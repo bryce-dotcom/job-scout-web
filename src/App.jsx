@@ -17,21 +17,23 @@ import Layout from './components/Layout'
 
 function Dashboard() {
   const company = useStore((state) => state.company)
+  const user = useStore((state) => state.user)
 
   return (
     <div className="p-6">
       <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Job Scout</h2>
-      {company ? (
-        <p className="text-gray-600">You're logged in as {company.company_name}</p>
-      ) : (
-        <p className="text-gray-600">Dashboard coming soon...</p>
+      {company && (
+        <p className="text-gray-600">
+          Logged in as {user?.name || user?.email} at {company.company_name}
+        </p>
       )}
     </div>
   )
 }
 
+// Protected route that checks for companyId (not just user)
 function ProtectedRoute({ children }) {
-  const user = useStore((state) => state.user)
+  const companyId = useStore((state) => state.companyId)
   const isLoading = useStore((state) => state.isLoading)
 
   if (isLoading) {
@@ -42,7 +44,8 @@ function ProtectedRoute({ children }) {
     )
   }
 
-  if (!user) {
+  // Must have companyId to access protected routes
+  if (!companyId) {
     return <Navigate to="/login" replace />
   }
 
@@ -50,52 +53,59 @@ function ProtectedRoute({ children }) {
 }
 
 function App() {
+  const companyId = useStore((state) => state.companyId)
   const setUser = useStore((state) => state.setUser)
   const setCompany = useStore((state) => state.setCompany)
   const setIsLoading = useStore((state) => state.setIsLoading)
-  const companyId = useStore((state) => state.companyId)
   const fetchAllData = useStore((state) => state.fetchAllData)
+  const clearSession = useStore((state) => state.clearSession)
 
+  // Check for existing session on mount and handle session recovery
   useEffect(() => {
-    setIsLoading(true)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      setIsLoading(false)
-    })
+    const initializeAuth = async () => {
+      setIsLoading(true)
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null)
+      const { data: { session } } = await supabase.auth.getSession()
 
-      // Auto-fetch or create company for user
       if (session?.user) {
-        const { data: companies } = await supabase
-          .from('companies')
-          .select('*')
-          .eq('owner_email', session.user.email)
-          .limit(1)
+        // Session exists - check if store has company data
+        const storedCompanyId = useStore.getState().companyId
 
-        if (companies && companies.length > 0) {
-          setCompany(companies[0])
-        } else {
-          // Create default company for new user
-          const { data: newCompany } = await supabase
-            .from('companies')
-            .insert([{
-              company_name: 'My Company',
-              owner_email: session.user.email
-            }])
-            .select()
+        if (!storedCompanyId) {
+          // Store is empty but we have a session - try to recover
+          const { data: employee } = await supabase
+            .from('employees')
+            .select('*, company:companies(*)')
+            .eq('email', session.user.email)
+            .eq('active', true)
             .single()
 
-          if (newCompany) {
-            setCompany(newCompany)
+          if (employee && employee.company) {
+            setUser(employee)
+            setCompany(employee.company)
+          } else {
+            // No valid employee - clear session
+            await clearSession()
           }
         }
+      }
+
+      setIsLoading(false)
+    }
+
+    initializeAuth()
+
+    // Listen for auth state changes (sign out from another tab, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        // Clear store on sign out
+        setUser(null)
+        setCompany(null)
       }
     })
 
     return () => subscription.unsubscribe()
-  }, [setUser, setCompany, setIsLoading])
+  }, [setUser, setCompany, setIsLoading, clearSession])
 
   // Fetch data when companyId changes
   useEffect(() => {

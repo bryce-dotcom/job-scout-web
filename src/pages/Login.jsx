@@ -7,6 +7,7 @@ import logo from '../assets/logo.png'
 export default function Login() {
   const navigate = useNavigate()
   const setUser = useStore((state) => state.setUser)
+  const setCompany = useStore((state) => state.setCompany)
 
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
@@ -16,6 +17,30 @@ export default function Login() {
   const [error, setError] = useState(null)
   const [message, setMessage] = useState(null)
 
+  // Lookup employee by email and get their company
+  const lookupEmployeeAndCompany = async (userEmail) => {
+    // Find employee with this email
+    const { data: employee, error: empError } = await supabase
+      .from('employees')
+      .select('*, company:companies(*)')
+      .eq('email', userEmail)
+      .eq('active', true)
+      .single()
+
+    if (empError || !employee) {
+      // No employee found - sign out and show error
+      await supabase.auth.signOut()
+      return { success: false, error: 'No account found for this email. Contact your administrator.' }
+    }
+
+    if (!employee.company) {
+      await supabase.auth.signOut()
+      return { success: false, error: 'Company not found. Contact your administrator.' }
+    }
+
+    return { success: true, employee, company: employee.company }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -23,6 +48,7 @@ export default function Login() {
     setMessage(null)
 
     if (isSignUp) {
+      // Sign up flow
       if (password !== confirmPassword) {
         setError('Passwords do not match')
         setLoading(false)
@@ -40,9 +66,10 @@ export default function Login() {
         return
       }
 
-      setMessage('Check your email for the confirmation link')
+      setMessage('Check your email for the confirmation link. Your administrator must add you as an employee before you can sign in.')
       setLoading(false)
     } else {
+      // Sign in flow
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -54,7 +81,20 @@ export default function Login() {
         return
       }
 
-      setUser(data.user)
+      // Lookup employee and company
+      const result = await lookupEmployeeAndCompany(data.user.email)
+
+      if (!result.success) {
+        setError(result.error)
+        setLoading(false)
+        return
+      }
+
+      // Set store state
+      setUser(result.employee)
+      setCompany(result.company)
+
+      // Navigate to dashboard
       navigate('/')
     }
   }

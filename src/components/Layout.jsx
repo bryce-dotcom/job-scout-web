@@ -1,16 +1,17 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useNavigate, NavLink, Outlet } from 'react-router-dom'
 import { useStore } from '../lib/store'
-import { supabase } from '../lib/supabase'
 import { Home, Users, Building2, UserPlus, TrendingUp, Package, FileText, Briefcase, LogOut } from 'lucide-react'
 import logo from '../assets/logo.png'
 
 export default function Layout() {
+  const navigate = useNavigate()
   const user = useStore((state) => state.user)
   const company = useStore((state) => state.company)
   const clearSession = useStore((state) => state.clearSession)
 
   const handleLogout = async () => {
     await clearSession()
+    navigate('/login')
   }
 
   const navItems = [
@@ -23,6 +24,9 @@ export default function Layout() {
     { to: '/quotes', icon: FileText, label: 'Quotes' },
     { to: '/jobs', icon: Briefcase, label: 'Jobs' }
   ]
+
+  // Display user's name if available, otherwise email
+  const displayName = user?.name || user?.email || 'User'
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -61,7 +65,7 @@ export default function Layout() {
           </div>
 
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600 hidden sm:block">{user?.email}</span>
+            <span className="text-sm text-gray-600 hidden sm:block">{displayName}</span>
             <button
               onClick={handleLogout}
               className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md"
