@@ -2,41 +2,21 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import { useStore } from './lib/store'
-import logo from './assets/logo.png'
 import Login from './pages/Login'
+import Employees from './pages/Employees'
+import Layout from './components/Layout'
 
 function Dashboard() {
-  const user = useStore((state) => state.user)
-  const setUser = useStore((state) => state.setUser)
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-  }
+  const company = useStore((state) => state.company)
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src={logo} alt="Job Scout" className="h-10" />
-            <h1 className="text-xl font-bold text-gray-900">Job Scout</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">{user?.email}</span>
-            <button
-              onClick={handleLogout}
-              className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Job Scout</h2>
+    <div className="p-6">
+      <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Job Scout</h2>
+      {company ? (
+        <p className="text-gray-600">You're logged in as {company.company_name}</p>
+      ) : (
         <p className="text-gray-600">Dashboard coming soon...</p>
-      </main>
+      )}
     </div>
   )
 }
@@ -62,36 +42,73 @@ function ProtectedRoute({ children }) {
 
 function App() {
   const setUser = useStore((state) => state.setUser)
+  const setCompany = useStore((state) => state.setCompany)
   const setIsLoading = useStore((state) => state.setIsLoading)
+  const companyId = useStore((state) => state.companyId)
+  const fetchAllData = useStore((state) => state.fetchAllData)
 
   useEffect(() => {
-    // Check current session
     setIsLoading(true)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       setIsLoading(false)
     })
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null)
+
+      // Auto-fetch or create company for user
+      if (session?.user) {
+        const { data: companies } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('owner_email', session.user.email)
+          .limit(1)
+
+        if (companies && companies.length > 0) {
+          setCompany(companies[0])
+        } else {
+          // Create default company for new user
+          const { data: newCompany } = await supabase
+            .from('companies')
+            .insert([{
+              company_name: 'My Company',
+              owner_email: session.user.email
+            }])
+            .select()
+            .single()
+
+          if (newCompany) {
+            setCompany(newCompany)
+          }
+        }
+      }
     })
 
     return () => subscription.unsubscribe()
-  }, [setUser, setIsLoading])
+  }, [setUser, setCompany, setIsLoading])
+
+  // Fetch data when companyId changes
+  useEffect(() => {
+    if (companyId) {
+      fetchAllData()
+    }
+  }, [companyId, fetchAllData])
 
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route
-          path="/"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <Layout />
             </ProtectedRoute>
           }
-        />
+        >
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/employees" element={<Employees />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   )

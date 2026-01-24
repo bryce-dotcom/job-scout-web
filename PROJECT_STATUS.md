@@ -1,18 +1,33 @@
 # Job Scout Web App - Project Status
-**Current Phase:** Initial Setup
+**Current Phase:** Core Development
 **Last Updated:** January 23, 2026
 
 ## Completed
-- [x] Project scaffolding
+- [x] Project scaffolding (Vite + React + Tailwind)
 - [x] GitHub connected
+- [x] Supabase connection configured
+- [x] Login/Signup with email authentication
+- [x] Multi-tenant foundation (companies table)
+- [x] Employees module (CRUD, cards, filters)
+- [x] Layout with navigation
+- [x] Protected routes
 
 ## In Progress
-- Supabase schema design
+- Customers module
 
 ## Next Up
-- Design database tables based on AppSheet schema
-- Create core tables (Customers, Jobs, Leads, Employees)
-- Build Login page
+- Leads module
+- Quotes module
+- Jobs module
+- Settings page (company profile)
+
+## Database Tables
+- [x] companies (multi-tenant root)
+- [x] employees
+- [ ] customers
+- [ ] leads
+- [ ] quotes
+- [ ] jobs
 
 ## Blockers
 None
@@ -20,3 +35,4 @@ None
 ## Notes
 Rebuilding AppSheet Job Scout (64 tables, 160 views) as React/Supabase web app
 Following OG DiX code standards for all patterns
+Multi-tenant architecture: all data scoped by company_id
