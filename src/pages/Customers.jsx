@@ -2,12 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { useTheme } from '../components/Layout'
 import { Plus, Pencil, Trash2, X, User, Phone, Mail, Building2, Search } from 'lucide-react'
-
-const defaultTheme = {
-  primary: '#2563eb',
-  primaryHover: '#1d4ed8'
-}
 
 const emptyCustomer = {
   name: '',
@@ -19,20 +15,12 @@ const emptyCustomer = {
   salesperson_id: '',
   status: 'Active',
   preferred_contact: 'Phone',
-  tags: '',
   notes: '',
   secondary_contact_name: '',
   secondary_contact_email: '',
   secondary_contact_phone: '',
   secondary_contact_role: '',
   marketing_opt_in: false
-}
-
-const statusColors = {
-  Active: 'bg-green-100 text-green-700',
-  Inactive: 'bg-gray-100 text-gray-600',
-  Lead: 'bg-blue-100 text-blue-700',
-  Prospect: 'bg-yellow-100 text-yellow-700'
 }
 
 export default function Customers() {
@@ -42,6 +30,20 @@ export default function Customers() {
   const employees = useStore((state) => state.employees)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
 
+  // Theme with fallback
+  const themeContext = useTheme()
+  const theme = themeContext?.theme || {
+    bg: '#f7f5ef',
+    bgCard: '#ffffff',
+    bgCardHover: '#eef2eb',
+    border: '#d6cdb8',
+    text: '#2c3530',
+    textSecondary: '#4d5a52',
+    textMuted: '#7d8a7f',
+    accent: '#5a6349',
+    accentBg: 'rgba(90,99,73,0.12)'
+  }
+
   const [showModal, setShowModal] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState(null)
   const [formData, setFormData] = useState(emptyCustomer)
@@ -50,8 +52,7 @@ export default function Customers() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
-  const theme = defaultTheme
-
+  // Guard clause - redirect if no company
   useEffect(() => {
     if (!companyId) {
       navigate('/')
@@ -90,7 +91,6 @@ export default function Customers() {
       salesperson_id: customer.salesperson_id || '',
       status: customer.status || 'Active',
       preferred_contact: customer.preferred_contact || 'Phone',
-      tags: customer.tags || '',
       notes: customer.notes || '',
       secondary_contact_name: customer.secondary_contact_name || '',
       secondary_contact_email: customer.secondary_contact_email || '',
@@ -152,12 +152,13 @@ export default function Customers() {
     setLoading(false)
   }
 
+  // Soft delete - set status to Inactive
   const handleDelete = async (customer) => {
-    if (!confirm(`Are you sure you want to delete ${customer.name}?`)) return
+    if (!confirm(`Are you sure you want to deactivate ${customer.name}?`)) return
 
     const { error } = await supabase
       .from('customers')
-      .delete()
+      .update({ status: 'Inactive', updated_at: new Date().toISOString() })
       .eq('id', customer.id)
 
     if (!error) {
@@ -165,14 +166,71 @@ export default function Customers() {
     }
   }
 
+  const getStatusStyle = (status) => {
+    switch (status) {
+      case 'Active':
+        return { backgroundColor: 'rgba(34,197,94,0.1)', color: '#16a34a' }
+      case 'Inactive':
+        return { backgroundColor: theme.bg, color: theme.textMuted }
+      case 'Prospect':
+        return { backgroundColor: 'rgba(234,179,8,0.1)', color: '#ca8a04' }
+      default:
+        return { backgroundColor: theme.bg, color: theme.textMuted }
+    }
+  }
+
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    backgroundColor: theme.bg,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '8px',
+    color: theme.text,
+    fontSize: '14px',
+    outline: 'none'
+  }
+
+  const labelStyle = {
+    display: 'block',
+    marginBottom: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: theme.text
+  }
+
   return (
-    <div className="p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
+    <div style={{ padding: '24px' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        gap: '16px'
+      }}>
+        <h1 style={{
+          fontSize: '24px',
+          fontWeight: '700',
+          color: theme.text
+        }}>
+          Customers
+        </h1>
         <button
           onClick={openAddModal}
-          style={{ backgroundColor: theme.primary }}
-          className="flex items-center gap-2 px-4 py-2 text-white rounded-md hover:opacity-90"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 16px',
+            backgroundColor: theme.accent,
+            color: '#fff',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            cursor: 'pointer'
+          }}
         >
           <Plus size={20} />
           Add Customer
@@ -180,96 +238,219 @@ export default function Customers() {
       </div>
 
       {/* Search and Filter */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+      <div style={{
+        display: 'flex',
+        gap: '16px',
+        marginBottom: '24px',
+        flexWrap: 'wrap'
+      }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+          <Search
+            size={20}
+            style={{
+              position: 'absolute',
+              left: '12px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: theme.textMuted
+            }}
+          />
           <input
             type="text"
             placeholder="Search customers..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            style={{
+              ...inputStyle,
+              paddingLeft: '40px',
+              backgroundColor: theme.bgCard
+            }}
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          style={{
+            ...inputStyle,
+            width: 'auto',
+            minWidth: '140px',
+            backgroundColor: theme.bgCard
+          }}
         >
           <option value="all">All Status</option>
           <option value="Active">Active</option>
           <option value="Inactive">Inactive</option>
-          <option value="Lead">Lead</option>
           <option value="Prospect">Prospect</option>
         </select>
       </div>
 
+      {/* Customer List */}
       {filteredCustomers.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg shadow">
-          <Building2 size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-600">
+        <div style={{
+          textAlign: 'center',
+          padding: '48px',
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`
+        }}>
+          <Building2 size={48} style={{ color: theme.textMuted, marginBottom: '16px' }} />
+          <p style={{ color: theme.textSecondary }}>
             {searchTerm || statusFilter !== 'all'
               ? 'No customers match your search.'
               : 'No customers yet. Add your first customer to get started.'}
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: '16px'
+        }}>
           {filteredCustomers.map((customer) => (
             <div
               key={customer.id}
-              className="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow cursor-pointer"
               onClick={() => openEditModal(customer)}
+              style={{
+                backgroundColor: theme.bgCard,
+                borderRadius: '12px',
+                border: `1px solid ${theme.border}`,
+                padding: '20px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = theme.bgCardHover
+                e.currentTarget.style.borderColor = theme.textMuted
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = theme.bgCard
+                e.currentTarget.style.borderColor = theme.border
+              }}
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                    <User size={24} className="text-blue-600" />
+              <div style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    backgroundColor: theme.accentBg,
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <User size={24} style={{ color: theme.accent }} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">{customer.name}</h3>
+                    <h3 style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      color: theme.text,
+                      marginBottom: '2px'
+                    }}>
+                      {customer.name}
+                    </h3>
                     {customer.business_name && (
-                      <p className="text-sm text-gray-500">{customer.business_name}</p>
+                      <p style={{
+                        fontSize: '14px',
+                        color: theme.textSecondary
+                      }}>
+                        {customer.business_name}
+                      </p>
                     )}
                   </div>
                 </div>
-                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                <div
+                  style={{ display: 'flex', gap: '4px' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <button
                     onClick={() => openEditModal(customer)}
-                    className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                    style={{
+                      padding: '8px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      color: theme.textMuted,
+                      cursor: 'pointer',
+                      borderRadius: '6px'
+                    }}
                   >
                     <Pencil size={16} />
                   </button>
                   <button
                     onClick={() => handleDelete(customer)}
-                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                    style={{
+                      padding: '8px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      color: theme.textMuted,
+                      cursor: 'pointer',
+                      borderRadius: '6px'
+                    }}
                   >
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-1.5 text-sm">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {customer.email && (
-                  <div className="flex items-center gap-2 text-gray-600">
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '14px',
+                    color: theme.textSecondary
+                  }}>
                     <Mail size={14} />
-                    <span className="truncate">{customer.email}</span>
+                    <span style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {customer.email}
+                    </span>
                   </div>
                 )}
                 {customer.phone && (
-                  <div className="flex items-center gap-2 text-gray-600">
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '14px',
+                    color: theme.textSecondary
+                  }}>
                     <Phone size={14} />
                     <span>{customer.phone}</span>
                   </div>
                 )}
               </div>
 
-              <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                <span className={`text-xs px-2 py-1 rounded-full ${statusColors[customer.status] || 'bg-gray-100 text-gray-600'}`}>
+              <div style={{
+                marginTop: '16px',
+                paddingTop: '16px',
+                borderTop: `1px solid ${theme.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <span style={{
+                  fontSize: '12px',
+                  padding: '4px 10px',
+                  borderRadius: '20px',
+                  ...getStatusStyle(customer.status)
+                }}>
                   {customer.status}
                 </span>
                 {customer.salesperson && (
-                  <span className="text-xs text-gray-500">
+                  <span style={{
+                    fontSize: '12px',
+                    color: theme.textMuted
+                  }}>
                     {customer.salesperson.name}
                   </span>
                 )}
@@ -281,283 +462,353 @@ export default function Customers() {
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
-              <h2 className="text-lg font-semibold">
+        <>
+          <div
+            onClick={closeModal}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.3)',
+              zIndex: 50
+            }}
+          />
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            border: `1px solid ${theme.border}`,
+            width: '100%',
+            maxWidth: '640px',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            zIndex: 51
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`,
+              position: 'sticky',
+              top: 0,
+              backgroundColor: theme.bgCard,
+              zIndex: 1
+            }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                color: theme.text
+              }}>
                 {editingCustomer ? 'Edit Customer' : 'Add Customer'}
               </h2>
-              <button onClick={closeModal} className="text-gray-500 hover:text-gray-700">
+              <button
+                onClick={closeModal}
+                style={{
+                  padding: '4px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: theme.textMuted,
+                  cursor: 'pointer'
+                }}
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-4">
+            <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
               {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">
+                <div style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(220,38,38,0.08)',
+                  border: '1px solid rgba(220,38,38,0.2)',
+                  borderRadius: '8px',
+                  color: '#b91c1c',
+                  fontSize: '14px'
+                }}>
                   {error}
                 </div>
               )}
 
-              <div className="space-y-4">
-                {/* Primary Contact */}
-                <h3 className="font-medium text-gray-900 border-b pb-2">Primary Contact</h3>
+              {/* Primary Contact */}
+              <h3 style={{
+                fontSize: '14px',
+                fontWeight: '600',
+                color: theme.text,
+                marginBottom: '16px',
+                paddingBottom: '8px',
+                borderBottom: `1px solid ${theme.border}`
+              }}>
+                Primary Contact
+              </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Name *
-                    </label>
-                    <input
-                      type="text"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Business Name
-                    </label>
-                    <input
-                      type="text"
-                      name="business_name"
-                      value={formData.business_name}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone
-                    </label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Job Title
-                    </label>
-                    <input
-                      type="text"
-                      name="job_title"
-                      value={formData.job_title}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Preferred Contact
-                    </label>
-                    <select
-                      name="preferred_contact"
-                      value={formData.preferred_contact}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="Phone">Phone</option>
-                      <option value="Email">Email</option>
-                      <option value="Text">Text</option>
-                    </select>
-                  </div>
-                </div>
-
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '16px',
+                marginBottom: '16px'
+              }}>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Address
-                  </label>
-                  <textarea
-                    name="address"
-                    value={formData.address}
+                  <label style={labelStyle}>Name *</label>
+                  <input
+                    type="text"
+                    name="name"
+                    value={formData.name}
                     onChange={handleChange}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                    style={inputStyle}
                   />
                 </div>
-
-                {/* Secondary Contact */}
-                <h3 className="font-medium text-gray-900 border-b pb-2 mt-6">Secondary Contact</h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Name
-                    </label>
-                    <input
-                      type="text"
-                      name="secondary_contact_name"
-                      value={formData.secondary_contact_name}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Role
-                    </label>
-                    <input
-                      type="text"
-                      name="secondary_contact_role"
-                      value={formData.secondary_contact_role}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      name="secondary_contact_email"
-                      value={formData.secondary_contact_email}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone
-                    </label>
-                    <input
-                      type="tel"
-                      name="secondary_contact_phone"
-                      value={formData.secondary_contact_phone}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Status & Assignment */}
-                <h3 className="font-medium text-gray-900 border-b pb-2 mt-6">Status & Assignment</h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Status
-                    </label>
-                    <select
-                      name="status"
-                      value={formData.status}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                      <option value="Lead">Lead</option>
-                      <option value="Prospect">Prospect</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Salesperson
-                    </label>
-                    <select
-                      name="salesperson_id"
-                      value={formData.salesperson_id}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">-- Select --</option>
-                      {employees.map((emp) => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Tags
-                    </label>
-                    <input
-                      type="text"
-                      name="tags"
-                      value={formData.tags}
-                      onChange={handleChange}
-                      placeholder="Comma separated"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-6">
-                    <input
-                      type="checkbox"
-                      name="marketing_opt_in"
-                      id="marketing_opt_in"
-                      checked={formData.marketing_opt_in}
-                      onChange={handleChange}
-                      className="rounded border-gray-300"
-                    />
-                    <label htmlFor="marketing_opt_in" className="text-sm text-gray-700">
-                      Marketing opt-in
-                    </label>
-                  </div>
-                </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes
-                  </label>
-                  <textarea
-                    name="notes"
-                    value={formData.notes}
+                  <label style={labelStyle}>Business Name</label>
+                  <input
+                    type="text"
+                    name="business_name"
+                    value={formData.business_name}
                     onChange={handleChange}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Email</label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Phone</label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Job Title</label>
+                  <input
+                    type="text"
+                    name="job_title"
+                    value={formData.job_title}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Preferred Contact</label>
+                  <select
+                    name="preferred_contact"
+                    value={formData.preferred_contact}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  >
+                    <option value="Phone">Phone</option>
+                    <option value="Email">Email</option>
+                    <option value="Text">Text</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <label style={labelStyle}>Address</label>
+                <textarea
+                  name="address"
+                  value={formData.address}
+                  onChange={handleChange}
+                  rows={2}
+                  style={{ ...inputStyle, resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Secondary Contact */}
+              <h3 style={{
+                fontSize: '14px',
+                fontWeight: '600',
+                color: theme.text,
+                marginBottom: '16px',
+                paddingBottom: '8px',
+                borderBottom: `1px solid ${theme.border}`
+              }}>
+                Secondary Contact
+              </h3>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '16px',
+                marginBottom: '24px'
+              }}>
+                <div>
+                  <label style={labelStyle}>Name</label>
+                  <input
+                    type="text"
+                    name="secondary_contact_name"
+                    value={formData.secondary_contact_name}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Role</label>
+                  <input
+                    type="text"
+                    name="secondary_contact_role"
+                    value={formData.secondary_contact_role}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Email</label>
+                  <input
+                    type="email"
+                    name="secondary_contact_email"
+                    value={formData.secondary_contact_email}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Phone</label>
+                  <input
+                    type="tel"
+                    name="secondary_contact_phone"
+                    value={formData.secondary_contact_phone}
+                    onChange={handleChange}
+                    style={inputStyle}
                   />
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-6">
+              {/* Status & Assignment */}
+              <h3 style={{
+                fontSize: '14px',
+                fontWeight: '600',
+                color: theme.text,
+                marginBottom: '16px',
+                paddingBottom: '8px',
+                borderBottom: `1px solid ${theme.border}`
+              }}>
+                Status & Assignment
+              </h3>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '16px',
+                marginBottom: '16px'
+              }}>
+                <div>
+                  <label style={labelStyle}>Status</label>
+                  <select
+                    name="status"
+                    value={formData.status}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Prospect">Prospect</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Salesperson</label>
+                  <select
+                    name="salesperson_id"
+                    value={formData.salesperson_id}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select --</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '16px'
+              }}>
+                <input
+                  type="checkbox"
+                  name="marketing_opt_in"
+                  id="marketing_opt_in"
+                  checked={formData.marketing_opt_in}
+                  onChange={handleChange}
+                  style={{ accentColor: theme.accent }}
+                />
+                <label
+                  htmlFor="marketing_opt_in"
+                  style={{ fontSize: '14px', color: theme.text }}
+                >
+                  Marketing opt-in
+                </label>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <label style={labelStyle}>Notes</label>
+                <textarea
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleChange}
+                  rows={3}
+                  style={{ ...inputStyle, resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', gap: '12px' }}>
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    color: theme.textSecondary,
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  style={{ backgroundColor: theme.primary }}
-                  className="flex-1 px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: theme.accent,
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: loading ? 0.7 : 1
+                  }}
                 >
                   {loading ? 'Saving...' : (editingCustomer ? 'Update' : 'Add Customer')}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

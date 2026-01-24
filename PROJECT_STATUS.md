@@ -25,7 +25,7 @@
 - [x] Login flow with employee/company lookup
 
 ## In Progress
-- Customers page
+- Leads & Sales Pipeline (light theme update)
 
 ## Next Up
 - Invoicing module (list, detail, payments)
