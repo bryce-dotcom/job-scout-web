@@ -587,16 +587,19 @@ export default function Layout() {
             flex: 1,
             marginLeft: '260px',
             minHeight: '100vh',
-            backgroundColor: theme.bg,
-            position: 'relative'
+            backgroundImage: 'url(/topo-bg.png)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundAttachment: 'fixed',
+            backgroundColor: theme.bg
           }}
           className="md:ml-[260px] ml-0 mt-[64px] md:mt-0"
         >
-          {/* Topo Background */}
-          <TopoBackground />
-
-          {/* Content */}
-          <div style={{ position: 'relative', zIndex: 1 }}>
+          {/* Semi-transparent overlay for readability */}
+          <div style={{
+            backgroundColor: 'rgba(247,245,239,0.85)',
+            minHeight: '100vh'
+          }}>
             <Outlet />
           </div>
         </main>
