@@ -19,16 +19,25 @@
 - [x] Jobs module (list, detail, calendar views)
 - [x] Layout with navigation
 - [x] Protected routes
+- [x] Full Supabase schema (40+ tables)
+- [x] Schema reference file (src/lib/schema.js)
+- [x] Complete Zustand store with all fetch functions
 
 ## In Progress
-- Invoicing & Payments
+- Fix login flow to link auth user to company
+- Invoicing & Payments module
 
 ## Next Up
-- Invoicing
+- Invoicing module (list, detail, payments)
 - Settings page (company profile)
 - Reports/Dashboard widgets
+- Time tracking module
+- Fleet management module
+- Lighting audits module
 
-## Database Tables
+## Database Tables (40+ tables defined)
+
+### Core
 - [x] companies (multi-tenant root)
 - [x] employees
 - [x] customers
@@ -36,12 +45,60 @@
 - [x] sales_pipeline
 - [x] lead_payments
 - [x] appointments
+
+### Products & Quotes
 - [x] products_services
 - [x] quotes
 - [x] quote_lines
+
+### Jobs & Work
 - [x] jobs
 - [x] job_lines
-- [ ] invoices
+- [x] custom_forms
+- [x] time_log
+- [x] expenses
+
+### Invoicing
+- [x] invoices
+- [x] invoice_lines
+- [x] payments
+- [x] utility_invoices
+- [x] incentives
+
+### Fleet
+- [x] fleet
+- [x] fleet_maintenance
+- [x] fleet_rentals
+
+### Inventory
+- [x] inventory
+- [x] inventory_transactions
+
+### Lighting Audits
+- [x] lighting_audits
+- [x] audit_areas
+- [x] audit_area_fixtures
+- [x] fixture_types
+- [x] rebate_rates
+- [x] rebate_update_log
+- [x] utility_programs
+- [x] utility_providers
+
+### Other
+- [x] communications_log
+- [x] routes
+- [x] route_stops
+- [x] settings
+- [x] search_index
+- [x] tags
+- [x] entity_tags
+- [x] file_attachments
+
+## Key Files
+- `src/lib/supabase.js` - Supabase client
+- `src/lib/store.js` - Zustand store with all fetch functions
+- `src/lib/schema.js` - Table definitions and constants
+- `supabase_schema.sql` - Complete SQL schema for Supabase
 
 ## Blockers
 None
