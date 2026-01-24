@@ -9,6 +9,7 @@ export const useStore = create(
       company: null,
       user: null,
       employees: [],
+      customers: [],
       isLoading: false,
 
       setCompany: (company) => set({ company, companyId: company?.id }),
@@ -21,7 +22,8 @@ export const useStore = create(
           company: null,
           companyId: null,
           user: null,
-          employees: []
+          employees: [],
+          customers: []
         });
       },
 
@@ -39,11 +41,24 @@ export const useStore = create(
         if (!error) set({ employees: data || [] });
       },
 
+      fetchCustomers: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*, salesperson:employees(id, name)')
+          .eq('company_id', companyId)
+          .order('name');
+
+        if (!error) set({ customers: data || [] });
+      },
+
       fetchAllData: async () => {
-        const { companyId, fetchEmployees } = get();
+        const { companyId, fetchEmployees, fetchCustomers } = get();
         if (!companyId) return;
         set({ isLoading: true });
-        await fetchEmployees();
+        await Promise.all([fetchEmployees(), fetchCustomers()]);
         set({ isLoading: false });
       }
     }),

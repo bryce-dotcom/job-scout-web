@@ -9,11 +9,12 @@
 - [x] Login/Signup with email authentication
 - [x] Multi-tenant foundation (companies table)
 - [x] Employees module (CRUD, cards, filters)
+- [x] Customers module (CRUD, search, status filters)
 - [x] Layout with navigation
 - [x] Protected routes
 
 ## In Progress
-- Customers module
+- Leads & Sales Pipeline
 
 ## Next Up
 - Leads module
@@ -24,7 +25,7 @@
 ## Database Tables
 - [x] companies (multi-tenant root)
 - [x] employees
-- [ ] customers
+- [x] customers
 - [ ] leads
 - [ ] quotes
 - [ ] jobs

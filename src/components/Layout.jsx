@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { supabase } from '../lib/supabase'
-import { Home, Users, LogOut } from 'lucide-react'
+import { Home, Users, Building2, LogOut } from 'lucide-react'
 import logo from '../assets/logo.png'
 
 export default function Layout() {
@@ -15,7 +15,8 @@ export default function Layout() {
 
   const navItems = [
     { to: '/', icon: Home, label: 'Dashboard' },
-    { to: '/employees', icon: Users, label: 'Employees' }
+    { to: '/employees', icon: Users, label: 'Employees' },
+    { to: '/customers', icon: Building2, label: 'Customers' }
   ]
 
   return (

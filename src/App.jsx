@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase'
 import { useStore } from './lib/store'
 import Login from './pages/Login'
 import Employees from './pages/Employees'
+import Customers from './pages/Customers'
 import Layout from './components/Layout'
 
 function Dashboard() {
@@ -108,6 +109,7 @@ function App() {
         >
           <Route path="/" element={<Dashboard />} />
           <Route path="/employees" element={<Employees />} />
+          <Route path="/customers" element={<Customers />} />
         </Route>
       </Routes>
     </BrowserRouter>
