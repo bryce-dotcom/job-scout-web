@@ -17,6 +17,12 @@
 - [x] Quotes (list, create, status tracking)
 - [x] Quote Detail (line items, totals, send/approve workflow)
 - [x] Jobs module (list, detail, calendar views)
+- [x] Light theme rebrand (topo background, olive green accent)
+- [x] Leads module with light theme (CRUD, quick actions, convert to customer)
+- [x] Sales Pipeline with light theme (Kanban board, stage management)
+- [x] Products & Services with light theme (CRUD, pricing, active toggle)
+- [x] Quotes with light theme (list, create, status tracking)
+- [x] Quote Detail with light theme (line items, totals, send/approve workflow)
 - [x] Layout with navigation
 - [x] Protected routes
 - [x] Full Supabase schema (40+ tables)
@@ -25,7 +31,7 @@
 - [x] Login flow with employee/company lookup
 
 ## In Progress
-- Leads & Sales Pipeline (light theme update)
+- None
 
 ## Next Up
 - Invoicing module (list, detail, payments)

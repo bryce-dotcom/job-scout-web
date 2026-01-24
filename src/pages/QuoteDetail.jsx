@@ -2,17 +2,27 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase } from 'lucide-react'
+import { useTheme } from '../components/Layout'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, X, DollarSign } from 'lucide-react'
 
+// Light theme fallback
 const defaultTheme = {
-  primary: '#2563eb'
+  bg: '#f7f5ef',
+  bgCard: '#ffffff',
+  bgCardHover: '#eef2eb',
+  border: '#d6cdb8',
+  text: '#2c3530',
+  textSecondary: '#4d5a52',
+  textMuted: '#7d8a7f',
+  accent: '#5a6349',
+  accentBg: 'rgba(90,99,73,0.12)'
 }
 
 const statusColors = {
-  'Draft': 'bg-gray-100 text-gray-700',
-  'Sent': 'bg-blue-100 text-blue-700',
-  'Approved': 'bg-green-100 text-green-700',
-  'Rejected': 'bg-red-100 text-red-700'
+  'Draft': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' },
+  'Sent': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
+  'Approved': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
+  'Rejected': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' }
 }
 
 export default function QuoteDetail() {
@@ -29,7 +39,9 @@ export default function QuoteDetail() {
   const [showAddLine, setShowAddLine] = useState(false)
   const [newLine, setNewLine] = useState({ item_id: '', quantity: 1 })
 
-  const theme = defaultTheme
+  // Theme with fallback
+  const themeContext = useTheme()
+  const theme = themeContext?.theme || defaultTheme
 
   useEffect(() => {
     if (!companyId) {
@@ -143,9 +155,8 @@ export default function QuoteDetail() {
 
   const convertToJob = async () => {
     if (!confirm('Convert this quote to a job?')) return
-    // For now, just mark as approved - Jobs module will be built next
     await approveQuote()
-    alert('Quote approved! Jobs module coming soon.')
+    alert('Quote approved! Jobs module ready for conversion.')
   }
 
   const formatCurrency = (amount) => {
@@ -153,19 +164,48 @@ export default function QuoteDetail() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
   }
 
+  // Styles
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    border: `1px solid ${theme.border}`,
+    borderRadius: '8px',
+    fontSize: '14px',
+    color: theme.text,
+    backgroundColor: theme.bgCard,
+    outline: 'none'
+  }
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: '500',
+    color: theme.textSecondary,
+    marginBottom: '6px'
+  }
+
   if (loading) {
     return (
-      <div className="p-6">
-        <p className="text-gray-600">Loading quote...</p>
+      <div style={{ padding: '24px' }}>
+        <p style={{ color: theme.textMuted }}>Loading quote...</p>
       </div>
     )
   }
 
   if (!quote) {
     return (
-      <div className="p-6">
-        <p className="text-red-600">Quote not found</p>
-        <button onClick={() => navigate('/quotes')} className="mt-4 text-blue-600 hover:underline">
+      <div style={{ padding: '24px' }}>
+        <p style={{ color: '#dc2626', marginBottom: '16px' }}>Quote not found</p>
+        <button
+          onClick={() => navigate('/quotes')}
+          style={{
+            color: theme.accent,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            textDecoration: 'underline'
+          }}
+        >
           Back to Quotes
         </button>
       </div>
@@ -179,64 +219,144 @@ export default function QuoteDetail() {
   const outOfPocket = total - incentive
 
   const customerInfo = quote.customer || quote.lead
+  const statusStyle = statusColors[quote.status] || statusColors['Draft']
 
   return (
-    <div className="p-6">
+    <div style={{ padding: '24px' }}>
       {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        marginBottom: '24px'
+      }}>
         <button
           onClick={() => navigate('/quotes')}
-          className="p-2 hover:bg-gray-100 rounded-md"
+          style={{
+            padding: '10px',
+            backgroundColor: theme.bgCard,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '8px',
+            cursor: 'pointer',
+            color: theme.textSecondary
+          }}
         >
           <ArrowLeft size={20} />
         </button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">
+        <div style={{ flex: 1 }}>
+          <h1 style={{
+            fontSize: '24px',
+            fontWeight: '700',
+            color: theme.text
+          }}>
             Quote {quote.quote_id || `#${quote.id}`}
           </h1>
-          <p className="text-gray-600">
+          <p style={{ fontSize: '14px', color: theme.textSecondary }}>
             {customerInfo?.name || customerInfo?.customer_name || 'No customer'}
           </p>
         </div>
-        <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[quote.status]}`}>
+        <span style={{
+          padding: '6px 14px',
+          borderRadius: '20px',
+          fontSize: '13px',
+          fontWeight: '500',
+          backgroundColor: statusStyle.bg,
+          color: statusStyle.text
+        }}>
           {quote.status}
         </span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 360px',
+        gap: '24px'
+      }}>
         {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Customer Info */}
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="font-medium text-gray-900 mb-3">Customer Information</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <h3 style={{
+              fontSize: '15px',
+              fontWeight: '600',
+              color: theme.text,
+              marginBottom: '16px'
+            }}>
+              Customer Information
+            </h3>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '16px'
+            }}>
               <div>
-                <p className="text-gray-500">Name</p>
-                <p className="font-medium">{customerInfo?.name || customerInfo?.customer_name || '-'}</p>
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Name</p>
+                <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                  {customerInfo?.name || customerInfo?.customer_name || '-'}
+                </p>
               </div>
               <div>
-                <p className="text-gray-500">Email</p>
-                <p className="font-medium">{customerInfo?.email || '-'}</p>
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Email</p>
+                <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                  {customerInfo?.email || '-'}
+                </p>
               </div>
               <div>
-                <p className="text-gray-500">Phone</p>
-                <p className="font-medium">{customerInfo?.phone || '-'}</p>
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Phone</p>
+                <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                  {customerInfo?.phone || '-'}
+                </p>
               </div>
               <div>
-                <p className="text-gray-500">Address</p>
-                <p className="font-medium">{customerInfo?.address || '-'}</p>
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Address</p>
+                <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                  {customerInfo?.address || '-'}
+                </p>
               </div>
             </div>
           </div>
 
           {/* Line Items */}
-          <div className="bg-white rounded-lg shadow">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="font-medium text-gray-900">Line Items</h3>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <h3 style={{
+                fontSize: '15px',
+                fontWeight: '600',
+                color: theme.text
+              }}>
+                Line Items
+              </h3>
               <button
                 onClick={() => setShowAddLine(true)}
-                style={{ backgroundColor: theme.primary }}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm text-white rounded-md hover:opacity-90"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 12px',
+                  backgroundColor: theme.accent,
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
               >
                 <Plus size={16} />
                 Add Item
@@ -244,118 +364,271 @@ export default function QuoteDetail() {
             </div>
 
             {lineItems.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
+              <div style={{
+                padding: '40px 20px',
+                textAlign: 'center',
+                color: theme.textMuted
+              }}>
                 No line items yet. Add products or services to this quote.
               </div>
             ) : (
-              <table className="min-w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                    <th className="px-4 py-2"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {lineItems.map((line) => (
-                    <tr key={line.id}>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{line.item?.name || 'Unknown'}</p>
-                        {line.item?.description && (
-                          <p className="text-sm text-gray-500 truncate max-w-xs">{line.item.description}</p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-600">{line.quantity}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(line.unit_price)}</td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(line.line_total)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => removeLineItem(line.id)}
-                          className="p-1 text-gray-400 hover:text-red-600"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <>
+                {/* Table Header */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '2fr 80px 100px 100px 40px',
+                  gap: '12px',
+                  padding: '12px 20px',
+                  backgroundColor: theme.accentBg,
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: theme.textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}>
+                  <div>Item</div>
+                  <div style={{ textAlign: 'right' }}>Qty</div>
+                  <div style={{ textAlign: 'right' }}>Price</div>
+                  <div style={{ textAlign: 'right' }}>Total</div>
+                  <div></div>
+                </div>
+
+                {/* Table Body */}
+                {lineItems.map((line) => (
+                  <div
+                    key={line.id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 80px 100px 100px 40px',
+                      gap: '12px',
+                      padding: '14px 20px',
+                      borderBottom: `1px solid ${theme.border}`,
+                      alignItems: 'center'
+                    }}
+                  >
+                    <div>
+                      <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
+                        {line.item?.name || 'Unknown'}
+                      </p>
+                      {line.item?.description && (
+                        <p style={{
+                          fontSize: '12px',
+                          color: theme.textMuted,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {line.item.description}
+                        </p>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>
+                      {line.quantity}
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>
+                      {formatCurrency(line.unit_price)}
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                      {formatCurrency(line.line_total)}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <button
+                        onClick={() => removeLineItem(line.id)}
+                        style={{
+                          padding: '6px',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          color: theme.textMuted
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#fef2f2'
+                          e.currentTarget.style.color = '#dc2626'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent'
+                          e.currentTarget.style.color = theme.textMuted
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
           </div>
 
           {/* Notes */}
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="font-medium text-gray-900 mb-3">Notes</h3>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <h3 style={{
+              fontSize: '15px',
+              fontWeight: '600',
+              color: theme.text,
+              marginBottom: '12px'
+            }}>
+              Notes
+            </h3>
             <textarea
               value={quote.notes || ''}
               onChange={(e) => updateQuoteField('notes', e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{
+                ...inputStyle,
+                resize: 'vertical'
+              }}
               placeholder="Add notes..."
             />
           </div>
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Totals */}
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="font-medium text-gray-900 mb-4">Quote Summary</h3>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <h3 style={{
+              fontSize: '15px',
+              fontWeight: '600',
+              color: theme.text,
+              marginBottom: '16px'
+            }}>
+              Quote Summary
+            </h3>
 
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal</span>
-                <span className="font-medium">{formatCurrency(subtotal)}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '14px'
+              }}>
+                <span style={{ color: theme.textSecondary }}>Subtotal</span>
+                <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(subtotal)}</span>
               </div>
 
-              <div className="flex justify-between text-sm items-center">
-                <span className="text-gray-600">Discount</span>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '14px'
+              }}>
+                <span style={{ color: theme.textSecondary }}>Discount</span>
                 <input
                   type="number"
                   value={quote.discount || ''}
                   onChange={(e) => updateQuoteField('discount', e.target.value || 0)}
-                  className="w-24 px-2 py-1 text-right border border-gray-300 rounded"
+                  style={{
+                    width: '100px',
+                    padding: '6px 10px',
+                    textAlign: 'right',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    color: theme.text,
+                    backgroundColor: theme.bgCard
+                  }}
                   step="0.01"
                 />
               </div>
 
-              <div className="flex justify-between text-sm items-center">
-                <span className="text-gray-600">Utility Incentive</span>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '14px'
+              }}>
+                <span style={{ color: theme.textSecondary }}>Utility Incentive</span>
                 <input
                   type="number"
                   value={quote.utility_incentive || ''}
                   onChange={(e) => updateQuoteField('utility_incentive', e.target.value || 0)}
-                  className="w-24 px-2 py-1 text-right border border-gray-300 rounded"
+                  style={{
+                    width: '100px',
+                    padding: '6px 10px',
+                    textAlign: 'right',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    color: theme.text,
+                    backgroundColor: theme.bgCard
+                  }}
                   step="0.01"
                 />
               </div>
 
-              <div className="border-t pt-3 flex justify-between font-medium">
-                <span>Total</span>
-                <span className="text-lg">{formatCurrency(total)}</span>
+              <div style={{
+                borderTop: `1px solid ${theme.border}`,
+                paddingTop: '12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
+                <span style={{ fontSize: '20px', fontWeight: '600', color: theme.text }}>
+                  {formatCurrency(total)}
+                </span>
               </div>
 
               {incentive > 0 && (
-                <div className="flex justify-between text-sm text-green-600">
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '14px',
+                  color: '#4a7c59'
+                }}>
                   <span>Out of Pocket</span>
-                  <span className="font-medium">{formatCurrency(outOfPocket)}</span>
+                  <span style={{ fontWeight: '500' }}>{formatCurrency(outOfPocket)}</span>
                 </div>
               )}
             </div>
           </div>
 
           {/* Actions */}
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="font-medium text-gray-900 mb-4">Actions</h3>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <h3 style={{
+              fontSize: '15px',
+              fontWeight: '600',
+              color: theme.text,
+              marginBottom: '16px'
+            }}>
+              Actions
+            </h3>
 
-            <div className="space-y-2">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {quote.status === 'Draft' && (
                 <button
                   onClick={sendQuote}
                   disabled={saving}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px 16px',
+                    backgroundColor: theme.accent,
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    opacity: saving ? 0.6 : 1
+                  }}
                 >
                   <Send size={18} />
                   Send Quote
@@ -367,7 +640,21 @@ export default function QuoteDetail() {
                   <button
                     onClick={approveQuote}
                     disabled={saving}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      padding: '12px 16px',
+                      backgroundColor: '#4a7c59',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      opacity: saving ? 0.6 : 1
+                    }}
                   >
                     <CheckCircle size={18} />
                     Mark Approved
@@ -375,7 +662,21 @@ export default function QuoteDetail() {
                   <button
                     onClick={rejectQuote}
                     disabled={saving}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      padding: '12px 16px',
+                      backgroundColor: '#8b5a5a',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      opacity: saving ? 0.6 : 1
+                    }}
                   >
                     <XCircle size={18} />
                     Mark Rejected
@@ -387,7 +688,21 @@ export default function QuoteDetail() {
                 <button
                   onClick={convertToJob}
                   disabled={saving}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px 16px',
+                    backgroundColor: '#7c6f4a',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    opacity: saving ? 0.6 : 1
+                  }}
                 >
                   <Briefcase size={18} />
                   Convert to Job
@@ -397,26 +712,48 @@ export default function QuoteDetail() {
           </div>
 
           {/* Contract */}
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="font-medium text-gray-900 mb-3">Contract</h3>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2">
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <h3 style={{
+              fontSize: '15px',
+              fontWeight: '600',
+              color: theme.text,
+              marginBottom: '12px'
+            }}>
+              Contract
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer'
+              }}>
                 <input
                   type="checkbox"
                   checked={quote.contract_required || false}
                   onChange={(e) => updateQuoteField('contract_required', e.target.checked)}
-                  className="rounded border-gray-300"
+                  style={{ width: '16px', height: '16px', accentColor: theme.accent }}
                 />
-                <span className="text-sm text-gray-700">Contract Required</span>
+                <span style={{ fontSize: '14px', color: theme.text }}>Contract Required</span>
               </label>
-              <label className="flex items-center gap-2">
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer'
+              }}>
                 <input
                   type="checkbox"
                   checked={quote.contract_signed || false}
                   onChange={(e) => updateQuoteField('contract_signed', e.target.checked)}
-                  className="rounded border-gray-300"
+                  style={{ width: '16px', height: '16px', accentColor: theme.accent }}
                 />
-                <span className="text-sm text-gray-700">Contract Signed</span>
+                <span style={{ fontSize: '14px', color: theme.text }}>Contract Signed</span>
               </label>
             </div>
           </div>
@@ -425,55 +762,117 @@ export default function QuoteDetail() {
 
       {/* Add Line Item Modal */}
       {showAddLine && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">Add Line Item</h2>
-              <button onClick={() => setShowAddLine(false)} className="text-gray-500 hover:text-gray-700">
-                ✕
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            width: '100%',
+            maxWidth: '400px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                color: theme.text
+              }}>
+                Add Line Item
+              </h2>
+              <button
+                onClick={() => setShowAddLine(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '8px',
+                  cursor: 'pointer',
+                  color: theme.textMuted,
+                  borderRadius: '8px'
+                }}
+              >
+                <X size={20} />
               </button>
             </div>
 
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Product/Service</label>
-                <select
-                  value={newLine.item_id}
-                  onChange={(e) => setNewLine(prev => ({ ...prev, item_id: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">-- Select --</option>
-                  {products.filter(p => p.active).map(product => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} - {formatCurrency(product.unit_price)}
-                    </option>
-                  ))}
-                </select>
+            <div style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={labelStyle}>Product/Service</label>
+                  <select
+                    value={newLine.item_id}
+                    onChange={(e) => setNewLine(prev => ({ ...prev, item_id: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select --</option>
+                    {products.filter(p => p.active).map(product => (
+                      <option key={product.id} value={product.id}>
+                        {product.name} - {formatCurrency(product.unit_price)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Quantity</label>
+                  <input
+                    type="number"
+                    value={newLine.quantity}
+                    onChange={(e) => setNewLine(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                    min="1"
+                    style={inputStyle}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                <input
-                  type="number"
-                  value={newLine.quantity}
-                  onChange={(e) => setNewLine(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
-                  min="1"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="flex gap-3">
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                marginTop: '24px'
+              }}>
                 <button
                   onClick={() => setShowAddLine(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={addLineItem}
                   disabled={saving || !newLine.item_id}
-                  style={{ backgroundColor: theme.primary }}
-                  className="flex-1 px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    backgroundColor: theme.accent,
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: (saving || !newLine.item_id) ? 'not-allowed' : 'pointer',
+                    opacity: (saving || !newLine.item_id) ? 0.6 : 1
+                  }}
                 >
                   {saving ? 'Adding...' : 'Add Item'}
                 </button>

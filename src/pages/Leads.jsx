@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { Plus, Pencil, Trash2, X, Phone, Mail, Calendar, UserPlus, Search } from 'lucide-react'
+import { useTheme } from '../components/Layout'
+import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search } from 'lucide-react'
 
-const defaultTheme = {
-  primary: '#2563eb',
-  primaryHover: '#1d4ed8'
-}
+const LEAD_SOURCES = ['Website', 'Referral', 'Cold Call', 'Marketing', 'Google Ads', 'Facebook', 'Door Knock', 'Trade Show', 'Other']
+const LEAD_STATUSES = ['New', 'Qualified', 'Appointment Scheduled', 'Waiting', 'Not Qualified', 'Converted']
+const SERVICE_TYPES = ['Residential', 'Commercial', 'Industrial', 'Government', 'Other']
 
 const emptyLead = {
   customer_name: '',
@@ -20,22 +20,10 @@ const emptyLead = {
   status: 'New',
   salesperson_id: '',
   notes: '',
-  appointment_time: ''
+  appointment_time: '',
+  job_title: '',
+  business_unit: ''
 }
-
-const statusColors = {
-  'New': 'bg-blue-100 text-blue-700',
-  'Qualified': 'bg-green-100 text-green-700',
-  'Appointment Scheduled': 'bg-orange-100 text-orange-700',
-  'Not Qualified': 'bg-red-100 text-red-700',
-  'Waiting': 'bg-gray-100 text-gray-600',
-  'Converted': 'bg-purple-100 text-purple-700'
-}
-
-const leadSources = [
-  'Website', 'Referral', 'Google Ads', 'Facebook', 'Instagram',
-  'Home Advisor', 'Angi', 'Thumbtack', 'Door Knock', 'Cold Call', 'Other'
-]
 
 export default function Leads() {
   const navigate = useNavigate()
@@ -45,18 +33,30 @@ export default function Leads() {
   const fetchLeads = useStore((state) => state.fetchLeads)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
 
+  const themeContext = useTheme()
+  const theme = themeContext?.theme || {
+    bg: '#f7f5ef',
+    bgCard: '#ffffff',
+    bgCardHover: '#eef2eb',
+    border: '#d6cdb8',
+    text: '#2c3530',
+    textSecondary: '#4d5a52',
+    textMuted: '#7d8a7f',
+    accent: '#5a6349',
+    accentBg: 'rgba(90,99,73,0.12)'
+  }
+
   const [showModal, setShowModal] = useState(false)
   const [showAppointmentModal, setShowAppointmentModal] = useState(false)
   const [editingLead, setEditingLead] = useState(null)
   const [selectedLead, setSelectedLead] = useState(null)
   const [formData, setFormData] = useState(emptyLead)
-  const [appointmentData, setAppointmentData] = useState({ title: '', start_time: '', end_time: '', location: '', description: '' })
+  const [appointmentData, setAppointmentData] = useState({ title: '', start_time: '', end_time: '', location: '', notes: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
-
-  const theme = defaultTheme
+  const [sourceFilter, setSourceFilter] = useState('all')
 
   useEffect(() => {
     if (!companyId) {
@@ -70,12 +70,23 @@ export default function Leads() {
     const matchesSearch = searchTerm === '' ||
       lead.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       lead.business_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.phone?.includes(searchTerm)
-
+      lead.email?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === 'all' || lead.status === statusFilter
-
-    return matchesSearch && matchesStatus
+    const matchesSource = sourceFilter === 'all' || lead.lead_source === sourceFilter
+    return matchesSearch && matchesStatus && matchesSource
   })
+
+  const getStatusStyle = (status) => {
+    const styles = {
+      'New': { backgroundColor: 'rgba(59,130,246,0.1)', color: '#2563eb' },
+      'Qualified': { backgroundColor: 'rgba(34,197,94,0.1)', color: '#16a34a' },
+      'Appointment Scheduled': { backgroundColor: 'rgba(249,115,22,0.1)', color: '#ea580c' },
+      'Waiting': { backgroundColor: 'rgba(156,163,175,0.1)', color: '#6b7280' },
+      'Not Qualified': { backgroundColor: 'rgba(239,68,68,0.1)', color: '#dc2626' },
+      'Converted': { backgroundColor: 'rgba(147,51,234,0.1)', color: '#9333ea' }
+    }
+    return styles[status] || { backgroundColor: theme.bg, color: theme.textMuted }
+  }
 
   const openAddModal = () => {
     setEditingLead(null)
@@ -97,7 +108,9 @@ export default function Leads() {
       status: lead.status || 'New',
       salesperson_id: lead.salesperson_id || '',
       notes: lead.notes || '',
-      appointment_time: lead.appointment_time ? new Date(lead.appointment_time).toISOString().slice(0, 16) : ''
+      appointment_time: lead.appointment_time || '',
+      job_title: lead.job_title || '',
+      business_unit: lead.business_unit || ''
     })
     setError(null)
     setShowModal(true)
@@ -124,20 +137,14 @@ export default function Leads() {
       ...formData,
       company_id: companyId,
       salesperson_id: formData.salesperson_id || null,
-      appointment_time: formData.appointment_time || null,
       updated_at: new Date().toISOString()
     }
 
     let result
     if (editingLead) {
-      result = await supabase
-        .from('leads')
-        .update(payload)
-        .eq('id', editingLead.id)
+      result = await supabase.from('leads').update(payload).eq('id', editingLead.id)
     } else {
-      result = await supabase
-        .from('leads')
-        .insert([payload])
+      result = await supabase.from('leads').insert([payload])
     }
 
     if (result.error) {
@@ -151,13 +158,6 @@ export default function Leads() {
     setLoading(false)
   }
 
-  const handleDelete = async (lead) => {
-    if (!confirm(`Are you sure you want to delete ${lead.customer_name}?`)) return
-
-    await supabase.from('leads').delete().eq('id', lead.id)
-    await fetchLeads()
-  }
-
   const openAppointmentModal = (lead) => {
     setSelectedLead(lead)
     setAppointmentData({
@@ -165,19 +165,24 @@ export default function Leads() {
       start_time: '',
       end_time: '',
       location: lead.address || '',
-      description: ''
+      notes: ''
     })
     setShowAppointmentModal(true)
   }
 
-  const handleScheduleAppointment = async (e) => {
+  const handleCreateAppointment = async (e) => {
     e.preventDefault()
     setLoading(true)
 
     const { error } = await supabase.from('appointments').insert([{
       company_id: companyId,
       lead_id: selectedLead.id,
-      ...appointmentData
+      title: appointmentData.title,
+      start_time: appointmentData.start_time,
+      end_time: appointmentData.end_time,
+      location: appointmentData.location,
+      notes: appointmentData.notes,
+      status: 'Scheduled'
     }])
 
     if (!error) {
@@ -186,7 +191,6 @@ export default function Leads() {
         appointment_time: appointmentData.start_time,
         updated_at: new Date().toISOString()
       }).eq('id', selectedLead.id)
-
       await fetchLeads()
     }
 
@@ -195,161 +199,136 @@ export default function Leads() {
     setLoading(false)
   }
 
-  const convertToCustomer = async (lead) => {
+  const handleCreateQuote = (lead) => {
+    navigate(`/quotes/new?lead_id=${lead.id}`)
+  }
+
+  const handleConvertToCustomer = async (lead) => {
     if (!confirm(`Convert ${lead.customer_name} to a customer?`)) return
 
-    const { data: newCustomer, error } = await supabase.from('customers').insert([{
+    const { data: customer, error } = await supabase.from('customers').insert([{
       company_id: companyId,
       name: lead.customer_name,
       business_name: lead.business_name,
       email: lead.email,
       phone: lead.phone,
       address: lead.address,
+      job_title: lead.job_title,
       salesperson_id: lead.salesperson_id,
       status: 'Active',
-      notes: `Converted from lead. Original notes: ${lead.notes || 'None'}`
+      notes: lead.notes
     }]).select().single()
 
-    if (!error && newCustomer) {
+    if (!error && customer) {
       await supabase.from('leads').update({
         status: 'Converted',
+        customer_id: customer.id,
         updated_at: new Date().toISOString()
       }).eq('id', lead.id)
-
-      // Create pipeline entry
-      await supabase.from('sales_pipeline').insert([{
-        company_id: companyId,
-        lead_id: lead.id,
-        customer_id: newCustomer.id,
-        salesperson_id: lead.salesperson_id,
-        stage: 'New Lead'
-      }])
-
       await fetchLeads()
       await fetchCustomers()
     }
   }
 
+  const formatDate = (dateStr) => {
+    if (!dateStr) return ''
+    return new Date(dateStr).toLocaleDateString()
+  }
+
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    backgroundColor: theme.bg,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '8px',
+    color: theme.text,
+    fontSize: '14px',
+    outline: 'none'
+  }
+
+  const labelStyle = {
+    display: 'block',
+    marginBottom: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: theme.text
+  }
+
   return (
-    <div className="p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
-        <button
-          onClick={openAddModal}
-          style={{ backgroundColor: theme.primary }}
-          className="flex items-center gap-2 px-4 py-2 text-white rounded-md hover:opacity-90"
-        >
+    <div style={{ padding: '24px' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Leads</h1>
+        <button onClick={openAddModal} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
           <Plus size={20} />
           Add Lead
         </button>
       </div>
 
-      {/* Search and Filter */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search leads..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+          <Search size={20} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
+          <input type="text" placeholder="Search leads..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle, paddingLeft: '40px', backgroundColor: theme.bgCard }} />
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '160px', backgroundColor: theme.bgCard }}>
           <option value="all">All Status</option>
-          <option value="New">New</option>
-          <option value="Qualified">Qualified</option>
-          <option value="Appointment Scheduled">Appointment Scheduled</option>
-          <option value="Waiting">Waiting</option>
-          <option value="Not Qualified">Not Qualified</option>
-          <option value="Converted">Converted</option>
+          {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '140px', backgroundColor: theme.bgCard }}>
+          <option value="all">All Sources</option>
+          {LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
 
+      {/* Leads List */}
       {filteredLeads.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg shadow">
-          <UserPlus size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-600">
-            {searchTerm || statusFilter !== 'all'
-              ? 'No leads match your search.'
-              : 'No leads yet. Add your first lead to get started.'}
-          </p>
+        <div style={{ textAlign: 'center', padding: '48px', backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}` }}>
+          <UserPlus size={48} style={{ color: theme.textMuted, marginBottom: '16px' }} />
+          <p style={{ color: theme.textSecondary }}>No leads found.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
           {filteredLeads.map((lead) => (
-            <div key={lead.id} className="bg-white rounded-lg shadow p-4">
-              <div className="flex items-start justify-between mb-3">
+            <div key={lead.id} style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <div>
-                  <h3 className="font-semibold text-gray-900">{lead.customer_name}</h3>
-                  {lead.business_name && (
-                    <p className="text-sm text-gray-500">{lead.business_name}</p>
-                  )}
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>{lead.customer_name}</h3>
+                  {lead.business_name && <p style={{ fontSize: '14px', color: theme.textSecondary }}>{lead.business_name}</p>}
                 </div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => openEditModal(lead)}
-                    className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                  >
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(lead)}
-                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                <button onClick={() => openEditModal(lead)} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', borderRadius: '6px' }}>
+                  <Pencil size={16} />
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                {lead.phone && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}><Phone size={14} />{lead.phone}</div>}
+                {lead.email && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}><Mail size={14} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span></div>}
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                {lead.service_type && <span style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: theme.bg, color: theme.textMuted, borderRadius: '4px' }}>{lead.service_type}</span>}
+                {lead.lead_source && <span style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: theme.bg, color: theme.textMuted, borderRadius: '4px' }}>{lead.lead_source}</span>}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
+                <span style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '20px', ...getStatusStyle(lead.status) }}>{lead.status}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {lead.salesperson && <span style={{ fontSize: '11px', color: theme.textMuted }}>{lead.salesperson.name}</span>}
+                  <span style={{ fontSize: '11px', color: theme.textMuted }}>{formatDate(lead.created_at)}</span>
                 </div>
               </div>
 
-              <div className="space-y-1.5 text-sm mb-3">
-                {lead.phone && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Phone size={14} />
-                    <span>{lead.phone}</span>
-                  </div>
-                )}
-                {lead.email && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Mail size={14} />
-                    <span className="truncate">{lead.email}</span>
-                  </div>
-                )}
-                {lead.lead_source && (
-                  <p className="text-gray-500 text-xs">Source: {lead.lead_source}</p>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between mb-3">
-                <span className={`text-xs px-2 py-1 rounded-full ${statusColors[lead.status] || 'bg-gray-100 text-gray-600'}`}>
-                  {lead.status}
-                </span>
-                {lead.salesperson && (
-                  <span className="text-xs text-gray-500">{lead.salesperson.name}</span>
-                )}
-              </div>
-
-              {/* Quick Actions */}
-              {lead.status !== 'Converted' && lead.status !== 'Not Qualified' && (
-                <div className="flex gap-2 pt-3 border-t">
-                  <button
-                    onClick={() => openAppointmentModal(lead)}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs bg-orange-50 text-orange-700 rounded hover:bg-orange-100"
-                  >
-                    <Calendar size={14} />
-                    Schedule
+              {lead.status !== 'Converted' && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
+                  <button onClick={() => openAppointmentModal(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '12px', cursor: 'pointer' }}>
+                    <Calendar size={14} />Appt
                   </button>
-                  <button
-                    onClick={() => convertToCustomer(lead)}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs bg-green-50 text-green-700 rounded hover:bg-green-100"
-                  >
-                    <UserPlus size={14} />
-                    Convert
+                  <button onClick={() => handleCreateQuote(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '12px', cursor: 'pointer' }}>
+                    <FileText size={14} />Quote
+                  </button>
+                  <button onClick={() => handleConvertToCustomer(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: theme.accentBg, border: 'none', borderRadius: '6px', color: theme.accent, fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>
+                    <UserCheck size={14} />Convert
                   </button>
                 </div>
               )}
@@ -360,251 +339,70 @@ export default function Leads() {
 
       {/* Lead Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
-              <h2 className="text-lg font-semibold">
-                {editingLead ? 'Edit Lead' : 'Add Lead'}
-              </h2>
-              <button onClick={closeModal} className="text-gray-500 hover:text-gray-700">
-                <X size={20} />
-              </button>
+        <>
+          <div onClick={closeModal} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '600px', maxHeight: '90vh', overflow: 'auto', zIndex: 51 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, backgroundColor: theme.bgCard }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>{editingLead ? 'Edit Lead' : 'Add Lead'}</h2>
+              <button onClick={closeModal} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
             </div>
+            <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
+              {error && <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '8px', color: '#b91c1c', fontSize: '14px' }}>{error}</div>}
 
-            <form onSubmit={handleSubmit} className="p-4">
-              {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">
-                  {error}
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                    <input
-                      type="text"
-                      name="customer_name"
-                      value={formData.customer_name}
-                      onChange={handleChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Business</label>
-                    <input
-                      type="text"
-                      name="business_name"
-                      value={formData.business_name}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                  <input
-                    type="text"
-                    name="address"
-                    value={formData.address}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Type</label>
-                    <input
-                      type="text"
-                      name="service_type"
-                      value={formData.service_type}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Lead Source</label>
-                    <select
-                      name="lead_source"
-                      value={formData.lead_source}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">-- Select --</option>
-                      {leadSources.map(src => (
-                        <option key={src} value={src}>{src}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <select
-                      name="status"
-                      value={formData.status}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="New">New</option>
-                      <option value="Qualified">Qualified</option>
-                      <option value="Appointment Scheduled">Appointment Scheduled</option>
-                      <option value="Waiting">Waiting</option>
-                      <option value="Not Qualified">Not Qualified</option>
-                      <option value="Converted">Converted</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Salesperson</label>
-                    <select
-                      name="salesperson_id"
-                      value={formData.salesperson_id}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">-- Select --</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                  <textarea
-                    name="notes"
-                    value={formData.notes}
-                    onChange={handleChange}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+                <div><label style={labelStyle}>Customer Name *</label><input type="text" name="customer_name" value={formData.customer_name} onChange={handleChange} required style={inputStyle} /></div>
+                <div><label style={labelStyle}>Business Name</label><input type="text" name="business_name" value={formData.business_name} onChange={handleChange} style={inputStyle} /></div>
+                <div><label style={labelStyle}>Email</label><input type="email" name="email" value={formData.email} onChange={handleChange} style={inputStyle} /></div>
+                <div><label style={labelStyle}>Phone</label><input type="tel" name="phone" value={formData.phone} onChange={handleChange} style={inputStyle} /></div>
+                <div><label style={labelStyle}>Job Title</label><input type="text" name="job_title" value={formData.job_title} onChange={handleChange} style={inputStyle} /></div>
+                <div><label style={labelStyle}>Business Unit</label><input type="text" name="business_unit" value={formData.business_unit} onChange={handleChange} style={inputStyle} /></div>
               </div>
 
-              <div className="flex gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{ backgroundColor: theme.primary }}
-                  className="flex-1 px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50"
-                >
-                  {loading ? 'Saving...' : (editingLead ? 'Update' : 'Add Lead')}
-                </button>
+              <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Address</label><textarea name="address" value={formData.address} onChange={handleChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+                <div><label style={labelStyle}>Service Type</label><select name="service_type" value={formData.service_type} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{SERVICE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                <div><label style={labelStyle}>Lead Source</label><select name="lead_source" value={formData.lead_source} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                <div><label style={labelStyle}>Status</label><select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>{LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                <div><label style={labelStyle}>Salesperson</label><select name="salesperson_id" value={formData.salesperson_id} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Appointment Time</label><input type="datetime-local" name="appointment_time" value={formData.appointment_time} onChange={handleChange} style={inputStyle} /></div>
+              <div style={{ marginBottom: '24px' }}><label style={labelStyle}>Notes</label><textarea name="notes" value={formData.notes} onChange={handleChange} rows={3} style={{ ...inputStyle, resize: 'vertical' }} /></div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="button" onClick={closeModal} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" disabled={loading} style={{ flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>{loading ? 'Saving...' : (editingLead ? 'Update' : 'Add Lead')}</button>
               </div>
             </form>
           </div>
-        </div>
+        </>
       )}
 
       {/* Appointment Modal */}
       {showAppointmentModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">Schedule Appointment</h2>
-              <button onClick={() => setShowAppointmentModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X size={20} />
-              </button>
+        <>
+          <div onClick={() => setShowAppointmentModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '480px', zIndex: 51 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Schedule Appointment</h2>
+              <button onClick={() => setShowAppointmentModal(false)} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
             </div>
-
-            <form onSubmit={handleScheduleAppointment} className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                <input
-                  type="text"
-                  value={appointmentData.title}
-                  onChange={(e) => setAppointmentData(prev => ({ ...prev, title: e.target.value }))}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+            <form onSubmit={handleCreateAppointment} style={{ padding: '20px' }}>
+              <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Title</label><input type="text" value={appointmentData.title} onChange={(e) => setAppointmentData({ ...appointmentData, title: e.target.value })} required style={inputStyle} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div><label style={labelStyle}>Start Time *</label><input type="datetime-local" value={appointmentData.start_time} onChange={(e) => setAppointmentData({ ...appointmentData, start_time: e.target.value })} required style={inputStyle} /></div>
+                <div><label style={labelStyle}>End Time</label><input type="datetime-local" value={appointmentData.end_time} onChange={(e) => setAppointmentData({ ...appointmentData, end_time: e.target.value })} style={inputStyle} /></div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Start</label>
-                  <input
-                    type="datetime-local"
-                    value={appointmentData.start_time}
-                    onChange={(e) => setAppointmentData(prev => ({ ...prev, start_time: e.target.value }))}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">End</label>
-                  <input
-                    type="datetime-local"
-                    value={appointmentData.end_time}
-                    onChange={(e) => setAppointmentData(prev => ({ ...prev, end_time: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                <input
-                  type="text"
-                  value={appointmentData.location}
-                  onChange={(e) => setAppointmentData(prev => ({ ...prev, location: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setShowAppointmentModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50"
-                >
-                  {loading ? 'Scheduling...' : 'Schedule'}
-                </button>
+              <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Location</label><input type="text" value={appointmentData.location} onChange={(e) => setAppointmentData({ ...appointmentData, location: e.target.value })} style={inputStyle} /></div>
+              <div style={{ marginBottom: '24px' }}><label style={labelStyle}>Notes</label><textarea value={appointmentData.notes} onChange={(e) => setAppointmentData({ ...appointmentData, notes: e.target.value })} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="button" onClick={() => setShowAppointmentModal(false)} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '14px', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" disabled={loading} style={{ flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>Schedule</button>
               </div>
             </form>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

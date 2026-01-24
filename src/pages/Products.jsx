@@ -2,10 +2,20 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { Plus, Pencil, Trash2, X, Package, Search } from 'lucide-react'
+import { useTheme } from '../components/Layout'
+import { Plus, Pencil, Trash2, X, Package, Search, ToggleLeft, ToggleRight } from 'lucide-react'
 
+// Light theme fallback
 const defaultTheme = {
-  primary: '#2563eb'
+  bg: '#f7f5ef',
+  bgCard: '#ffffff',
+  bgCardHover: '#eef2eb',
+  border: '#d6cdb8',
+  text: '#2c3530',
+  textSecondary: '#4d5a52',
+  textMuted: '#7d8a7f',
+  accent: '#5a6349',
+  accentBg: 'rgba(90,99,73,0.12)'
 }
 
 const emptyProduct = {
@@ -34,8 +44,11 @@ export default function Products() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [showInactive, setShowInactive] = useState(false)
+  const [typeFilter, setTypeFilter] = useState('all')
 
-  const theme = defaultTheme
+  // Theme with fallback
+  const themeContext = useTheme()
+  const theme = themeContext?.theme || defaultTheme
 
   useEffect(() => {
     if (!companyId) {
@@ -51,8 +64,9 @@ export default function Products() {
       product.description?.toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesActive = showInactive || product.active
+    const matchesType = typeFilter === 'all' || product.type === typeFilter
 
-    return matchesSearch && matchesActive
+    return matchesSearch && matchesActive && matchesType
   })
 
   const openAddModal = () => {
@@ -158,162 +172,418 @@ export default function Products() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
   }
 
+  // Styles
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    border: `1px solid ${theme.border}`,
+    borderRadius: '8px',
+    fontSize: '14px',
+    color: theme.text,
+    backgroundColor: theme.bgCard,
+    outline: 'none'
+  }
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: '500',
+    color: theme.textSecondary,
+    marginBottom: '6px'
+  }
+
   return (
-    <div className="p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Products & Services</h1>
+    <div style={{ padding: '24px' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px',
+        marginBottom: '24px',
+        flexWrap: 'wrap'
+      }}>
+        <h1 style={{
+          fontSize: '24px',
+          fontWeight: '700',
+          color: theme.text
+        }}>
+          Products & Services
+        </h1>
         <button
           onClick={openAddModal}
-          style={{ backgroundColor: theme.primary }}
-          className="flex items-center gap-2 px-4 py-2 text-white rounded-md hover:opacity-90"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 16px',
+            backgroundColor: theme.accent,
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            cursor: 'pointer'
+          }}
         >
-          <Plus size={20} />
+          <Plus size={18} />
           Add Product
         </button>
       </div>
 
       {/* Search and Filter */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+      <div style={{
+        display: 'flex',
+        flexDirection: 'row',
+        gap: '12px',
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        alignItems: 'center'
+      }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+          <Search size={18} style={{
+            position: 'absolute',
+            left: '12px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            color: theme.textMuted
+          }} />
           <input
             type="text"
             placeholder="Search products..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            style={{
+              ...inputStyle,
+              paddingLeft: '40px'
+            }}
           />
         </div>
-        <label className="flex items-center gap-2 text-sm text-gray-600">
+
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
+        >
+          <option value="all">All Types</option>
+          <option value="Service">Service</option>
+          <option value="Product">Product</option>
+          <option value="Labor">Labor</option>
+          <option value="Material">Material</option>
+        </select>
+
+        <label style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '14px',
+          color: theme.textSecondary,
+          cursor: 'pointer'
+        }}>
           <input
             type="checkbox"
             checked={showInactive}
             onChange={(e) => setShowInactive(e.target.checked)}
-            className="rounded border-gray-300"
+            style={{ width: '16px', height: '16px', accentColor: theme.accent }}
           />
           Show inactive
         </label>
       </div>
 
       {filteredProducts.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg shadow">
-          <Package size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-600">No products yet. Add your first product or service.</p>
+        <div style={{
+          textAlign: 'center',
+          padding: '48px 24px',
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`
+        }}>
+          <Package size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
+          <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
+            No products yet. Add your first product or service.
+          </p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Cost</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredProducts.map((product) => (
-                <tr key={product.id} className={!product.active ? 'opacity-50' : ''}>
-                  <td className="px-4 py-3">
-                    <div>
-                      <p className="font-medium text-gray-900">{product.name}</p>
-                      {product.description && (
-                        <p className="text-sm text-gray-500 truncate max-w-xs">{product.description}</p>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{product.type}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(product.unit_price)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 text-right">{formatCurrency(product.cost)}</td>
-                  <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => toggleActive(product)}
-                      className={`text-xs px-2 py-1 rounded-full ${
-                        product.active
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {product.active ? 'Active' : 'Inactive'}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => openEditModal(product)}
-                        className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(product)}
-                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`,
+          overflow: 'hidden'
+        }}>
+          {/* Table Header */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '2fr 1fr 1fr 1fr 100px 80px',
+            gap: '16px',
+            padding: '14px 20px',
+            backgroundColor: theme.accentBg,
+            borderBottom: `1px solid ${theme.border}`,
+            fontSize: '12px',
+            fontWeight: '600',
+            color: theme.textMuted,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            <div>Name</div>
+            <div>Type</div>
+            <div style={{ textAlign: 'right' }}>Price</div>
+            <div style={{ textAlign: 'right' }}>Cost</div>
+            <div style={{ textAlign: 'center' }}>Status</div>
+            <div style={{ textAlign: 'right' }}>Actions</div>
+          </div>
+
+          {/* Table Body */}
+          {filteredProducts.map((product) => (
+            <div
+              key={product.id}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '2fr 1fr 1fr 1fr 100px 80px',
+                gap: '16px',
+                padding: '16px 20px',
+                borderBottom: `1px solid ${theme.border}`,
+                alignItems: 'center',
+                opacity: product.active ? 1 : 0.5,
+                transition: 'background-color 0.15s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <div>
+                <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
+                  {product.name}
+                </p>
+                {product.description && (
+                  <p style={{
+                    fontSize: '13px',
+                    color: theme.textMuted,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: '300px'
+                  }}>
+                    {product.description}
+                  </p>
+                )}
+              </div>
+
+              <div style={{ fontSize: '14px', color: theme.textSecondary }}>
+                <span style={{
+                  display: 'inline-block',
+                  padding: '2px 8px',
+                  backgroundColor: theme.accentBg,
+                  borderRadius: '6px',
+                  fontSize: '12px'
+                }}>
+                  {product.type}
+                </span>
+              </div>
+
+              <div style={{
+                textAlign: 'right',
+                fontSize: '14px',
+                fontWeight: '500',
+                color: theme.text
+              }}>
+                {formatCurrency(product.unit_price)}
+              </div>
+
+              <div style={{
+                textAlign: 'right',
+                fontSize: '14px',
+                color: theme.textSecondary
+              }}>
+                {formatCurrency(product.cost)}
+              </div>
+
+              <div style={{ textAlign: 'center' }}>
+                <button
+                  onClick={() => toggleActive(product)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px 10px',
+                    borderRadius: '20px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    backgroundColor: product.active ? 'rgba(74,124,89,0.12)' : 'rgba(0,0,0,0.06)',
+                    color: product.active ? '#4a7c59' : theme.textMuted
+                  }}
+                >
+                  {product.active ? (
+                    <>
+                      <ToggleRight size={14} />
+                      Active
+                    </>
+                  ) : (
+                    <>
+                      <ToggleLeft size={14} />
+                      Inactive
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '4px'
+              }}>
+                <button
+                  onClick={() => openEditModal(product)}
+                  style={{
+                    padding: '8px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    color: theme.textMuted,
+                    transition: 'background-color 0.15s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = theme.accentBg
+                    e.currentTarget.style.color = theme.accent
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                    e.currentTarget.style.color = theme.textMuted
+                  }}
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  onClick={() => handleDelete(product)}
+                  style={{
+                    padding: '8px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    color: theme.textMuted,
+                    transition: 'background-color 0.15s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#fef2f2'
+                    e.currentTarget.style.color = '#dc2626'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                    e.currentTarget.style.color = theme.textMuted
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
-              <h2 className="text-lg font-semibold">
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            width: '100%',
+            maxWidth: '500px',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`,
+              position: 'sticky',
+              top: 0,
+              backgroundColor: theme.bgCard,
+              borderRadius: '16px 16px 0 0'
+            }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                color: theme.text
+              }}>
                 {editingProduct ? 'Edit Product' : 'Add Product'}
               </h2>
-              <button onClick={closeModal} className="text-gray-500 hover:text-gray-700">
+              <button
+                onClick={closeModal}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '8px',
+                  cursor: 'pointer',
+                  color: theme.textMuted,
+                  borderRadius: '8px'
+                }}
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-4">
+            <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
               {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">
+                <div style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '8px',
+                  color: '#dc2626',
+                  fontSize: '14px'
+                }}>
                   {error}
                 </div>
               )}
 
-              <div className="space-y-4">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <label style={labelStyle}>Name *</label>
                   <input
                     type="text"
                     name="name"
                     value={formData.name}
                     onChange={handleChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <label style={labelStyle}>Description</label>
                   <textarea
                     name="description"
                     value={formData.description}
                     onChange={handleChange}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ ...inputStyle, resize: 'vertical' }}
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                    <label style={labelStyle}>Type</label>
                     <select
                       name="type"
                       value={formData.type}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={inputStyle}
                     >
                       <option value="Service">Service</option>
                       <option value="Product">Product</option>
@@ -322,102 +592,135 @@ export default function Products() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Business Unit</label>
+                    <label style={labelStyle}>Business Unit</label>
                     <input
                       type="text"
                       name="business_unit"
                       value={formData.business_unit}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={inputStyle}
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price</label>
+                    <label style={labelStyle}>Unit Price</label>
                     <input
                       type="number"
                       name="unit_price"
                       value={formData.unit_price}
                       onChange={handleChange}
                       step="0.01"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={inputStyle}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Cost</label>
+                    <label style={labelStyle}>Cost</label>
                     <input
                       type="number"
                       name="cost"
                       value={formData.cost}
                       onChange={handleChange}
                       step="0.01"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={inputStyle}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Markup %</label>
+                    <label style={labelStyle}>Markup %</label>
                     <input
                       type="number"
                       name="markup_percent"
                       value={formData.markup_percent}
                       onChange={handleChange}
                       step="0.01"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={inputStyle}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Allotted Time (hours)</label>
+                  <label style={labelStyle}>Allotted Time (hours)</label>
                   <input
                     type="number"
                     name="allotted_time_hours"
                     value={formData.allotted_time_hours}
                     onChange={handleChange}
                     step="0.25"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   />
                 </div>
 
-                <div className="flex gap-6">
-                  <label className="flex items-center gap-2">
+                <div style={{ display: 'flex', gap: '24px' }}>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer'
+                  }}>
                     <input
                       type="checkbox"
                       name="taxable"
                       checked={formData.taxable}
                       onChange={handleChange}
-                      className="rounded border-gray-300"
+                      style={{ width: '16px', height: '16px', accentColor: theme.accent }}
                     />
-                    <span className="text-sm text-gray-700">Taxable</span>
+                    <span style={{ fontSize: '14px', color: theme.text }}>Taxable</span>
                   </label>
-                  <label className="flex items-center gap-2">
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer'
+                  }}>
                     <input
                       type="checkbox"
                       name="active"
                       checked={formData.active}
                       onChange={handleChange}
-                      className="rounded border-gray-300"
+                      style={{ width: '16px', height: '16px', accentColor: theme.accent }}
                     />
-                    <span className="text-sm text-gray-700">Active</span>
+                    <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
                   </label>
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-6">
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                marginTop: '24px'
+              }}>
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  style={{ backgroundColor: theme.primary }}
-                  className="flex-1 px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    backgroundColor: theme.accent,
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: loading ? 0.6 : 1
+                  }}
                 >
                   {loading ? 'Saving...' : (editingProduct ? 'Update' : 'Add Product')}
                 </button>

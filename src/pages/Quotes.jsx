@@ -2,18 +2,28 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { Plus, Search, FileText } from 'lucide-react'
+import { useTheme } from '../components/Layout'
+import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar } from 'lucide-react'
 
+// Light theme fallback
 const defaultTheme = {
-  primary: '#2563eb'
+  bg: '#f7f5ef',
+  bgCard: '#ffffff',
+  bgCardHover: '#eef2eb',
+  border: '#d6cdb8',
+  text: '#2c3530',
+  textSecondary: '#4d5a52',
+  textMuted: '#7d8a7f',
+  accent: '#5a6349',
+  accentBg: 'rgba(90,99,73,0.12)'
 }
 
 const statusColors = {
-  'Draft': 'bg-gray-100 text-gray-700',
-  'Sent': 'bg-blue-100 text-blue-700',
-  'Approved': 'bg-green-100 text-green-700',
-  'Rejected': 'bg-red-100 text-red-700',
-  'Expired': 'bg-yellow-100 text-yellow-700'
+  'Draft': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' },
+  'Sent': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
+  'Approved': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
+  'Rejected': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
+  'Expired': { bg: 'rgba(124,111,74,0.12)', text: '#7c6f4a' }
 }
 
 export default function Quotes() {
@@ -38,7 +48,9 @@ export default function Quotes() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
-  const theme = defaultTheme
+  // Theme with fallback
+  const themeContext = useTheme()
+  const theme = themeContext?.theme || defaultTheme
 
   useEffect(() => {
     if (!companyId) {
@@ -110,36 +122,152 @@ export default function Quotes() {
     return new Date(date).toLocaleDateString()
   }
 
+  // Stats
+  const draftCount = quotes.filter(q => q.status === 'Draft').length
+  const sentCount = quotes.filter(q => q.status === 'Sent').length
+  const approvedCount = quotes.filter(q => q.status === 'Approved').length
+  const totalValue = quotes.filter(q => q.status === 'Approved').reduce((sum, q) => sum + (parseFloat(q.quote_amount) || 0), 0)
+
+  // Styles
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    border: `1px solid ${theme.border}`,
+    borderRadius: '8px',
+    fontSize: '14px',
+    color: theme.text,
+    backgroundColor: theme.bgCard,
+    outline: 'none'
+  }
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: '500',
+    color: theme.textSecondary,
+    marginBottom: '6px'
+  }
+
   return (
-    <div className="p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Quotes</h1>
+    <div style={{ padding: '24px' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px',
+        marginBottom: '24px',
+        flexWrap: 'wrap'
+      }}>
+        <h1 style={{
+          fontSize: '24px',
+          fontWeight: '700',
+          color: theme.text
+        }}>
+          Quotes
+        </h1>
         <button
           onClick={() => setShowModal(true)}
-          style={{ backgroundColor: theme.primary }}
-          className="flex items-center gap-2 px-4 py-2 text-white rounded-md hover:opacity-90"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 16px',
+            backgroundColor: theme.accent,
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            cursor: 'pointer'
+          }}
         >
-          <Plus size={20} />
+          <Plus size={18} />
           New Quote
         </button>
       </div>
 
+      {/* Stats Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+        gap: '12px',
+        marginBottom: '24px'
+      }}>
+        <div style={{
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`,
+          padding: '16px',
+          textAlign: 'center'
+        }}>
+          <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Draft</p>
+          <p style={{ fontSize: '24px', fontWeight: '600', color: theme.text }}>{draftCount}</p>
+        </div>
+        <div style={{
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`,
+          padding: '16px',
+          textAlign: 'center'
+        }}>
+          <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Sent</p>
+          <p style={{ fontSize: '24px', fontWeight: '600', color: theme.text }}>{sentCount}</p>
+        </div>
+        <div style={{
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`,
+          padding: '16px',
+          textAlign: 'center'
+        }}>
+          <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Approved</p>
+          <p style={{ fontSize: '24px', fontWeight: '600', color: '#4a7c59' }}>{approvedCount}</p>
+        </div>
+        <div style={{
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`,
+          padding: '16px',
+          textAlign: 'center'
+        }}>
+          <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Total Value</p>
+          <p style={{ fontSize: '20px', fontWeight: '600', color: theme.accent }}>{formatCurrency(totalValue)}</p>
+        </div>
+      </div>
+
       {/* Search and Filter */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+      <div style={{
+        display: 'flex',
+        flexDirection: 'row',
+        gap: '12px',
+        marginBottom: '24px',
+        flexWrap: 'wrap'
+      }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+          <Search size={18} style={{
+            position: 'absolute',
+            left: '12px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            color: theme.textMuted
+          }} />
           <input
             type="text"
             placeholder="Search quotes..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            style={{
+              ...inputStyle,
+              paddingLeft: '40px'
+            }}
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
         >
           <option value="all">All Status</option>
           <option value="Draft">Draft</option>
@@ -150,89 +278,198 @@ export default function Quotes() {
       </div>
 
       {filteredQuotes.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg shadow">
-          <FileText size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-600">
+        <div style={{
+          textAlign: 'center',
+          padding: '48px 24px',
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`
+        }}>
+          <FileText size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
+          <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
             {searchTerm || statusFilter !== 'all'
               ? 'No quotes match your search.'
               : 'No quotes yet. Create your first quote.'}
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quote #</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sent Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Salesperson</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredQuotes.map((quote) => (
-                <tr
-                  key={quote.id}
-                  onClick={() => navigate(`/quotes/${quote.id}`)}
-                  className="hover:bg-gray-50 cursor-pointer"
-                >
-                  <td className="px-4 py-3 text-sm font-medium text-blue-600">
-                    {quote.quote_id || `#${quote.id}`}
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-sm font-medium text-gray-900">
-                      {quote.customer?.name || quote.lead?.customer_name || '-'}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">
-                    {formatCurrency(quote.quote_amount)}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`text-xs px-2 py-1 rounded-full ${statusColors[quote.status] || 'bg-gray-100 text-gray-600'}`}>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          {filteredQuotes.map((quote) => {
+            const statusStyle = statusColors[quote.status] || statusColors['Draft']
+            const customerName = quote.customer?.name || quote.lead?.customer_name || 'No customer'
+
+            return (
+              <div
+                key={quote.id}
+                onClick={() => navigate(`/quotes/${quote.id}`)}
+                style={{
+                  backgroundColor: theme.bgCard,
+                  borderRadius: '12px',
+                  border: `1px solid ${theme.border}`,
+                  padding: '16px 20px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '16px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.bgCardHover
+                  e.currentTarget.style.borderColor = theme.accent
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.bgCard
+                  e.currentTarget.style.borderColor = theme.border
+                }}
+              >
+                {/* Quote Number & Customer */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <span style={{
+                      fontWeight: '600',
+                      color: theme.accent,
+                      fontSize: '14px'
+                    }}>
+                      {quote.quote_id || `#${quote.id}`}
+                    </span>
+                    <span style={{
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '11px',
+                      fontWeight: '500',
+                      backgroundColor: statusStyle.bg,
+                      color: statusStyle.text
+                    }}>
                       {quote.status}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {formatDate(quote.sent_date)}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
+                  </div>
+                  <p style={{
+                    fontWeight: '500',
+                    color: theme.text,
+                    fontSize: '15px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {customerName}
+                  </p>
+                </div>
+
+                {/* Amount */}
+                <div style={{ textAlign: 'right', minWidth: '100px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: '4px',
+                    color: theme.text
+                  }}>
+                    <DollarSign size={14} style={{ color: theme.textMuted }} />
+                    <span style={{ fontWeight: '600', fontSize: '15px' }}>
+                      {formatCurrency(quote.quote_amount)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Salesperson */}
+                <div style={{ minWidth: '120px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <User size={14} style={{ color: theme.textMuted }} />
+                  <span style={{ fontSize: '13px', color: theme.textSecondary }}>
                     {quote.salesperson?.name || '-'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                </div>
+
+                {/* Date */}
+                <div style={{ minWidth: '100px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Calendar size={14} style={{ color: theme.textMuted }} />
+                  <span style={{ fontSize: '13px', color: theme.textSecondary }}>
+                    {formatDate(quote.sent_date || quote.created_at)}
+                  </span>
+                </div>
+
+                {/* Arrow */}
+                <ChevronRight size={20} style={{ color: theme.textMuted }} />
+              </div>
+            )
+          })}
         </div>
       )}
 
       {/* Create Quote Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">New Quote</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700">
-                ✕
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            width: '100%',
+            maxWidth: '450px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                color: theme.text
+              }}>
+                New Quote
+              </h2>
+              <button
+                onClick={() => setShowModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '8px',
+                  cursor: 'pointer',
+                  color: theme.textMuted,
+                  borderRadius: '8px'
+                }}
+              >
+                <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateQuote} className="p-4">
+            <form onSubmit={handleCreateQuote} style={{ padding: '20px' }}>
               {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">
+                <div style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '8px',
+                  color: '#dc2626',
+                  fontSize: '14px'
+                }}>
                   {error}
                 </div>
               )}
 
-              <div className="space-y-4">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Lead</label>
+                  <label style={labelStyle}>Lead</label>
                   <select
                     name="lead_id"
                     value={formData.lead_id}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   >
                     <option value="">-- Select Lead --</option>
                     {leads.filter(l => l.status !== 'Not Qualified').map(lead => (
@@ -242,12 +479,12 @@ export default function Quotes() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Or Customer</label>
+                  <label style={labelStyle}>Or Customer</label>
                   <select
                     name="customer_id"
                     value={formData.customer_id}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   >
                     <option value="">-- Select Customer --</option>
                     {customers.map(cust => (
@@ -257,12 +494,12 @@ export default function Quotes() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Salesperson</label>
+                  <label style={labelStyle}>Salesperson</label>
                   <select
                     name="salesperson_id"
                     value={formData.salesperson_id}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   >
                     <option value="">-- Select --</option>
                     {employees.map(emp => (
@@ -272,30 +509,54 @@ export default function Quotes() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Type</label>
+                  <label style={labelStyle}>Service Type</label>
                   <input
                     type="text"
                     name="service_type"
                     value={formData.service_type}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
+                    placeholder="e.g., Lighting Retrofit, Maintenance"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-6">
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                marginTop: '24px'
+              }}>
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  style={{ backgroundColor: theme.primary }}
-                  className="flex-1 px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    backgroundColor: theme.accent,
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: loading ? 0.6 : 1
+                  }}
                 >
                   {loading ? 'Creating...' : 'Create Quote'}
                 </button>
