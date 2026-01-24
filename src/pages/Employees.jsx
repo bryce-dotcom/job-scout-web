@@ -134,11 +134,12 @@ export default function Employees() {
   }
 
   const handleDelete = async (employee) => {
-    if (!confirm(`Are you sure you want to delete ${employee.name}?`)) return
+    if (!confirm(`Are you sure you want to deactivate ${employee.name}?`)) return
 
+    // Soft delete - set active = false
     const { error } = await supabase
       .from('employees')
-      .delete()
+      .update({ active: false, updated_at: new Date().toISOString() })
       .eq('id', employee.id)
 
     if (!error) {
@@ -206,6 +207,11 @@ export default function Employees() {
                   <div>
                     <h3 className="font-semibold text-gray-900">{employee.name}</h3>
                     <p className="text-sm text-gray-500">{employee.role}</p>
+                    {employee.user_role && (
+                      <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
+                        {employee.user_role}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-1">

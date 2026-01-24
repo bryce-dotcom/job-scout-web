@@ -22,10 +22,10 @@
 - [x] Full Supabase schema (40+ tables)
 - [x] Schema reference file (src/lib/schema.js)
 - [x] Complete Zustand store with all fetch functions
+- [x] Login flow with employee/company lookup
 
 ## In Progress
-- Fix login flow to link auth user to company
-- Invoicing & Payments module
+- Customers page
 
 ## Next Up
 - Invoicing module (list, detail, payments)
