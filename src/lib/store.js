@@ -13,6 +13,8 @@ export const useStore = create(
       leads: [],
       salesPipeline: [],
       appointments: [],
+      products: [],
+      quotes: [],
       isLoading: false,
 
       setCompany: (company) => set({ company, companyId: company?.id }),
@@ -29,7 +31,9 @@ export const useStore = create(
           customers: [],
           leads: [],
           salesPipeline: [],
-          appointments: []
+          appointments: [],
+          products: [],
+          quotes: []
         });
       },
 
@@ -99,8 +103,34 @@ export const useStore = create(
         if (!error) set({ appointments: data || [] });
       },
 
+      fetchProducts: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('products_services')
+          .select('*')
+          .eq('company_id', companyId)
+          .order('name');
+
+        if (!error) set({ products: data || [] });
+      },
+
+      fetchQuotes: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('quotes')
+          .select('*, lead:leads(id, customer_name), customer:customers(id, name, email, phone, address), salesperson:employees(id, name)')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+
+        if (!error) set({ quotes: data || [] });
+      },
+
       fetchAllData: async () => {
-        const { companyId, fetchEmployees, fetchCustomers, fetchLeads, fetchSalesPipeline, fetchAppointments } = get();
+        const { companyId, fetchEmployees, fetchCustomers, fetchLeads, fetchSalesPipeline, fetchAppointments, fetchProducts, fetchQuotes } = get();
         if (!companyId) return;
         set({ isLoading: true });
         await Promise.all([
@@ -108,7 +138,9 @@ export const useStore = create(
           fetchCustomers(),
           fetchLeads(),
           fetchSalesPipeline(),
-          fetchAppointments()
+          fetchAppointments(),
+          fetchProducts(),
+          fetchQuotes()
         ]);
         set({ isLoading: false });
       }

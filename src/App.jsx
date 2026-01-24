@@ -7,6 +7,9 @@ import Employees from './pages/Employees'
 import Customers from './pages/Customers'
 import Leads from './pages/Leads'
 import SalesPipeline from './pages/SalesPipeline'
+import Products from './pages/Products'
+import Quotes from './pages/Quotes'
+import QuoteDetail from './pages/QuoteDetail'
 import Layout from './components/Layout'
 
 function Dashboard() {
@@ -114,6 +117,9 @@ function App() {
           <Route path="/customers" element={<Customers />} />
           <Route path="/leads" element={<Leads />} />
           <Route path="/pipeline" element={<SalesPipeline />} />
+          <Route path="/products" element={<Products />} />
+          <Route path="/quotes" element={<Quotes />} />
+          <Route path="/quotes/:id" element={<QuoteDetail />} />
         </Route>
       </Routes>
     </BrowserRouter>

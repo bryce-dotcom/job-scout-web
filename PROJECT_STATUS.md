@@ -13,11 +13,14 @@
 - [x] Leads module (CRUD, quick actions, convert to customer)
 - [x] Sales Pipeline (Kanban board, stage management)
 - [x] Appointments scheduling
+- [x] Products & Services (CRUD, pricing, active toggle)
+- [x] Quotes (list, create, status tracking)
+- [x] Quote Detail (line items, totals, send/approve workflow)
 - [x] Layout with navigation
 - [x] Protected routes
 
 ## In Progress
-- Quotes module
+- Jobs module
 
 ## Next Up
 - Jobs module
@@ -33,7 +36,9 @@
 - [x] sales_pipeline
 - [x] lead_payments
 - [x] appointments
-- [ ] quotes
+- [x] products_services
+- [x] quotes
+- [x] quote_lines
 - [ ] jobs
 - [ ] invoices
 
