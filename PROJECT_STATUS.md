@@ -1,115 +1,237 @@
 # Job Scout Web App - Project Status
-**Current Phase:** Core Development
-**Last Updated:** January 24, 2026
 
-## Completed
-- [x] Project scaffolding (Vite + React + Tailwind)
-- [x] GitHub connected
-- [x] Supabase connection configured
-- [x] Login/Signup with email authentication
-- [x] Multi-tenant foundation (companies table)
-- [x] Employees module (CRUD, cards, filters)
-- [x] Customers module (CRUD, search, status filters)
-- [x] Leads module (CRUD, quick actions, convert to customer)
-- [x] Sales Pipeline (Kanban board, stage management)
-- [x] Appointments scheduling
-- [x] Products & Services (CRUD, pricing, active toggle)
-- [x] Quotes (list, create, status tracking)
-- [x] Quote Detail (line items, totals, send/approve workflow)
-- [x] Jobs module (list, detail, calendar views)
-- [x] Light theme rebrand (topo background, olive green accent)
-- [x] Leads module with light theme (CRUD, quick actions, convert to customer)
-- [x] Sales Pipeline with light theme (Kanban board, stage management)
-- [x] Products & Services with light theme (CRUD, pricing, active toggle)
-- [x] Quotes with light theme (list, create, status tracking)
-- [x] Quote Detail with light theme (line items, totals, send/approve workflow)
-- [x] Layout with navigation
+**Last Updated:** January 24, 2026
+**Current Phase:** Building Core Modules
+**GitHub:** https://github.com/bryce-dotcom/job-scout-web.git
+**Supabase:** https://tzrhfhisdeahrrmeksif.supabase.co
+
+---
+
+## Project Overview
+
+Rebuilding the AppSheet "Job Scout" application as a modern React/Supabase web app.
+- Original: 64 tables, 160 views, 250+ actions
+- Target: Multi-tenant SaaS for 20,000 users
+- Stack: React + Vite, Supabase, Zustand, Lucide React
+
+---
+
+## Reference Documents
+
+Always reference these project files:
+- **OG_DiX_Code_Standards.md** - Proven patterns, UI standards, inline styles
+- **Job_Scout_Documentation.md** - Complete AppSheet schema with all tables, columns, views, actions
+
+---
+
+## Theme (Job Scout Light Topo)
+```javascript
+const theme = {
+  bg: '#f7f5ef',           // Topo cream background
+  bgCard: '#ffffff',       // White cards
+  bgCardHover: '#eef2eb',  // Light sage hover
+  border: '#d6cdb8',       // Map tan borders
+  text: '#2c3530',         // Dark forest text
+  textSecondary: '#4d5a52', // Slate green
+  textMuted: '#7d8a7f',    // Sage grey
+  accent: '#5a6349',       // Scout olive (matches logo)
+  accentBg: 'rgba(90,99,73,0.12)'
+};
+```
+
+Logo: public/Scout_LOGO_GUY.png (olive scout silhouette)
+Background: Subtle topo contour pattern
+
+---
+
+## Database (Supabase)
+
+### Connection
+- URL: https://tzrhfhisdeahrrmeksif.supabase.co
+- Auth: Supabase Auth enabled
+- RLS: Enabled on all tables (permissive policies for now)
+
+### Tables Created (38 total)
+- companies (multi-tenant root)
+- employees
+- customers
+- leads
+- sales_pipeline
+- lead_payments
+- appointments
+- products_services
+- quotes
+- quote_lines
+- jobs
+- job_lines
+- custom_forms
+- time_log
+- invoices
+- payments
+- utility_invoices
+- incentives
+- expenses
+- fleet
+- fleet_maintenance
+- fleet_rentals
+- inventory
+- communications_log
+- routes
+- settings
+- helpers
+- search_index
+- webhook_form
+- sync_log
+- utility_providers
+- utility_programs
+- lighting_audits
+- fixture_types
+- audit_areas
+- rebate_rates
+- rebate_update_log
+- ai_sessions
+- ai_modules
+- ai_messages
+
+### Test Account
+- Company ID: 3
+- Company: HHH Services
+- User: bryce@hhh.services (Owner/Admin)
+
+---
+
+## Completed Modules
+
+### Infrastructure
+- [x] Vite + React project setup
+- [x] Supabase client connection
+- [x] Zustand store with multi-tenant pattern
+- [x] GitHub repo connected
 - [x] Protected routes
-- [x] Full Supabase schema (40+ tables)
-- [x] Schema reference file (src/lib/schema.js)
-- [x] Complete Zustand store with all fetch functions
-- [x] Login flow with employee/company lookup
+- [x] Sidebar navigation layout
+- [x] Job Scout theme with topo background
+
+### Pages
+- [x] Login (Supabase auth, employee/company lookup)
+- [x] Dashboard (basic)
+- [x] Employees (full CRUD)
+- [x] Customers (full CRUD)
+
+---
 
 ## In Progress
-- None
+
+- [ ] Leads (full CRUD, status workflow)
+- [ ] Sales Pipeline (Kanban board)
+- [ ] Appointments (calendar list)
+- [ ] Products & Services (catalog)
+- [ ] Quotes (with line items)
+- [ ] Quote Detail (line items, totals, convert to job)
+
+---
 
 ## Next Up
-- Invoicing module (list, detail, payments)
-- Settings page (company profile)
-- Reports/Dashboard widgets
-- Time tracking module
-- Fleet management module
-- Lighting audits module
 
-## Database Tables (40+ tables defined)
+### Phase 1: Complete Sales Flow
+- Leads page with quick actions
+- Pipeline Kanban
+- Quotes with line items
+- Convert quote to job
 
-### Core
-- [x] companies (multi-tenant root)
-- [x] employees
-- [x] customers
-- [x] leads
-- [x] sales_pipeline
-- [x] lead_payments
-- [x] appointments
+### Phase 2: Jobs & Work
+- Jobs page (list + calendar views)
+- Job Detail (line items, time tracking)
+- Work Order PDF generation
+- Custom Forms
 
-### Products & Quotes
-- [x] products_services
-- [x] quotes
-- [x] quote_lines
+### Phase 3: Invoicing
+- Invoices (generate from job)
+- Payments (record payments)
+- Utility Invoices
 
-### Jobs & Work
-- [x] jobs
-- [x] job_lines
-- [x] custom_forms
-- [x] time_log
-- [x] expenses
+### Phase 4: Time & Resources
+- Time Log (clock in/out)
+- Expenses
+- Fleet management
+- Inventory tracking
 
-### Invoicing
-- [x] invoices
-- [x] invoice_lines
-- [x] payments
-- [x] utility_invoices
-- [x] incentives
+### Phase 5: Advanced
+- Lighting Audits module
+- Utility Programs / Rebates
+- Reports dashboard
+- AI assistant integration
 
-### Fleet
-- [x] fleet
-- [x] fleet_maintenance
-- [x] fleet_rentals
+---
 
-### Inventory
-- [x] inventory
-- [x] inventory_transactions
+## Key Patterns (from OG_DiX_Code_Standards.md)
 
-### Lighting Audits
-- [x] lighting_audits
-- [x] audit_areas
-- [x] audit_area_fixtures
-- [x] fixture_types
-- [x] rebate_rates
-- [x] rebate_update_log
-- [x] utility_programs
-- [x] utility_providers
+### Multi-tenant
+- Every query filters by company_id
+- Store persists companyId
+- Guard clause in every page: if (!companyId) return null
 
-### Other
-- [x] communications_log
-- [x] routes
-- [x] route_stops
-- [x] settings
-- [x] search_index
-- [x] tags
-- [x] entity_tags
-- [x] file_attachments
+### Store Pattern
+```javascript
+const { companyId } = get();
+if (!companyId) return;
+// All queries filter by company_id
+```
 
-## Key Files
-- `src/lib/supabase.js` - Supabase client
-- `src/lib/store.js` - Zustand store with all fetch functions
-- `src/lib/schema.js` - Table definitions and constants
-- `supabase_schema.sql` - Complete SQL schema for Supabase
+### Page Pattern
+```javascript
+useEffect(() => {
+  if (!companyId) {
+    navigate('/login');
+    return;
+  }
+  fetchData();
+}, [companyId]);
+```
 
-## Blockers
-None
+### Styling
+- Inline styles only (no Tailwind classes)
+- Theme object for all colors
+- Theme with fallback in every component
+
+---
+
+## Build Order (Business Flow)
+
+1. Login ✅
+2. Employees ✅
+3. Customers ✅
+4. Leads & Sales Pipeline ← CURRENT
+5. Quotes
+6. Jobs
+7. Invoices
+8. Time Tracking
+9. Inventory
+10. Fleet
+11. Lighting Audits
+
+---
+
+## Commands Reference
+
+### Start dev server
+```bash
+cd job-scout-web
+npm run dev
+```
+
+### Commit and push
+```bash
+git add . && git commit -m "message" && git push
+```
+
+### Supabase SQL Editor
+https://supabase.com/dashboard/project/tzrhfhisdeahrrmeksif/sql
+
+---
 
 ## Notes
-Rebuilding AppSheet Job Scout (64 tables, 160 views) as React/Supabase web app
-Following OG DiX code standards for all patterns
-Multi-tenant architecture: all data scoped by company_id
+
+- AppSheet Ref columns → INTEGER REFERENCES in Postgres
+- AppSheet List columns → virtual (skip in DB, fetch via joins)
+- All prices use DECIMAL(12,2)
+- Soft delete pattern: set active=false or status='Inactive'
