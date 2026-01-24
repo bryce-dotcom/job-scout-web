@@ -2,12 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { useTheme } from '../components/Layout'
 import { Plus, Pencil, Trash2, X, User, Phone, Mail } from 'lucide-react'
-
-const defaultTheme = {
-  primary: '#2563eb',
-  primaryHover: '#1d4ed8'
-}
 
 const emptyEmployee = {
   name: '',
@@ -26,6 +22,20 @@ export default function Employees() {
   const employees = useStore((state) => state.employees)
   const fetchEmployees = useStore((state) => state.fetchEmployees)
 
+  // Theme with fallback
+  const themeContext = useTheme()
+  const theme = themeContext?.theme || {
+    bg: '#f7f5ef',
+    bgCard: '#ffffff',
+    bgCardHover: '#eef2eb',
+    border: '#d6cdb8',
+    text: '#2c3530',
+    textSecondary: '#4d5a52',
+    textMuted: '#7d8a7f',
+    accent: '#5a6349',
+    accentBg: 'rgba(90,99,73,0.12)'
+  }
+
   const [showModal, setShowModal] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState(null)
   const [formData, setFormData] = useState(emptyEmployee)
@@ -33,8 +43,6 @@ export default function Employees() {
   const [error, setError] = useState(null)
   const [showInactive, setShowInactive] = useState(false)
   const [allEmployees, setAllEmployees] = useState([])
-
-  const theme = defaultTheme
 
   // Guard clause - redirect if no company
   useEffect(() => {
@@ -158,24 +166,72 @@ export default function Employees() {
     await fetchAllEmployees()
   }
 
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    backgroundColor: theme.bg,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '8px',
+    color: theme.text,
+    fontSize: '14px',
+    outline: 'none'
+  }
+
+  const labelStyle = {
+    display: 'block',
+    marginBottom: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: theme.text
+  }
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Employees</h1>
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-gray-600">
+    <div style={{ padding: '24px' }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '24px'
+      }}>
+        <h1 style={{
+          fontSize: '24px',
+          fontWeight: '700',
+          color: theme.text
+        }}>
+          Employees
+        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '14px',
+            color: theme.textSecondary,
+            cursor: 'pointer'
+          }}>
             <input
               type="checkbox"
               checked={showInactive}
               onChange={(e) => setShowInactive(e.target.checked)}
-              className="rounded border-gray-300"
+              style={{ accentColor: theme.accent }}
             />
             Show inactive
           </label>
           <button
             onClick={openAddModal}
-            style={{ backgroundColor: theme.primary }}
-            className="flex items-center gap-2 px-4 py-2 text-white rounded-md hover:opacity-90"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 16px',
+              backgroundColor: theme.accent,
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
           >
             <Plus size={20} />
             Add Employee
@@ -184,78 +240,180 @@ export default function Employees() {
       </div>
 
       {displayedEmployees.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg shadow">
-          <User size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-600">No employees yet. Add your first employee to get started.</p>
+        <div style={{
+          textAlign: 'center',
+          padding: '48px',
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`
+        }}>
+          <User size={48} style={{ color: theme.textMuted, marginBottom: '16px' }} />
+          <p style={{ color: theme.textSecondary }}>
+            No employees yet. Add your first employee to get started.
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: '16px'
+        }}>
           {displayedEmployees.map((employee) => (
             <div
               key={employee.id}
-              className={`bg-white rounded-lg shadow p-4 ${!employee.active ? 'opacity-60' : ''}`}
+              style={{
+                backgroundColor: theme.bgCard,
+                borderRadius: '12px',
+                border: `1px solid ${theme.border}`,
+                padding: '20px',
+                opacity: employee.active ? 1 : 0.6
+              }}
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
+              <div style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: `1px solid ${theme.border}`
+                  }}>
                     {employee.headshot_url ? (
-                      <img src={employee.headshot_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                      <img
+                        src={employee.headshot_url}
+                        alt=""
+                        style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '10px',
+                          objectFit: 'cover'
+                        }}
+                      />
                     ) : (
-                      <User size={24} className="text-gray-500" />
+                      <User size={24} style={{ color: theme.textMuted }} />
                     )}
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">{employee.name}</h3>
-                    <p className="text-sm text-gray-500">{employee.role}</p>
+                    <h3 style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      color: theme.text,
+                      marginBottom: '4px'
+                    }}>
+                      {employee.name}
+                    </h3>
+                    <p style={{
+                      fontSize: '14px',
+                      color: theme.textSecondary,
+                      marginBottom: '4px'
+                    }}>
+                      {employee.role}
+                    </p>
                     {employee.user_role && (
-                      <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
+                      <span style={{
+                        display: 'inline-block',
+                        fontSize: '12px',
+                        padding: '2px 8px',
+                        backgroundColor: theme.accentBg,
+                        color: theme.accent,
+                        borderRadius: '4px'
+                      }}>
                         {employee.user_role}
                       </span>
                     )}
                   </div>
                 </div>
-                <div className="flex gap-1">
+                <div style={{ display: 'flex', gap: '4px' }}>
                   <button
                     onClick={() => openEditModal(employee)}
-                    className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                    style={{
+                      padding: '8px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      color: theme.textMuted,
+                      cursor: 'pointer',
+                      borderRadius: '6px'
+                    }}
                   >
                     <Pencil size={16} />
                   </button>
                   <button
                     onClick={() => handleDelete(employee)}
-                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                    style={{
+                      padding: '8px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      color: theme.textMuted,
+                      cursor: 'pointer',
+                      borderRadius: '6px'
+                    }}
                   >
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-1.5 text-sm">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {employee.email && (
-                  <div className="flex items-center gap-2 text-gray-600">
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '14px',
+                    color: theme.textSecondary
+                  }}>
                     <Mail size={14} />
                     <span>{employee.email}</span>
                   </div>
                 )}
                 {employee.phone && (
-                  <div className="flex items-center gap-2 text-gray-600">
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '14px',
+                    color: theme.textSecondary
+                  }}>
                     <Phone size={14} />
                     <span>{employee.phone}</span>
                   </div>
                 )}
               </div>
 
-              <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                <span className={`text-xs px-2 py-1 rounded-full ${
-                  employee.active
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-100 text-gray-600'
-                }`}>
+              <div style={{
+                marginTop: '16px',
+                paddingTop: '16px',
+                borderTop: `1px solid ${theme.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <span style={{
+                  fontSize: '12px',
+                  padding: '4px 10px',
+                  borderRadius: '20px',
+                  backgroundColor: employee.active ? 'rgba(34,197,94,0.1)' : theme.bg,
+                  color: employee.active ? '#16a34a' : theme.textMuted
+                }}>
                   {employee.active ? 'Active' : 'Inactive'}
                 </span>
                 <button
                   onClick={() => toggleActive(employee)}
-                  className="text-xs text-gray-500 hover:text-gray-700"
+                  style={{
+                    fontSize: '12px',
+                    color: theme.textMuted,
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
                 >
                   {employee.active ? 'Deactivate' : 'Activate'}
                 </button>
@@ -267,75 +425,116 @@ export default function Employees() {
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">
+        <>
+          <div
+            onClick={closeModal}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.3)',
+              zIndex: 50
+            }}
+          />
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            border: `1px solid ${theme.border}`,
+            width: '100%',
+            maxWidth: '480px',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            zIndex: 51
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                color: theme.text
+              }}>
                 {editingEmployee ? 'Edit Employee' : 'Add Employee'}
               </h2>
-              <button onClick={closeModal} className="text-gray-500 hover:text-gray-700">
+              <button
+                onClick={closeModal}
+                style={{
+                  padding: '4px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: theme.textMuted,
+                  cursor: 'pointer'
+                }}
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-4">
+            <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
               {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">
+                <div style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  backgroundColor: 'rgba(220,38,38,0.08)',
+                  border: '1px solid rgba(220,38,38,0.2)',
+                  borderRadius: '8px',
+                  color: '#b91c1c',
+                  fontSize: '14px'
+                }}>
                   {error}
                 </div>
               )}
 
-              <div className="space-y-4">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Name *
-                  </label>
+                  <label style={labelStyle}>Name *</label>
                   <input
                     type="text"
                     name="name"
                     value={formData.name}
                     onChange={handleChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
-                  </label>
+                  <label style={labelStyle}>Email</label>
                   <input
                     type="email"
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone
-                  </label>
+                  <label style={labelStyle}>Phone</label>
                   <input
                     type="tel"
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Role
-                    </label>
+                    <label style={labelStyle}>Role</label>
                     <select
                       name="role"
                       value={formData.role}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={inputStyle}
                     >
                       <option value="Field Tech">Field Tech</option>
                       <option value="Installer">Installer</option>
@@ -347,14 +546,12 @@ export default function Employees() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      User Role
-                    </label>
+                    <label style={labelStyle}>User Role</label>
                     <select
                       name="user_role"
                       value={formData.user_role}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={inputStyle}
                     >
                       <option value="User">User</option>
                       <option value="Admin">Admin</option>
@@ -364,68 +561,95 @@ export default function Employees() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Business Unit
-                  </label>
+                  <label style={labelStyle}>Business Unit</label>
                   <input
                     type="text"
                     name="business_unit"
                     value={formData.business_unit}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Employee ID
-                  </label>
+                  <label style={labelStyle}>Employee ID</label>
                   <input
                     type="text"
                     name="employee_id"
                     value={formData.employee_id}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={inputStyle}
                   />
                 </div>
 
                 {editingEmployee && (
-                  <div className="flex items-center gap-2">
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
                     <input
                       type="checkbox"
                       name="active"
                       id="active"
                       checked={formData.active}
                       onChange={handleChange}
-                      className="rounded border-gray-300"
+                      style={{ accentColor: theme.accent }}
                     />
-                    <label htmlFor="active" className="text-sm text-gray-700">
+                    <label
+                      htmlFor="active"
+                      style={{ fontSize: '14px', color: theme.text }}
+                    >
                       Active
                     </label>
                   </div>
                 )}
               </div>
 
-              <div className="flex gap-3 mt-6">
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                marginTop: '24px'
+              }}>
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    color: theme.textSecondary,
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  style={{ backgroundColor: theme.primary }}
-                  className="flex-1 px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: theme.accent,
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: loading ? 0.7 : 1
+                  }}
                 >
                   {loading ? 'Saving...' : (editingEmployee ? 'Update' : 'Add Employee')}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

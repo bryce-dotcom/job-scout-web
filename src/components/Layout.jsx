@@ -19,28 +19,26 @@ import {
   LogOut,
   Menu,
   X,
-  ChevronDown,
-  MapPin
+  ChevronDown
 } from 'lucide-react'
-import logo from '../assets/logo.png'
 
 // Theme context
 const ThemeContext = createContext(null)
 
-// Job Scout Theme - Forest Green with Topo aesthetic
+// Job Scout Theme - Light Topo
 const theme = {
-  bg: '#0c1210',
-  bgCard: '#151f1a',
-  bgCardHover: '#1e2d25',
-  border: '#2a3f32',
-  text: '#f0fdf4',
-  textSecondary: '#9cb3a3',
-  textMuted: '#6b8073',
-  accent: '#22c55e',
-  accentHover: '#16a34a',
-  accentBg: 'rgba(34,197,94,0.15)',
-  shadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2)',
-  shadowLg: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.2)'
+  bg: '#f7f5ef',
+  bgCard: '#ffffff',
+  bgCardHover: '#eef2eb',
+  border: '#d6cdb8',
+  text: '#2c3530',
+  textSecondary: '#4d5a52',
+  textMuted: '#7d8a7f',
+  accent: '#5a6349',
+  accentHover: '#4a5239',
+  accentBg: 'rgba(90,99,73,0.12)',
+  shadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
+  shadowLg: '0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05)'
 }
 
 export const useTheme = () => {
@@ -48,7 +46,7 @@ export const useTheme = () => {
   return context || { theme }
 }
 
-// SVG Topo Map Pattern - subtle contour lines
+// SVG Topo Map Pattern - subtle tan contour lines
 const TopoBackground = () => (
   <svg
     style={{
@@ -64,46 +62,62 @@ const TopoBackground = () => (
   >
     <defs>
       <pattern id="topoPattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
-        {/* Contour lines */}
+        {/* Flowing contour lines */}
         <path
-          d="M0,50 Q50,20 100,50 T200,50"
+          d="M0,40 Q30,20 60,35 Q100,55 140,30 Q180,10 200,40"
           fill="none"
-          stroke="#22c55e"
-          strokeWidth="0.5"
+          stroke="#c4b59a"
+          strokeWidth="1"
         />
         <path
-          d="M0,80 Q40,50 80,70 Q120,90 160,60 Q200,30 200,80"
+          d="M0,70 Q50,50 100,70 T200,70"
           fill="none"
-          stroke="#22c55e"
-          strokeWidth="0.5"
+          stroke="#c4b59a"
+          strokeWidth="1"
         />
         <path
-          d="M0,120 Q30,100 60,110 Q100,130 140,100 Q180,70 200,120"
+          d="M0,100 Q25,80 50,95 Q80,115 120,85 Q160,55 200,100"
           fill="none"
-          stroke="#22c55e"
-          strokeWidth="0.5"
+          stroke="#c4b59a"
+          strokeWidth="1"
         />
         <path
-          d="M0,160 Q50,140 100,160 T200,160"
+          d="M0,130 Q40,110 80,125 Q130,145 170,115 Q200,90 200,130"
           fill="none"
-          stroke="#22c55e"
-          strokeWidth="0.5"
+          stroke="#c4b59a"
+          strokeWidth="1"
         />
         <path
-          d="M50,0 Q30,50 50,100 Q70,150 50,200"
+          d="M0,160 Q60,140 100,160 T200,160"
           fill="none"
-          stroke="#22c55e"
-          strokeWidth="0.5"
+          stroke="#c4b59a"
+          strokeWidth="1"
         />
         <path
-          d="M150,0 Q170,60 150,100 Q130,140 150,200"
+          d="M0,190 Q35,170 70,185 Q110,200 150,175 Q200,150 200,190"
           fill="none"
-          stroke="#22c55e"
-          strokeWidth="0.5"
+          stroke="#c4b59a"
+          strokeWidth="1"
         />
-        {/* Subtle circles for elevation markers */}
-        <circle cx="100" cy="100" r="30" fill="none" stroke="#22c55e" strokeWidth="0.3" />
-        <circle cx="100" cy="100" r="50" fill="none" stroke="#22c55e" strokeWidth="0.3" />
+        {/* Vertical flowing lines */}
+        <path
+          d="M40,0 Q25,50 40,100 Q55,150 40,200"
+          fill="none"
+          stroke="#c4b59a"
+          strokeWidth="0.8"
+        />
+        <path
+          d="M100,0 Q85,40 100,80 Q115,120 100,160 Q85,200 100,200"
+          fill="none"
+          stroke="#c4b59a"
+          strokeWidth="0.8"
+        />
+        <path
+          d="M160,0 Q175,50 160,100 Q145,150 160,200"
+          fill="none"
+          stroke="#c4b59a"
+          strokeWidth="0.8"
+        />
       </pattern>
     </defs>
     <rect width="100%" height="100%" fill="url(#topoPattern)" />
@@ -166,7 +180,7 @@ export default function Layout() {
               color: theme.textMuted,
               fontSize: '14px',
               cursor: 'pointer',
-              transition: 'all 0.2s ease'
+              transition: 'all 0.15s ease'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = theme.bgCardHover
@@ -185,7 +199,7 @@ export default function Layout() {
               size={16}
               style={{
                 transform: jobsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 0.2s ease'
+                transition: 'transform 0.15s ease'
               }}
             />
           </button>
@@ -205,9 +219,11 @@ export default function Layout() {
                     borderRadius: '8px',
                     color: isActive ? theme.accent : theme.textMuted,
                     backgroundColor: isActive ? theme.accentBg : 'transparent',
+                    borderLeft: isActive ? `3px solid ${theme.accent}` : '3px solid transparent',
                     textDecoration: 'none',
                     fontSize: '14px',
-                    transition: 'all 0.2s ease'
+                    fontWeight: isActive ? '500' : '400',
+                    transition: 'all 0.15s ease'
                   })}
                 >
                   <child.icon size={18} />
@@ -233,10 +249,11 @@ export default function Layout() {
           borderRadius: '8px',
           color: isActive ? theme.accent : theme.textMuted,
           backgroundColor: isActive ? theme.accentBg : 'transparent',
+          borderLeft: isActive ? `3px solid ${theme.accent}` : '3px solid transparent',
           textDecoration: 'none',
           fontSize: '14px',
           fontWeight: isActive ? '500' : '400',
-          transition: 'all 0.2s ease'
+          transition: 'all 0.15s ease'
         })}
       >
         <item.icon size={20} />
@@ -264,33 +281,30 @@ export default function Layout() {
           left: 0,
           bottom: 0,
           zIndex: 40,
-          boxShadow: theme.shadowLg
+          boxShadow: theme.shadow
         }}
         className="hidden md:flex"
         >
           {/* Logo/Company */}
           <div style={{
-            padding: '24px 20px',
+            padding: '20px',
             borderBottom: `1px solid ${theme.border}`
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <div style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '10px',
-                backgroundColor: theme.accentBg,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: `1px solid ${theme.accent}30`
-              }}>
-                <MapPin size={24} style={{ color: theme.accent }} />
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <img
+                src="/Scout_LOGO_GUY.png"
+                alt="Job Scout"
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  objectFit: 'contain'
+                }}
+              />
               <div>
                 <div style={{
-                  fontSize: '18px',
+                  fontSize: '20px',
                   fontWeight: '700',
-                  color: theme.text,
+                  color: theme.accent,
                   letterSpacing: '-0.02em'
                 }}>
                   Job Scout
@@ -339,14 +353,13 @@ export default function Layout() {
                 width: '40px',
                 height: '40px',
                 borderRadius: '10px',
-                background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accentHover} 100%)`,
+                backgroundColor: theme.accent,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
                 fontWeight: '600',
-                fontSize: '16px',
-                boxShadow: `0 2px 8px ${theme.accent}40`
+                fontSize: '16px'
               }}>
                 {displayName.charAt(0).toUpperCase()}
               </div>
@@ -387,7 +400,7 @@ export default function Layout() {
                 color: theme.textMuted,
                 fontSize: '14px',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease'
+                transition: 'all 0.15s ease'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = theme.bgCardHover
@@ -425,22 +438,20 @@ export default function Layout() {
           }}
           className="md:hidden"
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
-              backgroundColor: theme.accentBg,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <MapPin size={20} style={{ color: theme.accent }} />
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <img
+              src="/Scout_LOGO_GUY.png"
+              alt="Job Scout"
+              style={{
+                width: '36px',
+                height: '36px',
+                objectFit: 'contain'
+              }}
+            />
             <span style={{
               fontSize: '18px',
               fontWeight: '700',
-              color: theme.text,
+              color: theme.accent,
               letterSpacing: '-0.02em'
             }}>
               Job Scout
@@ -468,9 +479,8 @@ export default function Layout() {
               style={{
                 position: 'fixed',
                 inset: 0,
-                backgroundColor: 'rgba(0,0,0,0.6)',
-                zIndex: 45,
-                backdropFilter: 'blur(4px)'
+                backgroundColor: 'rgba(0,0,0,0.3)',
+                zIndex: 45
               }}
               className="md:hidden"
             />
@@ -528,7 +538,7 @@ export default function Layout() {
                     width: '40px',
                     height: '40px',
                     borderRadius: '10px',
-                    background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accentHover} 100%)`,
+                    backgroundColor: theme.accent,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',

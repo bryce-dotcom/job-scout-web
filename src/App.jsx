@@ -13,20 +13,53 @@ import QuoteDetail from './pages/QuoteDetail'
 import Jobs from './pages/Jobs'
 import JobDetail from './pages/JobDetail'
 import JobCalendar from './pages/JobCalendar'
-import Layout from './components/Layout'
+import Layout, { useTheme } from './components/Layout'
+
+// Light theme fallback
+const defaultTheme = {
+  bg: '#f7f5ef',
+  bgCard: '#ffffff',
+  border: '#d6cdb8',
+  text: '#2c3530',
+  textSecondary: '#4d5a52',
+  textMuted: '#7d8a7f',
+  accent: '#5a6349',
+  accentBg: 'rgba(90,99,73,0.12)'
+}
 
 function Dashboard() {
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
 
+  // Theme with fallback
+  const themeContext = useTheme()
+  const theme = themeContext?.theme || defaultTheme
+
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Job Scout</h2>
-      {company && (
-        <p className="text-gray-600">
-          Logged in as {user?.name || user?.email} at {company.company_name}
-        </p>
-      )}
+    <div style={{ padding: '24px' }}>
+      <div style={{
+        backgroundColor: theme.bgCard,
+        borderRadius: '12px',
+        border: `1px solid ${theme.border}`,
+        padding: '32px'
+      }}>
+        <h2 style={{
+          fontSize: '24px',
+          fontWeight: '700',
+          color: theme.text,
+          marginBottom: '12px'
+        }}>
+          Welcome to Job Scout
+        </h2>
+        {company && (
+          <p style={{
+            fontSize: '15px',
+            color: theme.textSecondary
+          }}>
+            Logged in as <span style={{ fontWeight: '500' }}>{user?.name || user?.email}</span> at <span style={{ fontWeight: '500' }}>{company.company_name}</span>
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -38,8 +71,14 @@ function ProtectedRoute({ children }) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: defaultTheme.bg,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ color: defaultTheme.textMuted }}>Loading...</div>
       </div>
     )
   }

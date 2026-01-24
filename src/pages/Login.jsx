@@ -2,25 +2,25 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { MapPin, Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 
-// Job Scout Theme
+// Job Scout Theme - Light Topo
 const theme = {
-  bg: '#0c1210',
-  bgCard: '#151f1a',
-  bgCardHover: '#1e2d25',
-  border: '#2a3f32',
-  text: '#f0fdf4',
-  textSecondary: '#9cb3a3',
-  textMuted: '#6b8073',
-  accent: '#22c55e',
-  accentHover: '#16a34a',
-  accentBg: 'rgba(34,197,94,0.15)',
-  shadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2)',
-  shadowLg: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+  bg: '#f7f5ef',
+  bgCard: '#ffffff',
+  bgCardHover: '#eef2eb',
+  border: '#d6cdb8',
+  text: '#2c3530',
+  textSecondary: '#4d5a52',
+  textMuted: '#7d8a7f',
+  accent: '#5a6349',
+  accentHover: '#4a5239',
+  accentBg: 'rgba(90,99,73,0.12)',
+  shadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
+  shadowLg: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.08)'
 }
 
-// SVG Topo Map Pattern
+// SVG Topo Map Pattern - subtle tan contour lines
 const TopoBackground = () => (
   <svg
     style={{
@@ -29,21 +29,22 @@ const TopoBackground = () => (
       left: 0,
       width: '100%',
       height: '100%',
-      opacity: 0.08,
+      opacity: 0.06,
       pointerEvents: 'none'
     }}
     xmlns="http://www.w3.org/2000/svg"
   >
     <defs>
       <pattern id="topoPatternLogin" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
-        <path d="M0,50 Q50,20 100,50 T200,50" fill="none" stroke="#22c55e" strokeWidth="0.5" />
-        <path d="M0,80 Q40,50 80,70 Q120,90 160,60 Q200,30 200,80" fill="none" stroke="#22c55e" strokeWidth="0.5" />
-        <path d="M0,120 Q30,100 60,110 Q100,130 140,100 Q180,70 200,120" fill="none" stroke="#22c55e" strokeWidth="0.5" />
-        <path d="M0,160 Q50,140 100,160 T200,160" fill="none" stroke="#22c55e" strokeWidth="0.5" />
-        <path d="M50,0 Q30,50 50,100 Q70,150 50,200" fill="none" stroke="#22c55e" strokeWidth="0.5" />
-        <path d="M150,0 Q170,60 150,100 Q130,140 150,200" fill="none" stroke="#22c55e" strokeWidth="0.5" />
-        <circle cx="100" cy="100" r="30" fill="none" stroke="#22c55e" strokeWidth="0.3" />
-        <circle cx="100" cy="100" r="50" fill="none" stroke="#22c55e" strokeWidth="0.3" />
+        <path d="M0,40 Q30,20 60,35 Q100,55 140,30 Q180,10 200,40" fill="none" stroke="#c4b59a" strokeWidth="1" />
+        <path d="M0,70 Q50,50 100,70 T200,70" fill="none" stroke="#c4b59a" strokeWidth="1" />
+        <path d="M0,100 Q25,80 50,95 Q80,115 120,85 Q160,55 200,100" fill="none" stroke="#c4b59a" strokeWidth="1" />
+        <path d="M0,130 Q40,110 80,125 Q130,145 170,115 Q200,90 200,130" fill="none" stroke="#c4b59a" strokeWidth="1" />
+        <path d="M0,160 Q60,140 100,160 T200,160" fill="none" stroke="#c4b59a" strokeWidth="1" />
+        <path d="M0,190 Q35,170 70,185 Q110,200 150,175 Q200,150 200,190" fill="none" stroke="#c4b59a" strokeWidth="1" />
+        <path d="M40,0 Q25,50 40,100 Q55,150 40,200" fill="none" stroke="#c4b59a" strokeWidth="0.8" />
+        <path d="M100,0 Q85,40 100,80 Q115,120 100,160 Q85,200 100,200" fill="none" stroke="#c4b59a" strokeWidth="0.8" />
+        <path d="M160,0 Q175,50 160,100 Q145,150 160,200" fill="none" stroke="#c4b59a" strokeWidth="0.8" />
       </pattern>
     </defs>
     <rect width="100%" height="100%" fill="url(#topoPatternLogin)" />
@@ -147,7 +148,7 @@ export default function Login() {
     color: theme.text,
     fontSize: '15px',
     outline: 'none',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.15s ease'
   }
 
   return (
@@ -173,24 +174,20 @@ export default function Login() {
           textAlign: 'center',
           marginBottom: '32px'
         }}>
-          <div style={{
-            width: '72px',
-            height: '72px',
-            borderRadius: '16px',
-            backgroundColor: theme.accentBg,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '20px',
-            border: `1px solid ${theme.accent}30`,
-            boxShadow: `0 0 40px ${theme.accent}20`
-          }}>
-            <MapPin size={36} style={{ color: theme.accent }} />
-          </div>
+          <img
+            src="/Scout_LOGO_GUY.png"
+            alt="Job Scout"
+            style={{
+              width: '100px',
+              height: '100px',
+              objectFit: 'contain',
+              marginBottom: '16px'
+            }}
+          />
           <h1 style={{
             fontSize: '28px',
             fontWeight: '700',
-            color: theme.text,
+            color: theme.accent,
             marginBottom: '8px',
             letterSpacing: '-0.02em'
           }}>
@@ -216,10 +213,10 @@ export default function Login() {
             <div style={{
               marginBottom: '20px',
               padding: '14px 16px',
-              backgroundColor: 'rgba(239,68,68,0.1)',
-              border: '1px solid rgba(239,68,68,0.3)',
+              backgroundColor: 'rgba(220,38,38,0.08)',
+              border: '1px solid rgba(220,38,38,0.2)',
               borderRadius: '10px',
-              color: '#fca5a5',
+              color: '#b91c1c',
               fontSize: '14px'
             }}>
               {error}
@@ -260,7 +257,7 @@ export default function Login() {
                 style={inputStyle}
                 onFocus={(e) => {
                   e.target.style.borderColor = theme.accent
-                  e.target.style.boxShadow = `0 0 0 3px ${theme.accent}20`
+                  e.target.style.boxShadow = `0 0 0 3px ${theme.accentBg}`
                 }}
                 onBlur={(e) => {
                   e.target.style.borderColor = theme.border
@@ -286,11 +283,11 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={6}
-                  placeholder="••••••••"
+                  placeholder="Enter password"
                   style={{ ...inputStyle, paddingRight: '48px' }}
                   onFocus={(e) => {
                     e.target.style.borderColor = theme.accent
-                    e.target.style.boxShadow = `0 0 0 3px ${theme.accent}20`
+                    e.target.style.boxShadow = `0 0 0 3px ${theme.accentBg}`
                   }}
                   onBlur={(e) => {
                     e.target.style.borderColor = theme.border
@@ -334,11 +331,11 @@ export default function Login() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   minLength={6}
-                  placeholder="••••••••"
+                  placeholder="Confirm password"
                   style={inputStyle}
                   onFocus={(e) => {
                     e.target.style.borderColor = theme.accent
-                    e.target.style.boxShadow = `0 0 0 3px ${theme.accent}20`
+                    e.target.style.boxShadow = `0 0 0 3px ${theme.accentBg}`
                   }}
                   onBlur={(e) => {
                     e.target.style.borderColor = theme.border
@@ -354,7 +351,7 @@ export default function Login() {
               style={{
                 width: '100%',
                 padding: '14px',
-                background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accentHover} 100%)`,
+                backgroundColor: theme.accent,
                 color: '#fff',
                 border: 'none',
                 borderRadius: '10px',
@@ -362,18 +359,15 @@ export default function Login() {
                 fontWeight: '600',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 opacity: loading ? 0.7 : 1,
-                transition: 'all 0.2s ease',
-                boxShadow: `0 4px 14px ${theme.accent}40`
+                transition: 'all 0.15s ease'
               }}
               onMouseEnter={(e) => {
                 if (!loading) {
-                  e.currentTarget.style.transform = 'translateY(-1px)'
-                  e.currentTarget.style.boxShadow = `0 6px 20px ${theme.accent}50`
+                  e.currentTarget.style.backgroundColor = theme.accentHover
                 }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)'
-                e.currentTarget.style.boxShadow = `0 4px 14px ${theme.accent}40`
+                e.currentTarget.style.backgroundColor = theme.accent
               }}
             >
               {loading
