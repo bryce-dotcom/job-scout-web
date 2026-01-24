@@ -15,6 +15,7 @@ export const useStore = create(
       appointments: [],
       products: [],
       quotes: [],
+      jobs: [],
       isLoading: false,
 
       setCompany: (company) => set({ company, companyId: company?.id }),
@@ -33,7 +34,8 @@ export const useStore = create(
           salesPipeline: [],
           appointments: [],
           products: [],
-          quotes: []
+          quotes: [],
+          jobs: []
         });
       },
 
@@ -129,8 +131,21 @@ export const useStore = create(
         if (!error) set({ quotes: data || [] });
       },
 
+      fetchJobs: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('*, customer:customers(id, name, email, phone, address), salesperson:employees(id, name), quote:quotes(id, quote_id)')
+          .eq('company_id', companyId)
+          .order('start_date', { ascending: false });
+
+        if (!error) set({ jobs: data || [] });
+      },
+
       fetchAllData: async () => {
-        const { companyId, fetchEmployees, fetchCustomers, fetchLeads, fetchSalesPipeline, fetchAppointments, fetchProducts, fetchQuotes } = get();
+        const { companyId, fetchEmployees, fetchCustomers, fetchLeads, fetchSalesPipeline, fetchAppointments, fetchProducts, fetchQuotes, fetchJobs } = get();
         if (!companyId) return;
         set({ isLoading: true });
         await Promise.all([
@@ -140,7 +155,8 @@ export const useStore = create(
           fetchSalesPipeline(),
           fetchAppointments(),
           fetchProducts(),
-          fetchQuotes()
+          fetchQuotes(),
+          fetchJobs()
         ]);
         set({ isLoading: false });
       }

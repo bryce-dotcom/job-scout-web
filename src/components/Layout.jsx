@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { supabase } from '../lib/supabase'
-import { Home, Users, Building2, UserPlus, TrendingUp, Package, FileText, LogOut } from 'lucide-react'
+import { Home, Users, Building2, UserPlus, TrendingUp, Package, FileText, Briefcase, LogOut } from 'lucide-react'
 import logo from '../assets/logo.png'
 
 export default function Layout() {
@@ -20,7 +20,8 @@ export default function Layout() {
     { to: '/leads', icon: UserPlus, label: 'Leads' },
     { to: '/pipeline', icon: TrendingUp, label: 'Pipeline' },
     { to: '/products', icon: Package, label: 'Products' },
-    { to: '/quotes', icon: FileText, label: 'Quotes' }
+    { to: '/quotes', icon: FileText, label: 'Quotes' },
+    { to: '/jobs', icon: Briefcase, label: 'Jobs' }
   ]
 
   return (

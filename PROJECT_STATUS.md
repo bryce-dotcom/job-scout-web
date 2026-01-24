@@ -1,6 +1,6 @@
 # Job Scout Web App - Project Status
 **Current Phase:** Core Development
-**Last Updated:** January 23, 2026
+**Last Updated:** January 24, 2026
 
 ## Completed
 - [x] Project scaffolding (Vite + React + Tailwind)
@@ -16,14 +16,14 @@
 - [x] Products & Services (CRUD, pricing, active toggle)
 - [x] Quotes (list, create, status tracking)
 - [x] Quote Detail (line items, totals, send/approve workflow)
+- [x] Jobs module (list, detail, calendar views)
 - [x] Layout with navigation
 - [x] Protected routes
 
 ## In Progress
-- Jobs module
+- Invoicing & Payments
 
 ## Next Up
-- Jobs module
 - Invoicing
 - Settings page (company profile)
 - Reports/Dashboard widgets
@@ -39,7 +39,8 @@
 - [x] products_services
 - [x] quotes
 - [x] quote_lines
-- [ ] jobs
+- [x] jobs
+- [x] job_lines
 - [ ] invoices
 
 ## Blockers

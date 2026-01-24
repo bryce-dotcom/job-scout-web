@@ -10,6 +10,9 @@ import SalesPipeline from './pages/SalesPipeline'
 import Products from './pages/Products'
 import Quotes from './pages/Quotes'
 import QuoteDetail from './pages/QuoteDetail'
+import Jobs from './pages/Jobs'
+import JobDetail from './pages/JobDetail'
+import JobCalendar from './pages/JobCalendar'
 import Layout from './components/Layout'
 
 function Dashboard() {
@@ -120,6 +123,9 @@ function App() {
           <Route path="/products" element={<Products />} />
           <Route path="/quotes" element={<Quotes />} />
           <Route path="/quotes/:id" element={<QuoteDetail />} />
+          <Route path="/jobs" element={<Jobs />} />
+          <Route path="/jobs/calendar" element={<JobCalendar />} />
+          <Route path="/jobs/:id" element={<JobDetail />} />
         </Route>
       </Routes>
     </BrowserRouter>
