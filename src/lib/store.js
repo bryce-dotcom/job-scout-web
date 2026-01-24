@@ -10,6 +10,9 @@ export const useStore = create(
       user: null,
       employees: [],
       customers: [],
+      leads: [],
+      salesPipeline: [],
+      appointments: [],
       isLoading: false,
 
       setCompany: (company) => set({ company, companyId: company?.id }),
@@ -23,7 +26,10 @@ export const useStore = create(
           companyId: null,
           user: null,
           employees: [],
-          customers: []
+          customers: [],
+          leads: [],
+          salesPipeline: [],
+          appointments: []
         });
       },
 
@@ -54,11 +60,56 @@ export const useStore = create(
         if (!error) set({ customers: data || [] });
       },
 
+      fetchLeads: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('leads')
+          .select('*, salesperson:employees(id, name)')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+
+        if (!error) set({ leads: data || [] });
+      },
+
+      fetchSalesPipeline: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('sales_pipeline')
+          .select('*, lead:leads(id, customer_name, phone, email), customer:customers(id, name), salesperson:employees(id, name)')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+
+        if (!error) set({ salesPipeline: data || [] });
+      },
+
+      fetchAppointments: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('appointments')
+          .select('*, lead:leads(id, customer_name)')
+          .eq('company_id', companyId)
+          .order('start_time');
+
+        if (!error) set({ appointments: data || [] });
+      },
+
       fetchAllData: async () => {
-        const { companyId, fetchEmployees, fetchCustomers } = get();
+        const { companyId, fetchEmployees, fetchCustomers, fetchLeads, fetchSalesPipeline, fetchAppointments } = get();
         if (!companyId) return;
         set({ isLoading: true });
-        await Promise.all([fetchEmployees(), fetchCustomers()]);
+        await Promise.all([
+          fetchEmployees(),
+          fetchCustomers(),
+          fetchLeads(),
+          fetchSalesPipeline(),
+          fetchAppointments()
+        ]);
         set({ isLoading: false });
       }
     }),

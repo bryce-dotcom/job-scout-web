@@ -5,6 +5,8 @@ import { useStore } from './lib/store'
 import Login from './pages/Login'
 import Employees from './pages/Employees'
 import Customers from './pages/Customers'
+import Leads from './pages/Leads'
+import SalesPipeline from './pages/SalesPipeline'
 import Layout from './components/Layout'
 
 function Dashboard() {
@@ -110,6 +112,8 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/employees" element={<Employees />} />
           <Route path="/customers" element={<Customers />} />
+          <Route path="/leads" element={<Leads />} />
+          <Route path="/pipeline" element={<SalesPipeline />} />
         </Route>
       </Routes>
     </BrowserRouter>

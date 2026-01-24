@@ -10,25 +10,32 @@
 - [x] Multi-tenant foundation (companies table)
 - [x] Employees module (CRUD, cards, filters)
 - [x] Customers module (CRUD, search, status filters)
+- [x] Leads module (CRUD, quick actions, convert to customer)
+- [x] Sales Pipeline (Kanban board, stage management)
+- [x] Appointments scheduling
 - [x] Layout with navigation
 - [x] Protected routes
 
 ## In Progress
-- Leads & Sales Pipeline
+- Quotes module
 
 ## Next Up
-- Leads module
-- Quotes module
 - Jobs module
+- Invoicing
 - Settings page (company profile)
+- Reports/Dashboard widgets
 
 ## Database Tables
 - [x] companies (multi-tenant root)
 - [x] employees
 - [x] customers
-- [ ] leads
+- [x] leads
+- [x] sales_pipeline
+- [x] lead_payments
+- [x] appointments
 - [ ] quotes
 - [ ] jobs
+- [ ] invoices
 
 ## Blockers
 None
