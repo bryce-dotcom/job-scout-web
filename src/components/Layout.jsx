@@ -19,41 +19,96 @@ import {
   LogOut,
   Menu,
   X,
-  ChevronDown
+  ChevronDown,
+  MapPin
 } from 'lucide-react'
 import logo from '../assets/logo.png'
 
 // Theme context
 const ThemeContext = createContext(null)
 
-export const useTheme = () => {
-  const context = useContext(ThemeContext)
-  return context || {
-    theme: {
-      bg: '#09090b',
-      bgCard: '#18181b',
-      bgCardHover: '#27272a',
-      border: '#27272a',
-      text: '#ffffff',
-      textSecondary: '#a1a1aa',
-      textMuted: '#71717a',
-      accent: '#f97316',
-      accentBg: 'rgba(249,115,22,0.15)'
-    }
-  }
+// Job Scout Theme - Forest Green with Topo aesthetic
+const theme = {
+  bg: '#0c1210',
+  bgCard: '#151f1a',
+  bgCardHover: '#1e2d25',
+  border: '#2a3f32',
+  text: '#f0fdf4',
+  textSecondary: '#9cb3a3',
+  textMuted: '#6b8073',
+  accent: '#22c55e',
+  accentHover: '#16a34a',
+  accentBg: 'rgba(34,197,94,0.15)',
+  shadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2)',
+  shadowLg: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.2)'
 }
 
-const theme = {
-  bg: '#09090b',
-  bgCard: '#18181b',
-  bgCardHover: '#27272a',
-  border: '#27272a',
-  text: '#ffffff',
-  textSecondary: '#a1a1aa',
-  textMuted: '#71717a',
-  accent: '#f97316',
-  accentBg: 'rgba(249,115,22,0.15)'
+export const useTheme = () => {
+  const context = useContext(ThemeContext)
+  return context || { theme }
 }
+
+// SVG Topo Map Pattern - subtle contour lines
+const TopoBackground = () => (
+  <svg
+    style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      opacity: 0.06,
+      pointerEvents: 'none'
+    }}
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <defs>
+      <pattern id="topoPattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
+        {/* Contour lines */}
+        <path
+          d="M0,50 Q50,20 100,50 T200,50"
+          fill="none"
+          stroke="#22c55e"
+          strokeWidth="0.5"
+        />
+        <path
+          d="M0,80 Q40,50 80,70 Q120,90 160,60 Q200,30 200,80"
+          fill="none"
+          stroke="#22c55e"
+          strokeWidth="0.5"
+        />
+        <path
+          d="M0,120 Q30,100 60,110 Q100,130 140,100 Q180,70 200,120"
+          fill="none"
+          stroke="#22c55e"
+          strokeWidth="0.5"
+        />
+        <path
+          d="M0,160 Q50,140 100,160 T200,160"
+          fill="none"
+          stroke="#22c55e"
+          strokeWidth="0.5"
+        />
+        <path
+          d="M50,0 Q30,50 50,100 Q70,150 50,200"
+          fill="none"
+          stroke="#22c55e"
+          strokeWidth="0.5"
+        />
+        <path
+          d="M150,0 Q170,60 150,100 Q130,140 150,200"
+          fill="none"
+          stroke="#22c55e"
+          strokeWidth="0.5"
+        />
+        {/* Subtle circles for elevation markers */}
+        <circle cx="100" cy="100" r="30" fill="none" stroke="#22c55e" strokeWidth="0.3" />
+        <circle cx="100" cy="100" r="50" fill="none" stroke="#22c55e" strokeWidth="0.3" />
+      </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#topoPattern)" />
+  </svg>
+)
 
 export default function Layout() {
   const navigate = useNavigate()
@@ -108,16 +163,18 @@ export default function Layout() {
               backgroundColor: 'transparent',
               border: 'none',
               borderRadius: '8px',
-              color: theme.textSecondary,
+              color: theme.textMuted,
               fontSize: '14px',
               cursor: 'pointer',
-              transition: 'all 0.15s'
+              transition: 'all 0.2s ease'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = theme.bgCardHover
+              e.currentTarget.style.color = theme.accent
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = 'transparent'
+              e.currentTarget.style.color = theme.textMuted
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -128,7 +185,7 @@ export default function Layout() {
               size={16}
               style={{
                 transform: jobsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 0.2s'
+                transition: 'transform 0.2s ease'
               }}
             />
           </button>
@@ -146,11 +203,11 @@ export default function Layout() {
                     gap: '12px',
                     padding: '8px 12px',
                     borderRadius: '8px',
-                    color: isActive ? theme.accent : theme.textSecondary,
+                    color: isActive ? theme.accent : theme.textMuted,
                     backgroundColor: isActive ? theme.accentBg : 'transparent',
                     textDecoration: 'none',
                     fontSize: '14px',
-                    transition: 'all 0.15s'
+                    transition: 'all 0.2s ease'
                   })}
                 >
                   <child.icon size={18} />
@@ -174,11 +231,12 @@ export default function Layout() {
           gap: '12px',
           padding: '10px 12px',
           borderRadius: '8px',
-          color: isActive ? theme.accent : theme.textSecondary,
+          color: isActive ? theme.accent : theme.textMuted,
           backgroundColor: isActive ? theme.accentBg : 'transparent',
           textDecoration: 'none',
           fontSize: '14px',
-          transition: 'all 0.15s'
+          fontWeight: isActive ? '500' : '400',
+          transition: 'all 0.2s ease'
         })}
       >
         <item.icon size={20} />
@@ -196,7 +254,7 @@ export default function Layout() {
       }}>
         {/* Desktop Sidebar */}
         <aside style={{
-          width: '240px',
+          width: '260px',
           backgroundColor: theme.bgCard,
           borderRight: `1px solid ${theme.border}`,
           display: 'flex',
@@ -205,23 +263,44 @@ export default function Layout() {
           top: 0,
           left: 0,
           bottom: 0,
-          zIndex: 40
+          zIndex: 40,
+          boxShadow: theme.shadowLg
         }}
         className="hidden md:flex"
         >
           {/* Logo/Company */}
           <div style={{
-            padding: '20px 16px',
+            padding: '24px 20px',
             borderBottom: `1px solid ${theme.border}`
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <img src={logo} alt="Job Scout" style={{ height: '40px' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '10px',
+                backgroundColor: theme.accentBg,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: `1px solid ${theme.accent}30`
+              }}>
+                <MapPin size={24} style={{ color: theme.accent }} />
+              </div>
               <div>
-                <div style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>
+                <div style={{
+                  fontSize: '18px',
+                  fontWeight: '700',
+                  color: theme.text,
+                  letterSpacing: '-0.02em'
+                }}>
                   Job Scout
                 </div>
                 {company && (
-                  <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                  <div style={{
+                    fontSize: '12px',
+                    color: theme.textMuted,
+                    marginTop: '2px'
+                  }}>
                     {company.company_name}
                   </div>
                 )}
@@ -235,7 +314,7 @@ export default function Layout() {
             padding: '16px 12px',
             overflowY: 'auto'
           }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               {navItems.map((item, index) => (
                 <NavItem key={item.to || index} item={item} />
               ))}
@@ -251,19 +330,23 @@ export default function Layout() {
               display: 'flex',
               alignItems: 'center',
               gap: '12px',
+              padding: '12px',
+              backgroundColor: theme.bg,
+              borderRadius: '10px',
               marginBottom: '12px'
             }}>
               <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                backgroundColor: theme.accent,
+                width: '40px',
+                height: '40px',
+                borderRadius: '10px',
+                background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accentHover} 100%)`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
                 fontWeight: '600',
-                fontSize: '14px'
+                fontSize: '16px',
+                boxShadow: `0 2px 8px ${theme.accent}40`
               }}>
                 {displayName.charAt(0).toUpperCase()}
               </div>
@@ -285,7 +368,7 @@ export default function Layout() {
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap'
                 }}>
-                  {user?.role || 'User'}
+                  {user?.role || 'Team Member'}
                 </div>
               </div>
             </div>
@@ -301,18 +384,20 @@ export default function Layout() {
                 backgroundColor: 'transparent',
                 border: `1px solid ${theme.border}`,
                 borderRadius: '8px',
-                color: theme.textSecondary,
+                color: theme.textMuted,
                 fontSize: '14px',
                 cursor: 'pointer',
-                transition: 'all 0.15s'
+                transition: 'all 0.2s ease'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = theme.bgCardHover
                 e.currentTarget.style.color = theme.text
+                e.currentTarget.style.borderColor = theme.textMuted
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent'
-                e.currentTarget.style.color = theme.textSecondary
+                e.currentTarget.style.color = theme.textMuted
+                e.currentTarget.style.borderColor = theme.border
               }}
             >
               <LogOut size={18} />
@@ -328,20 +413,36 @@ export default function Layout() {
             top: 0,
             left: 0,
             right: 0,
-            height: '60px',
+            height: '64px',
             backgroundColor: theme.bgCard,
             borderBottom: `1px solid ${theme.border}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '0 16px',
-            zIndex: 50
+            zIndex: 50,
+            boxShadow: theme.shadow
           }}
           className="md:hidden"
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <img src={logo} alt="Job Scout" style={{ height: '32px' }} />
-            <span style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '8px',
+              backgroundColor: theme.accentBg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <MapPin size={20} style={{ color: theme.accent }} />
+            </div>
+            <span style={{
+              fontSize: '18px',
+              fontWeight: '700',
+              color: theme.text,
+              letterSpacing: '-0.02em'
+            }}>
               Job Scout
             </span>
           </div>
@@ -367,15 +468,16 @@ export default function Layout() {
               style={{
                 position: 'fixed',
                 inset: 0,
-                backgroundColor: 'rgba(0,0,0,0.5)',
-                zIndex: 45
+                backgroundColor: 'rgba(0,0,0,0.6)',
+                zIndex: 45,
+                backdropFilter: 'blur(4px)'
               }}
               className="md:hidden"
             />
             <aside
               style={{
                 position: 'fixed',
-                top: '60px',
+                top: '64px',
                 left: 0,
                 bottom: 0,
                 width: '280px',
@@ -384,7 +486,8 @@ export default function Layout() {
                 zIndex: 46,
                 display: 'flex',
                 flexDirection: 'column',
-                overflowY: 'auto'
+                overflowY: 'auto',
+                boxShadow: theme.shadowLg
               }}
               className="md:hidden"
             >
@@ -393,14 +496,16 @@ export default function Layout() {
                   padding: '16px',
                   borderBottom: `1px solid ${theme.border}`
                 }}>
-                  <div style={{ fontSize: '14px', color: theme.textMuted }}>Company</div>
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>
+                    Company
+                  </div>
                   <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
                     {company.company_name}
                   </div>
                 </div>
               )}
               <nav style={{ flex: 1, padding: '16px 12px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   {navItems.map((item, index) => (
                     <NavItem key={item.to || index} item={item} mobile />
                   ))}
@@ -414,13 +519,16 @@ export default function Layout() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '12px',
-                  marginBottom: '12px'
+                  marginBottom: '12px',
+                  padding: '12px',
+                  backgroundColor: theme.bg,
+                  borderRadius: '10px'
                 }}>
                   <div style={{
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '50%',
-                    backgroundColor: theme.accent,
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    background: `linear-gradient(135deg, ${theme.accent} 0%, ${theme.accentHover} 100%)`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -434,7 +542,7 @@ export default function Layout() {
                       {displayName}
                     </div>
                     <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                      {user?.role || 'User'}
+                      {user?.role || 'Team Member'}
                     </div>
                   </div>
                 </div>
@@ -450,7 +558,7 @@ export default function Layout() {
                     backgroundColor: 'transparent',
                     border: `1px solid ${theme.border}`,
                     borderRadius: '8px',
-                    color: theme.textSecondary,
+                    color: theme.textMuted,
                     fontSize: '14px',
                     cursor: 'pointer'
                   }}
@@ -467,13 +575,20 @@ export default function Layout() {
         <main
           style={{
             flex: 1,
-            marginLeft: '240px',
+            marginLeft: '260px',
             minHeight: '100vh',
-            backgroundColor: theme.bg
+            backgroundColor: theme.bg,
+            position: 'relative'
           }}
-          className="md:ml-[240px] ml-0 mt-[60px] md:mt-0"
+          className="md:ml-[260px] ml-0 mt-[64px] md:mt-0"
         >
-          <Outlet />
+          {/* Topo Background */}
+          <TopoBackground />
+
+          {/* Content */}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <Outlet />
+          </div>
         </main>
       </div>
 
@@ -483,18 +598,34 @@ export default function Layout() {
           .hidden { display: none !important; }
           .md\\:hidden { display: flex !important; }
           .md\\:flex { display: none !important; }
-          .md\\:ml-\\[240px\\] { margin-left: 0 !important; }
+          .md\\:ml-\\[260px\\] { margin-left: 0 !important; }
           .ml-0 { margin-left: 0 !important; }
-          .mt-\\[60px\\] { margin-top: 60px !important; }
-          .md\\:mt-0 { margin-top: 60px !important; }
+          .mt-\\[64px\\] { margin-top: 64px !important; }
+          .md\\:mt-0 { margin-top: 64px !important; }
         }
         @media (min-width: 769px) {
           .hidden { display: flex !important; }
           .md\\:hidden { display: none !important; }
           .md\\:flex { display: flex !important; }
-          .md\\:ml-\\[240px\\] { margin-left: 240px !important; }
-          .mt-\\[60px\\] { margin-top: 0 !important; }
+          .md\\:ml-\\[260px\\] { margin-left: 260px !important; }
+          .mt-\\[64px\\] { margin-top: 0 !important; }
           .md\\:mt-0 { margin-top: 0 !important; }
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+          background: ${theme.bg};
+        }
+        ::-webkit-scrollbar-thumb {
+          background: ${theme.border};
+          border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: ${theme.textMuted};
         }
       `}</style>
     </ThemeContext.Provider>
