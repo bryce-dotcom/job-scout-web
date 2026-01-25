@@ -127,14 +127,18 @@ Background: Subtle topo contour pattern
 - [x] Invoices (table view, payments tracking)
 - [x] Invoice Detail (payments section, add payment modal)
 - [x] Time Log (clock in/out, manual entry, filters)
+- [x] Inventory (card grid, low stock warnings, quantity adjust, location filter)
+- [x] Fleet (card view, status badges, PM tracking, quick status updates)
+- [x] Fleet Detail (maintenance history, rental history, mileage updates)
+- [x] Fleet Calendar (PM due dates, rental periods, out of service)
 
 ---
 
 ## In Progress
 
 - [ ] Appointments (calendar integration)
-- [ ] Work Order PDF generation
-- [ ] Custom Forms
+- [ ] Lighting Audits
+- [ ] Expenses tracking
 
 ---
 
@@ -145,18 +149,13 @@ Background: Subtle topo contour pattern
 - Work Order PDF generation
 - Custom Forms module
 
-### Phase 2: Resources & Expenses
-- Expenses tracking
-- Fleet management
-- Fleet maintenance
-- Inventory tracking
-
-### Phase 3: Utility & Rebates
+### Phase 2: Utility & Rebates
 - Utility Invoices
 - Utility Programs / Rebates
 - Lighting Audits module
 
-### Phase 4: Advanced Features
+### Phase 3: Advanced Features
+- Expenses tracking
 - Reports dashboard
 - AI assistant integration
 - Route optimization
@@ -207,10 +206,10 @@ useEffect(() => {
 7. Jobs ✅
 8. Invoices ✅
 9. Time Tracking ✅
-10. Appointments ← CURRENT
-11. Expenses
-12. Inventory
-13. Fleet
+10. Inventory ✅
+11. Fleet ✅
+12. Appointments ← CURRENT
+13. Expenses
 14. Lighting Audits
 
 ---

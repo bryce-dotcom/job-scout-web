@@ -16,6 +16,10 @@ import JobCalendar from './pages/JobCalendar'
 import Invoices from './pages/Invoices'
 import InvoiceDetail from './pages/InvoiceDetail'
 import TimeLog from './pages/TimeLog'
+import Inventory from './pages/Inventory'
+import Fleet from './pages/Fleet'
+import FleetDetail from './pages/FleetDetail'
+import FleetCalendar from './pages/FleetCalendar'
 import Layout, { useTheme } from './components/Layout'
 
 // Light theme fallback
@@ -181,6 +185,10 @@ function App() {
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/time-log" element={<TimeLog />} />
+          <Route path="/inventory" element={<Inventory />} />
+          <Route path="/fleet" element={<Fleet />} />
+          <Route path="/fleet/calendar" element={<FleetCalendar />} />
+          <Route path="/fleet/:id" element={<FleetDetail />} />
         </Route>
       </Routes>
     </BrowserRouter>

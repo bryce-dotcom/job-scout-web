@@ -35,6 +35,8 @@ export const useStore = create(
 
       // Fleet
       fleet: [],
+      fleetMaintenance: [],
+      fleetRentals: [],
 
       // Inventory
       inventory: [],
@@ -76,6 +78,8 @@ export const useStore = create(
           invoices: [],
           payments: [],
           fleet: [],
+          fleetMaintenance: [],
+          fleetRentals: [],
           inventory: [],
           lightingAudits: [],
           fixtureTypes: [],
@@ -269,11 +273,37 @@ export const useStore = create(
 
         const { data, error } = await supabase
           .from(TABLES.fleet)
-          .select(QUERIES.fleet)
+          .select('*')
           .eq('company_id', companyId)
           .order('name');
 
         if (!error) set({ fleet: data || [] });
+      },
+
+      fetchFleetMaintenance: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from(TABLES.fleet_maintenance)
+          .select('*, asset:fleet(id, name, asset_id)')
+          .eq('company_id', companyId)
+          .order('date', { ascending: false });
+
+        if (!error) set({ fleetMaintenance: data || [] });
+      },
+
+      fetchFleetRentals: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from(TABLES.fleet_rentals)
+          .select('*, asset:fleet(id, name, asset_id)')
+          .eq('company_id', companyId)
+          .order('start_date', { ascending: false });
+
+        if (!error) set({ fleetRentals: data || [] });
       },
 
       // ========================================
@@ -286,9 +316,9 @@ export const useStore = create(
 
         const { data, error } = await supabase
           .from(TABLES.inventory)
-          .select('*, product:products_services(id, name, sku)')
+          .select('*, product:products_services(id, name, unit_price)')
           .eq('company_id', companyId)
-          .order('id');
+          .order('name');
 
         if (!error) set({ inventory: data || [] });
       },
@@ -408,7 +438,11 @@ export const useStore = create(
           fetchJobs,
           fetchInvoices,
           fetchPayments,
-          fetchTimeLogs
+          fetchTimeLogs,
+          fetchInventory,
+          fetchFleet,
+          fetchFleetMaintenance,
+          fetchFleetRentals
         } = get();
 
         // Fetch core data in parallel
@@ -423,7 +457,11 @@ export const useStore = create(
           fetchJobs(),
           fetchInvoices(),
           fetchPayments(),
-          fetchTimeLogs()
+          fetchTimeLogs(),
+          fetchInventory(),
+          fetchFleet(),
+          fetchFleetMaintenance(),
+          fetchFleetRentals()
         ]);
 
         set({ isLoading: false });
