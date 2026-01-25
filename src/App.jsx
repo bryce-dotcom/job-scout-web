@@ -13,6 +13,9 @@ import QuoteDetail from './pages/QuoteDetail'
 import Jobs from './pages/Jobs'
 import JobDetail from './pages/JobDetail'
 import JobCalendar from './pages/JobCalendar'
+import Invoices from './pages/Invoices'
+import InvoiceDetail from './pages/InvoiceDetail'
+import TimeLog from './pages/TimeLog'
 import Layout, { useTheme } from './components/Layout'
 
 // Light theme fallback
@@ -175,6 +178,9 @@ function App() {
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/calendar" element={<JobCalendar />} />
           <Route path="/jobs/:id" element={<JobDetail />} />
+          <Route path="/invoices" element={<Invoices />} />
+          <Route path="/invoices/:id" element={<InvoiceDetail />} />
+          <Route path="/time-log" element={<TimeLog />} />
         </Route>
       </Routes>
     </BrowserRouter>

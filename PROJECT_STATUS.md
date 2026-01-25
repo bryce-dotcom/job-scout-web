@@ -116,50 +116,51 @@ Background: Subtle topo contour pattern
 - [x] Dashboard (basic)
 - [x] Employees (full CRUD)
 - [x] Customers (full CRUD)
+- [x] Leads (full CRUD, status workflow, convert to customer)
+- [x] Sales Pipeline (Kanban board with drag-drop)
+- [x] Products (catalog with categories)
+- [x] Quotes (list with line items, totals)
+- [x] Quote Detail (line items table, convert to job)
+- [x] Jobs (card list, status badges, quick actions)
+- [x] Job Detail (line items, time tracking progress bar, generate invoice)
+- [x] Job Calendar (monthly grid, status color coding)
+- [x] Invoices (table view, payments tracking)
+- [x] Invoice Detail (payments section, add payment modal)
+- [x] Time Log (clock in/out, manual entry, filters)
 
 ---
 
 ## In Progress
 
-- [ ] Leads (full CRUD, status workflow)
-- [ ] Sales Pipeline (Kanban board)
-- [ ] Appointments (calendar list)
-- [ ] Products & Services (catalog)
-- [ ] Quotes (with line items)
-- [ ] Quote Detail (line items, totals, convert to job)
+- [ ] Appointments (calendar integration)
+- [ ] Work Order PDF generation
+- [ ] Custom Forms
 
 ---
 
 ## Next Up
 
-### Phase 1: Complete Sales Flow
-- Leads page with quick actions
-- Pipeline Kanban
-- Quotes with line items
-- Convert quote to job
-
-### Phase 2: Jobs & Work
-- Jobs page (list + calendar views)
-- Job Detail (line items, time tracking)
+### Phase 1: Complete Operations
+- Appointments (calendar integration)
 - Work Order PDF generation
-- Custom Forms
+- Custom Forms module
 
-### Phase 3: Invoicing
-- Invoices (generate from job)
-- Payments (record payments)
-- Utility Invoices
-
-### Phase 4: Time & Resources
-- Time Log (clock in/out)
-- Expenses
+### Phase 2: Resources & Expenses
+- Expenses tracking
 - Fleet management
+- Fleet maintenance
 - Inventory tracking
 
-### Phase 5: Advanced
-- Lighting Audits module
+### Phase 3: Utility & Rebates
+- Utility Invoices
 - Utility Programs / Rebates
+- Lighting Audits module
+
+### Phase 4: Advanced Features
 - Reports dashboard
 - AI assistant integration
+- Route optimization
+- Communications log
 
 ---
 
@@ -200,14 +201,17 @@ useEffect(() => {
 1. Login ✅
 2. Employees ✅
 3. Customers ✅
-4. Leads & Sales Pipeline ← CURRENT
-5. Quotes
-6. Jobs
-7. Invoices
-8. Time Tracking
-9. Inventory
-10. Fleet
-11. Lighting Audits
+4. Leads & Sales Pipeline ✅
+5. Products ✅
+6. Quotes ✅
+7. Jobs ✅
+8. Invoices ✅
+9. Time Tracking ✅
+10. Appointments ← CURRENT
+11. Expenses
+12. Inventory
+13. Fleet
+14. Lighting Audits
 
 ---
 

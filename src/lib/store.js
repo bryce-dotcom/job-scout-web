@@ -25,6 +25,7 @@ export const useStore = create(
 
       // Jobs & Work
       jobs: [],
+      jobLines: [],
       timeLogs: [],
       expenses: [],
 
@@ -404,7 +405,10 @@ export const useStore = create(
           fetchAppointments,
           fetchProducts,
           fetchQuotes,
-          fetchJobs
+          fetchJobs,
+          fetchInvoices,
+          fetchPayments,
+          fetchTimeLogs
         } = get();
 
         // Fetch core data in parallel
@@ -416,7 +420,10 @@ export const useStore = create(
           fetchAppointments(),
           fetchProducts(),
           fetchQuotes(),
-          fetchJobs()
+          fetchJobs(),
+          fetchInvoices(),
+          fetchPayments(),
+          fetchTimeLogs()
         ]);
 
         set({ isLoading: false });

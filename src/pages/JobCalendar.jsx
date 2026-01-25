@@ -1,14 +1,28 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
-import { ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
+import { useTheme } from '../components/Layout'
+import { ChevronLeft, ChevronRight, ArrowLeft, Calendar } from 'lucide-react'
+
+// Light theme fallback
+const defaultTheme = {
+  bg: '#f7f5ef',
+  bgCard: '#ffffff',
+  bgCardHover: '#eef2eb',
+  border: '#d6cdb8',
+  text: '#2c3530',
+  textSecondary: '#4d5a52',
+  textMuted: '#7d8a7f',
+  accent: '#5a6349',
+  accentBg: 'rgba(90,99,73,0.12)'
+}
 
 const statusColors = {
-  'Scheduled': 'bg-blue-500',
-  'In Progress': 'bg-orange-500',
-  'Completed': 'bg-green-500',
-  'Cancelled': 'bg-red-500',
-  'On Hold': 'bg-yellow-500'
+  'Scheduled': '#5a6349',
+  'In Progress': '#c28b38',
+  'Completed': '#4a7c59',
+  'Cancelled': '#8b5a5a',
+  'On Hold': '#7d8a7f'
 }
 
 export default function JobCalendar() {
@@ -18,6 +32,10 @@ export default function JobCalendar() {
   const fetchJobs = useStore((state) => state.fetchJobs)
 
   const [currentDate, setCurrentDate] = useState(new Date())
+
+  // Theme with fallback
+  const themeContext = useTheme()
+  const theme = themeContext?.theme || defaultTheme
 
   useEffect(() => {
     if (!companyId) {
@@ -86,38 +104,80 @@ export default function JobCalendar() {
   }
 
   return (
-    <div className="p-6">
+    <div style={{ padding: '24px' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '24px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button
             onClick={() => navigate('/jobs')}
-            className="p-2 hover:bg-gray-100 rounded-md"
+            style={{
+              padding: '10px',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: theme.textSecondary
+            }}
           >
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-2xl font-bold text-gray-900">Job Calendar</h1>
+          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+            Job Calendar
+          </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             onClick={goToToday}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+            style={{
+              padding: '8px 16px',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              fontSize: '14px',
+              color: theme.text,
+              cursor: 'pointer'
+            }}
           >
             Today
           </button>
           <button
             onClick={prevMonth}
-            className="p-2 hover:bg-gray-100 rounded-md"
+            style={{
+              padding: '10px',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: theme.textSecondary
+            }}
           >
             <ChevronLeft size={20} />
           </button>
-          <span className="text-lg font-medium w-40 text-center">
+          <span style={{
+            width: '160px',
+            textAlign: 'center',
+            fontSize: '16px',
+            fontWeight: '600',
+            color: theme.text
+          }}>
             {monthNames[month]} {year}
           </span>
           <button
             onClick={nextMonth}
-            className="p-2 hover:bg-gray-100 rounded-md"
+            style={{
+              padding: '10px',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: theme.textSecondary
+            }}
           >
             <ChevronRight size={20} />
           </button>
@@ -125,58 +185,108 @@ export default function JobCalendar() {
       </div>
 
       {/* Legend */}
-      <div className="flex gap-4 mb-4 text-sm">
+      <div style={{
+        display: 'flex',
+        gap: '16px',
+        marginBottom: '16px',
+        flexWrap: 'wrap'
+      }}>
         {Object.entries(statusColors).map(([status, color]) => (
-          <div key={status} className="flex items-center gap-1">
-            <div className={`w-3 h-3 rounded ${color}`} />
-            <span className="text-gray-600">{status}</span>
+          <div key={status} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{
+              width: '12px',
+              height: '12px',
+              borderRadius: '4px',
+              backgroundColor: color
+            }} />
+            <span style={{ fontSize: '13px', color: theme.textSecondary }}>{status}</span>
           </div>
         ))}
       </div>
 
       {/* Calendar Grid */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div style={{
+        backgroundColor: theme.bgCard,
+        borderRadius: '12px',
+        border: `1px solid ${theme.border}`,
+        overflow: 'hidden'
+      }}>
         {/* Day Headers */}
-        <div className="grid grid-cols-7 bg-gray-50 border-b">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          backgroundColor: theme.accentBg,
+          borderBottom: `1px solid ${theme.border}`
+        }}>
           {dayNames.map(day => (
-            <div key={day} className="px-2 py-3 text-center text-sm font-medium text-gray-600">
+            <div key={day} style={{
+              padding: '12px 8px',
+              textAlign: 'center',
+              fontSize: '13px',
+              fontWeight: '600',
+              color: theme.textMuted
+            }}>
               {day}
             </div>
           ))}
         </div>
 
         {/* Calendar Days */}
-        <div className="grid grid-cols-7">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)'
+        }}>
           {calendarDays.map((day, index) => {
             const dayJobs = day ? getJobsForDate(day) : []
 
             return (
               <div
                 key={index}
-                className={`min-h-[120px] border-b border-r p-1 ${
-                  day ? 'bg-white' : 'bg-gray-50'
-                } ${isToday(day) ? 'bg-blue-50' : ''}`}
+                style={{
+                  minHeight: '120px',
+                  borderBottom: `1px solid ${theme.border}`,
+                  borderRight: (index + 1) % 7 !== 0 ? `1px solid ${theme.border}` : 'none',
+                  padding: '8px',
+                  backgroundColor: day ? (isToday(day) ? 'rgba(90,99,73,0.08)' : 'transparent') : theme.accentBg
+                }}
               >
                 {day && (
                   <>
-                    <div className={`text-sm font-medium mb-1 ${
-                      isToday(day) ? 'text-blue-600' : 'text-gray-900'
-                    }`}>
+                    <div style={{
+                      fontSize: '14px',
+                      fontWeight: isToday(day) ? '600' : '500',
+                      color: isToday(day) ? theme.accent : theme.text,
+                      marginBottom: '6px'
+                    }}>
                       {day}
                     </div>
-                    <div className="space-y-1">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {dayJobs.slice(0, 3).map(job => (
                         <div
                           key={job.id}
                           onClick={() => navigate(`/jobs/${job.id}`)}
-                          className={`${statusColors[job.status]} text-white text-xs px-1.5 py-1 rounded truncate cursor-pointer hover:opacity-80`}
+                          style={{
+                            backgroundColor: statusColors[job.status] || statusColors['Scheduled'],
+                            color: '#ffffff',
+                            fontSize: '11px',
+                            padding: '4px 6px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}
                           title={job.job_title || job.customer?.name || 'Untitled'}
                         >
                           {job.job_title || job.customer?.name || 'Untitled'}
                         </div>
                       ))}
                       {dayJobs.length > 3 && (
-                        <div className="text-xs text-gray-500 px-1">
+                        <div style={{
+                          fontSize: '11px',
+                          color: theme.textMuted,
+                          padding: '2px 4px'
+                        }}>
                           +{dayJobs.length - 3} more
                         </div>
                       )}
