@@ -20,6 +20,13 @@ import Inventory from './pages/Inventory'
 import Fleet from './pages/Fleet'
 import FleetDetail from './pages/FleetDetail'
 import FleetCalendar from './pages/FleetCalendar'
+import LightingAudits from './pages/LightingAudits'
+import NewLightingAudit from './pages/NewLightingAudit'
+import LightingAuditDetail from './pages/LightingAuditDetail'
+import FixtureTypes from './pages/FixtureTypes'
+import UtilityProviders from './pages/UtilityProviders'
+import UtilityPrograms from './pages/UtilityPrograms'
+import RebateRates from './pages/RebateRates'
 import Layout, { useTheme } from './components/Layout'
 
 // Light theme fallback
@@ -189,6 +196,13 @@ function App() {
           <Route path="/fleet" element={<Fleet />} />
           <Route path="/fleet/calendar" element={<FleetCalendar />} />
           <Route path="/fleet/:id" element={<FleetDetail />} />
+          <Route path="/lighting-audits" element={<LightingAudits />} />
+          <Route path="/lighting-audits/new" element={<NewLightingAudit />} />
+          <Route path="/lighting-audits/:id" element={<LightingAuditDetail />} />
+          <Route path="/fixture-types" element={<FixtureTypes />} />
+          <Route path="/utility-providers" element={<UtilityProviders />} />
+          <Route path="/utility-programs" element={<UtilityPrograms />} />
+          <Route path="/utility-programs/:id/rates" element={<RebateRates />} />
         </Route>
       </Routes>
     </BrowserRouter>

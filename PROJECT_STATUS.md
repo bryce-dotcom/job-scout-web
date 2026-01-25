@@ -131,13 +131,19 @@ Background: Subtle topo contour pattern
 - [x] Fleet (card view, status badges, PM tracking, quick status updates)
 - [x] Fleet Detail (maintenance history, rental history, mileage updates)
 - [x] Fleet Calendar (PM due dates, rental periods, out of service)
+- [x] Lighting Audits (list view, stats cards, status filters)
+- [x] New Lighting Audit (multi-step form with area calculations)
+- [x] Lighting Audit Detail (areas table, status workflow, recalculation)
+- [x] Fixture Types (reference table for common fixtures)
+- [x] Utility Providers (table with rebate program tracking)
+- [x] Utility Programs (card view with program details, rates link)
+- [x] Rebate Rates (per-program rates by fixture category)
 
 ---
 
 ## In Progress
 
 - [ ] Appointments (calendar integration)
-- [ ] Lighting Audits
 - [ ] Expenses tracking
 
 ---
@@ -148,18 +154,17 @@ Background: Subtle topo contour pattern
 - Appointments (calendar integration)
 - Work Order PDF generation
 - Custom Forms module
-
-### Phase 2: Utility & Rebates
-- Utility Invoices
-- Utility Programs / Rebates
-- Lighting Audits module
-
-### Phase 3: Advanced Features
 - Expenses tracking
+
+### Phase 2: Utility & Reporting
+- Utility Invoices
 - Reports dashboard
 - AI assistant integration
+
+### Phase 3: Advanced Features
 - Route optimization
 - Communications log
+- Mobile-optimized views
 
 ---
 
@@ -208,9 +213,9 @@ useEffect(() => {
 9. Time Tracking ✅
 10. Inventory ✅
 11. Fleet ✅
-12. Appointments ← CURRENT
-13. Expenses
-14. Lighting Audits
+12. Lighting Audits ✅ (with Fixture Types, Utility Providers, Utility Programs, Rebate Rates)
+13. Appointments ← CURRENT
+14. Expenses
 
 ---
 

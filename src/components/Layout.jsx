@@ -15,6 +15,9 @@ import {
   Truck,
   Package,
   Lightbulb,
+  ClipboardList,
+  Building,
+  FileStack,
   Settings,
   LogOut,
   Menu,
@@ -131,6 +134,7 @@ export default function Layout() {
   const clearSession = useStore((state) => state.clearSession)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [jobsExpanded, setJobsExpanded] = useState(false)
+  const [lightingExpanded, setLightingExpanded] = useState(false)
 
   const handleLogout = async () => {
     await clearSession()
@@ -146,6 +150,7 @@ export default function Layout() {
     {
       label: 'Jobs',
       icon: Briefcase,
+      expandKey: 'jobs',
       children: [
         { to: '/jobs', icon: Briefcase, label: 'All Jobs' },
         { to: '/jobs/calendar', icon: Calendar, label: 'Calendar' }
@@ -156,7 +161,17 @@ export default function Layout() {
     { to: '/employees', icon: Users, label: 'Employees' },
     { to: '/fleet', icon: Truck, label: 'Fleet' },
     { to: '/inventory', icon: Package, label: 'Inventory' },
-    { to: '/lighting-audits', icon: Lightbulb, label: 'Lighting Audits' },
+    {
+      label: 'Lighting & Rebates',
+      icon: Lightbulb,
+      expandKey: 'lighting',
+      children: [
+        { to: '/lighting-audits', icon: ClipboardList, label: 'Lighting Audits' },
+        { to: '/fixture-types', icon: Lightbulb, label: 'Fixture Types' },
+        { to: '/utility-providers', icon: Building, label: 'Utility Providers' },
+        { to: '/utility-programs', icon: FileStack, label: 'Utility Programs' }
+      ]
+    },
     { to: '/settings', icon: Settings, label: 'Settings' }
   ]
 
@@ -164,10 +179,18 @@ export default function Layout() {
 
   const NavItem = ({ item, mobile = false }) => {
     if (item.children) {
+      const isExpanded = item.expandKey === 'lighting' ? lightingExpanded :
+                         item.expandKey === 'jobs' ? jobsExpanded : false
+      const toggleExpand = item.expandKey === 'lighting'
+        ? () => setLightingExpanded(!lightingExpanded)
+        : item.expandKey === 'jobs'
+        ? () => setJobsExpanded(!jobsExpanded)
+        : () => {}
+
       return (
         <div>
           <button
-            onClick={() => setJobsExpanded(!jobsExpanded)}
+            onClick={toggleExpand}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -198,18 +221,18 @@ export default function Layout() {
             <ChevronDown
               size={16}
               style={{
-                transform: jobsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
                 transition: 'transform 0.15s ease'
               }}
             />
           </button>
-          {jobsExpanded && (
+          {isExpanded && (
             <div style={{ marginLeft: '20px', marginTop: '4px' }}>
               {item.children.map((child) => (
                 <NavLink
                   key={child.to}
                   to={child.to}
-                  end={child.to === '/jobs'}
+                  end={child.to === '/jobs' || child.to === '/lighting-audits'}
                   onClick={() => mobile && setMobileMenuOpen(false)}
                   style={({ isActive }) => ({
                     display: 'flex',

@@ -43,9 +43,11 @@ export const useStore = create(
 
       // Lighting Audits
       lightingAudits: [],
+      auditAreas: [],
       fixtureTypes: [],
       utilityProviders: [],
       utilityPrograms: [],
+      rebateRates: [],
 
       // Communications
       communications: [],
@@ -82,9 +84,11 @@ export const useStore = create(
           fleetRentals: [],
           inventory: [],
           lightingAudits: [],
+          auditAreas: [],
           fixtureTypes: [],
           utilityProviders: [],
           utilityPrograms: [],
+          rebateRates: [],
           communications: [],
           routes: []
         });
@@ -332,12 +336,24 @@ export const useStore = create(
         if (!companyId) return;
 
         const { data, error } = await supabase
-          .from(TABLES.lighting_audits)
-          .select(QUERIES.lightingAudits)
+          .from('lighting_audits')
+          .select('*, customer:customers(id, name), job:jobs(id, job_id), utility_provider:utility_providers(id, provider_name)')
           .eq('company_id', companyId)
-          .order('audit_date', { ascending: false });
+          .order('created_at', { ascending: false });
 
         if (!error) set({ lightingAudits: data || [] });
+      },
+
+      fetchAuditAreas: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('audit_areas')
+          .select('*, audit:lighting_audits(id, audit_id), led_replacement:products_services(id, name)')
+          .eq('company_id', companyId);
+
+        if (!error) set({ auditAreas: data || [] });
       },
 
       fetchFixtureTypes: async () => {
@@ -345,11 +361,10 @@ export const useStore = create(
         if (!companyId) return;
 
         const { data, error } = await supabase
-          .from(TABLES.fixture_types)
+          .from('fixture_types')
           .select('*')
           .eq('company_id', companyId)
-          .eq('active', true)
-          .order('name');
+          .order('fixture_name');
 
         if (!error) set({ fixtureTypes: data || [] });
       },
@@ -359,10 +374,9 @@ export const useStore = create(
         if (!companyId) return;
 
         const { data, error } = await supabase
-          .from(TABLES.utility_providers)
+          .from('utility_providers')
           .select('*')
           .eq('company_id', companyId)
-          .eq('active', true)
           .order('provider_name');
 
         if (!error) set({ utilityProviders: data || [] });
@@ -373,13 +387,24 @@ export const useStore = create(
         if (!companyId) return;
 
         const { data, error } = await supabase
-          .from(TABLES.utility_programs)
+          .from('utility_programs')
           .select('*, utility_provider:utility_providers(id, provider_name)')
           .eq('company_id', companyId)
-          .eq('active', true)
           .order('program_name');
 
         if (!error) set({ utilityPrograms: data || [] });
+      },
+
+      fetchRebateRates: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('rebate_rates')
+          .select('*, program:utility_programs(id, program_name)')
+          .eq('company_id', companyId);
+
+        if (!error) set({ rebateRates: data || [] });
       },
 
       // ========================================
@@ -442,7 +467,13 @@ export const useStore = create(
           fetchInventory,
           fetchFleet,
           fetchFleetMaintenance,
-          fetchFleetRentals
+          fetchFleetRentals,
+          fetchLightingAudits,
+          fetchAuditAreas,
+          fetchFixtureTypes,
+          fetchUtilityProviders,
+          fetchUtilityPrograms,
+          fetchRebateRates
         } = get();
 
         // Fetch core data in parallel
@@ -461,7 +492,13 @@ export const useStore = create(
           fetchInventory(),
           fetchFleet(),
           fetchFleetMaintenance(),
-          fetchFleetRentals()
+          fetchFleetRentals(),
+          fetchLightingAudits(),
+          fetchAuditAreas(),
+          fetchFixtureTypes(),
+          fetchUtilityProviders(),
+          fetchUtilityPrograms(),
+          fetchRebateRates()
         ]);
 
         set({ isLoading: false });
