@@ -15,8 +15,14 @@ import {
   Plus,
   X,
   Save,
-  ExternalLink
+  ExternalLink,
+  Code,
+  Database,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react'
+import { seedSampleData, clearAllData } from '../lib/seedData'
+import { toast } from '../lib/toast'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -30,7 +36,7 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-const tabs = [
+const baseTabs = [
   { id: 'company', label: 'Company Profile', icon: Building2 },
   { id: 'business_units', label: 'Business Units', icon: Layers },
   { id: 'lead_sources', label: 'Lead Sources', icon: Target },
@@ -47,12 +53,22 @@ export default function Settings() {
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const setCompany = useStore((state) => state.setCompany)
+  const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
   const settings = useStore((state) => state.settings)
   const fetchSettings = useStore((state) => state.fetchSettings)
+  const fetchAllData = useStore((state) => state.fetchAllData)
   const getSettingList = useStore((state) => state.getSettingList)
 
+  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner'
+  const tabs = isAdmin
+    ? [...baseTabs, { id: 'developer_tools', label: 'Developer Tools', icon: Code }]
+    : baseTabs
+
   const [activeTab, setActiveTab] = useState('company')
+  const [seeding, setSeeding] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [companyForm, setCompanyForm] = useState({
     company_name: '',
     owner_email: '',
@@ -106,9 +122,9 @@ export default function Settings() {
 
     if (!error && data) {
       setCompany(data)
-      alert('Company profile saved!')
+      toast.success('Company profile saved!')
     } else {
-      alert('Error saving: ' + error?.message)
+      toast.error('Error saving: ' + error?.message)
     }
     setSaving(false)
   }
@@ -532,6 +548,169 @@ export default function Settings() {
                   </span>
                 </div>
               ))}
+            </div>
+          </div>
+        )
+
+      case 'developer_tools':
+        return (
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Developer Tools</h3>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '24px' }}>
+              Tools for testing and development. Use with caution in production.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '500px' }}>
+              {/* Seed Sample Data */}
+              <div style={{
+                padding: '20px',
+                backgroundColor: theme.bg,
+                borderRadius: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <Database size={24} style={{ color: theme.accent, flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>
+                      Seed Sample Data
+                    </div>
+                    <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
+                      Populate the database with sample customers, jobs, invoices, products, leads, and more for testing.
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setSeeding(true)
+                        const result = await seedSampleData(companyId)
+                        if (result.success) {
+                          toast.success(result.message)
+                          fetchAllData()
+                        } else {
+                          toast.error(result.message)
+                        }
+                        setSeeding(false)
+                      }}
+                      disabled={seeding}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 20px',
+                        backgroundColor: theme.accent,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        cursor: seeding ? 'not-allowed' : 'pointer',
+                        opacity: seeding ? 0.7 : 1
+                      }}
+                    >
+                      <Database size={16} />
+                      {seeding ? 'Seeding...' : 'Seed Sample Data'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Clear All Data */}
+              <div style={{
+                padding: '20px',
+                backgroundColor: 'rgba(194,90,90,0.08)',
+                borderRadius: '12px',
+                border: '1px solid rgba(194,90,90,0.2)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <Trash2 size={24} style={{ color: '#c25a5a', flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: '#c25a5a', marginBottom: '4px' }}>
+                      Clear All Data
+                    </div>
+                    <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
+                      Delete all records for this company except your user account. This action cannot be undone.
+                    </div>
+                    {!showClearConfirm ? (
+                      <button
+                        onClick={() => setShowClearConfirm(true)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '10px 20px',
+                          backgroundColor: '#c25a5a',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Trash2 size={16} />
+                        Clear All Data
+                      </button>
+                    ) : (
+                      <div style={{
+                        padding: '16px',
+                        backgroundColor: 'rgba(194,90,90,0.1)',
+                        borderRadius: '8px',
+                        marginTop: '8px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                          <AlertTriangle size={18} style={{ color: '#c25a5a' }} />
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#c25a5a' }}>
+                            Are you sure? This will delete everything.
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={async () => {
+                              setClearing(true)
+                              const result = await clearAllData(companyId, user?.id)
+                              if (result.success) {
+                                toast.success(result.message)
+                                fetchAllData()
+                              } else {
+                                toast.error(result.message)
+                              }
+                              setClearing(false)
+                              setShowClearConfirm(false)
+                            }}
+                            disabled={clearing}
+                            style={{
+                              padding: '8px 16px',
+                              backgroundColor: '#c25a5a',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              cursor: clearing ? 'not-allowed' : 'pointer',
+                              opacity: clearing ? 0.7 : 1
+                            }}
+                          >
+                            {clearing ? 'Clearing...' : 'Yes, Clear Everything'}
+                          </button>
+                          <button
+                            onClick={() => setShowClearConfirm(false)}
+                            disabled={clearing}
+                            style={{
+                              padding: '8px 16px',
+                              backgroundColor: 'transparent',
+                              color: theme.textMuted,
+                              border: `1px solid ${theme.border}`,
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )

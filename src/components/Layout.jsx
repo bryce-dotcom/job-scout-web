@@ -597,7 +597,62 @@ export default function Layout() {
           .ml-0 { margin-left: 0 !important; }
           .mt-\\[64px\\] { margin-top: 64px !important; }
           .md\\:mt-0 { margin-top: 64px !important; }
+
+          /* Mobile grid responsiveness */
+          .responsive-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .responsive-grid-2 {
+            grid-template-columns: 1fr !important;
+          }
+
+          /* Mobile table scroll */
+          .table-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+
+          /* Mobile padding adjustments */
+          .page-padding {
+            padding: 16px !important;
+          }
+
+          /* Mobile header flex wrap */
+          .page-header {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 12px !important;
+          }
+
+          /* Mobile stat cards */
+          .stat-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 12px !important;
+          }
+
+          /* Mobile modal */
+          .modal-content {
+            width: 95vw !important;
+            max-width: 95vw !important;
+            max-height: 90vh !important;
+            margin: 5vh auto !important;
+          }
+
+          /* Mobile form layout */
+          .form-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          /* Mobile button stack */
+          .button-group {
+            flex-direction: column !important;
+            width: 100% !important;
+          }
+          .button-group button {
+            width: 100% !important;
+          }
         }
+
         @media (min-width: 769px) {
           .hidden { display: flex !important; }
           .md\\:hidden { display: none !important; }
@@ -605,6 +660,13 @@ export default function Layout() {
           .md\\:ml-\\[260px\\] { margin-left: 260px !important; }
           .mt-\\[64px\\] { margin-top: 0 !important; }
           .md\\:mt-0 { margin-top: 0 !important; }
+        }
+
+        @media (max-width: 480px) {
+          /* Extra small devices */
+          .stat-grid {
+            grid-template-columns: 1fr !important;
+          }
         }
 
         /* Scrollbar styling */
@@ -621,6 +683,16 @@ export default function Layout() {
         }
         ::-webkit-scrollbar-thumb:hover {
           background: ${theme.textMuted};
+        }
+
+        /* Global responsive utilities */
+        * {
+          box-sizing: border-box;
+        }
+
+        /* Prevent horizontal scroll */
+        html, body {
+          overflow-x: hidden;
         }
       `}</style>
     </ThemeContext.Provider>

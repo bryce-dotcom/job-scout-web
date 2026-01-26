@@ -32,6 +32,7 @@ import Settings from './pages/Settings'
 import Reports from './pages/Reports'
 import CommunicationsLog from './pages/CommunicationsLog'
 import Layout from './components/Layout'
+import ToastContainer from './components/Toast'
 
 // Light theme fallback
 const defaultTheme = {
@@ -136,6 +137,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <ToastContainer />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route

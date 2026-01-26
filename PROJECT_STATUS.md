@@ -148,8 +148,54 @@ Background: Subtle topo contour pattern
 
 ### Admin
 - [x] Settings (company profile, business units, lead sources, service types, user management)
+- [x] Settings Developer Tools (sample data seeder, clear data - Admin only)
 - [x] Reports (sales, jobs, financial, employee, inventory, fleet)
 - [x] Communications Log
+- [x] Toast notifications (success, error, info, warning)
+- [x] Loading/Error/Empty state components
+- [x] Mobile responsive layout with collapsible sidebar
+
+---
+
+## Deployment
+
+### Vercel Setup
+1. Connect GitHub repo to Vercel
+2. Framework Preset: Vite
+3. Build Command: `npm run build`
+4. Output Directory: `dist`
+5. Install Command: `npm install`
+
+### Environment Variables (Vercel)
+```
+VITE_SUPABASE_URL=https://tzrhfhisdeahrrmeksif.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-anon-key>
+```
+
+### Files
+- `vercel.json` - SPA rewrites configured
+- `.env.example` - Template for local development
+
+### Build Status
+- Production build: ✅ Passing
+- Bundle size: ~860KB (consider code splitting for production optimization)
+
+---
+
+## Developer Tools
+
+### Sample Data Seeder
+Located in `src/lib/seedData.js`:
+- `seedSampleData(companyId)` - Populates database with test data
+- `clearAllData(companyId, currentUserId)` - Clears all records except current user
+
+Access via Settings → Developer Tools (Admin only)
+
+### UI Components
+- `LoadingSpinner` - Centered spinner with optional message
+- `ErrorMessage` - Error display with retry button
+- `EmptyState` - Friendly empty state with action button
+- `Toast` - Toast notification system (success, error, info, warning)
 
 ---
 
@@ -159,13 +205,14 @@ Background: Subtle topo contour pattern
 - [ ] Email/SMS integration (Twilio)
 - [ ] Google Calendar sync
 - [ ] QuickBooks integration
-- [ ] Mobile responsive improvements
+- [x] Mobile responsive improvements
 - [ ] AI assistant integration
 - [ ] Photo uploads for audits
 - [ ] Route optimization
 - [ ] Customer portal
 - [ ] Appointments calendar
 - [ ] Expenses tracking
+- [ ] Code splitting for smaller bundle size
 
 ---
 
