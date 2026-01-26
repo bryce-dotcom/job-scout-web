@@ -27,7 +27,11 @@ import FixtureTypes from './pages/FixtureTypes'
 import UtilityProviders from './pages/UtilityProviders'
 import UtilityPrograms from './pages/UtilityPrograms'
 import RebateRates from './pages/RebateRates'
-import Layout, { useTheme } from './components/Layout'
+import Dashboard from './pages/Dashboard'
+import Settings from './pages/Settings'
+import Reports from './pages/Reports'
+import CommunicationsLog from './pages/CommunicationsLog'
+import Layout from './components/Layout'
 
 // Light theme fallback
 const defaultTheme = {
@@ -39,43 +43,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-function Dashboard() {
-  const company = useStore((state) => state.company)
-  const user = useStore((state) => state.user)
-
-  // Theme with fallback
-  const themeContext = useTheme()
-  const theme = themeContext?.theme || defaultTheme
-
-  return (
-    <div style={{ padding: '24px' }}>
-      <div style={{
-        backgroundColor: theme.bgCard,
-        borderRadius: '12px',
-        border: `1px solid ${theme.border}`,
-        padding: '32px'
-      }}>
-        <h2 style={{
-          fontSize: '24px',
-          fontWeight: '700',
-          color: theme.text,
-          marginBottom: '12px'
-        }}>
-          Welcome to Job Scout
-        </h2>
-        {company && (
-          <p style={{
-            fontSize: '15px',
-            color: theme.textSecondary
-          }}>
-            Logged in as <span style={{ fontWeight: '500' }}>{user?.name || user?.email}</span> at <span style={{ fontWeight: '500' }}>{company.company_name}</span>
-          </p>
-        )}
-      </div>
-    </div>
-  )
 }
 
 // Protected route that checks for companyId (not just user)
@@ -203,6 +170,10 @@ function App() {
           <Route path="/utility-providers" element={<UtilityProviders />} />
           <Route path="/utility-programs" element={<UtilityPrograms />} />
           <Route path="/utility-programs/:id/rates" element={<RebateRates />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/reports/:reportType" element={<Reports />} />
+          <Route path="/communications" element={<CommunicationsLog />} />
         </Route>
       </Routes>
     </BrowserRouter>

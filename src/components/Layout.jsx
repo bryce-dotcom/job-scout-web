@@ -4,20 +4,24 @@ import { useStore } from '../lib/store'
 import {
   LayoutDashboard,
   UserPlus,
-  TrendingUp,
-  Building2,
+  GitBranch,
+  CalendarDays,
+  Users,
   FileText,
   Briefcase,
   Calendar,
-  Receipt,
   Clock,
-  Users,
-  Truck,
+  Receipt,
   Package,
-  Lightbulb,
+  UserCog,
+  Truck,
+  Warehouse,
   ClipboardList,
+  Lightbulb,
   Building,
   FileStack,
+  MessageSquare,
+  BarChart3,
   Settings,
   LogOut,
   Menu,
@@ -133,157 +137,116 @@ export default function Layout() {
   const company = useStore((state) => state.company)
   const clearSession = useStore((state) => state.clearSession)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [jobsExpanded, setJobsExpanded] = useState(false)
-  const [lightingExpanded, setLightingExpanded] = useState(false)
 
   const handleLogout = async () => {
     await clearSession()
     navigate('/login')
   }
 
-  const navItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/leads', icon: UserPlus, label: 'Leads' },
-    { to: '/pipeline', icon: TrendingUp, label: 'Sales Pipeline' },
-    { to: '/customers', icon: Building2, label: 'Customers' },
-    { to: '/quotes', icon: FileText, label: 'Quotes' },
+  // Grouped navigation structure
+  const navSections = [
     {
-      label: 'Jobs',
-      icon: Briefcase,
-      expandKey: 'jobs',
-      children: [
-        { to: '/jobs', icon: Briefcase, label: 'All Jobs' },
-        { to: '/jobs/calendar', icon: Calendar, label: 'Calendar' }
+      title: 'MAIN',
+      items: [
+        { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
       ]
     },
-    { to: '/invoices', icon: Receipt, label: 'Invoices' },
-    { to: '/time-logs', icon: Clock, label: 'Time Logs' },
-    { to: '/employees', icon: Users, label: 'Employees' },
-    { to: '/fleet', icon: Truck, label: 'Fleet' },
-    { to: '/inventory', icon: Package, label: 'Inventory' },
     {
-      label: 'Lighting & Rebates',
-      icon: Lightbulb,
-      expandKey: 'lighting',
-      children: [
-        { to: '/lighting-audits', icon: ClipboardList, label: 'Lighting Audits' },
+      title: 'SALES',
+      items: [
+        { to: '/leads', icon: UserPlus, label: 'Leads' },
+        { to: '/pipeline', icon: GitBranch, label: 'Pipeline' },
+        { to: '/customers', icon: Users, label: 'Customers' },
+        { to: '/quotes', icon: FileText, label: 'Quotes' }
+      ]
+    },
+    {
+      title: 'OPERATIONS',
+      items: [
+        { to: '/jobs', icon: Briefcase, label: 'Jobs' },
+        { to: '/jobs/calendar', icon: CalendarDays, label: 'Jobs Calendar' },
+        { to: '/time-log', icon: Clock, label: 'Time Log' }
+      ]
+    },
+    {
+      title: 'FINANCIAL',
+      items: [
+        { to: '/invoices', icon: Receipt, label: 'Invoices' },
+        { to: '/products', icon: Package, label: 'Products' }
+      ]
+    },
+    {
+      title: 'RESOURCES',
+      items: [
+        { to: '/employees', icon: UserCog, label: 'Employees' },
+        { to: '/fleet', icon: Truck, label: 'Fleet' },
+        { to: '/inventory', icon: Warehouse, label: 'Inventory' }
+      ]
+    },
+    {
+      title: 'LIGHTING',
+      items: [
+        { to: '/lighting-audits', icon: ClipboardList, label: 'Audits' },
         { to: '/fixture-types', icon: Lightbulb, label: 'Fixture Types' },
-        { to: '/utility-providers', icon: Building, label: 'Utility Providers' },
-        { to: '/utility-programs', icon: FileStack, label: 'Utility Programs' }
+        { to: '/utility-providers', icon: Building, label: 'Providers' },
+        { to: '/utility-programs', icon: FileStack, label: 'Programs' }
       ]
     },
-    { to: '/settings', icon: Settings, label: 'Settings' }
+    {
+      title: 'ADMIN',
+      items: [
+        { to: '/communications', icon: MessageSquare, label: 'Communications' },
+        { to: '/reports', icon: BarChart3, label: 'Reports' },
+        { to: '/settings', icon: Settings, label: 'Settings' }
+      ]
+    }
   ]
 
   const displayName = user?.name || user?.email || 'User'
 
-  const NavItem = ({ item, mobile = false }) => {
-    if (item.children) {
-      const isExpanded = item.expandKey === 'lighting' ? lightingExpanded :
-                         item.expandKey === 'jobs' ? jobsExpanded : false
-      const toggleExpand = item.expandKey === 'lighting'
-        ? () => setLightingExpanded(!lightingExpanded)
-        : item.expandKey === 'jobs'
-        ? () => setJobsExpanded(!jobsExpanded)
-        : () => {}
+  const NavItem = ({ item, mobile = false }) => (
+    <NavLink
+      to={item.to}
+      end={item.to === '/' || item.to === '/jobs' || item.to === '/lighting-audits'}
+      onClick={() => mobile && setMobileMenuOpen(false)}
+      style={({ isActive }) => ({
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '8px 12px',
+        borderRadius: '6px',
+        color: isActive ? theme.accent : theme.textMuted,
+        backgroundColor: isActive ? theme.accentBg : 'transparent',
+        textDecoration: 'none',
+        fontSize: '13px',
+        fontWeight: isActive ? '500' : '400',
+        transition: 'all 0.15s ease'
+      })}
+    >
+      <item.icon size={18} />
+      {item.label}
+    </NavLink>
+  )
 
-      return (
-        <div>
-          <button
-            onClick={toggleExpand}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              width: '100%',
-              padding: '10px 12px',
-              backgroundColor: 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: theme.textMuted,
-              fontSize: '14px',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = theme.bgCardHover
-              e.currentTarget.style.color = theme.accent
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent'
-              e.currentTarget.style.color = theme.textMuted
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <item.icon size={20} />
-              {item.label}
-            </span>
-            <ChevronDown
-              size={16}
-              style={{
-                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 0.15s ease'
-              }}
-            />
-          </button>
-          {isExpanded && (
-            <div style={{ marginLeft: '20px', marginTop: '4px' }}>
-              {item.children.map((child) => (
-                <NavLink
-                  key={child.to}
-                  to={child.to}
-                  end={child.to === '/jobs' || child.to === '/lighting-audits'}
-                  onClick={() => mobile && setMobileMenuOpen(false)}
-                  style={({ isActive }) => ({
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    color: isActive ? theme.accent : theme.textMuted,
-                    backgroundColor: isActive ? theme.accentBg : 'transparent',
-                    borderLeft: isActive ? `3px solid ${theme.accent}` : '3px solid transparent',
-                    textDecoration: 'none',
-                    fontSize: '14px',
-                    fontWeight: isActive ? '500' : '400',
-                    transition: 'all 0.15s ease'
-                  })}
-                >
-                  <child.icon size={18} />
-                  {child.label}
-                </NavLink>
-              ))}
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    return (
-      <NavLink
-        to={item.to}
-        end={item.to === '/'}
-        onClick={() => mobile && setMobileMenuOpen(false)}
-        style={({ isActive }) => ({
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '10px 12px',
-          borderRadius: '8px',
-          color: isActive ? theme.accent : theme.textMuted,
-          backgroundColor: isActive ? theme.accentBg : 'transparent',
-          borderLeft: isActive ? `3px solid ${theme.accent}` : '3px solid transparent',
-          textDecoration: 'none',
-          fontSize: '14px',
-          fontWeight: isActive ? '500' : '400',
-          transition: 'all 0.15s ease'
-        })}
-      >
-        <item.icon size={20} />
-        {item.label}
-      </NavLink>
-    )
-  }
+  const NavSection = ({ section, mobile = false }) => (
+    <div style={{ marginBottom: '16px' }}>
+      <div style={{
+        fontSize: '10px',
+        fontWeight: '600',
+        color: theme.textMuted,
+        letterSpacing: '0.05em',
+        padding: '8px 12px 4px',
+        textTransform: 'uppercase'
+      }}>
+        {section.title}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+        {section.items.map((item) => (
+          <NavItem key={item.to} item={item} mobile={mobile} />
+        ))}
+      </div>
+    </div>
+  )
 
   return (
     <ThemeContext.Provider value={{ theme }}>
@@ -348,14 +311,12 @@ export default function Layout() {
           {/* Navigation */}
           <nav style={{
             flex: 1,
-            padding: '16px 12px',
+            padding: '8px 8px',
             overflowY: 'auto'
           }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {navItems.map((item, index) => (
-                <NavItem key={item.to || index} item={item} />
-              ))}
-            </div>
+            {navSections.map((section) => (
+              <NavSection key={section.title} section={section} />
+            ))}
           </nav>
 
           {/* User/Logout */}
@@ -537,12 +498,10 @@ export default function Layout() {
                   </div>
                 </div>
               )}
-              <nav style={{ flex: 1, padding: '16px 12px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  {navItems.map((item, index) => (
-                    <NavItem key={item.to || index} item={item} mobile />
-                  ))}
-                </div>
+              <nav style={{ flex: 1, padding: '8px 8px' }}>
+                {navSections.map((section) => (
+                  <NavSection key={section.title} section={section} mobile />
+                ))}
               </nav>
               <div style={{
                 padding: '16px',

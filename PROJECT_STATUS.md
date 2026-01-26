@@ -1,7 +1,7 @@
 # Job Scout Web App - Project Status
 
-**Last Updated:** January 24, 2026
-**Current Phase:** Building Core Modules
+**Last Updated:** January 25, 2026
+**Current Phase:** CORE COMPLETE
 **GitHub:** https://github.com/bryce-dotcom/job-scout-web.git
 **Supabase:** https://tzrhfhisdeahrrmeksif.supabase.co
 
@@ -104,67 +104,68 @@ Background: Subtle topo contour pattern
 
 ### Infrastructure
 - [x] Vite + React project setup
-- [x] Supabase client connection
-- [x] Zustand store with multi-tenant pattern
-- [x] GitHub repo connected
+- [x] Supabase connection (38 tables)
+- [x] Zustand store with multi-tenant
+- [x] GitHub connected
 - [x] Protected routes
-- [x] Sidebar navigation layout
 - [x] Job Scout theme with topo background
+- [x] Sidebar navigation (grouped sections)
 
-### Pages
-- [x] Login (Supabase auth, employee/company lookup)
-- [x] Dashboard (basic)
-- [x] Employees (full CRUD)
-- [x] Customers (full CRUD)
-- [x] Leads (full CRUD, status workflow, convert to customer)
-- [x] Sales Pipeline (Kanban board with drag-drop)
-- [x] Products (catalog with categories)
-- [x] Quotes (list with line items, totals)
-- [x] Quote Detail (line items table, convert to job)
-- [x] Jobs (card list, status badges, quick actions)
-- [x] Job Detail (line items, time tracking progress bar, generate invoice)
-- [x] Job Calendar (monthly grid, status color coding)
-- [x] Invoices (table view, payments tracking)
-- [x] Invoice Detail (payments section, add payment modal)
-- [x] Time Log (clock in/out, manual entry, filters)
-- [x] Inventory (card grid, low stock warnings, quantity adjust, location filter)
-- [x] Fleet (card view, status badges, PM tracking, quick status updates)
-- [x] Fleet Detail (maintenance history, rental history, mileage updates)
-- [x] Fleet Calendar (PM due dates, rental periods, out of service)
-- [x] Lighting Audits (list view, stats cards, status filters)
-- [x] New Lighting Audit (multi-step form with area calculations)
-- [x] Lighting Audit Detail (areas table, status workflow, recalculation)
-- [x] Fixture Types (reference table for common fixtures)
-- [x] Utility Providers (table with rebate program tracking)
-- [x] Utility Programs (card view with program details, rates link)
-- [x] Rebate Rates (per-program rates by fixture category)
+### Core Pages
+- [x] Login / Auth
+- [x] Dashboard (real metrics, pipeline overview, alerts, quick actions)
+- [x] Employees
+- [x] Customers
+
+### Sales Flow
+- [x] Leads
+- [x] Sales Pipeline (Kanban)
+- [x] Products & Services
+- [x] Quotes (with line items)
+
+### Operations
+- [x] Jobs (list, calendar, detail)
+- [x] Job Lines
+- [x] Time Log (clock in/out)
+
+### Financial
+- [x] Invoices
+- [x] Payments
+
+### Resources
+- [x] Inventory
+- [x] Fleet
+- [x] Fleet Maintenance
+- [x] Fleet Rentals
+
+### Lighting & Rebates
+- [x] Lighting Audits
+- [x] Audit Areas
+- [x] Fixture Types
+- [x] Utility Providers
+- [x] Utility Programs
+- [x] Rebate Rates
+
+### Admin
+- [x] Settings (company profile, business units, lead sources, service types, user management)
+- [x] Reports (sales, jobs, financial, employee, inventory, fleet)
+- [x] Communications Log
 
 ---
 
-## In Progress
+## Future Enhancements
 
-- [ ] Appointments (calendar integration)
+- [ ] PDF generation (work orders, proposals, invoices)
+- [ ] Email/SMS integration (Twilio)
+- [ ] Google Calendar sync
+- [ ] QuickBooks integration
+- [ ] Mobile responsive improvements
+- [ ] AI assistant integration
+- [ ] Photo uploads for audits
+- [ ] Route optimization
+- [ ] Customer portal
+- [ ] Appointments calendar
 - [ ] Expenses tracking
-
----
-
-## Next Up
-
-### Phase 1: Complete Operations
-- Appointments (calendar integration)
-- Work Order PDF generation
-- Custom Forms module
-- Expenses tracking
-
-### Phase 2: Utility & Reporting
-- Utility Invoices
-- Reports dashboard
-- AI assistant integration
-
-### Phase 3: Advanced Features
-- Route optimization
-- Communications log
-- Mobile-optimized views
 
 ---
 
@@ -200,22 +201,43 @@ useEffect(() => {
 
 ---
 
-## Build Order (Business Flow)
+## Sidebar Navigation Structure
 
-1. Login ✅
-2. Employees ✅
-3. Customers ✅
-4. Leads & Sales Pipeline ✅
-5. Products ✅
-6. Quotes ✅
-7. Jobs ✅
-8. Invoices ✅
-9. Time Tracking ✅
-10. Inventory ✅
-11. Fleet ✅
-12. Lighting Audits ✅ (with Fixture Types, Utility Providers, Utility Programs, Rebate Rates)
-13. Appointments ← CURRENT
-14. Expenses
+```
+MAIN
+- Dashboard
+
+SALES
+- Leads
+- Pipeline
+- Customers
+- Quotes
+
+OPERATIONS
+- Jobs
+- Jobs Calendar
+- Time Log
+
+FINANCIAL
+- Invoices
+- Products
+
+RESOURCES
+- Employees
+- Fleet
+- Inventory
+
+LIGHTING
+- Audits
+- Fixture Types
+- Providers
+- Programs
+
+ADMIN
+- Communications
+- Reports
+- Settings
+```
 
 ---
 

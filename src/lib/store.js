@@ -52,6 +52,9 @@ export const useStore = create(
       // Communications
       communications: [],
 
+      // Settings
+      settings: [],
+
       // Routes
       routes: [],
 
@@ -90,6 +93,7 @@ export const useStore = create(
           utilityPrograms: [],
           rebateRates: [],
           communications: [],
+          settings: [],
           routes: []
         });
       },
@@ -426,6 +430,41 @@ export const useStore = create(
       },
 
       // ========================================
+      // FETCH FUNCTIONS - Settings
+      // ========================================
+
+      fetchSettings: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('settings')
+          .select('*')
+          .eq('company_id', companyId);
+
+        if (!error) set({ settings: data || [] });
+      },
+
+      // Helper to get a single setting value
+      getSettingValue: (key) => {
+        const { settings } = get();
+        const setting = settings.find(s => s.key === key);
+        return setting?.value || null;
+      },
+
+      // Helper to get setting as parsed array
+      getSettingList: (key) => {
+        const { settings } = get();
+        const setting = settings.find(s => s.key === key);
+        if (!setting?.value) return [];
+        try {
+          return JSON.parse(setting.value);
+        } catch {
+          return setting.value.split(',').map(s => s.trim());
+        }
+      },
+
+      // ========================================
       // FETCH FUNCTIONS - Routes
       // ========================================
 
@@ -473,7 +512,9 @@ export const useStore = create(
           fetchFixtureTypes,
           fetchUtilityProviders,
           fetchUtilityPrograms,
-          fetchRebateRates
+          fetchRebateRates,
+          fetchSettings,
+          fetchCommunications
         } = get();
 
         // Fetch core data in parallel
@@ -498,7 +539,9 @@ export const useStore = create(
           fetchFixtureTypes(),
           fetchUtilityProviders(),
           fetchUtilityPrograms(),
-          fetchRebateRates()
+          fetchRebateRates(),
+          fetchSettings(),
+          fetchCommunications()
         ]);
 
         set({ isLoading: false });
