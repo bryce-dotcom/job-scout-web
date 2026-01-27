@@ -7,15 +7,18 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "import-data": "node scripts/importData.js"
   },
   "dependencies": {
     "@sentry/react": "^10.36.0",
     "@supabase/supabase-js": "^2.91.1",
+    "dotenv": "^16.4.5",
     "lucide-react": "^0.562.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.10"
   },
   "devDependencies": {

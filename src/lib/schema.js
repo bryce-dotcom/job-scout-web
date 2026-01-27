@@ -66,11 +66,12 @@ export const TABLES = {
   tags: 'tags',
   entity_tags: 'entity_tags',
   file_attachments: 'file_attachments',
+  reports: 'reports',
 
   // Bookings & Scheduling
   bookings: 'bookings',
 
-  // AI/Webhooks (future)
+  // AI/Webhooks
   ai_sessions: 'ai_sessions',
   ai_modules: 'ai_modules',
   ai_messages: 'ai_messages',
