@@ -37,6 +37,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const COMPANY_ID = 3; // Replace with actual UUID if needed
 
 // Column name mapping: Excel header -> Supabase column
+// Note: Keys are trimmed before lookup, so "Business Name " will match "Business Name"
 const COLUMN_MAPPINGS = {
   // Common patterns
   'ID': 'id',
@@ -73,7 +74,7 @@ const COLUMN_MAPPINGS = {
 
   // Customers
   'Name': 'name',
-  'Salesperson': 'salesperson',
+  'Salesperson': 'salesperson_id',
   'Preferred Contact': 'preferred_contact',
   'Tags': 'tags',
   'Notes': 'notes',
@@ -94,7 +95,7 @@ const COLUMN_MAPPINGS = {
   'Expense ID': 'expense_id',
   'Amount': 'amount',
   'Description': 'description',
-  'Date': 'expense_date',
+  'Date': 'date',
   'Category': 'category',
 
   // Fleet
@@ -115,6 +116,7 @@ const COLUMN_MAPPINGS = {
   // Fleet Maintenance
   'Maintenance ID': 'maintenance_id',
   'Cost': 'cost',
+  'Asset ID': 'fleet_id',
 
   // Helpers
   'List Name': 'list_name',
@@ -196,12 +198,11 @@ const COLUMN_MAPPINGS = {
   'Unit Price': 'unit_price',
   'Markup %': 'markup_percent',
   'Taxable': 'taxable',
-  'Image': 'image',
+  'Image': 'image_url',
   'Active': 'active',
 
   // Quotes
   'Quote Amount': 'quote_amount',
-  'Sent Date': 'sent_date',
   'Contract Required': 'contract_required',
   'Contract Signed': 'contract_signed',
   'Follow-Up 1': 'follow_up_1',
@@ -248,6 +249,7 @@ const COLUMN_MAPPINGS = {
   'Customer_ID': 'customer_id',
   'Created_By': 'created_by',
   'Created_Date': 'created_at',
+  'Job_ID': 'job_id',
   'City': 'city',
   'State': 'state',
   'Zip': 'zip',
@@ -318,13 +320,22 @@ const COLUMN_MAPPINGS = {
 
   // Rebate Rates
   'Rate_ID': 'rate_id',
+  'Program_ID': 'program_id',
   'Location_Type': 'location_type',
   'Control_Level': 'control_level',
   'Calc_Method': 'calc_method',
   'Rate': 'rate',
   'Rate_Unit': 'rate_unit',
   'Min_Watts': 'min_watts',
-  'Max_Watts': 'max_watts'
+  'Max_Watts': 'max_watts',
+
+  // AI Modules
+  'Module_ID': 'module_id',
+  'Module_Name': 'module_name',
+  'Trigger_Keywords': 'trigger_keywords',
+  'Tables_Used': 'tables_used',
+  'System_Prompt': 'system_prompt',
+  'Icon': 'icon'
 };
 
 // Sheet name to table name mapping
@@ -374,19 +385,40 @@ const SHEET_TO_TABLE = {
 
 // Convert Excel column name to Supabase column name
 function mapColumnName(excelColumn) {
-  // Check exact mapping first
-  if (COLUMN_MAPPINGS[excelColumn]) {
-    return COLUMN_MAPPINGS[excelColumn];
+  // Trim whitespace first (handles "Business Name " -> "Business Name")
+  const trimmed = excelColumn.trim();
+
+  // Check exact mapping first (after trimming)
+  if (COLUMN_MAPPINGS[trimmed]) {
+    return COLUMN_MAPPINGS[trimmed];
   }
 
-  // Convert to snake_case
-  return excelColumn
-    .replace(/([A-Z])/g, '_$1')
-    .toLowerCase()
+  // Convert to snake_case properly:
+  // 1. Handle "Column_Name" format (underscore between words) - just lowercase it
+  // 2. Handle "Column Name" format (space between words) - replace space with underscore
+  // 3. Handle "ColumnName" format (camelCase) - insert underscore before caps
+
+  let result = trimmed;
+
+  // If it already has underscores, just lowercase it
+  if (result.includes('_')) {
+    result = result.toLowerCase();
+  } else {
+    // Convert camelCase/PascalCase to snake_case
+    result = result
+      .replace(/([a-z])([A-Z])/g, '$1_$2')  // Insert _ between lower and upper
+      .replace(/\s+/g, '_')                  // Replace spaces with _
+      .toLowerCase();
+  }
+
+  // Clean up: remove non-alphanumeric except underscore, collapse multiple underscores, remove leading/trailing underscores
+  result = result
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/_+/g, '_')
     .replace(/^_/, '')
-    .replace(/\s+/g, '_')
-    .replace(/__+/g, '_')
-    .replace(/[^a-z0-9_]/g, '');
+    .replace(/_$/, '');
+
+  return result;
 }
 
 // Parse value for Supabase
@@ -410,10 +442,10 @@ function parseValue(value, columnName) {
   }
 
   // Handle date fields
-  const dateFields = ['preferred_date', 'start_date', 'end_date', 'expense_date',
+  const dateFields = ['preferred_date', 'start_date', 'end_date', 'date',
     'last_pm_date', 'next_pm_due', 'repair_date', 'rental_start_date', 'rental_end_date',
     'last_updated', 'sent_date', 'follow_up_1', 'follow_up_2', 'route_date',
-    'effective_date', 'expiration_date', 'last_verified', 'date', 'invoice_date',
+    'effective_date', 'expiration_date', 'last_verified', 'invoice_date',
     'payment_date', 'date_created'];
 
   if (dateFields.includes(columnName)) {
@@ -490,6 +522,44 @@ function parseValue(value, columnName) {
   return value;
 }
 
+// Columns that are TEXT IDs from AppSheet (not UUID foreign keys)
+// These store the AppSheet ID strings like "J001", "C001", etc.
+const TEXT_ID_COLUMNS = [
+  'job_id', 'customer_id', 'lead_id', 'quote_id', 'invoice_id', 'employee_id',
+  'booking_id', 'expense_id', 'asset_id', 'item_id', 'incentive_id', 'payment_id',
+  'route_id', 'audit_id', 'area_id', 'fixture_id', 'provider_id', 'program_id',
+  'rate_id', 'maintenance_id', 'rental_id', 'form_id', 'communication_id',
+  'time_log_id', 'utility_invoice_id', 'job_line_id', 'line_id', 'meeting_id',
+  'module_id', 'session_id', 'message_id', 'log_id', 'event_id', 'calendar_id'
+];
+
+// Columns that should be skipped entirely
+const SKIP_COLUMNS = ['id', '_empty', 'salesperson_id', 'empty', 'fleet_id'];
+
+// Table-specific columns to skip (UUID FK columns that conflict with TEXT IDs from Excel)
+// These tables have UUID FK columns that can't accept TEXT values like "C001", "J001"
+const TABLE_SKIP_COLUMNS = {
+  'jobs': ['customer_id', 'quote_id'],  // UUID FKs
+  'quotes': ['lead_id', 'customer_id'],  // UUID FKs
+  'quote_lines': ['quote_id', 'item_id'],  // UUID FKs
+  'invoices': ['customer_id', 'job_id'],  // UUID FKs
+  'job_lines': ['job_id', 'item_id'],  // UUID FKs
+  'expenses': ['job_id', 'employee_id'],  // UUID FKs
+  'incentives': ['job_id', 'program_id'],  // UUID FKs
+  'payments': ['invoice_id'],  // UUID FK
+  'lead_payments': ['lead_id'],  // UUID FK
+  'appointments': ['lead_id', 'customer_id', 'employee_id'],  // UUID FKs
+  'sales_pipeline': ['lead_id', 'customer_id'],  // UUID FKs
+  'utility_invoices': ['customer_id', 'job_id', 'utility_provider_id'],  // UUID FKs
+  'custom_forms': ['job_id'],  // UUID FK
+  'fleet_rentals': ['asset_id'],  // UUID FK (maps to fleet.id)
+  'fleet_maintenance': ['asset_id'],  // UUID FK (maps to fleet.id)
+  'lighting_audits': ['customer_id', 'job_id', 'utility_provider_id'],  // UUID FKs
+  'audit_areas': ['audit_id', 'led_replacement'],  // UUID FKs
+  'rebate_rates': ['program_id'],  // UUID FK
+  'time_log': ['job_id', 'employee_id']  // UUID FKs
+};
+
 // Import a single sheet
 async function importSheet(sheetName, data, tableName) {
   if (!data || data.length === 0) {
@@ -509,7 +579,18 @@ async function importSheet(sheetName, data, tableName) {
 
       for (const [excelCol, value] of Object.entries(row)) {
         const dbCol = mapColumnName(excelCol);
-        if (dbCol && dbCol !== 'id') { // Skip ID column
+
+        // Skip certain columns globally
+        if (!dbCol || SKIP_COLUMNS.includes(dbCol)) continue;
+
+        // Skip table-specific UUID FK columns
+        const tableSkips = TABLE_SKIP_COLUMNS[tableName] || [];
+        if (tableSkips.includes(dbCol)) continue;
+
+        // For TEXT ID columns, keep the value as-is (string)
+        if (TEXT_ID_COLUMNS.includes(dbCol)) {
+          record[dbCol] = value ? String(value) : null;
+        } else {
           record[dbCol] = parseValue(value, dbCol);
         }
       }
