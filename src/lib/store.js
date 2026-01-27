@@ -58,6 +58,18 @@ export const useStore = create(
       // Routes
       routes: [],
 
+      // Bookings & Scheduling
+      bookings: [],
+
+      // Lead Payments
+      leadPayments: [],
+
+      // Utility Invoices
+      utilityInvoices: [],
+
+      // Incentives
+      incentives: [],
+
       // Setters
       setCompany: (company) => set({ company, companyId: company?.id }),
       setUser: (user) => set({ user }),
@@ -94,7 +106,11 @@ export const useStore = create(
           rebateRates: [],
           communications: [],
           settings: [],
-          routes: []
+          routes: [],
+          bookings: [],
+          leadPayments: [],
+          utilityInvoices: [],
+          incentives: []
         });
       },
 
@@ -482,6 +498,74 @@ export const useStore = create(
       },
 
       // ========================================
+      // FETCH FUNCTIONS - Bookings
+      // ========================================
+
+      fetchBookings: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from(TABLES.bookings)
+          .select('*')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+
+        if (!error) set({ bookings: data || [] });
+      },
+
+      // ========================================
+      // FETCH FUNCTIONS - Lead Payments
+      // ========================================
+
+      fetchLeadPayments: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from(TABLES.lead_payments)
+          .select(QUERIES.leadPayments)
+          .eq('company_id', companyId)
+          .order('payment_date', { ascending: false });
+
+        if (!error) set({ leadPayments: data || [] });
+      },
+
+      // ========================================
+      // FETCH FUNCTIONS - Utility Invoices
+      // ========================================
+
+      fetchUtilityInvoices: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from(TABLES.utility_invoices)
+          .select(QUERIES.utilityInvoices)
+          .eq('company_id', companyId)
+          .order('invoice_date', { ascending: false });
+
+        if (!error) set({ utilityInvoices: data || [] });
+      },
+
+      // ========================================
+      // FETCH FUNCTIONS - Incentives
+      // ========================================
+
+      fetchIncentives: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from(TABLES.incentives)
+          .select(QUERIES.incentives)
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+
+        if (!error) set({ incentives: data || [] });
+      },
+
+      // ========================================
       // FETCH ALL DATA
       // ========================================
 
@@ -503,6 +587,7 @@ export const useStore = create(
           fetchInvoices,
           fetchPayments,
           fetchTimeLogs,
+          fetchExpenses,
           fetchInventory,
           fetchFleet,
           fetchFleetMaintenance,
@@ -514,7 +599,12 @@ export const useStore = create(
           fetchUtilityPrograms,
           fetchRebateRates,
           fetchSettings,
-          fetchCommunications
+          fetchCommunications,
+          fetchRoutes,
+          fetchBookings,
+          fetchLeadPayments,
+          fetchUtilityInvoices,
+          fetchIncentives
         } = get();
 
         // Fetch core data in parallel
@@ -530,6 +620,7 @@ export const useStore = create(
           fetchInvoices(),
           fetchPayments(),
           fetchTimeLogs(),
+          fetchExpenses(),
           fetchInventory(),
           fetchFleet(),
           fetchFleetMaintenance(),
@@ -541,7 +632,12 @@ export const useStore = create(
           fetchUtilityPrograms(),
           fetchRebateRates(),
           fetchSettings(),
-          fetchCommunications()
+          fetchCommunications(),
+          fetchRoutes(),
+          fetchBookings(),
+          fetchLeadPayments(),
+          fetchUtilityInvoices(),
+          fetchIncentives()
         ]);
 
         set({ isLoading: false });

@@ -26,7 +26,13 @@ import {
   LogOut,
   Menu,
   X,
-  ChevronDown
+  ChevronDown,
+  CalendarCheck,
+  Route,
+  DollarSign,
+  CreditCard,
+  Zap,
+  Gift
 } from 'lucide-react'
 
 // Theme context
@@ -157,7 +163,8 @@ export default function Layout() {
         { to: '/leads', icon: UserPlus, label: 'Leads' },
         { to: '/pipeline', icon: GitBranch, label: 'Pipeline' },
         { to: '/customers', icon: Users, label: 'Customers' },
-        { to: '/quotes', icon: FileText, label: 'Quotes' }
+        { to: '/quotes', icon: FileText, label: 'Quotes' },
+        { to: '/appointments', icon: CalendarCheck, label: 'Appointments' }
       ]
     },
     {
@@ -165,14 +172,19 @@ export default function Layout() {
       items: [
         { to: '/jobs', icon: Briefcase, label: 'Jobs' },
         { to: '/jobs/calendar', icon: CalendarDays, label: 'Jobs Calendar' },
-        { to: '/time-log', icon: Clock, label: 'Time Log' }
+        { to: '/routes', icon: Route, label: 'Routes' },
+        { to: '/routes/calendar', icon: Calendar, label: 'Routes Calendar' },
+        { to: '/time-log', icon: Clock, label: 'Time Log' },
+        { to: '/bookings', icon: CalendarCheck, label: 'Bookings' }
       ]
     },
     {
       title: 'FINANCIAL',
       items: [
         { to: '/invoices', icon: Receipt, label: 'Invoices' },
-        { to: '/products', icon: Package, label: 'Products' }
+        { to: '/products', icon: Package, label: 'Products' },
+        { to: '/expenses', icon: DollarSign, label: 'Expenses' },
+        { to: '/lead-payments', icon: CreditCard, label: 'Lead Payments' }
       ]
     },
     {
@@ -189,7 +201,9 @@ export default function Layout() {
         { to: '/lighting-audits', icon: ClipboardList, label: 'Audits' },
         { to: '/fixture-types', icon: Lightbulb, label: 'Fixture Types' },
         { to: '/utility-providers', icon: Building, label: 'Providers' },
-        { to: '/utility-programs', icon: FileStack, label: 'Programs' }
+        { to: '/utility-programs', icon: FileStack, label: 'Programs' },
+        { to: '/utility-invoices', icon: Zap, label: 'Utility Invoices' },
+        { to: '/incentives', icon: Gift, label: 'Incentives' }
       ]
     },
     {

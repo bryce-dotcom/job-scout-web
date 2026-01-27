@@ -31,6 +31,14 @@ import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Reports from './pages/Reports'
 import CommunicationsLog from './pages/CommunicationsLog'
+import Expenses from './pages/Expenses'
+import Appointments from './pages/Appointments'
+import RoutesPage from './pages/RoutesPage'
+import RoutesCalendar from './pages/RoutesCalendar'
+import Bookings from './pages/Bookings'
+import LeadPayments from './pages/LeadPayments'
+import UtilityInvoices from './pages/UtilityInvoices'
+import Incentives from './pages/Incentives'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
 
@@ -176,6 +184,14 @@ function App() {
           <Route path="/reports" element={<Reports />} />
           <Route path="/reports/:reportType" element={<Reports />} />
           <Route path="/communications" element={<CommunicationsLog />} />
+          <Route path="/expenses" element={<Expenses />} />
+          <Route path="/appointments" element={<Appointments />} />
+          <Route path="/routes" element={<RoutesPage />} />
+          <Route path="/routes/calendar" element={<RoutesCalendar />} />
+          <Route path="/bookings" element={<Bookings />} />
+          <Route path="/lead-payments" element={<LeadPayments />} />
+          <Route path="/utility-invoices" element={<UtilityInvoices />} />
+          <Route path="/incentives" element={<Incentives />} />
         </Route>
       </Routes>
     </BrowserRouter>

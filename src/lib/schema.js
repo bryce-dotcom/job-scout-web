@@ -67,6 +67,9 @@ export const TABLES = {
   entity_tags: 'entity_tags',
   file_attachments: 'file_attachments',
 
+  // Bookings & Scheduling
+  bookings: 'bookings',
+
   // AI/Webhooks (future)
   ai_sessions: 'ai_sessions',
   ai_modules: 'ai_modules',
@@ -142,6 +145,15 @@ export const EXPENSE_CATEGORIES = [
   'Other'
 ];
 
+// Booking statuses
+export const BOOKING_STATUS = ['Pending', 'Confirmed', 'Scheduled', 'Cancelled'];
+
+// Appointment statuses
+export const APPOINTMENT_STATUS = ['Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'No Show'];
+
+// Route statuses
+export const ROUTE_STATUS = ['Planned', 'In Progress', 'Completed', 'Cancelled'];
+
 // Common select queries with joins
 export const QUERIES = {
   employees: '*, department, role',
@@ -163,7 +175,11 @@ export const QUERIES = {
   lightingAudits: '*, customer:customers(id, name), auditor:employees(id, name), utility_provider:utility_providers(id, provider_name)',
   auditAreas: '*, audit:lighting_audits(id, audit_id)',
   routes: '*, assigned_to:employees(id, name), fleet:fleet(id, name)',
-  communications: '*, lead:leads(id, customer_name), customer:customers(id, name), employee:employees(id, name)'
+  communications: '*, lead:leads(id, customer_name), customer:customers(id, name), employee:employees(id, name)',
+  bookings: '*',
+  leadPayments: '*, lead:leads(id, customer_name, email, phone)',
+  utilityInvoices: '*, customer:customers(id, name), utility_provider:utility_providers(id, provider_name)',
+  incentives: '*, job:jobs(id, job_id, job_title), program:utility_programs(id, program_name)'
 };
 
 export default TABLES;

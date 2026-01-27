@@ -23,12 +23,20 @@ const emptyProduct = {
   description: '',
   type: 'Service',
   business_unit: '',
+  sku: '',
+  category: '',
+  subcategory: '',
+  manufacturer: '',
+  model_number: '',
   unit_price: '',
   cost: '',
   markup_percent: '',
   taxable: true,
   active: true,
-  allotted_time_hours: ''
+  allotted_time_hours: '',
+  image_url: '',
+  inventory_tracked: false,
+  reorder_level: ''
 }
 
 export default function Products() {
@@ -61,7 +69,9 @@ export default function Products() {
   const filteredProducts = products.filter(product => {
     const matchesSearch = searchTerm === '' ||
       product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      product.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.manufacturer?.toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesActive = showInactive || product.active
     const matchesType = typeFilter === 'all' || product.type === typeFilter
@@ -83,12 +93,20 @@ export default function Products() {
       description: product.description || '',
       type: product.type || 'Service',
       business_unit: product.business_unit || '',
+      sku: product.sku || '',
+      category: product.category || '',
+      subcategory: product.subcategory || '',
+      manufacturer: product.manufacturer || '',
+      model_number: product.model_number || '',
       unit_price: product.unit_price || '',
       cost: product.cost || '',
       markup_percent: product.markup_percent || '',
       taxable: product.taxable ?? true,
       active: product.active ?? true,
-      allotted_time_hours: product.allotted_time_hours || ''
+      allotted_time_hours: product.allotted_time_hours || '',
+      image_url: product.image_url || '',
+      inventory_tracked: product.inventory_tracked ?? false,
+      reorder_level: product.reorder_level || ''
     })
     setError(null)
     setShowModal(true)
@@ -120,12 +138,20 @@ export default function Products() {
       description: formData.description || null,
       type: formData.type,
       business_unit: formData.business_unit || null,
+      sku: formData.sku || null,
+      category: formData.category || null,
+      subcategory: formData.subcategory || null,
+      manufacturer: formData.manufacturer || null,
+      model_number: formData.model_number || null,
       unit_price: formData.unit_price || null,
       cost: formData.cost || null,
       markup_percent: formData.markup_percent || null,
       taxable: formData.taxable,
       active: formData.active,
       allotted_time_hours: formData.allotted_time_hours || null,
+      image_url: formData.image_url || null,
+      inventory_tracked: formData.inventory_tracked,
+      reorder_level: formData.reorder_level || null,
       updated_at: new Date().toISOString()
     }
 
@@ -314,7 +340,7 @@ export default function Products() {
           {/* Table Header */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '2fr 1fr 1fr 1fr 100px 80px',
+            gridTemplateColumns: '80px 2fr 100px 1fr 1fr 1fr 100px 80px',
             gap: '16px',
             padding: '14px 20px',
             backgroundColor: theme.accentBg,
@@ -325,8 +351,10 @@ export default function Products() {
             textTransform: 'uppercase',
             letterSpacing: '0.5px'
           }}>
+            <div>SKU</div>
             <div>Name</div>
             <div>Type</div>
+            <div>Category</div>
             <div style={{ textAlign: 'right' }}>Price</div>
             <div style={{ textAlign: 'right' }}>Cost</div>
             <div style={{ textAlign: 'center' }}>Status</div>
@@ -339,7 +367,7 @@ export default function Products() {
               key={product.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '2fr 1fr 1fr 1fr 100px 80px',
+                gridTemplateColumns: '80px 2fr 100px 1fr 1fr 1fr 100px 80px',
                 gap: '16px',
                 padding: '16px 20px',
                 borderBottom: `1px solid ${theme.border}`,
@@ -350,6 +378,10 @@ export default function Products() {
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
+              <div style={{ fontSize: '13px', color: theme.textMuted, fontFamily: 'monospace' }}>
+                {product.sku || '-'}
+              </div>
+
               <div>
                 <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
                   {product.name}
@@ -378,6 +410,10 @@ export default function Products() {
                 }}>
                   {product.type}
                 </span>
+              </div>
+
+              <div style={{ fontSize: '13px', color: theme.textSecondary }}>
+                {product.category || '-'}
               </div>
 
               <div style={{
@@ -592,15 +628,72 @@ export default function Products() {
                     </select>
                   </div>
                   <div>
-                    <label style={labelStyle}>Business Unit</label>
+                    <label style={labelStyle}>SKU / Item ID</label>
                     <input
                       type="text"
-                      name="business_unit"
-                      value={formData.business_unit}
+                      name="sku"
+                      value={formData.sku}
                       onChange={handleChange}
                       style={inputStyle}
                     />
                   </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Category</label>
+                    <input
+                      type="text"
+                      name="category"
+                      value={formData.category}
+                      onChange={handleChange}
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Subcategory</label>
+                    <input
+                      type="text"
+                      name="subcategory"
+                      value={formData.subcategory}
+                      onChange={handleChange}
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Manufacturer</label>
+                    <input
+                      type="text"
+                      name="manufacturer"
+                      value={formData.manufacturer}
+                      onChange={handleChange}
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Model Number</label>
+                    <input
+                      type="text"
+                      name="model_number"
+                      value={formData.model_number}
+                      onChange={handleChange}
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Business Unit</label>
+                  <input
+                    type="text"
+                    name="business_unit"
+                    value={formData.business_unit}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
@@ -639,19 +732,59 @@ export default function Products() {
                   </div>
                 </div>
 
-                <div>
-                  <label style={labelStyle}>Allotted Time (hours)</label>
-                  <input
-                    type="number"
-                    name="allotted_time_hours"
-                    value={formData.allotted_time_hours}
-                    onChange={handleChange}
-                    step="0.25"
-                    style={inputStyle}
-                  />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Allotted Time (hours)</label>
+                    <input
+                      type="number"
+                      name="allotted_time_hours"
+                      value={formData.allotted_time_hours}
+                      onChange={handleChange}
+                      step="0.25"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Reorder Level</label>
+                    <input
+                      type="number"
+                      name="reorder_level"
+                      value={formData.reorder_level}
+                      onChange={handleChange}
+                      style={inputStyle}
+                      disabled={!formData.inventory_tracked}
+                    />
+                  </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '24px' }}>
+                <div>
+                  <label style={labelStyle}>Image URL</label>
+                  <input
+                    type="url"
+                    name="image_url"
+                    value={formData.image_url}
+                    onChange={handleChange}
+                    placeholder="https://..."
+                    style={inputStyle}
+                  />
+                  {formData.image_url && (
+                    <div style={{ marginTop: '8px' }}>
+                      <img
+                        src={formData.image_url}
+                        alt="Product preview"
+                        style={{
+                          maxWidth: '100px',
+                          maxHeight: '100px',
+                          borderRadius: '8px',
+                          border: `1px solid ${theme.border}`
+                        }}
+                        onError={(e) => e.target.style.display = 'none'}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
                   <label style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -681,6 +814,21 @@ export default function Products() {
                       style={{ width: '16px', height: '16px', accentColor: theme.accent }}
                     />
                     <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
+                  </label>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer'
+                  }}>
+                    <input
+                      type="checkbox"
+                      name="inventory_tracked"
+                      checked={formData.inventory_tracked}
+                      onChange={handleChange}
+                      style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                    />
+                    <span style={{ fontSize: '14px', color: theme.text }}>Track Inventory</span>
                   </label>
                 </div>
               </div>
