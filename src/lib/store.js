@@ -70,6 +70,10 @@ export const useStore = create(
       // Incentives
       incentives: [],
 
+      // Agents (Base Camp)
+      agents: [],
+      companyAgents: [],
+
       // Setters
       setCompany: (company) => set({ company, companyId: company?.id }),
       setUser: (user) => set({ user }),
@@ -110,7 +114,9 @@ export const useStore = create(
           bookings: [],
           leadPayments: [],
           utilityInvoices: [],
-          incentives: []
+          incentives: [],
+          agents: [],
+          companyAgents: []
         });
       },
 
@@ -566,6 +572,85 @@ export const useStore = create(
       },
 
       // ========================================
+      // FETCH FUNCTIONS - Agents (Base Camp)
+      // ========================================
+
+      fetchAgents: async () => {
+        // Agents are global (not company-specific)
+        const { data, error } = await supabase
+          .from('agents')
+          .select('*')
+          .order('display_order');
+
+        if (!error) set({ agents: data || [] });
+      },
+
+      fetchCompanyAgents: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('company_agents')
+          .select('*, agent:agents(*)')
+          .eq('company_id', companyId);
+
+        if (!error) set({ companyAgents: data || [] });
+      },
+
+      recruitAgent: async (agentId) => {
+        const { companyId, fetchCompanyAgents } = get();
+        if (!companyId) return { error: 'No company selected' };
+
+        const { data, error } = await supabase
+          .from('company_agents')
+          .insert({
+            company_id: companyId,
+            agent_id: agentId,
+            subscription_status: 'active'
+          })
+          .select('*, agent:agents(*)')
+          .single();
+
+        if (!error) {
+          await fetchCompanyAgents();
+        }
+
+        return { data, error };
+      },
+
+      updateAgentNickname: async (companyAgentId, customName) => {
+        const { fetchCompanyAgents } = get();
+
+        const { data, error } = await supabase
+          .from('company_agents')
+          .update({ custom_name: customName, updated_at: new Date().toISOString() })
+          .eq('id', companyAgentId)
+          .select()
+          .single();
+
+        if (!error) {
+          await fetchCompanyAgents();
+        }
+
+        return { data, error };
+      },
+
+      hasAgent: (slug) => {
+        const { companyAgents } = get();
+        return companyAgents.some(ca => ca.agent?.slug === slug && ca.subscription_status === 'active');
+      },
+
+      getAgent: (slug) => {
+        const { agents } = get();
+        return agents.find(a => a.slug === slug);
+      },
+
+      getCompanyAgent: (slug) => {
+        const { companyAgents } = get();
+        return companyAgents.find(ca => ca.agent?.slug === slug);
+      },
+
+      // ========================================
       // FETCH ALL DATA
       // ========================================
 
@@ -604,7 +689,9 @@ export const useStore = create(
           fetchBookings,
           fetchLeadPayments,
           fetchUtilityInvoices,
-          fetchIncentives
+          fetchIncentives,
+          fetchAgents,
+          fetchCompanyAgents
         } = get();
 
         // Fetch core data in parallel
@@ -637,7 +724,9 @@ export const useStore = create(
           fetchBookings(),
           fetchLeadPayments(),
           fetchUtilityInvoices(),
-          fetchIncentives()
+          fetchIncentives(),
+          fetchAgents(),
+          fetchCompanyAgents()
         ]);
 
         set({ isLoading: false });

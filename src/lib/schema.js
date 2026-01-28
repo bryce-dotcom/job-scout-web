@@ -77,7 +77,11 @@ export const TABLES = {
   ai_messages: 'ai_messages',
   webhook_form: 'webhook_form',
   sync_log: 'sync_log',
-  helpers: 'helpers'
+  helpers: 'helpers',
+
+  // Agents (Base Camp)
+  agents: 'agents',
+  company_agents: 'company_agents'
 };
 
 // Status enums for consistent UI

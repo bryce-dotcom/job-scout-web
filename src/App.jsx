@@ -39,6 +39,10 @@ import Bookings from './pages/Bookings'
 import LeadPayments from './pages/LeadPayments'
 import UtilityInvoices from './pages/UtilityInvoices'
 import Incentives from './pages/Incentives'
+import BaseCamp from './pages/BaseCamp'
+import MyCrew from './pages/MyCrew'
+import LenardWorkspace from './pages/agents/lenard/LenardWorkspace'
+import FreddyWorkspace from './pages/agents/freddy/FreddyWorkspace'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
 
@@ -192,6 +196,30 @@ function App() {
           <Route path="/lead-payments" element={<LeadPayments />} />
           <Route path="/utility-invoices" element={<UtilityInvoices />} />
           <Route path="/incentives" element={<Incentives />} />
+
+          {/* Base Camp & AI Agents */}
+          <Route path="/base-camp" element={<BaseCamp />} />
+          <Route path="/my-crew" element={<MyCrew />} />
+
+          {/* Lenard Workspace (Lighting) */}
+          <Route path="/agents/lenard" element={<LenardWorkspace />}>
+            <Route index element={<LightingAudits />} />
+            <Route path="fixture-types" element={<FixtureTypes />} />
+            <Route path="providers" element={<UtilityProviders />} />
+            <Route path="programs" element={<UtilityPrograms />} />
+            <Route path="programs/:id/rates" element={<RebateRates />} />
+            <Route path="rebates" element={<RebateRates />} />
+            <Route path="audits/new" element={<NewLightingAudit />} />
+            <Route path="audits/:id" element={<LightingAuditDetail />} />
+          </Route>
+
+          {/* Freddy Workspace (Fleet) */}
+          <Route path="/agents/freddy" element={<FreddyWorkspace />}>
+            <Route index element={<Fleet />} />
+            <Route path="calendar" element={<FleetCalendar />} />
+            <Route path="inventory" element={<Inventory />} />
+            <Route path=":id" element={<FleetDetail />} />
+          </Route>
         </Route>
       </Routes>
     </BrowserRouter>

@@ -32,7 +32,10 @@ import {
   DollarSign,
   CreditCard,
   Zap,
-  Gift
+  Gift,
+  Tent,
+  Bot,
+  ChevronRight
 } from 'lucide-react'
 
 // Theme context
@@ -143,6 +146,11 @@ export default function Layout() {
   const company = useStore((state) => state.company)
   const clearSession = useStore((state) => state.clearSession)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [expandedMenus, setExpandedMenus] = useState({})
+
+  const toggleMenu = (key) => {
+    setExpandedMenus(prev => ({ ...prev, [key]: !prev[key] }))
+  }
 
   const handleLogout = async () => {
     await clearSession()
@@ -155,6 +163,37 @@ export default function Layout() {
       title: 'MAIN',
       items: [
         { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
+      ]
+    },
+    {
+      title: 'AI CREW',
+      items: [
+        { to: '/base-camp', icon: Tent, label: 'Base Camp' },
+        { to: '/my-crew', icon: Users, label: 'My Crew' },
+        {
+          key: 'lenard',
+          icon: Lightbulb,
+          label: 'Lenard (Lighting)',
+          expandable: true,
+          subItems: [
+            { to: '/agents/lenard', label: 'Audits' },
+            { to: '/agents/lenard/fixture-types', label: 'Fixture Types' },
+            { to: '/agents/lenard/providers', label: 'Providers' },
+            { to: '/agents/lenard/programs', label: 'Programs' },
+            { to: '/agents/lenard/rebates', label: 'Rebates' }
+          ]
+        },
+        {
+          key: 'freddy',
+          icon: Truck,
+          label: 'Freddy (Fleet)',
+          expandable: true,
+          subItems: [
+            { to: '/agents/freddy', label: 'Fleet' },
+            { to: '/agents/freddy/calendar', label: 'Calendar' },
+            { to: '/agents/freddy/inventory', label: 'Inventory' }
+          ]
+        }
       ]
     },
     {
@@ -191,19 +230,7 @@ export default function Layout() {
       title: 'RESOURCES',
       items: [
         { to: '/employees', icon: UserCog, label: 'Employees' },
-        { to: '/fleet', icon: Truck, label: 'Fleet' },
         { to: '/inventory', icon: Warehouse, label: 'Inventory' }
-      ]
-    },
-    {
-      title: 'LIGHTING',
-      items: [
-        { to: '/lighting-audits', icon: ClipboardList, label: 'Audits' },
-        { to: '/fixture-types', icon: Lightbulb, label: 'Fixture Types' },
-        { to: '/utility-providers', icon: Building, label: 'Providers' },
-        { to: '/utility-programs', icon: FileStack, label: 'Programs' },
-        { to: '/utility-invoices', icon: Zap, label: 'Utility Invoices' },
-        { to: '/incentives', icon: Gift, label: 'Incentives' }
       ]
     },
     {
@@ -242,6 +269,68 @@ export default function Layout() {
     </NavLink>
   )
 
+  const ExpandableNavItem = ({ item, mobile = false }) => {
+    const isExpanded = expandedMenus[item.key]
+    return (
+      <div>
+        <button
+          onClick={() => toggleMenu(item.key)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            color: isExpanded ? theme.accent : theme.textMuted,
+            backgroundColor: isExpanded ? theme.accentBg : 'transparent',
+            border: 'none',
+            width: '100%',
+            cursor: 'pointer',
+            fontSize: '13px',
+            fontWeight: isExpanded ? '500' : '400',
+            transition: 'all 0.15s ease',
+            textAlign: 'left'
+          }}
+        >
+          <item.icon size={18} />
+          <span style={{ flex: 1 }}>{item.label}</span>
+          <ChevronRight
+            size={14}
+            style={{
+              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.15s ease'
+            }}
+          />
+        </button>
+        {isExpanded && (
+          <div style={{ marginLeft: '28px', marginTop: '2px' }}>
+            {item.subItems.map((subItem) => (
+              <NavLink
+                key={subItem.to}
+                to={subItem.to}
+                end={subItem.to === '/agents/lenard' || subItem.to === '/agents/freddy'}
+                onClick={() => mobile && setMobileMenuOpen(false)}
+                style={({ isActive }) => ({
+                  display: 'block',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  color: isActive ? theme.accent : theme.textMuted,
+                  backgroundColor: isActive ? theme.accentBg : 'transparent',
+                  textDecoration: 'none',
+                  fontSize: '12px',
+                  fontWeight: isActive ? '500' : '400',
+                  transition: 'all 0.15s ease'
+                })}
+              >
+                {subItem.label}
+              </NavLink>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const NavSection = ({ section, mobile = false }) => (
     <div style={{ marginBottom: '16px' }}>
       <div style={{
@@ -256,7 +345,11 @@ export default function Layout() {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
         {section.items.map((item) => (
-          <NavItem key={item.to} item={item} mobile={mobile} />
+          item.expandable ? (
+            <ExpandableNavItem key={item.key} item={item} mobile={mobile} />
+          ) : (
+            <NavItem key={item.to} item={item} mobile={mobile} />
+          )
         ))}
       </div>
     </div>
