@@ -893,21 +893,19 @@ export default function SalesPipeline() {
         <div style={{
           flex: 1,
           overflow: 'hidden',
-          position: 'relative'
+          display: 'flex',
+          gap: '10px'
         }}>
-          <div style={{
-            display: 'flex',
-            gap: '12px',
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            height: '100%',
-            paddingBottom: '16px',
-            WebkitOverflowScrolling: 'touch'
-          }}>
         {stages.map((stage) => (
           <div
             key={stage.id}
-            style={{ flexShrink: 0, width: '300px', display: 'flex', flexDirection: 'column' }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
             onDragOver={(e) => handleDragOver(e, stage.id)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, stage)}
@@ -916,31 +914,37 @@ export default function SalesPipeline() {
             <div style={{
               backgroundColor: stage.color || theme.accent,
               color: '#ffffff',
-              padding: '14px 16px',
-              borderRadius: '12px 12px 0 0'
+              padding: '10px 12px',
+              borderRadius: '10px 10px 0 0',
+              flexShrink: 0
             }}>
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                marginBottom: '4px'
+                marginBottom: '2px'
               }}>
-                <span style={{ fontWeight: '600', fontSize: '14px' }}>{stage.name}</span>
+                <span style={{
+                  fontWeight: '600',
+                  fontSize: '13px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>{stage.name}</span>
                 <span style={{
                   backgroundColor: 'rgba(255,255,255,0.25)',
-                  padding: '2px 10px',
-                  borderRadius: '12px',
-                  fontSize: '13px',
-                  fontWeight: '500'
+                  padding: '1px 8px',
+                  borderRadius: '10px',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  flexShrink: 0,
+                  marginLeft: '6px'
                 }}>
                   {getDealsByStage(stage.id).length}
                 </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', opacity: 0.9 }}>
-                <span>{formatCurrency(getStageTotal(stage.id))}</span>
-                {!stage.is_won && !stage.is_lost && (
-                  <span>{stage.win_probability}% prob</span>
-                )}
+              <div style={{ fontSize: '12px', opacity: 0.9 }}>
+                {formatCurrency(getStageTotal(stage.id))}
               </div>
             </div>
 
@@ -948,13 +952,13 @@ export default function SalesPipeline() {
             <div style={{
               backgroundColor: dragOverStage === stage.id ? theme.accentBg : 'rgba(0,0,0,0.02)',
               border: dragOverStage === stage.id ? `2px dashed ${theme.accent}` : '2px solid transparent',
-              padding: '10px',
-              borderRadius: '0 0 12px 12px',
-              minHeight: '400px',
+              padding: '6px',
+              borderRadius: '0 0 10px 10px',
               flex: 1,
+              overflowY: 'auto',
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
+              gap: '6px',
               transition: 'all 0.2s ease'
             }}>
               {getDealsByStage(stage.id).map((deal) => {
@@ -970,32 +974,31 @@ export default function SalesPipeline() {
                     onClick={() => openDealDetail(deal)}
                     style={{
                       backgroundColor: theme.bgCard,
-                      borderRadius: '10px',
-                      padding: '14px',
+                      borderRadius: '8px',
+                      padding: '10px',
                       border: `1px solid ${theme.border}`,
-                      borderLeft: rottingLevel > 0 ? `4px solid ${rottingColors[rottingLevel]}` : `1px solid ${theme.border}`,
+                      borderLeft: rottingLevel > 0 ? `3px solid ${rottingColors[rottingLevel]}` : `1px solid ${theme.border}`,
                       cursor: 'grab',
                       transition: 'all 0.15s ease',
-                      position: 'relative'
+                      position: 'relative',
+                      flexShrink: 0
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
-                      e.currentTarget.style.transform = 'translateY(-1px)'
+                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.boxShadow = 'none'
-                      e.currentTarget.style.transform = 'none'
                     }}
                   >
                     {/* Rotting indicator */}
                     {rottingLevel >= 2 && (
                       <div style={{
                         position: 'absolute',
-                        top: '8px',
-                        right: '8px'
+                        top: '6px',
+                        right: '6px'
                       }}>
                         <AlertTriangle
-                          size={16}
+                          size={14}
                           color={rottingColors[rottingLevel]}
                           title={`No activity for ${Math.floor((Date.now() - new Date(deal.last_activity_at).getTime()) / (1000 * 60 * 60 * 24))} days`}
                         />
@@ -1006,9 +1009,12 @@ export default function SalesPipeline() {
                     <h4 style={{
                       fontWeight: '600',
                       color: theme.text,
-                      fontSize: '14px',
-                      marginBottom: '6px',
-                      paddingRight: rottingLevel >= 2 ? '20px' : '0'
+                      fontSize: '13px',
+                      marginBottom: '4px',
+                      paddingRight: rottingLevel >= 2 ? '18px' : '0',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
                     }}>
                       {deal.title}
                     </h4>
@@ -1016,91 +1022,59 @@ export default function SalesPipeline() {
                     {/* Organization */}
                     {deal.organization && (
                       <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        color: theme.textSecondary,
-                        fontSize: '13px',
-                        marginBottom: '8px'
+                        color: theme.textMuted,
+                        fontSize: '11px',
+                        marginBottom: '6px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
                       }}>
-                        <Building2 size={12} />
-                        <span>{deal.organization}</span>
+                        {deal.organization}
                       </div>
                     )}
 
                     {/* Value */}
                     <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
                       color: '#16a34a',
-                      fontSize: '15px',
-                      fontWeight: '600',
-                      marginBottom: '10px'
+                      fontSize: '13px',
+                      fontWeight: '600'
                     }}>
-                      <DollarSign size={16} />
-                      <span>{formatCurrency(deal.value)}</span>
+                      {formatCurrency(deal.value)}
                     </div>
 
-                    {/* Footer */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      paddingTop: '10px',
-                      borderTop: `1px solid ${theme.border}`
-                    }}>
-                      {/* Owner Avatar */}
-                      {deal.owner && (
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px'
-                        }}>
+                    {/* Footer - compact */}
+                    {(deal.owner || deal.expected_close_date) && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginTop: '6px',
+                        paddingTop: '6px',
+                        borderTop: `1px solid ${theme.border}`
+                      }}>
+                        {deal.owner && (
                           <div style={{
-                            width: '24px',
-                            height: '24px',
+                            width: '20px',
+                            height: '20px',
                             borderRadius: '50%',
                             backgroundColor: theme.accentBg,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: '11px',
+                            fontSize: '9px',
                             fontWeight: '600',
                             color: theme.accent
                           }}>
                             {deal.owner.name?.split(' ').map(n => n[0]).join('').slice(0, 2)}
                           </div>
-                        </div>
-                      )}
-
-                      {/* Expected Close Date */}
-                      {deal.expected_close_date && (
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          color: theme.textMuted,
-                          fontSize: '12px'
-                        }}>
-                          <Calendar size={12} />
-                          <span>{new Date(deal.expected_close_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                        </div>
-                      )}
-
-                      {/* Win Probability */}
-                      {!stage.is_won && !stage.is_lost && (
-                        <div style={{
-                          fontSize: '12px',
-                          color: theme.textMuted,
-                          backgroundColor: theme.accentBg,
-                          padding: '2px 8px',
-                          borderRadius: '4px'
-                        }}>
-                          {deal.win_probability || stage.win_probability}%
-                        </div>
-                      )}
-                    </div>
+                        )}
+                        {deal.expected_close_date && (
+                          <span style={{ fontSize: '10px', color: theme.textMuted }}>
+                            {new Date(deal.expected_close_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -1108,19 +1082,17 @@ export default function SalesPipeline() {
               {getDealsByStage(stage.id).length === 0 && (
                 <div style={{
                   textAlign: 'center',
-                  padding: '40px 16px',
+                  padding: '20px 8px',
                   color: theme.textMuted,
-                  fontSize: '13px'
+                  fontSize: '11px'
                 }}>
-                  <Target size={28} style={{ opacity: 0.3, marginBottom: '8px' }} />
+                  <Target size={20} style={{ opacity: 0.3, marginBottom: '4px' }} />
                   <p>No deals</p>
-                  <p style={{ fontSize: '12px', marginTop: '4px' }}>Drag deals here</p>
                 </div>
               )}
             </div>
           </div>
         ))}
-          </div>
         </div>
       )}
 
