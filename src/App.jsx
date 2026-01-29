@@ -120,12 +120,14 @@ function App() {
           if (employee && employee.company) {
             setUser(employee)
             setCompany(employee.company)
-            checkDeveloperStatus()
           } else {
             // No valid employee - clear session
             await clearSession()
           }
         }
+
+        // Always check developer status when we have a session
+        checkDeveloperStatus()
       }
 
       setIsLoading(false)

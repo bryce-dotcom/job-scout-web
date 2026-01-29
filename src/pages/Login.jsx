@@ -55,6 +55,7 @@ export default function Login() {
   const navigate = useNavigate()
   const setUser = useStore((state) => state.setUser)
   const setCompany = useStore((state) => state.setCompany)
+  const checkDeveloperStatus = useStore((state) => state.checkDeveloperStatus)
 
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
@@ -128,6 +129,7 @@ export default function Login() {
 
       setUser(result.employee)
       setCompany(result.company)
+      await checkDeveloperStatus()
       navigate('/')
     }
   }
