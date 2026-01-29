@@ -6,8 +6,8 @@ import { useTheme } from '../components/Layout'
 import {
   Plus, X, DollarSign, User, Calendar, Target, Settings, Clock,
   AlertTriangle, Trophy, XCircle, Phone, Mail, Building2, FileText,
-  MessageSquare, ChevronRight, GripVertical, MoreHorizontal, Trash2,
-  Edit3, Activity, CheckCircle2, ArrowRight
+  MessageSquare, ChevronRight, ChevronDown, GripVertical, MoreHorizontal, Trash2,
+  Edit3, Activity, CheckCircle2, ArrowRight, LayoutGrid, List
 } from 'lucide-react'
 
 // Light theme fallback
@@ -101,6 +101,34 @@ export default function SalesPipeline() {
 
   // Stage settings form
   const [stageForm, setStageForm] = useState([])
+
+  // View mode: 'kanban' or 'list'
+  const [viewMode, setViewMode] = useState('kanban')
+  const [expandedStages, setExpandedStages] = useState({})
+  const [isMobile, setIsMobile] = useState(false)
+
+  // Check if mobile on mount and resize
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768
+      setIsMobile(mobile)
+      if (mobile && viewMode === 'kanban') {
+        setViewMode('list')
+      }
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  // Initialize expanded stages
+  useEffect(() => {
+    if (stages.length > 0 && Object.keys(expandedStages).length === 0) {
+      const expanded = {}
+      stages.forEach(s => { expanded[s.id] = true })
+      setExpandedStages(expanded)
+    }
+  }, [stages])
 
   // Fetch pipeline data
   const fetchPipelineData = async () => {
@@ -584,42 +612,105 @@ export default function SalesPipeline() {
     )
   }
 
+  const toggleStageExpand = (stageId) => {
+    setExpandedStages(prev => ({ ...prev, [stageId]: !prev[stageId] }))
+  }
+
   return (
-    <div style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{
+      padding: isMobile ? '16px' : '24px',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden'
+    }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         justifyContent: 'space-between',
-        marginBottom: '20px',
+        marginBottom: '16px',
         flexWrap: 'wrap',
         gap: '12px'
       }}>
         <div>
           <h1 style={{
-            fontSize: '24px',
+            fontSize: isMobile ? '20px' : '24px',
             fontWeight: '700',
             color: theme.text,
             marginBottom: '4px'
           }}>
             Sales Pipeline
           </h1>
-          <div style={{ display: 'flex', gap: '16px', fontSize: '14px', color: theme.textMuted }}>
+          <div style={{
+            display: 'flex',
+            gap: isMobile ? '8px' : '16px',
+            fontSize: isMobile ? '12px' : '14px',
+            color: theme.textMuted,
+            flexWrap: 'wrap'
+          }}>
             <span>{deals.length} deals</span>
             <span>•</span>
-            <span>Total: {formatCurrency(totalPipelineValue)}</span>
-            <span>•</span>
-            <span>Weighted: {formatCurrency(weightedValue)}</span>
+            <span>{formatCurrency(totalPipelineValue)}</span>
+            {!isMobile && (
+              <>
+                <span>•</span>
+                <span>Weighted: {formatCurrency(weightedValue)}</span>
+              </>
+            )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {/* View Toggle */}
+          {!isMobile && (
+            <div style={{
+              display: 'flex',
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              overflow: 'hidden'
+            }}>
+              <button
+                onClick={() => setViewMode('kanban')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '8px 12px',
+                  backgroundColor: viewMode === 'kanban' ? theme.accentBg : 'transparent',
+                  color: viewMode === 'kanban' ? theme.accent : theme.textMuted,
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '13px'
+                }}
+              >
+                <LayoutGrid size={16} />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '8px 12px',
+                  backgroundColor: viewMode === 'list' ? theme.accentBg : 'transparent',
+                  color: viewMode === 'list' ? theme.accent : theme.textMuted,
+                  border: 'none',
+                  borderLeft: `1px solid ${theme.border}`,
+                  cursor: 'pointer',
+                  fontSize: '13px'
+                }}
+              >
+                <List size={16} />
+              </button>
+            </div>
+          )}
           <button
             onClick={openSettings}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '10px 14px',
+              padding: isMobile ? '8px 10px' : '10px 14px',
               backgroundColor: 'transparent',
               border: `1px solid ${theme.border}`,
               color: theme.textSecondary,
@@ -629,7 +720,7 @@ export default function SalesPipeline() {
             }}
           >
             <Settings size={16} />
-            Settings
+            {!isMobile && 'Settings'}
           </button>
           <button
             onClick={openAddModal}
@@ -637,7 +728,7 @@ export default function SalesPipeline() {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '10px 16px',
+              padding: isMobile ? '8px 12px' : '10px 16px',
               backgroundColor: theme.accent,
               color: '#ffffff',
               border: 'none',
@@ -648,19 +739,171 @@ export default function SalesPipeline() {
             }}
           >
             <Plus size={18} />
-            Add Deal
+            {isMobile ? 'Add' : 'Add Deal'}
           </button>
         </div>
       </div>
 
+      {/* List View (Mobile-friendly) */}
+      {viewMode === 'list' && (
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          {stages.map((stage) => {
+            const stageDeals = getDealsByStage(stage.id)
+            const isExpanded = expandedStages[stage.id]
+
+            return (
+              <div key={stage.id} style={{
+                backgroundColor: theme.bgCard,
+                borderRadius: '12px',
+                border: `1px solid ${theme.border}`,
+                overflow: 'hidden'
+              }}>
+                {/* Stage Header */}
+                <button
+                  onClick={() => toggleStageExpand(stage.id)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '14px 16px',
+                    backgroundColor: stage.color || theme.accent,
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                    <span style={{ fontWeight: '600', fontSize: '15px' }}>{stage.name}</span>
+                    <span style={{
+                      backgroundColor: 'rgba(255,255,255,0.25)',
+                      padding: '2px 10px',
+                      borderRadius: '12px',
+                      fontSize: '13px'
+                    }}>
+                      {stageDeals.length}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '14px', opacity: 0.9 }}>
+                    {formatCurrency(getStageTotal(stage.id))}
+                  </span>
+                </button>
+
+                {/* Stage Deals */}
+                {isExpanded && (
+                  <div style={{ padding: '8px' }}>
+                    {stageDeals.length === 0 ? (
+                      <div style={{
+                        textAlign: 'center',
+                        padding: '20px',
+                        color: theme.textMuted,
+                        fontSize: '13px'
+                      }}>
+                        No deals in this stage
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {stageDeals.map((deal) => {
+                          const rottingLevel = getRottingLevel(deal, stage)
+                          const rottingColors = ['transparent', '#fbbf24', '#f97316', '#ef4444']
+
+                          return (
+                            <div
+                              key={deal.id}
+                              onClick={() => openDealDetail(deal)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '14px 16px',
+                                backgroundColor: theme.bg,
+                                borderRadius: '10px',
+                                borderLeft: rottingLevel > 0 ? `4px solid ${rottingColors[rottingLevel]}` : 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  marginBottom: '4px'
+                                }}>
+                                  <span style={{
+                                    fontWeight: '600',
+                                    fontSize: '14px',
+                                    color: theme.text,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}>
+                                    {deal.title}
+                                  </span>
+                                  {rottingLevel >= 2 && (
+                                    <AlertTriangle size={14} color={rottingColors[rottingLevel]} />
+                                  )}
+                                </div>
+                                {deal.organization && (
+                                  <span style={{
+                                    fontSize: '12px',
+                                    color: theme.textMuted
+                                  }}>
+                                    {deal.organization}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                flexShrink: 0
+                              }}>
+                                <span style={{
+                                  fontWeight: '600',
+                                  fontSize: '15px',
+                                  color: '#16a34a'
+                                }}>
+                                  {formatCurrency(deal.value)}
+                                </span>
+                                <ChevronRight size={18} color={theme.textMuted} />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Kanban Board */}
-      <div style={{
-        display: 'flex',
-        gap: '12px',
-        overflowX: 'auto',
-        flex: 1,
-        paddingBottom: '16px'
-      }}>
+      {viewMode === 'kanban' && (
+        <div style={{
+          flex: 1,
+          overflow: 'hidden',
+          position: 'relative'
+        }}>
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            height: '100%',
+            paddingBottom: '16px',
+            WebkitOverflowScrolling: 'touch'
+          }}>
         {stages.map((stage) => (
           <div
             key={stage.id}
@@ -877,7 +1120,9 @@ export default function SalesPipeline() {
             </div>
           </div>
         ))}
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Deal Modal */}
       {showAddModal && (
@@ -1156,7 +1401,7 @@ export default function SalesPipeline() {
           top: 0,
           right: 0,
           bottom: 0,
-          width: '480px',
+          width: isMobile ? '100%' : '480px',
           maxWidth: '100%',
           backgroundColor: theme.bgCard,
           boxShadow: '-4px 0 20px rgba(0,0,0,0.1)',
@@ -1167,13 +1412,22 @@ export default function SalesPipeline() {
         }}>
           {/* Panel Header */}
           <div style={{
-            padding: '20px',
+            padding: isMobile ? '16px' : '20px',
             borderBottom: `1px solid ${theme.border}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between'
           }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
+            <h2 style={{
+              fontSize: isMobile ? '16px' : '18px',
+              fontWeight: '600',
+              color: theme.text,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+              marginRight: '12px'
+            }}>
               {selectedDeal.title}
             </h2>
             <div style={{ display: 'flex', gap: '8px' }}>
