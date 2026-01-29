@@ -15,13 +15,19 @@ import DataConsoleUsers from './DataConsoleUsers'
 import DataConsoleUtilities from './DataConsoleUtilities'
 import DataConsoleProducts from './DataConsoleProducts'
 import DataConsoleAgents from './DataConsoleAgents'
+import DataConsoleBrowser from './DataConsoleBrowser'
+import DataConsoleBulkOps from './DataConsoleBulkOps'
+import DataConsoleSQL from './DataConsoleSQL'
+import DataConsoleFeedback from './DataConsoleFeedback'
+import DataConsoleAuditLog from './DataConsoleAuditLog'
+import DataConsoleSystem from './DataConsoleSystem'
 
-// Placeholder for remaining Phase 3+ pages
+// Placeholder for AI Assistant (coming later)
 const Placeholder = ({ title }) => (
   <div style={{ color: '#888', padding: '40px', textAlign: 'center' }}>
     <div style={{ fontSize: '48px', marginBottom: '16px' }}>🚧</div>
     <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '8px' }}>{title}</div>
-    <div>Coming in Phase 3...</div>
+    <div>Coming soon...</div>
   </div>
 )
 
@@ -220,17 +226,17 @@ export default function DataConsole() {
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <Routes>
           <Route index element={<DataConsoleDashboard theme={theme} />} />
-          <Route path="feedback" element={<Placeholder title="Feedback" />} />
+          <Route path="feedback" element={<DataConsoleFeedback />} />
           <Route path="companies" element={<DataConsoleCompanies />} />
           <Route path="users" element={<DataConsoleUsers />} />
           <Route path="utilities" element={<DataConsoleUtilities />} />
           <Route path="agents" element={<DataConsoleAgents />} />
           <Route path="products" element={<DataConsoleProducts />} />
-          <Route path="browser" element={<Placeholder title="Data Browser" />} />
-          <Route path="bulk-ops" element={<Placeholder title="Bulk Ops" />} />
-          <Route path="sql" element={<Placeholder title="SQL Runner" />} />
-          <Route path="audit-log" element={<Placeholder title="Audit Log" />} />
-          <Route path="system" element={<Placeholder title="System" />} />
+          <Route path="browser" element={<DataConsoleBrowser />} />
+          <Route path="bulk-ops" element={<DataConsoleBulkOps />} />
+          <Route path="sql" element={<DataConsoleSQL />} />
+          <Route path="audit-log" element={<DataConsoleAuditLog />} />
+          <Route path="system" element={<DataConsoleSystem />} />
           <Route path="ai-assist" element={<Placeholder title="AI Assistant" />} />
         </Routes>
       </div>

@@ -1,6 +1,7 @@
 import { useState, createContext, useContext } from 'react'
 import { useNavigate, NavLink, Outlet } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import FeedbackButton from './FeedbackButton'
 import {
   LayoutDashboard,
   UserPlus,
@@ -702,6 +703,9 @@ export default function Layout() {
           </div>
         </main>
       </div>
+
+      {/* Feedback Button */}
+      <FeedbackButton />
 
       {/* Responsive CSS */}
       <style>{`

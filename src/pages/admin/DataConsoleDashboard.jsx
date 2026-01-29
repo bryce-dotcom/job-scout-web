@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import {
   Building2, Users, Zap, Bot, Package, MessageSquare,
-  TrendingUp, Clock, AlertCircle, CheckCircle, Database
+  TrendingUp, Clock, AlertCircle, CheckCircle, Database, Upload, Terminal
 } from 'lucide-react'
 
 export default function DataConsoleDashboard({ theme }) {
@@ -285,7 +285,7 @@ export default function DataConsoleDashboard({ theme }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
           {[
             { label: 'Browse Data', icon: Database, path: '/admin/data-console/browser' },
-            { label: 'Run SQL', icon: '>', path: '/admin/data-console/sql' },
+            { label: 'Run SQL', icon: Terminal, path: '/admin/data-console/sql' },
             { label: 'Bulk Import', icon: Upload, path: '/admin/data-console/bulk-ops' },
             { label: 'View Audit Log', icon: Clock, path: '/admin/data-console/audit-log' },
             { label: 'AI Assistant', icon: Bot, path: '/admin/data-console/ai-assist' }
