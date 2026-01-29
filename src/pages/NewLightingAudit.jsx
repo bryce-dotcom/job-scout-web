@@ -64,6 +64,12 @@ export default function NewLightingAudit() {
   const [areas, setAreas] = useState([])
   const [showAreaModal, setShowAreaModal] = useState(false)
   const [editingAreaIndex, setEditingAreaIndex] = useState(null)
+
+  // Lenard AI Photo Analysis state
+  const [photoPreview, setPhotoPreview] = useState(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [aiResult, setAiResult] = useState(null)
+
   const [areaForm, setAreaForm] = useState({
     area_name: '',
     ceiling_height: '',
@@ -189,6 +195,7 @@ export default function NewLightingAudit() {
       confirmed: false,
       override_notes: ''
     })
+    clearPhotoState()
   }
 
   const handleEditArea = (index) => {
@@ -281,6 +288,90 @@ export default function NewLightingAudit() {
 
   const formatCurrency = (amount) => {
     return '$' + parseFloat(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })
+  }
+
+  // Map AI category to our categories
+  const mapCategory = (aiCategory) => {
+    const mapping = {
+      'Indoor Linear': 'Linear',
+      'Indoor High Bay': 'High Bay',
+      'Outdoor': 'Outdoor',
+      'Decorative': 'Other',
+      'Other': 'Other'
+    }
+    return mapping[aiCategory] || 'Linear'
+  }
+
+  // Handle photo capture for Lenard AI analysis
+  const handlePhotoCapture = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Create preview
+    const reader = new FileReader()
+    reader.onload = (ev) => setPhotoPreview(ev.target.result)
+    reader.readAsDataURL(file)
+
+    // Convert to base64 for API
+    setAnalyzing(true)
+    setAiResult(null)
+
+    const base64Reader = new FileReader()
+    base64Reader.onload = async (ev) => {
+      const base64 = ev.target.result.split(',')[1]
+
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-fixture`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({
+              imageBase64: base64,
+              auditContext: {
+                areaName: areaForm.area_name || 'Unknown Area',
+                buildingType: 'Commercial'
+              }
+            })
+          }
+        )
+
+        const data = await response.json()
+
+        if (data?.success && data?.analysis) {
+          setAiResult(data.analysis)
+
+          // Auto-fill form fields
+          setAreaForm(prev => ({
+            ...prev,
+            area_name: prev.area_name || data.analysis.fixture_type || '',
+            fixture_category: mapCategory(data.analysis.fixture_category),
+            fixture_count: data.analysis.fixture_count || prev.fixture_count,
+            existing_wattage: data.analysis.existing_wattage_per_fixture || prev.existing_wattage,
+            ceiling_height: data.analysis.ceiling_height_estimate || prev.ceiling_height,
+            override_notes: data.analysis.notes ? `AI Notes: ${data.analysis.notes}` : prev.override_notes
+          }))
+        } else {
+          alert('Lenard had trouble analyzing this photo. Please try again or fill in manually.')
+        }
+      } catch (err) {
+        console.error('Error calling analyze-fixture:', err)
+        alert('Could not connect to Lenard. Please try again.')
+      }
+
+      setAnalyzing(false)
+    }
+    base64Reader.readAsDataURL(file)
+  }
+
+  // Clear photo state
+  const clearPhotoState = () => {
+    setPhotoPreview(null)
+    setAiResult(null)
+    setAnalyzing(false)
   }
 
   const ledProducts = products.filter(p => p.type === 'Product')
@@ -1097,6 +1188,118 @@ export default function NewLightingAudit() {
             </h2>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Lenard AI Photo Analysis */}
+              {editingAreaIndex === null && (
+                <div style={{
+                  backgroundColor: 'rgba(90, 99, 73, 0.1)',
+                  border: '2px dashed #5a6349',
+                  borderRadius: '12px',
+                  padding: '24px',
+                  textAlign: 'center'
+                }}>
+                  {!photoPreview ? (
+                    <>
+                      <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔦</div>
+                      <p style={{ color: '#5a6349', fontWeight: '600', marginBottom: '4px', margin: '0 0 4px' }}>
+                        Let Lenard identify your fixtures
+                      </p>
+                      <p style={{ color: '#7d8a7f', fontSize: '14px', marginBottom: '20px', margin: '0 0 20px' }}>
+                        Snap a photo and AI will auto-fill the form
+                      </p>
+                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <label style={{
+                          padding: '12px 24px',
+                          backgroundColor: '#5a6349',
+                          color: '#fff',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontWeight: '600',
+                          display: 'inline-block'
+                        }}>
+                          📷 Take Photo
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handlePhotoCapture}
+                            style={{ display: 'none' }}
+                          />
+                        </label>
+                        <label style={{
+                          padding: '12px 24px',
+                          backgroundColor: 'transparent',
+                          color: '#5a6349',
+                          border: '2px solid #5a6349',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontWeight: '600',
+                          display: 'inline-block'
+                        }}>
+                          📁 Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handlePhotoCapture}
+                            style={{ display: 'none' }}
+                          />
+                        </label>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <img
+                        src={photoPreview}
+                        alt="Fixture"
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '180px',
+                          borderRadius: '8px',
+                          marginBottom: '16px'
+                        }}
+                      />
+                      {analyzing ? (
+                        <div style={{ color: '#5a6349' }}>
+                          <p style={{ fontWeight: '600', margin: '0 0 4px' }}>🔦 Lenard is analyzing...</p>
+                          <p style={{ fontSize: '13px', color: '#7d8a7f', margin: 0 }}>Identifying fixtures, counting, estimating wattage</p>
+                        </div>
+                      ) : aiResult ? (
+                        <div style={{
+                          backgroundColor: '#fff',
+                          padding: '16px',
+                          borderRadius: '8px',
+                          textAlign: 'left',
+                          border: '1px solid #d6cdb8'
+                        }}>
+                          <div style={{ color: '#5a6349', fontWeight: '600', marginBottom: '8px' }}>✅ Lenard detected:</div>
+                          <div style={{ color: '#2c3530', fontWeight: '600' }}>{aiResult.fixture_type}</div>
+                          <div style={{ color: '#5a6349', fontSize: '14px' }}>
+                            {aiResult.fixture_count} fixtures • ~{aiResult.existing_wattage_per_fixture}W each
+                          </div>
+                          <div style={{ color: '#7d8a7f', fontSize: '12px', marginTop: '8px' }}>
+                            Confidence: {aiResult.confidence} • {aiResult.lamp_type} lamps
+                          </div>
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={clearPhotoState}
+                        style={{
+                          marginTop: '16px',
+                          padding: '8px 20px',
+                          backgroundColor: 'transparent',
+                          color: '#7d8a7f',
+                          border: '1px solid #d6cdb8',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ✕ Clear & Try Again
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label style={{
                   display: 'block',
@@ -1362,6 +1565,7 @@ export default function NewLightingAudit() {
                     confirmed: false,
                     override_notes: ''
                   })
+                  clearPhotoState()
                 }}
                 style={{
                   padding: '10px 20px',
