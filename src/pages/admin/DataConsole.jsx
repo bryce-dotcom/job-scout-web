@@ -8,14 +8,20 @@ import {
   ArrowLeft
 } from 'lucide-react'
 
-// Sub-pages (we'll create these)
+// Sub-pages
 import DataConsoleDashboard from './DataConsoleDashboard'
-// Placeholder components for Phase 2+
+import DataConsoleCompanies from './DataConsoleCompanies'
+import DataConsoleUsers from './DataConsoleUsers'
+import DataConsoleUtilities from './DataConsoleUtilities'
+import DataConsoleProducts from './DataConsoleProducts'
+import DataConsoleAgents from './DataConsoleAgents'
+
+// Placeholder for remaining Phase 3+ pages
 const Placeholder = ({ title }) => (
   <div style={{ color: '#888', padding: '40px', textAlign: 'center' }}>
     <div style={{ fontSize: '48px', marginBottom: '16px' }}>🚧</div>
     <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '8px' }}>{title}</div>
-    <div>Coming soon...</div>
+    <div>Coming in Phase 3...</div>
   </div>
 )
 
@@ -215,11 +221,11 @@ export default function DataConsole() {
         <Routes>
           <Route index element={<DataConsoleDashboard theme={theme} />} />
           <Route path="feedback" element={<Placeholder title="Feedback" />} />
-          <Route path="companies" element={<Placeholder title="Companies" />} />
-          <Route path="users" element={<Placeholder title="Users" />} />
-          <Route path="utilities" element={<Placeholder title="Utilities & Rebates" />} />
-          <Route path="agents" element={<Placeholder title="AI Agents" />} />
-          <Route path="products" element={<Placeholder title="Products Library" />} />
+          <Route path="companies" element={<DataConsoleCompanies />} />
+          <Route path="users" element={<DataConsoleUsers />} />
+          <Route path="utilities" element={<DataConsoleUtilities />} />
+          <Route path="agents" element={<DataConsoleAgents />} />
+          <Route path="products" element={<DataConsoleProducts />} />
           <Route path="browser" element={<Placeholder title="Data Browser" />} />
           <Route path="bulk-ops" element={<Placeholder title="Bulk Ops" />} />
           <Route path="sql" element={<Placeholder title="SQL Runner" />} />
