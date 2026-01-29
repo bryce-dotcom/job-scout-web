@@ -169,10 +169,54 @@ export default function Layout() {
       ]
     },
     {
-      title: 'AI CREW',
+      title: 'CRM',
       items: [
-        { to: '/base-camp', icon: Tent, label: 'Base Camp' },
-        { to: '/my-crew', icon: Users, label: 'My Crew' },
+        { to: '/customers', icon: Users, label: 'Customers' },
+        { to: '/leads', icon: UserPlus, label: 'Leads' },
+        { to: '/pipeline', icon: GitBranch, label: 'Pipeline' },
+        { to: '/appointments', icon: CalendarCheck, label: 'Appointments' }
+      ]
+    },
+    {
+      title: 'SALES',
+      items: [
+        { to: '/quotes', icon: FileText, label: 'Quotes' },
+        { to: '/products', icon: Package, label: 'Products & Services' }
+      ]
+    },
+    {
+      title: 'JOBS',
+      items: [
+        { to: '/jobs', icon: Briefcase, label: 'Jobs' },
+        { to: '/jobs/calendar', icon: CalendarDays, label: 'Calendar' },
+        { to: '/routes', icon: Route, label: 'Routes' }
+      ]
+    },
+    {
+      title: 'FINANCIAL',
+      items: [
+        { to: '/invoices', icon: Receipt, label: 'Invoices' },
+        { to: '/lead-payments', icon: CreditCard, label: 'Payments' },
+        { to: '/expenses', icon: DollarSign, label: 'Expenses' }
+      ]
+    },
+    {
+      title: 'RESOURCES',
+      items: [
+        { to: '/inventory', icon: Warehouse, label: 'Inventory' }
+      ]
+    },
+    {
+      title: 'TEAM',
+      items: [
+        { to: '/employees', icon: UserCog, label: 'Employees' },
+        { to: '/time-clock', icon: Clock, label: 'Time Clock' },
+        { to: '/payroll', icon: DollarSign, label: 'Payroll' }
+      ]
+    },
+    {
+      title: 'MY CREW',
+      items: [
         {
           key: 'lenard',
           icon: Lightbulb,
@@ -200,58 +244,28 @@ export default function Layout() {
       ]
     },
     {
-      title: 'SALES',
+      title: 'BASE CAMP',
       items: [
-        { to: '/leads', icon: UserPlus, label: 'Leads' },
-        { to: '/pipeline', icon: GitBranch, label: 'Pipeline' },
-        { to: '/customers', icon: Users, label: 'Customers' },
-        { to: '/quotes', icon: FileText, label: 'Quotes' },
-        { to: '/appointments', icon: CalendarCheck, label: 'Appointments' }
-      ]
-    },
-    {
-      title: 'OPERATIONS',
-      items: [
-        { to: '/jobs', icon: Briefcase, label: 'Jobs' },
-        { to: '/jobs/calendar', icon: CalendarDays, label: 'Jobs Calendar' },
-        { to: '/routes', icon: Route, label: 'Routes' },
-        { to: '/routes/calendar', icon: Calendar, label: 'Routes Calendar' },
-        { to: '/time-log', icon: Clock, label: 'Time Log' },
-        { to: '/bookings', icon: CalendarCheck, label: 'Bookings' }
-      ]
-    },
-    {
-      title: 'FINANCIAL',
-      items: [
-        { to: '/invoices', icon: Receipt, label: 'Invoices' },
-        { to: '/products', icon: Package, label: 'Products' },
-        { to: '/expenses', icon: DollarSign, label: 'Expenses' },
-        { to: '/lead-payments', icon: CreditCard, label: 'Lead Payments' }
-      ]
-    },
-    {
-      title: 'RESOURCES',
-      items: [
-        { to: '/employees', icon: UserCog, label: 'Employees' },
-        { to: '/inventory', icon: Warehouse, label: 'Inventory' }
+        { to: '/base-camp', icon: Tent, label: 'Agent Marketplace' }
       ]
     },
     {
       title: 'ADMIN',
       items: [
-        { to: '/communications', icon: MessageSquare, label: 'Communications' },
-        { to: '/reports', icon: BarChart3, label: 'Reports' },
-        { to: '/settings', icon: Settings, label: 'Settings' }
+        { to: '/settings', icon: Settings, label: 'Settings' },
+        { to: '/reports', icon: BarChart3, label: 'Reports' }
       ]
-    },
-    // Dev section - only shown for developers
-    ...(isDeveloper ? [{
-      title: 'DEV',
-      items: [
-        { to: '/admin/data-console', icon: Terminal, label: 'Data Console' }
-      ]
-    }] : [])
+    }
   ]
+
+  // Dev section - only shown for developers (handled separately for red styling)
+  const devSection = isDeveloper ? {
+    title: 'DEVELOPMENT & MAINT.',
+    items: [
+      { to: '/admin/data-console', icon: Terminal, label: 'Data Console' }
+    ],
+    isDev: true
+  } : null
 
   const displayName = user?.name || user?.email || 'User'
 
@@ -346,9 +360,9 @@ export default function Layout() {
       <div style={{
         fontSize: '10px',
         fontWeight: '600',
-        color: theme.textMuted,
+        color: section.isDev ? '#ef4444' : theme.textMuted,
         letterSpacing: '0.05em',
-        padding: '8px 12px 4px',
+        padding: section.isDev ? '16px 12px 4px' : '8px 12px 4px',
         textTransform: 'uppercase'
       }}>
         {section.title}
@@ -357,6 +371,28 @@ export default function Layout() {
         {section.items.map((item) => (
           item.expandable ? (
             <ExpandableNavItem key={item.key} item={item} mobile={mobile} />
+          ) : section.isDev ? (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              onClick={() => mobile && setMobileMenuOpen(false)}
+              style={({ isActive }) => ({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                color: isActive ? '#f97316' : '#ef4444',
+                backgroundColor: isActive ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
+                textDecoration: 'none',
+                fontSize: '13px',
+                fontWeight: isActive ? '500' : '400',
+                transition: 'all 0.15s ease'
+              })}
+            >
+              <item.icon size={18} />
+              {item.label}
+            </NavLink>
           ) : (
             <NavItem key={item.to} item={item} mobile={mobile} />
           )
@@ -434,6 +470,7 @@ export default function Layout() {
             {navSections.map((section) => (
               <NavSection key={section.title} section={section} />
             ))}
+            {devSection && <NavSection section={devSection} />}
           </nav>
 
           {/* User/Logout */}
@@ -619,6 +656,7 @@ export default function Layout() {
                 {navSections.map((section) => (
                   <NavSection key={section.title} section={section} mobile />
                 ))}
+                {devSection && <NavSection section={devSection} mobile />}
               </nav>
               <div style={{
                 padding: '16px',

@@ -39,6 +39,8 @@ import Bookings from './pages/Bookings'
 import LeadPayments from './pages/LeadPayments'
 import UtilityInvoices from './pages/UtilityInvoices'
 import Incentives from './pages/Incentives'
+import TimeClock from './pages/TimeClock'
+import Payroll from './pages/Payroll'
 import BaseCamp from './pages/BaseCamp'
 import MyCrew from './pages/MyCrew'
 import LenardWorkspace from './pages/agents/lenard/LenardWorkspace'
@@ -199,6 +201,8 @@ function App() {
           <Route path="/lead-payments" element={<LeadPayments />} />
           <Route path="/utility-invoices" element={<UtilityInvoices />} />
           <Route path="/incentives" element={<Incentives />} />
+          <Route path="/time-clock" element={<TimeClock />} />
+          <Route path="/payroll" element={<Payroll />} />
 
           {/* Base Camp & AI Agents */}
           <Route path="/base-camp" element={<BaseCamp />} />
