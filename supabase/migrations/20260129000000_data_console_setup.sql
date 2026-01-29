@@ -1,5 +1,4 @@
 -- Data Console Setup - Developer Admin Panel Tables
--- Run this in Supabase SQL Editor
 
 -- Add developer/admin flags to employees
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_developer BOOLEAN DEFAULT false;
@@ -11,7 +10,7 @@ UPDATE employees SET is_developer = true, is_admin = true WHERE email ILIKE '%br
 -- Feedback table for user submissions
 CREATE TABLE IF NOT EXISTS feedback (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id UUID REFERENCES companies(id),
+  company_id INTEGER REFERENCES companies(id),
   user_email TEXT,
   page_url TEXT,
   feedback_type TEXT, -- bug, feature, question
@@ -27,11 +26,11 @@ CREATE TABLE IF NOT EXISTS feedback (
 -- Audit log for tracking data changes
 CREATE TABLE IF NOT EXISTS audit_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id UUID,
+  company_id INTEGER,
   user_email TEXT,
   action TEXT, -- create, update, delete
   table_name TEXT,
-  record_id UUID,
+  record_id TEXT,
   old_values JSONB,
   new_values JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
