@@ -35,7 +35,8 @@ import {
   Gift,
   Tent,
   Bot,
-  ChevronRight
+  ChevronRight,
+  Terminal
 } from 'lucide-react'
 
 // Theme context
@@ -145,6 +146,7 @@ export default function Layout() {
   const user = useStore((state) => state.user)
   const company = useStore((state) => state.company)
   const clearSession = useStore((state) => state.clearSession)
+  const isDeveloper = useStore((state) => state.isDeveloper)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [expandedMenus, setExpandedMenus] = useState({})
 
@@ -240,7 +242,14 @@ export default function Layout() {
         { to: '/reports', icon: BarChart3, label: 'Reports' },
         { to: '/settings', icon: Settings, label: 'Settings' }
       ]
-    }
+    },
+    // Dev section - only shown for developers
+    ...(isDeveloper ? [{
+      title: 'DEV',
+      items: [
+        { to: '/admin/data-console', icon: Terminal, label: 'Data Console' }
+      ]
+    }] : [])
   ]
 
   const displayName = user?.name || user?.email || 'User'

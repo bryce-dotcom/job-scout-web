@@ -43,6 +43,7 @@ import BaseCamp from './pages/BaseCamp'
 import MyCrew from './pages/MyCrew'
 import LenardWorkspace from './pages/agents/lenard/LenardWorkspace'
 import FreddyWorkspace from './pages/agents/freddy/FreddyWorkspace'
+import DataConsole from './pages/admin/DataConsole'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
 
@@ -92,6 +93,7 @@ function App() {
   const setIsLoading = useStore((state) => state.setIsLoading)
   const fetchAllData = useStore((state) => state.fetchAllData)
   const clearSession = useStore((state) => state.clearSession)
+  const checkDeveloperStatus = useStore((state) => state.checkDeveloperStatus)
 
   // Check for existing session on mount and handle session recovery
   useEffect(() => {
@@ -116,6 +118,7 @@ function App() {
           if (employee && employee.company) {
             setUser(employee)
             setCompany(employee.company)
+            checkDeveloperStatus()
           } else {
             // No valid employee - clear session
             await clearSession()
@@ -138,7 +141,7 @@ function App() {
     })
 
     return () => subscription.unsubscribe()
-  }, [setUser, setCompany, setIsLoading, clearSession])
+  }, [setUser, setCompany, setIsLoading, clearSession, checkDeveloperStatus])
 
   // Fetch data when companyId changes
   useEffect(() => {
@@ -220,6 +223,9 @@ function App() {
             <Route path="inventory" element={<Inventory />} />
             <Route path=":id" element={<FleetDetail />} />
           </Route>
+
+          {/* Admin Data Console (Developer Only) */}
+          <Route path="/admin/data-console/*" element={<DataConsole />} />
         </Route>
       </Routes>
     </BrowserRouter>

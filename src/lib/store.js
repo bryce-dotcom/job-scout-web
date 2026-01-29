@@ -11,6 +11,8 @@ export const useStore = create(
       company: null,
       user: null,
       isLoading: false,
+      isDeveloper: false,
+      isAdmin: false,
 
       // Core Data
       employees: [],
@@ -79,6 +81,29 @@ export const useStore = create(
       setUser: (user) => set({ user }),
       setIsLoading: (isLoading) => set({ isLoading }),
 
+      // Check developer/admin status
+      checkDeveloperStatus: async () => {
+        const { user } = get()
+        if (!user?.email) {
+          set({ isDeveloper: false, isAdmin: false })
+          return
+        }
+        try {
+          const { data } = await supabase
+            .from('employees')
+            .select('is_developer, is_admin')
+            .eq('email', user.email)
+            .single()
+          set({
+            isDeveloper: data?.is_developer || false,
+            isAdmin: data?.is_admin || false
+          })
+        } catch (err) {
+          console.log('Error checking developer status:', err)
+          set({ isDeveloper: false, isAdmin: false })
+        }
+      },
+
       // Clear session on logout
       clearSession: async () => {
         await supabase.auth.signOut();
@@ -86,6 +111,8 @@ export const useStore = create(
           company: null,
           companyId: null,
           user: null,
+          isDeveloper: false,
+          isAdmin: false,
           employees: [],
           customers: [],
           leads: [],
