@@ -3,7 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Plus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown } from 'lucide-react'
+import { ArrowLeft, Plus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Camera } from 'lucide-react'
+import FixtureCamera from '../components/FixtureCamera'
+import FixtureConfirmModal from '../components/FixtureConfirmModal'
 
 // Light theme fallback
 const defaultTheme = {
@@ -39,11 +41,14 @@ export default function LightingAuditDetail() {
   const lightingAudits = useStore((state) => state.lightingAudits)
   const auditAreas = useStore((state) => state.auditAreas)
   const products = useStore((state) => state.products)
+  const fixtureTypes = useStore((state) => state.fixtureTypes)
   const fetchLightingAudits = useStore((state) => state.fetchLightingAudits)
   const fetchAuditAreas = useStore((state) => state.fetchAuditAreas)
 
   const [showAreaModal, setShowAreaModal] = useState(false)
   const [editingArea, setEditingArea] = useState(null)
+  const [showAIModal, setShowAIModal] = useState(false)
+  const [aiDetection, setAIDetection] = useState(null)
   const [areaForm, setAreaForm] = useState({
     area_name: '',
     ceiling_height: '',
@@ -230,6 +235,52 @@ export default function LightingAuditDetail() {
   }
 
   const ledProducts = products.filter(p => p.type === 'Product')
+
+  // Handle AI photo analysis completion
+  const handleAIAnalysisComplete = ({ analysis, imagePreview }) => {
+    setAIDetection({ analysis, imagePreview })
+    setShowAIModal(true)
+  }
+
+  // Handle confirming AI detected fixture
+  const handleConfirmAIDetection = async (data) => {
+    const total_existing_watts = data.fixture_count * data.existing_wattage
+    const led_wattage = data.recommended_led_id
+      ? products.find(p => p.id === data.recommended_led_id)?.wattage || Math.round(data.existing_wattage * 0.5)
+      : Math.round(data.existing_wattage * 0.5)
+    const total_led_watts = data.fixture_count * led_wattage
+    const area_watts_reduced = total_existing_watts - total_led_watts
+
+    const areaData = {
+      company_id: companyId,
+      lighting_audit_id: id,
+      area_name: data.fixture_type || 'AI Detected Area',
+      ceiling_height: data.ceiling_height || null,
+      fixture_category: data.fixture_category || 'Linear',
+      fixture_count: data.fixture_count,
+      existing_wattage: data.existing_wattage,
+      led_replacement_id: data.recommended_led_id || null,
+      led_wattage: led_wattage,
+      total_existing_watts,
+      total_led_watts,
+      area_watts_reduced,
+      confirmed: true,
+      override_notes: `AI Detected: ${data.fixture_type}. Notes: ${data.notes || 'None'}`
+    }
+
+    const { error } = await supabase
+      .from('audit_areas')
+      .insert(areaData)
+
+    if (error) {
+      alert('Error saving area: ' + error.message)
+    } else {
+      setShowAIModal(false)
+      setAIDetection(null)
+      fetchAuditAreas()
+      setTimeout(recalculateAudit, 500)
+    }
+  }
 
   return (
     <div style={{ padding: '24px' }}>
@@ -521,13 +572,25 @@ export default function LightingAuditDetail() {
           </button>
         </div>
 
+        {/* AI Photo Capture */}
+        <div style={{ padding: '16px', borderBottom: `1px solid ${theme.border}` }}>
+          <FixtureCamera
+            theme={theme}
+            auditContext={{
+              areaName: 'New Area',
+              buildingType: audit.building_type || 'Commercial'
+            }}
+            onAnalysisComplete={handleAIAnalysisComplete}
+          />
+        </div>
+
         {areas.length === 0 ? (
           <div style={{
             padding: '40px',
             textAlign: 'center',
             color: theme.textMuted
           }}>
-            No areas added yet
+            No areas added yet. Use Lenard AI above to snap a photo!
           </div>
         ) : (
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -986,6 +1049,22 @@ export default function LightingAuditDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* AI Detection Confirmation Modal */}
+      {showAIModal && aiDetection && (
+        <FixtureConfirmModal
+          detected={aiDetection.analysis}
+          imagePreview={aiDetection.imagePreview}
+          fixtureTypes={fixtureTypes}
+          products={products}
+          theme={theme}
+          onConfirm={handleConfirmAIDetection}
+          onCancel={() => {
+            setShowAIModal(false)
+            setAIDetection(null)
+          }}
+        />
       )}
     </div>
   )
