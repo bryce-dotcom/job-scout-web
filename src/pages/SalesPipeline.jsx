@@ -1042,8 +1042,33 @@ export default function SalesPipeline() {
                       {formatCurrency(deal.value)}
                     </div>
 
+                    {/* Appointment Info - show if lead has appointment */}
+                    {deal.lead?.appointment_time && (
+                      <div style={{
+                        marginTop: '6px',
+                        padding: '4px 6px',
+                        backgroundColor: new Date(deal.lead.appointment_time).toDateString() === new Date().toDateString()
+                          ? '#dcfce7' : '#f0fdf4',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        color: new Date(deal.lead.appointment_time).toDateString() === new Date().toDateString()
+                          ? '#166534' : '#15803d',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <Calendar size={10} />
+                        <span style={{ fontWeight: new Date(deal.lead.appointment_time).toDateString() === new Date().toDateString() ? '600' : '400' }}>
+                          {new Date(deal.lead.appointment_time).toDateString() === new Date().toDateString()
+                            ? `TODAY ${new Date(deal.lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                            : new Date(deal.lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+                          }
+                        </span>
+                      </div>
+                    )}
+
                     {/* Footer - compact */}
-                    {(deal.owner || deal.expected_close_date) && (
+                    {(deal.owner || deal.expected_close_date || deal.lead?.appointment_time) && (
                       <div style={{
                         display: 'flex',
                         alignItems: 'center',

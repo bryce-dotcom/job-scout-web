@@ -37,7 +37,8 @@ import {
   Tent,
   Bot,
   ChevronRight,
-  Terminal
+  Terminal,
+  Headphones
 } from 'lucide-react'
 
 // Theme context
@@ -173,6 +174,7 @@ export default function Layout() {
       items: [
         { to: '/customers', icon: Users, label: 'Customers' },
         { to: '/leads', icon: UserPlus, label: 'Leads' },
+        { to: '/lead-setter', icon: Headphones, label: 'Lead Setter' },
         { to: '/pipeline', icon: GitBranch, label: 'Pipeline' },
         { to: '/appointments', icon: CalendarCheck, label: 'Appointments' }
       ]
