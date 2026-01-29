@@ -3,7 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, ArrowRight, Check, Plus, Trash2, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Plus, Trash2, Zap, Info } from 'lucide-react'
+
+const buildingSizes = [
+  { value: 'small', label: 'Small', description: '<10,000 sq ft, <50kW demand' },
+  { value: 'medium', label: 'Medium', description: '10,000-50,000 sq ft, 50-200kW demand' },
+  { value: 'large', label: 'Large/Industrial', description: '>50,000 sq ft, >200kW demand' }
+]
 
 // Light theme fallback
 const defaultTheme = {
@@ -35,13 +41,16 @@ const fixtureCategories = [
 export default function NewLightingAudit() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const user = useStore((state) => state.user)
   const customers = useStore((state) => state.customers)
-  const jobs = useStore((state) => state.jobs)
+  const employees = useStore((state) => state.employees)
   const products = useStore((state) => state.products)
   const utilityProviders = useStore((state) => state.utilityProviders)
+  const utilityPrograms = useStore((state) => state.utilityPrograms)
   const rebateRates = useStore((state) => state.rebateRates)
   const fetchLightingAudits = useStore((state) => state.fetchLightingAudits)
   const fetchAuditAreas = useStore((state) => state.fetchAuditAreas)
+  const fetchSalesPipeline = useStore((state) => state.fetchSalesPipeline)
 
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
@@ -49,16 +58,19 @@ export default function NewLightingAudit() {
   // Step 1 - Basic Info
   const [basicInfo, setBasicInfo] = useState({
     customer_id: '',
-    job_id: '',
+    salesperson_id: '',
     address: '',
     city: '',
     state: '',
     zip: '',
+    building_size: 'medium',
     utility_provider_id: '',
+    rate_schedule_id: '',
     electric_rate: 0.12,
     operating_hours: 10,
     operating_days: 260
   })
+  const [showBuildingSizeTooltip, setShowBuildingSizeTooltip] = useState(false)
 
   // Step 2 - Areas
   const [areas, setAreas] = useState([])
@@ -93,6 +105,16 @@ export default function NewLightingAudit() {
     }
   }, [companyId, navigate])
 
+  // Set default salesperson to current user's employee record
+  useEffect(() => {
+    if (user?.id && employees.length > 0 && !basicInfo.salesperson_id) {
+      const currentEmployee = employees.find(e => e.user_id === user.id)
+      if (currentEmployee) {
+        setBasicInfo(prev => ({ ...prev, salesperson_id: currentEmployee.id }))
+      }
+    }
+  }, [user, employees, basicInfo.salesperson_id])
+
   // Auto-fill address from customer
   useEffect(() => {
     if (basicInfo.customer_id) {
@@ -108,6 +130,30 @@ export default function NewLightingAudit() {
       }
     }
   }, [basicInfo.customer_id, customers])
+
+  // Filter rate schedules based on utility provider and building size
+  const filteredRateSchedules = utilityPrograms.filter(p => {
+    if (!basicInfo.utility_provider_id) return false
+    if (p.utility_provider_id !== basicInfo.utility_provider_id) return false
+    // Match business size if the program has one specified
+    if (p.business_size && p.business_size !== basicInfo.building_size) return false
+    return true
+  })
+
+  // Update electric rate when rate schedule is selected
+  useEffect(() => {
+    if (basicInfo.rate_schedule_id) {
+      const schedule = utilityPrograms.find(p => p.id === basicInfo.rate_schedule_id)
+      if (schedule?.electric_rate) {
+        setBasicInfo(prev => ({ ...prev, electric_rate: schedule.electric_rate }))
+      }
+    }
+  }, [basicInfo.rate_schedule_id, utilityPrograms])
+
+  // Reset rate schedule when provider changes
+  useEffect(() => {
+    setBasicInfo(prev => ({ ...prev, rate_schedule_id: '' }))
+  }, [basicInfo.utility_provider_id])
 
   // Calculate totals
   const calculations = (() => {
@@ -217,12 +263,14 @@ export default function NewLightingAudit() {
         company_id: companyId,
         audit_id: generateAuditId(),
         customer_id: basicInfo.customer_id || null,
-        job_id: basicInfo.job_id || null,
+        salesperson_id: basicInfo.salesperson_id || null,
+        building_size: basicInfo.building_size,
         address: basicInfo.address,
         city: basicInfo.city,
         state: basicInfo.state,
         zip: basicInfo.zip,
         utility_provider_id: basicInfo.utility_provider_id || null,
+        rate_schedule_id: basicInfo.rate_schedule_id || null,
         electric_rate: basicInfo.electric_rate,
         operating_hours: basicInfo.operating_hours,
         operating_days: basicInfo.operating_days,
@@ -271,6 +319,25 @@ export default function NewLightingAudit() {
           .insert(areaRecords)
 
         if (areasError) throw areasError
+      }
+
+      // Create sales pipeline entry for tracking
+      if (basicInfo.customer_id) {
+        const customer = customers.find(c => c.id === basicInfo.customer_id)
+        const pipelineData = {
+          company_id: companyId,
+          customer_id: basicInfo.customer_id,
+          lighting_audit_id: audit.id,
+          salesperson_id: basicInfo.salesperson_id || null,
+          stage: 'Audit Created',
+          deal_name: `Lighting Audit - ${customer?.name || 'Unknown'}`,
+          estimated_value: calculations.est_project_cost,
+          probability: 25,
+          notes: `Auto-created from lighting audit ${audit.audit_id}`
+        }
+
+        await supabase.from('sales_pipeline').insert(pipelineData)
+        fetchSalesPipeline?.()
       }
 
       // Refresh data
@@ -449,6 +516,7 @@ export default function NewLightingAudit() {
           </h2>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Customer and Salesperson */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
                 <label style={{
@@ -458,7 +526,7 @@ export default function NewLightingAudit() {
                   color: theme.textSecondary,
                   marginBottom: '6px'
                 }}>
-                  Customer
+                  Customer *
                 </label>
                 <select
                   value={basicInfo.customer_id}
@@ -488,11 +556,11 @@ export default function NewLightingAudit() {
                   color: theme.textSecondary,
                   marginBottom: '6px'
                 }}>
-                  Job (Optional)
+                  Salesperson
                 </label>
                 <select
-                  value={basicInfo.job_id}
-                  onChange={(e) => setBasicInfo({ ...basicInfo, job_id: e.target.value })}
+                  value={basicInfo.salesperson_id}
+                  onChange={(e) => setBasicInfo({ ...basicInfo, salesperson_id: e.target.value })}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -503,9 +571,9 @@ export default function NewLightingAudit() {
                     fontSize: '14px'
                   }}
                 >
-                  <option value="">No Job</option>
-                  {jobs.map(j => (
-                    <option key={j.id} value={j.id}>{j.job_title || j.job_id}</option>
+                  <option value="">Select Salesperson</option>
+                  {employees.map(e => (
+                    <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
                   ))}
                 </select>
               </div>
@@ -616,19 +684,49 @@ export default function NewLightingAudit() {
               </div>
             </div>
 
+            {/* Building Size with tooltip */}
             <div>
               <label style={{
-                display: 'block',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
                 fontSize: '13px',
                 fontWeight: '500',
                 color: theme.textSecondary,
                 marginBottom: '6px'
               }}>
-                Utility Provider
+                Building Size
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  <Info
+                    size={14}
+                    style={{ cursor: 'pointer', color: theme.textMuted }}
+                    onMouseEnter={() => setShowBuildingSizeTooltip(true)}
+                    onMouseLeave={() => setShowBuildingSizeTooltip(false)}
+                  />
+                  {showBuildingSizeTooltip && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '20px',
+                      left: '0',
+                      backgroundColor: theme.text,
+                      color: '#fff',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      width: '280px',
+                      zIndex: 100,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                    }}>
+                      <div style={{ marginBottom: '8px' }}><strong>Small:</strong> &lt;10,000 sq ft, &lt;50kW demand</div>
+                      <div style={{ marginBottom: '8px' }}><strong>Medium:</strong> 10,000-50,000 sq ft, 50-200kW demand</div>
+                      <div><strong>Large/Industrial:</strong> &gt;50,000 sq ft, &gt;200kW demand</div>
+                    </div>
+                  )}
+                </div>
               </label>
               <select
-                value={basicInfo.utility_provider_id}
-                onChange={(e) => setBasicInfo({ ...basicInfo, utility_provider_id: e.target.value })}
+                value={basicInfo.building_size}
+                onChange={(e) => setBasicInfo({ ...basicInfo, building_size: e.target.value })}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
@@ -639,13 +737,78 @@ export default function NewLightingAudit() {
                   fontSize: '14px'
                 }}
               >
-                <option value="">Select Utility Provider</option>
-                {utilityProviders.map(p => (
-                  <option key={p.id} value={p.id}>{p.provider_name}</option>
+                {buildingSizes.map(size => (
+                  <option key={size.value} value={size.value}>{size.label}</option>
                 ))}
               </select>
             </div>
 
+            {/* Utility Provider and Rate Schedule */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: theme.textSecondary,
+                  marginBottom: '6px'
+                }}>
+                  Utility Provider
+                </label>
+                <select
+                  value={basicInfo.utility_provider_id}
+                  onChange={(e) => setBasicInfo({ ...basicInfo, utility_provider_id: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: theme.bg,
+                    color: theme.text,
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select Utility Provider</option>
+                  {utilityProviders.map(p => (
+                    <option key={p.id} value={p.id}>{p.provider_name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: theme.textSecondary,
+                  marginBottom: '6px'
+                }}>
+                  Rate Schedule
+                </label>
+                <select
+                  value={basicInfo.rate_schedule_id}
+                  onChange={(e) => setBasicInfo({ ...basicInfo, rate_schedule_id: e.target.value })}
+                  disabled={!basicInfo.utility_provider_id}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: !basicInfo.utility_provider_id ? theme.border : theme.bg,
+                    color: theme.text,
+                    fontSize: '14px',
+                    cursor: !basicInfo.utility_provider_id ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <option value="">{basicInfo.utility_provider_id ? 'Select Rate Schedule' : 'Select provider first'}</option>
+                  {filteredRateSchedules.map(p => (
+                    <option key={p.id} value={p.id}>{p.program_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Electric Rate and Operating Schedule */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
               <div>
                 <label style={{
@@ -657,22 +820,35 @@ export default function NewLightingAudit() {
                 }}>
                   Electric Rate ($/kWh)
                 </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={basicInfo.electric_rate}
-                  onChange={(e) => setBasicInfo({ ...basicInfo, electric_rate: parseFloat(e.target.value) || 0 })}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
-                    border: `1px solid ${theme.border}`,
-                    backgroundColor: theme.bg,
-                    color: theme.text,
-                    fontSize: '14px'
-                  }}
-                />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={basicInfo.electric_rate}
+                    onChange={(e) => setBasicInfo({ ...basicInfo, electric_rate: parseFloat(e.target.value) || 0 })}
+                    readOnly={!!basicInfo.rate_schedule_id}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${theme.border}`,
+                      backgroundColor: basicInfo.rate_schedule_id ? theme.border : theme.bg,
+                      color: theme.text,
+                      fontSize: '14px',
+                      cursor: basicInfo.rate_schedule_id ? 'not-allowed' : 'text'
+                    }}
+                  />
+                  {basicInfo.rate_schedule_id && (
+                    <div style={{
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      marginTop: '4px'
+                    }}>
+                      From rate schedule
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{
@@ -1077,7 +1253,9 @@ export default function NewLightingAudit() {
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
               <div><span style={{ color: theme.textMuted }}>Customer:</span> {customers.find(c => c.id === basicInfo.customer_id)?.name || 'None'}</div>
+              <div><span style={{ color: theme.textMuted }}>Salesperson:</span> {employees.find(e => e.id === basicInfo.salesperson_id)?.first_name || 'None'} {employees.find(e => e.id === basicInfo.salesperson_id)?.last_name || ''}</div>
               <div><span style={{ color: theme.textMuted }}>Location:</span> {basicInfo.city}, {basicInfo.state}</div>
+              <div><span style={{ color: theme.textMuted }}>Building Size:</span> {buildingSizes.find(s => s.value === basicInfo.building_size)?.label || basicInfo.building_size}</div>
               <div><span style={{ color: theme.textMuted }}>Electric Rate:</span> ${basicInfo.electric_rate}/kWh</div>
               <div><span style={{ color: theme.textMuted }}>Operating:</span> {basicInfo.operating_hours}h/day, {basicInfo.operating_days} days/yr</div>
             </div>
