@@ -15,9 +15,10 @@ CREATE POLICY "Developers can manage saved queries"
   ON saved_queries FOR ALL
   USING (
     EXISTS (
-      SELECT 1 FROM employees
-      WHERE user_id = auth.uid()
-      AND is_developer = true
+      SELECT 1 FROM employees e
+      JOIN auth.users u ON e.email = u.email
+      WHERE u.id = auth.uid()
+      AND e.is_developer = true
     )
   );
 
