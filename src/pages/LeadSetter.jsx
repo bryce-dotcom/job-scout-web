@@ -86,18 +86,28 @@ export default function LeadSetter() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
+  // Check if user is admin
+  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.role === 'Admin' || user?.role === 'Owner'
+
   // Fetch data
   const fetchData = async () => {
     if (!companyId) return
     setLoading(true)
 
-    // Fetch leads for all setter-relevant stages (simplified query)
-    const { data: leadsData } = await supabase
+    // Build query - filter by setter_id for non-admins
+    let leadsQuery = supabase
       .from('leads')
       .select('*')
       .eq('company_id', companyId)
       .in('status', ['New', 'Contacted', 'Callback', 'Not Qualified', 'Appointment Set', 'Qualified'])
       .order('created_at', { ascending: false })
+
+    // Non-admins only see their assigned leads or unassigned leads
+    if (!isAdmin && user?.id) {
+      leadsQuery = leadsQuery.or(`setter_id.eq.${user.id},setter_id.is.null`)
+    }
+
+    const { data: leadsData } = await leadsQuery
 
     // Fetch appointments for calendar
     const weekStart = getWeekStart(currentDate)
@@ -470,25 +480,53 @@ export default function LeadSetter() {
             Drag leads to calendar to schedule appointments
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           {/* Commission Summary */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            padding: '8px 12px',
+            gap: '12px',
+            padding: '8px 14px',
             backgroundColor: '#dcfce7',
             borderRadius: '8px',
             fontSize: '13px',
             color: '#166534'
           }}>
-            <DollarSign size={16} />
-            <span>
-              {commissions.filter(c => c.payment_status === 'pending').length} pending
-              {' • '}
-              ${commissions.filter(c => c.payment_status === 'paid').reduce((sum, c) => sum + (c.setter_amount || 0), 0)} earned
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <DollarSign size={14} />
+              <span style={{ fontWeight: '600' }}>
+                ${user?.commission_setter_rate || company?.setter_pay_per_appointment || 25}
+              </span>
+              <span style={{ color: '#15803d' }}>/appt</span>
+            </div>
+            <div style={{ width: '1px', height: '16px', backgroundColor: '#86efac' }} />
+            <div>
+              <span style={{ fontWeight: '600' }}>{commissions.filter(c => c.payment_status === 'pending').length}</span>
+              <span style={{ color: '#15803d' }}> pending</span>
+            </div>
+            <div style={{ width: '1px', height: '16px', backgroundColor: '#86efac' }} />
+            <div>
+              <span style={{ fontWeight: '600' }}>
+                ${commissions.filter(c => c.payment_status === 'paid').reduce((sum, c) => sum + (c.setter_amount || 0), 0)}
+              </span>
+              <span style={{ color: '#15803d' }}> earned</span>
+            </div>
           </div>
+
+          {/* Setter Filter (Admin only) */}
+          {isAdmin && (
+            <select
+              value={filterSetter}
+              onChange={(e) => setFilterSetter(e.target.value)}
+              style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
+            >
+              <option value="">All Setters</option>
+              {employees.filter(e => e.role === 'Setter' || e.role === 'Sales').map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.name}</option>
+              ))}
+            </select>
+          )}
+
           {/* Search */}
           <div style={{ position: 'relative' }}>
             <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
@@ -516,22 +554,24 @@ export default function LeadSetter() {
           >
             <RefreshCw size={16} />
           </button>
-          <button
-            onClick={() => setShowSettingsModal(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '10px 14px',
-              backgroundColor: 'transparent',
-              border: `1px solid ${theme.border}`,
-              color: theme.textSecondary,
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
-            <Settings size={16} />
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '10px 14px',
+                backgroundColor: 'transparent',
+                border: `1px solid ${theme.border}`,
+                color: theme.textSecondary,
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              <Settings size={16} />
+            </button>
+          )}
         </div>
       </div>
 

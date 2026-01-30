@@ -180,7 +180,10 @@ export const useStore = create(
 
       fetchLeads: async () => {
         const { companyId } = get();
-        if (!companyId) return;
+        if (!companyId) {
+          console.log('[fetchLeads] No companyId');
+          return;
+        }
 
         const { data, error } = await supabase
           .from('leads')
@@ -188,7 +191,12 @@ export const useStore = create(
           .eq('company_id', companyId)
           .order('created_at', { ascending: false });
 
-        if (!error) set({ leads: data || [] });
+        if (error) {
+          console.error('[fetchLeads] Error:', error);
+        } else {
+          console.log('[fetchLeads] Loaded', data?.length || 0, 'leads');
+          set({ leads: data || [] });
+        }
       },
 
       fetchSalesPipeline: async () => {
