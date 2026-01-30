@@ -7,7 +7,7 @@ import {
   Plus, X, Phone, Mail, Calendar, Clock, User, Building2, MapPin,
   ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, XCircle,
   MessageSquare, PhoneCall, PhoneOff, CalendarPlus, DollarSign,
-  RefreshCw, Filter, Search
+  RefreshCw, Filter, Search, Settings, Trophy
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -29,6 +29,12 @@ const setterStages = [
   { id: 'Not Qualified', label: 'Not Qualified', color: '#6b7280' }
 ]
 
+// Win stages (read-only, shows setter's wins)
+const winStages = [
+  { id: 'Appointment Set', label: 'Scheduled', color: '#10b981', icon: '📅' },
+  { id: 'Qualified', label: 'Qualified', color: '#059669', icon: '✅' }
+]
+
 export default function LeadSetter() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -39,7 +45,15 @@ export default function LeadSetter() {
   // Data
   const [leads, setLeads] = useState([])
   const [appointments, setAppointments] = useState([])
+  const [commissions, setCommissions] = useState([])
   const [loading, setLoading] = useState(true)
+
+  // Settings modal
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [settingsForm, setSettingsForm] = useState({
+    setter_pay_per_appointment: 25,
+    commission_requires_quote: true
+  })
 
   // Calendar
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -77,12 +91,12 @@ export default function LeadSetter() {
     if (!companyId) return
     setLoading(true)
 
-    // Fetch leads for setter stages
+    // Fetch leads for all setter-relevant stages (simplified query)
     const { data: leadsData } = await supabase
       .from('leads')
-      .select('*, setter:employees!leads_setter_id_fkey(*), salesperson:employees!leads_salesperson_id_fkey(*)')
+      .select('*')
       .eq('company_id', companyId)
-      .in('status', ['New', 'Contacted', 'Callback', 'Not Qualified', 'Appointment Set'])
+      .in('status', ['New', 'Contacted', 'Callback', 'Not Qualified', 'Appointment Set', 'Qualified'])
       .order('created_at', { ascending: false })
 
     // Fetch appointments for calendar
@@ -92,14 +106,32 @@ export default function LeadSetter() {
 
     const { data: appointmentsData } = await supabase
       .from('appointments')
-      .select('*, lead:leads(*), salesperson:employees!appointments_salesperson_id_fkey(*)')
+      .select('*, lead:leads(*)')
       .eq('company_id', companyId)
       .gte('start_time', weekStart.toISOString())
       .lte('start_time', weekEnd.toISOString())
       .order('start_time')
 
+    // Fetch commissions for current setter
+    const { data: commissionsData } = await supabase
+      .from('setter_commissions')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('setter_id', user?.id)
+      .order('created_at', { ascending: false })
+
     setLeads(leadsData || [])
     setAppointments(appointmentsData || [])
+    setCommissions(commissionsData || [])
+
+    // Load company settings
+    if (company) {
+      setSettingsForm({
+        setter_pay_per_appointment: company.setter_pay_per_appointment || 25,
+        commission_requires_quote: company.commission_requires_quote !== false
+      })
+    }
+
     setLoading(false)
   }
 
@@ -195,6 +227,7 @@ export default function LeadSetter() {
   const handleDragStart = (e, lead) => {
     setDraggedLead(lead)
     e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', lead.id.toString()) // Required for drop to work
   }
 
   const handleDragEnd = () => {
@@ -253,68 +286,88 @@ export default function LeadSetter() {
       location: draggedLead.address || '',
       notes: ''
     })
+    setAppointmentError(null)
     setShowAppointmentModal(true)
   }
+
+  // Appointment error state
+  const [appointmentError, setAppointmentError] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   // Create appointment
   const handleCreateAppointment = async (e) => {
     e.preventDefault()
     if (!selectedLead || !appointmentForm.start_time) return
 
+    setSaving(true)
+    setAppointmentError(null)
+
     const startTime = new Date(appointmentForm.start_time)
     const endTime = new Date(startTime)
     endTime.setMinutes(endTime.getMinutes() + appointmentForm.duration_minutes)
 
-    // Create appointment
+    // Create appointment with minimal required fields
+    const appointmentPayload = {
+      company_id: companyId,
+      lead_id: selectedLead.id,
+      title: `${selectedLead.customer_name} - ${selectedLead.service_type || 'Meeting'}`,
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString(),
+      status: 'scheduled'
+    }
+
+    // Add optional fields only if they have values
+    if (appointmentForm.location) appointmentPayload.location = appointmentForm.location
+    if (appointmentForm.notes) appointmentPayload.notes = appointmentForm.notes
+
+    console.log('Creating appointment:', appointmentPayload)
+
     const { data: apt, error } = await supabase
       .from('appointments')
-      .insert({
-        company_id: companyId,
-        lead_id: selectedLead.id,
-        title: `${selectedLead.customer_name} - ${selectedLead.service_type || 'Meeting'}`,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        duration_minutes: appointmentForm.duration_minutes,
-        location: appointmentForm.location,
-        salesperson_id: appointmentForm.salesperson_id || null,
-        setter_id: user?.id,
-        status: 'scheduled',
-        notes: appointmentForm.notes
-      })
+      .insert(appointmentPayload)
       .select()
       .single()
 
     if (error) {
       console.error('Error creating appointment:', error)
+      setAppointmentError(error.message)
+      setSaving(false)
       return
     }
 
-    // Update lead status and link appointment
-    await supabase
+    console.log('Appointment created:', apt)
+
+    // Update lead status (simplified - only use columns we know exist)
+    const { error: leadError } = await supabase
       .from('leads')
       .update({
-        status: 'Appointment Set',
-        appointment_id: apt.id,
-        appointment_time: startTime.toISOString(),
-        setter_id: user?.id
+        status: 'Appointment Set'
       })
       .eq('id', selectedLead.id)
 
-    // Create commission record (pending until quote)
-    if (company?.commission_requires_quote) {
-      await supabase
-        .from('setter_commissions')
-        .insert({
-          company_id: companyId,
-          lead_id: selectedLead.id,
-          appointment_id: apt.id,
-          setter_id: user?.id,
-          setter_amount: company?.setter_pay_per_appointment || 25,
-          payment_status: 'pending',
-          requires_quote: true
-        })
+    if (leadError) {
+      console.error('Error updating lead:', leadError)
     }
 
+    // Try to create commission record (may fail if table doesn't exist)
+    try {
+      if (company?.setter_pay_per_appointment > 0) {
+        await supabase
+          .from('setter_commissions')
+          .insert({
+            company_id: companyId,
+            lead_id: selectedLead.id,
+            appointment_id: apt.id,
+            setter_id: user?.id,
+            setter_amount: company?.setter_pay_per_appointment || 25,
+            payment_status: 'pending'
+          })
+      }
+    } catch (err) {
+      console.log('Commission record not created:', err)
+    }
+
+    setSaving(false)
     setShowAppointmentModal(false)
     setSelectedLead(null)
     setDraggedLead(null)
@@ -349,6 +402,23 @@ export default function LeadSetter() {
 
     setShowLeadModal(false)
     await fetchData()
+  }
+
+  // Save commission settings
+  const saveSettings = async () => {
+    const { error } = await supabase
+      .from('companies')
+      .update({
+        setter_pay_per_appointment: settingsForm.setter_pay_per_appointment,
+        commission_requires_quote: settingsForm.commission_requires_quote
+      })
+      .eq('id', companyId)
+
+    if (!error) {
+      setShowSettingsModal(false)
+      // Refresh company data
+      await fetchData()
+    }
   }
 
   // Styles
@@ -401,6 +471,24 @@ export default function LeadSetter() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Commission Summary */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 12px',
+            backgroundColor: '#dcfce7',
+            borderRadius: '8px',
+            fontSize: '13px',
+            color: '#166534'
+          }}>
+            <DollarSign size={16} />
+            <span>
+              {commissions.filter(c => c.payment_status === 'pending').length} pending
+              {' • '}
+              ${commissions.filter(c => c.payment_status === 'paid').reduce((sum, c) => sum + (c.setter_amount || 0), 0)} earned
+            </span>
+          </div>
           {/* Search */}
           <div style={{ position: 'relative' }}>
             <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
@@ -428,13 +516,30 @@ export default function LeadSetter() {
           >
             <RefreshCw size={16} />
           </button>
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '10px 14px',
+              backgroundColor: 'transparent',
+              border: `1px solid ${theme.border}`,
+              color: theme.textSecondary,
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            <Settings size={16} />
+          </button>
         </div>
       </div>
 
       {/* Main Content - Split View */}
       <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden' }}>
         {/* Left: Kanban Leads */}
-        <div style={{ width: '400px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ width: '450px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Stats Row */}
           <div style={{
             display: 'flex',
             gap: '8px',
@@ -456,6 +561,25 @@ export default function LeadSetter() {
                   {getLeadsByStage(stage.id).length}
                 </div>
                 <div style={{ fontSize: '11px', color: theme.textMuted }}>{stage.label}</div>
+              </div>
+            ))}
+            {/* Wins */}
+            {winStages.map(stage => (
+              <div
+                key={stage.id}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  backgroundColor: '#dcfce7',
+                  borderRadius: '8px',
+                  border: `1px solid #86efac`,
+                  textAlign: 'center'
+                }}
+              >
+                <div style={{ fontSize: '18px', fontWeight: '700', color: stage.color }}>
+                  {getLeadsByStage(stage.id).length}
+                </div>
+                <div style={{ fontSize: '11px', color: '#166534' }}>{stage.icon} {stage.label}</div>
               </div>
             ))}
           </div>
@@ -830,6 +954,19 @@ export default function LeadSetter() {
             </div>
 
             <form onSubmit={handleCreateAppointment} style={{ padding: '20px' }}>
+              {appointmentError && (
+                <div style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '8px',
+                  color: '#dc2626',
+                  fontSize: '14px'
+                }}>
+                  Error: {appointmentError}
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
                   <label style={labelStyle}>Date & Time *</label>
@@ -928,6 +1065,7 @@ export default function LeadSetter() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving}
                   style={{
                     flex: 1,
                     padding: '12px',
@@ -936,10 +1074,11 @@ export default function LeadSetter() {
                     border: 'none',
                     borderRadius: '8px',
                     fontWeight: '500',
-                    cursor: 'pointer'
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    opacity: saving ? 0.7 : 1
                   }}
                 >
-                  Schedule
+                  {saving ? 'Scheduling...' : 'Schedule'}
                 </button>
               </div>
             </form>
@@ -1191,6 +1330,154 @@ export default function LeadSetter() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettingsModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '480px',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <div style={{
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
+                  Commission Settings
+                </h2>
+                <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '2px' }}>
+                  Configure setter pay and commission rules
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                style={{
+                  padding: '8px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: theme.textMuted
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={labelStyle}>Pay Per Appointment ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={settingsForm.setter_pay_per_appointment}
+                  onChange={(e) => setSettingsForm(prev => ({
+                    ...prev,
+                    setter_pay_per_appointment: parseFloat(e.target.value) || 0
+                  }))}
+                  style={inputStyle}
+                />
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                  Amount paid to setter for each appointment they schedule
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  cursor: 'pointer'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={settingsForm.commission_requires_quote}
+                    onChange={(e) => setSettingsForm(prev => ({
+                      ...prev,
+                      commission_requires_quote: e.target.checked
+                    }))}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                  <span style={{ fontSize: '14px', color: theme.text }}>
+                    Require quote for commission
+                  </span>
+                </label>
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '8px', marginLeft: '28px' }}>
+                  When enabled, commission is only paid when a quote is generated from the appointment.
+                  This ensures setters are paid for qualified meetings.
+                </p>
+              </div>
+
+              <div style={{
+                padding: '16px',
+                backgroundColor: theme.accentBg,
+                borderRadius: '8px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>
+                  How it works:
+                </div>
+                <ul style={{ fontSize: '13px', color: theme.textSecondary, margin: 0, paddingLeft: '20px' }}>
+                  <li style={{ marginBottom: '4px' }}>Setter schedules appointment → Lead moves to "Scheduled"</li>
+                  <li style={{ marginBottom: '4px' }}>Salesperson meets with lead → Creates quote</li>
+                  <li style={{ marginBottom: '4px' }}>Quote generated → Lead moves to "Qualified"</li>
+                  <li>Commission approved and paid to setter</li>
+                </ul>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowSettingsModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveSettings}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Save Settings
+                </button>
+              </div>
             </div>
           </div>
         </div>

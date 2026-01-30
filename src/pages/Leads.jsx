@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search } from 'lucide-react'
+import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download } from 'lucide-react'
 
 const LEAD_SOURCES = ['Website', 'Referral', 'Cold Call', 'Marketing', 'Google Ads', 'Facebook', 'Door Knock', 'Trade Show', 'Other']
 const LEAD_STATUSES = ['New', 'Qualified', 'Appointment Scheduled', 'Waiting', 'Not Qualified', 'Converted']
@@ -48,6 +48,7 @@ export default function Leads() {
 
   const [showModal, setShowModal] = useState(false)
   const [showAppointmentModal, setShowAppointmentModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const [editingLead, setEditingLead] = useState(null)
   const [selectedLead, setSelectedLead] = useState(null)
   const [formData, setFormData] = useState(emptyLead)
@@ -57,6 +58,9 @@ export default function Leads() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
+  const [importData, setImportData] = useState('')
+  const [importError, setImportError] = useState(null)
+  const [importSuccess, setImportSuccess] = useState(null)
 
   useEffect(() => {
     if (!companyId) {
@@ -133,10 +137,18 @@ export default function Leads() {
     setLoading(true)
     setError(null)
 
+    // Build payload with only defined fields - avoid spreading undefined form fields
     const payload = {
-      ...formData,
       company_id: companyId,
-      salesperson_id: formData.salesperson_id || null,
+      customer_name: formData.customer_name,
+      business_name: formData.business_name || null,
+      email: formData.email || null,
+      phone: formData.phone || null,
+      address: formData.address || null,
+      service_type: formData.service_type || null,
+      lead_source: formData.lead_source || null,
+      status: formData.status || 'New',
+      notes: formData.notes || null,
       updated_at: new Date().toISOString()
     }
 
@@ -178,17 +190,17 @@ export default function Leads() {
       company_id: companyId,
       lead_id: selectedLead.id,
       title: appointmentData.title,
-      start_time: appointmentData.start_time,
-      end_time: appointmentData.end_time,
-      location: appointmentData.location,
-      notes: appointmentData.notes,
+      start_time: appointmentData.start_time || null,
+      end_time: appointmentData.end_time || null,
+      location: appointmentData.location || null,
+      notes: appointmentData.notes || null,
       status: 'Scheduled'
     }])
 
     if (!error) {
       await supabase.from('leads').update({
         status: 'Appointment Scheduled',
-        appointment_time: appointmentData.start_time,
+        appointment_time: appointmentData.start_time || null,
         updated_at: new Date().toISOString()
       }).eq('id', selectedLead.id)
       await fetchLeads()
@@ -235,6 +247,142 @@ export default function Leads() {
     return new Date(dateStr).toLocaleDateString()
   }
 
+  // Delete lead
+  const handleDelete = async (lead) => {
+    if (!confirm(`Delete lead "${lead.customer_name}"? This cannot be undone.`)) return
+
+    const { error } = await supabase.from('leads').delete().eq('id', lead.id)
+    if (!error) {
+      await fetchLeads()
+    }
+  }
+
+  // CSV Import
+  const handleImport = async () => {
+    setImportError(null)
+    setImportSuccess(null)
+    setLoading(true)
+
+    try {
+      const lines = importData.trim().split('\n')
+      if (lines.length < 2) {
+        setImportError('CSV must have a header row and at least one data row')
+        setLoading(false)
+        return
+      }
+
+      // Parse header
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+
+      // Map common header variations
+      const headerMap = {
+        'name': 'customer_name',
+        'customer': 'customer_name',
+        'customer_name': 'customer_name',
+        'company': 'business_name',
+        'business': 'business_name',
+        'business_name': 'business_name',
+        'email': 'email',
+        'phone': 'phone',
+        'telephone': 'phone',
+        'address': 'address',
+        'source': 'lead_source',
+        'lead_source': 'lead_source',
+        'service': 'service_type',
+        'service_type': 'service_type',
+        'notes': 'notes',
+        'status': 'status'
+      }
+
+      const mappedHeaders = headers.map(h => headerMap[h] || h)
+
+      // Must have customer_name
+      if (!mappedHeaders.includes('customer_name')) {
+        setImportError('CSV must have a "name" or "customer_name" column')
+        setLoading(false)
+        return
+      }
+
+      // Parse data rows
+      const leadsToInsert = []
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim()
+        if (!line) continue
+
+        // Simple CSV parse (handles quoted fields)
+        const values = []
+        let current = ''
+        let inQuotes = false
+        for (let j = 0; j < line.length; j++) {
+          const char = line[j]
+          if (char === '"') {
+            inQuotes = !inQuotes
+          } else if (char === ',' && !inQuotes) {
+            values.push(current.trim())
+            current = ''
+          } else {
+            current += char
+          }
+        }
+        values.push(current.trim())
+
+        const lead = { company_id: companyId, status: 'New' }
+        mappedHeaders.forEach((header, idx) => {
+          if (values[idx] && ['customer_name', 'business_name', 'email', 'phone', 'address', 'lead_source', 'service_type', 'notes', 'status'].includes(header)) {
+            lead[header] = values[idx]
+          }
+        })
+
+        if (lead.customer_name) {
+          leadsToInsert.push(lead)
+        }
+      }
+
+      if (leadsToInsert.length === 0) {
+        setImportError('No valid leads found in CSV')
+        setLoading(false)
+        return
+      }
+
+      // Insert in batches of 100
+      const batchSize = 100
+      let imported = 0
+      for (let i = 0; i < leadsToInsert.length; i += batchSize) {
+        const batch = leadsToInsert.slice(i, i + batchSize)
+        const { error } = await supabase.from('leads').insert(batch)
+        if (error) {
+          setImportError(`Error importing batch: ${error.message}`)
+          setLoading(false)
+          return
+        }
+        imported += batch.length
+      }
+
+      setImportSuccess(`Successfully imported ${imported} leads!`)
+      await fetchLeads()
+      setTimeout(() => {
+        setShowImportModal(false)
+        setImportData('')
+        setImportSuccess(null)
+      }, 2000)
+    } catch (err) {
+      setImportError(`Import failed: ${err.message}`)
+    }
+    setLoading(false)
+  }
+
+  // Download CSV template
+  const downloadTemplate = () => {
+    const template = 'customer_name,business_name,email,phone,address,lead_source,service_type,notes\nJohn Doe,Acme Corp,john@acme.com,555-1234,123 Main St,Website,Commercial,Interested in lighting audit'
+    const blob = new Blob([template], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'leads_template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const inputStyle = {
     width: '100%',
     padding: '10px 12px',
@@ -259,10 +407,16 @@ export default function Leads() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Leads</h1>
-        <button onClick={openAddModal} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
-          <Plus size={20} />
-          Add Lead
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setShowImportModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} />
+            Import CSV
+          </button>
+          <button onClick={openAddModal} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Plus size={20} />
+            Add Lead
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -296,9 +450,14 @@ export default function Leads() {
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>{lead.customer_name}</h3>
                   {lead.business_name && <p style={{ fontSize: '14px', color: theme.textSecondary }}>{lead.business_name}</p>}
                 </div>
-                <button onClick={() => openEditModal(lead)} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', borderRadius: '6px' }}>
-                  <Pencil size={16} />
-                </button>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button onClick={() => openEditModal(lead)} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', borderRadius: '6px' }}>
+                    <Pencil size={16} />
+                  </button>
+                  <button onClick={() => handleDelete(lead)} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer', borderRadius: '6px' }}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
@@ -401,6 +560,57 @@ export default function Leads() {
                 <button type="submit" disabled={loading} style={{ flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>Schedule</button>
               </div>
             </form>
+          </div>
+        </>
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <>
+          <div onClick={() => { setShowImportModal(false); setImportData(''); setImportError(null); setImportSuccess(null); }} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '600px', maxHeight: '90vh', overflow: 'auto', zIndex: 51 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, backgroundColor: theme.bgCard }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Import Leads from CSV</h2>
+              <button onClick={() => { setShowImportModal(false); setImportData(''); setImportError(null); setImportSuccess(null); }} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              {importError && (
+                <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '8px', color: '#b91c1c', fontSize: '14px' }}>{importError}</div>
+              )}
+              {importSuccess && (
+                <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', color: '#16a34a', fontSize: '14px' }}>{importSuccess}</div>
+              )}
+
+              <div style={{ marginBottom: '16px' }}>
+                <p style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '12px' }}>
+                  Paste your CSV data below. The first row should be headers. Required column: <strong>customer_name</strong> (or "name")
+                </p>
+                <button onClick={downloadTemplate} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: theme.accentBg, border: 'none', borderRadius: '6px', color: theme.accent, fontSize: '13px', cursor: 'pointer', marginBottom: '12px' }}>
+                  <Download size={14} />
+                  Download Template
+                </button>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>CSV Data</label>
+                <textarea
+                  value={importData}
+                  onChange={(e) => setImportData(e.target.value)}
+                  placeholder={`customer_name,business_name,email,phone,address,lead_source,service_type,notes\nJohn Doe,Acme Corp,john@acme.com,555-1234,123 Main St,Website,Commercial,Notes here`}
+                  rows={10}
+                  style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '12px', resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="button" onClick={() => { setShowImportModal(false); setImportData(''); setImportError(null); setImportSuccess(null); }} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '14px', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button onClick={handleImport} disabled={loading || !importData.trim()} style={{ flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: loading || !importData.trim() ? 'not-allowed' : 'pointer', opacity: loading || !importData.trim() ? 0.6 : 1 }}>
+                  {loading ? 'Importing...' : 'Import Leads'}
+                </button>
+              </div>
+            </div>
           </div>
         </>
       )}
