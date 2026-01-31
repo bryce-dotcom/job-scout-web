@@ -323,7 +323,8 @@ export default function LeadSetter() {
       title: `${selectedLead.customer_name} - ${selectedLead.service_type || 'Meeting'}`,
       start_time: startTime.toISOString(),
       end_time: endTime.toISOString(),
-      status: 'scheduled'
+      status: 'scheduled',
+      setter_id: user?.id || null
     }
 
     // Add optional fields only if they have values

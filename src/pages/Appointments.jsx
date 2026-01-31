@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { APPOINTMENT_STATUS } from '../lib/schema'
-import { Plus, Pencil, Trash2, X, Calendar, Search, Clock, MapPin, User } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Calendar, Search, Clock, MapPin, User, Filter } from 'lucide-react'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -42,6 +42,7 @@ const emptyAppointment = {
 export default function Appointments() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const user = useStore((state) => state.user)
   const appointments = useStore((state) => state.appointments)
   const leads = useStore((state) => state.leads)
   const customers = useStore((state) => state.customers)
@@ -55,6 +56,7 @@ export default function Appointments() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [setterFilter, setSetterFilter] = useState('all') // 'all', 'my', or employee id
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -67,13 +69,25 @@ export default function Appointments() {
     fetchAppointments()
   }, [companyId, navigate, fetchAppointments])
 
+  // Check if user is admin
+  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.role === 'Admin' || user?.role === 'Owner'
+
   const filteredAppointments = appointments.filter(apt => {
     const matchesSearch = searchTerm === '' ||
       apt.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       apt.lead?.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       apt.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === 'all' || apt.status === statusFilter
-    return matchesSearch && matchesStatus
+
+    // Setter filter - 'my' shows appointments the current user set
+    let matchesSetter = true
+    if (setterFilter === 'my') {
+      matchesSetter = apt.setter_id === user?.id
+    } else if (setterFilter !== 'all') {
+      matchesSetter = apt.setter_id === parseInt(setterFilter)
+    }
+
+    return matchesSearch && matchesStatus && matchesSetter
   })
 
   const openAddModal = () => {
@@ -254,6 +268,19 @@ export default function Appointments() {
             <option key={status} value={status}>{status}</option>
           ))}
         </select>
+
+        {/* Setter Filter - Show "My Appointments" option for all users */}
+        <select
+          value={setterFilter}
+          onChange={(e) => setSetterFilter(e.target.value)}
+          style={{ ...inputStyle, width: 'auto', minWidth: '160px' }}
+        >
+          <option value="all">All Appointments</option>
+          <option value="my">My Appointments</option>
+          {isAdmin && employees.filter(e => e.role === 'Setter' || e.role === 'Sales').map(emp => (
+            <option key={emp.id} value={emp.id}>{emp.name}'s Appointments</option>
+          ))}
+        </select>
       </div>
 
       {/* Appointments Grid */}
@@ -322,10 +349,11 @@ export default function Appointments() {
                   </div>
                 </div>
 
-                {apt.employee && (
-                  <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
-                    Assigned to: {apt.employee.name}
-                  </p>
+                {(apt.employee || apt.setter) && (
+                  <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
+                    {apt.employee && <div>Assigned to: {apt.employee.name}</div>}
+                    {apt.setter && <div>Set by: {apt.setter.name}</div>}
+                  </div>
                 )}
 
                 <div style={{ display: 'flex', gap: '8px', borderTop: `1px solid ${theme.border}`, paddingTop: '12px' }}>

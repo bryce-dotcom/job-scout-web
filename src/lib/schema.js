@@ -165,7 +165,7 @@ export const QUERIES = {
   customers: '*, salesperson:employees(id, name)',
   leads: '*, salesperson:employees(id, name)',
   salesPipeline: '*, lead:leads(id, customer_name, phone, email), customer:customers(id, name), salesperson:employees(id, name)',
-  appointments: '*, lead:leads(id, customer_name), customer:customers(id, name), employee:employees(id, name)',
+  appointments: '*, lead:leads(id, customer_name), customer:customers(id, name), employee:employees(id, name), setter:employees!setter_id(id, name)',
   quotes: '*, lead:leads(id, customer_name), customer:customers(id, name, email, phone, address), salesperson:employees(id, name)',
   quoteLines: '*, item:products_services(id, name, description)',
   jobs: '*, customer:customers(id, name, email, phone, address), salesperson:employees(id, name), quote:quotes(id, quote_id)',
