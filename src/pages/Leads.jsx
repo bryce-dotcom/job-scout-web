@@ -3,10 +3,24 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download } from 'lucide-react'
+import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send } from 'lucide-react'
 
-const LEAD_SOURCES = ['Website', 'Referral', 'Cold Call', 'Marketing', 'Google Ads', 'Facebook', 'Door Knock', 'Trade Show', 'Other']
-const LEAD_STATUSES = ['New', 'Qualified', 'Appointment Scheduled', 'Waiting', 'Not Qualified', 'Converted']
+// Updated lead sources with 'user' for employee-brought leads
+const LEAD_SOURCES = [
+  { value: 'user', label: 'Employee/User' },
+  { value: 'website', label: 'Website' },
+  { value: 'referral', label: 'Referral' },
+  { value: 'purchased_list', label: 'Purchased List' },
+  { value: 'cold_call', label: 'Cold Call' },
+  { value: 'marketing', label: 'Marketing' },
+  { value: 'google_ads', label: 'Google Ads' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'door_knock', label: 'Door Knock' },
+  { value: 'trade_show', label: 'Trade Show' },
+  { value: 'other', label: 'Other' }
+]
+
+const LEAD_STATUSES = ['New', 'Assigned', 'Contacted', 'Callback', 'Appointment Set', 'Qualified', 'Not Qualified', 'Converted']
 const SERVICE_TYPES = ['Residential', 'Commercial', 'Industrial', 'Government', 'Other']
 
 const emptyLead = {
@@ -16,7 +30,9 @@ const emptyLead = {
   phone: '',
   address: '',
   service_type: '',
-  lead_source: '',
+  lead_source: 'user',
+  lead_owner_id: '',
+  setter_owner_id: '',
   status: 'New',
   salesperson_id: '',
   notes: '',
@@ -28,6 +44,7 @@ const emptyLead = {
 export default function Leads() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const user = useStore((state) => state.user)
   const leads = useStore((state) => state.leads)
   const employees = useStore((state) => state.employees)
   const fetchLeads = useStore((state) => state.fetchLeads)
@@ -49,10 +66,12 @@ export default function Leads() {
   const [showModal, setShowModal] = useState(false)
   const [showAppointmentModal, setShowAppointmentModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [showAssignModal, setShowAssignModal] = useState(false)
   const [editingLead, setEditingLead] = useState(null)
   const [selectedLead, setSelectedLead] = useState(null)
   const [formData, setFormData] = useState(emptyLead)
   const [appointmentData, setAppointmentData] = useState({ title: '', start_time: '', end_time: '', location: '', notes: '' })
+  const [assignSetterId, setAssignSetterId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -83,18 +102,29 @@ export default function Leads() {
   const getStatusStyle = (status) => {
     const styles = {
       'New': { backgroundColor: 'rgba(59,130,246,0.1)', color: '#2563eb' },
-      'Qualified': { backgroundColor: 'rgba(34,197,94,0.1)', color: '#16a34a' },
-      'Appointment Scheduled': { backgroundColor: 'rgba(249,115,22,0.1)', color: '#ea580c' },
-      'Waiting': { backgroundColor: 'rgba(156,163,175,0.1)', color: '#6b7280' },
+      'Assigned': { backgroundColor: 'rgba(139,92,246,0.1)', color: '#7c3aed' },
+      'Contacted': { backgroundColor: 'rgba(14,165,233,0.1)', color: '#0284c7' },
+      'Callback': { backgroundColor: 'rgba(245,158,11,0.1)', color: '#d97706' },
+      'Appointment Set': { backgroundColor: 'rgba(34,197,94,0.1)', color: '#16a34a' },
+      'Qualified': { backgroundColor: 'rgba(16,185,129,0.1)', color: '#059669' },
       'Not Qualified': { backgroundColor: 'rgba(239,68,68,0.1)', color: '#dc2626' },
       'Converted': { backgroundColor: 'rgba(147,51,234,0.1)', color: '#9333ea' }
     }
     return styles[status] || { backgroundColor: theme.bg, color: theme.textMuted }
   }
 
+  const getSourceLabel = (value) => {
+    const source = LEAD_SOURCES.find(s => s.value === value)
+    return source?.label || value || '-'
+  }
+
   const openAddModal = () => {
     setEditingLead(null)
-    setFormData(emptyLead)
+    // Auto-set lead owner to current user if source is 'user'
+    setFormData({
+      ...emptyLead,
+      lead_owner_id: user?.id || ''
+    })
     setError(null)
     setShowModal(true)
   }
@@ -108,7 +138,9 @@ export default function Leads() {
       phone: lead.phone || '',
       address: lead.address || '',
       service_type: lead.service_type || '',
-      lead_source: lead.lead_source || '',
+      lead_source: lead.lead_source || 'user',
+      lead_owner_id: lead.lead_owner_id || '',
+      setter_owner_id: lead.setter_owner_id || '',
       status: lead.status || 'New',
       salesperson_id: lead.salesperson_id || '',
       notes: lead.notes || '',
@@ -129,7 +161,14 @@ export default function Leads() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
+    setFormData(prev => {
+      const updated = { ...prev, [name]: value }
+      // Auto-set lead owner when source changes to 'user'
+      if (name === 'lead_source' && value === 'user' && !prev.lead_owner_id) {
+        updated.lead_owner_id = user?.id || ''
+      }
+      return updated
+    })
   }
 
   const handleSubmit = async (e) => {
@@ -137,7 +176,13 @@ export default function Leads() {
     setLoading(true)
     setError(null)
 
-    // Build payload with only defined fields - avoid spreading undefined form fields
+    // Validate: If source is 'user', lead_owner_id is required
+    if (formData.lead_source === 'user' && !formData.lead_owner_id) {
+      setError('Lead Owner is required when Lead Source is "Employee/User"')
+      setLoading(false)
+      return
+    }
+
     const payload = {
       company_id: companyId,
       customer_name: formData.customer_name,
@@ -146,8 +191,11 @@ export default function Leads() {
       phone: formData.phone || null,
       address: formData.address || null,
       service_type: formData.service_type || null,
-      lead_source: formData.lead_source || null,
+      lead_source: formData.lead_source || 'other',
+      lead_owner_id: formData.lead_owner_id || null,
+      setter_owner_id: formData.setter_owner_id || null,
       status: formData.status || 'New',
+      salesperson_id: formData.salesperson_id || null,
       notes: formData.notes || null,
       updated_at: new Date().toISOString()
     }
@@ -170,6 +218,34 @@ export default function Leads() {
     setLoading(false)
   }
 
+  // Open assign to setter modal
+  const openAssignModal = (lead) => {
+    setSelectedLead(lead)
+    setAssignSetterId(lead.setter_owner_id || '')
+    setShowAssignModal(true)
+  }
+
+  // Assign lead to setter
+  const handleAssignToSetter = async () => {
+    if (!selectedLead || !assignSetterId) return
+    setLoading(true)
+
+    const { error } = await supabase.from('leads').update({
+      setter_owner_id: parseInt(assignSetterId),
+      status: 'Assigned',
+      updated_at: new Date().toISOString()
+    }).eq('id', selectedLead.id)
+
+    if (!error) {
+      await fetchLeads()
+    }
+
+    setShowAssignModal(false)
+    setSelectedLead(null)
+    setAssignSetterId('')
+    setLoading(false)
+  }
+
   const openAppointmentModal = (lead) => {
     setSelectedLead(lead)
     setAppointmentData({
@@ -186,21 +262,28 @@ export default function Leads() {
     e.preventDefault()
     setLoading(true)
 
-    const { error } = await supabase.from('appointments').insert([{
+    const startTime = new Date(appointmentData.start_time)
+    const endTime = appointmentData.end_time ? new Date(appointmentData.end_time) : new Date(startTime.getTime() + 60 * 60 * 1000)
+
+    const { data: appointment, error } = await supabase.from('appointments').insert([{
       company_id: companyId,
       lead_id: selectedLead.id,
       title: appointmentData.title,
-      start_time: appointmentData.start_time || null,
-      end_time: appointmentData.end_time || null,
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString(),
+      duration_minutes: Math.round((endTime - startTime) / 60000),
       location: appointmentData.location || null,
       notes: appointmentData.notes || null,
+      setter_id: user?.id,
+      lead_owner_id: selectedLead.lead_owner_id,
       status: 'Scheduled'
-    }])
+    }]).select().single()
 
-    if (!error) {
+    if (!error && appointment) {
       await supabase.from('leads').update({
-        status: 'Appointment Scheduled',
-        appointment_time: appointmentData.start_time || null,
+        status: 'Appointment Set',
+        appointment_time: startTime.toISOString(),
+        appointment_id: appointment.id,
         updated_at: new Date().toISOString()
       }).eq('id', selectedLead.id)
       await fetchLeads()
@@ -247,7 +330,6 @@ export default function Leads() {
     return new Date(dateStr).toLocaleDateString()
   }
 
-  // Delete lead
   const handleDelete = async (lead) => {
     if (!confirm(`Delete lead "${lead.customer_name}"? This cannot be undone.`)) return
 
@@ -271,10 +353,8 @@ export default function Leads() {
         return
       }
 
-      // Parse header
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
 
-      // Map common header variations
       const headerMap = {
         'name': 'customer_name',
         'customer': 'customer_name',
@@ -296,20 +376,17 @@ export default function Leads() {
 
       const mappedHeaders = headers.map(h => headerMap[h] || h)
 
-      // Must have customer_name
       if (!mappedHeaders.includes('customer_name')) {
         setImportError('CSV must have a "name" or "customer_name" column')
         setLoading(false)
         return
       }
 
-      // Parse data rows
       const leadsToInsert = []
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim()
         if (!line) continue
 
-        // Simple CSV parse (handles quoted fields)
         const values = []
         let current = ''
         let inQuotes = false
@@ -326,7 +403,7 @@ export default function Leads() {
         }
         values.push(current.trim())
 
-        const lead = { company_id: companyId, status: 'New' }
+        const lead = { company_id: companyId, status: 'New', lead_source: 'purchased_list' }
         mappedHeaders.forEach((header, idx) => {
           if (values[idx] && ['customer_name', 'business_name', 'email', 'phone', 'address', 'lead_source', 'service_type', 'notes', 'status'].includes(header)) {
             lead[header] = values[idx]
@@ -344,7 +421,6 @@ export default function Leads() {
         return
       }
 
-      // Insert in batches of 100
       const batchSize = 100
       let imported = 0
       for (let i = 0; i < leadsToInsert.length; i += batchSize) {
@@ -371,9 +447,8 @@ export default function Leads() {
     setLoading(false)
   }
 
-  // Download CSV template
   const downloadTemplate = () => {
-    const template = 'customer_name,business_name,email,phone,address,lead_source,service_type,notes\nJohn Doe,Acme Corp,john@acme.com,555-1234,123 Main St,Website,Commercial,Interested in lighting audit'
+    const template = 'customer_name,business_name,email,phone,address,lead_source,service_type,notes\nJohn Doe,Acme Corp,john@acme.com,555-1234,123 Main St,website,Commercial,Interested in lighting audit'
     const blob = new Blob([template], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -381,6 +456,16 @@ export default function Leads() {
     a.download = 'leads_template.csv'
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // Get employees who can be setters
+  const setterEmployees = employees.filter(e =>
+    e.role === 'Setter' || e.role === 'Sales' || e.role === 'Admin' || e.role === 'Manager' || e.role === 'Owner'
+  )
+
+  const getEmployeeName = (id) => {
+    const emp = employees.find(e => e.id === id)
+    return emp?.name || '-'
   }
 
   const inputStyle = {
@@ -431,7 +516,7 @@ export default function Leads() {
         </select>
         <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '140px', backgroundColor: theme.bgCard }}>
           <option value="all">All Sources</option>
-          {LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+          {LEAD_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </div>
 
@@ -465,21 +550,40 @@ export default function Leads() {
                 {lead.email && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}><Mail size={14} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span></div>}
               </div>
 
+              {/* Lead Owner & Setter Info */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px', fontSize: '12px' }}>
+                {lead.lead_owner_id && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: theme.textMuted }}>
+                    <Users size={12} />
+                    <span>Owner: <strong style={{ color: theme.textSecondary }}>{getEmployeeName(lead.lead_owner_id)}</strong></span>
+                  </div>
+                )}
+                {lead.setter_owner_id && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: theme.textMuted }}>
+                    <Send size={12} />
+                    <span>Setter: <strong style={{ color: theme.textSecondary }}>{getEmployeeName(lead.setter_owner_id)}</strong></span>
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                 {lead.service_type && <span style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: theme.bg, color: theme.textMuted, borderRadius: '4px' }}>{lead.service_type}</span>}
-                {lead.lead_source && <span style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: theme.bg, color: theme.textMuted, borderRadius: '4px' }}>{lead.lead_source}</span>}
+                {lead.lead_source && <span style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: theme.bg, color: theme.textMuted, borderRadius: '4px' }}>{getSourceLabel(lead.lead_source)}</span>}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
                 <span style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '20px', ...getStatusStyle(lead.status) }}>{lead.status}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {lead.salesperson && <span style={{ fontSize: '11px', color: theme.textMuted }}>{lead.salesperson.name}</span>}
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>{formatDate(lead.created_at)}</span>
-                </div>
+                <span style={{ fontSize: '11px', color: theme.textMuted }}>{formatDate(lead.created_at)}</span>
               </div>
 
               {lead.status !== 'Converted' && (
                 <div style={{ display: 'flex', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
+                  {/* Assign to Setter - only show if not already assigned or appointment set */}
+                  {!lead.setter_owner_id && lead.status === 'New' && (
+                    <button onClick={() => openAssignModal(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: 'rgba(139,92,246,0.1)', border: 'none', borderRadius: '6px', color: '#7c3aed', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>
+                      <Send size={14} />Assign
+                    </button>
+                  )}
                   <button onClick={() => openAppointmentModal(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '12px', cursor: 'pointer' }}>
                     <Calendar size={14} />Appt
                   </button>
@@ -513,20 +617,50 @@ export default function Leads() {
                 <div><label style={labelStyle}>Business Name</label><input type="text" name="business_name" value={formData.business_name} onChange={handleChange} style={inputStyle} /></div>
                 <div><label style={labelStyle}>Email</label><input type="email" name="email" value={formData.email} onChange={handleChange} style={inputStyle} /></div>
                 <div><label style={labelStyle}>Phone</label><input type="tel" name="phone" value={formData.phone} onChange={handleChange} style={inputStyle} /></div>
-                <div><label style={labelStyle}>Job Title</label><input type="text" name="job_title" value={formData.job_title} onChange={handleChange} style={inputStyle} /></div>
-                <div><label style={labelStyle}>Business Unit</label><input type="text" name="business_unit" value={formData.business_unit} onChange={handleChange} style={inputStyle} /></div>
               </div>
 
               <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Address</label><textarea name="address" value={formData.address} onChange={handleChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div><label style={labelStyle}>Service Type</label><select name="service_type" value={formData.service_type} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{SERVICE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                <div><label style={labelStyle}>Lead Source</label><select name="lead_source" value={formData.lead_source} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                <div><label style={labelStyle}>Status</label><select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>{LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                <div><label style={labelStyle}>Salesperson</label><select name="salesperson_id" value={formData.salesperson_id} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
+                <div>
+                  <label style={labelStyle}>Lead Source *</label>
+                  <select name="lead_source" value={formData.lead_source} onChange={handleChange} required style={inputStyle}>
+                    {LEAD_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
               </div>
 
-              <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Appointment Time</label><input type="datetime-local" name="appointment_time" value={formData.appointment_time} onChange={handleChange} style={inputStyle} /></div>
+              {/* Lead Owner - Required if source is 'user' */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <label style={labelStyle}>
+                    Lead Owner {formData.lead_source === 'user' && <span style={{ color: '#dc2626' }}>*</span>}
+                  </label>
+                  <select
+                    name="lead_owner_id"
+                    value={formData.lead_owner_id}
+                    onChange={handleChange}
+                    required={formData.lead_source === 'user'}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select --</option>
+                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                  {formData.lead_source === 'user' && (
+                    <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                      Lead owner earns commission when source is "Employee/User"
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label style={labelStyle}>Status</label>
+                  <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
+                    {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
               <div style={{ marginBottom: '24px' }}><label style={labelStyle}>Notes</label><textarea name="notes" value={formData.notes} onChange={handleChange} rows={3} style={{ ...inputStyle, resize: 'vertical' }} /></div>
 
               <div style={{ display: 'flex', gap: '12px' }}>
@@ -534,6 +668,53 @@ export default function Leads() {
                 <button type="submit" disabled={loading} style={{ flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>{loading ? 'Saving...' : (editingLead ? 'Update' : 'Add Lead')}</button>
               </div>
             </form>
+          </div>
+        </>
+      )}
+
+      {/* Assign to Setter Modal */}
+      {showAssignModal && selectedLead && (
+        <>
+          <div onClick={() => setShowAssignModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '400px', zIndex: 51 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Assign to Setter</h2>
+              <button onClick={() => setShowAssignModal(false)} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <p style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px' }}>
+                Assign <strong>{selectedLead.customer_name}</strong> to a setter for scheduling
+              </p>
+              <div style={{ marginBottom: '24px' }}>
+                <label style={labelStyle}>Select Setter</label>
+                <select
+                  value={assignSetterId}
+                  onChange={(e) => setAssignSetterId(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">-- Select Setter --</option>
+                  {setterEmployees.map(e => (
+                    <option key={e.id} value={e.id}>{e.name} {e.role ? `(${e.role})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAssignModal(false)}
+                  style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '14px', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAssignToSetter}
+                  disabled={!assignSetterId || loading}
+                  style={{ flex: 1, padding: '12px', backgroundColor: '#7c3aed', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: !assignSetterId || loading ? 'not-allowed' : 'pointer', opacity: !assignSetterId || loading ? 0.6 : 1 }}
+                >
+                  {loading ? 'Assigning...' : 'Assign'}
+                </button>
+              </div>
+            </div>
           </div>
         </>
       )}
@@ -596,7 +777,7 @@ export default function Leads() {
                 <textarea
                   value={importData}
                   onChange={(e) => setImportData(e.target.value)}
-                  placeholder={`customer_name,business_name,email,phone,address,lead_source,service_type,notes\nJohn Doe,Acme Corp,john@acme.com,555-1234,123 Main St,Website,Commercial,Notes here`}
+                  placeholder={`customer_name,business_name,email,phone,address,lead_source,service_type,notes\nJohn Doe,Acme Corp,john@acme.com,555-1234,123 Main St,website,Commercial,Notes here`}
                   rows={10}
                   style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '12px', resize: 'vertical' }}
                 />

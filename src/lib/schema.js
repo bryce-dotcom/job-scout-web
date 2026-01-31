@@ -163,9 +163,9 @@ export const ROUTE_STATUS = ['Planned', 'In Progress', 'Completed', 'Cancelled']
 export const QUERIES = {
   employees: '*, department, role',
   customers: '*, salesperson:employees(id, name)',
-  leads: '*, salesperson:employees(id, name)',
+  leads: '*, salesperson:employees(id, name), lead_owner:employees!lead_owner_id(id, name), setter_owner:employees!setter_owner_id(id, name)',
   salesPipeline: '*, lead:leads(id, customer_name, phone, email), customer:customers(id, name), salesperson:employees(id, name)',
-  appointments: '*, lead:leads(id, customer_name), customer:customers(id, name), employee:employees(id, name), setter:employees!setter_id(id, name)',
+  appointments: '*, lead:leads(id, customer_name, phone, address, service_type), customer:customers(id, name), employee:employees(id, name), setter:employees!setter_id(id, name), salesperson:employees!salesperson_id(id, name), lead_owner:employees!lead_owner_id(id, name)',
   quotes: '*, lead:leads(id, customer_name), customer:customers(id, name, email, phone, address), salesperson:employees(id, name)',
   quoteLines: '*, item:products_services(id, name, description)',
   jobs: '*, customer:customers(id, name, email, phone, address), salesperson:employees(id, name), quote:quotes(id, quote_id)',

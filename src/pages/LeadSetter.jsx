@@ -23,6 +23,7 @@ const defaultTheme = {
 
 // Setter stages (what setter works with)
 const setterStages = [
+  { id: 'Assigned', label: 'Assigned to Me', color: '#7c3aed' },
   { id: 'New', label: 'New Leads', color: '#3b82f6' },
   { id: 'Contacted', label: 'Contacted', color: '#8b5cf6' },
   { id: 'Callback', label: 'Callback', color: '#f59e0b' },
@@ -41,6 +42,7 @@ export default function LeadSetter() {
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
   const company = useStore((state) => state.company)
+  const fetchAppointments = useStore((state) => state.fetchAppointments)
 
   // Data
   const [leads, setLeads] = useState([])
@@ -94,17 +96,17 @@ export default function LeadSetter() {
     if (!companyId) return
     setLoading(true)
 
-    // Build query - filter by setter_id for non-admins
+    // Build query - filter by setter_owner_id for non-admins
     let leadsQuery = supabase
       .from('leads')
-      .select('*')
+      .select('*, lead_owner:employees!leads_lead_owner_id_fkey(id, name), setter_owner:employees!leads_setter_owner_id_fkey(id, name)')
       .eq('company_id', companyId)
-      .in('status', ['New', 'Contacted', 'Callback', 'Not Qualified', 'Appointment Set', 'Qualified'])
+      .in('status', ['New', 'Assigned', 'Contacted', 'Callback', 'Not Qualified'])
       .order('created_at', { ascending: false })
 
-    // Non-admins only see their assigned leads or unassigned leads
+    // Non-admins only see leads assigned to them as setter
     if (!isAdmin && user?.id) {
-      leadsQuery = leadsQuery.or(`setter_id.eq.${user.id},setter_id.is.null`)
+      leadsQuery = leadsQuery.eq('setter_owner_id', user.id)
     }
 
     const { data: leadsData } = await leadsQuery
@@ -316,20 +318,21 @@ export default function LeadSetter() {
     const endTime = new Date(startTime)
     endTime.setMinutes(endTime.getMinutes() + appointmentForm.duration_minutes)
 
-    // Create appointment with minimal required fields
+    // Create appointment with all required fields
     const appointmentPayload = {
       company_id: companyId,
       lead_id: selectedLead.id,
-      title: `${selectedLead.customer_name} - ${selectedLead.service_type || 'Meeting'}`,
+      title: `${selectedLead.customer_name} - ${selectedLead.service_type || 'Consultation'}`,
       start_time: startTime.toISOString(),
       end_time: endTime.toISOString(),
+      duration_minutes: appointmentForm.duration_minutes,
+      location: appointmentForm.location || selectedLead.address || null,
+      salesperson_id: appointmentForm.salesperson_id || null,
+      setter_id: user?.id || null,
+      lead_owner_id: selectedLead.lead_owner_id || null,
       status: 'Scheduled',
-      setter_id: user?.id || null
+      notes: appointmentForm.notes || null
     }
-
-    // Add optional fields only if they have values
-    if (appointmentForm.location) appointmentPayload.location = appointmentForm.location
-    if (appointmentForm.notes) appointmentPayload.notes = appointmentForm.notes
 
     console.log('Creating appointment:', appointmentPayload)
 
@@ -348,11 +351,14 @@ export default function LeadSetter() {
 
     console.log('Appointment created:', apt)
 
-    // Update lead status (simplified - only use columns we know exist)
+    // Update lead status and link appointment
     const { error: leadError } = await supabase
       .from('leads')
       .update({
-        status: 'Appointment Set'
+        status: 'Appointment Set',
+        appointment_time: startTime.toISOString(),
+        appointment_id: apt.id,
+        salesperson_id: appointmentForm.salesperson_id || null
       })
       .eq('id', selectedLead.id)
 
@@ -360,7 +366,66 @@ export default function LeadSetter() {
       console.error('Error updating lead:', leadError)
     }
 
-    // Try to create commission record (may fail if table doesn't exist)
+    // Create SETTER commission in lead_commissions table
+    try {
+      // Get setter's commission rate from employee profile
+      const { data: setterEmployee } = await supabase
+        .from('employees')
+        .select('commission_setter_rate, commission_setter_type')
+        .eq('id', user?.id)
+        .single()
+
+      const setterRate = setterEmployee?.commission_setter_rate || company?.setter_pay_per_appointment || 25
+
+      if (setterRate > 0) {
+        await supabase
+          .from('lead_commissions')
+          .insert({
+            company_id: companyId,
+            lead_id: selectedLead.id,
+            appointment_id: apt.id,
+            commission_type: 'appointment_set',
+            employee_id: user?.id,
+            amount: setterRate,
+            rate_type: setterEmployee?.commission_setter_type || 'flat',
+            payment_status: 'pending'
+          })
+        console.log('Setter commission created:', setterRate)
+      }
+    } catch (err) {
+      console.log('Setter commission not created:', err)
+    }
+
+    // Create LEAD OWNER commission (only if source = 'user')
+    try {
+      if (selectedLead.lead_source === 'user' && selectedLead.lead_owner_id) {
+        const { data: ownerEmployee } = await supabase
+          .from('employees')
+          .select('commission_leads_rate, commission_leads_type')
+          .eq('id', selectedLead.lead_owner_id)
+          .single()
+
+        if (ownerEmployee?.commission_leads_rate > 0) {
+          await supabase
+            .from('lead_commissions')
+            .insert({
+              company_id: companyId,
+              lead_id: selectedLead.id,
+              appointment_id: apt.id,
+              commission_type: 'lead_generation',
+              employee_id: selectedLead.lead_owner_id,
+              amount: ownerEmployee.commission_leads_rate,
+              rate_type: ownerEmployee.commission_leads_type || 'flat',
+              payment_status: 'pending'
+            })
+          console.log('Lead owner commission created:', ownerEmployee.commission_leads_rate)
+        }
+      }
+    } catch (err) {
+      console.log('Lead owner commission not created:', err)
+    }
+
+    // Also try legacy setter_commissions table for backwards compatibility
     try {
       if (company?.setter_pay_per_appointment > 0) {
         await supabase
@@ -375,7 +440,7 @@ export default function LeadSetter() {
           })
       }
     } catch (err) {
-      console.log('Commission record not created:', err)
+      // Legacy table may not exist
     }
 
     setSaving(false)
@@ -383,6 +448,11 @@ export default function LeadSetter() {
     setSelectedLead(null)
     setDraggedLead(null)
     await fetchData()
+
+    // Also refresh global store appointments
+    if (fetchAppointments) {
+      await fetchAppointments()
+    }
   }
 
   // Open lead detail
