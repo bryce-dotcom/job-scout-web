@@ -5,7 +5,8 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import {
   Plus, Pencil, X, User, Phone, Mail, Eye,
-  DollarSign, Clock, Calendar, Briefcase, Lock
+  DollarSign, Clock, Calendar, Briefcase, Lock,
+  Camera, FileText, Upload
 } from 'lucide-react'
 
 // Role colors (OG DiX style)
@@ -40,6 +41,8 @@ const emptyEmployee = {
   business_unit: '',
   employee_id: '',
   active: true,
+  headshot_url: '',
+  tax_classification: 'W2', // W2 or 1099
   // Multi-select pay types
   is_hourly: false,
   is_salary: false,
@@ -149,6 +152,8 @@ export default function Employees() {
       business_unit: employee.business_unit || '',
       employee_id: employee.employee_id || '',
       active: employee.active !== false,
+      headshot_url: employee.headshot_url || '',
+      tax_classification: employee.tax_classification || 'W2',
       // Parse pay types from pay_type field or individual flags
       is_hourly: employee.is_hourly || employee.pay_type === 'hourly' || employee.pay_type === 'hybrid',
       is_salary: employee.is_salary || employee.pay_type === 'salary' || employee.pay_type === 'hybrid',
@@ -182,12 +187,59 @@ export default function Employees() {
     setError(null)
   }
 
+  const [uploading, setUploading] = useState(false)
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }))
+  }
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${companyId}/${Date.now()}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('employee-photos')
+        .upload(fileName, file)
+
+      if (uploadError) {
+        // If bucket doesn't exist, try public bucket
+        const { error: publicError } = await supabase.storage
+          .from('public')
+          .upload(`employee-photos/${fileName}`, file)
+
+        if (publicError) {
+          console.error('Upload error:', publicError)
+          setError('Failed to upload image')
+          setUploading(false)
+          return
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('public')
+          .getPublicUrl(`employee-photos/${fileName}`)
+
+        setFormData(prev => ({ ...prev, headshot_url: publicUrl }))
+      } else {
+        const { data: { publicUrl } } = supabase.storage
+          .from('employee-photos')
+          .getPublicUrl(fileName)
+
+        setFormData(prev => ({ ...prev, headshot_url: publicUrl }))
+      }
+    } catch (err) {
+      console.error('Image upload failed:', err)
+      setError('Failed to upload image')
+    }
+    setUploading(false)
   }
 
   const togglePayType = (payType) => {
@@ -219,6 +271,8 @@ export default function Employees() {
       business_unit: formData.business_unit || null,
       employee_id: formData.employee_id || null,
       active: formData.active,
+      headshot_url: formData.headshot_url || null,
+      tax_classification: formData.tax_classification || 'W2',
       pay_type: payType,
       is_hourly: formData.is_hourly,
       is_salary: formData.is_salary,
@@ -558,17 +612,29 @@ export default function Employees() {
                     {employee.role}
                   </p>
 
-                  {/* Status Badge */}
-                  <span style={{
-                    display: 'inline-block',
-                    fontSize: '11px',
-                    padding: '3px 10px',
-                    borderRadius: '20px',
-                    backgroundColor: employee.active ? 'rgba(34,197,94,0.1)' : 'rgba(107,114,128,0.1)',
-                    color: employee.active ? '#16a34a' : '#6b7280'
-                  }}>
-                    {employee.active ? 'Active' : 'Inactive'}
-                  </span>
+                  {/* Status & Tax Classification Badges */}
+                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <span style={{
+                      fontSize: '11px',
+                      padding: '3px 10px',
+                      borderRadius: '20px',
+                      backgroundColor: employee.active ? 'rgba(34,197,94,0.1)' : 'rgba(107,114,128,0.1)',
+                      color: employee.active ? '#16a34a' : '#6b7280'
+                    }}>
+                      {employee.active ? 'Active' : 'Inactive'}
+                    </span>
+                    {employee.tax_classification && (
+                      <span style={{
+                        fontSize: '11px',
+                        padding: '3px 10px',
+                        borderRadius: '20px',
+                        backgroundColor: employee.tax_classification === 'W2' ? 'rgba(59,130,246,0.1)' : 'rgba(249,115,22,0.1)',
+                        color: employee.tax_classification === 'W2' ? '#3b82f6' : '#f97316'
+                      }}>
+                        {employee.tax_classification}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Contact Info */}
@@ -778,38 +844,156 @@ export default function Employees() {
                   </div>
                 )}
 
-                {/* ===== BASIC INFO SECTION ===== */}
-                <div style={sectionHeaderStyle}>Basic Information</div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                  <div style={{ gridColumn: isEditing ? '1 / -1' : 'auto' }}>
-                    <label style={labelStyle}>Name *</label>
-                    <input
-                      type="text"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      required
-                      disabled={!isEditing}
-                      style={isEditing ? inputStyle : inputStyleDisabled}
-                    />
-                  </div>
-                  {!isEditing && viewingEmployee && (
-                    <div>
-                      <label style={labelStyle}>Status</label>
-                      <div style={{
-                        padding: '10px 12px',
-                        backgroundColor: formData.active ? 'rgba(34,197,94,0.1)' : 'rgba(107,114,128,0.1)',
-                        borderRadius: '8px',
-                        color: formData.active ? '#16a34a' : '#6b7280',
-                        fontSize: '14px',
-                        fontWeight: '500'
+                {/* ===== PHOTO & TAX CLASSIFICATION ===== */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '24px',
+                  marginBottom: '24px',
+                  paddingBottom: '24px',
+                  borderBottom: `1px solid ${theme.border}`
+                }}>
+                  {/* Photo Upload */}
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      width: '100px',
+                      height: '100px',
+                      borderRadius: '16px',
+                      backgroundColor: formData.headshot_url ? 'transparent' : `${getRoleColor(formData.role)}20`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 8px',
+                      fontSize: '36px',
+                      fontWeight: '600',
+                      color: getRoleColor(formData.role),
+                      overflow: 'hidden',
+                      border: `2px solid ${theme.border}`,
+                      position: 'relative'
+                    }}>
+                      {formData.headshot_url ? (
+                        <img
+                          src={formData.headshot_url}
+                          alt=""
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        formData.name?.charAt(0)?.toUpperCase() || <User size={36} />
+                      )}
+                      {uploading && (
+                        <div style={{
+                          position: 'absolute',
+                          inset: 0,
+                          backgroundColor: 'rgba(0,0,0,0.5)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#fff',
+                          fontSize: '12px'
+                        }}>
+                          Uploading...
+                        </div>
+                      )}
+                    </div>
+                    {isEditing && (
+                      <label style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 12px',
+                        backgroundColor: theme.accentBg,
+                        borderRadius: '6px',
+                        color: theme.accent,
+                        fontSize: '12px',
+                        fontWeight: '500',
+                        cursor: 'pointer'
                       }}>
-                        {formData.active ? 'Active' : 'Inactive'}
+                        <Camera size={14} />
+                        {formData.headshot_url ? 'Change' : 'Upload'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Name, Status & Tax Classification */}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={labelStyle}>Name *</label>
+                      <input
+                        type="text"
+                        name="name"
+                        value={formData.name}
+                        onChange={handleChange}
+                        required
+                        disabled={!isEditing}
+                        style={isEditing ? inputStyle : inputStyleDisabled}
+                      />
+                    </div>
+
+                    {/* W2 / 1099 Toggle */}
+                    <div>
+                      <label style={labelStyle}>Tax Classification</label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => isEditing && setFormData(prev => ({ ...prev, tax_classification: 'W2' }))}
+                          disabled={!isEditing}
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            padding: '10px 16px',
+                            backgroundColor: formData.tax_classification === 'W2' ? '#3b82f620' : theme.bg,
+                            border: `2px solid ${formData.tax_classification === 'W2' ? '#3b82f6' : theme.border}`,
+                            borderRadius: '8px',
+                            color: formData.tax_classification === 'W2' ? '#3b82f6' : theme.textMuted,
+                            fontSize: '14px',
+                            fontWeight: formData.tax_classification === 'W2' ? '600' : '400',
+                            cursor: isEditing ? 'pointer' : 'not-allowed',
+                            opacity: isEditing ? 1 : 0.7
+                          }}
+                        >
+                          <FileText size={16} />
+                          W-2 Employee
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => isEditing && setFormData(prev => ({ ...prev, tax_classification: '1099' }))}
+                          disabled={!isEditing}
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            padding: '10px 16px',
+                            backgroundColor: formData.tax_classification === '1099' ? '#f9731620' : theme.bg,
+                            border: `2px solid ${formData.tax_classification === '1099' ? '#f97316' : theme.border}`,
+                            borderRadius: '8px',
+                            color: formData.tax_classification === '1099' ? '#f97316' : theme.textMuted,
+                            fontSize: '14px',
+                            fontWeight: formData.tax_classification === '1099' ? '600' : '400',
+                            cursor: isEditing ? 'pointer' : 'not-allowed',
+                            opacity: isEditing ? 1 : 0.7
+                          }}
+                        >
+                          <FileText size={16} />
+                          1099 Contractor
+                        </button>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
+
+                {/* ===== BASIC INFO SECTION ===== */}
+                <div style={sectionHeaderStyle}>Contact & Role</div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                   <div>
