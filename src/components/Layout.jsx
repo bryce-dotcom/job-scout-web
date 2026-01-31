@@ -38,7 +38,10 @@ import {
   Bot,
   ChevronRight,
   Terminal,
-  Headphones
+  Headphones,
+  UserCircle,
+  Rocket,
+  BookOpen
 } from 'lucide-react'
 
 // Theme context
@@ -161,104 +164,73 @@ export default function Layout() {
     navigate('/login')
   }
 
-  // Grouped navigation structure
+  // Get recruited agents from store
+  const companyAgents = useStore((state) => state.companyAgents) || []
+  const recruitedAgents = companyAgents.filter(ca => ca.subscription_status === 'active')
+
+  // Dashboard link (always visible at top)
+  const dashboardItem = { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
+
+  // Grouped navigation structure - Clean 5-section menu
   const navSections = [
     {
-      title: 'MAIN',
-      items: [
-        { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
-      ]
-    },
-    {
       title: 'CRM',
+      sectionIcon: Users,
       items: [
         { to: '/customers', icon: Users, label: 'Customers' },
         { to: '/leads', icon: UserPlus, label: 'Leads' },
         { to: '/lead-setter', icon: Headphones, label: 'Lead Setter' },
         { to: '/pipeline', icon: GitBranch, label: 'Pipeline' },
-        { to: '/appointments', icon: CalendarCheck, label: 'Appointments' }
+        { to: '/appointments', icon: CalendarCheck, label: 'Appointments' },
+        { to: '/quotes', icon: FileText, label: 'Quotes' }
       ]
     },
     {
-      title: 'SALES',
+      title: 'OPERATIONS',
+      sectionIcon: Briefcase,
       items: [
-        { to: '/quotes', icon: FileText, label: 'Quotes' },
+        { to: '/jobs', icon: Briefcase, label: 'Jobs' },
+        { to: '/jobs/calendar', icon: CalendarDays, label: 'Calendar' },
+        { to: '/routes', icon: Route, label: 'Routes' },
+        { to: '/inventory', icon: Warehouse, label: 'Inventory' },
         { to: '/products', icon: Package, label: 'Products & Services' }
       ]
     },
     {
-      title: 'JOBS',
-      items: [
-        { to: '/jobs', icon: Briefcase, label: 'Jobs' },
-        { to: '/jobs/calendar', icon: CalendarDays, label: 'Calendar' },
-        { to: '/routes', icon: Route, label: 'Routes' }
-      ]
-    },
-    {
       title: 'FINANCIAL',
+      sectionIcon: DollarSign,
       items: [
+        { to: '/books', icon: BookOpen, label: 'Books' },
         { to: '/invoices', icon: Receipt, label: 'Invoices' },
         { to: '/lead-payments', icon: CreditCard, label: 'Payments' },
         { to: '/expenses', icon: DollarSign, label: 'Expenses' }
       ]
     },
     {
-      title: 'RESOURCES',
-      items: [
-        { to: '/inventory', icon: Warehouse, label: 'Inventory' }
-      ]
-    },
-    {
       title: 'TEAM',
+      sectionIcon: UserCircle,
       items: [
         { to: '/employees', icon: UserCog, label: 'Employees' },
         { to: '/time-clock', icon: Clock, label: 'Time Clock' },
         { to: '/payroll', icon: DollarSign, label: 'Payroll' }
-      ]
-    },
-    {
-      title: 'MY CREW',
-      items: [
-        {
-          key: 'lenard',
-          icon: Lightbulb,
-          label: 'Lenard (Lighting)',
-          expandable: true,
-          subItems: [
-            { to: '/agents/lenard', label: 'Audits' },
-            { to: '/agents/lenard/fixture-types', label: 'Fixture Types' },
-            { to: '/agents/lenard/providers', label: 'Providers' },
-            { to: '/agents/lenard/programs', label: 'Programs' },
-            { to: '/agents/lenard/rebates', label: 'Rebates' }
-          ]
-        },
-        {
-          key: 'freddy',
-          icon: Truck,
-          label: 'Freddy (Fleet)',
-          expandable: true,
-          subItems: [
-            { to: '/agents/freddy', label: 'Fleet' },
-            { to: '/agents/freddy/calendar', label: 'Calendar' },
-            { to: '/agents/freddy/inventory', label: 'Inventory' }
-          ]
-        }
-      ]
+      ],
+      hasCrewSection: true
     },
     {
       title: 'BASE CAMP',
+      sectionIcon: Rocket,
       items: [
-        { to: '/base-camp', icon: Tent, label: 'Agent Marketplace' }
-      ]
-    },
-    {
-      title: 'ADMIN',
-      items: [
-        { to: '/settings', icon: Settings, label: 'Settings' },
-        { to: '/reports', icon: BarChart3, label: 'Reports' }
+        { to: '/base-camp', icon: Tent, label: 'Agent Marketplace' },
+        { to: '/settings', icon: Settings, label: 'Settings' }
       ]
     }
   ]
+
+  // Agent icon mapping
+  const agentIcons = {
+    'lenard': Lightbulb,
+    'freddy': Truck
+  }
 
   // Dev section - only shown for developers (handled separately for red styling)
   const devSection = isDeveloper ? {
@@ -400,6 +372,59 @@ export default function Layout() {
           )
         ))}
       </div>
+
+      {/* MY AI CREW - Boxed Section (only in TEAM section) */}
+      {section.hasCrewSection && recruitedAgents.length > 0 && (
+        <div style={{
+          margin: '8px 12px',
+          padding: '12px',
+          backgroundColor: 'rgba(168,85,247,0.1)',
+          border: '1px solid rgba(168,85,247,0.3)',
+          borderRadius: '8px'
+        }}>
+          <div style={{
+            fontSize: '10px',
+            fontWeight: '600',
+            color: '#a855f7',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}>
+            <Bot size={12} />
+            My AI Crew
+          </div>
+          {recruitedAgents.map(ca => {
+            const agent = ca.agent
+            const AgentIcon = agentIcons[agent?.slug] || Bot
+            return (
+              <NavLink
+                key={ca.id}
+                to={`/agents/${agent?.slug}`}
+                onClick={() => mobile && setMobileMenuOpen(false)}
+                style={({ isActive }) => ({
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  color: isActive ? '#a855f7' : '#9ca3af',
+                  backgroundColor: isActive ? 'rgba(168,85,247,0.15)' : 'transparent',
+                  textDecoration: 'none',
+                  fontSize: '12px',
+                  fontWeight: isActive ? '500' : '400',
+                  transition: 'all 0.15s ease'
+                })}
+              >
+                <AgentIcon size={14} />
+                {ca.custom_name || agent?.name}
+              </NavLink>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 
@@ -469,6 +494,30 @@ export default function Layout() {
             padding: '8px 8px',
             overflowY: 'auto'
           }}>
+            {/* Dashboard Link - Always at top */}
+            <div style={{ marginBottom: '8px' }}>
+              <NavLink
+                to="/"
+                end
+                style={({ isActive }) => ({
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  color: isActive ? theme.accent : theme.textMuted,
+                  backgroundColor: isActive ? theme.accentBg : 'transparent',
+                  textDecoration: 'none',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  transition: 'all 0.15s ease'
+                })}
+              >
+                <LayoutDashboard size={20} />
+                Dashboard
+              </NavLink>
+            </div>
+
             {navSections.map((section) => (
               <NavSection key={section.title} section={section} />
             ))}
@@ -655,6 +704,31 @@ export default function Layout() {
                 </div>
               )}
               <nav style={{ flex: 1, padding: '8px 8px' }}>
+                {/* Dashboard Link - Mobile */}
+                <div style={{ marginBottom: '8px' }}>
+                  <NavLink
+                    to="/"
+                    end
+                    onClick={() => setMobileMenuOpen(false)}
+                    style={({ isActive }) => ({
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      color: isActive ? theme.accent : theme.textMuted,
+                      backgroundColor: isActive ? theme.accentBg : 'transparent',
+                      textDecoration: 'none',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      transition: 'all 0.15s ease'
+                    })}
+                  >
+                    <LayoutDashboard size={20} />
+                    Dashboard
+                  </NavLink>
+                </div>
+
                 {navSections.map((section) => (
                   <NavSection key={section.title} section={section} mobile />
                 ))}

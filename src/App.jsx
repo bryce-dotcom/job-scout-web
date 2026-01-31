@@ -42,6 +42,7 @@ import UtilityInvoices from './pages/UtilityInvoices'
 import Incentives from './pages/Incentives'
 import TimeClock from './pages/TimeClock'
 import Payroll from './pages/Payroll'
+import Books from './pages/Books'
 import BaseCamp from './pages/BaseCamp'
 import MyCrew from './pages/MyCrew'
 import LenardWorkspace from './pages/agents/lenard/LenardWorkspace'
@@ -207,6 +208,7 @@ function App() {
           <Route path="/incentives" element={<Incentives />} />
           <Route path="/time-clock" element={<TimeClock />} />
           <Route path="/payroll" element={<Payroll />} />
+          <Route path="/books" element={<Books />} />
 
           {/* Base Camp & AI Agents */}
           <Route path="/base-camp" element={<BaseCamp />} />
