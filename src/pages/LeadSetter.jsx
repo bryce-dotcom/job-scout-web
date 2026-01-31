@@ -280,19 +280,29 @@ export default function LeadSetter() {
     setDragOverStage(null)
   }
 
+  // Helper to format date for datetime-local input (uses local time, not UTC)
+  const formatDateTimeLocal = (date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+  }
+
   const handleSlotDrop = async (e, date, hour) => {
     e.preventDefault()
     setDragOverSlot(null)
 
     if (!draggedLead) return
 
-    // Open appointment modal with pre-filled time
+    // Open appointment modal with pre-filled time (in local timezone)
     const startTime = new Date(date)
     startTime.setHours(hour, 0, 0, 0)
 
     setSelectedLead(draggedLead)
     setAppointmentForm({
-      start_time: startTime.toISOString().slice(0, 16),
+      start_time: formatDateTimeLocal(startTime),
       duration_minutes: 60,
       salesperson_id: '',
       location: draggedLead.address || '',
