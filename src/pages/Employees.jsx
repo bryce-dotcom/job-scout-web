@@ -4,8 +4,8 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import {
-  Plus, Pencil, X, User, Phone, Mail, ChevronDown, ChevronUp,
-  DollarSign, Clock, Calendar, Briefcase, Settings
+  Plus, Pencil, X, User, Phone, Mail, Eye,
+  DollarSign, Clock, Calendar, Briefcase, Lock
 } from 'lucide-react'
 
 // Role colors (OG DiX style)
@@ -13,23 +13,20 @@ const roleColors = {
   'Admin': '#D4AF37',
   'Owner': '#D4AF37',
   'CEO': '#D4AF37',
-  'Manager': '#D4AF37',
+  'Manager': '#f59e0b',
   'Sales': '#22c55e',
+  'Salesperson': '#22c55e',
   'Setter': '#3b82f6',
+  'Lead Setter': '#3b82f6',
   'Field Tech': '#a855f7',
   'Installer': '#a855f7',
   'Tech': '#a855f7',
-  'Office': '#f97316'
+  'Technician': '#a855f7',
+  'Office': '#f97316',
+  'Finance': '#06b6d4'
 }
 
 const getRoleColor = (role) => roleColors[role] || '#6b7280'
-
-const PAY_TYPES = [
-  { value: 'hourly', label: 'Hourly' },
-  { value: 'salary', label: 'Salary' },
-  { value: 'commission', label: 'Commission Only' },
-  { value: 'hybrid', label: 'Salary + Commission' }
-]
 
 const ROLES = ['Field Tech', 'Installer', 'Sales', 'Setter', 'Office', 'Manager', 'Admin', 'Owner']
 const USER_ROLES = ['User', 'Admin', 'Owner']
@@ -43,9 +40,13 @@ const emptyEmployee = {
   business_unit: '',
   employee_id: '',
   active: true,
-  pay_type: 'hourly',
+  // Multi-select pay types
+  is_hourly: false,
+  is_salary: false,
+  is_commission: false,
   hourly_rate: 0,
   annual_salary: 0,
+  // Commission rates
   commission_goods_rate: 0,
   commission_goods_type: 'percent',
   commission_services_rate: 0,
@@ -56,6 +57,7 @@ const emptyEmployee = {
   commission_leads_type: 'flat',
   commission_setter_rate: 25,
   commission_setter_type: 'flat',
+  // PTO
   pto_days_per_year: 10,
   pto_accrued: 0,
   pto_used: 0
@@ -64,6 +66,7 @@ const emptyEmployee = {
 export default function Employees() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const currentUser = useStore((state) => state.user)
   const fetchEmployees = useStore((state) => state.fetchEmployees)
 
   const themeContext = useTheme()
@@ -81,13 +84,16 @@ export default function Employees() {
 
   const [employees, setEmployees] = useState([])
   const [showModal, setShowModal] = useState(false)
-  const [editingEmployee, setEditingEmployee] = useState(null)
+  const [viewingEmployee, setViewingEmployee] = useState(null)
+  const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState(emptyEmployee)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [showInactive, setShowInactive] = useState(false)
-  const [expandedCard, setExpandedCard] = useState(null)
-  const [activeTab, setActiveTab] = useState('pay') // pay, commission, pto
+
+  // Check if current user is admin
+  const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' ||
+    currentUser?.role === 'Admin' || currentUser?.role === 'Owner'
 
   useEffect(() => {
     if (!companyId) {
@@ -111,16 +117,29 @@ export default function Employees() {
     ? employees
     : employees.filter(e => e.active)
 
+  // Check if user can edit this employee
+  const canEdit = (employee) => {
+    if (isAdmin) return true
+    // User can only edit their own record
+    return currentUser?.email === employee?.email || currentUser?.id === employee?.id
+  }
+
+  // Check if user can view sensitive info (pay, commission, PTO)
+  const canViewSensitiveInfo = (employee) => {
+    if (isAdmin) return true
+    return currentUser?.email === employee?.email || currentUser?.id === employee?.id
+  }
+
   const openAddModal = () => {
-    setEditingEmployee(null)
+    setViewingEmployee(null)
     setFormData(emptyEmployee)
+    setIsEditing(true)
     setError(null)
-    setActiveTab('pay')
     setShowModal(true)
   }
 
-  const openEditModal = (employee) => {
-    setEditingEmployee(employee)
+  const openViewModal = (employee) => {
+    setViewingEmployee(employee)
     setFormData({
       name: employee.name || '',
       email: employee.email || '',
@@ -130,7 +149,10 @@ export default function Employees() {
       business_unit: employee.business_unit || '',
       employee_id: employee.employee_id || '',
       active: employee.active !== false,
-      pay_type: employee.pay_type || 'hourly',
+      // Parse pay types from pay_type field or individual flags
+      is_hourly: employee.is_hourly || employee.pay_type === 'hourly' || employee.pay_type === 'hybrid',
+      is_salary: employee.is_salary || employee.pay_type === 'salary' || employee.pay_type === 'hybrid',
+      is_commission: employee.is_commission || employee.pay_type === 'commission' || employee.pay_type === 'hybrid',
       hourly_rate: employee.hourly_rate || 0,
       annual_salary: employee.annual_salary || 0,
       commission_goods_rate: employee.commission_goods_rate || 0,
@@ -147,14 +169,15 @@ export default function Employees() {
       pto_accrued: employee.pto_accrued || 0,
       pto_used: employee.pto_used || 0
     })
+    setIsEditing(false)
     setError(null)
-    setActiveTab('pay')
     setShowModal(true)
   }
 
   const closeModal = () => {
     setShowModal(false)
-    setEditingEmployee(null)
+    setViewingEmployee(null)
+    setIsEditing(false)
     setFormData(emptyEmployee)
     setError(null)
   }
@@ -167,21 +190,51 @@ export default function Employees() {
     }))
   }
 
+  const togglePayType = (payType) => {
+    if (!isEditing) return
+    setFormData(prev => ({ ...prev, [payType]: !prev[payType] }))
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!isEditing) return
+
     setLoading(true)
     setError(null)
 
+    // Build pay_type string for backwards compatibility
+    let payType = 'hourly'
+    if (formData.is_salary && formData.is_commission) payType = 'hybrid'
+    else if (formData.is_salary) payType = 'salary'
+    else if (formData.is_commission) payType = 'commission'
+    else if (formData.is_hourly) payType = 'hourly'
+
     const payload = {
-      ...formData,
       company_id: companyId,
+      name: formData.name,
+      email: formData.email || null,
+      phone: formData.phone || null,
+      role: formData.role,
+      user_role: formData.user_role,
+      business_unit: formData.business_unit || null,
+      employee_id: formData.employee_id || null,
+      active: formData.active,
+      pay_type: payType,
+      is_hourly: formData.is_hourly,
+      is_salary: formData.is_salary,
+      is_commission: formData.is_commission,
       hourly_rate: parseFloat(formData.hourly_rate) || 0,
       annual_salary: parseFloat(formData.annual_salary) || 0,
       commission_goods_rate: parseFloat(formData.commission_goods_rate) || 0,
+      commission_goods_type: formData.commission_goods_type,
       commission_services_rate: parseFloat(formData.commission_services_rate) || 0,
+      commission_services_type: formData.commission_services_type,
       commission_software_rate: parseFloat(formData.commission_software_rate) || 0,
+      commission_software_type: formData.commission_software_type,
       commission_leads_rate: parseFloat(formData.commission_leads_rate) || 0,
+      commission_leads_type: formData.commission_leads_type,
       commission_setter_rate: parseFloat(formData.commission_setter_rate) || 0,
+      commission_setter_type: formData.commission_setter_type,
       pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
       pto_accrued: parseFloat(formData.pto_accrued) || 0,
       pto_used: parseFloat(formData.pto_used) || 0,
@@ -189,11 +242,11 @@ export default function Employees() {
     }
 
     let result
-    if (editingEmployee) {
+    if (viewingEmployee) {
       result = await supabase
         .from('employees')
         .update(payload)
-        .eq('id', editingEmployee.id)
+        .eq('id', viewingEmployee.id)
     } else {
       result = await supabase
         .from('employees')
@@ -213,6 +266,8 @@ export default function Employees() {
   }
 
   const toggleActive = async (employee) => {
+    if (!canEdit(employee)) return
+
     await supabase
       .from('employees')
       .update({ active: !employee.active, updated_at: new Date().toISOString() })
@@ -233,6 +288,13 @@ export default function Employees() {
     outline: 'none'
   }
 
+  const inputStyleDisabled = {
+    ...inputStyle,
+    backgroundColor: theme.bgCard,
+    color: theme.textMuted,
+    cursor: 'not-allowed'
+  }
+
   const labelStyle = {
     display: 'block',
     marginBottom: '6px',
@@ -241,8 +303,20 @@ export default function Employees() {
     color: theme.textSecondary
   }
 
+  const sectionHeaderStyle = {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginBottom: '12px',
+    marginTop: '20px',
+    paddingBottom: '8px',
+    borderBottom: `1px solid ${theme.border}`
+  }
+
   // Commission rate input component
-  const RateInput = ({ label, rateName, typeName }) => (
+  const RateInput = ({ label, rateName, typeName, disabled }) => (
     <div style={{ marginBottom: '12px' }}>
       <label style={labelStyle}>{label}</label>
       <div style={{ display: 'flex', gap: '8px' }}>
@@ -253,33 +327,38 @@ export default function Employees() {
           name={rateName}
           value={formData[rateName]}
           onChange={handleChange}
-          style={{ ...inputStyle, flex: 1 }}
+          disabled={disabled}
+          style={{ ...(disabled ? inputStyleDisabled : inputStyle), flex: 1 }}
         />
         <div style={{ display: 'flex', border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}>
           <button
             type="button"
-            onClick={() => setFormData(prev => ({ ...prev, [typeName]: 'flat' }))}
+            onClick={() => !disabled && setFormData(prev => ({ ...prev, [typeName]: 'flat' }))}
+            disabled={disabled}
             style={{
               padding: '8px 12px',
               backgroundColor: formData[typeName] === 'flat' ? theme.accent : 'transparent',
               color: formData[typeName] === 'flat' ? '#fff' : theme.textMuted,
               border: 'none',
-              cursor: 'pointer',
-              fontSize: '13px'
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              fontSize: '13px',
+              opacity: disabled ? 0.6 : 1
             }}
           >
             $
           </button>
           <button
             type="button"
-            onClick={() => setFormData(prev => ({ ...prev, [typeName]: 'percent' }))}
+            onClick={() => !disabled && setFormData(prev => ({ ...prev, [typeName]: 'percent' }))}
+            disabled={disabled}
             style={{
               padding: '8px 12px',
               backgroundColor: formData[typeName] === 'percent' ? theme.accent : 'transparent',
               color: formData[typeName] === 'percent' ? '#fff' : theme.textMuted,
               border: 'none',
-              cursor: 'pointer',
-              fontSize: '13px'
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              fontSize: '13px',
+              opacity: disabled ? 0.6 : 1
             }}
           >
             %
@@ -288,6 +367,52 @@ export default function Employees() {
       </div>
     </div>
   )
+
+  // Pay type toggle button
+  const PayTypeToggle = ({ label, field, icon: Icon, disabled }) => {
+    const isActive = formData[field]
+    return (
+      <button
+        type="button"
+        onClick={() => togglePayType(field)}
+        disabled={disabled}
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '16px 12px',
+          backgroundColor: isActive ? theme.accentBg : theme.bg,
+          border: `2px solid ${isActive ? theme.accent : theme.border}`,
+          borderRadius: '12px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          transition: 'all 0.15s ease',
+          opacity: disabled ? 0.7 : 1
+        }}
+      >
+        <Icon size={24} style={{ color: isActive ? theme.accent : theme.textMuted }} />
+        <span style={{
+          fontSize: '13px',
+          fontWeight: isActive ? '600' : '400',
+          color: isActive ? theme.accent : theme.textSecondary
+        }}>
+          {label}
+        </span>
+        {isActive && (
+          <span style={{
+            fontSize: '10px',
+            padding: '2px 8px',
+            backgroundColor: theme.accent,
+            color: '#fff',
+            borderRadius: '10px'
+          }}>
+            Active
+          </span>
+        )}
+      </button>
+    )
+  }
 
   return (
     <div style={{ padding: '24px' }}>
@@ -323,25 +448,27 @@ export default function Employees() {
             />
             Show inactive
           </label>
-          <button
-            onClick={openAddModal}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              backgroundColor: theme.accent,
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '500',
-              cursor: 'pointer'
-            }}
-          >
-            <Plus size={20} />
-            Add Employee
-          </button>
+          {isAdmin && (
+            <button
+              onClick={openAddModal}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 16px',
+                backgroundColor: theme.accent,
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer'
+              }}
+            >
+              <Plus size={20} />
+              Add Employee
+            </button>
+          )}
         </div>
       </div>
 
@@ -356,7 +483,7 @@ export default function Employees() {
         }}>
           <User size={48} style={{ color: theme.textMuted, marginBottom: '16px' }} />
           <p style={{ color: theme.textSecondary }}>
-            No employees yet. Add your first team member.
+            No employees yet. {isAdmin && 'Add your first team member.'}
           </p>
         </div>
       ) : (
@@ -367,17 +494,20 @@ export default function Employees() {
         }}>
           {displayedEmployees.map((employee) => {
             const roleColor = getRoleColor(employee.role)
-            const isExpanded = expandedCard === employee.id
+            const userCanView = canViewSensitiveInfo(employee)
+            const userCanEdit = canEdit(employee)
 
             return (
               <div
                 key={employee.id}
+                onClick={() => openViewModal(employee)}
                 style={{
                   backgroundColor: theme.bgCard,
                   borderRadius: '16px',
                   border: `1px solid ${theme.border}`,
                   padding: '24px',
                   opacity: employee.active ? 1 : 0.6,
+                  cursor: 'pointer',
                   transition: 'all 0.2s'
                 }}
               >
@@ -475,8 +605,8 @@ export default function Employees() {
                   )}
                 </div>
 
-                {/* Pay Info Summary */}
-                {employee.pay_type && (
+                {/* Pay Info Summary - Only show if can view */}
+                {userCanView && (employee.is_hourly || employee.is_salary || employee.is_commission || employee.pay_type) && (
                   <div style={{
                     marginTop: '12px',
                     padding: '10px',
@@ -485,75 +615,51 @@ export default function Employees() {
                     fontSize: '12px',
                     color: theme.textSecondary
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                       <DollarSign size={12} />
-                      <span>
-                        {employee.pay_type === 'hourly' && `$${employee.hourly_rate || 0}/hr`}
-                        {employee.pay_type === 'salary' && `$${(employee.annual_salary || 0).toLocaleString()}/yr`}
-                        {employee.pay_type === 'commission' && 'Commission'}
-                        {employee.pay_type === 'hybrid' && `$${(employee.annual_salary || 0).toLocaleString()}/yr + Commission`}
-                      </span>
-                    </div>
-                    {employee.pto_days_per_year > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                        <Calendar size={12} />
-                        <span>
-                          PTO: {employee.pto_accrued || 0} / {employee.pto_days_per_year} days
+                      {(employee.is_hourly || employee.pay_type === 'hourly') && (
+                        <span style={{ padding: '2px 6px', backgroundColor: '#22c55e20', color: '#22c55e', borderRadius: '4px', fontSize: '11px' }}>
+                          ${employee.hourly_rate}/hr
                         </span>
-                      </div>
-                    )}
+                      )}
+                      {(employee.is_salary || employee.pay_type === 'salary' || employee.pay_type === 'hybrid') && (
+                        <span style={{ padding: '2px 6px', backgroundColor: '#3b82f620', color: '#3b82f6', borderRadius: '4px', fontSize: '11px' }}>
+                          ${(employee.annual_salary || 0).toLocaleString()}/yr
+                        </span>
+                      )}
+                      {(employee.is_commission || employee.pay_type === 'commission' || employee.pay_type === 'hybrid') && (
+                        <span style={{ padding: '2px 6px', backgroundColor: '#f9731620', color: '#f97316', borderRadius: '4px', fontSize: '11px' }}>
+                          Commission
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
 
-                {/* Actions */}
-                <div style={{
-                  display: 'flex',
-                  gap: '8px',
-                  marginTop: '16px'
-                }}>
-                  <button
-                    onClick={() => openEditModal(employee)}
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      padding: '10px',
-                      backgroundColor: theme.accentBg,
-                      border: 'none',
-                      borderRadius: '8px',
-                      color: theme.accent,
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Settings size={14} />
-                    Manage
-                  </button>
-                  <button
-                    onClick={() => toggleActive(employee)}
-                    style={{
-                      padding: '10px 14px',
-                      backgroundColor: 'transparent',
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '8px',
-                      color: theme.textMuted,
-                      fontSize: '13px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {employee.active ? 'Deactivate' : 'Activate'}
-                  </button>
-                </div>
+                {/* Locked indicator if can't view sensitive info */}
+                {!userCanView && (
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '10px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    color: theme.textMuted,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <Lock size={12} />
+                    <span>Details restricted</span>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
       )}
 
-      {/* Modal */}
+      {/* Employee Detail Modal */}
       {showModal && (
         <>
           <div
@@ -574,7 +680,7 @@ export default function Employees() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '560px',
+            maxWidth: '640px',
             maxHeight: '90vh',
             overflow: 'hidden',
             display: 'flex',
@@ -590,61 +696,72 @@ export default function Employees() {
               borderBottom: `1px solid ${theme.border}`,
               flexShrink: 0
             }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
-                {editingEmployee ? 'Edit Employee' : 'Add Employee'}
-              </h2>
-              <button
-                onClick={closeModal}
-                style={{
-                  padding: '8px',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  color: theme.textMuted,
-                  cursor: 'pointer'
-                }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Tab Navigation */}
-            <div style={{
-              display: 'flex',
-              borderBottom: `1px solid ${theme.border}`,
-              padding: '0 20px',
-              flexShrink: 0
-            }}>
-              {[
-                { id: 'info', label: 'Info', icon: User },
-                { id: 'pay', label: 'Pay', icon: DollarSign },
-                { id: 'commission', label: 'Commission', icon: Briefcase },
-                { id: 'pto', label: 'PTO', icon: Calendar }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  style={{
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {viewingEmployee && (
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '12px',
+                    backgroundColor: `${getRoleColor(formData.role)}20`,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    padding: '12px 16px',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    fontWeight: '600',
+                    color: getRoleColor(formData.role)
+                  }}>
+                    {formData.name?.charAt(0)?.toUpperCase() || '?'}
+                  </div>
+                )}
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
+                    {viewingEmployee ? formData.name : 'Add Employee'}
+                  </h2>
+                  {viewingEmployee && (
+                    <p style={{ fontSize: '13px', color: getRoleColor(formData.role), fontWeight: '500' }}>
+                      {formData.role}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {viewingEmployee && canEdit(viewingEmployee) && !isEditing && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      backgroundColor: theme.accentBg,
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: theme.accent,
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Pencil size={14} />
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={closeModal}
+                  style={{
+                    padding: '8px',
                     backgroundColor: 'transparent',
                     border: 'none',
-                    borderBottom: activeTab === tab.id ? `2px solid ${theme.accent}` : '2px solid transparent',
-                    color: activeTab === tab.id ? theme.accent : theme.textMuted,
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                    marginBottom: '-1px'
+                    color: theme.textMuted,
+                    cursor: 'pointer'
                   }}
                 >
-                  <tab.icon size={14} />
-                  {tab.label}
+                  <X size={20} />
                 </button>
-              ))}
+              </div>
             </div>
 
-            {/* Form */}
+            {/* Form Content */}
             <form onSubmit={handleSubmit} style={{ flex: 1, overflow: 'auto' }}>
               <div style={{ padding: '20px' }}>
                 {error && (
@@ -661,254 +778,252 @@ export default function Employees() {
                   </div>
                 )}
 
-                {/* Info Tab */}
-                {activeTab === 'info' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div>
-                      <label style={labelStyle}>Name *</label>
-                      <input
-                        type="text"
-                        name="name"
-                        value={formData.name}
-                        onChange={handleChange}
-                        required
-                        style={inputStyle}
-                      />
-                    </div>
+                {/* ===== BASIC INFO SECTION ===== */}
+                <div style={sectionHeaderStyle}>Basic Information</div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      <div>
-                        <label style={labelStyle}>Email</label>
-                        <input
-                          type="email"
-                          name="email"
-                          value={formData.email}
-                          onChange={handleChange}
-                          style={inputStyle}
-                        />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Phone</label>
-                        <input
-                          type="tel"
-                          name="phone"
-                          value={formData.phone}
-                          onChange={handleChange}
-                          style={inputStyle}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      <div>
-                        <label style={labelStyle}>Role</label>
-                        <select
-                          name="role"
-                          value={formData.role}
-                          onChange={handleChange}
-                          style={inputStyle}
-                        >
-                          {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={labelStyle}>User Role</label>
-                        <select
-                          name="user_role"
-                          value={formData.user_role}
-                          onChange={handleChange}
-                          style={inputStyle}
-                        >
-                          {USER_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      <div>
-                        <label style={labelStyle}>Business Unit</label>
-                        <input
-                          type="text"
-                          name="business_unit"
-                          value={formData.business_unit}
-                          onChange={handleChange}
-                          style={inputStyle}
-                        />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Employee ID</label>
-                        <input
-                          type="text"
-                          name="employee_id"
-                          value={formData.employee_id}
-                          onChange={handleChange}
-                          style={inputStyle}
-                        />
-                      </div>
-                    </div>
-
-                    {editingEmployee && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input
-                          type="checkbox"
-                          name="active"
-                          id="active"
-                          checked={formData.active}
-                          onChange={handleChange}
-                          style={{ accentColor: theme.accent }}
-                        />
-                        <label htmlFor="active" style={{ fontSize: '14px', color: theme.text }}>
-                          Active
-                        </label>
-                      </div>
-                    )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ gridColumn: isEditing ? '1 / -1' : 'auto' }}>
+                    <label style={labelStyle}>Name *</label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleChange}
+                      required
+                      disabled={!isEditing}
+                      style={isEditing ? inputStyle : inputStyleDisabled}
+                    />
                   </div>
-                )}
-
-                {/* Pay Tab */}
-                {activeTab === 'pay' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {!isEditing && viewingEmployee && (
                     <div>
-                      <label style={labelStyle}>Pay Type</label>
+                      <label style={labelStyle}>Status</label>
+                      <div style={{
+                        padding: '10px 12px',
+                        backgroundColor: formData.active ? 'rgba(34,197,94,0.1)' : 'rgba(107,114,128,0.1)',
+                        borderRadius: '8px',
+                        color: formData.active ? '#16a34a' : '#6b7280',
+                        fontSize: '14px',
+                        fontWeight: '500'
+                      }}>
+                        {formData.active ? 'Active' : 'Inactive'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Email</label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleChange}
+                      disabled={!isEditing}
+                      style={isEditing ? inputStyle : inputStyleDisabled}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Phone</label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleChange}
+                      disabled={!isEditing}
+                      style={isEditing ? inputStyle : inputStyleDisabled}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Role</label>
+                    <select
+                      name="role"
+                      value={formData.role}
+                      onChange={handleChange}
+                      disabled={!isEditing}
+                      style={isEditing ? inputStyle : inputStyleDisabled}
+                    >
+                      {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  {isAdmin && (
+                    <div>
+                      <label style={labelStyle}>User Role (Permissions)</label>
                       <select
-                        name="pay_type"
-                        value={formData.pay_type}
+                        name="user_role"
+                        value={formData.user_role}
                         onChange={handleChange}
-                        style={inputStyle}
+                        disabled={!isEditing}
+                        style={isEditing ? inputStyle : inputStyleDisabled}
                       >
-                        {PAY_TYPES.map(pt => (
-                          <option key={pt.value} value={pt.value}>{pt.label}</option>
-                        ))}
+                        {USER_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </div>
+                  )}
+                </div>
 
-                    {formData.pay_type === 'hourly' && (
-                      <div>
-                        <label style={labelStyle}>Hourly Rate ($)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          name="hourly_rate"
-                          value={formData.hourly_rate}
-                          onChange={handleChange}
-                          style={inputStyle}
-                        />
-                      </div>
-                    )}
+                {/* ===== PAY SECTION ===== */}
+                {canViewSensitiveInfo(viewingEmployee) && (
+                  <>
+                    <div style={sectionHeaderStyle}>Compensation</div>
 
-                    {(formData.pay_type === 'salary' || formData.pay_type === 'hybrid') && (
-                      <div>
-                        <label style={labelStyle}>Annual Salary ($)</label>
-                        <input
-                          type="number"
-                          step="1"
-                          min="0"
-                          name="annual_salary"
-                          value={formData.annual_salary}
-                          onChange={handleChange}
-                          style={inputStyle}
-                        />
-                      </div>
-                    )}
-
-                    {(formData.pay_type === 'commission' || formData.pay_type === 'hybrid') && (
-                      <div style={{
-                        padding: '16px',
-                        backgroundColor: theme.bg,
-                        borderRadius: '8px'
-                      }}>
-                        <p style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '8px' }}>
-                          Commission rates are configured in the Commission tab.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('commission')}
-                          style={{
-                            padding: '8px 16px',
-                            backgroundColor: theme.accent,
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '13px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Configure Commission
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Commission Tab */}
-                {activeTab === 'commission' && (
-                  <div>
-                    <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
-                      Set commission rates for different categories. Use $ for flat amounts or % for percentage.
+                    <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
+                      Select all that apply. Employee can have multiple pay types.
                     </p>
 
-                    <RateInput
-                      label="Goods (Products)"
-                      rateName="commission_goods_rate"
-                      typeName="commission_goods_type"
-                    />
-
-                    <RateInput
-                      label="Services (Labor)"
-                      rateName="commission_services_rate"
-                      typeName="commission_services_type"
-                    />
-
-                    <RateInput
-                      label="Software/Subscriptions"
-                      rateName="commission_software_rate"
-                      typeName="commission_software_type"
-                    />
-
-                    <div style={{
-                      borderTop: `1px solid ${theme.border}`,
-                      paddingTop: '16px',
-                      marginTop: '8px'
-                    }}>
-                      <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px', fontWeight: '500' }}>
-                        LEAD GENERATION
-                      </p>
-
-                      <RateInput
-                        label="Lead Generation (per lead)"
-                        rateName="commission_leads_rate"
-                        typeName="commission_leads_type"
-                      />
-
-                      <RateInput
-                        label="Lead Setter (per appointment)"
-                        rateName="commission_setter_rate"
-                        typeName="commission_setter_type"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* PTO Tab */}
-                {activeTab === 'pto' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div>
-                      <label style={labelStyle}>PTO Days Per Year</label>
-                      <input
-                        type="number"
-                        step="0.5"
-                        min="0"
-                        name="pto_days_per_year"
-                        value={formData.pto_days_per_year}
-                        onChange={handleChange}
-                        style={inputStyle}
-                      />
+                    {/* Pay Type Toggles */}
+                    <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                      <PayTypeToggle label="Hourly" field="is_hourly" icon={Clock} disabled={!isEditing} />
+                      <PayTypeToggle label="Salary" field="is_salary" icon={Briefcase} disabled={!isEditing} />
+                      <PayTypeToggle label="Commission" field="is_commission" icon={DollarSign} disabled={!isEditing} />
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    {/* Conditional Rate Inputs */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                      {formData.is_hourly && (
+                        <div>
+                          <label style={labelStyle}>Hourly Rate</label>
+                          <div style={{ position: 'relative' }}>
+                            <span style={{
+                              position: 'absolute',
+                              left: '12px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              color: theme.textMuted
+                            }}>$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              name="hourly_rate"
+                              value={formData.hourly_rate}
+                              onChange={handleChange}
+                              disabled={!isEditing}
+                              style={{
+                                ...(isEditing ? inputStyle : inputStyleDisabled),
+                                paddingLeft: '28px'
+                              }}
+                            />
+                            <span style={{
+                              position: 'absolute',
+                              right: '12px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              color: theme.textMuted,
+                              fontSize: '13px'
+                            }}>/hr</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {formData.is_salary && (
+                        <div>
+                          <label style={labelStyle}>Annual Salary</label>
+                          <div style={{ position: 'relative' }}>
+                            <span style={{
+                              position: 'absolute',
+                              left: '12px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              color: theme.textMuted
+                            }}>$</span>
+                            <input
+                              type="number"
+                              step="1"
+                              min="0"
+                              name="annual_salary"
+                              value={formData.annual_salary}
+                              onChange={handleChange}
+                              disabled={!isEditing}
+                              style={{
+                                ...(isEditing ? inputStyle : inputStyleDisabled),
+                                paddingLeft: '28px'
+                              }}
+                            />
+                            <span style={{
+                              position: 'absolute',
+                              right: '12px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              color: theme.textMuted,
+                              fontSize: '13px'
+                            }}>/yr</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Commission Rates - Only show if commission is enabled */}
+                    {formData.is_commission && (
+                      <>
+                        <div style={{ ...sectionHeaderStyle, marginTop: '24px' }}>Commission Rates</div>
+                        <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
+                          Use $ for flat amounts or % for percentage of sale.
+                        </p>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                          <RateInput
+                            label="Goods (Products)"
+                            rateName="commission_goods_rate"
+                            typeName="commission_goods_type"
+                            disabled={!isEditing}
+                          />
+                          <RateInput
+                            label="Services (Labor)"
+                            rateName="commission_services_rate"
+                            typeName="commission_services_type"
+                            disabled={!isEditing}
+                          />
+                          <RateInput
+                            label="Software/Subscriptions"
+                            rateName="commission_software_rate"
+                            typeName="commission_software_type"
+                            disabled={!isEditing}
+                          />
+                        </div>
+
+                        <p style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginTop: '16px', marginBottom: '12px' }}>
+                          LEAD GENERATION
+                        </p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                          <RateInput
+                            label="Per Lead Generated"
+                            rateName="commission_leads_rate"
+                            typeName="commission_leads_type"
+                            disabled={!isEditing}
+                          />
+                          <RateInput
+                            label="Per Appointment Set"
+                            rateName="commission_setter_rate"
+                            typeName="commission_setter_type"
+                            disabled={!isEditing}
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* ===== PTO SECTION ===== */}
+                    <div style={sectionHeaderStyle}>Paid Time Off</div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                       <div>
-                        <label style={labelStyle}>Accrued Days</label>
+                        <label style={labelStyle}>Days Per Year</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          name="pto_days_per_year"
+                          value={formData.pto_days_per_year}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Accrued</label>
                         <input
                           type="number"
                           step="0.5"
@@ -916,11 +1031,12 @@ export default function Employees() {
                           name="pto_accrued"
                           value={formData.pto_accrued}
                           onChange={handleChange}
-                          style={inputStyle}
+                          disabled={!isEditing}
+                          style={isEditing ? inputStyle : inputStyleDisabled}
                         />
                       </div>
                       <div>
-                        <label style={labelStyle}>Used Days</label>
+                        <label style={labelStyle}>Used</label>
                         <input
                           type="number"
                           step="0.5"
@@ -928,11 +1044,13 @@ export default function Employees() {
                           name="pto_used"
                           value={formData.pto_used}
                           onChange={handleChange}
-                          style={inputStyle}
+                          disabled={!isEditing}
+                          style={isEditing ? inputStyle : inputStyleDisabled}
                         />
                       </div>
                     </div>
 
+                    {/* PTO Progress Bar */}
                     <div style={{
                       padding: '16px',
                       backgroundColor: theme.accentBg,
@@ -958,54 +1076,89 @@ export default function Employees() {
                         }} />
                       </div>
                     </div>
+                  </>
+                )}
+
+                {/* Restricted info message */}
+                {viewingEmployee && !canViewSensitiveInfo(viewingEmployee) && (
+                  <div style={{
+                    marginTop: '20px',
+                    padding: '24px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '12px',
+                    textAlign: 'center'
+                  }}>
+                    <Lock size={32} style={{ color: theme.textMuted, marginBottom: '12px' }} />
+                    <p style={{ color: theme.textSecondary, fontSize: '14px' }}>
+                      Compensation and PTO details are only visible to admins and the employee themselves.
+                    </p>
+                  </div>
+                )}
+
+                {/* Active checkbox for editing */}
+                {isEditing && viewingEmployee && (
+                  <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="checkbox"
+                      name="active"
+                      id="active"
+                      checked={formData.active}
+                      onChange={handleChange}
+                      style={{ accentColor: theme.accent }}
+                    />
+                    <label htmlFor="active" style={{ fontSize: '14px', color: theme.text }}>
+                      Active Employee
+                    </label>
                   </div>
                 )}
               </div>
 
               {/* Form Actions */}
-              <div style={{
-                display: 'flex',
-                gap: '12px',
-                padding: '20px',
-                borderTop: `1px solid ${theme.border}`,
-                flexShrink: 0
-              }}>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    backgroundColor: 'transparent',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '8px',
-                    color: theme.textSecondary,
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    backgroundColor: theme.accent,
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    opacity: loading ? 0.7 : 1
-                  }}
-                >
-                  {loading ? 'Saving...' : (editingEmployee ? 'Update' : 'Add Employee')}
-                </button>
-              </div>
+              {isEditing && (
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  padding: '20px',
+                  borderTop: `1px solid ${theme.border}`,
+                  flexShrink: 0
+                }}>
+                  <button
+                    type="button"
+                    onClick={viewingEmployee ? () => setIsEditing(false) : closeModal}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '8px',
+                      color: theme.textSecondary,
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      backgroundColor: theme.accent,
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      opacity: loading ? 0.7 : 1
+                    }}
+                  >
+                    {loading ? 'Saving...' : (viewingEmployee ? 'Save Changes' : 'Add Employee')}
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </>
