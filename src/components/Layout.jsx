@@ -221,6 +221,7 @@ export default function Layout() {
       sectionIcon: Rocket,
       items: [
         { to: '/base-camp', icon: Tent, label: 'Agent Marketplace' },
+        { to: '/robot-marketplace', icon: Bot, label: 'Robot Marketplace' },
         { to: '/settings', icon: Settings, label: 'Settings' }
       ]
     }

@@ -44,6 +44,7 @@ import TimeClock from './pages/TimeClock'
 import Payroll from './pages/Payroll'
 import Books from './pages/Books'
 import BaseCamp from './pages/BaseCamp'
+import RobotMarketplace from './pages/RobotMarketplace'
 import MyCrew from './pages/MyCrew'
 import LenardWorkspace from './pages/agents/lenard/LenardWorkspace'
 import FreddyWorkspace from './pages/agents/freddy/FreddyWorkspace'
@@ -212,6 +213,7 @@ function App() {
 
           {/* Base Camp & AI Agents */}
           <Route path="/base-camp" element={<BaseCamp />} />
+          <Route path="/robot-marketplace" element={<RobotMarketplace />} />
           <Route path="/my-crew" element={<MyCrew />} />
 
           {/* Lenard Workspace (Lighting) */}
