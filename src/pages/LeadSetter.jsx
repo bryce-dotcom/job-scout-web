@@ -323,7 +323,7 @@ export default function LeadSetter() {
       title: `${selectedLead.customer_name} - ${selectedLead.service_type || 'Meeting'}`,
       start_time: startTime.toISOString(),
       end_time: endTime.toISOString(),
-      status: 'scheduled',
+      status: 'Scheduled',
       setter_id: user?.id || null
     }
 
@@ -883,11 +883,11 @@ export default function LeadSetter() {
                             <div
                               key={apt.id}
                               style={{
-                                backgroundColor: apt.status === 'completed' ? '#dcfce7' :
-                                  apt.status === 'cancelled' ? '#fee2e2' :
+                                backgroundColor: apt.status === 'Completed' ? '#dcfce7' :
+                                  apt.status === 'Cancelled' ? '#fee2e2' :
                                     isToday(new Date(apt.start_time)) ? '#d1fae5' : theme.accentBg,
-                                borderLeft: `3px solid ${apt.status === 'completed' ? '#16a34a' :
-                                  apt.status === 'cancelled' ? '#dc2626' :
+                                borderLeft: `3px solid ${apt.status === 'Completed' ? '#16a34a' :
+                                  apt.status === 'Cancelled' ? '#dc2626' :
                                     isToday(new Date(apt.start_time)) ? '#059669' : theme.accent}`,
                                 borderRadius: '4px',
                                 padding: '4px 6px',
