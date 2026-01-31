@@ -443,15 +443,26 @@ export default function LeadSetter() {
       // Legacy table may not exist
     }
 
+    console.log('Appointment saved successfully, refreshing...')
+
     setSaving(false)
     setShowAppointmentModal(false)
     setSelectedLead(null)
     setDraggedLead(null)
+
+    // Refresh local data
     await fetchData()
+    console.log('Local fetchData completed, appointments count:', appointments.length)
 
     // Also refresh global store appointments
     if (fetchAppointments) {
       await fetchAppointments()
+    }
+
+    // Refresh shared calendar component if available
+    if (window.refreshAppointmentsCalendar) {
+      window.refreshAppointmentsCalendar()
+      console.log('Shared calendar refreshed')
     }
   }
 

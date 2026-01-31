@@ -1,13 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { APPOINTMENT_STATUS } from '../lib/schema'
-import {
-  Plus, Pencil, Trash2, X, Calendar, Search, Clock, MapPin, User,
-  ChevronLeft, ChevronRight, Filter
-} from 'lucide-react'
+import AppointmentsCalendar from '../components/AppointmentsCalendar'
+import { Plus, X, Trash2 } from 'lucide-react'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -19,14 +17,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Scheduled': { bg: '#5a9bd5', text: '#ffffff' },
-  'Confirmed': { bg: '#4a7c59', text: '#ffffff' },
-  'Completed': { bg: '#5a6349', text: '#ffffff' },
-  'Cancelled': { bg: '#c25a5a', text: '#ffffff' },
-  'No Show': { bg: '#d4940a', text: '#ffffff' }
 }
 
 const emptyAppointment = {
@@ -46,19 +36,18 @@ export default function Appointments() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
-  const appointments = useStore((state) => state.appointments)
   const leads = useStore((state) => state.leads)
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
   const fetchAppointments = useStore((state) => state.fetchAppointments)
 
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const calendarRef = useRef(null)
+
   const [showModal, setShowModal] = useState(false)
   const [editingAppointment, setEditingAppointment] = useState(null)
   const [formData, setFormData] = useState(emptyAppointment)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [statusFilter, setStatusFilter] = useState('all')
   const [setterFilter, setSetterFilter] = useState('all')
 
   const themeContext = useTheme()
@@ -70,74 +59,18 @@ export default function Appointments() {
   useEffect(() => {
     if (!companyId) {
       navigate('/')
-      return
     }
-    fetchAppointments()
-  }, [companyId, navigate, fetchAppointments])
+  }, [companyId, navigate])
 
-  // Calendar helpers
-  const year = currentDate.getFullYear()
-  const month = currentDate.getMonth()
-
-  const firstDayOfMonth = new Date(year, month, 1)
-  const lastDayOfMonth = new Date(year, month + 1, 0)
-  const startDay = firstDayOfMonth.getDay()
-  const daysInMonth = lastDayOfMonth.getDate()
-
-  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1))
-  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1))
-  const goToToday = () => setCurrentDate(new Date())
-
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ]
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-  const today = new Date()
-  const isToday = (day) => {
-    return today.getFullYear() === year &&
-           today.getMonth() === month &&
-           today.getDate() === day
-  }
-
-  // Filter appointments
-  const filteredAppointments = appointments.filter(apt => {
-    const matchesStatus = statusFilter === 'all' || apt.status === statusFilter
-    let matchesSetter = true
-    if (setterFilter === 'my') {
-      matchesSetter = apt.setter_id === user?.id
-    } else if (setterFilter !== 'all') {
-      matchesSetter = apt.setter_id === parseInt(setterFilter)
-    }
-    return matchesStatus && matchesSetter
-  })
-
-  const getAppointmentsForDate = (day) => {
-    const date = new Date(year, month, day)
-    const dateStr = date.toISOString().split('T')[0]
-
-    return filteredAppointments.filter(apt => {
-      if (!apt.start_time) return false
-      const aptDate = new Date(apt.start_time).toISOString().split('T')[0]
-      return aptDate === dateStr
-    })
-  }
-
-  // Build calendar grid
-  const calendarDays = []
-  for (let i = 0; i < startDay; i++) {
-    calendarDays.push(null)
-  }
-  for (let day = 1; day <= daysInMonth; day++) {
-    calendarDays.push(day)
-  }
-
-  const openAddModal = (day = null) => {
+  const openAddModal = (date = null, hour = null) => {
     setEditingAppointment(null)
-    const defaultDate = day
-      ? new Date(year, month, day, 9, 0).toISOString().slice(0, 16)
-      : ''
+    let defaultDate = ''
+    if (date) {
+      const d = new Date(date)
+      if (hour) d.setHours(hour, 0, 0, 0)
+      else d.setHours(9, 0, 0, 0)
+      defaultDate = d.toISOString().slice(0, 16)
+    }
     setFormData({ ...emptyAppointment, start_time: defaultDate })
     setError(null)
     setShowModal(true)
@@ -211,26 +144,25 @@ export default function Appointments() {
       return
     }
 
+    // Refresh calendar and store
+    calendarRef.current?.refresh()
     await fetchAppointments()
     closeModal()
     setLoading(false)
   }
 
-  const handleDelete = async (apt, e) => {
-    e.stopPropagation()
+  const handleDelete = async (apt) => {
     if (!confirm(`Delete appointment "${apt.title}"?`)) return
     await supabase.from('appointments').delete().eq('id', apt.id)
+    calendarRef.current?.refresh()
     await fetchAppointments()
+    closeModal()
   }
 
-  const formatTime = (dateStr) => {
-    if (!dateStr) return ''
-    return new Date(dateStr).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    })
-  }
+  // Get filter setter ID
+  const filterSetterId = setterFilter === 'my'
+    ? user?.id
+    : (setterFilter !== 'all' ? parseInt(setterFilter) : null)
 
   const inputStyle = {
     width: '100%',
@@ -267,18 +199,7 @@ export default function Appointments() {
         </h1>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          {/* Filters */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', minWidth: '130px' }}
-          >
-            <option value="all">All Statuses</option>
-            {APPOINTMENT_STATUS.map(status => (
-              <option key={status} value={status}>{status}</option>
-            ))}
-          </select>
-
+          {/* Setter Filter */}
           <select
             value={setterFilter}
             onChange={(e) => setSetterFilter(e.target.value)}
@@ -313,186 +234,15 @@ export default function Appointments() {
         </div>
       </div>
 
-      {/* Calendar Navigation */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '16px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={goToToday}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: theme.bgCard,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              fontSize: '14px',
-              color: theme.text,
-              cursor: 'pointer'
-            }}
-          >
-            Today
-          </button>
-          <button
-            onClick={prevMonth}
-            style={{
-              padding: '10px',
-              backgroundColor: theme.bgCard,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              cursor: 'pointer',
-              color: theme.textSecondary
-            }}
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <button
-            onClick={nextMonth}
-            style={{
-              padding: '10px',
-              backgroundColor: theme.bgCard,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              cursor: 'pointer',
-              color: theme.textSecondary
-            }}
-          >
-            <ChevronRight size={20} />
-          </button>
-        </div>
-
-        <span style={{
-          fontSize: '18px',
-          fontWeight: '600',
-          color: theme.text
-        }}>
-          {monthNames[month]} {year}
-        </span>
-
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {Object.entries(statusColors).slice(0, 4).map(([status, colors]) => (
-            <div key={status} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{
-                width: '10px',
-                height: '10px',
-                borderRadius: '3px',
-                backgroundColor: colors.bg
-              }} />
-              <span style={{ fontSize: '12px', color: theme.textMuted }}>{status}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Calendar Grid */}
-      <div style={{
-        backgroundColor: theme.bgCard,
-        borderRadius: '12px',
-        border: `1px solid ${theme.border}`,
-        overflow: 'hidden'
-      }}>
-        {/* Day Headers */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
-          backgroundColor: theme.accentBg,
-          borderBottom: `1px solid ${theme.border}`
-        }}>
-          {dayNames.map(day => (
-            <div key={day} style={{
-              padding: '12px 8px',
-              textAlign: 'center',
-              fontSize: '13px',
-              fontWeight: '600',
-              color: theme.textMuted
-            }}>
-              {day}
-            </div>
-          ))}
-        </div>
-
-        {/* Calendar Days */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)'
-        }}>
-          {calendarDays.map((day, index) => {
-            const dayAppointments = day ? getAppointmentsForDate(day) : []
-
-            return (
-              <div
-                key={index}
-                onClick={() => day && openAddModal(day)}
-                style={{
-                  minHeight: '120px',
-                  borderBottom: `1px solid ${theme.border}`,
-                  borderRight: (index + 1) % 7 !== 0 ? `1px solid ${theme.border}` : 'none',
-                  padding: '8px',
-                  backgroundColor: day ? (isToday(day) ? 'rgba(90,99,73,0.08)' : 'transparent') : theme.accentBg,
-                  cursor: day ? 'pointer' : 'default'
-                }}
-              >
-                {day && (
-                  <>
-                    <div style={{
-                      fontSize: '14px',
-                      fontWeight: isToday(day) ? '600' : '500',
-                      color: isToday(day) ? theme.accent : theme.text,
-                      marginBottom: '6px'
-                    }}>
-                      {day}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {dayAppointments.slice(0, 3).map(apt => {
-                        const colors = statusColors[apt.status] || statusColors['Scheduled']
-                        return (
-                          <div
-                            key={apt.id}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openEditModal(apt)
-                            }}
-                            style={{
-                              backgroundColor: colors.bg,
-                              color: colors.text,
-                              fontSize: '11px',
-                              padding: '4px 6px',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px'
-                            }}
-                            title={`${formatTime(apt.start_time)} - ${apt.title || apt.lead?.customer_name || 'Untitled'}`}
-                          >
-                            <span style={{ opacity: 0.8 }}>{formatTime(apt.start_time)}</span>
-                            <span>{apt.title || apt.lead?.customer_name || 'Untitled'}</span>
-                          </div>
-                        )
-                      })}
-                      {dayAppointments.length > 3 && (
-                        <div style={{
-                          fontSize: '11px',
-                          color: theme.textMuted,
-                          padding: '2px 4px'
-                        }}>
-                          +{dayAppointments.length - 3} more
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      {/* Shared Calendar Component */}
+      <AppointmentsCalendar
+        ref={calendarRef}
+        viewMode="month"
+        filterSetterId={filterSetterId}
+        onAppointmentClick={openEditModal}
+        onSlotClick={(date, hour) => openAddModal(date, hour)}
+        showHeader={true}
+      />
 
       {/* Modal */}
       {showModal && (
@@ -636,7 +386,7 @@ export default function Appointments() {
                 {editingAppointment && (
                   <button
                     type="button"
-                    onClick={(e) => handleDelete(editingAppointment, e)}
+                    onClick={() => handleDelete(editingAppointment)}
                     style={{
                       padding: '10px 16px',
                       backgroundColor: 'rgba(194,90,90,0.1)',
