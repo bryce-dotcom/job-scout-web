@@ -468,6 +468,29 @@ export default function Leads() {
     return emp?.name || '-'
   }
 
+  // Quick inline update for lead owner
+  const handleQuickOwnerChange = async (lead, newOwnerId) => {
+    const { error } = await supabase.from('leads').update({
+      lead_owner_id: newOwnerId ? parseInt(newOwnerId) : null,
+      updated_at: new Date().toISOString()
+    }).eq('id', lead.id)
+    if (!error) await fetchLeads()
+  }
+
+  // Quick inline update for setter
+  const handleQuickSetterChange = async (lead, newSetterId) => {
+    const updates = {
+      setter_owner_id: newSetterId ? parseInt(newSetterId) : null,
+      updated_at: new Date().toISOString()
+    }
+    // If assigning a setter and status is New, change to Assigned
+    if (newSetterId && lead.status === 'New') {
+      updates.status = 'Assigned'
+    }
+    const { error } = await supabase.from('leads').update(updates).eq('id', lead.id)
+    if (!error) await fetchLeads()
+  }
+
   const inputStyle = {
     width: '100%',
     padding: '10px 12px',
@@ -532,7 +555,12 @@ export default function Leads() {
             <div key={lead.id} style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>{lead.customer_name}</h3>
+                  <h3
+                    onClick={() => navigate(`/leads/${lead.id}`)}
+                    style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px', cursor: 'pointer' }}
+                    onMouseEnter={(e) => e.target.style.color = theme.accent}
+                    onMouseLeave={(e) => e.target.style.color = theme.text}
+                  >{lead.customer_name}</h3>
                   {lead.business_name && <p style={{ fontSize: '14px', color: theme.textSecondary }}>{lead.business_name}</p>}
                 </div>
                 <div style={{ display: 'flex', gap: '4px' }}>
@@ -550,20 +578,57 @@ export default function Leads() {
                 {lead.email && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}><Mail size={14} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span></div>}
               </div>
 
-              {/* Lead Owner & Setter Info */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px', fontSize: '12px' }}>
-                {lead.lead_owner_id && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: theme.textMuted }}>
-                    <Users size={12} />
-                    <span>Owner: <strong style={{ color: theme.textSecondary }}>{getEmployeeName(lead.lead_owner_id)}</strong></span>
-                  </div>
-                )}
-                {lead.setter_owner_id && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: theme.textMuted }}>
-                    <Send size={12} />
-                    <span>Setter: <strong style={{ color: theme.textSecondary }}>{getEmployeeName(lead.setter_owner_id)}</strong></span>
-                  </div>
-                )}
+              {/* Lead Owner & Setter Dropdowns */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                {/* Lead Owner Dropdown */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Users size={12} style={{ color: theme.textMuted, flexShrink: 0 }} />
+                  <span style={{ fontSize: '11px', color: theme.textMuted, minWidth: '42px' }}>Owner:</span>
+                  <select
+                    value={lead.lead_owner_id || ''}
+                    onChange={(e) => handleQuickOwnerChange(lead, e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 6px',
+                      fontSize: '12px',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '4px',
+                      backgroundColor: theme.bg,
+                      color: theme.text,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="">-- None --</option>
+                    {employees.map(e => (
+                      <option key={e.id} value={e.id}>{e.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Setter Dropdown */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Send size={12} style={{ color: theme.textMuted, flexShrink: 0 }} />
+                  <span style={{ fontSize: '11px', color: theme.textMuted, minWidth: '42px' }}>Setter:</span>
+                  <select
+                    value={lead.setter_owner_id || ''}
+                    onChange={(e) => handleQuickSetterChange(lead, e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 6px',
+                      fontSize: '12px',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '4px',
+                      backgroundColor: theme.bg,
+                      color: theme.text,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="">-- None --</option>
+                    {setterEmployees.map(e => (
+                      <option key={e.id} value={e.id}>{e.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
@@ -578,12 +643,6 @@ export default function Leads() {
 
               {lead.status !== 'Converted' && (
                 <div style={{ display: 'flex', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
-                  {/* Assign to Setter - only show if not already assigned or appointment set */}
-                  {!lead.setter_owner_id && lead.status === 'New' && (
-                    <button onClick={() => openAssignModal(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: 'rgba(139,92,246,0.1)', border: 'none', borderRadius: '6px', color: '#7c3aed', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>
-                      <Send size={14} />Assign
-                    </button>
-                  )}
                   <button onClick={() => openAppointmentModal(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '12px', cursor: 'pointer' }}>
                     <Calendar size={14} />Appt
                   </button>

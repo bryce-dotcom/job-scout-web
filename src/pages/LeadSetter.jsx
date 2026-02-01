@@ -113,16 +113,34 @@ export default function LeadSetter() {
 
     // Fetch appointments for calendar
     const weekStart = getWeekStart(currentDate)
+    weekStart.setHours(0, 0, 0, 0)
     const weekEnd = new Date(weekStart)
-    weekEnd.setDate(weekEnd.getDate() + 7)
+    weekEnd.setDate(weekEnd.getDate() + 6)
+    weekEnd.setHours(23, 59, 59, 999)
 
-    const { data: appointmentsData } = await supabase
+    console.log('=== FETCH DEBUG ===')
+    console.log('currentDate:', currentDate.toLocaleString())
+    console.log('weekStart:', weekStart.toLocaleString(), '| ISO:', weekStart.toISOString())
+    console.log('weekEnd:', weekEnd.toLocaleString(), '| ISO:', weekEnd.toISOString())
+
+    const { data: appointmentsData, error: aptError } = await supabase
       .from('appointments')
-      .select('*, lead:leads(*)')
+      .select('*, lead:leads!lead_id(id, customer_name, phone, address, service_type), salesperson:employees!salesperson_id(id, name)')
       .eq('company_id', companyId)
       .gte('start_time', weekStart.toISOString())
       .lte('start_time', weekEnd.toISOString())
       .order('start_time')
+
+    if (aptError) {
+      console.error('Error fetching appointments:', aptError)
+    }
+    console.log('Appointments fetched:', appointmentsData?.length || 0)
+    if (appointmentsData?.length > 0) {
+      appointmentsData.forEach(apt => {
+        const d = new Date(apt.start_time)
+        console.log(`  Apt ${apt.id}: ${apt.title} | ${d.toLocaleString()} | Hour: ${d.getHours()}`)
+      })
+    }
 
     // Fetch commissions for current setter
     const { data: commissionsData } = await supabase
@@ -200,12 +218,43 @@ export default function LeadSetter() {
   }
 
   const getAppointmentsForSlot = (date, hour) => {
-    return appointments.filter(apt => {
+    const results = appointments.filter(apt => {
       const aptDate = new Date(apt.start_time)
-      return aptDate.toDateString() === date.toDateString() &&
-        aptDate.getHours() === hour
+      const sameDay = aptDate.toDateString() === date.toDateString()
+      const aptHour = aptDate.getHours()
+      const sameHour = aptHour === hour
+      // Also show in closest hour slot if outside 7-19 range
+      const isOutsideRange = aptHour < 7 || aptHour > 19
+      const showInFirstSlot = isOutsideRange && hour === 7 && aptHour < 7
+      const showInLastSlot = isOutsideRange && hour === 19 && aptHour > 19
+      return sameDay && (sameHour || showInFirstSlot || showInLastSlot)
     })
+    if (results.length > 0) {
+      console.log(`Slot ${date.toDateString()} ${hour}:00 has ${results.length} appointments`)
+    }
+    return results
   }
+
+  // Debug: Log appointments when they change
+  useEffect(() => {
+    if (appointments.length > 0) {
+      console.log('=== APPOINTMENTS DEBUG ===')
+      console.log('Total appointments:', appointments.length)
+      const weekStart = getWeekStart(currentDate)
+      const days = []
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(weekStart)
+        d.setDate(d.getDate() + i)
+        days.push(d)
+      }
+      console.log('Current week:', days.map(d => d.toDateString()))
+      appointments.forEach(apt => {
+        const aptDate = new Date(apt.start_time)
+        const matchingDay = days.find(d => d.toDateString() === aptDate.toDateString())
+        console.log('Apt:', apt.id, '| Raw:', apt.start_time, '| Local:', aptDate.toLocaleString(), '| Hour:', aptDate.getHours(), '| Matches day:', !!matchingDay)
+      })
+    }
+  }, [appointments, currentDate])
 
   const isToday = (date) => {
     const today = new Date()
@@ -220,15 +269,35 @@ export default function LeadSetter() {
 
   // Navigation
   const prevWeek = () => {
-    const d = new Date(currentDate)
-    d.setDate(d.getDate() - 7)
-    setCurrentDate(d)
+    setCurrentDate(prev => {
+      const d = new Date(prev)
+      d.setDate(d.getDate() - 7)
+      return d
+    })
   }
 
   const nextWeek = () => {
-    const d = new Date(currentDate)
-    d.setDate(d.getDate() + 7)
-    setCurrentDate(d)
+    setCurrentDate(prev => {
+      const d = new Date(prev)
+      d.setDate(d.getDate() + 7)
+      return d
+    })
+  }
+
+  const prevMonth = () => {
+    setCurrentDate(prev => {
+      const d = new Date(prev)
+      d.setMonth(d.getMonth() - 1)
+      return d
+    })
+  }
+
+  const nextMonth = () => {
+    setCurrentDate(prev => {
+      const d = new Date(prev)
+      d.setMonth(d.getMonth() + 1)
+      return d
+    })
   }
 
   const goToToday = () => {
@@ -550,6 +619,17 @@ export default function LeadSetter() {
     )
   }
 
+  // Debug render state
+  console.log('=== CALENDAR RENDER ===')
+  console.log('currentDate:', currentDate?.toDateString())
+  console.log('appointments in state:', appointments.length)
+  if (appointments.length > 0) {
+    appointments.forEach(apt => {
+      const d = new Date(apt.start_time)
+      console.log(`  - Apt ${apt.id}: ${d.toDateString()} @ ${d.getHours()}:00 (${d.toLocaleTimeString()}) - "${apt.title}"`)
+    })
+  }
+
   const weekDays = getWeekDays()
   const hourSlots = getHourSlots()
 
@@ -843,53 +923,93 @@ export default function LeadSetter() {
             padding: '12px 16px',
             borderBottom: `1px solid ${theme.border}`
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <button
-                onClick={prevWeek}
+                onClick={prevMonth}
+                title="Previous Month"
                 style={{
-                  padding: '6px',
+                  padding: '6px 8px',
                   backgroundColor: 'transparent',
                   border: `1px solid ${theme.border}`,
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  color: theme.textSecondary
+                  color: theme.textSecondary,
+                  fontSize: '14px',
+                  fontWeight: '600'
                 }}
               >
-                <ChevronLeft size={18} />
+                ««
               </button>
               <button
-                onClick={nextWeek}
+                onClick={prevWeek}
+                title="Previous Week"
                 style={{
-                  padding: '6px',
+                  padding: '6px 10px',
                   backgroundColor: 'transparent',
                   border: `1px solid ${theme.border}`,
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  color: theme.textSecondary
+                  color: theme.textSecondary,
+                  fontSize: '14px',
+                  fontWeight: '600'
                 }}
               >
-                <ChevronRight size={18} />
+                ‹
               </button>
               <button
                 onClick={goToToday}
                 style={{
-                  padding: '6px 12px',
-                  backgroundColor: theme.accentBg,
+                  padding: '8px 16px',
+                  backgroundColor: '#22c55e',
                   border: 'none',
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  color: theme.accent,
+                  color: '#fff',
                   fontSize: '13px',
-                  fontWeight: '500'
+                  fontWeight: '600'
                 }}
               >
                 Today
               </button>
+              <button
+                onClick={nextWeek}
+                title="Next Week"
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  color: theme.textSecondary,
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}
+              >
+                ›
+              </button>
+              <button
+                onClick={nextMonth}
+                title="Next Month"
+                style={{
+                  padding: '6px 8px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  color: theme.textSecondary,
+                  fontSize: '14px',
+                  fontWeight: '600'
+                }}
+              >
+                »»
+              </button>
             </div>
-            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
               {weekDays[0].toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </h3>
-            <div style={{ width: '120px' }}></div>
+            <div style={{ fontSize: '13px', color: theme.textMuted }}>
+              {weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </div>
           </div>
 
           {/* Calendar Grid */}

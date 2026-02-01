@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Employees from './pages/Employees'
 import Customers from './pages/Customers'
 import Leads from './pages/Leads'
+import LeadDetail from './pages/LeadDetail'
 import LeadSetter from './pages/LeadSetter'
 import SalesPipeline from './pages/SalesPipeline'
 import Products from './pages/Products'
@@ -173,6 +174,7 @@ function App() {
           <Route path="/employees" element={<Employees />} />
           <Route path="/customers" element={<Customers />} />
           <Route path="/leads" element={<Leads />} />
+          <Route path="/leads/:id" element={<LeadDetail />} />
           <Route path="/lead-setter" element={<LeadSetter />} />
           <Route path="/pipeline" element={<SalesPipeline />} />
           <Route path="/products" element={<Products />} />

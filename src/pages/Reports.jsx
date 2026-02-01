@@ -101,10 +101,12 @@ export default function Reports() {
       bySource[source] = (bySource[source] || 0) + 1
     })
 
-    const pipelineValue = salesPipeline.reduce((sum, p) => sum + (parseFloat(p.deal_value) || 0), 0)
+    const pipelineValue = leads
+      .filter(l => ['Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation'].includes(l.status))
+      .reduce((sum, l) => sum + (parseFloat(l.estimated_value) || 0), 0)
 
     return { totalLeads, converted, conversionRate, byStatus, bySource, pipelineValue }
-  }, [leads, salesPipeline, dateRange])
+  }, [leads, dateRange])
 
   // Jobs Report Data
   const jobsReportData = useMemo(() => {

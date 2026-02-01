@@ -68,8 +68,12 @@ const AppointmentsCalendar = forwardRef(({
 
   // Fetch appointments from database
   const fetchAppointments = useCallback(async () => {
-    if (!companyId) return
+    if (!companyId) {
+      console.log('[Calendar] No companyId, skipping fetch')
+      return
+    }
 
+    console.log('[Calendar] fetchAppointments called, viewMode:', viewMode, 'currentDate:', currentDate.toISOString())
     setLoading(true)
 
     let startDate, endDate
@@ -78,31 +82,37 @@ const AppointmentsCalendar = forwardRef(({
       endDate = new Date(startDate)
       endDate.setDate(endDate.getDate() + 7)
     } else {
-      // Month view
+      // Month view - extend range to include full month
       startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
-      endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
-      endDate.setDate(endDate.getDate() + 1)
+      endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)
     }
+
+    // Use start of day and end of day for local timezone
+    startDate.setHours(0, 0, 0, 0)
+    endDate.setHours(23, 59, 59, 999)
+
+    console.log('[Calendar] Query range:', startDate.toISOString(), 'to', endDate.toISOString())
 
     let query = supabase
       .from('appointments')
-      .select('*, lead:leads(id, customer_name, phone, address, service_type), setter:employees!setter_id(id, name), salesperson:employees!salesperson_id(id, name)')
+      .select('*, lead:leads!lead_id(id, customer_name, phone, address, service_type), setter:employees!setter_id(id, name), salesperson:employees!salesperson_id(id, name)')
       .eq('company_id', companyId)
       .gte('start_time', startDate.toISOString())
-      .lt('start_time', endDate.toISOString())
+      .lte('start_time', endDate.toISOString())
       .order('start_time')
 
     // Filter by setter if specified
     if (filterSetterId) {
+      console.log('[Calendar] Filtering by setter_id:', filterSetterId)
       query = query.eq('setter_id', filterSetterId)
     }
 
     const { data, error } = await query
 
     if (error) {
-      console.error('Error fetching appointments:', error)
+      console.error('[Calendar] Error fetching appointments:', error)
     } else {
-      console.log('Appointments fetched:', data?.length || 0)
+      console.log('[Calendar] Appointments fetched:', data?.length || 0, data?.map(a => ({ id: a.id, title: a.title, start_time: a.start_time })))
       setAppointments(data || [])
     }
 
@@ -168,13 +178,15 @@ const AppointmentsCalendar = forwardRef(({
     })
   }
 
-  // Get appointments for a specific date (month view)
+  // Get appointments for a specific date (month view) - uses local date comparison
   const getAppointmentsForDate = (date) => {
-    const dateStr = date.toISOString().split('T')[0]
     return appointments.filter(apt => {
       if (!apt.start_time) return false
-      const aptDate = new Date(apt.start_time).toISOString().split('T')[0]
-      return aptDate === dateStr
+      const aptDate = new Date(apt.start_time)
+      // Compare using local date parts to avoid timezone issues
+      return aptDate.getFullYear() === date.getFullYear() &&
+             aptDate.getMonth() === date.getMonth() &&
+             aptDate.getDate() === date.getDate()
     })
   }
 
