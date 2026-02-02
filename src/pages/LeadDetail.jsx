@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import {
   ArrowLeft, Calendar, FileText, Clipboard, Plus, Send, Phone, Mail,
   MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
-  CalendarDays, ClipboardList, X, Save, DollarSign, Inbox
+  CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import FlowIndicator from '../components/FlowIndicator'
@@ -28,6 +28,8 @@ export default function LeadDetail() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const employees = useStore((state) => state.employees)
+  const products = useStore((state) => state.products)
+  const serviceTypes = useStore((state) => state.serviceTypes)
 
   const [lead, setLead] = useState(null)
   const [audits, setAudits] = useState([])
@@ -38,6 +40,14 @@ export default function LeadDetail() {
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [isMobile, setIsMobile] = useState(false)
+
+  // Quote creation modal state
+  const [showQuoteModal, setShowQuoteModal] = useState(false)
+  const [quoteLines, setQuoteLines] = useState([])
+  const [quoteDiscount, setQuoteDiscount] = useState(0)
+  const [quoteNotes, setQuoteNotes] = useState('')
+  const [savingQuote, setSavingQuote] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState('')
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -165,31 +175,130 @@ export default function LeadDetail() {
     alert('Quote created from audit!')
   }
 
-  // Create manual quote
-  const handleCreateManualQuote = async () => {
-    const { data: quote, error } = await supabase
+  // Open quote creation modal
+  const openQuoteModal = () => {
+    setQuoteLines([])
+    setQuoteDiscount(0)
+    setQuoteNotes('')
+    setSelectedProduct('')
+    setShowQuoteModal(true)
+  }
+
+  // Add line item from product
+  const handleAddProductLine = () => {
+    if (!selectedProduct) return
+    const product = products.find(p => p.id === parseInt(selectedProduct))
+    if (!product) return
+
+    const newLine = {
+      id: Date.now(),
+      product_id: product.id,
+      description: product.name,
+      quantity: 1,
+      unit_price: product.unit_price || 0,
+      line_total: product.unit_price || 0
+    }
+    setQuoteLines([...quoteLines, newLine])
+    setSelectedProduct('')
+  }
+
+  // Add custom line item
+  const handleAddCustomLine = () => {
+    const newLine = {
+      id: Date.now(),
+      product_id: null,
+      description: '',
+      quantity: 1,
+      unit_price: 0,
+      line_total: 0
+    }
+    setQuoteLines([...quoteLines, newLine])
+  }
+
+  // Update line item
+  const handleUpdateLine = (lineId, field, value) => {
+    setQuoteLines(quoteLines.map(line => {
+      if (line.id === lineId) {
+        const updated = { ...line, [field]: value }
+        if (field === 'quantity' || field === 'unit_price') {
+          updated.line_total = (parseFloat(updated.quantity) || 0) * (parseFloat(updated.unit_price) || 0)
+        }
+        return updated
+      }
+      return line
+    }))
+  }
+
+  // Remove line item
+  const handleRemoveLine = (lineId) => {
+    setQuoteLines(quoteLines.filter(line => line.id !== lineId))
+  }
+
+  // Calculate totals
+  const quoteSubtotal = quoteLines.reduce((sum, line) => sum + (line.line_total || 0), 0)
+  const quoteTotal = quoteSubtotal - (parseFloat(quoteDiscount) || 0)
+
+  // Save quote
+  const handleSaveQuote = async () => {
+    if (quoteLines.length === 0) {
+      alert('Please add at least one line item')
+      return
+    }
+
+    setSavingQuote(true)
+
+    // Create quote
+    const { data: quote, error: quoteError } = await supabase
       .from('quotes')
       .insert({
         company_id: companyId,
         lead_id: lead.id,
-        quote_amount: 0,
-        status: 'Draft'
+        quote_amount: quoteTotal,
+        discount_amount: parseFloat(quoteDiscount) || 0,
+        status: 'Draft',
+        notes: quoteNotes || null
       })
       .select()
       .single()
 
-    if (error) {
-      console.error('Error creating quote:', error)
-      alert('Error creating quote: ' + error.message)
+    if (quoteError) {
+      console.error('Error creating quote:', quoteError)
+      alert('Error creating quote: ' + quoteError.message)
+      setSavingQuote(false)
       return
     }
 
+    // Create quote lines
+    const linesToInsert = quoteLines.map(line => ({
+      quote_id: quote.id,
+      product_id: line.product_id,
+      description: line.description,
+      quantity: parseFloat(line.quantity) || 1,
+      unit_price: parseFloat(line.unit_price) || 0,
+      line_total: line.line_total || 0
+    }))
+
+    const { error: linesError } = await supabase
+      .from('quote_lines')
+      .insert(linesToInsert)
+
+    if (linesError) {
+      console.error('Error creating quote lines:', linesError)
+    }
+
+    // Update lead with quote_id and status
     await supabase
       .from('leads')
-      .update({ quote_id: quote.id })
+      .update({
+        quote_id: quote.id,
+        status: 'Quote Sent',
+        updated_at: new Date().toISOString()
+      })
       .eq('id', lead.id)
 
-    navigate(`/quotes/${quote.id}`)
+    setSavingQuote(false)
+    setShowQuoteModal(false)
+    await fetchLeadData()
   }
 
   // Mark quote as sent
@@ -755,7 +864,7 @@ export default function LeadDetail() {
                 </p>
               </div>
               <button
-                onClick={handleCreateManualQuote}
+                onClick={openQuoteModal}
                 style={{
                   padding: isMobile ? '12px 16px' : '10px 16px',
                   minHeight: isMobile ? '44px' : 'auto',
@@ -785,8 +894,8 @@ export default function LeadDetail() {
                 message={audits.length > 0
                   ? "You have audits available! Create a quote from an audit to auto-fill line items and pricing."
                   : "Create a quote manually, or go to the Audits tab first to generate one automatically."}
-                actionLabel="Create Manual Quote"
-                onAction={handleCreateManualQuote}
+                actionLabel="Create Quote"
+                onAction={openQuoteModal}
                 secondaryLabel={audits.length === 0 ? "Create Audit First" : undefined}
                 onSecondaryAction={audits.length === 0 ? () => setActiveTab('audits') : undefined}
               />
@@ -891,6 +1000,485 @@ export default function LeadDetail() {
           </div>
         )}
       </div>
+
+      {/* Quote Creation Modal */}
+      {showQuoteModal && (
+        <>
+          <div
+            onClick={() => setShowQuoteModal(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 50
+            }}
+          />
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            border: `1px solid ${theme.border}`,
+            width: '100%',
+            maxWidth: isMobile ? '95%' : '700px',
+            maxHeight: '90vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 51
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: isMobile ? '16px' : '20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <div>
+                <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Create Quote
+                </h2>
+                <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
+                  {lead.customer_name}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowQuoteModal(false)}
+                style={{
+                  padding: isMobile ? '12px' : '8px',
+                  minWidth: isMobile ? '44px' : 'auto',
+                  minHeight: isMobile ? '44px' : 'auto',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: theme.textMuted,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{
+              flex: 1,
+              overflow: 'auto',
+              padding: isMobile ? '16px' : '20px'
+            }}>
+              {/* Add Product Line */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: theme.textSecondary,
+                  marginBottom: '8px'
+                }}>
+                  Add from Products
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select
+                    value={selectedProduct}
+                    onChange={(e) => setSelectedProduct(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: isMobile ? '12px' : '10px 12px',
+                      minHeight: isMobile ? '44px' : 'auto',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      color: theme.text,
+                      backgroundColor: theme.bgCard
+                    }}
+                  >
+                    <option value="">-- Select Product --</option>
+                    {products.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} - ${(p.unit_price || 0).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleAddProductLine}
+                    disabled={!selectedProduct}
+                    style={{
+                      padding: isMobile ? '12px 16px' : '10px 16px',
+                      minHeight: isMobile ? '44px' : 'auto',
+                      backgroundColor: selectedProduct ? theme.accent : theme.border,
+                      color: selectedProduct ? '#fff' : theme.textMuted,
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: selectedProduct ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '14px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    <Plus size={16} />
+                    {!isMobile && 'Add'}
+                  </button>
+                </div>
+                <button
+                  onClick={handleAddCustomLine}
+                  style={{
+                    marginTop: '8px',
+                    padding: isMobile ? '10px 12px' : '8px 12px',
+                    minHeight: isMobile ? '44px' : 'auto',
+                    backgroundColor: 'transparent',
+                    color: theme.accent,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Plus size={14} />
+                  Add Custom Line Item
+                </button>
+              </div>
+
+              {/* Line Items */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: theme.textSecondary,
+                  marginBottom: '8px'
+                }}>
+                  Line Items ({quoteLines.length})
+                </label>
+
+                {quoteLines.length === 0 ? (
+                  <div style={{
+                    padding: '24px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '8px',
+                    textAlign: 'center',
+                    color: theme.textMuted,
+                    fontSize: '14px'
+                  }}>
+                    <Package size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                    <p style={{ margin: 0 }}>No line items yet. Add products or custom items above.</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {quoteLines.map((line, index) => (
+                      <div
+                        key={line.id}
+                        style={{
+                          padding: isMobile ? '12px' : '12px 16px',
+                          backgroundColor: theme.bg,
+                          borderRadius: '8px',
+                          border: `1px solid ${theme.border}`
+                        }}
+                      >
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: isMobile ? '1fr' : '1fr auto auto auto auto',
+                          gap: isMobile ? '8px' : '12px',
+                          alignItems: 'center'
+                        }}>
+                          {/* Description */}
+                          <input
+                            type="text"
+                            value={line.description}
+                            onChange={(e) => handleUpdateLine(line.id, 'description', e.target.value)}
+                            placeholder="Description"
+                            style={{
+                              padding: isMobile ? '10px' : '8px 10px',
+                              minHeight: isMobile ? '44px' : 'auto',
+                              border: `1px solid ${theme.border}`,
+                              borderRadius: '6px',
+                              fontSize: '14px',
+                              color: theme.text,
+                              backgroundColor: theme.bgCard
+                            }}
+                          />
+
+                          {isMobile ? (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px', alignItems: 'center' }}>
+                              {/* Qty */}
+                              <input
+                                type="number"
+                                value={line.quantity}
+                                onChange={(e) => handleUpdateLine(line.id, 'quantity', e.target.value)}
+                                min="1"
+                                placeholder="Qty"
+                                style={{
+                                  padding: '10px',
+                                  minHeight: '44px',
+                                  border: `1px solid ${theme.border}`,
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  color: theme.text,
+                                  backgroundColor: theme.bgCard,
+                                  width: '100%'
+                                }}
+                              />
+                              {/* Price */}
+                              <input
+                                type="number"
+                                value={line.unit_price}
+                                onChange={(e) => handleUpdateLine(line.id, 'unit_price', e.target.value)}
+                                min="0"
+                                step="0.01"
+                                placeholder="Price"
+                                style={{
+                                  padding: '10px',
+                                  minHeight: '44px',
+                                  border: `1px solid ${theme.border}`,
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  color: theme.text,
+                                  backgroundColor: theme.bgCard,
+                                  width: '100%'
+                                }}
+                              />
+                              {/* Total */}
+                              <div style={{
+                                padding: '10px',
+                                minHeight: '44px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: '600',
+                                color: theme.text,
+                                fontSize: '14px'
+                              }}>
+                                ${(line.line_total || 0).toFixed(2)}
+                              </div>
+                              {/* Delete */}
+                              <button
+                                onClick={() => handleRemoveLine(line.id)}
+                                style={{
+                                  padding: '10px',
+                                  minWidth: '44px',
+                                  minHeight: '44px',
+                                  backgroundColor: '#fee2e2',
+                                  color: '#dc2626',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Qty */}
+                              <input
+                                type="number"
+                                value={line.quantity}
+                                onChange={(e) => handleUpdateLine(line.id, 'quantity', e.target.value)}
+                                min="1"
+                                style={{
+                                  width: '70px',
+                                  padding: '8px 10px',
+                                  border: `1px solid ${theme.border}`,
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  color: theme.text,
+                                  backgroundColor: theme.bgCard,
+                                  textAlign: 'center'
+                                }}
+                              />
+                              {/* Price */}
+                              <input
+                                type="number"
+                                value={line.unit_price}
+                                onChange={(e) => handleUpdateLine(line.id, 'unit_price', e.target.value)}
+                                min="0"
+                                step="0.01"
+                                style={{
+                                  width: '100px',
+                                  padding: '8px 10px',
+                                  border: `1px solid ${theme.border}`,
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  color: theme.text,
+                                  backgroundColor: theme.bgCard,
+                                  textAlign: 'right'
+                                }}
+                              />
+                              {/* Total */}
+                              <div style={{
+                                width: '90px',
+                                fontWeight: '600',
+                                color: theme.text,
+                                textAlign: 'right'
+                              }}>
+                                ${(line.line_total || 0).toFixed(2)}
+                              </div>
+                              {/* Delete */}
+                              <button
+                                onClick={() => handleRemoveLine(line.id)}
+                                style={{
+                                  padding: '6px',
+                                  backgroundColor: '#fee2e2',
+                                  color: '#dc2626',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Totals */}
+              {quoteLines.length > 0 && (
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: theme.bg,
+                  borderRadius: '8px',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ color: theme.textSecondary }}>Subtotal</span>
+                    <span style={{ fontWeight: '500', color: theme.text }}>${quoteSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ color: theme.textSecondary }}>Discount</span>
+                    <input
+                      type="number"
+                      value={quoteDiscount}
+                      onChange={(e) => setQuoteDiscount(e.target.value)}
+                      min="0"
+                      step="0.01"
+                      style={{
+                        width: '100px',
+                        padding: isMobile ? '10px' : '6px 10px',
+                        minHeight: isMobile ? '44px' : 'auto',
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        color: theme.text,
+                        backgroundColor: theme.bgCard,
+                        textAlign: 'right'
+                      }}
+                    />
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    paddingTop: '8px',
+                    borderTop: `1px solid ${theme.border}`
+                  }}>
+                    <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
+                    <span style={{ fontSize: '18px', fontWeight: '700', color: theme.accent }}>
+                      ${quoteTotal.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: theme.textSecondary,
+                  marginBottom: '8px'
+                }}>
+                  Notes
+                </label>
+                <textarea
+                  value={quoteNotes}
+                  onChange={(e) => setQuoteNotes(e.target.value)}
+                  placeholder="Optional notes for this quote..."
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: isMobile ? '12px' : '10px 12px',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    color: theme.text,
+                    backgroundColor: theme.bgCard,
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              padding: isMobile ? '16px' : '20px',
+              borderTop: `1px solid ${theme.border}`
+            }}>
+              <button
+                onClick={() => setShowQuoteModal(false)}
+                style={{
+                  flex: 1,
+                  padding: isMobile ? '14px' : '12px',
+                  minHeight: isMobile ? '44px' : 'auto',
+                  backgroundColor: 'transparent',
+                  color: theme.textSecondary,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveQuote}
+                disabled={savingQuote || quoteLines.length === 0}
+                style={{
+                  flex: 1,
+                  padding: isMobile ? '14px' : '12px',
+                  minHeight: isMobile ? '44px' : 'auto',
+                  backgroundColor: quoteLines.length === 0 ? theme.border : theme.accent,
+                  color: quoteLines.length === 0 ? theme.textMuted : '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: savingQuote || quoteLines.length === 0 ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  opacity: savingQuote ? 0.7 : 1
+                }}
+              >
+                <Save size={16} />
+                {savingQuote ? 'Saving...' : 'Create Quote'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
