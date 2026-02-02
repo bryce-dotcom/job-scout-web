@@ -21,7 +21,6 @@ const LEAD_SOURCES = [
 ]
 
 const LEAD_STATUSES = ['New', 'Assigned', 'Contacted', 'Callback', 'Appointment Set', 'Qualified', 'Not Qualified', 'Converted']
-const SERVICE_TYPES = ['Residential', 'Commercial', 'Industrial', 'Government', 'Other']
 
 const emptyLead = {
   customer_name: '',
@@ -47,6 +46,7 @@ export default function Leads() {
   const user = useStore((state) => state.user)
   const leads = useStore((state) => state.leads)
   const employees = useStore((state) => state.employees)
+  const serviceTypes = useStore((state) => state.serviceTypes)
   const fetchLeads = useStore((state) => state.fetchLeads)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
 
@@ -802,7 +802,7 @@ export default function Leads() {
               <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Address</label><textarea name="address" value={formData.address} onChange={handleChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
-                <div><label style={labelStyle}>Service Type</label><select name="service_type" value={formData.service_type} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{SERVICE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                <div><label style={labelStyle}>Service Type</label><select name="service_type" value={formData.service_type} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
                 <div>
                   <label style={labelStyle}>Lead Source *</label>
                   <select name="lead_source" value={formData.lead_source} onChange={handleChange} required style={inputStyle}>

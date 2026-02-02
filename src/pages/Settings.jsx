@@ -48,6 +48,94 @@ const baseTabs = [
 
 const jobStatuses = ['Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
 
+// ListEditor component - defined outside Settings to prevent re-creation on every render
+function ListEditor({ type, items, title, onAdd, onRemove, theme }) {
+  const [inputValue, setInputValue] = useState('')
+
+  const handleAdd = () => {
+    if (!inputValue.trim()) return
+    onAdd(type, inputValue.trim())
+    setInputValue('')
+  }
+
+  return (
+    <div>
+      <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>{title}</h3>
+
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          placeholder="Add new item..."
+          onKeyPress={(e) => e.key === 'Enter' && handleAdd()}
+          style={{
+            flex: 1,
+            padding: '10px 12px',
+            borderRadius: '8px',
+            border: `1px solid ${theme.border}`,
+            backgroundColor: theme.bg,
+            color: theme.text,
+            fontSize: '14px'
+          }}
+        />
+        <button
+          onClick={handleAdd}
+          style={{
+            padding: '10px 16px',
+            backgroundColor: theme.accent,
+            color: '#fff',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          <Plus size={16} /> Add
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        {items.map((item, index) => (
+          <div
+            key={index}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 12px',
+              backgroundColor: theme.accentBg,
+              borderRadius: '8px'
+            }}
+          >
+            <span style={{ fontSize: '14px', color: theme.text }}>{item}</span>
+            <button
+              onClick={() => onRemove(type, index)}
+              style={{
+                padding: '2px',
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: theme.textMuted,
+                display: 'flex'
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+        {items.length === 0 && (
+          <div style={{ padding: '20px', color: theme.textMuted, fontSize: '14px' }}>
+            No items added yet
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -79,7 +167,6 @@ export default function Settings() {
   const [businessUnits, setBusinessUnits] = useState([])
   const [leadSources, setLeadSources] = useState([])
   const [serviceTypes, setServiceTypes] = useState([])
-  const [newItem, setNewItem] = useState('')
   const [saving, setSaving] = useState(false)
 
   const themeContext = useTheme()
@@ -148,8 +235,8 @@ export default function Settings() {
     fetchSettings()
   }
 
-  const addItem = (type) => {
-    if (!newItem.trim()) return
+  const addItem = (type, value) => {
+    if (!value) return
 
     let items, setter, key
     if (type === 'business_units') {
@@ -166,10 +253,9 @@ export default function Settings() {
       key = 'service_types'
     }
 
-    const updated = [...items, newItem.trim()]
+    const updated = [...items, value]
     setter(updated)
     saveSetting(key, updated)
-    setNewItem('')
   }
 
   const removeItem = (type, index) => {
@@ -192,83 +278,6 @@ export default function Settings() {
     setter(updated)
     saveSetting(key, updated)
   }
-
-  const ListEditor = ({ type, items, title }) => (
-    <div>
-      <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>{title}</h3>
-
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-        <input
-          type="text"
-          value={newItem}
-          onChange={(e) => setNewItem(e.target.value)}
-          placeholder="Add new item..."
-          onKeyPress={(e) => e.key === 'Enter' && addItem(type)}
-          style={{
-            flex: 1,
-            padding: '10px 12px',
-            borderRadius: '8px',
-            border: `1px solid ${theme.border}`,
-            backgroundColor: theme.bg,
-            color: theme.text,
-            fontSize: '14px'
-          }}
-        />
-        <button
-          onClick={() => addItem(type)}
-          style={{
-            padding: '10px 16px',
-            backgroundColor: theme.accent,
-            color: '#fff',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
-          <Plus size={16} /> Add
-        </button>
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-        {items.map((item, index) => (
-          <div
-            key={index}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 12px',
-              backgroundColor: theme.accentBg,
-              borderRadius: '8px'
-            }}
-          >
-            <span style={{ fontSize: '14px', color: theme.text }}>{item}</span>
-            <button
-              onClick={() => removeItem(type, index)}
-              style={{
-                padding: '2px',
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: theme.textMuted,
-                display: 'flex'
-              }}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        ))}
-        {items.length === 0 && (
-          <div style={{ padding: '20px', color: theme.textMuted, fontSize: '14px' }}>
-            No items added yet
-          </div>
-        )}
-      </div>
-    </div>
-  )
 
   const renderContent = () => {
     switch (activeTab) {
@@ -407,13 +416,13 @@ export default function Settings() {
         )
 
       case 'business_units':
-        return <ListEditor type="business_units" items={businessUnits} title="Business Units" />
+        return <ListEditor type="business_units" items={businessUnits} title="Business Units" onAdd={addItem} onRemove={removeItem} theme={theme} />
 
       case 'lead_sources':
-        return <ListEditor type="lead_sources" items={leadSources} title="Lead Sources" />
+        return <ListEditor type="lead_sources" items={leadSources} title="Lead Sources" onAdd={addItem} onRemove={removeItem} theme={theme} />
 
       case 'service_types':
-        return <ListEditor type="service_types" items={serviceTypes} title="Service Types" />
+        return <ListEditor type="service_types" items={serviceTypes} title="Service Types" onAdd={addItem} onRemove={removeItem} theme={theme} />
 
       case 'statuses':
         return (

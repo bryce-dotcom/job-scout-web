@@ -56,6 +56,9 @@ export const useStore = create(
 
       // Settings
       settings: [],
+      serviceTypes: [],
+      businessUnits: [],
+      leadSources: [],
 
       // Routes
       routes: [],
@@ -137,6 +140,9 @@ export const useStore = create(
           rebateRates: [],
           communications: [],
           settings: [],
+          serviceTypes: [],
+          businessUnits: [],
+          leadSources: [],
           routes: [],
           bookings: [],
           leadPayments: [],
@@ -499,7 +505,26 @@ export const useStore = create(
           .select('*')
           .eq('company_id', companyId);
 
-        if (!error) set({ settings: data || [] });
+        if (!error) {
+          set({ settings: data || [] });
+
+          // Parse JSON values for specific settings
+          const parseSettingList = (key) => {
+            const setting = (data || []).find(s => s.key === key);
+            if (!setting?.value) return [];
+            try {
+              return JSON.parse(setting.value);
+            } catch {
+              return setting.value.split(',').map(s => s.trim());
+            }
+          };
+
+          set({
+            serviceTypes: parseSettingList('service_types'),
+            businessUnits: parseSettingList('business_units'),
+            leadSources: parseSettingList('lead_sources')
+          });
+        }
       },
 
       // Helper to get a single setting value
