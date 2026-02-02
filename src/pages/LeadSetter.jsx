@@ -184,7 +184,11 @@ export default function LeadSetter() {
       )
     }
     if (filterSetter) {
-      filtered = filtered.filter(l => l.setter_id === parseInt(filterSetter))
+      if (filterSetter === 'unassigned') {
+        filtered = filtered.filter(l => !l.setter_owner_id)
+      } else {
+        filtered = filtered.filter(l => l.setter_owner_id === parseInt(filterSetter))
+      }
     }
     return filtered
   }
@@ -690,10 +694,11 @@ export default function LeadSetter() {
             <select
               value={filterSetter}
               onChange={(e) => setFilterSetter(e.target.value)}
-              style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
+              style={{ ...inputStyle, width: 'auto', minWidth: '140px', minHeight: '44px' }}
             >
               <option value="">All Setters</option>
-              {employees.filter(e => e.role === 'Setter' || e.role === 'Sales').map(emp => (
+              <option value="unassigned">Unassigned</option>
+              {employees.filter(e => e.role === 'Setter' || e.role === 'Sales' || e.role === 'Admin' || e.role === 'Manager').map(emp => (
                 <option key={emp.id} value={emp.id}>{emp.name}</option>
               ))}
             </select>

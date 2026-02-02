@@ -81,6 +81,7 @@ export default function Leads() {
   const [importError, setImportError] = useState(null)
   const [importSuccess, setImportSuccess] = useState(null)
   const [isMobile, setIsMobile] = useState(false)
+  const [ownerFilter, setOwnerFilter] = useState('all')
 
   // Mobile detection
   useEffect(() => {
@@ -98,6 +99,9 @@ export default function Leads() {
     fetchLeads()
   }, [companyId, navigate, fetchLeads])
 
+  // Get active employees for owner filter
+  const activeEmployees = employees.filter(e => e.active !== false)
+
   const filteredLeads = leads.filter(lead => {
     const matchesSearch = searchTerm === '' ||
       lead.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -105,7 +109,9 @@ export default function Leads() {
       lead.email?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === 'all' || lead.status === statusFilter
     const matchesSource = sourceFilter === 'all' || lead.lead_source === sourceFilter
-    return matchesSearch && matchesStatus && matchesSource
+    const matchesOwner = ownerFilter === 'all' ||
+      (ownerFilter === 'unassigned' ? !lead.lead_owner_id : lead.lead_owner_id === parseInt(ownerFilter))
+    return matchesSearch && matchesStatus && matchesSource && matchesOwner
   })
 
   // Status colors for badges
@@ -549,7 +555,12 @@ export default function Leads() {
           <Search size={20} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
           <input type="text" placeholder="Search leads..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle, paddingLeft: '40px', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }} />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: isMobile ? 'auto' : '160px', flex: isMobile ? 1 : 'none', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }}>
+        <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: isMobile ? 'auto' : '140px', flex: isMobile ? 1 : 'none', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }}>
+          <option value="all">All Owners</option>
+          <option value="unassigned">Unassigned</option>
+          {activeEmployees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: isMobile ? 'auto' : '140px', flex: isMobile ? 1 : 'none', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }}>
           <option value="all">All Status</option>
           {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>

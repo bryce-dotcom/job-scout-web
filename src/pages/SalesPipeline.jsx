@@ -82,8 +82,14 @@ export default function SalesPipeline() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [selectedMobileStage, setSelectedMobileStage] = useState(null)
 
+  // Owner filter
+  const [ownerFilter, setOwnerFilter] = useState('all')
+
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+
+  // Get active employees for filter
+  const activeEmployees = employees.filter(e => e.active !== false)
 
   // Check if user is superadmin (only superadmins can edit pipeline settings)
   const isSuperAdmin = user?.user_role === 'Super Admin' || user?.role === 'Super Admin'
@@ -160,9 +166,16 @@ export default function SalesPipeline() {
     fetchPipelineLeads()
   }, [companyId, navigate, stages])
 
+  // Filter leads by owner
+  const filteredPipelineLeads = pipelineLeads.filter(lead => {
+    if (ownerFilter === 'all') return true
+    if (ownerFilter === 'unassigned') return !lead.lead_owner_id && !lead.salesperson_id
+    return lead.lead_owner_id === parseInt(ownerFilter) || lead.salesperson_id === parseInt(ownerFilter)
+  })
+
   // Get leads for a stage
   const getLeadsForStage = (stageId) => {
-    return pipelineLeads.filter(l => l.status === stageId)
+    return filteredPipelineLeads.filter(l => l.status === stageId)
   }
 
   // Get stage value
@@ -485,6 +498,28 @@ export default function SalesPipeline() {
               })}
             </div>
           )}
+
+          {/* Owner Filter */}
+          <select
+            value={ownerFilter}
+            onChange={(e) => setOwnerFilter(e.target.value)}
+            style={{
+              padding: isMobile ? '10px 8px' : '8px 12px',
+              minHeight: isMobile ? '44px' : 'auto',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              color: theme.text,
+              fontSize: '13px',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="all">All Owners</option>
+            <option value="unassigned">Unassigned</option>
+            {activeEmployees.map(emp => (
+              <option key={emp.id} value={emp.id}>{emp.name}</option>
+            ))}
+          </select>
 
           <button
             onClick={fetchPipelineLeads}
