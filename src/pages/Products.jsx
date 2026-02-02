@@ -43,6 +43,7 @@ export default function Products() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const products = useStore((state) => state.products)
+  const businessUnits = useStore((state) => state.businessUnits)
   const fetchProducts = useStore((state) => state.fetchProducts)
 
   const [showModal, setShowModal] = useState(false)
@@ -687,13 +688,15 @@ export default function Products() {
 
                 <div>
                   <label style={labelStyle}>Business Unit</label>
-                  <input
-                    type="text"
+                  <select
                     name="business_unit"
                     value={formData.business_unit}
                     onChange={handleChange}
                     style={inputStyle}
-                  />
+                  >
+                    <option value="">-- Select --</option>
+                    {businessUnits.map(bu => <option key={bu} value={bu}>{bu}</option>)}
+                  </select>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>

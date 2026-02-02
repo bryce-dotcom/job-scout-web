@@ -63,6 +63,7 @@ export default function Jobs() {
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
   const quotes = useStore((state) => state.quotes)
+  const businessUnits = useStore((state) => state.businessUnits)
   const fetchJobs = useStore((state) => state.fetchJobs)
 
   const [showModal, setShowModal] = useState(false)
@@ -706,7 +707,10 @@ export default function Jobs() {
                   </div>
                   <div>
                     <label style={labelStyle}>Business Unit</label>
-                    <input type="text" name="business_unit" value={formData.business_unit} onChange={handleChange} style={inputStyle} />
+                    <select name="business_unit" value={formData.business_unit} onChange={handleChange} style={inputStyle}>
+                      <option value="">-- Select --</option>
+                      {businessUnits.map(bu => <option key={bu} value={bu}>{bu}</option>)}
+                    </select>
                   </div>
                 </div>
 
