@@ -80,6 +80,15 @@ export default function Leads() {
   const [importData, setImportData] = useState('')
   const [importError, setImportError] = useState(null)
   const [importSuccess, setImportSuccess] = useState(null)
+  const [isMobile, setIsMobile] = useState(false)
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     if (!companyId) {
@@ -99,18 +108,25 @@ export default function Leads() {
     return matchesSearch && matchesStatus && matchesSource
   })
 
+  // Status colors for badges
+  const statusColors = {
+    'New': { bg: '#e0e7ff', text: '#4338ca' },
+    'Assigned': { bg: '#f3e8ff', text: '#7c3aed' },
+    'Contacted': { bg: '#fef3c7', text: '#d97706' },
+    'Callback': { bg: '#fce7f3', text: '#db2777' },
+    'Appointment Set': { bg: '#d1fae5', text: '#059669' },
+    'Qualified': { bg: '#dbeafe', text: '#2563eb' },
+    'Quote Sent': { bg: '#e0e7ff', text: '#4f46e5' },
+    'Negotiation': { bg: '#ffedd5', text: '#ea580c' },
+    'Won': { bg: '#d1fae5', text: '#059669' },
+    'Lost': { bg: '#f3f4f6', text: '#6b7280' },
+    'Not Qualified': { bg: '#fee2e2', text: '#dc2626' },
+    'Converted': { bg: '#f3e8ff', text: '#9333ea' }
+  }
+
   const getStatusStyle = (status) => {
-    const styles = {
-      'New': { backgroundColor: 'rgba(59,130,246,0.1)', color: '#2563eb' },
-      'Assigned': { backgroundColor: 'rgba(139,92,246,0.1)', color: '#7c3aed' },
-      'Contacted': { backgroundColor: 'rgba(14,165,233,0.1)', color: '#0284c7' },
-      'Callback': { backgroundColor: 'rgba(245,158,11,0.1)', color: '#d97706' },
-      'Appointment Set': { backgroundColor: 'rgba(34,197,94,0.1)', color: '#16a34a' },
-      'Qualified': { backgroundColor: 'rgba(16,185,129,0.1)', color: '#059669' },
-      'Not Qualified': { backgroundColor: 'rgba(239,68,68,0.1)', color: '#dc2626' },
-      'Converted': { backgroundColor: 'rgba(147,51,234,0.1)', color: '#9333ea' }
-    }
-    return styles[status] || { backgroundColor: theme.bg, color: theme.textMuted }
+    const colors = statusColors[status] || { bg: theme.bg, text: theme.textMuted }
+    return { backgroundColor: colors.bg, color: colors.text }
   }
 
   const getSourceLabel = (value) => {
@@ -511,33 +527,33 @@ export default function Leads() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Leads</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Leads</h1>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => setShowImportModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+          <button onClick={() => setShowImportModal(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} />
-            Import CSV
+            {!isMobile && 'Import CSV'}
           </button>
-          <button onClick={openAddModal} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+          <button onClick={openAddModal} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: isMobile ? '10px 14px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Plus size={20} />
-            Add Lead
+            {isMobile ? 'Add' : 'Add Lead'}
           </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+      <div style={{ display: 'flex', gap: isMobile ? '8px' : '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: isMobile ? '100%' : '200px' }}>
           <Search size={20} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
-          <input type="text" placeholder="Search leads..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle, paddingLeft: '40px', backgroundColor: theme.bgCard }} />
+          <input type="text" placeholder="Search leads..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle, paddingLeft: '40px', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }} />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '160px', backgroundColor: theme.bgCard }}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: isMobile ? 'auto' : '160px', flex: isMobile ? 1 : 'none', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }}>
           <option value="all">All Status</option>
           {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '140px', backgroundColor: theme.bgCard }}>
+        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: isMobile ? 'auto' : '140px', flex: isMobile ? 1 : 'none', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }}>
           <option value="all">All Sources</option>
           {LEAD_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
@@ -550,110 +566,204 @@ export default function Leads() {
           <p style={{ color: theme.textSecondary }}>No leads found.</p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
           {filteredLeads.map((lead) => (
-            <div key={lead.id} style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <div>
-                  <h3
-                    onClick={() => navigate(`/leads/${lead.id}`)}
-                    style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px', cursor: 'pointer' }}
-                    onMouseEnter={(e) => e.target.style.color = theme.accent}
-                    onMouseLeave={(e) => e.target.style.color = theme.text}
-                  >{lead.customer_name}</h3>
-                  {lead.business_name && <p style={{ fontSize: '14px', color: theme.textSecondary }}>{lead.business_name}</p>}
-                </div>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <button onClick={() => openEditModal(lead)} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', borderRadius: '6px' }}>
-                    <Pencil size={16} />
-                  </button>
-                  <button onClick={() => handleDelete(lead)} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer', borderRadius: '6px' }}>
-                    <Trash2 size={16} />
-                  </button>
-                </div>
+            <div
+              key={lead.id}
+              onClick={() => navigate(`/leads/${lead.id}`)}
+              style={{
+                backgroundColor: theme.bgCard,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                padding: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = theme.accent
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = theme.border
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            >
+              {/* TOP ROW: Name + Status Badge */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0, lineHeight: 1.3 }}>
+                  {lead.customer_name}
+                </h3>
+                <span style={{
+                  padding: '4px 10px',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  ...getStatusStyle(lead.status)
+                }}>
+                  {lead.status}
+                </span>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-                {lead.phone && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}><Phone size={14} />{lead.phone}</div>}
-                {lead.email && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}><Mail size={14} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span></div>}
-              </div>
-
-              {/* Lead Owner & Setter Dropdowns */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-                {/* Lead Owner Dropdown */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Users size={12} style={{ color: theme.textMuted, flexShrink: 0 }} />
-                  <span style={{ fontSize: '11px', color: theme.textMuted, minWidth: '42px' }}>Owner:</span>
-                  <select
-                    value={lead.lead_owner_id || ''}
-                    onChange={(e) => handleQuickOwnerChange(lead, e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '4px 6px',
-                      fontSize: '12px',
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '4px',
-                      backgroundColor: theme.bg,
-                      color: theme.text,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="">-- None --</option>
-                    {employees.map(e => (
-                      <option key={e.id} value={e.id}>{e.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Setter Dropdown */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Send size={12} style={{ color: theme.textMuted, flexShrink: 0 }} />
-                  <span style={{ fontSize: '11px', color: theme.textMuted, minWidth: '42px' }}>Setter:</span>
-                  <select
-                    value={lead.setter_owner_id || ''}
-                    onChange={(e) => handleQuickSetterChange(lead, e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '4px 6px',
-                      fontSize: '12px',
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '4px',
-                      backgroundColor: theme.bg,
-                      color: theme.text,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="">-- None --</option>
-                    {setterEmployees.map(e => (
-                      <option key={e.id} value={e.id}>{e.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                {lead.service_type && <span style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: theme.bg, color: theme.textMuted, borderRadius: '4px' }}>{lead.service_type}</span>}
-                {lead.lead_source && <span style={{ fontSize: '11px', padding: '3px 8px', backgroundColor: theme.bg, color: theme.textMuted, borderRadius: '4px' }}>{getSourceLabel(lead.lead_source)}</span>}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
-                <span style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '20px', ...getStatusStyle(lead.status) }}>{lead.status}</span>
-                <span style={{ fontSize: '11px', color: theme.textMuted }}>{formatDate(lead.created_at)}</span>
-              </div>
-
-              {lead.status !== 'Converted' && (
-                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
-                  <button onClick={() => openAppointmentModal(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '12px', cursor: 'pointer' }}>
-                    <Calendar size={14} />Appt
-                  </button>
-                  <button onClick={() => handleCreateQuote(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '12px', cursor: 'pointer' }}>
-                    <FileText size={14} />Quote
-                  </button>
-                  <button onClick={() => handleConvertToCustomer(lead)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px', backgroundColor: theme.accentBg, border: 'none', borderRadius: '6px', color: theme.accent, fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}>
-                    <UserCheck size={14} />Convert
-                  </button>
+              {/* Business Name */}
+              {lead.business_name && (
+                <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '10px' }}>
+                  {lead.business_name}
                 </div>
               )}
+
+              {/* Contact Info: Phone & Email */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', color: theme.textMuted, marginBottom: '12px', flexWrap: 'wrap' }}>
+                {lead.phone && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Phone size={13} />
+                    <span>{lead.phone}</span>
+                  </div>
+                )}
+                {lead.phone && lead.email && <span style={{ color: theme.border }}>|</span>}
+                {lead.email && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden' }}>
+                    <Mail size={13} style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* BOTTOM ROW: Service type + Appointment + Quote indicators */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {lead.service_type && (
+                  <span style={{
+                    fontSize: '11px',
+                    padding: '4px 8px',
+                    backgroundColor: theme.bg,
+                    color: theme.textSecondary,
+                    borderRadius: '4px',
+                    fontWeight: '500'
+                  }}>
+                    {lead.service_type}
+                  </span>
+                )}
+                {lead.appointment_time && (
+                  <span style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    padding: '4px 8px',
+                    backgroundColor: '#d1fae5',
+                    color: '#059669',
+                    borderRadius: '4px',
+                    fontWeight: '500'
+                  }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#059669' }} />
+                    <Calendar size={11} />
+                    {new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                )}
+                {lead.quote_id && (
+                  <span style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    padding: '4px 8px',
+                    backgroundColor: '#dbeafe',
+                    color: '#2563eb',
+                    borderRadius: '4px',
+                    fontWeight: '500'
+                  }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#2563eb' }} />
+                    <FileText size={11} />
+                    Quote
+                  </span>
+                )}
+                {lead.estimated_value > 0 && (
+                  <span style={{
+                    fontSize: '11px',
+                    padding: '4px 8px',
+                    backgroundColor: '#fef3c7',
+                    color: '#d97706',
+                    borderRadius: '4px',
+                    fontWeight: '600'
+                  }}>
+                    ${lead.estimated_value.toLocaleString()}
+                  </span>
+                )}
+              </div>
+
+              {/* Quick Actions - shown below with separator */}
+              <div style={{
+                display: 'flex',
+                gap: '8px',
+                marginTop: '12px',
+                paddingTop: '12px',
+                borderTop: `1px solid ${theme.border}`
+              }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={(e) => { e.stopPropagation(); openEditModal(lead); }}
+                  style={{
+                    padding: isMobile ? '10px' : '8px 12px',
+                    minHeight: isMobile ? '44px' : 'auto',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    color: theme.textSecondary,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Pencil size={14} />
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); openAppointmentModal(lead); }}
+                  style={{
+                    flex: 1,
+                    padding: isMobile ? '10px' : '8px',
+                    minHeight: isMobile ? '44px' : 'auto',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    color: theme.textSecondary,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Calendar size={14} />
+                  Appt
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleCreateQuote(lead); }}
+                  style={{
+                    flex: 1,
+                    padding: isMobile ? '10px' : '8px',
+                    minHeight: isMobile ? '44px' : 'auto',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    color: theme.textSecondary,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <FileText size={14} />
+                  Quote
+                </button>
+              </div>
             </div>
           ))}
         </div>

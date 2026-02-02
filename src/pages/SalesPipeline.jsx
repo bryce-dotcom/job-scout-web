@@ -625,35 +625,55 @@ export default function SalesPipeline() {
               return stageLeads.map(lead => (
                 <div
                   key={lead.id}
-                  onClick={() => openLeadDetail(lead)}
+                  onClick={() => navigate(`/leads/${lead.id}`)}
                   style={{
                     padding: '14px 16px',
                     backgroundColor: theme.bgCard,
                     borderRadius: '8px',
                     marginBottom: '8px',
                     border: `1px solid ${theme.border}`,
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    transition: 'border-color 0.15s ease'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
+                  {/* TOP ROW: Name + Value */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: '600', color: theme.text, fontSize: '15px' }}>
                         {lead.customer_name}
                       </div>
                       {lead.business_name && (
-                        <div style={{ color: theme.textMuted, fontSize: '13px', marginTop: '2px' }}>
+                        <div style={{ color: theme.textMuted, fontSize: '13px', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {lead.business_name}
                         </div>
                       )}
                     </div>
                     {lead.estimated_value > 0 && (
-                      <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '15px' }}>
+                      <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '15px', flexShrink: 0 }}>
                         {formatCurrency(lead.estimated_value)}
                       </div>
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: '12px', marginTop: '10px', flexWrap: 'wrap' }}>
+                  {/* Contact Info */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: '13px', color: theme.textMuted }}>
+                    {lead.phone && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Phone size={12} />
+                        <span>{lead.phone}</span>
+                      </div>
+                    )}
+                    {lead.phone && lead.email && <span style={{ color: theme.border }}>|</span>}
+                    {lead.email && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
+                        <Mail size={12} style={{ flexShrink: 0 }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Indicators Row */}
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                     {lead.appointment_time && (
                       <div style={{
                         display: 'flex',
@@ -663,34 +683,16 @@ export default function SalesPipeline() {
                         backgroundColor: isToday(lead.appointment_time) ? '#dcfce7' : '#f0fdf4',
                         borderRadius: '4px',
                         fontSize: '12px',
-                        color: isToday(lead.appointment_time) ? '#166534' : '#15803d'
+                        color: isToday(lead.appointment_time) ? '#166534' : '#15803d',
+                        fontWeight: '500'
                       }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: isToday(lead.appointment_time) ? '#166534' : '#15803d' }} />
                         <Calendar size={12} />
                         {isToday(lead.appointment_time)
                           ? `Today ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
                           : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                         }
                       </div>
-                    )}
-                    {lead.phone && (
-                      <a
-                        href={`tel:${lead.phone}`}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '4px 8px',
-                          backgroundColor: '#dcfce7',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          color: '#166534',
-                          textDecoration: 'none'
-                        }}
-                      >
-                        <Phone size={12} />
-                        Call
-                      </a>
                     )}
                     {lead.lead_owner && (
                       <div style={{
@@ -714,7 +716,31 @@ export default function SalesPipeline() {
                       marginTop: '12px',
                       paddingTop: '12px',
                       borderTop: `1px solid ${theme.border}`
-                    }}>
+                    }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <a
+                        href={lead.phone ? `tel:${lead.phone}` : undefined}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          padding: '10px 14px',
+                          minHeight: '44px',
+                          backgroundColor: '#dcfce7',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          color: '#166534',
+                          textDecoration: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontWeight: '500',
+                          opacity: lead.phone ? 1 : 0.5,
+                          pointerEvents: lead.phone ? 'auto' : 'none'
+                        }}
+                      >
+                        <Phone size={14} />
+                        Call
+                      </a>
                       <select
                         value=""
                         onChange={async (e) => {
@@ -739,6 +765,7 @@ export default function SalesPipeline() {
                         style={{
                           flex: 1,
                           padding: '10px 12px',
+                          minHeight: '44px',
                           border: `1px solid ${theme.border}`,
                           borderRadius: '6px',
                           fontSize: '13px',
@@ -859,7 +886,7 @@ export default function SalesPipeline() {
                     draggable
                     onDragStart={(e) => handleDragStart(e, lead)}
                     onDragEnd={handleDragEnd}
-                    onClick={() => openLeadDetail(lead)}
+                    onClick={() => navigate(`/leads/${lead.id}`)}
                     style={{
                       backgroundColor: theme.bgCard,
                       borderRadius: '6px',
@@ -869,6 +896,14 @@ export default function SalesPipeline() {
                       transition: 'all 0.15s',
                       boxShadow: draggedLead?.id === lead.id ? '0 4px 12px rgba(0,0,0,0.15)' : 'none',
                       opacity: draggedLead?.id === lead.id ? 0.8 : 1
+                    }}
+                    onMouseEnter={(e) => {
+                      if (draggedLead?.id !== lead.id) {
+                        e.currentTarget.style.borderColor = theme.accent
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = theme.border
                     }}
                   >
                     {/* Lead Name */}
@@ -897,6 +932,20 @@ export default function SalesPipeline() {
                         {lead.business_name}
                       </div>
                     )}
+
+                    {/* Contact Info Row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      {lead.phone && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}>
+                          <Phone size={10} />
+                        </div>
+                      )}
+                      {lead.email && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}>
+                          <Mail size={10} />
+                        </div>
+                      )}
+                    </div>
 
                     {/* Value */}
                     {lead.estimated_value > 0 && (
