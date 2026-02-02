@@ -118,13 +118,12 @@ export default function Settings() {
       .update(companyForm)
       .eq('id', companyId)
       .select()
-      .single()
 
-    if (!error && data) {
-      setCompany(data)
+    if (!error && data && data.length > 0) {
+      setCompany(data[0])
       toast.success('Company profile saved!')
     } else {
-      toast.error('Error saving: ' + error?.message)
+      toast.error('Error saving: ' + (error?.message || 'No data returned'))
     }
     setSaving(false)
   }
