@@ -171,6 +171,15 @@ export default function Layout() {
   // Dashboard link (always visible at top)
   const dashboardItem = { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
 
+  // Sales Flow - Numbered steps with tooltips (per design standards)
+  const salesFlowItems = [
+    { to: '/leads', icon: UserPlus, label: 'Leads', step: 1, hint: 'All potential customers start here', color: '#6b7280' },
+    { to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 2, hint: 'Call leads and schedule appointments', color: '#8b5cf6' },
+    { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 3, hint: 'Track leads through sales process', color: '#f59e0b' },
+    { to: '/quotes', icon: FileText, label: 'Quotes', step: 4, hint: 'Create and send price quotes', color: '#3b82f6' },
+    { to: '/jobs', icon: Briefcase, label: 'Jobs', step: 5, hint: 'Won quotes become jobs', color: '#22c55e' }
+  ]
+
   // Grouped navigation structure - Clean 5-section menu
   const navSections = [
     {
@@ -178,19 +187,14 @@ export default function Layout() {
       sectionIcon: Users,
       items: [
         { to: '/customers', icon: Users, label: 'Customers' },
-        { to: '/leads', icon: UserPlus, label: 'Leads' },
-        { to: '/lead-setter', icon: Headphones, label: 'Lead Setter' },
-        { to: '/pipeline', icon: GitBranch, label: 'Pipeline' },
-        { to: '/appointments', icon: CalendarCheck, label: 'Appointments' },
-        { to: '/quotes', icon: FileText, label: 'Quotes' }
+        { to: '/appointments', icon: CalendarCheck, label: 'Appointments' }
       ]
     },
     {
       title: 'OPERATIONS',
       sectionIcon: Briefcase,
       items: [
-        { to: '/jobs', icon: Briefcase, label: 'Jobs' },
-        { to: '/jobs/calendar', icon: CalendarDays, label: 'Calendar' },
+        { to: '/jobs/calendar', icon: CalendarDays, label: 'Job Calendar' },
         { to: '/routes', icon: Route, label: 'Routes' },
         { to: '/inventory', icon: Warehouse, label: 'Inventory' },
         { to: '/products', icon: Package, label: 'Products & Services' }
@@ -519,6 +523,61 @@ export default function Layout() {
               </NavLink>
             </div>
 
+            {/* Sales Flow - Numbered Steps */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{
+                fontSize: '10px',
+                fontWeight: '600',
+                color: theme.textMuted,
+                letterSpacing: '0.05em',
+                padding: '8px 12px 4px',
+                textTransform: 'uppercase'
+              }}>
+                Sales Flow
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                {salesFlowItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    title={item.hint}
+                    style={({ isActive }) => ({
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      color: isActive ? item.color : theme.textMuted,
+                      backgroundColor: isActive ? item.color + '15' : 'transparent',
+                      textDecoration: 'none',
+                      fontSize: '13px',
+                      fontWeight: isActive ? '500' : '400',
+                      transition: 'all 0.15s ease',
+                      minHeight: '40px'
+                    })}
+                  >
+                    <div style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      backgroundColor: item.color + '20',
+                      color: item.color,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      flexShrink: 0
+                    }}>
+                      {item.step}
+                    </div>
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                    <item.icon size={16} style={{ opacity: 0.6 }} />
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+
             {navSections.map((section) => (
               <NavSection key={section.title} section={section} />
             ))}
@@ -728,6 +787,65 @@ export default function Layout() {
                     <LayoutDashboard size={20} />
                     Dashboard
                   </NavLink>
+                </div>
+
+                {/* Sales Flow - Mobile (Numbered Steps) */}
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{
+                    fontSize: '10px',
+                    fontWeight: '600',
+                    color: theme.textMuted,
+                    letterSpacing: '0.05em',
+                    padding: '8px 12px 4px',
+                    textTransform: 'uppercase'
+                  }}>
+                    Sales Flow
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                    {salesFlowItems.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        onClick={() => setMobileMenuOpen(false)}
+                        style={({ isActive }) => ({
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '10px 12px',
+                          borderRadius: '6px',
+                          color: isActive ? item.color : theme.textMuted,
+                          backgroundColor: isActive ? item.color + '15' : 'transparent',
+                          textDecoration: 'none',
+                          fontSize: '14px',
+                          fontWeight: isActive ? '500' : '400',
+                          transition: 'all 0.15s ease',
+                          minHeight: '44px' // Touch-friendly
+                        })}
+                      >
+                        <div style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          backgroundColor: item.color + '20',
+                          color: item.color,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          flexShrink: 0
+                        }}>
+                          {item.step}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div>{item.label}</div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
+                            {item.hint}
+                          </div>
+                        </div>
+                      </NavLink>
+                    ))}
+                  </div>
                 </div>
 
                 {navSections.map((section) => (

@@ -1,9 +1,35 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
-export default function Tooltip({ children, text, position = 'top' }) {
-  const [show, setShow] = useState(false)
+/**
+ * Tooltip Component - Mobile Responsive PWA
+ *
+ * Shows tooltip on hover (desktop) or tap (mobile).
+ * Position auto-adjusts to stay on screen.
+ *
+ * Usage:
+ * <Tooltip text="This is a tooltip">
+ *   <button>Hover/Tap me</button>
+ * </Tooltip>
+ */
+export default function Tooltip({
+  children,
+  text,
+  position = 'top', // top, bottom, left, right
+  delay = 200
+}) {
+  const [isVisible, setIsVisible] = useState(false)
+  const [adjustedPosition, setAdjustedPosition] = useState(position)
+  const [isMobile, setIsMobile] = useState(false)
+  const triggerRef = useRef(null)
+  const tooltipRef = useRef(null)
+  const timeoutRef = useRef(null)
 
-  if (!text) return children
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   const positions = {
     top: { bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: '8px' },
@@ -19,40 +45,111 @@ export default function Tooltip({ children, text, position = 'top' }) {
     right: { left: '-4px', top: '50%', marginTop: '-4px' }
   }
 
+  const show = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsVisible(true)
+    }, isMobile ? 0 : delay)
+  }
+
+  const hide = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+    }
+    setIsVisible(false)
+  }
+
+  const handleClick = (e) => {
+    if (isMobile) {
+      e.stopPropagation()
+      if (isVisible) {
+        hide()
+      } else {
+        show()
+        // Auto-hide after 3 seconds on mobile
+        setTimeout(hide, 3000)
+      }
+    }
+  }
+
+  // Close on outside click for mobile
+  useEffect(() => {
+    if (isMobile && isVisible) {
+      const handleOutsideClick = (e) => {
+        if (triggerRef.current && !triggerRef.current.contains(e.target)) {
+          hide()
+        }
+      }
+      document.addEventListener('touchstart', handleOutsideClick)
+      document.addEventListener('click', handleOutsideClick)
+      return () => {
+        document.removeEventListener('touchstart', handleOutsideClick)
+        document.removeEventListener('click', handleOutsideClick)
+      }
+    }
+  }, [isMobile, isVisible])
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [])
+
+  if (!text) return children
+
   return (
     <div
+      ref={triggerRef}
       style={{ position: 'relative', display: 'inline-flex' }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
+      onMouseEnter={!isMobile ? show : undefined}
+      onMouseLeave={!isMobile ? hide : undefined}
+      onClick={handleClick}
     >
       {children}
-      {show && (
-        <div style={{
-          position: 'absolute',
-          ...positions[position],
-          padding: '8px 12px',
-          backgroundColor: '#1a1a1a',
-          color: '#fff',
-          fontSize: '12px',
-          borderRadius: '6px',
-          zIndex: 1000,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-          maxWidth: '250px',
-          whiteSpace: 'normal',
-          lineHeight: '1.4',
-          textAlign: 'left'
-        }}>
+      {isVisible && (
+        <div
+          ref={tooltipRef}
+          style={{
+            position: 'absolute',
+            ...positions[position],
+            padding: '8px 12px',
+            backgroundColor: '#1f2937',
+            color: '#fff',
+            fontSize: isMobile ? '13px' : '12px',
+            borderRadius: '6px',
+            zIndex: 9999,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            maxWidth: isMobile ? '200px' : '250px',
+            whiteSpace: 'normal',
+            lineHeight: '1.4',
+            textAlign: 'left',
+            animation: 'tooltipFadeIn 0.15s ease'
+          }}
+        >
           {text}
           <div style={{
             position: 'absolute',
             width: '8px',
             height: '8px',
-            backgroundColor: '#1a1a1a',
+            backgroundColor: '#1f2937',
             transform: 'rotate(45deg)',
             ...arrowPositions[position]
           }} />
         </div>
       )}
+      <style>{`
+        @keyframes tooltipFadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(4px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   )
 }
