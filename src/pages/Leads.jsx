@@ -5,21 +5,6 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send } from 'lucide-react'
 
-// Updated lead sources with 'user' for employee-brought leads
-const LEAD_SOURCES = [
-  { value: 'user', label: 'Employee/User' },
-  { value: 'website', label: 'Website' },
-  { value: 'referral', label: 'Referral' },
-  { value: 'purchased_list', label: 'Purchased List' },
-  { value: 'cold_call', label: 'Cold Call' },
-  { value: 'marketing', label: 'Marketing' },
-  { value: 'google_ads', label: 'Google Ads' },
-  { value: 'facebook', label: 'Facebook' },
-  { value: 'door_knock', label: 'Door Knock' },
-  { value: 'trade_show', label: 'Trade Show' },
-  { value: 'other', label: 'Other' }
-]
-
 const LEAD_STATUSES = ['New', 'Assigned', 'Contacted', 'Callback', 'Appointment Set', 'Qualified', 'Not Qualified', 'Converted']
 
 const emptyLead = {
@@ -29,7 +14,7 @@ const emptyLead = {
   phone: '',
   address: '',
   service_type: '',
-  lead_source: 'user',
+  lead_source: '',
   lead_owner_id: '',
   setter_owner_id: '',
   status: 'New',
@@ -47,6 +32,7 @@ export default function Leads() {
   const leads = useStore((state) => state.leads)
   const employees = useStore((state) => state.employees)
   const serviceTypes = useStore((state) => state.serviceTypes)
+  const leadSources = useStore((state) => state.leadSources)
   const fetchLeads = useStore((state) => state.fetchLeads)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
 
@@ -136,13 +122,11 @@ export default function Leads() {
   }
 
   const getSourceLabel = (value) => {
-    const source = LEAD_SOURCES.find(s => s.value === value)
-    return source?.label || value || '-'
+    return value || '-'
   }
 
   const openAddModal = () => {
     setEditingLead(null)
-    // Auto-set lead owner to current user if source is 'user'
     setFormData({
       ...emptyLead,
       lead_owner_id: user?.id || ''
@@ -160,7 +144,7 @@ export default function Leads() {
       phone: lead.phone || '',
       address: lead.address || '',
       service_type: lead.service_type || '',
-      lead_source: lead.lead_source || 'user',
+      lead_source: lead.lead_source || '',
       lead_owner_id: lead.lead_owner_id || '',
       setter_owner_id: lead.setter_owner_id || '',
       status: lead.status || 'New',
@@ -183,27 +167,13 @@ export default function Leads() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => {
-      const updated = { ...prev, [name]: value }
-      // Auto-set lead owner when source changes to 'user'
-      if (name === 'lead_source' && value === 'user' && !prev.lead_owner_id) {
-        updated.lead_owner_id = user?.id || ''
-      }
-      return updated
-    })
+    setFormData(prev => ({ ...prev, [name]: value }))
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
-
-    // Validate: If source is 'user', lead_owner_id is required
-    if (formData.lead_source === 'user' && !formData.lead_owner_id) {
-      setError('Lead Owner is required when Lead Source is "Employee/User"')
-      setLoading(false)
-      return
-    }
 
     const payload = {
       company_id: companyId,
@@ -213,7 +183,7 @@ export default function Leads() {
       phone: formData.phone || null,
       address: formData.address || null,
       service_type: formData.service_type || null,
-      lead_source: formData.lead_source || 'other',
+      lead_source: formData.lead_source || null,
       lead_owner_id: formData.lead_owner_id || null,
       setter_owner_id: formData.setter_owner_id || null,
       status: formData.status || 'New',
@@ -566,7 +536,7 @@ export default function Leads() {
         </select>
         <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: isMobile ? 'auto' : '140px', flex: isMobile ? 1 : 'none', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }}>
           <option value="all">All Sources</option>
-          {LEAD_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          {leadSources.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
 
@@ -804,34 +774,26 @@ export default function Leads() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div><label style={labelStyle}>Service Type</label><select name="service_type" value={formData.service_type} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
                 <div>
-                  <label style={labelStyle}>Lead Source *</label>
-                  <select name="lead_source" value={formData.lead_source} onChange={handleChange} required style={inputStyle}>
-                    {LEAD_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  <label style={labelStyle}>Lead Source</label>
+                  <select name="lead_source" value={formData.lead_source} onChange={handleChange} style={inputStyle}>
+                    <option value="">-- Select --</option>
+                    {leadSources.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
               </div>
 
-              {/* Lead Owner - Required if source is 'user' */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
-                  <label style={labelStyle}>
-                    Lead Owner {formData.lead_source === 'user' && <span style={{ color: '#dc2626' }}>*</span>}
-                  </label>
+                  <label style={labelStyle}>Lead Owner</label>
                   <select
                     name="lead_owner_id"
                     value={formData.lead_owner_id}
                     onChange={handleChange}
-                    required={formData.lead_source === 'user'}
                     style={inputStyle}
                   >
                     <option value="">-- Select --</option>
                     {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
-                  {formData.lead_source === 'user' && (
-                    <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                      Lead owner earns commission when source is "Employee/User"
-                    </p>
-                  )}
                 </div>
                 <div>
                   <label style={labelStyle}>Status</label>

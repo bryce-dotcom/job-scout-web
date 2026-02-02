@@ -98,23 +98,6 @@ export const STATUS = {
   audit: ['Draft', 'In Progress', 'Completed', 'Submitted', 'Approved']
 };
 
-// Lead sources for dropdowns
-export const LEAD_SOURCES = [
-  'Website',
-  'Referral',
-  'Google Ads',
-  'Facebook',
-  'Instagram',
-  'Home Advisor',
-  'Angi',
-  'Thumbtack',
-  'Door Knock',
-  'Cold Call',
-  'Trade Show',
-  'Email Campaign',
-  'Other'
-];
-
 // Payment methods
 export const PAYMENT_METHODS = [
   'Cash',
