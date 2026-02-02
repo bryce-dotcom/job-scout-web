@@ -113,17 +113,20 @@ export default function Settings() {
 
   const handleSaveCompany = async () => {
     setSaving(true)
-    const { data, error } = await supabase
+    console.log('Saving company settings:', companyForm, 'Company ID:', companyId)
+
+    const { error } = await supabase
       .from('companies')
       .update(companyForm)
       .eq('id', companyId)
-      .select()
 
-    if (!error && data && data.length > 0) {
-      setCompany(data[0])
-      toast.success('Company profile saved!')
+    if (error) {
+      console.error('Save error:', error)
+      toast.error('Error saving: ' + error.message)
     } else {
-      toast.error('Error saving: ' + (error?.message || 'No data returned'))
+      // Update local state with the form data
+      setCompany({ ...company, ...companyForm })
+      toast.success('Company profile saved!')
     }
     setSaving(false)
   }
