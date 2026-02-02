@@ -101,7 +101,7 @@ export default function Tooltip({
   return (
     <div
       ref={triggerRef}
-      style={{ position: 'relative', display: 'inline-flex' }}
+      style={{ position: 'relative', display: 'inline-flex', zIndex: isVisible ? 1000 : 'auto' }}
       onMouseEnter={!isMobile ? show : undefined}
       onMouseLeave={!isMobile ? hide : undefined}
       onClick={handleClick}
@@ -118,13 +118,14 @@ export default function Tooltip({
             color: '#fff',
             fontSize: isMobile ? '13px' : '12px',
             borderRadius: '6px',
-            zIndex: 9999,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 10000,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
             maxWidth: isMobile ? '200px' : '250px',
             whiteSpace: 'normal',
             lineHeight: '1.4',
             textAlign: 'left',
-            animation: 'tooltipFadeIn 0.15s ease'
+            pointerEvents: 'none',
+            opacity: 1
           }}
         >
           {text}
@@ -138,18 +139,6 @@ export default function Tooltip({
           }} />
         </div>
       )}
-      <style>{`
-        @keyframes tooltipFadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(4px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
     </div>
   )
 }
