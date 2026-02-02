@@ -5,10 +5,12 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import {
   ArrowLeft, Calendar, FileText, Clipboard, Plus, Send, Phone, Mail,
-  MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb
+  MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
+  CalendarDays, ClipboardList, X, Save, DollarSign, Inbox
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
-import HelpBadge from '../components/HelpBadge'
+import FlowIndicator from '../components/FlowIndicator'
+import EmptyState from '../components/EmptyState'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -19,75 +21,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-// Flow indicator showing lead's journey
-const LeadFlowIndicator = ({ currentStatus, theme }) => {
-  const steps = [
-    { status: 'New', label: 'New', color: '#6b7280' },
-    { status: 'Contacted', label: 'Contacted', color: '#8b5cf6' },
-    { status: 'Callback', label: 'Callback', color: '#f59e0b' },
-    { status: 'Appointment Set', label: 'Appointment', color: '#22c55e' },
-    { status: 'Qualified', label: 'Qualified', color: '#3b82f6' },
-    { status: 'Quote Sent', label: 'Quote Sent', color: '#6366f1' },
-    { status: 'Converted', label: 'Won!', color: '#10b981' }
-  ]
-
-  // Find current step index
-  const statusMap = {
-    'New': 0, 'Assigned': 0,
-    'Contacted': 1,
-    'Callback': 2,
-    'Appointment Set': 3,
-    'Qualified': 4,
-    'Quote Sent': 5,
-    'Converted': 6, 'Won': 6
-  }
-  const currentIndex = statusMap[currentStatus] ?? 0
-
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-      padding: '12px 16px',
-      backgroundColor: theme.bg,
-      borderRadius: '10px',
-      marginBottom: '24px',
-      overflowX: 'auto'
-    }}>
-      <span style={{ fontSize: '12px', color: theme.textMuted, marginRight: '8px', whiteSpace: 'nowrap' }}>
-        Journey:
-      </span>
-      {steps.map((step, i) => (
-        <div key={step.status} style={{ display: 'flex', alignItems: 'center' }}>
-          <div style={{
-            padding: '5px 10px',
-            borderRadius: '14px',
-            backgroundColor: i <= currentIndex ? step.color : '#e5e7eb',
-            color: i <= currentIndex ? '#fff' : '#9ca3af',
-            fontSize: '11px',
-            fontWeight: '600',
-            whiteSpace: 'nowrap',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}>
-            {i < currentIndex && <CheckCircle2 size={12} />}
-            {step.label}
-          </div>
-          {i < steps.length - 1 && (
-            <div style={{
-              width: '16px',
-              height: '2px',
-              backgroundColor: i < currentIndex ? step.color : '#e5e7eb',
-              margin: '0 2px'
-            }} />
-          )}
-        </div>
-      ))}
-    </div>
-  )
 }
 
 export default function LeadDetail() {
@@ -102,9 +35,20 @@ export default function LeadDetail() {
   const [appointment, setAppointment] = useState(null)
   const [activeTab, setActiveTab] = useState('info')
   const [loading, setLoading] = useState(true)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({})
+  const [isMobile, setIsMobile] = useState(false)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     if (id && companyId) {
@@ -317,57 +261,66 @@ export default function LeadDetail() {
   }
 
   return (
-    <div style={{ padding: '24px', minHeight: '100vh' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'flex-start',
-        gap: '16px',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'flex-start',
+        gap: isMobile ? '12px' : '16px',
         marginBottom: '24px'
       }}>
-        <button
-          onClick={() => navigate(-1)}
-          style={{
-            padding: '8px',
-            background: 'none',
-            border: `1px solid ${theme.border}`,
-            borderRadius: '8px',
-            cursor: 'pointer',
-            color: theme.textSecondary
-          }}
-        >
-          <ArrowLeft size={20} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+          <button
+            onClick={() => navigate(-1)}
+            style={{
+              padding: isMobile ? '12px' : '8px',
+              minWidth: isMobile ? '44px' : 'auto',
+              minHeight: isMobile ? '44px' : 'auto',
+              background: 'none',
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: theme.textSecondary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <ArrowLeft size={20} />
+          </button>
 
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
-              {lead.customer_name}
-            </h1>
-            <span style={{
-              padding: '4px 10px',
-              backgroundColor: getStatusColor(lead.status) + '20',
-              color: getStatusColor(lead.status),
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '600'
-            }}>
-              {lead.status}
-            </span>
-          </div>
-          <div style={{ fontSize: '14px', color: theme.textMuted, display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            {lead.service_type && <span>{lead.service_type}</span>}
-            {lead.lead_source && <span>Source: {lead.lead_source}</span>}
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
+                {lead.customer_name}
+              </h1>
+              <span style={{
+                padding: '4px 10px',
+                backgroundColor: getStatusColor(lead.status) + '20',
+                color: getStatusColor(lead.status),
+                borderRadius: '6px',
+                fontSize: '13px',
+                fontWeight: '600'
+              }}>
+                {lead.status}
+              </span>
+            </div>
+            <div style={{ fontSize: isMobile ? '13px' : '14px', color: theme.textMuted, display: 'flex', gap: isMobile ? '12px' : '16px', flexWrap: 'wrap' }}>
+              {lead.service_type && <span>{lead.service_type}</span>}
+              {lead.lead_source && <span>Source: {lead.lead_source}</span>}
+            </div>
           </div>
         </div>
 
         {/* Quick Actions */}
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {lead.phone && (
             <a
               href={`tel:${lead.phone}`}
               style={{
-                padding: '10px 14px',
+                padding: isMobile ? '12px 16px' : '10px 14px',
+                minHeight: isMobile ? '44px' : 'auto',
                 backgroundColor: '#dcfce7',
                 color: '#166534',
                 border: 'none',
@@ -375,9 +328,11 @@ export default function LeadDetail() {
                 textDecoration: 'none',
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '6px',
                 fontSize: '14px',
-                fontWeight: '500'
+                fontWeight: '500',
+                flex: isMobile ? 1 : 'none'
               }}
             >
               <Phone size={16} />
@@ -388,7 +343,8 @@ export default function LeadDetail() {
             <a
               href={`mailto:${lead.email}`}
               style={{
-                padding: '10px 14px',
+                padding: isMobile ? '12px 16px' : '10px 14px',
+                minHeight: isMobile ? '44px' : 'auto',
                 backgroundColor: theme.accentBg,
                 color: theme.accent,
                 border: 'none',
@@ -396,9 +352,11 @@ export default function LeadDetail() {
                 textDecoration: 'none',
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '6px',
                 fontSize: '14px',
-                fontWeight: '500'
+                fontWeight: '500',
+                flex: isMobile ? 1 : 'none'
               }}
             >
               <Mail size={16} />
@@ -409,42 +367,51 @@ export default function LeadDetail() {
       </div>
 
       {/* Lead Journey Flow Indicator */}
-      <LeadFlowIndicator currentStatus={lead.status} theme={theme} />
+      <FlowIndicator currentStatus={lead.status} showCompact={isMobile} />
 
       {/* Tabs */}
       <div style={{
-        display: 'flex',
-        gap: '8px',
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
         marginBottom: '24px',
         borderBottom: `1px solid ${theme.border}`,
         paddingBottom: '12px'
       }}>
-        {tabs.map(tab => {
-          const Icon = tab.icon
-          return (
-            <Tooltip key={tab.id} text={tab.hint} position="bottom">
-              <button
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  padding: '10px 16px',
-                  backgroundColor: activeTab === tab.id ? theme.accent : 'transparent',
-                  color: activeTab === tab.id ? '#fff' : theme.textSecondary,
-                  border: activeTab === tab.id ? 'none' : `1px solid ${theme.border}`,
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
-              >
-                <Icon size={16} />
-                {tab.label}
-              </button>
-            </Tooltip>
-          )
-        })}
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          minWidth: 'max-content',
+          padding: '4px'
+        }}>
+          {tabs.map(tab => {
+            const Icon = tab.icon
+            return (
+              <Tooltip key={tab.id} text={tab.hint} position="bottom">
+                <button
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    padding: isMobile ? '12px 16px' : '10px 16px',
+                    minHeight: isMobile ? '44px' : 'auto',
+                    backgroundColor: activeTab === tab.id ? theme.accent : 'transparent',
+                    color: activeTab === tab.id ? '#fff' : theme.textSecondary,
+                    border: activeTab === tab.id ? 'none' : `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: isMobile ? '13px' : '14px',
+                    fontWeight: '500',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <Icon size={16} />
+                  {tab.label}
+                </button>
+              </Tooltip>
+            )
+          })}
+        </div>
       </div>
 
       {/* Tab Content */}
@@ -452,7 +419,7 @@ export default function LeadDetail() {
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
         border: `1px solid ${theme.border}`,
-        padding: '24px'
+        padding: isMobile ? '16px' : '24px'
       }}>
 
         {/* INFO TAB */}
@@ -460,16 +427,16 @@ export default function LeadDetail() {
           <div>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-              gap: '24px'
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))',
+              gap: isMobile ? '16px' : '24px'
             }}>
               {/* Contact Info */}
               <div style={{
-                padding: '20px',
+                padding: isMobile ? '16px' : '20px',
                 backgroundColor: theme.bg,
                 borderRadius: '10px'
               }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '12px' : '16px' }}>
                   Contact Information
                 </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -506,14 +473,14 @@ export default function LeadDetail() {
 
               {/* Lead Details */}
               <div style={{
-                padding: '20px',
+                padding: isMobile ? '16px' : '20px',
                 backgroundColor: theme.bg,
                 borderRadius: '10px'
               }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '12px' : '16px' }}>
                   Lead Details
                 </h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Source</div>
                     <div style={{ fontSize: '14px', color: theme.text }}>{lead.lead_source || '-'}</div>
@@ -546,10 +513,10 @@ export default function LeadDetail() {
               {/* Notes */}
               {lead.notes && (
                 <div style={{
-                  padding: '20px',
+                  padding: isMobile ? '16px' : '20px',
                   backgroundColor: theme.bg,
                   borderRadius: '10px',
-                  gridColumn: 'span 2'
+                  gridColumn: isMobile ? 'span 1' : 'span 2'
                 }}>
                   <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: '12px' }}>
                     Notes
@@ -568,23 +535,23 @@ export default function LeadDetail() {
           <div>
             {appointment ? (
               <div style={{
-                padding: '24px',
+                padding: isMobile ? '16px' : '24px',
                 backgroundColor: '#dcfce7',
                 borderRadius: '12px',
                 border: '1px solid #86efac'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                  <Calendar size={24} color="#166534" />
+                <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: '12px', marginBottom: '16px' }}>
+                  <Calendar size={isMobile ? 20 : 24} color="#166534" style={{ flexShrink: 0, marginTop: isMobile ? '2px' : 0 }} />
                   <div>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#166534' }}>
+                    <div style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: '700', color: '#166534' }}>
                       {new Date(appointment.start_time).toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        month: 'long',
+                        weekday: isMobile ? 'short' : 'long',
+                        month: isMobile ? 'short' : 'long',
                         day: 'numeric',
                         year: 'numeric'
                       })}
                     </div>
-                    <div style={{ fontSize: '16px', color: '#15803d' }}>
+                    <div style={{ fontSize: isMobile ? '14px' : '16px', color: '#15803d' }}>
                       {new Date(appointment.start_time).toLocaleTimeString('en-US', {
                         hour: '2-digit',
                         minute: '2-digit'
@@ -602,7 +569,7 @@ export default function LeadDetail() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '16px' }}>
                   <div>
                     <div style={{ fontSize: '12px', color: '#15803d', marginBottom: '4px' }}>Status</div>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534' }}>
@@ -618,7 +585,7 @@ export default function LeadDetail() {
                     </div>
                   )}
                   {appointment.location && (
-                    <div style={{ gridColumn: 'span 2' }}>
+                    <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
                       <div style={{ fontSize: '12px', color: '#15803d', marginBottom: '4px' }}>Location</div>
                       <div style={{ fontSize: '14px', color: '#166534' }}>
                         {appointment.location}
@@ -626,7 +593,7 @@ export default function LeadDetail() {
                     </div>
                   )}
                   {appointment.notes && (
-                    <div style={{ gridColumn: 'span 2' }}>
+                    <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
                       <div style={{ fontSize: '12px', color: '#15803d', marginBottom: '4px' }}>Notes</div>
                       <div style={{ fontSize: '14px', color: '#166534' }}>
                         {appointment.notes}
@@ -636,42 +603,14 @@ export default function LeadDetail() {
                 </div>
               </div>
             ) : (
-              <div style={{
-                textAlign: 'center',
-                padding: '60px 20px',
-                backgroundColor: 'rgba(34,197,94,0.05)',
-                borderRadius: '12px',
-                border: '2px dashed rgba(34,197,94,0.3)'
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>📅</div>
-                <div style={{ fontWeight: '600', color: theme.text, marginBottom: '8px', fontSize: '18px' }}>
-                  No appointment scheduled
-                </div>
-                <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '20px', maxWidth: '350px', margin: '0 auto 20px', lineHeight: '1.5' }}>
-                  Schedule a meeting with this lead to move them forward in the sales process.
-                </div>
-                <Tooltip text="Go to Lead Setter and drag this lead to a time slot">
-                  <button
-                    onClick={() => navigate('/lead-setter')}
-                    style={{
-                      padding: '12px 24px',
-                      backgroundColor: '#22c55e',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      fontWeight: '600',
-                      fontSize: '14px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    <Calendar size={18} />
-                    Go to Lead Setter
-                  </button>
-                </Tooltip>
-              </div>
+              <EmptyState
+                icon={CalendarDays}
+                iconColor="#22c55e"
+                title="No appointment scheduled"
+                message="Schedule a meeting with this lead to move them forward in the sales process."
+                actionLabel="Go to Lead Setter"
+                onAction={() => navigate('/lead-setter')}
+              />
             )}
           </div>
         )}
@@ -681,12 +620,14 @@ export default function LeadDetail() {
           <div>
             <div style={{
               display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
               justifyContent: 'space-between',
-              alignItems: 'center',
+              alignItems: isMobile ? 'stretch' : 'center',
+              gap: isMobile ? '12px' : '16px',
               marginBottom: '20px'
             }}>
               <div>
-                <h3 style={{ margin: 0, color: theme.text, fontSize: '18px' }}>Audits & Takeoffs</h3>
+                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Audits & Takeoffs</h3>
                 <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
                   Create lighting audits to generate accurate quotes
                 </p>
@@ -694,7 +635,8 @@ export default function LeadDetail() {
               <button
                 onClick={handleNewAudit}
                 style={{
-                  padding: '10px 16px',
+                  padding: isMobile ? '12px 16px' : '10px 16px',
+                  minHeight: isMobile ? '44px' : 'auto',
                   backgroundColor: theme.accent,
                   color: '#fff',
                   border: 'none',
@@ -702,6 +644,7 @@ export default function LeadDetail() {
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   gap: '6px',
                   fontSize: '14px',
                   fontWeight: '500'
@@ -713,59 +656,33 @@ export default function LeadDetail() {
             </div>
 
             {audits.length === 0 ? (
-              <div style={{
-                textAlign: 'center',
-                padding: '60px 20px',
-                backgroundColor: 'rgba(139,92,246,0.05)',
-                borderRadius: '12px',
-                border: '2px dashed rgba(139,92,246,0.3)'
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>💡</div>
-                <div style={{ fontWeight: '600', color: theme.text, marginBottom: '8px', fontSize: '18px' }}>
-                  No audits yet
-                </div>
-                <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '20px', maxWidth: '350px', margin: '0 auto 20px', lineHeight: '1.5' }}>
-                  Create a lighting audit to calculate energy savings, find rebates, and generate a professional quote automatically.
-                </div>
-                <Tooltip text="Lenard will guide you through the audit process">
-                  <button
-                    onClick={handleNewAudit}
-                    style={{
-                      padding: '12px 24px',
-                      backgroundColor: '#8b5cf6',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      fontWeight: '600',
-                      fontSize: '14px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    <Lightbulb size={18} />
-                    Start Lighting Audit
-                  </button>
-                </Tooltip>
-              </div>
+              <EmptyState
+                icon={Lightbulb}
+                iconColor="#8b5cf6"
+                title="No audits yet"
+                message="Create a lighting audit to calculate energy savings, find rebates, and generate a professional quote automatically."
+                actionLabel="Start Lighting Audit"
+                onAction={handleNewAudit}
+              />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {audits.map(audit => (
                   <div key={audit.id} style={{
-                    padding: '16px 20px',
+                    padding: isMobile ? '14px 16px' : '16px 20px',
                     backgroundColor: theme.bg,
                     borderRadius: '10px',
                     border: `1px solid ${theme.border}`,
                     display: 'flex',
+                    flexDirection: isMobile ? 'column' : 'row',
                     justifyContent: 'space-between',
-                    alignItems: 'center'
+                    alignItems: isMobile ? 'stretch' : 'center',
+                    gap: isMobile ? '12px' : '16px'
                   }}>
                     <div>
-                      <div style={{ fontWeight: '600', color: theme.text, fontSize: '16px' }}>
+                      <div style={{ fontWeight: '600', color: theme.text, fontSize: isMobile ? '15px' : '16px' }}>
                         {audit.audit_name || audit.location_name || 'Lighting Audit'}
                       </div>
-                      <div style={{ fontSize: '14px', color: theme.textMuted, marginTop: '4px' }}>
+                      <div style={{ fontSize: isMobile ? '13px' : '14px', color: theme.textMuted, marginTop: '4px' }}>
                         {audit.total_fixtures || 0} fixtures
                         {audit.est_project_cost > 0 && (
                           <> • ${(audit.est_project_cost || 0).toLocaleString()} estimated</>
@@ -779,14 +696,16 @@ export default function LeadDetail() {
                       <button
                         onClick={() => navigate(`/audits/${audit.id}`)}
                         style={{
-                          padding: '8px 14px',
+                          padding: isMobile ? '10px 14px' : '8px 14px',
+                          minHeight: isMobile ? '44px' : 'auto',
                           backgroundColor: 'transparent',
                           color: theme.accent,
                           border: `1px solid ${theme.accent}`,
                           borderRadius: '6px',
                           cursor: 'pointer',
                           fontSize: '13px',
-                          fontWeight: '500'
+                          fontWeight: '500',
+                          flex: isMobile ? 1 : 'none'
                         }}
                       >
                         View
@@ -795,14 +714,16 @@ export default function LeadDetail() {
                         <button
                           onClick={() => handleCreateQuoteFromAudit(audit)}
                           style={{
-                            padding: '8px 14px',
+                            padding: isMobile ? '10px 14px' : '8px 14px',
+                            minHeight: isMobile ? '44px' : 'auto',
                             backgroundColor: '#16a34a',
                             color: '#fff',
                             border: 'none',
                             borderRadius: '6px',
                             cursor: 'pointer',
                             fontSize: '13px',
-                            fontWeight: '500'
+                            fontWeight: '500',
+                            flex: isMobile ? 1 : 'none'
                           }}
                         >
                           Create Quote
@@ -821,12 +742,14 @@ export default function LeadDetail() {
           <div>
             <div style={{
               display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
               justifyContent: 'space-between',
-              alignItems: 'center',
+              alignItems: isMobile ? 'stretch' : 'center',
+              gap: isMobile ? '12px' : '16px',
               marginBottom: '20px'
             }}>
               <div>
-                <h3 style={{ margin: 0, color: theme.text, fontSize: '18px' }}>Quotes</h3>
+                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Quotes</h3>
                 <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
                   Create and send quotes to convert this lead
                 </p>
@@ -834,7 +757,8 @@ export default function LeadDetail() {
               <button
                 onClick={handleCreateManualQuote}
                 style={{
-                  padding: '10px 16px',
+                  padding: isMobile ? '12px 16px' : '10px 16px',
+                  minHeight: isMobile ? '44px' : 'auto',
                   backgroundColor: theme.accent,
                   color: '#fff',
                   border: 'none',
@@ -842,6 +766,7 @@ export default function LeadDetail() {
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   gap: '6px',
                   fontSize: '14px',
                   fontWeight: '500'
@@ -853,65 +778,18 @@ export default function LeadDetail() {
             </div>
 
             {quotes.length === 0 ? (
-              <div style={{
-                textAlign: 'center',
-                padding: '60px 20px',
-                backgroundColor: 'rgba(59,130,246,0.05)',
-                borderRadius: '12px',
-                border: '2px dashed rgba(59,130,246,0.3)'
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>📋</div>
-                <div style={{ fontWeight: '600', color: theme.text, marginBottom: '8px', fontSize: '18px' }}>
-                  No quotes yet
-                </div>
-                <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '20px', maxWidth: '350px', margin: '0 auto 20px', lineHeight: '1.5' }}>
-                  {audits.length > 0
-                    ? "You have audits available! Create a quote from an audit to auto-fill line items and pricing."
-                    : "Create a quote manually, or go to the Audits tab first to generate one automatically."}
-                </div>
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <Tooltip text="Start with a blank quote">
-                    <button
-                      onClick={handleCreateManualQuote}
-                      style={{
-                        padding: '12px 24px',
-                        backgroundColor: '#3b82f6',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontWeight: '600',
-                        fontSize: '14px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <Plus size={18} />
-                      Create Manual Quote
-                    </button>
-                  </Tooltip>
-                  {audits.length === 0 && (
-                    <Tooltip text="Audits auto-generate accurate quotes">
-                      <button
-                        onClick={() => setActiveTab('audits')}
-                        style={{
-                          padding: '12px 24px',
-                          backgroundColor: 'transparent',
-                          color: '#8b5cf6',
-                          border: '1px solid #8b5cf6',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          fontWeight: '500',
-                          fontSize: '14px'
-                        }}
-                      >
-                        Create Audit First
-                      </button>
-                    </Tooltip>
-                  )}
-                </div>
-              </div>
+              <EmptyState
+                icon={ClipboardList}
+                iconColor="#3b82f6"
+                title="No quotes yet"
+                message={audits.length > 0
+                  ? "You have audits available! Create a quote from an audit to auto-fill line items and pricing."
+                  : "Create a quote manually, or go to the Audits tab first to generate one automatically."}
+                actionLabel="Create Manual Quote"
+                onAction={handleCreateManualQuote}
+                secondaryLabel={audits.length === 0 ? "Create Audit First" : undefined}
+                onSecondaryAction={audits.length === 0 ? () => setActiveTab('audits') : undefined}
+              />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {quotes.map(quote => {
@@ -925,17 +803,19 @@ export default function LeadDetail() {
 
                   return (
                     <div key={quote.id} style={{
-                      padding: '16px 20px',
+                      padding: isMobile ? '14px 16px' : '16px 20px',
                       backgroundColor: theme.bg,
                       borderRadius: '10px',
                       border: `1px solid ${theme.border}`,
                       display: 'flex',
+                      flexDirection: isMobile ? 'column' : 'row',
                       justifyContent: 'space-between',
-                      alignItems: 'center'
+                      alignItems: isMobile ? 'stretch' : 'center',
+                      gap: isMobile ? '12px' : '16px'
                     }}>
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ fontSize: '20px', fontWeight: '700', color: theme.text }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text }}>
                             ${(quote.quote_amount || 0).toLocaleString()}
                           </div>
                           <span style={{
@@ -962,14 +842,16 @@ export default function LeadDetail() {
                         <button
                           onClick={() => navigate(`/quotes/${quote.id}`)}
                           style={{
-                            padding: '8px 14px',
+                            padding: isMobile ? '10px 14px' : '8px 14px',
+                            minHeight: isMobile ? '44px' : 'auto',
                             backgroundColor: 'transparent',
                             color: theme.accent,
                             border: `1px solid ${theme.accent}`,
                             borderRadius: '6px',
                             cursor: 'pointer',
                             fontSize: '13px',
-                            fontWeight: '500'
+                            fontWeight: '500',
+                            flex: isMobile ? 1 : 'none'
                           }}
                         >
                           View/Edit
@@ -979,7 +861,8 @@ export default function LeadDetail() {
                             <button
                               onClick={() => handleSendQuote(quote.id)}
                               style={{
-                                padding: '8px 14px',
+                                padding: isMobile ? '10px 14px' : '8px 14px',
+                                minHeight: isMobile ? '44px' : 'auto',
                                 backgroundColor: '#16a34a',
                                 color: '#fff',
                                 border: 'none',
@@ -989,7 +872,9 @@ export default function LeadDetail() {
                                 fontWeight: '500',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px'
+                                justifyContent: 'center',
+                                gap: '4px',
+                                flex: isMobile ? 1 : 'none'
                               }}
                             >
                               <Send size={14} />
