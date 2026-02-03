@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import {
   ArrowLeft, FileText, Briefcase, Plus, Send, Phone, Mail,
-  MapPin, Building2, User, X, Save, Trash2, Package
+  MapPin, Building2, User, X, Save, Trash2, Package, UserPlus
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import EmptyState from '../components/EmptyState'
@@ -225,6 +225,40 @@ export default function CustomerDetail() {
     alert('Quote marked as sent!')
   }
 
+  // Send customer to setter pipeline
+  const handleSendToSetter = async () => {
+    const confirmed = window.confirm(
+      `Send ${customer.name} to the Lead Setter pipeline?\n\nThis will create a new lead from this customer's information so a setter can schedule a new appointment.`
+    )
+
+    if (!confirmed) return
+
+    const { data: newLead, error } = await supabase
+      .from('leads')
+      .insert({
+        company_id: companyId,
+        customer_name: customer.name,
+        email: customer.email || null,
+        phone: customer.phone || null,
+        address: customer.address || null,
+        business_name: customer.business_name || null,
+        status: 'New',
+        lead_source: 'Existing Customer',
+        customer_id: customer.id
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating lead:', error)
+      alert('Error creating lead: ' + error.message)
+      return
+    }
+
+    alert(`Lead created for ${customer.name}. Redirecting to Lead Setter...`)
+    navigate('/lead-setter')
+  }
+
   const getStatusColor = (status) => {
     const colors = {
       'Active': '#16a34a',
@@ -371,6 +405,30 @@ export default function CustomerDetail() {
               Email
             </a>
           )}
+          <Tooltip text="Create a new lead from this customer for the setter to schedule an appointment">
+            <button
+              onClick={handleSendToSetter}
+              style={{
+                padding: isMobile ? '12px 16px' : '10px 14px',
+                minHeight: isMobile ? '44px' : 'auto',
+                backgroundColor: '#dbeafe',
+                color: '#1d4ed8',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                fontSize: '14px',
+                fontWeight: '500',
+                flex: isMobile ? 1 : 'none'
+              }}
+            >
+              <UserPlus size={16} />
+              Send to Setter
+            </button>
+          </Tooltip>
         </div>
       </div>
 
