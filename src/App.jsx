@@ -11,7 +11,7 @@ import Leads from './pages/Leads'
 import LeadDetail from './pages/LeadDetail'
 import LeadSetter from './pages/LeadSetter'
 import SalesPipeline from './pages/SalesPipeline'
-import Products from './pages/Products'
+import ProductsServices from './pages/ProductsServices'
 import Quotes from './pages/Quotes'
 import QuoteDetail from './pages/QuoteDetail'
 import Jobs from './pages/Jobs'
@@ -180,7 +180,7 @@ function App() {
           <Route path="/leads/:id" element={<LeadDetail />} />
           <Route path="/lead-setter" element={<LeadSetter />} />
           <Route path="/pipeline" element={<SalesPipeline />} />
-          <Route path="/products" element={<Products />} />
+          <Route path="/products" element={<ProductsServices />} />
           <Route path="/quotes" element={<Quotes />} />
           <Route path="/quotes/:id" element={<QuoteDetail />} />
           <Route path="/jobs" element={<Jobs />} />
