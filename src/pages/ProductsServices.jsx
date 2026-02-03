@@ -22,6 +22,103 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
+// Reusable Product Card component
+function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle }) {
+  return (
+    <div
+      style={{
+        backgroundColor: theme.bgCard,
+        borderRadius: '12px',
+        border: `1px solid ${theme.border}`,
+        overflow: 'hidden',
+        opacity: product.active ? 1 : 0.6
+      }}
+    >
+      {/* Product Image */}
+      <div style={{
+        height: '100px',
+        backgroundColor: theme.bg,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderBottom: `1px solid ${theme.border}`
+      }}>
+        {product.image_url ? (
+          <img src={product.image_url} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <Package size={32} style={{ color: theme.textMuted, opacity: 0.4 }} />
+        )}
+      </div>
+
+      {/* Product Info */}
+      <div style={{ padding: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: 0, lineHeight: '1.3' }}>
+            {product.name}
+          </h3>
+          <span style={{
+            fontSize: '10px',
+            padding: '2px 6px',
+            borderRadius: '10px',
+            backgroundColor: product.active ? 'rgba(74,124,89,0.12)' : 'rgba(0,0,0,0.06)',
+            color: product.active ? '#4a7c59' : theme.textMuted,
+            flexShrink: 0,
+            marginLeft: '8px'
+          }}>
+            {product.active ? 'Active' : 'Inactive'}
+          </span>
+        </div>
+
+        {product.type && (
+          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>
+            {product.type}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+          <div style={{ fontSize: '16px', fontWeight: '600', color: theme.accent }}>
+            {formatCurrency(product.unit_price)}
+          </div>
+          {product.allotted_time_hours && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: theme.textMuted }}>
+              <Clock size={11} />
+              {product.allotted_time_hours}h
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            onClick={() => openProductForm(product)}
+            style={{
+              flex: 1,
+              ...buttonStyle,
+              backgroundColor: theme.accentBg,
+              color: theme.accent,
+              padding: '8px',
+              fontSize: '12px'
+            }}
+          >
+            <Pencil size={12} />
+            Edit
+          </button>
+          <button
+            onClick={() => handleDeleteProduct(product)}
+            style={{
+              ...buttonStyle,
+              backgroundColor: '#fef2f2',
+              color: '#dc2626',
+              padding: '8px 10px'
+            }}
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ProductsServices() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -47,7 +144,7 @@ export default function ProductsServices() {
   const [editingProduct, setEditingProduct] = useState(null)
   const [productForm, setProductForm] = useState({
     name: '', description: '', unit_price: '', cost: '', markup_percent: '',
-    taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null
+    taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: ''
   })
 
   const [saving, setSaving] = useState(false)
@@ -87,15 +184,24 @@ export default function ProductsServices() {
     setLoading(false)
   }
 
+  // Filter products by service type (using type column on products_services)
+  const filteredProducts = products.filter(p =>
+    activeServiceType === 'all' || p.type === activeServiceType
+  )
+
   // Filter groups by service type
   const filteredGroups = productGroups.filter(g =>
-    activeServiceType === 'all' || g.service_type === activeServiceType
+    g.active && (activeServiceType === 'all' || g.service_type === activeServiceType)
   )
 
   // Get products for selected group
   const groupProducts = selectedGroup
     ? products.filter(p => p.group_id === selectedGroup.id)
     : []
+
+  // Get ungrouped products (products with no group_id or group_id not in current groups)
+  const groupIds = new Set(productGroups.map(g => g.id))
+  const ungroupedProducts = filteredProducts.filter(p => !p.group_id || !groupIds.has(p.group_id))
 
   // Count products per group
   const getProductCount = (groupId) => products.filter(p => p.group_id === groupId).length
@@ -194,14 +300,16 @@ export default function ProductsServices() {
         active: product.active ?? true,
         image_url: product.image_url || '',
         allotted_time_hours: product.allotted_time_hours || '',
-        group_id: product.group_id
+        group_id: product.group_id,
+        type: product.type || ''
       })
     } else {
       setEditingProduct(null)
       setProductForm({
         name: '', description: '', unit_price: '', cost: '', markup_percent: '',
         taxable: true, active: true, image_url: '', allotted_time_hours: '',
-        group_id: selectedGroup?.id || null
+        group_id: selectedGroup?.id || null,
+        type: selectedGroup?.service_type || (activeServiceType !== 'all' ? activeServiceType : (serviceTypes[0] || ''))
       })
     }
     setShowProductModal(true)
@@ -226,7 +334,7 @@ export default function ProductsServices() {
       company_id: companyId,
       name: productForm.name,
       description: productForm.description || null,
-      type: selectedGroup?.service_type || null,
+      type: productForm.type || null,
       unit_price: productForm.unit_price || null,
       cost: productForm.cost || null,
       markup_percent: productForm.markup_percent || null,
@@ -372,15 +480,14 @@ export default function ProductsServices() {
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          {selectedGroup ? (
-            <button
-              onClick={() => openProductForm()}
-              style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}
-            >
-              <Plus size={18} />
-              Add Product
-            </button>
-          ) : (
+          <button
+            onClick={() => openProductForm()}
+            style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}
+          >
+            <Plus size={18} />
+            Add Product
+          </button>
+          {!selectedGroup && (
             <Tooltip text="Manage product groups">
               <button
                 onClick={() => setShowSettings(!showSettings)}
@@ -447,7 +554,7 @@ export default function ProductsServices() {
               Loading...
             </div>
           ) : selectedGroup ? (
-            // ============ PRODUCTS VIEW ============
+            // ============ DRILL-DOWN: PRODUCTS IN SELECTED GROUP ============
             groupProducts.length === 0 ? (
               <div style={{
                 textAlign: 'center',
@@ -468,174 +575,123 @@ export default function ProductsServices() {
                 gap: '16px'
               }}>
                 {groupProducts.map(product => (
-                  <div
-                    key={product.id}
-                    style={{
-                      backgroundColor: theme.bgCard,
-                      borderRadius: '12px',
-                      border: `1px solid ${theme.border}`,
-                      overflow: 'hidden',
-                      opacity: product.active ? 1 : 0.6
-                    }}
-                  >
-                    {/* Product Image */}
-                    <div style={{
-                      height: '120px',
-                      backgroundColor: theme.bg,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderBottom: `1px solid ${theme.border}`
-                    }}>
-                      {product.image_url ? (
-                        <img src={product.image_url} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <Package size={40} style={{ color: theme.textMuted, opacity: 0.4 }} />
-                      )}
-                    </div>
-
-                    {/* Product Info */}
-                    <div style={{ padding: '14px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                        <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                          {product.name}
-                        </h3>
-                        <span style={{
-                          fontSize: '10px',
-                          padding: '2px 6px',
-                          borderRadius: '10px',
-                          backgroundColor: product.active ? 'rgba(74,124,89,0.12)' : 'rgba(0,0,0,0.06)',
-                          color: product.active ? '#4a7c59' : theme.textMuted
-                        }}>
-                          {product.active ? 'Active' : 'Inactive'}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                        <div style={{ fontSize: '16px', fontWeight: '600', color: theme.accent }}>
-                          {formatCurrency(product.unit_price)}
-                        </div>
-                        {product.allotted_time_hours && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: theme.textMuted }}>
-                            <Clock size={12} />
-                            {product.allotted_time_hours}h
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          onClick={() => openProductForm(product)}
-                          style={{
-                            flex: 1,
-                            ...buttonStyle,
-                            backgroundColor: theme.accentBg,
-                            color: theme.accent,
-                            padding: '8px'
-                          }}
-                        >
-                          <Pencil size={14} />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteProduct(product)}
-                          style={{
-                            ...buttonStyle,
-                            backgroundColor: '#fef2f2',
-                            color: '#dc2626',
-                            padding: '8px 12px'
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} />
                 ))}
               </div>
             )
           ) : (
-            // ============ GROUPS VIEW ============
-            filteredGroups.length === 0 ? (
-              <div style={{
-                textAlign: 'center',
-                padding: '48px',
-                backgroundColor: theme.bgCard,
-                borderRadius: '12px',
-                border: `1px solid ${theme.border}`
-              }}>
-                <Boxes size={48} style={{ color: theme.textMuted, opacity: 0.5, marginBottom: '16px' }} />
-                <p style={{ color: theme.textSecondary, margin: 0 }}>
-                  No product groups yet. Click the Groups button to create one.
-                </p>
-              </div>
-            ) : (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
-                gap: '16px'
-              }}>
-                {filteredGroups.filter(g => g.active).map(group => (
-                  <div
-                    key={group.id}
-                    onClick={() => setSelectedGroup(group)}
-                    style={{
-                      backgroundColor: theme.bgCard,
-                      borderRadius: '16px',
-                      border: `1px solid ${theme.border}`,
-                      overflow: 'hidden',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)'
-                      e.currentTarget.style.borderColor = theme.accent
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.boxShadow = 'none'
-                      e.currentTarget.style.borderColor = theme.border
-                    }}
-                  >
-                    {/* Group Image/Icon */}
-                    <div style={{
-                      height: isMobile ? '100px' : '140px',
-                      backgroundColor: theme.accentBg,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      {group.image_url ? (
-                        <img src={group.image_url} alt={group.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <Boxes size={isMobile ? 40 : 56} style={{ color: theme.accent, opacity: 0.6 }} />
-                      )}
-                    </div>
+            // ============ MAIN VIEW: GROUPS + UNGROUPED PRODUCTS ============
+            <div>
+              {/* Product Groups (if any exist for this service type) */}
+              {filteredGroups.length > 0 && (
+                <div style={{ marginBottom: '32px' }}>
+                  <h2 style={{ fontSize: '14px', fontWeight: '600', color: theme.textMuted, marginBottom: '16px', textTransform: 'uppercase' }}>
+                    Product Groups
+                  </h2>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
+                    gap: '16px'
+                  }}>
+                    {filteredGroups.map(group => (
+                      <div
+                        key={group.id}
+                        onClick={() => setSelectedGroup(group)}
+                        style={{
+                          backgroundColor: theme.bgCard,
+                          borderRadius: '16px',
+                          border: `1px solid ${theme.border}`,
+                          overflow: 'hidden',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)'
+                          e.currentTarget.style.borderColor = theme.accent
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = 'none'
+                          e.currentTarget.style.borderColor = theme.border
+                        }}
+                      >
+                        {/* Group Image/Icon */}
+                        <div style={{
+                          height: isMobile ? '80px' : '100px',
+                          backgroundColor: theme.accentBg,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          {group.image_url ? (
+                            <img src={group.image_url} alt={group.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <Boxes size={isMobile ? 32 : 40} style={{ color: theme.accent, opacity: 0.6 }} />
+                          )}
+                        </div>
 
-                    {/* Group Info */}
-                    <div style={{ padding: isMobile ? '12px' : '16px' }}>
-                      <h3 style={{
-                        fontSize: isMobile ? '14px' : '16px',
-                        fontWeight: '600',
-                        color: theme.text,
-                        margin: '0 0 4px 0'
-                      }}>
-                        {group.name}
-                      </h3>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}>
-                        <span style={{ fontSize: '13px', color: theme.textMuted }}>
-                          {getProductCount(group.id)} items
-                        </span>
-                        <ChevronRight size={16} style={{ color: theme.textMuted }} />
+                        {/* Group Info */}
+                        <div style={{ padding: isMobile ? '10px' : '12px' }}>
+                          <h3 style={{
+                            fontSize: isMobile ? '13px' : '14px',
+                            fontWeight: '600',
+                            color: theme.text,
+                            margin: '0 0 4px 0'
+                          }}>
+                            {group.name}
+                          </h3>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between'
+                          }}>
+                            <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                              {getProductCount(group.id)} items
+                            </span>
+                            <ChevronRight size={14} style={{ color: theme.textMuted }} />
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )
+                </div>
+              )}
+
+              {/* Ungrouped Products (always show if there are any) */}
+              {ungroupedProducts.length > 0 && (
+                <div>
+                  {filteredGroups.length > 0 && (
+                    <h2 style={{ fontSize: '14px', fontWeight: '600', color: theme.textMuted, marginBottom: '16px', textTransform: 'uppercase' }}>
+                      {activeServiceType === 'all' ? 'All Products' : `${activeServiceType} Products`}
+                    </h2>
+                  )}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))',
+                    gap: '16px'
+                  }}>
+                    {ungroupedProducts.map(product => (
+                      <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state - only show when NO groups AND NO ungrouped products */}
+              {filteredGroups.length === 0 && ungroupedProducts.length === 0 && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '48px',
+                  backgroundColor: theme.bgCard,
+                  borderRadius: '12px',
+                  border: `1px solid ${theme.border}`
+                }}>
+                  <Package size={48} style={{ color: theme.textMuted, opacity: 0.5, marginBottom: '16px' }} />
+                  <p style={{ color: theme.textSecondary, margin: 0 }}>
+                    No products yet. Click "Add Product" to create your first product.
+                  </p>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -864,6 +920,28 @@ export default function ProductsServices() {
                 <div>
                   <label style={labelStyle}>Name *</label>
                   <input type="text" name="name" value={productForm.name} onChange={handleProductChange} style={inputStyle} />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>Service Type</label>
+                    <select name="type" value={productForm.type || ''} onChange={handleProductChange} style={inputStyle}>
+                      <option value="">-- Select --</option>
+                      {serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Product Group</label>
+                    <select
+                      name="group_id"
+                      value={productForm.group_id || ''}
+                      onChange={(e) => setProductForm(prev => ({ ...prev, group_id: e.target.value ? parseInt(e.target.value) : null }))}
+                      style={inputStyle}
+                    >
+                      <option value="">None (Ungrouped)</option>
+                      {productGroups.filter(g => g.active).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                  </div>
                 </div>
 
                 <div>
