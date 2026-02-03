@@ -254,7 +254,7 @@ export default function LeadDetail() {
         company_id: companyId,
         lead_id: lead.id,
         quote_amount: quoteTotal,
-        discount_amount: parseFloat(quoteDiscount) || 0,
+        discount: parseFloat(quoteDiscount) || 0,
         status: 'Draft',
         notes: quoteNotes || null
       })
@@ -271,10 +271,10 @@ export default function LeadDetail() {
     // Create quote lines
     const linesToInsert = quoteLines.map(line => ({
       quote_id: quote.id,
-      product_id: line.product_id,
-      description: line.description,
+      item_id: line.product_id,
+      item_name: line.description,
       quantity: parseFloat(line.quantity) || 1,
-      unit_price: parseFloat(line.unit_price) || 0,
+      price: parseFloat(line.unit_price) || 0,
       line_total: line.line_total || 0
     }))
 
