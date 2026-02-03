@@ -59,6 +59,8 @@ export const useStore = create(
       serviceTypes: [],
       businessUnits: [],
       leadSources: [],
+      inventoryTypes: [],
+      inventoryLocations: [],
 
       // Routes
       routes: [],
@@ -387,7 +389,7 @@ export const useStore = create(
 
         const { data, error } = await supabase
           .from(TABLES.inventory)
-          .select('*, product:products_services(id, name, unit_price)')
+          .select('*, product:products_services(id, name, unit_price), assigned_employee:employees!assigned_to(id, name), product_group:product_groups(id, name, service_type)')
           .eq('company_id', companyId)
           .order('name');
 
@@ -522,7 +524,9 @@ export const useStore = create(
           set({
             serviceTypes: parseSettingList('service_types'),
             businessUnits: parseSettingList('business_units'),
-            leadSources: parseSettingList('lead_sources')
+            leadSources: parseSettingList('lead_sources'),
+            inventoryTypes: parseSettingList('inventory_types'),
+            inventoryLocations: parseSettingList('inventory_locations')
           });
         }
       },

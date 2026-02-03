@@ -6,7 +6,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import {
   Plus, ArrowLeft, Settings, X, Save, Trash2, Package, Boxes,
-  Upload, Clock, DollarSign, Pencil, ChevronRight
+  Upload, Clock, DollarSign, Pencil, ChevronRight, Archive
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 
@@ -23,7 +23,7 @@ const defaultTheme = {
 }
 
 // Reusable Product Card component
-function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle }) {
+function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount }) {
   return (
     <div
       style={{
@@ -41,12 +41,33 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        borderBottom: `1px solid ${theme.border}`
+        borderBottom: `1px solid ${theme.border}`,
+        position: 'relative'
       }}>
         {product.image_url ? (
           <img src={product.image_url} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
           <Package size={32} style={{ color: theme.textMuted, opacity: 0.4 }} />
+        )}
+        {/* Inventory badge */}
+        {inventoryCount !== undefined && (
+          <div style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            backgroundColor: inventoryCount > 0 ? '#22c55e' : '#ef4444',
+            color: '#fff',
+            padding: '3px 8px',
+            borderRadius: '10px',
+            fontSize: '11px',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}>
+            <Archive size={10} />
+            {inventoryCount}
+          </div>
         )}
       </div>
 
@@ -124,7 +145,15 @@ export default function ProductsServices() {
   const companyId = useStore((state) => state.companyId)
   const serviceTypes = useStore((state) => state.serviceTypes)
   const products = useStore((state) => state.products)
+  const inventory = useStore((state) => state.inventory)
   const fetchProducts = useStore((state) => state.fetchProducts)
+
+  // Helper to get inventory count for a product
+  const getInventoryCount = (productId) => {
+    return inventory
+      .filter(item => item.product_id === productId)
+      .reduce((sum, item) => sum + (item.quantity || 0), 0)
+  }
 
   const [activeServiceType, setActiveServiceType] = useState('all')
   const [productGroups, setProductGroups] = useState([])
@@ -575,7 +604,7 @@ export default function ProductsServices() {
                 gap: '16px'
               }}>
                 {groupProducts.map(product => (
-                  <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} />
+                  <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} inventoryCount={getInventoryCount(product.id)} />
                 ))}
               </div>
             )
@@ -670,7 +699,7 @@ export default function ProductsServices() {
                     gap: '16px'
                   }}>
                     {ungroupedProducts.map(product => (
-                      <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} />
+                      <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} inventoryCount={getInventoryCount(product.id)} />
                     ))}
                   </div>
                 </div>
