@@ -5,6 +5,7 @@ import { useStore } from './lib/store'
 import Login from './pages/Login'
 import Employees from './pages/Employees'
 import Customers from './pages/Customers'
+import CustomerDetail from './pages/CustomerDetail'
 import Leads from './pages/Leads'
 import LeadDetail from './pages/LeadDetail'
 import LeadSetter from './pages/LeadSetter'
@@ -173,6 +174,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/employees" element={<Employees />} />
           <Route path="/customers" element={<Customers />} />
+          <Route path="/customers/:id" element={<CustomerDetail />} />
           <Route path="/leads" element={<Leads />} />
           <Route path="/leads/:id" element={<LeadDetail />} />
           <Route path="/lead-setter" element={<LeadSetter />} />

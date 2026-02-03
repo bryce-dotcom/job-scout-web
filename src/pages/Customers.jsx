@@ -309,7 +309,7 @@ export default function Customers() {
           {filteredCustomers.map((customer) => (
             <div
               key={customer.id}
-              onClick={() => openEditModal(customer)}
+              onClick={() => navigate(`/customers/${customer.id}`)}
               style={{
                 backgroundColor: theme.bgCard,
                 borderRadius: '12px',
