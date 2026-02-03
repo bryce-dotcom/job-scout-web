@@ -41,6 +41,7 @@ export default function Bookings() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const bookings = useStore((state) => state.bookings)
+  const serviceTypes = useStore((state) => state.serviceTypes)
   const fetchBookings = useStore((state) => state.fetchBookings)
 
   const [showModal, setShowModal] = useState(false)
@@ -458,12 +459,10 @@ export default function Bookings() {
                   <div>
                     <label style={labelStyle}>Service Type</label>
                     <select name="service_type" value={formData.service_type} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select service</option>
-                      <option value="Window Cleaning">Window Cleaning</option>
-                      <option value="Energy Audit">Energy Audit</option>
-                      <option value="Pressure Washing">Pressure Washing</option>
-                      <option value="Gutter Cleaning">Gutter Cleaning</option>
-                      <option value="Other">Other</option>
+                      <option value="">-- Select --</option>
+                      {serviceTypes.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
                     </select>
                   </div>
                   <div>

@@ -21,7 +21,7 @@ const defaultTheme = {
 const emptyProduct = {
   name: '',
   description: '',
-  type: 'Service',
+  type: '',
   business_unit: '',
   sku: '',
   category: '',
@@ -44,6 +44,7 @@ export default function Products() {
   const companyId = useStore((state) => state.companyId)
   const products = useStore((state) => state.products)
   const businessUnits = useStore((state) => state.businessUnits)
+  const serviceTypes = useStore((state) => state.serviceTypes)
   const fetchProducts = useStore((state) => state.fetchProducts)
 
   const [showModal, setShowModal] = useState(false)
@@ -294,10 +295,9 @@ export default function Products() {
           style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
         >
           <option value="all">All Types</option>
-          <option value="Service">Service</option>
-          <option value="Product">Product</option>
-          <option value="Labor">Labor</option>
-          <option value="Material">Material</option>
+          {serviceTypes.map(t => (
+            <option key={t} value={t}>{t}</option>
+          ))}
         </select>
 
         <label style={{
@@ -622,10 +622,10 @@ export default function Products() {
                       onChange={handleChange}
                       style={inputStyle}
                     >
-                      <option value="Service">Service</option>
-                      <option value="Product">Product</option>
-                      <option value="Labor">Labor</option>
-                      <option value="Material">Material</option>
+                      <option value="">-- Select --</option>
+                      {serviceTypes.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
                     </select>
                   </div>
                   <div>

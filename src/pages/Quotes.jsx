@@ -33,6 +33,7 @@ export default function Quotes() {
   const leads = useStore((state) => state.leads)
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
+  const serviceTypes = useStore((state) => state.serviceTypes)
   const fetchQuotes = useStore((state) => state.fetchQuotes)
 
   const [showModal, setShowModal] = useState(false)
@@ -510,14 +511,17 @@ export default function Quotes() {
 
                 <div>
                   <label style={labelStyle}>Service Type</label>
-                  <input
-                    type="text"
+                  <select
                     name="service_type"
                     value={formData.service_type}
                     onChange={handleChange}
                     style={inputStyle}
-                    placeholder="e.g., Lighting Retrofit, Maintenance"
-                  />
+                  >
+                    <option value="">-- Select --</option>
+                    {serviceTypes.map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
