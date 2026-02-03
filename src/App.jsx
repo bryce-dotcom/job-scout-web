@@ -1,3 +1,4 @@
+// ALWAYS READ JOBSCOUT_PROJECT_RULES.md BEFORE MAKING CHANGES
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
