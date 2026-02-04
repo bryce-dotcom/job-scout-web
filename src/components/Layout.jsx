@@ -380,8 +380,7 @@ export default function Layout() {
     items: [
       { to: '/settings', icon: Settings, label: 'Settings', hint: 'Company and app settings' },
       { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' }
-    ],
-    isAdmin: true
+    ]
   } : null
 
   // Dev section - only shown for super admins (isDeveloper flag)
