@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -6,7 +6,8 @@ import { useTheme } from '../components/Layout'
 import {
   ArrowLeft, Calendar, FileText, Clipboard, Plus, Send, Phone, Mail,
   MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
-  CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package
+  CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package,
+  Search, ChevronLeft, Grid3X3, Wrench, Zap, Droplets, Leaf, ShoppingBag, Box
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import FlowIndicator from '../components/FlowIndicator'
@@ -30,6 +31,8 @@ export default function LeadDetail() {
   const employees = useStore((state) => state.employees)
   const products = useStore((state) => state.products)
   const serviceTypes = useStore((state) => state.serviceTypes)
+  const laborRates = useStore((state) => state.laborRates)
+  const inventory = useStore((state) => state.inventory)
 
   const [lead, setLead] = useState(null)
   const [audits, setAudits] = useState([])
@@ -47,7 +50,13 @@ export default function LeadDetail() {
   const [quoteDiscount, setQuoteDiscount] = useState(0)
   const [quoteNotes, setQuoteNotes] = useState('')
   const [savingQuote, setSavingQuote] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState('')
+
+  // Product catalog picker state
+  const [productGroups, setProductGroups] = useState([])
+  const [catalogServiceType, setCatalogServiceType] = useState('')
+  const [selectedGroup, setSelectedGroup] = useState(null)
+  const [catalogSearch, setCatalogSearch] = useState('')
+  const [showCatalogPicker, setShowCatalogPicker] = useState(false)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -175,31 +184,84 @@ export default function LeadDetail() {
     alert('Quote created from audit!')
   }
 
+  // Fetch product groups for catalog
+  const fetchProductGroups = async () => {
+    const { data } = await supabase
+      .from('product_groups')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('name')
+    setProductGroups(data || [])
+  }
+
   // Open quote creation modal
-  const openQuoteModal = () => {
+  const openQuoteModal = async () => {
     setQuoteLines([])
     setQuoteDiscount(0)
     setQuoteNotes('')
-    setSelectedProduct('')
+    setCatalogServiceType(serviceTypes[0] || '')
+    setSelectedGroup(null)
+    setCatalogSearch('')
+    setShowCatalogPicker(false)
+    await fetchProductGroups()
     setShowQuoteModal(true)
   }
 
-  // Add line item from product
-  const handleAddProductLine = () => {
-    if (!selectedProduct) return
-    const product = products.find(p => p.id === parseInt(selectedProduct))
-    if (!product) return
+  // Get service type icon
+  const getServiceTypeIcon = (type) => {
+    const iconMap = {
+      'Energy Efficiency': Zap,
+      'Electrical': Zap,
+      'Exterior Cleaning': Droplets,
+      'Landscaping': Leaf,
+      'Retail': ShoppingBag,
+      'General': Grid3X3
+    }
+    return iconMap[type] || Wrench
+  }
+
+  // Calculate labor cost for product
+  const calculateLaborCost = (product) => {
+    if (!product.allotted_time_hours) return 0
+
+    // Find the labor rate for this product
+    let rate = null
+    if (product.labor_rate_id) {
+      rate = laborRates.find(r => r.id === product.labor_rate_id)
+    }
+    // Fall back to default rate
+    if (!rate) {
+      rate = laborRates.find(r => r.is_default)
+    }
+
+    if (!rate) return 0
+    return product.allotted_time_hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1)
+  }
+
+  // Get inventory count for product
+  const getInventoryCount = (productId) => {
+    const inv = inventory.find(i => i.product_id === productId)
+    return inv?.quantity || 0
+  }
+
+  // Select product from catalog and add to quote
+  const handleSelectProduct = (product) => {
+    const laborCost = calculateLaborCost(product)
+    const totalPrice = (product.unit_price || 0) + laborCost
 
     const newLine = {
       id: Date.now(),
       product_id: product.id,
       description: product.name,
       quantity: 1,
-      unit_price: product.unit_price || 0,
-      line_total: product.unit_price || 0
+      unit_price: totalPrice,
+      labor_cost: laborCost,
+      line_total: totalPrice
     }
     setQuoteLines([...quoteLines, newLine])
-    setSelectedProduct('')
+    setSelectedGroup(null)
+    setCatalogSearch('')
+    setShowCatalogPicker(false)
   }
 
   // Add custom line item
@@ -1015,15 +1077,18 @@ export default function LeadDetail() {
           />
           <div style={{
             position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
+            top: isMobile ? 0 : '50%',
+            left: isMobile ? 0 : '50%',
+            right: isMobile ? 0 : 'auto',
+            bottom: isMobile ? 0 : 'auto',
+            transform: isMobile ? 'none' : 'translate(-50%, -50%)',
             backgroundColor: theme.bgCard,
-            borderRadius: '16px',
-            border: `1px solid ${theme.border}`,
-            width: '100%',
-            maxWidth: isMobile ? '95%' : '700px',
-            maxHeight: '90vh',
+            borderRadius: isMobile ? 0 : '16px',
+            border: isMobile ? 'none' : `1px solid ${theme.border}`,
+            width: isMobile ? '100%' : '90%',
+            maxWidth: isMobile ? '100%' : '900px',
+            height: isMobile ? '100%' : 'auto',
+            maxHeight: isMobile ? '100%' : '90vh',
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
@@ -1070,82 +1135,563 @@ export default function LeadDetail() {
               overflow: 'auto',
               padding: isMobile ? '16px' : '20px'
             }}>
-              {/* Add Product Line */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  color: theme.textSecondary,
-                  marginBottom: '8px'
-                }}>
-                  Add from Products
-                </label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <select
-                    value={selectedProduct}
-                    onChange={(e) => setSelectedProduct(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: isMobile ? '12px' : '10px 12px',
-                      minHeight: isMobile ? '44px' : 'auto',
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      color: theme.text,
-                      backgroundColor: theme.bgCard
-                    }}
-                  >
-                    <option value="">-- Select Product --</option>
-                    {products.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} - ${(p.unit_price || 0).toFixed(2)}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={handleAddProductLine}
-                    disabled={!selectedProduct}
-                    style={{
-                      padding: isMobile ? '12px 16px' : '10px 16px',
-                      minHeight: isMobile ? '44px' : 'auto',
-                      backgroundColor: selectedProduct ? theme.accent : theme.border,
-                      color: selectedProduct ? '#fff' : theme.textMuted,
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: selectedProduct ? 'pointer' : 'not-allowed',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      fontSize: '14px',
-                      fontWeight: '500'
-                    }}
-                  >
-                    <Plus size={16} />
-                    {!isMobile && 'Add'}
-                  </button>
-                </div>
-                <button
-                  onClick={handleAddCustomLine}
-                  style={{
-                    marginTop: '8px',
-                    padding: isMobile ? '10px 12px' : '8px 12px',
-                    minHeight: isMobile ? '44px' : 'auto',
-                    backgroundColor: 'transparent',
-                    color: theme.accent,
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
+              {/* Product Catalog Picker */}
+              {showCatalogPicker ? (
+                <div style={{ marginBottom: '20px' }}>
+                  {/* Search Bar */}
+                  <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  <Plus size={14} />
-                  Add Custom Line Item
-                </button>
-              </div>
+                    gap: '8px',
+                    marginBottom: '16px'
+                  }}>
+                    <button
+                      onClick={() => {
+                        if (catalogSearch) {
+                          setCatalogSearch('')
+                        } else if (selectedGroup) {
+                          setSelectedGroup(null)
+                        } else {
+                          setShowCatalogPicker(false)
+                        }
+                      }}
+                      style={{
+                        padding: isMobile ? '12px' : '10px',
+                        minWidth: isMobile ? '44px' : 'auto',
+                        minHeight: isMobile ? '44px' : 'auto',
+                        backgroundColor: theme.bg,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        color: theme.textSecondary,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <ChevronLeft size={20} />
+                    </button>
+                    <div style={{
+                      flex: 1,
+                      position: 'relative'
+                    }}>
+                      <Search size={18} style={{
+                        position: 'absolute',
+                        left: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        color: theme.textMuted
+                      }} />
+                      <input
+                        type="text"
+                        value={catalogSearch}
+                        onChange={(e) => setCatalogSearch(e.target.value)}
+                        placeholder="Search products..."
+                        style={{
+                          width: '100%',
+                          padding: isMobile ? '12px 12px 12px 40px' : '10px 12px 10px 40px',
+                          minHeight: isMobile ? '44px' : 'auto',
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          color: theme.text,
+                          backgroundColor: theme.bgCard
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Service Type Tabs */}
+                  {!catalogSearch && !selectedGroup && (
+                    <div style={{
+                      display: 'flex',
+                      gap: '8px',
+                      overflowX: 'auto',
+                      WebkitOverflowScrolling: 'touch',
+                      paddingBottom: '8px',
+                      marginBottom: '16px'
+                    }}>
+                      {serviceTypes.map(type => (
+                        <button
+                          key={type}
+                          onClick={() => setCatalogServiceType(type)}
+                          style={{
+                            padding: isMobile ? '10px 16px' : '8px 14px',
+                            minHeight: isMobile ? '44px' : 'auto',
+                            backgroundColor: catalogServiceType === type ? theme.accent : theme.bg,
+                            color: catalogServiceType === type ? '#fff' : theme.textSecondary,
+                            border: `1px solid ${catalogServiceType === type ? theme.accent : theme.border}`,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            whiteSpace: 'nowrap',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          {(() => {
+                            const Icon = getServiceTypeIcon(type)
+                            return <Icon size={16} />
+                          })()}
+                          {type}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Search Results */}
+                  {catalogSearch && (
+                    <div>
+                      <div style={{
+                        fontSize: '13px',
+                        color: theme.textMuted,
+                        marginBottom: '12px'
+                      }}>
+                        Search results for "{catalogSearch}"
+                      </div>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
+                        gap: '12px'
+                      }}>
+                        {products
+                          .filter(p => p.active !== false && p.name.toLowerCase().includes(catalogSearch.toLowerCase()))
+                          .slice(0, 20)
+                          .map(product => (
+                            <button
+                              key={product.id}
+                              onClick={() => handleSelectProduct(product)}
+                              style={{
+                                padding: '16px',
+                                backgroundColor: theme.bg,
+                                border: `1px solid ${theme.border}`,
+                                borderRadius: '12px',
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                transition: 'border-color 0.2s',
+                                minHeight: isMobile ? '80px' : 'auto'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.borderColor = theme.accent}
+                              onMouseLeave={(e) => e.currentTarget.style.borderColor = theme.border}
+                            >
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '12px'
+                              }}>
+                                <div style={{
+                                  width: '48px',
+                                  height: '48px',
+                                  borderRadius: '8px',
+                                  backgroundColor: theme.accentBg,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0
+                                }}>
+                                  {product.image_url ? (
+                                    <img
+                                      src={product.image_url}
+                                      alt={product.name}
+                                      style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover',
+                                        borderRadius: '8px'
+                                      }}
+                                    />
+                                  ) : (
+                                    <Package size={24} color={theme.accent} />
+                                  )}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    color: theme.text,
+                                    marginBottom: '4px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}>
+                                    {product.name}
+                                  </div>
+                                  <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    fontSize: '13px'
+                                  }}>
+                                    <span style={{ fontWeight: '600', color: theme.accent }}>
+                                      ${((product.unit_price || 0) + calculateLaborCost(product)).toFixed(2)}
+                                    </span>
+                                    <span style={{ color: theme.textMuted }}>
+                                      {getInventoryCount(product.id)} in stock
+                                    </span>
+                                  </div>
+                                  {calculateLaborCost(product) > 0 && (
+                                    <div style={{
+                                      fontSize: '11px',
+                                      color: theme.textMuted,
+                                      marginTop: '2px'
+                                    }}>
+                                      +${calculateLaborCost(product).toFixed(2)} labor
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                      {products.filter(p => p.active !== false && p.name.toLowerCase().includes(catalogSearch.toLowerCase())).length === 0 && (
+                        <div style={{
+                          padding: '40px',
+                          textAlign: 'center',
+                          color: theme.textMuted
+                        }}>
+                          No products found matching "{catalogSearch}"
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Product Groups */}
+                  {!catalogSearch && !selectedGroup && (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(150px, 1fr))',
+                      gap: '12px'
+                    }}>
+                      {/* Show groups for selected service type */}
+                      {productGroups
+                        .filter(g => g.service_type === catalogServiceType)
+                        .map(group => (
+                          <button
+                            key={group.id}
+                            onClick={() => setSelectedGroup(group)}
+                            style={{
+                              padding: '20px 16px',
+                              backgroundColor: theme.bg,
+                              border: `1px solid ${theme.border}`,
+                              borderRadius: '12px',
+                              cursor: 'pointer',
+                              textAlign: 'center',
+                              transition: 'border-color 0.2s, transform 0.2s',
+                              minHeight: isMobile ? '100px' : '120px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = theme.accent
+                              e.currentTarget.style.transform = 'translateY(-2px)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = theme.border
+                              e.currentTarget.style.transform = 'translateY(0)'
+                            }}
+                          >
+                            <div style={{
+                              width: '48px',
+                              height: '48px',
+                              borderRadius: '12px',
+                              backgroundColor: theme.accentBg,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              {group.image_url ? (
+                                <img
+                                  src={group.image_url}
+                                  alt={group.name}
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    borderRadius: '12px'
+                                  }}
+                                />
+                              ) : (
+                                <Grid3X3 size={24} color={theme.accent} />
+                              )}
+                            </div>
+                            <div style={{
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              color: theme.text
+                            }}>
+                              {group.name}
+                            </div>
+                            <div style={{
+                              fontSize: '11px',
+                              color: theme.textMuted
+                            }}>
+                              {products.filter(p => p.group_id === group.id && p.active !== false).length} items
+                            </div>
+                          </button>
+                        ))}
+
+                      {/* Show ungrouped products tile */}
+                      {products.filter(p =>
+                        p.service_type === catalogServiceType &&
+                        !p.group_id &&
+                        p.active !== false
+                      ).length > 0 && (
+                        <button
+                          onClick={() => setSelectedGroup({ id: null, name: 'Other Products', service_type: catalogServiceType })}
+                          style={{
+                            padding: '20px 16px',
+                            backgroundColor: theme.bg,
+                            border: `1px solid ${theme.border}`,
+                            borderRadius: '12px',
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                            transition: 'border-color 0.2s, transform 0.2s',
+                            minHeight: isMobile ? '100px' : '120px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = theme.accent
+                            e.currentTarget.style.transform = 'translateY(-2px)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = theme.border
+                            e.currentTarget.style.transform = 'translateY(0)'
+                          }}
+                        >
+                          <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '12px',
+                            backgroundColor: theme.accentBg,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            <Box size={24} color={theme.accent} />
+                          </div>
+                          <div style={{
+                            fontSize: '13px',
+                            fontWeight: '600',
+                            color: theme.text
+                          }}>
+                            Other Products
+                          </div>
+                          <div style={{
+                            fontSize: '11px',
+                            color: theme.textMuted
+                          }}>
+                            {products.filter(p => p.service_type === catalogServiceType && !p.group_id && p.active !== false).length} items
+                          </div>
+                        </button>
+                      )}
+
+                      {productGroups.filter(g => g.service_type === catalogServiceType).length === 0 &&
+                       products.filter(p => p.service_type === catalogServiceType && !p.group_id && p.active !== false).length === 0 && (
+                        <div style={{
+                          gridColumn: '1 / -1',
+                          padding: '40px',
+                          textAlign: 'center',
+                          color: theme.textMuted
+                        }}>
+                          No product groups for {catalogServiceType}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Products in selected group */}
+                  {!catalogSearch && selectedGroup && (
+                    <div>
+                      <div style={{
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        color: theme.text,
+                        marginBottom: '16px'
+                      }}>
+                        {selectedGroup.name}
+                      </div>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
+                        gap: '12px'
+                      }}>
+                        {products
+                          .filter(p => {
+                            if (selectedGroup.id === null) {
+                              return p.service_type === selectedGroup.service_type && !p.group_id && p.active !== false
+                            }
+                            return p.group_id === selectedGroup.id && p.active !== false
+                          })
+                          .map(product => (
+                            <button
+                              key={product.id}
+                              onClick={() => handleSelectProduct(product)}
+                              style={{
+                                padding: '16px',
+                                backgroundColor: theme.bg,
+                                border: `1px solid ${theme.border}`,
+                                borderRadius: '12px',
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                transition: 'border-color 0.2s',
+                                minHeight: isMobile ? '80px' : 'auto'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.borderColor = theme.accent}
+                              onMouseLeave={(e) => e.currentTarget.style.borderColor = theme.border}
+                            >
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '12px'
+                              }}>
+                                <div style={{
+                                  width: '48px',
+                                  height: '48px',
+                                  borderRadius: '8px',
+                                  backgroundColor: theme.accentBg,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0
+                                }}>
+                                  {product.image_url ? (
+                                    <img
+                                      src={product.image_url}
+                                      alt={product.name}
+                                      style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover',
+                                        borderRadius: '8px'
+                                      }}
+                                    />
+                                  ) : (
+                                    <Package size={24} color={theme.accent} />
+                                  )}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    color: theme.text,
+                                    marginBottom: '4px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}>
+                                    {product.name}
+                                  </div>
+                                  <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    fontSize: '13px'
+                                  }}>
+                                    <span style={{ fontWeight: '600', color: theme.accent }}>
+                                      ${((product.unit_price || 0) + calculateLaborCost(product)).toFixed(2)}
+                                    </span>
+                                    <span style={{ color: theme.textMuted }}>
+                                      {getInventoryCount(product.id)} in stock
+                                    </span>
+                                  </div>
+                                  {calculateLaborCost(product) > 0 && (
+                                    <div style={{
+                                      fontSize: '11px',
+                                      color: theme.textMuted,
+                                      marginTop: '2px'
+                                    }}>
+                                      +${calculateLaborCost(product).toFixed(2)} labor
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                      {products.filter(p => {
+                        if (selectedGroup.id === null) {
+                          return p.service_type === selectedGroup.service_type && !p.group_id && p.active !== false
+                        }
+                        return p.group_id === selectedGroup.id && p.active !== false
+                      }).length === 0 && (
+                        <div style={{
+                          padding: '40px',
+                          textAlign: 'center',
+                          color: theme.textMuted
+                        }}>
+                          No products in this group
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Add Product Buttons */
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: theme.textSecondary,
+                    marginBottom: '8px'
+                  }}>
+                    Add Products
+                  </label>
+                  <button
+                    onClick={() => setShowCatalogPicker(true)}
+                    style={{
+                      width: '100%',
+                      padding: isMobile ? '16px' : '14px 16px',
+                      minHeight: isMobile ? '60px' : 'auto',
+                      backgroundColor: theme.accentBg,
+                      color: theme.accent,
+                      border: `2px dashed ${theme.accent}`,
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      fontSize: '15px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    <Grid3X3 size={20} />
+                    Browse Product Catalog
+                  </button>
+                  <button
+                    onClick={handleAddCustomLine}
+                    style={{
+                      marginTop: '8px',
+                      width: '100%',
+                      padding: isMobile ? '12px' : '10px 12px',
+                      minHeight: isMobile ? '44px' : 'auto',
+                      backgroundColor: 'transparent',
+                      color: theme.textSecondary,
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Plus size={14} />
+                    Add Custom Line Item
+                  </button>
+                </div>
+              )}
 
               {/* Line Items */}
               <div style={{ marginBottom: '20px' }}>
