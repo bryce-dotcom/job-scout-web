@@ -9,7 +9,7 @@ import {
   RefreshCw, Filter, Search, Settings, Plus, Briefcase, CheckCircle2,
   AlertCircle, PauseCircle, PlayCircle, ClipboardList, CalendarPlus, Trash2,
   LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2,
-  Palette, Edit2, Layers
+  Palette, Edit2, Layers, ChevronUp
 } from 'lucide-react'
 
 // Default calendar colors for visual distinction
@@ -24,6 +24,26 @@ const calendarColors = [
   '#6366f1'  // indigo
 ]
 
+// Default status colors (used when store value is plain string)
+const defaultStatusColors = {
+  'Scheduled': '#3b82f6',
+  'In Progress': '#f59e0b',
+  'On Hold': '#6b7280',
+  'Complete': '#22c55e',
+  'Not Started': '#9ca3af',
+  'Verified': '#8b5cf6'
+}
+
+// Status icons
+const statusIcons = {
+  'Scheduled': Calendar,
+  'In Progress': PlayCircle,
+  'On Hold': PauseCircle,
+  'Complete': CheckCircle2,
+  'Not Started': AlertCircle,
+  'Verified': CheckCircle2
+}
+
 const defaultTheme = {
   bg: '#f7f5ef',
   bgCard: '#ffffff',
@@ -35,35 +55,35 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-// Job statuses for Kanban columns
-const jobStatuses = [
-  { id: 'Scheduled', label: 'Scheduled', color: '#3b82f6', icon: Calendar },
-  { id: 'In Progress', label: 'In Progress', color: '#f59e0b', icon: PlayCircle },
-  { id: 'On Hold', label: 'On Hold', color: '#6b7280', icon: PauseCircle },
-  { id: 'Complete', label: 'Complete', color: '#22c55e', icon: CheckCircle2 }
-]
-
-// Section status colors
-const sectionStatusColors = {
-  'Not Started': { bg: '#f3f4f6', text: '#6b7280' },
-  'In Progress': { bg: '#fef3c7', text: '#d97706' },
-  'Complete': { bg: '#d1fae5', text: '#059669' },
-  'Verified': { bg: '#dbeafe', text: '#2563eb' }
-}
-
-// Gantt chart section colors (solid colors for blocks)
-const ganttSectionColors = {
-  'Not Started': '#9ca3af',  // gray
-  'In Progress': '#3b82f6',  // blue
-  'Complete': '#22c55e',     // green
-  'Verified': '#8b5cf6'      // purple
-}
-
 export default function PMJobSetter() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const employees = useStore((state) => state.employees)
   const businessUnits = useStore((state) => state.businessUnits)
+  const fetchSettings = useStore((state) => state.fetchSettings)
+
+  // Data-driven statuses from store
+  const storeJobStatuses = useStore((state) => state.jobStatuses)
+  const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
+  const storeEmployeeRoles = useStore((state) => state.employeeRoles)
+  const storeJobCalendars = useStore((state) => state.jobCalendars)
+
+  // Normalize statuses to objects with id, name, color
+  const normalizeStatuses = (statuses, defaultColors = defaultStatusColors) => {
+    if (!statuses || statuses.length === 0) return []
+    return statuses.map((s, idx) => {
+      if (typeof s === 'string') {
+        return { id: s, name: s, color: defaultColors[s] || calendarColors[idx % calendarColors.length] }
+      }
+      return { id: s.id || s.name, name: s.name, color: s.color || defaultColors[s.name] || calendarColors[idx % calendarColors.length] }
+    })
+  }
+
+  // Use normalized versions
+  const jobStatuses = normalizeStatuses(storeJobStatuses, defaultStatusColors)
+  const sectionStatuses = normalizeStatuses(storeJobSectionStatuses, defaultStatusColors)
+  const employeeRoles = storeEmployeeRoles || []
+  const jobCalendarsFromStore = storeJobCalendars || []
 
   // Data
   const [jobs, setJobs] = useState([])
@@ -71,8 +91,17 @@ export default function PMJobSetter() {
   const [loading, setLoading] = useState(true)
   const [jobCalendars, setJobCalendars] = useState([])
 
+  // Settings modal state
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [settingsTab, setSettingsTab] = useState('job_statuses') // job_statuses, section_statuses, calendars, roles
+  const [statusForm, setStatusForm] = useState([])
+  const [sectionStatusForm, setSectionStatusForm] = useState([])
+  const [calendarsForm, setCalendarsForm] = useState([])
+  const [rolesForm, setRolesForm] = useState([])
+  const [isSaving, setIsSaving] = useState(false)
+
   // Calendar management
-  const [selectedCalendar, setSelectedCalendar] = useState('all') // 'all' or calendar id
+  const [selectedCalendar, setSelectedCalendar] = useState('all')
   const [showCalendarForm, setShowCalendarForm] = useState(false)
   const [editingCalendar, setEditingCalendar] = useState(null)
   const [calendarForm, setCalendarForm] = useState({
@@ -84,7 +113,6 @@ export default function PMJobSetter() {
   // UI State
   const [expandedJobs, setExpandedJobs] = useState({})
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showSectionModal, setShowSectionModal] = useState(false)
   const [selectedSection, setSelectedSection] = useState(null)
   const [selectedJob, setSelectedJob] = useState(null)
@@ -94,10 +122,10 @@ export default function PMJobSetter() {
   const [filterBusinessUnit, setFilterBusinessUnit] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
 
-  // View Mode: 'kanban' or 'gantt'
+  // View Mode
   const [viewMode, setViewMode] = useState('kanban')
-  const [ganttGroupBy, setGanttGroupBy] = useState('pm') // 'pm' or 'unit'
-  const [zoomLevel, setZoomLevel] = useState('week') // 'day', 'week', 'month'
+  const [ganttGroupBy, setGanttGroupBy] = useState('pm')
+  const [zoomLevel, setZoomLevel] = useState('week')
   const [ganttStartDate, setGanttStartDate] = useState(new Date())
   const ganttRef = useRef(null)
 
@@ -139,7 +167,6 @@ export default function PMJobSetter() {
       .from('jobs')
       .select('*, customer:customers(id, name, address), pm:employees!jobs_pm_id_fkey(id, name)')
       .eq('company_id', companyId)
-      .in('status', ['Scheduled', 'In Progress', 'On Hold', 'Complete'])
       .order('start_date', { ascending: true })
 
     // Fetch all job sections
@@ -171,65 +198,151 @@ export default function PMJobSetter() {
     setLoading(false)
   }
 
-  // Save calendars to settings
-  const saveCalendars = async (calendars) => {
+  // Initialize settings forms when modal opens
+  const openSettingsModal = () => {
+    // Initialize job statuses form
+    setStatusForm(jobStatuses.map(s => ({ ...s })))
+    setSectionStatusForm(sectionStatuses.map(s => ({ ...s })))
+    setCalendarsForm(jobCalendars.map(c => ({ ...c })))
+    setRolesForm(employeeRoles.map(r => typeof r === 'string' ? r : r.name || r))
+    setShowSettingsModal(true)
+  }
+
+  // Save settings to Supabase
+  const saveSetting = async (key, value) => {
     const { data: existing } = await supabase
       .from('settings')
       .select('id')
       .eq('company_id', companyId)
-      .eq('key', 'job_calendars')
+      .eq('key', key)
       .single()
 
     if (existing) {
       await supabase
         .from('settings')
-        .update({ value: JSON.stringify(calendars) })
+        .update({ value: JSON.stringify(value) })
         .eq('id', existing.id)
     } else {
       await supabase
         .from('settings')
-        .insert({ company_id: companyId, key: 'job_calendars', value: JSON.stringify(calendars) })
-    }
-
-    setJobCalendars(calendars)
-  }
-
-  // Add or update calendar
-  const handleSaveCalendar = async () => {
-    if (!calendarForm.name) return
-
-    let updatedCalendars
-    if (editingCalendar) {
-      updatedCalendars = jobCalendars.map(c =>
-        c.id === editingCalendar.id ? { ...c, ...calendarForm } : c
-      )
-    } else {
-      const newCalendar = {
-        id: Date.now().toString(),
-        ...calendarForm
-      }
-      updatedCalendars = [...jobCalendars, newCalendar]
-    }
-
-    await saveCalendars(updatedCalendars)
-    setShowCalendarForm(false)
-    setEditingCalendar(null)
-    setCalendarForm({ name: '', business_unit: '', color: calendarColors[0] })
-  }
-
-  // Delete calendar
-  const handleDeleteCalendar = async (calendarId) => {
-    const updatedCalendars = jobCalendars.filter(c => c.id !== calendarId)
-    await saveCalendars(updatedCalendars)
-    if (selectedCalendar === calendarId) {
-      setSelectedCalendar('all')
+        .insert({ company_id: companyId, key, value: JSON.stringify(value) })
     }
   }
 
-  // Get calendar for a job based on business unit
-  const getCalendarForJob = (job) => {
-    if (!job.business_unit) return null
-    return jobCalendars.find(c => c.business_unit === job.business_unit)
+  // Save all settings
+  const saveAllSettings = async () => {
+    setIsSaving(true)
+    try {
+      // Save job statuses
+      const jobStatusesToSave = statusForm.filter(s => s.name?.trim()).map(s => ({
+        id: s.name.trim(),
+        name: s.name.trim(),
+        color: s.color
+      }))
+      await saveSetting('job_statuses', jobStatusesToSave)
+
+      // Save section statuses
+      const sectionStatusesToSave = sectionStatusForm.filter(s => s.name?.trim()).map(s => ({
+        id: s.name.trim(),
+        name: s.name.trim(),
+        color: s.color
+      }))
+      await saveSetting('job_section_statuses', sectionStatusesToSave)
+
+      // Save calendars
+      await saveSetting('job_calendars', calendarsForm)
+      setJobCalendars(calendarsForm)
+
+      // Save roles
+      const rolesToSave = rolesForm.filter(r => r?.trim())
+      await saveSetting('employee_roles', rolesToSave)
+
+      // Refresh store settings
+      await fetchSettings()
+
+      setShowSettingsModal(false)
+    } catch (error) {
+      console.error('Error saving settings:', error)
+    }
+    setIsSaving(false)
+  }
+
+  // Status form helpers
+  const addStatus = (formSetter, form) => {
+    formSetter([...form, { id: '', name: '', color: calendarColors[form.length % calendarColors.length], isNew: true }])
+  }
+
+  const updateStatus = (formSetter, form, index, field, value) => {
+    const updated = [...form]
+    updated[index] = { ...updated[index], [field]: value }
+    formSetter(updated)
+  }
+
+  const deleteStatus = (formSetter, form, index) => {
+    formSetter(form.filter((_, i) => i !== index))
+  }
+
+  const moveStatusUp = (formSetter, form, index) => {
+    if (index === 0) return
+    const updated = [...form]
+    ;[updated[index - 1], updated[index]] = [updated[index], updated[index - 1]]
+    formSetter(updated)
+  }
+
+  const moveStatusDown = (formSetter, form, index) => {
+    if (index >= form.length - 1) return
+    const updated = [...form]
+    ;[updated[index], updated[index + 1]] = [updated[index + 1], updated[index]]
+    formSetter(updated)
+  }
+
+  // Role form helpers
+  const addRole = () => {
+    setRolesForm([...rolesForm, ''])
+  }
+
+  const updateRole = (index, value) => {
+    const updated = [...rolesForm]
+    updated[index] = value
+    setRolesForm(updated)
+  }
+
+  const deleteRole = (index) => {
+    setRolesForm(rolesForm.filter((_, i) => i !== index))
+  }
+
+  const moveRoleUp = (index) => {
+    if (index === 0) return
+    const updated = [...rolesForm]
+    ;[updated[index - 1], updated[index]] = [updated[index], updated[index - 1]]
+    setRolesForm(updated)
+  }
+
+  const moveRoleDown = (index) => {
+    if (index >= rolesForm.length - 1) return
+    const updated = [...rolesForm]
+    ;[updated[index], updated[index + 1]] = [updated[index + 1], updated[index]]
+    setRolesForm(updated)
+  }
+
+  // Calendar form helpers
+  const addCalendar = () => {
+    setCalendarsForm([...calendarsForm, {
+      id: Date.now().toString(),
+      name: '',
+      business_unit: '',
+      color: calendarColors[calendarsForm.length % calendarColors.length]
+    }])
+  }
+
+  const updateCalendar = (index, field, value) => {
+    const updated = [...calendarsForm]
+    updated[index] = { ...updated[index], [field]: value }
+    setCalendarsForm(updated)
+  }
+
+  const deleteCalendar = (index) => {
+    setCalendarsForm(calendarsForm.filter((_, i) => i !== index))
   }
 
   useEffect(() => {
@@ -245,14 +358,12 @@ export default function PMJobSetter() {
     let pms = employees.filter(e =>
       e.role?.includes('Project Manager') || e.role === 'Admin' || e.role === 'Manager'
     )
-    // If a calendar is selected, only show PMs for that business unit
     if (selectedCalendar !== 'all') {
       const cal = jobCalendars.find(c => c.id === selectedCalendar)
       if (cal?.business_unit) {
         pms = pms.filter(pm => pm.business_unit === cal.business_unit || !pm.business_unit)
       }
     }
-    // If business unit filter is set, filter PMs
     if (filterBusinessUnit) {
       pms = pms.filter(pm => pm.business_unit === filterBusinessUnit || !pm.business_unit)
     }
@@ -265,7 +376,12 @@ export default function PMJobSetter() {
   const getFilteredJobs = () => {
     let filtered = jobs
 
-    // Filter by selected calendar (based on business unit)
+    // Only show jobs with statuses that exist in our jobStatuses
+    const validStatuses = jobStatuses.map(s => s.id)
+    if (validStatuses.length > 0) {
+      filtered = filtered.filter(j => validStatuses.includes(j.status))
+    }
+
     if (selectedCalendar !== 'all') {
       const cal = jobCalendars.find(c => c.id === selectedCalendar)
       if (cal?.business_unit) {
@@ -311,6 +427,19 @@ export default function PMJobSetter() {
     return Math.min(100, completedPercent)
   }
 
+  // Get section status color
+  const getSectionStatusColor = (status) => {
+    const found = sectionStatuses.find(s => s.id === status || s.name === status)
+    if (found) return { bg: found.color + '20', text: found.color }
+    return { bg: '#f3f4f6', text: '#6b7280' }
+  }
+
+  // Get calendar for a job based on business unit
+  const getCalendarForJob = (job) => {
+    if (!job.business_unit) return null
+    return jobCalendars.find(c => c.business_unit === job.business_unit)
+  }
+
   // Toggle job expansion
   const toggleJobExpanded = (jobId) => {
     setExpandedJobs(prev => ({ ...prev, [jobId]: !prev[jobId] }))
@@ -350,7 +479,6 @@ export default function PMJobSetter() {
       const sectionDate = new Date(section.scheduled_date)
       const sameDay = sectionDate.toDateString() === date.toDateString()
 
-      // If section has start_time, use that hour, otherwise show at 8am
       if (section.start_time) {
         const startHour = new Date(section.start_time).getHours()
         return sameDay && startHour === hour
@@ -391,7 +519,7 @@ export default function PMJobSetter() {
     setCurrentDate(new Date())
   }
 
-  // Drag handlers for sections
+  // Drag handlers
   const handleSectionDragStart = (e, section, job) => {
     setDraggedSection({ ...section, job })
     e.dataTransfer.effectAllowed = 'move'
@@ -415,7 +543,6 @@ export default function PMJobSetter() {
 
     if (!draggedSection) return
 
-    // Update section scheduled_date
     const startTime = new Date(date)
     startTime.setHours(hour, 0, 0, 0)
 
@@ -440,9 +567,6 @@ export default function PMJobSetter() {
   const handleStatusDrop = async (e, statusId) => {
     e.preventDefault()
     setDragOverStatus(null)
-
-    // This is for dragging jobs between status columns
-    // We can implement this if needed
   }
 
   // Add new section
@@ -459,7 +583,7 @@ export default function PMJobSetter() {
       assigned_to: sectionForm.assigned_to || null,
       estimated_hours: parseFloat(sectionForm.estimated_hours) || null,
       scheduled_date: sectionForm.scheduled_date || null,
-      status: 'Not Started',
+      status: sectionStatuses[0]?.id || 'Not Started',
       sort_order: getSectionsForJob(selectedJob.id).length
     })
 
@@ -493,12 +617,12 @@ export default function PMJobSetter() {
       colWidth = isMobile ? 80 : 120
     } else if (zoomLevel === 'week') {
       start.setDate(start.getDate() - start.getDay())
-      end.setDate(start.getDate() + 27) // 4 weeks
+      end.setDate(start.getDate() + 27)
       colCount = 28
       colWidth = isMobile ? 30 : 40
     } else if (zoomLevel === 'month') {
       start.setDate(1)
-      end = new Date(start.getFullYear(), start.getMonth() + 3, 0) // 3 months
+      end = new Date(start.getFullYear(), start.getMonth() + 3, 0)
       colCount = Math.ceil((end - start) / (1000 * 60 * 60 * 24))
       colWidth = isMobile ? 10 : 15
     }
@@ -557,12 +681,11 @@ export default function PMJobSetter() {
     if (daysDiff < 0) return null
 
     const hours = parseFloat(section.estimated_hours) || 4
-    // Each hour = ~0.125 of a day width (8 hour day)
     const widthDays = Math.max(0.5, hours / 8)
 
     return {
       left: daysDiff * colWidth,
-      width: Math.max(colWidth * widthDays, 40) // minimum 40px
+      width: Math.max(colWidth * widthDays, 40)
     }
   }
 
@@ -611,7 +734,6 @@ export default function PMJobSetter() {
     if (!ganttRef.current) return
 
     try {
-      // Dynamically import html2canvas
       const html2canvas = (await import('html2canvas')).default
 
       const canvas = await html2canvas(ganttRef.current, {
@@ -620,7 +742,6 @@ export default function PMJobSetter() {
         backgroundColor: theme.bgCard
       })
 
-      // Create PDF using jspdf (dynamically import)
       const { jsPDF } = await import('jspdf')
 
       const imgData = canvas.toDataURL('image/png')
@@ -630,7 +751,6 @@ export default function PMJobSetter() {
         format: [canvas.width / 2, canvas.height / 2 + 100]
       })
 
-      // Add header
       const company = useStore.getState().company
       pdf.setFontSize(20)
       pdf.setTextColor(44, 53, 48)
@@ -644,7 +764,6 @@ export default function PMJobSetter() {
       pdf.text(`${start.toLocaleDateString()} - ${end.toLocaleDateString()}`, 40, 75)
       pdf.text(`Generated: ${new Date().toLocaleString()}`, 40, 90)
 
-      // Add the chart image
       pdf.addImage(imgData, 'PNG', 20, 110, canvas.width / 2 - 40, canvas.height / 2 - 20)
 
       pdf.save(`gantt-chart-${new Date().toISOString().split('T')[0]}.pdf`)
@@ -686,6 +805,333 @@ export default function PMJobSetter() {
 
   const weekDays = getWeekDays()
   const hourSlots = getHourSlots()
+
+  // Render status list in settings
+  const renderStatusList = (form, setForm, title) => (
+    <div>
+      <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '0 0 12px' }}>
+        {title}
+      </h3>
+      {form.map((status, index) => {
+        const canMoveUp = index > 0
+        const canMoveDown = index < form.length - 1
+
+        return (
+          <div
+            key={index}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '10px',
+              padding: '10px',
+              backgroundColor: theme.bg,
+              borderRadius: '6px'
+            }}
+          >
+            {/* Reorder buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <button
+                onClick={() => moveStatusUp(setForm, form, index)}
+                disabled={!canMoveUp}
+                style={{
+                  padding: '2px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: canMoveUp ? 'pointer' : 'default',
+                  color: canMoveUp ? theme.textSecondary : theme.border,
+                  opacity: canMoveUp ? 1 : 0.4
+                }}
+                title="Move up"
+              >
+                <ChevronUp size={14} />
+              </button>
+              <button
+                onClick={() => moveStatusDown(setForm, form, index)}
+                disabled={!canMoveDown}
+                style={{
+                  padding: '2px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: canMoveDown ? 'pointer' : 'default',
+                  color: canMoveDown ? theme.textSecondary : theme.border,
+                  opacity: canMoveDown ? 1 : 0.4
+                }}
+                title="Move down"
+              >
+                <ChevronDown size={14} />
+              </button>
+            </div>
+
+            <input
+              type="color"
+              value={status.color || '#3b82f6'}
+              onChange={(e) => updateStatus(setForm, form, index, 'color', e.target.value)}
+              style={{
+                width: '32px',
+                height: '32px',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                padding: 0
+              }}
+            />
+            <input
+              type="text"
+              value={status.name || ''}
+              onChange={(e) => updateStatus(setForm, form, index, 'name', e.target.value)}
+              placeholder="Status name"
+              style={{
+                ...inputStyle,
+                flex: 1,
+                minHeight: '36px',
+                padding: '8px 10px'
+              }}
+            />
+            <button
+              onClick={() => deleteStatus(setForm, form, index)}
+              style={{
+                padding: '8px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#dc2626'
+              }}
+              title="Delete status"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        )
+      })}
+
+      <button
+        onClick={() => addStatus(setForm, form)}
+        style={{
+          width: '100%',
+          padding: '10px',
+          backgroundColor: 'transparent',
+          border: `1px dashed ${theme.border}`,
+          borderRadius: '6px',
+          color: theme.textSecondary,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
+          fontSize: '13px',
+          marginTop: '8px',
+          minHeight: '44px'
+        }}
+      >
+        <Plus size={16} />
+        Add Status
+      </button>
+    </div>
+  )
+
+  // Render roles list in settings
+  const renderRolesList = () => (
+    <div>
+      <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '0 0 12px' }}>
+        Employee Roles
+      </h3>
+      {rolesForm.map((role, index) => {
+        const canMoveUp = index > 0
+        const canMoveDown = index < rolesForm.length - 1
+
+        return (
+          <div
+            key={index}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '10px',
+              padding: '10px',
+              backgroundColor: theme.bg,
+              borderRadius: '6px'
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <button
+                onClick={() => moveRoleUp(index)}
+                disabled={!canMoveUp}
+                style={{
+                  padding: '2px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: canMoveUp ? 'pointer' : 'default',
+                  color: canMoveUp ? theme.textSecondary : theme.border,
+                  opacity: canMoveUp ? 1 : 0.4
+                }}
+              >
+                <ChevronUp size={14} />
+              </button>
+              <button
+                onClick={() => moveRoleDown(index)}
+                disabled={!canMoveDown}
+                style={{
+                  padding: '2px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: canMoveDown ? 'pointer' : 'default',
+                  color: canMoveDown ? theme.textSecondary : theme.border,
+                  opacity: canMoveDown ? 1 : 0.4
+                }}
+              >
+                <ChevronDown size={14} />
+              </button>
+            </div>
+
+            <input
+              type="text"
+              value={role}
+              onChange={(e) => updateRole(index, e.target.value)}
+              placeholder="Role name"
+              style={{
+                ...inputStyle,
+                flex: 1,
+                minHeight: '36px',
+                padding: '8px 10px'
+              }}
+            />
+            <button
+              onClick={() => deleteRole(index)}
+              style={{
+                padding: '8px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#dc2626'
+              }}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        )
+      })}
+
+      <button
+        onClick={addRole}
+        style={{
+          width: '100%',
+          padding: '10px',
+          backgroundColor: 'transparent',
+          border: `1px dashed ${theme.border}`,
+          borderRadius: '6px',
+          color: theme.textSecondary,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
+          fontSize: '13px',
+          marginTop: '8px',
+          minHeight: '44px'
+        }}
+      >
+        <Plus size={16} />
+        Add Role
+      </button>
+    </div>
+  )
+
+  // Render calendars list in settings
+  const renderCalendarsList = () => (
+    <div>
+      <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '0 0 12px' }}>
+        Job Calendars
+      </h3>
+      <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px' }}>
+        Create calendars for different business units to organize jobs
+      </p>
+      {calendarsForm.map((cal, index) => (
+        <div
+          key={cal.id}
+          style={{
+            padding: '12px',
+            backgroundColor: theme.bg,
+            borderRadius: '6px',
+            marginBottom: '10px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <input
+              type="color"
+              value={cal.color || '#3b82f6'}
+              onChange={(e) => updateCalendar(index, 'color', e.target.value)}
+              style={{
+                width: '32px',
+                height: '32px',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                padding: 0
+              }}
+            />
+            <input
+              type="text"
+              value={cal.name}
+              onChange={(e) => updateCalendar(index, 'name', e.target.value)}
+              placeholder="Calendar name"
+              style={{
+                ...inputStyle,
+                flex: 1,
+                minHeight: '36px',
+                padding: '8px 10px'
+              }}
+            />
+            <button
+              onClick={() => deleteCalendar(index)}
+              style={{
+                padding: '8px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#dc2626'
+              }}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+          <select
+            value={cal.business_unit || ''}
+            onChange={(e) => updateCalendar(index, 'business_unit', e.target.value)}
+            style={{ ...inputStyle, minHeight: '36px', padding: '6px 10px' }}
+          >
+            <option value="">Select Business Unit</option>
+            {businessUnits.map(unit => (
+              <option key={unit} value={unit}>{unit}</option>
+            ))}
+          </select>
+        </div>
+      ))}
+
+      <button
+        onClick={addCalendar}
+        style={{
+          width: '100%',
+          padding: '10px',
+          backgroundColor: 'transparent',
+          border: `1px dashed ${theme.border}`,
+          borderRadius: '6px',
+          color: theme.textSecondary,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
+          fontSize: '13px',
+          marginTop: '8px',
+          minHeight: '44px'
+        }}
+      >
+        <Plus size={16} />
+        Add Calendar
+      </button>
+    </div>
+  )
 
   return (
     <div style={{ padding: isMobile ? '12px' : '16px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -880,7 +1326,7 @@ export default function PMJobSetter() {
           </button>
 
           <button
-            onClick={() => setShowSettingsModal(true)}
+            onClick={openSettingsModal}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -914,286 +1360,316 @@ export default function PMJobSetter() {
           maxHeight: isMobile ? '50vh' : 'none'
         }}>
           {/* Stats Row */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${jobStatuses.length}, 1fr)`,
-            gap: '8px',
-            marginBottom: '12px'
-          }}>
-            {jobStatuses.map(status => (
-              <div
-                key={status.id}
-                style={{
-                  padding: '8px',
-                  backgroundColor: theme.bgCard,
-                  borderRadius: '8px',
-                  border: `1px solid ${theme.border}`,
-                  textAlign: 'center'
-                }}
-              >
-                <div style={{ fontSize: '18px', fontWeight: '700', color: status.color }}>
-                  {getJobsByStatus(status.id).length}
-                </div>
-                <div style={{ fontSize: '10px', color: theme.textMuted }}>{status.label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Kanban Columns */}
-          <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
-            {jobStatuses.map(status => {
-              const StatusIcon = status.icon
-              return (
+          {jobStatuses.length > 0 && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${jobStatuses.length}, 1fr)`,
+              gap: '8px',
+              marginBottom: '12px'
+            }}>
+              {jobStatuses.map(status => (
                 <div
                   key={status.id}
                   style={{
-                    flex: 1,
-                    minWidth: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden'
-                  }}
-                  onDragOver={(e) => handleStatusDragOver(e, status.id)}
-                  onDrop={(e) => handleStatusDrop(e, status.id)}
-                >
-                  {/* Status Header */}
-                  <div style={{
-                    backgroundColor: status.color,
-                    color: '#fff',
                     padding: '8px',
-                    borderRadius: '8px 8px 0 0',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    textAlign: 'center',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '4px'
-                  }}>
-                    <StatusIcon size={12} />
-                    <span>{status.label.split(' ')[0]}</span>
-                    <span style={{
-                      marginLeft: '4px',
-                      backgroundColor: 'rgba(255,255,255,0.25)',
-                      padding: '1px 6px',
-                      borderRadius: '8px',
-                      fontSize: '10px'
-                    }}>
-                      {getJobsByStatus(status.id).length}
-                    </span>
+                    backgroundColor: theme.bgCard,
+                    borderRadius: '8px',
+                    border: `1px solid ${theme.border}`,
+                    textAlign: 'center'
+                  }}
+                >
+                  <div style={{ fontSize: '18px', fontWeight: '700', color: status.color }}>
+                    {getJobsByStatus(status.id).length}
                   </div>
+                  <div style={{ fontSize: '10px', color: theme.textMuted }}>{status.name}</div>
+                </div>
+              ))}
+            </div>
+          )}
 
-                  {/* Status Content */}
-                  <div style={{
-                    flex: 1,
-                    backgroundColor: dragOverStatus === status.id ? theme.accentBg : 'rgba(0,0,0,0.02)',
-                    borderRadius: '0 0 8px 8px',
-                    padding: '6px',
-                    overflowY: 'auto',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px'
-                  }}>
-                    {getJobsByStatus(status.id).map(job => {
-                      const progress = calculateJobProgress(job.id)
-                      const sections = getSectionsForJob(job.id)
-                      const isExpanded = expandedJobs[job.id]
-                      const jobCalendar = getCalendarForJob(job)
+          {/* Kanban Columns */}
+          {jobStatuses.length === 0 ? (
+            <div style={{
+              padding: '40px 20px',
+              textAlign: 'center',
+              backgroundColor: theme.bgCard,
+              borderRadius: '8px',
+              border: `1px solid ${theme.border}`
+            }}>
+              <AlertCircle size={32} style={{ color: theme.textMuted, marginBottom: '12px' }} />
+              <p style={{ fontSize: '14px', color: theme.textSecondary, margin: '0 0 12px' }}>
+                No job statuses configured
+              </p>
+              <button
+                onClick={openSettingsModal}
+                style={{
+                  padding: '10px 16px',
+                  backgroundColor: theme.accent,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  minHeight: '44px'
+                }}
+              >
+                Configure Statuses
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
+              {jobStatuses.map(status => {
+                const StatusIcon = statusIcons[status.name] || Briefcase
+                return (
+                  <div
+                    key={status.id}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      overflow: 'hidden'
+                    }}
+                    onDragOver={(e) => handleStatusDragOver(e, status.id)}
+                    onDrop={(e) => handleStatusDrop(e, status.id)}
+                  >
+                    {/* Status Header */}
+                    <div style={{
+                      backgroundColor: status.color,
+                      color: '#fff',
+                      padding: '8px',
+                      borderRadius: '8px 8px 0 0',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      textAlign: 'center',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px'
+                    }}>
+                      <StatusIcon size={12} />
+                      <span>{status.name.split(' ')[0]}</span>
+                      <span style={{
+                        marginLeft: '4px',
+                        backgroundColor: 'rgba(255,255,255,0.25)',
+                        padding: '1px 6px',
+                        borderRadius: '8px',
+                        fontSize: '10px'
+                      }}>
+                        {getJobsByStatus(status.id).length}
+                      </span>
+                    </div>
 
-                      return (
-                        <div
-                          key={job.id}
-                          style={{
-                            backgroundColor: theme.bgCard,
-                            borderRadius: '8px',
-                            border: `1px solid ${theme.border}`,
-                            borderLeft: jobCalendar ? `4px solid ${jobCalendar.color}` : `1px solid ${theme.border}`,
-                            overflow: 'hidden'
-                          }}
-                        >
-                          {/* Job Card Header */}
-                          <div
-                            onClick={() => toggleJobExpanded(job.id)}
-                            style={{
-                              padding: '10px',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '6px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden' }}>
-                                {jobCalendar && (
-                                  <div style={{
-                                    width: '8px',
-                                    height: '8px',
-                                    borderRadius: '2px',
-                                    backgroundColor: jobCalendar.color,
-                                    flexShrink: 0
-                                  }} />
-                                )}
-                                <div style={{
-                                  fontWeight: '600',
-                                  color: theme.text,
-                                  fontSize: '12px',
-                                  flex: 1,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap'
-                                }}>
-                                  {job.title || `Job #${job.id}`}
-                                </div>
-                              </div>
-                              {isExpanded ? <ChevronDown size={14} color={theme.textMuted} /> : <ChevronRight size={14} color={theme.textMuted} />}
-                            </div>
+                    {/* Status Content */}
+                    <div style={{
+                      flex: 1,
+                      backgroundColor: dragOverStatus === status.id ? theme.accentBg : 'rgba(0,0,0,0.02)',
+                      borderRadius: '0 0 8px 8px',
+                      padding: '6px',
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px'
+                    }}>
+                      {getJobsByStatus(status.id).map(job => {
+                        const progress = calculateJobProgress(job.id)
+                        const sections = getSectionsForJob(job.id)
+                        const isExpanded = expandedJobs[job.id]
+                        const calendar = getCalendarForJob(job)
 
-                            {/* Customer & Address */}
-                            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-                              {job.customer?.name}
-                            </div>
-                            {job.customer?.address && (
-                              <div style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <MapPin size={10} />
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {job.customer.address}
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Progress Bar */}
-                            <div style={{
-                              height: '6px',
-                              backgroundColor: theme.border,
-                              borderRadius: '3px',
-                              overflow: 'hidden',
-                              marginBottom: '6px'
-                            }}>
-                              <div style={{
-                                height: '100%',
-                                width: `${progress}%`,
-                                backgroundColor: progress === 100 ? '#22c55e' : status.color,
-                                borderRadius: '3px',
-                                transition: 'width 0.3s ease'
-                              }} />
-                            </div>
-
-                            {/* Meta Row */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: theme.textMuted }}>
-                              <span>{Math.round(progress)}% complete</span>
-                              <span>{sections.length} sections</span>
-                            </div>
-
-                            {/* PM & Date */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: theme.textMuted, marginTop: '4px' }}>
-                              {job.pm && <span>PM: {job.pm.name}</span>}
-                              {job.start_date && <span>{new Date(job.start_date).toLocaleDateString()}</span>}
-                            </div>
-                          </div>
-
-                          {/* Expanded Sections */}
-                          {isExpanded && (
-                            <div style={{
-                              borderTop: `1px solid ${theme.border}`,
-                              padding: '8px',
-                              backgroundColor: theme.bg
-                            }}>
-                              {sections.length === 0 ? (
-                                <div style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'center', padding: '8px' }}>
-                                  No sections yet
-                                </div>
-                              ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  {sections.map(section => {
-                                    const statusColor = sectionStatusColors[section.status] || sectionStatusColors['Not Started']
-                                    return (
-                                      <div
-                                        key={section.id}
-                                        draggable
-                                        onDragStart={(e) => handleSectionDragStart(e, section, job)}
-                                        onDragEnd={handleDragEnd}
-                                        style={{
-                                          padding: '8px',
-                                          backgroundColor: theme.bgCard,
-                                          borderRadius: '6px',
-                                          border: `1px solid ${theme.border}`,
-                                          cursor: 'grab',
-                                          fontSize: '11px'
-                                        }}
-                                      >
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                          <span style={{ fontWeight: '500', color: theme.text }}>{section.name}</span>
-                                          <span style={{
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            backgroundColor: statusColor.bg,
-                                            color: statusColor.text,
-                                            fontSize: '9px',
-                                            fontWeight: '500'
-                                          }}>
-                                            {section.status}
-                                          </span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textMuted, fontSize: '10px' }}>
-                                          <span>{section.percent_of_job || 0}% of job</span>
-                                          {section.assigned_employee && <span>{section.assigned_employee.name}</span>}
-                                        </div>
-                                        {section.scheduled_date && (
-                                          <div style={{ fontSize: '9px', color: theme.accent, marginTop: '4px' }}>
-                                            Scheduled: {new Date(section.scheduled_date).toLocaleDateString()}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              )}
-
-                              {/* Add Section Button */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setSelectedJob(job)
-                                  setShowSectionModal(true)
-                                }}
+                        return (
+                          <div key={job.id}>
+                            {/* Job Card */}
+                            <div
+                              style={{
+                                backgroundColor: theme.bgCard,
+                                borderRadius: '6px',
+                                border: `1px solid ${theme.border}`,
+                                overflow: 'hidden',
+                                borderLeft: calendar ? `3px solid ${calendar.color}` : undefined
+                              }}
+                            >
+                              {/* Job Header */}
+                              <div
+                                onClick={() => toggleJobExpanded(job.id)}
                                 style={{
-                                  width: '100%',
-                                  marginTop: '8px',
-                                  padding: '8px',
-                                  minHeight: '36px',
+                                  padding: '8px 10px',
+                                  cursor: 'pointer',
                                   display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '4px',
-                                  backgroundColor: 'transparent',
-                                  border: `1px dashed ${theme.border}`,
-                                  borderRadius: '6px',
-                                  color: theme.textMuted,
-                                  fontSize: '11px',
-                                  cursor: 'pointer'
+                                  alignItems: 'flex-start',
+                                  gap: '6px'
                                 }}
                               >
-                                <Plus size={12} />
-                                Add Section
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                                {isExpanded ? (
+                                  <ChevronDown size={14} style={{ color: theme.textMuted, flexShrink: 0, marginTop: '2px' }} />
+                                ) : (
+                                  <ChevronRight size={14} style={{ color: theme.textMuted, flexShrink: 0, marginTop: '2px' }} />
+                                )}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                    color: theme.text,
+                                    marginBottom: '2px',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                  }}>
+                                    {job.title || `Job #${job.id}`}
+                                  </div>
+                                  <div style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+                                    {job.customer?.name}
+                                  </div>
 
-                    {getJobsByStatus(status.id).length === 0 && (
-                      <div style={{
-                        textAlign: 'center',
-                        padding: '16px 8px',
-                        color: theme.textMuted,
-                        fontSize: '11px'
-                      }}>
-                        No jobs
-                      </div>
-                    )}
+                                  {/* Progress Bar */}
+                                  <div style={{
+                                    height: '4px',
+                                    backgroundColor: theme.border,
+                                    borderRadius: '2px',
+                                    overflow: 'hidden',
+                                    marginBottom: '4px'
+                                  }}>
+                                    <div style={{
+                                      height: '100%',
+                                      width: `${progress}%`,
+                                      backgroundColor: progress === 100 ? '#22c55e' : '#3b82f6',
+                                      borderRadius: '2px',
+                                      transition: 'width 0.3s'
+                                    }} />
+                                  </div>
+
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '9px', color: theme.textMuted }}>
+                                      {Math.round(progress)}% complete
+                                    </span>
+                                    {job.pm?.name && (
+                                      <span style={{ fontSize: '9px', color: theme.textSecondary }}>
+                                        <User size={9} style={{ marginRight: '2px' }} />
+                                        {job.pm.name}
+                                      </span>
+                                    )}
+                                    {job.start_date && (
+                                      <span style={{ fontSize: '9px', color: theme.textSecondary }}>
+                                        <Calendar size={9} style={{ marginRight: '2px' }} />
+                                        {new Date(job.start_date).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Expanded Sections */}
+                              {isExpanded && (
+                                <div style={{
+                                  borderTop: `1px solid ${theme.border}`,
+                                  padding: '6px',
+                                  backgroundColor: theme.bg
+                                }}>
+                                  {sections.length === 0 ? (
+                                    <div style={{ fontSize: '10px', color: theme.textMuted, textAlign: 'center', padding: '8px' }}>
+                                      No sections yet
+                                    </div>
+                                  ) : (
+                                    sections.map(section => {
+                                      const statusColor = getSectionStatusColor(section.status)
+                                      return (
+                                        <div
+                                          key={section.id}
+                                          draggable
+                                          onDragStart={(e) => handleSectionDragStart(e, section, job)}
+                                          onDragEnd={handleDragEnd}
+                                          style={{
+                                            backgroundColor: theme.bgCard,
+                                            borderRadius: '4px',
+                                            padding: '6px 8px',
+                                            marginBottom: '4px',
+                                            border: `1px solid ${theme.border}`,
+                                            cursor: 'grab',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px'
+                                          }}
+                                        >
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{
+                                              fontSize: '11px',
+                                              fontWeight: '500',
+                                              color: theme.text,
+                                              whiteSpace: 'nowrap',
+                                              overflow: 'hidden',
+                                              textOverflow: 'ellipsis'
+                                            }}>
+                                              {section.name}
+                                            </div>
+                                            <div style={{ fontSize: '9px', color: theme.textMuted }}>
+                                              {section.percent_of_job || 0}%
+                                              {section.assigned_employee?.name && ` · ${section.assigned_employee.name}`}
+                                            </div>
+                                          </div>
+                                          <select
+                                            value={section.status}
+                                            onChange={(e) => {
+                                              e.stopPropagation()
+                                              updateSectionStatus(section.id, e.target.value)
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{
+                                              padding: '2px 4px',
+                                              fontSize: '9px',
+                                              borderRadius: '4px',
+                                              border: 'none',
+                                              backgroundColor: statusColor.bg,
+                                              color: statusColor.text,
+                                              cursor: 'pointer',
+                                              fontWeight: '500'
+                                            }}
+                                          >
+                                            {sectionStatuses.map(s => (
+                                              <option key={s.id} value={s.id}>{s.name}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      )
+                                    })
+                                  )}
+
+                                  {/* Add Section Button */}
+                                  <button
+                                    onClick={() => {
+                                      setSelectedJob(job)
+                                      setShowSectionModal(true)
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px',
+                                      backgroundColor: 'transparent',
+                                      border: `1px dashed ${theme.border}`,
+                                      borderRadius: '4px',
+                                      color: theme.textMuted,
+                                      cursor: 'pointer',
+                                      fontSize: '10px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '4px',
+                                      minHeight: '28px'
+                                    }}
+                                  >
+                                    <Plus size={10} />
+                                    Add Section
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* Right: Calendar */}
@@ -1201,37 +1677,34 @@ export default function PMJobSetter() {
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
+          overflow: 'hidden',
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
-          border: `1px solid ${theme.border}`,
-          overflow: 'hidden',
-          minHeight: isMobile ? '400px' : 'auto'
+          border: `1px solid ${theme.border}`
         }}>
           {/* Calendar Header */}
           <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
             padding: '12px 16px',
             borderBottom: `1px solid ${theme.border}`,
-            flexWrap: 'wrap',
-            gap: '8px'
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
                 onClick={prevWeek}
                 style={{
-                  padding: '8px 12px',
-                  minWidth: '44px',
-                  minHeight: '44px',
+                  padding: '8px',
                   backgroundColor: 'transparent',
                   border: `1px solid ${theme.border}`,
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  color: theme.textSecondary,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  minWidth: '36px',
+                  minHeight: '36px',
+                  color: theme.textSecondary
                 }}
               >
                 <ChevronLeft size={16} />
@@ -1239,15 +1712,15 @@ export default function PMJobSetter() {
               <button
                 onClick={goToToday}
                 style={{
-                  padding: '8px 16px',
-                  minHeight: '44px',
-                  backgroundColor: '#22c55e',
-                  border: 'none',
+                  padding: '6px 12px',
+                  backgroundColor: theme.bg,
+                  border: `1px solid ${theme.border}`,
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  color: '#fff',
-                  fontSize: '13px',
-                  fontWeight: '600'
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: theme.textSecondary,
+                  minHeight: '36px'
                 }}
               >
                 Today
@@ -1255,810 +1728,472 @@ export default function PMJobSetter() {
               <button
                 onClick={nextWeek}
                 style={{
-                  padding: '8px 12px',
-                  minWidth: '44px',
-                  minHeight: '44px',
+                  padding: '8px',
                   backgroundColor: 'transparent',
                   border: `1px solid ${theme.border}`,
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  color: theme.textSecondary,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  minWidth: '36px',
+                  minHeight: '36px',
+                  color: theme.textSecondary
                 }}
               >
                 <ChevronRight size={16} />
               </button>
             </div>
-            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
               {weekDays[0].toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-            </h3>
-            <div style={{ fontSize: '12px', color: theme.textMuted }}>
-              {weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </div>
           </div>
 
           {/* Calendar Grid */}
           <div style={{ flex: 1, overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-              <thead>
-                <tr>
-                  <th style={{
-                    width: '60px',
-                    padding: '8px',
-                    borderBottom: `1px solid ${theme.border}`,
-                    backgroundColor: theme.bg,
-                    position: 'sticky',
-                    top: 0,
-                    zIndex: 1
-                  }}></th>
-                  {weekDays.map((day, i) => (
-                    <th
-                      key={i}
-                      style={{
-                        padding: '8px',
-                        borderBottom: `1px solid ${theme.border}`,
-                        borderLeft: `1px solid ${theme.border}`,
-                        backgroundColor: isToday(day) ? theme.accentBg : theme.bg,
-                        position: 'sticky',
-                        top: 0,
-                        zIndex: 1
-                      }}
-                    >
-                      <div style={{
-                        fontSize: '10px',
-                        color: theme.textMuted,
-                        textTransform: 'uppercase'
-                      }}>
-                        {day.toLocaleDateString('en-US', { weekday: 'short' })}
-                      </div>
-                      <div style={{
-                        fontSize: '16px',
-                        fontWeight: isToday(day) ? '700' : '500',
-                        color: isToday(day) ? theme.accent : theme.text
-                      }}>
-                        {day.getDate()}
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
+            <div style={{ display: 'flex', minWidth: '700px' }}>
+              {/* Time Column */}
+              <div style={{ width: '60px', flexShrink: 0 }}>
+                <div style={{ height: '40px', borderBottom: `1px solid ${theme.border}` }} />
                 {hourSlots.map(hour => (
-                  <tr key={hour}>
-                    <td style={{
+                  <div
+                    key={hour}
+                    style={{
+                      height: '60px',
                       padding: '4px 8px',
                       fontSize: '10px',
                       color: theme.textMuted,
-                      textAlign: 'right',
-                      verticalAlign: 'top',
-                      borderBottom: `1px solid ${theme.border}`
-                    }}>
-                      {formatTime(hour)}
-                    </td>
-                    {weekDays.map((day, i) => {
-                      const slotSections = getSectionsForSlot(day, hour)
-                      const isSlotDragOver = dragOverSlot?.date?.toDateString() === day.toDateString() && dragOverSlot?.hour === hour
-
-                      return (
-                        <td
-                          key={i}
-                          onDragOver={(e) => handleSlotDragOver(e, day, hour)}
-                          onDragLeave={() => setDragOverSlot(null)}
-                          onDrop={(e) => handleSlotDrop(e, day, hour)}
-                          style={{
-                            padding: '2px',
-                            borderBottom: `1px solid ${theme.border}`,
-                            borderLeft: `1px solid ${theme.border}`,
-                            height: '50px',
-                            verticalAlign: 'top',
-                            backgroundColor: isSlotDragOver ? theme.accentBg : (isToday(day) ? 'rgba(90,99,73,0.04)' : 'transparent'),
-                            transition: 'background-color 0.15s'
-                          }}
-                        >
-                          {slotSections.map(section => {
-                            const statusColor = sectionStatusColors[section.status] || sectionStatusColors['Not Started']
-                            const job = jobs.find(j => j.id === section.job_id)
-                            const calendar = job ? getCalendarForJob(job) : null
-                            return (
-                              <div
-                                key={section.id}
-                                draggable
-                                onDragStart={(e) => handleSectionDragStart(e, section, job)}
-                                onDragEnd={handleDragEnd}
-                                style={{
-                                  backgroundColor: statusColor.bg,
-                                  borderLeft: `3px solid ${calendar?.color || statusColor.text}`,
-                                  borderRadius: '4px',
-                                  padding: '4px 6px',
-                                  fontSize: '9px',
-                                  overflow: 'hidden',
-                                  cursor: 'grab',
-                                  marginBottom: '2px'
-                                }}
-                                onClick={() => {
-                                  navigate(`/jobs/${section.job_id}`)
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  {calendar && (
-                                    <div style={{
-                                      width: '6px',
-                                      height: '6px',
-                                      borderRadius: '2px',
-                                      backgroundColor: calendar.color,
-                                      flexShrink: 0
-                                    }} />
-                                  )}
-                                  <div style={{
-                                    fontWeight: '600',
-                                    color: theme.text,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    flex: 1
-                                  }}>
-                                    {section.name}
-                                  </div>
-                                </div>
-                                <div style={{ color: theme.textMuted, fontSize: '8px' }}>
-                                  {job?.title || `Job #${section.job_id}`}
-                                </div>
-                              </div>
-                            )
-                          })}
-
-                          {isSlotDragOver && slotSections.length === 0 && (
-                            <div style={{
-                              height: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              border: `2px dashed ${theme.accent}`,
-                              borderRadius: '4px',
-                              color: theme.accent,
-                              fontSize: '10px'
-                            }}>
-                              <CalendarPlus size={14} />
-                            </div>
-                          )}
-                        </td>
-                      )
-                    })}
-                  </tr>
+                      borderBottom: `1px solid ${theme.border}`,
+                      textAlign: 'right'
+                    }}
+                  >
+                    {formatTime(hour)}
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+
+              {/* Day Columns */}
+              {weekDays.map(day => (
+                <div
+                  key={day.toISOString()}
+                  style={{
+                    flex: 1,
+                    minWidth: '100px',
+                    borderLeft: `1px solid ${theme.border}`
+                  }}
+                >
+                  {/* Day Header */}
+                  <div style={{
+                    height: '40px',
+                    padding: '8px',
+                    textAlign: 'center',
+                    borderBottom: `1px solid ${theme.border}`,
+                    backgroundColor: isToday(day) ? theme.accentBg : 'transparent'
+                  }}>
+                    <div style={{ fontSize: '10px', color: theme.textMuted }}>
+                      {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                    </div>
+                    <div style={{
+                      fontSize: '14px',
+                      fontWeight: isToday(day) ? '700' : '500',
+                      color: isToday(day) ? theme.accent : theme.text
+                    }}>
+                      {day.getDate()}
+                    </div>
+                  </div>
+
+                  {/* Hour Slots */}
+                  {hourSlots.map(hour => {
+                    const slotSections = getSectionsForSlot(day, hour)
+                    const isOver = dragOverSlot?.date?.toDateString() === day.toDateString() && dragOverSlot?.hour === hour
+
+                    return (
+                      <div
+                        key={hour}
+                        onDragOver={(e) => handleSlotDragOver(e, day, hour)}
+                        onDrop={(e) => handleSlotDrop(e, day, hour)}
+                        style={{
+                          height: '60px',
+                          borderBottom: `1px solid ${theme.border}`,
+                          padding: '2px',
+                          backgroundColor: isOver ? theme.accentBg : 'transparent',
+                          transition: 'background-color 0.15s'
+                        }}
+                      >
+                        {slotSections.map(section => {
+                          const job = jobs.find(j => j.id === section.job_id)
+                          const calendar = job ? getCalendarForJob(job) : null
+                          const statusColor = getSectionStatusColor(section.status)
+
+                          return (
+                            <div
+                              key={section.id}
+                              draggable
+                              onDragStart={(e) => handleSectionDragStart(e, section, job)}
+                              onDragEnd={handleDragEnd}
+                              style={{
+                                backgroundColor: statusColor.bg,
+                                borderRadius: '4px',
+                                padding: '4px 6px',
+                                marginBottom: '2px',
+                                cursor: 'grab',
+                                fontSize: '10px',
+                                color: statusColor.text,
+                                fontWeight: '500',
+                                borderLeft: calendar ? `2px solid ${calendar.color}` : undefined,
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}
+                              title={`${section.name} - ${job?.title || 'Unknown Job'}`}
+                            >
+                              {section.name}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
       ) : (
-      /* Gantt Chart View */
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Gantt Controls */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '12px',
-          flexWrap: 'wrap',
-          gap: '8px'
-        }}>
-          {/* Navigation */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button
-              onClick={prevGanttPeriod}
-              style={{
-                padding: '8px 12px',
-                minWidth: '44px',
-                minHeight: '44px',
-                backgroundColor: 'transparent',
-                border: `1px solid ${theme.border}`,
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: theme.textSecondary,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button
-              onClick={goToGanttToday}
-              style={{
-                padding: '8px 16px',
-                minHeight: '44px',
-                backgroundColor: '#22c55e',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: '#fff',
-                fontSize: '13px',
-                fontWeight: '600'
-              }}
-            >
-              Today
-            </button>
-            <button
-              onClick={nextGanttPeriod}
-              style={{
-                padding: '8px 12px',
-                minWidth: '44px',
-                minHeight: '44px',
-                backgroundColor: 'transparent',
-                border: `1px solid ${theme.border}`,
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: theme.textSecondary,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-
-          {/* Group By Toggle */}
+        /* Gantt View */
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Gantt Controls */}
           <div style={{
             display: 'flex',
-            backgroundColor: theme.bg,
-            borderRadius: '8px',
-            padding: '4px',
-            border: `1px solid ${theme.border}`
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '12px',
+            gap: '12px',
+            flexWrap: 'wrap'
           }}>
-            <button
-              onClick={() => setGanttGroupBy('pm')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 12px',
-                minHeight: '36px',
-                backgroundColor: ganttGroupBy === 'pm' ? theme.bgCard : 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                color: ganttGroupBy === 'pm' ? theme.accent : theme.textMuted,
-                fontSize: '12px',
-                fontWeight: ganttGroupBy === 'pm' ? '600' : '400',
-                cursor: 'pointer'
-              }}
-            >
-              <Users size={14} />
-              By PM
-            </button>
-            <button
-              onClick={() => setGanttGroupBy('unit')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 12px',
-                minHeight: '36px',
-                backgroundColor: ganttGroupBy === 'unit' ? theme.bgCard : 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                color: ganttGroupBy === 'unit' ? theme.accent : theme.textMuted,
-                fontSize: '12px',
-                fontWeight: ganttGroupBy === 'unit' ? '600' : '400',
-                cursor: 'pointer'
-              }}
-            >
-              <Building2 size={14} />
-              By Unit
-            </button>
-          </div>
-
-          {/* Zoom Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '12px', color: theme.textMuted, marginRight: '8px' }}>Zoom:</span>
-            {['day', 'week', 'month'].map(level => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
-                key={level}
-                onClick={() => setZoomLevel(level)}
+                onClick={prevGanttPeriod}
                 style={{
-                  padding: '8px 12px',
-                  minHeight: '36px',
-                  backgroundColor: zoomLevel === level ? theme.accent : 'transparent',
-                  border: `1px solid ${zoomLevel === level ? theme.accent : theme.border}`,
+                  padding: '8px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${theme.border}`,
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  color: zoomLevel === level ? '#fff' : theme.textSecondary,
-                  fontSize: '12px',
-                  fontWeight: zoomLevel === level ? '600' : '400',
-                  textTransform: 'capitalize'
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '36px',
+                  minHeight: '36px',
+                  color: theme.textSecondary
                 }}
               >
-                {level}
+                <ChevronLeft size={16} />
               </button>
-            ))}
+              <button
+                onClick={goToGanttToday}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: theme.bg,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: theme.textSecondary,
+                  minHeight: '36px'
+                }}
+              >
+                Today
+              </button>
+              <button
+                onClick={nextGanttPeriod}
+                style={{
+                  padding: '8px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '36px',
+                  minHeight: '36px',
+                  color: theme.textSecondary
+                }}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Group By */}
+              <select
+                value={ganttGroupBy}
+                onChange={(e) => setGanttGroupBy(e.target.value)}
+                style={{ ...inputStyle, width: 'auto', minWidth: '120px' }}
+              >
+                <option value="pm">By PM</option>
+                <option value="unit">By Unit</option>
+              </select>
+
+              {/* Zoom */}
+              <div style={{
+                display: 'flex',
+                backgroundColor: theme.bg,
+                borderRadius: '6px',
+                padding: '2px',
+                border: `1px solid ${theme.border}`
+              }}>
+                {['day', 'week', 'month'].map(level => (
+                  <button
+                    key={level}
+                    onClick={() => setZoomLevel(level)}
+                    style={{
+                      padding: '6px 10px',
+                      backgroundColor: zoomLevel === level ? theme.bgCard : 'transparent',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontWeight: zoomLevel === level ? '600' : '400',
+                      color: zoomLevel === level ? theme.accent : theme.textMuted,
+                      cursor: 'pointer',
+                      textTransform: 'capitalize',
+                      minHeight: '32px'
+                    }}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+
+              {/* Export */}
+              <button
+                onClick={exportGanttToPDF}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 12px',
+                  backgroundColor: theme.accent,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  minHeight: '36px'
+                }}
+              >
+                <Download size={14} />
+                {!isMobile && 'Export PDF'}
+              </button>
+            </div>
           </div>
 
-          {/* Export Button */}
-          <button
-            onClick={exportGanttToPDF}
+          {/* Gantt Chart */}
+          <div
+            ref={ganttRef}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '10px 16px',
-              minHeight: '44px',
-              backgroundColor: theme.accent,
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              color: '#fff',
-              fontSize: '13px',
-              fontWeight: '500'
+              flex: 1,
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              overflow: 'auto'
             }}
           >
-            <Download size={14} />
-            Export PDF
-          </button>
-        </div>
-
-        {/* Legend */}
-        <div style={{
-          display: 'flex',
-          gap: '16px',
-          marginBottom: '12px',
-          flexWrap: 'wrap'
-        }}>
-          {Object.entries(ganttSectionColors).map(([status, color]) => (
-            <div key={status} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', minWidth: 'max-content' }}>
+              {/* Left Labels */}
               <div style={{
-                width: '12px',
-                height: '12px',
-                backgroundColor: color,
-                borderRadius: '3px'
-              }} />
-              <span style={{ fontSize: '11px', color: theme.textMuted }}>{status}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Gantt Chart Container */}
-        <div
-          ref={ganttRef}
-          style={{
-            flex: 1,
-            backgroundColor: theme.bgCard,
-            borderRadius: '12px',
-            border: `1px solid ${theme.border}`,
-            overflow: 'auto',
-            position: 'relative'
-          }}
-        >
-          {(() => {
-            const ganttCols = getGanttColumns()
-            const groups = getGroupedJobs()
-            const { colWidth } = getGanttDateRange()
-            const rowHeight = 60
-            const headerHeight = 50
-            const jobLabelWidth = 200
-
-            return (
-              <div style={{ minWidth: jobLabelWidth + ganttCols.length * colWidth, minHeight: 'fit-content' }}>
-                {/* Timeline Header */}
+                width: isMobile ? '120px' : '180px',
+                flexShrink: 0,
+                borderRight: `1px solid ${theme.border}`,
+                position: 'sticky',
+                left: 0,
+                backgroundColor: theme.bgCard,
+                zIndex: 2
+              }}>
+                {/* Header */}
                 <div style={{
+                  height: '50px',
+                  padding: '12px',
+                  borderBottom: `1px solid ${theme.border}`,
                   display: 'flex',
+                  alignItems: 'center',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: theme.text
+                }}>
+                  {ganttGroupBy === 'pm' ? 'Project Manager' : 'Business Unit'}
+                </div>
+
+                {/* Groups */}
+                {getGroupedJobs().map(group => (
+                  <div key={group.id}>
+                    <div style={{
+                      padding: '8px 12px',
+                      backgroundColor: theme.bg,
+                      borderBottom: `1px solid ${theme.border}`,
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: theme.text
+                    }}>
+                      {group.name}
+                    </div>
+                    {group.jobs.map(job => (
+                      <div
+                        key={job.id}
+                        style={{
+                          height: '40px',
+                          padding: '8px 12px',
+                          borderBottom: `1px solid ${theme.border}`,
+                          fontSize: '11px',
+                          color: theme.textSecondary,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        <span style={{
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}>
+                          {job.title || `Job #${job.id}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              {/* Timeline */}
+              <div style={{ flex: 1 }}>
+                {/* Date Headers */}
+                <div style={{
+                  height: '50px',
+                  display: 'flex',
+                  borderBottom: `1px solid ${theme.border}`,
                   position: 'sticky',
                   top: 0,
-                  zIndex: 2,
-                  backgroundColor: theme.bg
+                  backgroundColor: theme.bgCard,
+                  zIndex: 1
                 }}>
-                  {/* Empty corner */}
-                  <div style={{
-                    width: jobLabelWidth,
-                    flexShrink: 0,
-                    padding: '8px 12px',
-                    borderBottom: `1px solid ${theme.border}`,
-                    borderRight: `1px solid ${theme.border}`,
-                    fontWeight: '600',
-                    color: theme.text,
-                    fontSize: '13px',
-                    display: 'flex',
-                    alignItems: 'center'
-                  }}>
-                    {ganttGroupBy === 'pm' ? 'Project Manager / Jobs' : 'Business Unit / Jobs'}
-                  </div>
-                  {/* Date columns */}
-                  <div style={{ display: 'flex' }}>
-                    {ganttCols.map((col, i) => {
-                      const isWeekendDay = isWeekend(col.date)
-                      const isTodayCol = isToday(col.date)
-                      return (
+                  {getGanttColumns().map((col, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        width: `${col.width}px`,
+                        flexShrink: 0,
+                        padding: '4px',
+                        borderRight: `1px solid ${theme.border}`,
+                        textAlign: 'center',
+                        fontSize: '10px',
+                        color: isWeekend(col.date) ? theme.textMuted : theme.textSecondary,
+                        backgroundColor: isWeekend(col.date) ? 'rgba(0,0,0,0.02)' : 'transparent',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      {formatGanttDate(col.date)}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Job Rows */}
+                {getGroupedJobs().map(group => (
+                  <div key={group.id}>
+                    {/* Group Header Row */}
+                    <div style={{
+                      height: '28px',
+                      backgroundColor: theme.bg,
+                      borderBottom: `1px solid ${theme.border}`,
+                      display: 'flex'
+                    }}>
+                      {getGanttColumns().map((col, i) => (
                         <div
                           key={i}
                           style={{
-                            width: colWidth,
+                            width: `${col.width}px`,
                             flexShrink: 0,
-                            padding: '4px',
-                            borderBottom: `1px solid ${theme.border}`,
                             borderRight: `1px solid ${theme.border}`,
-                            backgroundColor: isTodayCol ? theme.accentBg : isWeekendDay ? 'rgba(0,0,0,0.03)' : 'transparent',
-                            textAlign: 'center',
-                            fontSize: zoomLevel === 'day' ? '10px' : '9px',
-                            color: isTodayCol ? theme.accent : theme.textMuted
+                            backgroundColor: isWeekend(col.date) ? 'rgba(0,0,0,0.02)' : 'transparent'
                           }}
-                        >
-                          {formatGanttDate(col.date)}
-                          {zoomLevel === 'week' && col.date.getDay() === 0 && (
-                            <div style={{ fontSize: '8px', marginTop: '2px' }}>
-                              {col.date.toLocaleDateString('en-US', { month: 'short' })}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Groups and Jobs */}
-                {groups.map(group => (
-                  <div key={group.id}>
-                    {/* Group Header */}
-                    <div style={{
-                      display: 'flex',
-                      backgroundColor: theme.bg,
-                      position: 'sticky',
-                      left: 0
-                    }}>
-                      <div style={{
-                        width: jobLabelWidth,
-                        flexShrink: 0,
-                        padding: '10px 12px',
-                        borderBottom: `1px solid ${theme.border}`,
-                        borderRight: `1px solid ${theme.border}`,
-                        fontWeight: '600',
-                        color: theme.accent,
-                        fontSize: '13px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}>
-                        {ganttGroupBy === 'pm' ? <User size={14} /> : <Building2 size={14} />}
-                        {group.name}
-                        <span style={{
-                          backgroundColor: theme.accentBg,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          fontSize: '10px',
-                          color: theme.accent
-                        }}>
-                          {group.jobs.length}
-                        </span>
-                      </div>
-                      <div style={{ flex: 1, borderBottom: `1px solid ${theme.border}` }} />
+                        />
+                      ))}
                     </div>
 
-                    {/* Jobs in Group */}
+                    {/* Job Rows */}
                     {group.jobs.map(job => {
                       const sections = getSectionsForJob(job.id)
-                      const progress = calculateJobProgress(job.id)
-
                       return (
                         <div
                           key={job.id}
                           style={{
+                            height: '40px',
+                            borderBottom: `1px solid ${theme.border}`,
                             display: 'flex',
-                            minHeight: rowHeight,
                             position: 'relative'
                           }}
                         >
-                          {/* Job Label */}
-                          <div
-                            style={{
-                              width: jobLabelWidth,
-                              flexShrink: 0,
-                              padding: '8px 12px',
-                              borderBottom: `1px solid ${theme.border}`,
-                              borderRight: `1px solid ${theme.border}`,
-                              backgroundColor: theme.bgCard,
-                              position: 'sticky',
-                              left: 0,
-                              zIndex: 1
-                            }}
-                          >
-                            <div style={{
-                              fontWeight: '500',
-                              color: theme.text,
-                              fontSize: '12px',
-                              marginBottom: '4px',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}>
-                              {job.title || `Job #${job.id}`}
-                            </div>
-                            <div style={{
-                              fontSize: '10px',
-                              color: theme.textMuted,
-                              marginBottom: '4px'
-                            }}>
-                              {job.customer?.name}
-                            </div>
-                            {/* Mini progress bar */}
-                            <div style={{
-                              height: '4px',
-                              backgroundColor: theme.border,
-                              borderRadius: '2px',
-                              overflow: 'hidden'
-                            }}>
-                              <div style={{
-                                height: '100%',
-                                width: `${progress}%`,
-                                backgroundColor: progress === 100 ? '#22c55e' : theme.accent,
-                                borderRadius: '2px'
-                              }} />
-                            </div>
-                          </div>
+                          {/* Grid Lines */}
+                          {getGanttColumns().map((col, i) => (
+                            <div
+                              key={i}
+                              style={{
+                                width: `${col.width}px`,
+                                flexShrink: 0,
+                                borderRight: `1px solid ${theme.border}`,
+                                backgroundColor: isWeekend(col.date) ? 'rgba(0,0,0,0.02)' : 'transparent'
+                              }}
+                            />
+                          ))}
 
-                          {/* Timeline Area */}
-                          <div style={{
-                            flex: 1,
-                            position: 'relative',
-                            borderBottom: `1px solid ${theme.border}`,
-                            display: 'flex'
-                          }}>
-                            {/* Background grid */}
-                            {ganttCols.map((col, i) => {
-                              const isWeekendDay = isWeekend(col.date)
-                              const isTodayCol = isToday(col.date)
-                              return (
-                                <div
-                                  key={i}
-                                  style={{
-                                    width: colWidth,
-                                    flexShrink: 0,
-                                    borderRight: `1px solid ${theme.border}`,
-                                    backgroundColor: isTodayCol ? 'rgba(90,99,73,0.08)' : isWeekendDay ? 'rgba(0,0,0,0.02)' : 'transparent'
-                                  }}
-                                />
-                              )
-                            })}
+                          {/* Section Bars */}
+                          {sections.map(section => {
+                            const pos = getSectionPosition(section)
+                            if (!pos) return null
 
-                            {/* Section Blocks */}
-                            {sections.map(section => {
-                              const pos = getSectionPosition(section)
-                              if (!pos) return null
+                            const statusColor = getSectionStatusColor(section.status)
 
-                              const statusColor = ganttSectionColors[section.status] || ganttSectionColors['Not Started']
-
-                              return (
-                                <div
-                                  key={section.id}
-                                  style={{
-                                    position: 'absolute',
-                                    left: pos.left,
-                                    top: '8px',
-                                    width: pos.width,
-                                    height: rowHeight - 20,
-                                    backgroundColor: statusColor,
-                                    borderRadius: '4px',
-                                    padding: '4px 6px',
-                                    overflow: 'hidden',
-                                    cursor: 'pointer',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.15)'
-                                  }}
-                                  title={`${section.name} - ${section.status} (${section.percent_of_job || 0}%)`}
-                                >
-                                  <div style={{
-                                    fontWeight: '500',
-                                    color: '#fff',
-                                    fontSize: '10px',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    textShadow: '0 1px 1px rgba(0,0,0,0.2)'
-                                  }}>
-                                    {section.name}
-                                  </div>
-                                  <div style={{
-                                    fontSize: '9px',
-                                    color: 'rgba(255,255,255,0.8)',
-                                    marginTop: '2px'
-                                  }}>
-                                    {section.percent_of_job || 0}%
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
+                            return (
+                              <div
+                                key={section.id}
+                                style={{
+                                  position: 'absolute',
+                                  top: '6px',
+                                  left: `${pos.left}px`,
+                                  width: `${pos.width}px`,
+                                  height: '28px',
+                                  backgroundColor: statusColor.text,
+                                  borderRadius: '4px',
+                                  padding: '4px 6px',
+                                  fontSize: '9px',
+                                  color: '#fff',
+                                  fontWeight: '500',
+                                  overflow: 'hidden',
+                                  whiteSpace: 'nowrap',
+                                  textOverflow: 'ellipsis',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center'
+                                }}
+                                title={`${section.name} (${section.status})`}
+                              >
+                                {section.name}
+                              </div>
+                            )
+                          })}
                         </div>
                       )
                     })}
                   </div>
                 ))}
-
-                {/* Empty state */}
-                {groups.length === 0 && (
-                  <div style={{
-                    padding: '40px',
-                    textAlign: 'center',
-                    color: theme.textMuted
-                  }}>
-                    No jobs found. Adjust filters or add new jobs.
-                  </div>
-                )}
               </div>
-            )
-          })()}
-        </div>
-      </div>
-      )}
-
-      {/* Add Section Modal */}
-      {showSectionModal && selectedJob && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          zIndex: 50
-        }}>
-          <div style={{
-            backgroundColor: theme.bgCard,
-            borderRadius: '16px',
-            width: '100%',
-            maxWidth: '440px',
-            maxHeight: '90vh',
-            overflowY: 'auto'
-          }}>
-            <div style={{
-              padding: '20px',
-              borderBottom: `1px solid ${theme.border}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <div>
-                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                  Add Section
-                </h2>
-                <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '2px' }}>
-                  {selectedJob.title || `Job #${selectedJob.id}`}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowSectionModal(false)
-                  setSelectedJob(null)
-                }}
-                style={{
-                  padding: '8px',
-                  minWidth: '44px',
-                  minHeight: '44px',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: theme.textMuted,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <X size={20} />
-              </button>
             </div>
-
-            <form onSubmit={handleAddSection} style={{ padding: '20px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={labelStyle}>Section Name *</label>
-                  <input
-                    type="text"
-                    value={sectionForm.name}
-                    onChange={(e) => setSectionForm(prev => ({ ...prev, name: e.target.value }))}
-                    required
-                    placeholder="e.g., Install fixtures, Paint walls"
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Description</label>
-                  <textarea
-                    value={sectionForm.description}
-                    onChange={(e) => setSectionForm(prev => ({ ...prev, description: e.target.value }))}
-                    rows={2}
-                    style={{ ...inputStyle, resize: 'vertical' }}
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>% of Job</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={sectionForm.percent_of_job}
-                      onChange={(e) => setSectionForm(prev => ({ ...prev, percent_of_job: e.target.value }))}
-                      style={inputStyle}
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Est. Hours</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={sectionForm.estimated_hours}
-                      onChange={(e) => setSectionForm(prev => ({ ...prev, estimated_hours: e.target.value }))}
-                      style={inputStyle}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Assign To</label>
-                  <select
-                    value={sectionForm.assigned_to}
-                    onChange={(e) => setSectionForm(prev => ({ ...prev, assigned_to: e.target.value }))}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select Employee --</option>
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Scheduled Date</label>
-                  <input
-                    type="date"
-                    value={sectionForm.scheduled_date}
-                    onChange={(e) => setSectionForm(prev => ({ ...prev, scheduled_date: e.target.value }))}
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSectionModal(false)
-                    setSelectedJob(null)
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    minHeight: '44px',
-                    border: `1px solid ${theme.border}`,
-                    backgroundColor: 'transparent',
-                    color: theme.text,
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    minHeight: '44px',
-                    backgroundColor: theme.accent,
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Add Section
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
@@ -2073,330 +2208,279 @@ export default function PMJobSetter() {
           alignItems: 'center',
           justifyContent: 'center',
           padding: '16px',
-          zIndex: 50
+          zIndex: 60
         }}>
           <div style={{
             backgroundColor: theme.bgCard,
-            borderRadius: '16px',
+            borderRadius: '12px',
             width: '100%',
-            maxWidth: '540px',
-            maxHeight: '90vh',
-            overflowY: 'auto'
+            maxWidth: '500px',
+            maxHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
+            {/* Modal Header */}
             <div style={{
-              padding: '20px',
+              padding: '16px 20px',
               borderBottom: `1px solid ${theme.border}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
             }}>
               <div>
-                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
                   Job Board Settings
                 </h2>
-                <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '2px' }}>
-                  Manage calendars, statuses and sections
+                <p style={{ fontSize: '12px', color: theme.textMuted, margin: '2px 0 0' }}>
+                  Configure statuses, calendars, and roles
                 </p>
               </div>
               <button
-                onClick={() => {
-                  setShowSettingsModal(false)
-                  setShowCalendarForm(false)
-                  setEditingCalendar(null)
-                }}
-                style={{
-                  padding: '8px',
-                  minWidth: '44px',
-                  minHeight: '44px',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: theme.textMuted,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
+                onClick={() => setShowSettingsModal(false)}
+                style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div style={{ padding: '20px' }}>
-              {/* Job Calendars Section */}
-              <div style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <label style={{ ...labelStyle, marginBottom: 0 }}>
-                    <Layers size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                    Job Calendars
-                  </label>
-                  <button
-                    onClick={() => {
-                      setShowCalendarForm(true)
-                      setEditingCalendar(null)
-                      setCalendarForm({ name: '', business_unit: '', color: calendarColors[jobCalendars.length % calendarColors.length] })
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '6px 12px',
-                      minHeight: '36px',
-                      backgroundColor: theme.accent,
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontSize: '12px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Plus size={14} />
-                    Add Calendar
-                  </button>
-                </div>
+            {/* Tabs */}
+            <div style={{
+              display: 'flex',
+              borderBottom: `1px solid ${theme.border}`,
+              padding: '0 20px'
+            }}>
+              {[
+                { id: 'job_statuses', label: 'Job Statuses' },
+                { id: 'section_statuses', label: 'Section Statuses' },
+                { id: 'calendars', label: 'Calendars' },
+                { id: 'roles', label: 'Roles' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setSettingsTab(tab.id)}
+                  style={{
+                    padding: '12px 16px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderBottom: settingsTab === tab.id ? `2px solid ${theme.accent}` : '2px solid transparent',
+                    color: settingsTab === tab.id ? theme.accent : theme.textMuted,
+                    fontSize: '13px',
+                    fontWeight: settingsTab === tab.id ? '600' : '400',
+                    cursor: 'pointer',
+                    marginBottom: '-1px'
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-                {/* Calendar Form */}
-                {showCalendarForm && (
-                  <div style={{
-                    padding: '16px',
-                    backgroundColor: theme.bg,
-                    borderRadius: '8px',
-                    marginBottom: '12px'
-                  }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div>
-                        <label style={labelStyle}>Calendar Name *</label>
-                        <input
-                          type="text"
-                          value={calendarForm.name}
-                          onChange={(e) => setCalendarForm(prev => ({ ...prev, name: e.target.value }))}
-                          placeholder="e.g., Plumbing Calendar"
-                          style={inputStyle}
-                        />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Business Unit</label>
-                        <select
-                          value={calendarForm.business_unit}
-                          onChange={(e) => setCalendarForm(prev => ({ ...prev, business_unit: e.target.value }))}
-                          style={inputStyle}
-                        >
-                          <option value="">-- All Units --</option>
-                          {businessUnits.map(unit => (
-                            <option key={unit} value={unit}>{unit}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Color</label>
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                          {calendarColors.map(color => (
-                            <button
-                              key={color}
-                              type="button"
-                              onClick={() => setCalendarForm(prev => ({ ...prev, color }))}
-                              style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '6px',
-                                backgroundColor: color,
-                                border: calendarForm.color === color ? '3px solid #000' : '2px solid transparent',
-                                cursor: 'pointer',
-                                boxShadow: calendarForm.color === color ? '0 0 0 2px #fff' : 'none'
-                              }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                        <button
-                          onClick={() => {
-                            setShowCalendarForm(false)
-                            setEditingCalendar(null)
-                          }}
-                          style={{
-                            flex: 1,
-                            padding: '10px',
-                            minHeight: '44px',
-                            backgroundColor: 'transparent',
-                            border: `1px solid ${theme.border}`,
-                            borderRadius: '6px',
-                            color: theme.text,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleSaveCalendar}
-                          style={{
-                            flex: 1,
-                            padding: '10px',
-                            minHeight: '44px',
-                            backgroundColor: theme.accent,
-                            border: 'none',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontWeight: '500',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {editingCalendar ? 'Update' : 'Create'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
+            {/* Tab Content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+              {settingsTab === 'job_statuses' && renderStatusList(statusForm, setStatusForm, 'Job Statuses')}
+              {settingsTab === 'section_statuses' && renderStatusList(sectionStatusForm, setSectionStatusForm, 'Section Statuses')}
+              {settingsTab === 'calendars' && renderCalendarsList()}
+              {settingsTab === 'roles' && renderRolesList()}
+            </div>
 
-                {/* Existing Calendars */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {jobCalendars.length === 0 && !showCalendarForm && (
-                    <div style={{
-                      padding: '16px',
-                      backgroundColor: theme.bg,
-                      borderRadius: '8px',
-                      textAlign: 'center',
-                      color: theme.textMuted,
-                      fontSize: '13px'
-                    }}>
-                      No calendars created yet. Add calendars to organize jobs by business unit.
-                    </div>
-                  )}
-                  {jobCalendars.map(cal => (
-                    <div
-                      key={cal.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '12px',
-                        backgroundColor: theme.bg,
-                        borderRadius: '8px',
-                        borderLeft: `4px solid ${cal.color}`
-                      }}
-                    >
-                      <div style={{
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '4px',
-                        backgroundColor: cal.color,
-                        flexShrink: 0
-                      }} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>{cal.name}</div>
-                        {cal.business_unit && (
-                          <div style={{ fontSize: '11px', color: theme.textMuted }}>{cal.business_unit}</div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => {
-                          setEditingCalendar(cal)
-                          setCalendarForm({ name: cal.name, business_unit: cal.business_unit || '', color: cal.color })
-                          setShowCalendarForm(true)
-                        }}
-                        style={{
-                          padding: '6px',
-                          minWidth: '32px',
-                          minHeight: '32px',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          color: theme.textMuted,
-                          cursor: 'pointer',
-                          borderRadius: '4px'
-                        }}
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteCalendar(cal.id)}
-                        style={{
-                          padding: '6px',
-                          minWidth: '32px',
-                          minHeight: '32px',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          color: '#ef4444',
-                          cursor: 'pointer',
-                          borderRadius: '4px'
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Job Statuses */}
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ ...labelStyle, marginBottom: '12px' }}>Job Statuses</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {jobStatuses.map(status => (
-                    <div
-                      key={status.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '10px 12px',
-                        backgroundColor: theme.bg,
-                        borderRadius: '8px'
-                      }}
-                    >
-                      <div style={{
-                        width: '12px',
-                        height: '12px',
-                        borderRadius: '50%',
-                        backgroundColor: status.color
-                      }} />
-                      <span style={{ fontSize: '14px', color: theme.text }}>{status.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Section Status Options */}
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ ...labelStyle, marginBottom: '12px' }}>Section Status Options</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {Object.entries(sectionStatusColors).map(([status, colors]) => (
-                    <div
-                      key={status}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '10px 12px',
-                        backgroundColor: colors.bg,
-                        borderRadius: '8px'
-                      }}
-                    >
-                      <span style={{ fontSize: '14px', color: colors.text, fontWeight: '500' }}>{status}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
+            {/* Modal Footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: `1px solid ${theme.border}`,
+              display: 'flex',
+              gap: '8px'
+            }}>
               <button
-                onClick={() => {
-                  setShowSettingsModal(false)
-                  setShowCalendarForm(false)
-                  setEditingCalendar(null)
-                }}
+                onClick={() => setShowSettingsModal(false)}
                 style={{
-                  width: '100%',
-                  padding: '12px',
-                  minHeight: '44px',
+                  flex: 1,
+                  padding: '10px',
+                  border: `1px solid ${theme.border}`,
+                  backgroundColor: 'transparent',
+                  color: theme.text,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  minHeight: '44px'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveAllSettings}
+                disabled={isSaving}
+                style={{
+                  flex: 1,
+                  padding: '10px',
                   backgroundColor: theme.accent,
                   color: '#fff',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '6px',
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
                   fontWeight: '500',
-                  cursor: 'pointer'
+                  fontSize: '13px',
+                  minHeight: '44px',
+                  opacity: isSaving ? 0.7 : 1
                 }}
               >
-                Close
+                {isSaving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Section Modal */}
+      {showSectionModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 60
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '400px',
+            padding: '20px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '16px'
+            }}>
+              <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                Add Section to {selectedJob?.title || `Job #${selectedJob?.id}`}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowSectionModal(false)
+                  setSelectedJob(null)
+                }}
+                style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSection}>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={labelStyle}>Section Name *</label>
+                <input
+                  type="text"
+                  value={sectionForm.name}
+                  onChange={(e) => setSectionForm({ ...sectionForm, name: e.target.value })}
+                  style={inputStyle}
+                  placeholder="e.g., Foundation Work"
+                  required
+                />
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label style={labelStyle}>Description</label>
+                <textarea
+                  value={sectionForm.description}
+                  onChange={(e) => setSectionForm({ ...sectionForm, description: e.target.value })}
+                  style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
+                  placeholder="What work is included?"
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div>
+                  <label style={labelStyle}>% of Job</label>
+                  <input
+                    type="number"
+                    value={sectionForm.percent_of_job}
+                    onChange={(e) => setSectionForm({ ...sectionForm, percent_of_job: e.target.value })}
+                    style={inputStyle}
+                    min="0"
+                    max="100"
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Est. Hours</label>
+                  <input
+                    type="number"
+                    value={sectionForm.estimated_hours}
+                    onChange={(e) => setSectionForm({ ...sectionForm, estimated_hours: e.target.value })}
+                    style={inputStyle}
+                    min="0"
+                    step="0.5"
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label style={labelStyle}>Assigned To</label>
+                <select
+                  value={sectionForm.assigned_to}
+                  onChange={(e) => setSectionForm({ ...sectionForm, assigned_to: e.target.value })}
+                  style={inputStyle}
+                >
+                  <option value="">Select employee</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Scheduled Date</label>
+                <input
+                  type="date"
+                  value={sectionForm.scheduled_date}
+                  onChange={(e) => setSectionForm({ ...sectionForm, scheduled_date: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSectionModal(false)
+                    setSelectedJob(null)
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    minHeight: '44px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    fontSize: '13px',
+                    minHeight: '44px'
+                  }}
+                >
+                  Add Section
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
