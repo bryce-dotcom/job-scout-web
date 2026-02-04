@@ -477,6 +477,7 @@ export default function LeadDetail() {
       {/* Tabs */}
       <div style={{
         overflowX: 'auto',
+        overflowY: 'visible',
         WebkitOverflowScrolling: 'touch',
         marginBottom: '24px',
         borderBottom: `1px solid ${theme.border}`,

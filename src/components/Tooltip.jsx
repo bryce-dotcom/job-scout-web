@@ -101,7 +101,7 @@ export default function Tooltip({
   return (
     <div
       ref={triggerRef}
-      style={{ position: 'relative', display: 'inline-flex', zIndex: isVisible ? 1000 : 'auto' }}
+      style={{ position: 'relative', display: 'inline-flex', zIndex: isVisible ? 9999 : 'auto' }}
       onMouseEnter={!isMobile ? show : undefined}
       onMouseLeave={!isMobile ? hide : undefined}
       onClick={handleClick}
@@ -118,7 +118,7 @@ export default function Tooltip({
             color: '#fff',
             fontSize: isMobile ? '13px' : '12px',
             borderRadius: '6px',
-            zIndex: 10000,
+            zIndex: 9999,
             boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
             maxWidth: isMobile ? '200px' : '250px',
             whiteSpace: 'normal',
