@@ -8,8 +8,21 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, X, Calendar, Clock, User, MapPin,
   RefreshCw, Filter, Search, Settings, Plus, Briefcase, CheckCircle2,
   AlertCircle, PauseCircle, PlayCircle, ClipboardList, CalendarPlus, Trash2,
-  LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2
+  LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2,
+  Palette, Edit2, Layers
 } from 'lucide-react'
+
+// Default calendar colors for visual distinction
+const calendarColors = [
+  '#3b82f6', // blue
+  '#22c55e', // green
+  '#f59e0b', // amber
+  '#8b5cf6', // purple
+  '#ec4899', // pink
+  '#14b8a6', // teal
+  '#f97316', // orange
+  '#6366f1'  // indigo
+]
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -56,6 +69,17 @@ export default function PMJobSetter() {
   const [jobs, setJobs] = useState([])
   const [jobSections, setJobSections] = useState([])
   const [loading, setLoading] = useState(true)
+  const [jobCalendars, setJobCalendars] = useState([])
+
+  // Calendar management
+  const [selectedCalendar, setSelectedCalendar] = useState('all') // 'all' or calendar id
+  const [showCalendarForm, setShowCalendarForm] = useState(false)
+  const [editingCalendar, setEditingCalendar] = useState(null)
+  const [calendarForm, setCalendarForm] = useState({
+    name: '',
+    business_unit: '',
+    color: calendarColors[0]
+  })
 
   // UI State
   const [expandedJobs, setExpandedJobs] = useState({})
@@ -125,9 +149,87 @@ export default function PMJobSetter() {
       .eq('company_id', companyId)
       .order('sort_order')
 
+    // Fetch job calendars from settings
+    const { data: calendarsSetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('company_id', companyId)
+      .eq('key', 'job_calendars')
+      .single()
+
+    if (calendarsSetting?.value) {
+      try {
+        const cals = JSON.parse(calendarsSetting.value)
+        setJobCalendars(Array.isArray(cals) ? cals : [])
+      } catch {
+        setJobCalendars([])
+      }
+    }
+
     setJobs(jobsData || [])
     setJobSections(sectionsData || [])
     setLoading(false)
+  }
+
+  // Save calendars to settings
+  const saveCalendars = async (calendars) => {
+    const { data: existing } = await supabase
+      .from('settings')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('key', 'job_calendars')
+      .single()
+
+    if (existing) {
+      await supabase
+        .from('settings')
+        .update({ value: JSON.stringify(calendars) })
+        .eq('id', existing.id)
+    } else {
+      await supabase
+        .from('settings')
+        .insert({ company_id: companyId, key: 'job_calendars', value: JSON.stringify(calendars) })
+    }
+
+    setJobCalendars(calendars)
+  }
+
+  // Add or update calendar
+  const handleSaveCalendar = async () => {
+    if (!calendarForm.name) return
+
+    let updatedCalendars
+    if (editingCalendar) {
+      updatedCalendars = jobCalendars.map(c =>
+        c.id === editingCalendar.id ? { ...c, ...calendarForm } : c
+      )
+    } else {
+      const newCalendar = {
+        id: Date.now().toString(),
+        ...calendarForm
+      }
+      updatedCalendars = [...jobCalendars, newCalendar]
+    }
+
+    await saveCalendars(updatedCalendars)
+    setShowCalendarForm(false)
+    setEditingCalendar(null)
+    setCalendarForm({ name: '', business_unit: '', color: calendarColors[0] })
+  }
+
+  // Delete calendar
+  const handleDeleteCalendar = async (calendarId) => {
+    const updatedCalendars = jobCalendars.filter(c => c.id !== calendarId)
+    await saveCalendars(updatedCalendars)
+    if (selectedCalendar === calendarId) {
+      setSelectedCalendar('all')
+    }
+  }
+
+  // Get calendar for a job based on business unit
+  const getCalendarForJob = (job) => {
+    if (!job.business_unit) return null
+    return jobCalendars.find(c => c.business_unit === job.business_unit)
   }
 
   useEffect(() => {
@@ -138,14 +240,39 @@ export default function PMJobSetter() {
     fetchData()
   }, [companyId])
 
-  // Get Project Managers from employees
-  const projectManagers = employees.filter(e =>
-    e.role?.includes('Project Manager') || e.role === 'Admin' || e.role === 'Manager'
-  )
+  // Get Project Managers - filter by business unit if selected
+  const getProjectManagers = () => {
+    let pms = employees.filter(e =>
+      e.role?.includes('Project Manager') || e.role === 'Admin' || e.role === 'Manager'
+    )
+    // If a calendar is selected, only show PMs for that business unit
+    if (selectedCalendar !== 'all') {
+      const cal = jobCalendars.find(c => c.id === selectedCalendar)
+      if (cal?.business_unit) {
+        pms = pms.filter(pm => pm.business_unit === cal.business_unit || !pm.business_unit)
+      }
+    }
+    // If business unit filter is set, filter PMs
+    if (filterBusinessUnit) {
+      pms = pms.filter(pm => pm.business_unit === filterBusinessUnit || !pm.business_unit)
+    }
+    return pms
+  }
+
+  const projectManagers = getProjectManagers()
 
   // Filter jobs
   const getFilteredJobs = () => {
     let filtered = jobs
+
+    // Filter by selected calendar (based on business unit)
+    if (selectedCalendar !== 'all') {
+      const cal = jobCalendars.find(c => c.id === selectedCalendar)
+      if (cal?.business_unit) {
+        filtered = filtered.filter(j => j.business_unit === cal.business_unit)
+      }
+    }
+
     if (filterPM) {
       filtered = filtered.filter(j => j.pm_id === parseInt(filterPM))
     }
@@ -635,6 +762,68 @@ export default function PMJobSetter() {
             </button>
           </div>
 
+          {/* Calendar Selector */}
+          {jobCalendars.length > 0 && (
+            <div style={{
+              display: 'flex',
+              backgroundColor: theme.bg,
+              borderRadius: '8px',
+              padding: '4px',
+              border: `1px solid ${theme.border}`,
+              gap: '2px',
+              flexWrap: 'wrap'
+            }}>
+              <button
+                onClick={() => setSelectedCalendar('all')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 10px',
+                  minHeight: '32px',
+                  backgroundColor: selectedCalendar === 'all' ? theme.bgCard : 'transparent',
+                  border: 'none',
+                  borderRadius: '5px',
+                  color: selectedCalendar === 'all' ? theme.accent : theme.textMuted,
+                  fontSize: '12px',
+                  fontWeight: selectedCalendar === 'all' ? '600' : '400',
+                  cursor: 'pointer'
+                }}
+              >
+                <Layers size={12} />
+                All
+              </button>
+              {jobCalendars.map(cal => (
+                <button
+                  key={cal.id}
+                  onClick={() => setSelectedCalendar(cal.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '6px 10px',
+                    minHeight: '32px',
+                    backgroundColor: selectedCalendar === cal.id ? theme.bgCard : 'transparent',
+                    border: 'none',
+                    borderRadius: '5px',
+                    color: selectedCalendar === cal.id ? cal.color : theme.textMuted,
+                    fontSize: '12px',
+                    fontWeight: selectedCalendar === cal.id ? '600' : '400',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '2px',
+                    backgroundColor: cal.color
+                  }} />
+                  {!isMobile && cal.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* PM Filter */}
           <select
             value={filterPM}
@@ -809,6 +998,7 @@ export default function PMJobSetter() {
                       const progress = calculateJobProgress(job.id)
                       const sections = getSectionsForJob(job.id)
                       const isExpanded = expandedJobs[job.id]
+                      const jobCalendar = getCalendarForJob(job)
 
                       return (
                         <div
@@ -817,6 +1007,7 @@ export default function PMJobSetter() {
                             backgroundColor: theme.bgCard,
                             borderRadius: '8px',
                             border: `1px solid ${theme.border}`,
+                            borderLeft: jobCalendar ? `4px solid ${jobCalendar.color}` : `1px solid ${theme.border}`,
                             overflow: 'hidden'
                           }}
                         >
@@ -829,16 +1020,27 @@ export default function PMJobSetter() {
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '6px' }}>
-                              <div style={{
-                                fontWeight: '600',
-                                color: theme.text,
-                                fontSize: '12px',
-                                flex: 1,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
-                              }}>
-                                {job.title || `Job #${job.id}`}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden' }}>
+                                {jobCalendar && (
+                                  <div style={{
+                                    width: '8px',
+                                    height: '8px',
+                                    borderRadius: '2px',
+                                    backgroundColor: jobCalendar.color,
+                                    flexShrink: 0
+                                  }} />
+                                )}
+                                <div style={{
+                                  fontWeight: '600',
+                                  color: theme.text,
+                                  fontSize: '12px',
+                                  flex: 1,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {job.title || `Job #${job.id}`}
+                                </div>
                               </div>
                               {isExpanded ? <ChevronDown size={14} color={theme.textMuted} /> : <ChevronRight size={14} color={theme.textMuted} />}
                             </div>
@@ -1158,6 +1360,7 @@ export default function PMJobSetter() {
                           {slotSections.map(section => {
                             const statusColor = sectionStatusColors[section.status] || sectionStatusColors['Not Started']
                             const job = jobs.find(j => j.id === section.job_id)
+                            const calendar = job ? getCalendarForJob(job) : null
                             return (
                               <div
                                 key={section.id}
@@ -1166,7 +1369,7 @@ export default function PMJobSetter() {
                                 onDragEnd={handleDragEnd}
                                 style={{
                                   backgroundColor: statusColor.bg,
-                                  borderLeft: `3px solid ${statusColor.text}`,
+                                  borderLeft: `3px solid ${calendar?.color || statusColor.text}`,
                                   borderRadius: '4px',
                                   padding: '4px 6px',
                                   fontSize: '9px',
@@ -1175,17 +1378,29 @@ export default function PMJobSetter() {
                                   marginBottom: '2px'
                                 }}
                                 onClick={() => {
-                                  setSelectedSection(section)
+                                  navigate(`/jobs/${section.job_id}`)
                                 }}
                               >
-                                <div style={{
-                                  fontWeight: '600',
-                                  color: theme.text,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap'
-                                }}>
-                                  {section.name}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  {calendar && (
+                                    <div style={{
+                                      width: '6px',
+                                      height: '6px',
+                                      borderRadius: '2px',
+                                      backgroundColor: calendar.color,
+                                      flexShrink: 0
+                                    }} />
+                                  )}
+                                  <div style={{
+                                    fontWeight: '600',
+                                    color: theme.text,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    flex: 1
+                                  }}>
+                                    {section.name}
+                                  </div>
                                 </div>
                                 <div style={{ color: theme.textMuted, fontSize: '8px' }}>
                                   {job?.title || `Job #${section.job_id}`}
@@ -1864,7 +2079,7 @@ export default function PMJobSetter() {
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '480px',
+            maxWidth: '540px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -1880,11 +2095,15 @@ export default function PMJobSetter() {
                   Job Board Settings
                 </h2>
                 <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '2px' }}>
-                  Configure job statuses and section templates
+                  Manage calendars, statuses and sections
                 </p>
               </div>
               <button
-                onClick={() => setShowSettingsModal(false)}
+                onClick={() => {
+                  setShowSettingsModal(false)
+                  setShowCalendarForm(false)
+                  setEditingCalendar(null)
+                }}
                 style={{
                   padding: '8px',
                   minWidth: '44px',
@@ -1903,6 +2122,210 @@ export default function PMJobSetter() {
             </div>
 
             <div style={{ padding: '20px' }}>
+              {/* Job Calendars Section */}
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>
+                    <Layers size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+                    Job Calendars
+                  </label>
+                  <button
+                    onClick={() => {
+                      setShowCalendarForm(true)
+                      setEditingCalendar(null)
+                      setCalendarForm({ name: '', business_unit: '', color: calendarColors[jobCalendars.length % calendarColors.length] })
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '6px 12px',
+                      minHeight: '36px',
+                      backgroundColor: theme.accent,
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Plus size={14} />
+                    Add Calendar
+                  </button>
+                </div>
+
+                {/* Calendar Form */}
+                {showCalendarForm && (
+                  <div style={{
+                    padding: '16px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '8px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div>
+                        <label style={labelStyle}>Calendar Name *</label>
+                        <input
+                          type="text"
+                          value={calendarForm.name}
+                          onChange={(e) => setCalendarForm(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="e.g., Plumbing Calendar"
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Business Unit</label>
+                        <select
+                          value={calendarForm.business_unit}
+                          onChange={(e) => setCalendarForm(prev => ({ ...prev, business_unit: e.target.value }))}
+                          style={inputStyle}
+                        >
+                          <option value="">-- All Units --</option>
+                          {businessUnits.map(unit => (
+                            <option key={unit} value={unit}>{unit}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Color</label>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {calendarColors.map(color => (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => setCalendarForm(prev => ({ ...prev, color }))}
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '6px',
+                                backgroundColor: color,
+                                border: calendarForm.color === color ? '3px solid #000' : '2px solid transparent',
+                                cursor: 'pointer',
+                                boxShadow: calendarForm.color === color ? '0 0 0 2px #fff' : 'none'
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <button
+                          onClick={() => {
+                            setShowCalendarForm(false)
+                            setEditingCalendar(null)
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '10px',
+                            minHeight: '44px',
+                            backgroundColor: 'transparent',
+                            border: `1px solid ${theme.border}`,
+                            borderRadius: '6px',
+                            color: theme.text,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveCalendar}
+                          style={{
+                            flex: 1,
+                            padding: '10px',
+                            minHeight: '44px',
+                            backgroundColor: theme.accent,
+                            border: 'none',
+                            borderRadius: '6px',
+                            color: '#fff',
+                            fontWeight: '500',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {editingCalendar ? 'Update' : 'Create'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Existing Calendars */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {jobCalendars.length === 0 && !showCalendarForm && (
+                    <div style={{
+                      padding: '16px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '8px',
+                      textAlign: 'center',
+                      color: theme.textMuted,
+                      fontSize: '13px'
+                    }}>
+                      No calendars created yet. Add calendars to organize jobs by business unit.
+                    </div>
+                  )}
+                  {jobCalendars.map(cal => (
+                    <div
+                      key={cal.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px',
+                        backgroundColor: theme.bg,
+                        borderRadius: '8px',
+                        borderLeft: `4px solid ${cal.color}`
+                      }}
+                    >
+                      <div style={{
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '4px',
+                        backgroundColor: cal.color,
+                        flexShrink: 0
+                      }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>{cal.name}</div>
+                        {cal.business_unit && (
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>{cal.business_unit}</div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setEditingCalendar(cal)
+                          setCalendarForm({ name: cal.name, business_unit: cal.business_unit || '', color: cal.color })
+                          setShowCalendarForm(true)
+                        }}
+                        style={{
+                          padding: '6px',
+                          minWidth: '32px',
+                          minHeight: '32px',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          color: theme.textMuted,
+                          cursor: 'pointer',
+                          borderRadius: '4px'
+                        }}
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteCalendar(cal.id)}
+                        style={{
+                          padding: '6px',
+                          minWidth: '32px',
+                          minHeight: '32px',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          borderRadius: '4px'
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Job Statuses */}
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ ...labelStyle, marginBottom: '12px' }}>Job Statuses</label>
@@ -1929,12 +2352,9 @@ export default function PMJobSetter() {
                     </div>
                   ))}
                 </div>
-                <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '8px' }}>
-                  Job statuses are system defaults. Contact support to customize.
-                </p>
               </div>
 
-              {/* Section Templates */}
+              {/* Section Status Options */}
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ ...labelStyle, marginBottom: '12px' }}>Section Status Options</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1957,7 +2377,11 @@ export default function PMJobSetter() {
               </div>
 
               <button
-                onClick={() => setShowSettingsModal(false)}
+                onClick={() => {
+                  setShowSettingsModal(false)
+                  setShowCalendarForm(false)
+                  setEditingCalendar(null)
+                }}
                 style={{
                   width: '100%',
                   padding: '12px',

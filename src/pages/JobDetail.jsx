@@ -1,12 +1,30 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import HelpBadge from '../components/HelpBadge'
 import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
-  Play, CheckCircle, Pencil, X, DollarSign
+  Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
+  Edit2, Save, AlertCircle, GripVertical, CheckCircle2
 } from 'lucide-react'
+
+// Section status colors
+const sectionStatusColors = {
+  'Not Started': { bg: '#f3f4f6', text: '#6b7280' },
+  'In Progress': { bg: '#fef3c7', text: '#d97706' },
+  'Complete': { bg: '#d1fae5', text: '#059669' },
+  'Verified': { bg: '#dbeafe', text: '#2563eb' }
+}
+
+// Gantt colors for mini view
+const ganttSectionColors = {
+  'Not Started': '#9ca3af',
+  'In Progress': '#3b82f6',
+  'Complete': '#22c55e',
+  'Verified': '#8b5cf6'
+}
 
 // Light theme fallback
 const defaultTheme = {
@@ -50,10 +68,35 @@ export default function JobDetail() {
   const [newTime, setNewTime] = useState({ employee_id: '', hours: '', category: 'Regular', notes: '' })
   const [editMode, setEditMode] = useState(false)
   const [formData, setFormData] = useState({})
+  const [isMobile, setIsMobile] = useState(false)
+
+  // Section state
+  const [sections, setSections] = useState([])
+  const [showSectionModal, setShowSectionModal] = useState(false)
+  const [editingSection, setEditingSection] = useState(null)
+  const [sectionForm, setSectionForm] = useState({
+    name: '',
+    description: '',
+    percent_of_job: '',
+    assigned_to: '',
+    estimated_hours: '',
+    scheduled_date: '',
+    status: 'Not Started'
+  })
+  const [sectionFormError, setSectionFormError] = useState('')
+  const ganttRef = useRef(null)
 
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     if (!companyId) {
@@ -74,7 +117,7 @@ export default function JobDetail() {
 
     const { data: jobData } = await supabase
       .from('jobs')
-      .select('*, customer:customers(id, name, email, phone, address), salesperson:employees(id, name), quote:quotes(id, quote_id)')
+      .select('*, customer:customers(id, name, email, phone, address, city, state, zip, company_name), salesperson:employees(id, name), quote:quotes(id, quote_id, quote_number), pm:employees!jobs_pm_id_fkey(id, name)')
       .eq('id', id)
       .single()
 
@@ -89,6 +132,16 @@ export default function JobDetail() {
         .order('id')
 
       setLineItems(lines || [])
+
+      // Fetch sections
+      const { data: sectionsData } = await supabase
+        .from('job_sections')
+        .select('*, assigned_employee:employees!job_sections_assigned_to_fkey(id, name)')
+        .eq('job_id', id)
+        .eq('company_id', companyId)
+        .order('sort_order')
+
+      setSections(sectionsData || [])
     }
 
     setLoading(false)
@@ -274,6 +327,162 @@ export default function JobDetail() {
     }
   }
 
+  // Section management functions
+  const calculateSectionProgress = () => {
+    if (sections.length === 0) return 0
+    const completedPercent = sections
+      .filter(s => s.status === 'Complete' || s.status === 'Verified')
+      .reduce((sum, s) => sum + (parseFloat(s.percent_of_job) || 0), 0)
+    return Math.min(100, completedPercent)
+  }
+
+  const getTotalSectionPercent = (excludeSectionId = null) => {
+    return sections
+      .filter(s => s.id !== excludeSectionId)
+      .reduce((sum, s) => sum + (parseFloat(s.percent_of_job) || 0), 0)
+  }
+
+  const getRemainingSectionPercent = () => {
+    const total = getTotalSectionPercent(editingSection?.id)
+    return Math.max(0, 100 - total)
+  }
+
+  const validateSectionForm = () => {
+    if (!sectionForm.name.trim()) {
+      setSectionFormError('Section name is required')
+      return false
+    }
+
+    const percent = parseFloat(sectionForm.percent_of_job) || 0
+    const currentTotal = getTotalSectionPercent(editingSection?.id)
+    const newTotal = currentTotal + percent
+
+    if (percent < 0 || percent > 100) {
+      setSectionFormError('Percent must be between 0 and 100')
+      return false
+    }
+
+    if (newTotal > 100) {
+      setSectionFormError(`Total would be ${newTotal}%. Max is 100%. ${getRemainingSectionPercent()}% available.`)
+      return false
+    }
+
+    setSectionFormError('')
+    return true
+  }
+
+  const handleSaveSection = async () => {
+    if (!validateSectionForm()) return
+    setSaving(true)
+
+    const sectionData = {
+      company_id: companyId,
+      job_id: parseInt(id),
+      name: sectionForm.name.trim(),
+      description: sectionForm.description.trim() || null,
+      percent_of_job: parseFloat(sectionForm.percent_of_job) || 0,
+      assigned_to: sectionForm.assigned_to ? parseInt(sectionForm.assigned_to) : null,
+      estimated_hours: sectionForm.estimated_hours ? parseFloat(sectionForm.estimated_hours) : null,
+      scheduled_date: sectionForm.scheduled_date || null,
+      status: sectionForm.status,
+      updated_at: new Date().toISOString()
+    }
+
+    if (editingSection) {
+      await supabase.from('job_sections').update(sectionData).eq('id', editingSection.id)
+    } else {
+      sectionData.sort_order = sections.length
+      await supabase.from('job_sections').insert(sectionData)
+    }
+
+    setShowSectionModal(false)
+    setEditingSection(null)
+    resetSectionForm()
+    await fetchJobData()
+    setSaving(false)
+  }
+
+  const handleDeleteSection = async (sectionId) => {
+    if (!confirm('Delete this section?')) return
+    setSaving(true)
+    await supabase.from('job_sections').delete().eq('id', sectionId)
+    await fetchJobData()
+    setSaving(false)
+  }
+
+  const updateSectionStatus = async (sectionId, newStatus) => {
+    setSaving(true)
+    await supabase
+      .from('job_sections')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', sectionId)
+    await fetchJobData()
+    setSaving(false)
+  }
+
+  const resetSectionForm = () => {
+    setSectionForm({
+      name: '',
+      description: '',
+      percent_of_job: '',
+      assigned_to: '',
+      estimated_hours: '',
+      scheduled_date: '',
+      status: 'Not Started'
+    })
+    setSectionFormError('')
+  }
+
+  const openAddSection = () => {
+    resetSectionForm()
+    setEditingSection(null)
+    setShowSectionModal(true)
+  }
+
+  const openEditSection = (section) => {
+    setEditingSection(section)
+    setSectionForm({
+      name: section.name || '',
+      description: section.description || '',
+      percent_of_job: section.percent_of_job?.toString() || '',
+      assigned_to: section.assigned_to?.toString() || '',
+      estimated_hours: section.estimated_hours?.toString() || '',
+      scheduled_date: section.scheduled_date || '',
+      status: section.status || 'Not Started'
+    })
+    setSectionFormError('')
+    setShowSectionModal(true)
+  }
+
+  // Mini Gantt helpers
+  const getGanttDateRange = () => {
+    const dates = sections.filter(s => s.scheduled_date).map(s => new Date(s.scheduled_date))
+    if (dates.length === 0) {
+      const today = new Date()
+      return { start: new Date(today.setDate(today.getDate() - 3)), end: new Date(today.setDate(today.getDate() + 17)), days: 14 }
+    }
+    const min = new Date(Math.min(...dates))
+    const max = new Date(Math.max(...dates))
+    min.setDate(min.getDate() - 2)
+    max.setDate(max.getDate() + 5)
+    const days = Math.ceil((max - min) / (1000 * 60 * 60 * 24))
+    return { start: min, end: max, days: Math.max(days, 14) }
+  }
+
+  const getSectionGanttPosition = (section) => {
+    if (!section.scheduled_date) return null
+    const { start, days } = getGanttDateRange()
+    const sectionDate = new Date(section.scheduled_date)
+    const daysDiff = Math.floor((sectionDate - start) / (1000 * 60 * 60 * 24))
+    const hours = parseFloat(section.estimated_hours) || 4
+    const widthDays = Math.max(0.5, hours / 8)
+    const dayWidth = 100 / days
+    return { left: `${daysDiff * dayWidth}%`, width: `${Math.max(widthDays * dayWidth, 3)}%` }
+  }
+
+  const sectionProgress = calculateSectionProgress()
+  const totalSectionPercent = getTotalSectionPercent()
+
   // Styles
   const inputStyle = {
     width: '100%',
@@ -360,7 +569,268 @@ export default function JobDetail() {
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px' }}>
+      {/* Section Progress Bar */}
+      {sections.length > 0 && (
+        <div style={{
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          padding: '20px',
+          border: `1px solid ${theme.border}`,
+          marginBottom: '20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Section Progress</span>
+            <span style={{ fontSize: '14px', fontWeight: '600', color: sectionProgress === 100 ? '#22c55e' : theme.accent }}>
+              {Math.round(sectionProgress)}%
+            </span>
+          </div>
+          <div style={{
+            height: '12px',
+            backgroundColor: theme.border,
+            borderRadius: '6px',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              height: '100%',
+              width: `${sectionProgress}%`,
+              backgroundColor: sectionProgress === 100 ? '#22c55e' : theme.accent,
+              borderRadius: '6px',
+              transition: 'width 0.3s ease'
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '12px', color: theme.textMuted }}>
+            <span>{sections.filter(s => s.status === 'Complete' || s.status === 'Verified').length} of {sections.length} sections complete</span>
+            <span style={{ color: totalSectionPercent === 100 ? '#22c55e' : totalSectionPercent > 100 ? '#ef4444' : theme.textMuted }}>
+              {totalSectionPercent}% allocated
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Sections & Mini Gantt */}
+      <div style={{
+        backgroundColor: theme.bgCard,
+        borderRadius: '12px',
+        padding: '20px',
+        border: `1px solid ${theme.border}`,
+        marginBottom: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+            <CheckCircle2 size={18} />
+            Sections ({sections.length})
+            <HelpBadge text="Break job into trackable sections. Total percent must equal 100%." />
+          </h3>
+          <button
+            onClick={openAddSection}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              minHeight: '44px',
+              backgroundColor: theme.accent,
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Plus size={16} />
+            Add Section
+          </button>
+        </div>
+
+        {/* Percent allocation warning */}
+        {totalSectionPercent !== 100 && sections.length > 0 && (
+          <div style={{
+            padding: '12px 16px',
+            backgroundColor: totalSectionPercent > 100 ? '#fef2f2' : '#fefce8',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <AlertCircle size={16} style={{ color: totalSectionPercent > 100 ? '#ef4444' : '#eab308' }} />
+            <span style={{ fontSize: '13px', color: totalSectionPercent > 100 ? '#dc2626' : '#ca8a04' }}>
+              {totalSectionPercent > 100
+                ? `Total allocation is ${totalSectionPercent}% (exceeds 100%)`
+                : `Total allocation is ${totalSectionPercent}%. ${100 - totalSectionPercent}% remaining.`}
+            </span>
+          </div>
+        )}
+
+        {/* Mini Gantt */}
+        {sections.filter(s => s.scheduled_date).length > 0 && (
+          <div ref={ganttRef} style={{ overflowX: 'auto', marginBottom: '16px', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: isMobile ? '500px' : '100%', padding: '8px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+              {/* Timeline Header */}
+              <div style={{ display: 'flex', borderBottom: `1px solid ${theme.border}`, marginBottom: '8px', paddingBottom: '6px' }}>
+                {(() => {
+                  const { start, days } = getGanttDateRange()
+                  const cols = []
+                  for (let i = 0; i < days; i++) {
+                    const d = new Date(start)
+                    d.setDate(d.getDate() + i)
+                    const isToday = d.toDateString() === new Date().toDateString()
+                    cols.push(
+                      <div key={i} style={{
+                        flex: 1,
+                        textAlign: 'center',
+                        fontSize: '8px',
+                        color: isToday ? theme.accent : theme.textMuted,
+                        fontWeight: isToday ? '600' : '400'
+                      }}>
+                        {d.getDate()}
+                      </div>
+                    )
+                  }
+                  return cols
+                })()}
+              </div>
+              {/* Section Rows */}
+              {sections.map(section => {
+                const pos = getSectionGanttPosition(section)
+                const color = ganttSectionColors[section.status] || ganttSectionColors['Not Started']
+                return (
+                  <div key={section.id} style={{ position: 'relative', height: '24px', marginBottom: '4px' }}>
+                    {pos ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: pos.left,
+                          width: pos.width,
+                          top: '2px',
+                          height: '20px',
+                          backgroundColor: color,
+                          borderRadius: '3px',
+                          padding: '2px 4px',
+                          overflow: 'hidden',
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => openEditSection(section)}
+                        title={`${section.name} - ${section.status}`}
+                      >
+                        <div style={{ fontSize: '9px', fontWeight: '500', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {section.name}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ padding: '3px 8px', fontSize: '10px', color: theme.textMuted, fontStyle: 'italic' }}>
+                        {section.name} (unscheduled)
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Sections List */}
+        {sections.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 20px', color: theme.textMuted }}>
+            <CheckCircle2 size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
+            <div style={{ fontSize: '13px' }}>No sections yet. Break this job into trackable sections.</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {sections.map(section => {
+              const statusColor = sectionStatusColors[section.status] || sectionStatusColors['Not Started']
+              return (
+                <div
+                  key={section.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '8px',
+                    border: `1px solid ${theme.border}`,
+                    flexWrap: isMobile ? 'wrap' : 'nowrap'
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: isMobile ? '100%' : 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>{section.name}</span>
+                      <span style={{
+                        padding: '2px 8px',
+                        backgroundColor: statusColor.bg,
+                        color: statusColor.text,
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontWeight: '500'
+                      }}>
+                        {section.status}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '11px', color: theme.textMuted }}>
+                      <span style={{ fontWeight: '500', color: theme.accent }}>{section.percent_of_job || 0}%</span>
+                      {section.assigned_employee && <span>{section.assigned_employee.name}</span>}
+                      {section.scheduled_date && <span>{new Date(section.scheduled_date).toLocaleDateString()}</span>}
+                      {section.estimated_hours && <span>{section.estimated_hours}h</span>}
+                    </div>
+                  </div>
+                  <select
+                    value={section.status}
+                    onChange={(e) => updateSectionStatus(section.id, e.target.value)}
+                    style={{
+                      padding: '6px 8px',
+                      minHeight: '36px',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '6px',
+                      backgroundColor: theme.bgCard,
+                      color: theme.text,
+                      fontSize: '11px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {Object.keys(sectionStatusColors).map(status => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => openEditSection(section)}
+                    style={{
+                      padding: '8px',
+                      minWidth: '36px',
+                      minHeight: '36px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '6px',
+                      color: theme.textSecondary,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSection(section.id)}
+                    style={{
+                      padding: '8px',
+                      minWidth: '36px',
+                      minHeight: '36px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '6px',
+                      color: '#ef4444',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 360px', gap: '24px' }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Customer Info */}
@@ -796,6 +1266,214 @@ export default function JobDetail() {
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button onClick={() => setShowAddTime(false)} style={{ flex: 1, padding: '10px 16px', border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.text, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>Cancel</button>
                 <button onClick={addTimeEntry} disabled={saving || !newTime.employee_id || !newTime.hours} style={{ flex: 1, padding: '10px 16px', backgroundColor: theme.accent, color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', opacity: saving || !newTime.employee_id || !newTime.hours ? 0.6 : 1 }}>{saving ? 'Adding...' : 'Add Time'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Section Modal */}
+      {showSectionModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '480px',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <div style={{
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                {editingSection ? 'Edit Section' : 'Add Section'}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowSectionModal(false)
+                  setEditingSection(null)
+                  resetSectionForm()
+                }}
+                style={{
+                  padding: '8px',
+                  minWidth: '44px',
+                  minHeight: '44px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: theme.textMuted,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px' }}>
+              {sectionFormError && (
+                <div style={{
+                  padding: '12px 16px',
+                  backgroundColor: '#fef2f2',
+                  borderRadius: '8px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <AlertCircle size={16} style={{ color: '#ef4444' }} />
+                  <span style={{ fontSize: '13px', color: '#dc2626' }}>{sectionFormError}</span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={labelStyle}>Section Name *</label>
+                  <input
+                    type="text"
+                    value={sectionForm.name}
+                    onChange={(e) => setSectionForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g., Install fixtures"
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Description</label>
+                  <textarea
+                    value={sectionForm.description}
+                    onChange={(e) => setSectionForm(prev => ({ ...prev, description: e.target.value }))}
+                    rows={2}
+                    style={{ ...inputStyle, resize: 'vertical' }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>
+                      % of Job
+                      <span style={{ fontSize: '10px', color: theme.textMuted, fontWeight: '400', marginLeft: '4px' }}>
+                        ({getRemainingSectionPercent()}% avail)
+                      </span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={sectionForm.percent_of_job}
+                      onChange={(e) => setSectionForm(prev => ({ ...prev, percent_of_job: e.target.value }))}
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Est. Hours</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={sectionForm.estimated_hours}
+                      onChange={(e) => setSectionForm(prev => ({ ...prev, estimated_hours: e.target.value }))}
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Status</label>
+                  <select
+                    value={sectionForm.status}
+                    onChange={(e) => setSectionForm(prev => ({ ...prev, status: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    {Object.keys(sectionStatusColors).map(status => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Assign To</label>
+                  <select
+                    value={sectionForm.assigned_to}
+                    onChange={(e) => setSectionForm(prev => ({ ...prev, assigned_to: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select Employee --</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Scheduled Date</label>
+                  <input
+                    type="date"
+                    value={sectionForm.scheduled_date}
+                    onChange={(e) => setSectionForm(prev => ({ ...prev, scheduled_date: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button
+                  onClick={() => {
+                    setShowSectionModal(false)
+                    setEditingSection(null)
+                    resetSectionForm()
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    minHeight: '44px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveSection}
+                  disabled={saving}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    minHeight: '44px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    opacity: saving ? 0.6 : 1
+                  }}
+                >
+                  <Save size={16} />
+                  {saving ? 'Saving...' : (editingSection ? 'Update' : 'Add')}
+                </button>
               </div>
             </div>
           </div>
