@@ -10,16 +10,8 @@ import {
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2
 } from 'lucide-react'
 
-// Section status colors
-const sectionStatusColors = {
-  'Not Started': { bg: '#f3f4f6', text: '#6b7280' },
-  'In Progress': { bg: '#fef3c7', text: '#d97706' },
-  'Complete': { bg: '#d1fae5', text: '#059669' },
-  'Verified': { bg: '#dbeafe', text: '#2563eb' }
-}
-
-// Gantt colors for mini view
-const ganttSectionColors = {
+// Default status colors (fallback when store is empty)
+const defaultSectionStatusColors = {
   'Not Started': '#9ca3af',
   'In Progress': '#3b82f6',
   'Complete': '#22c55e',
@@ -56,6 +48,36 @@ export default function JobDetail() {
   const timeLogs = useStore((state) => state.timeLogs)
   const fetchJobs = useStore((state) => state.fetchJobs)
   const fetchTimeLogs = useStore((state) => state.fetchTimeLogs)
+  const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
+
+  // Normalize section statuses from store
+  const sectionStatuses = (storeJobSectionStatuses || []).map((s, idx) => {
+    if (typeof s === 'string') {
+      return { id: s, name: s, color: defaultSectionStatusColors[s] || '#9ca3af' }
+    }
+    return { id: s.id || s.name, name: s.name, color: s.color || defaultSectionStatusColors[s.name] || '#9ca3af' }
+  })
+
+  // Fallback if store is empty
+  const effectiveSectionStatuses = sectionStatuses.length > 0 ? sectionStatuses : [
+    { id: 'Not Started', name: 'Not Started', color: '#9ca3af' },
+    { id: 'In Progress', name: 'In Progress', color: '#3b82f6' },
+    { id: 'Complete', name: 'Complete', color: '#22c55e' },
+    { id: 'Verified', name: 'Verified', color: '#8b5cf6' }
+  ]
+
+  // Get section status color from store
+  const getSectionStatusColor = (status) => {
+    const found = effectiveSectionStatuses.find(s => s.id === status || s.name === status)
+    if (found) return { bg: found.color + '20', text: found.color }
+    return { bg: '#f3f4f6', text: '#6b7280' }
+  }
+
+  // Get gantt color for section
+  const getGanttColor = (status) => {
+    const found = effectiveSectionStatuses.find(s => s.id === status || s.name === status)
+    return found?.color || '#9ca3af'
+  }
 
   const [job, setJob] = useState(null)
   const [lineItems, setLineItems] = useState([])
@@ -694,7 +716,7 @@ export default function JobDetail() {
               {/* Section Rows */}
               {sections.map(section => {
                 const pos = getSectionGanttPosition(section)
-                const color = ganttSectionColors[section.status] || ganttSectionColors['Not Started']
+                const color = getGanttColor(section.status)
                 return (
                   <div key={section.id} style={{ position: 'relative', height: '24px', marginBottom: '4px' }}>
                     {pos ? (
@@ -739,7 +761,7 @@ export default function JobDetail() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {sections.map(section => {
-              const statusColor = sectionStatusColors[section.status] || sectionStatusColors['Not Started']
+              const statusColor = getSectionStatusColor(section.status)
               return (
                 <div
                   key={section.id}
@@ -789,8 +811,8 @@ export default function JobDetail() {
                       cursor: 'pointer'
                     }}
                   >
-                    {Object.keys(sectionStatusColors).map(status => (
-                      <option key={status} value={status}>{status}</option>
+                    {effectiveSectionStatuses.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
                   <button
@@ -1400,8 +1422,8 @@ export default function JobDetail() {
                     onChange={(e) => setSectionForm(prev => ({ ...prev, status: e.target.value }))}
                     style={inputStyle}
                   >
-                    {Object.keys(sectionStatusColors).map(status => (
-                      <option key={status} value={status}>{status}</option>
+                    {effectiveSectionStatuses.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
                 </div>
