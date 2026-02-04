@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, X, DollarSign } from 'lucide-react'
+import ProductPickerModal from '../components/ProductPickerModal'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase } from 'lucide-react'
 
 // Light theme fallback
 const defaultTheme = {
@@ -36,8 +37,7 @@ export default function QuoteDetail() {
   const [lineItems, setLineItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [showAddLine, setShowAddLine] = useState(false)
-  const [newLine, setNewLine] = useState({ item_id: '', quantity: 1 })
+  const [showProductPicker, setShowProductPicker] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -75,30 +75,21 @@ export default function QuoteDetail() {
     setLoading(false)
   }
 
-  const addLineItem = async () => {
-    if (!newLine.item_id) return
-
-    const product = products.find(p => p.id === parseInt(newLine.item_id))
-    if (!product) return
-
+  const handleProductSelect = async (product, laborCost, totalPrice) => {
     setSaving(true)
-
-    const lineTotal = (product.unit_price || 0) * newLine.quantity
+    setShowProductPicker(false)
 
     await supabase.from('quote_lines').insert([{
       company_id: companyId,
       quote_id: parseInt(id),
       item_id: product.id,
-      quantity: newLine.quantity,
-      unit_price: product.unit_price,
-      line_total: lineTotal
+      quantity: 1,
+      unit_price: totalPrice,
+      line_total: totalPrice
     }])
 
     await updateQuoteTotal()
     await fetchQuoteData()
-
-    setNewLine({ item_id: '', quantity: 1 })
-    setShowAddLine(false)
     setSaving(false)
   }
 
@@ -343,7 +334,7 @@ export default function QuoteDetail() {
                 Line Items
               </h3>
               <button
-                onClick={() => setShowAddLine(true)}
+                onClick={() => setShowProductPicker(true)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -760,127 +751,12 @@ export default function QuoteDetail() {
         </div>
       </div>
 
-      {/* Add Line Item Modal */}
-      {showAddLine && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          zIndex: 50
-        }}>
-          <div style={{
-            backgroundColor: theme.bgCard,
-            borderRadius: '16px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
-            width: '100%',
-            maxWidth: '400px'
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '20px',
-              borderBottom: `1px solid ${theme.border}`
-            }}>
-              <h2 style={{
-                fontSize: '18px',
-                fontWeight: '600',
-                color: theme.text
-              }}>
-                Add Line Item
-              </h2>
-              <button
-                onClick={() => setShowAddLine(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: '8px',
-                  cursor: 'pointer',
-                  color: theme.textMuted,
-                  borderRadius: '8px'
-                }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div style={{ padding: '20px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={labelStyle}>Product/Service</label>
-                  <select
-                    value={newLine.item_id}
-                    onChange={(e) => setNewLine(prev => ({ ...prev, item_id: e.target.value }))}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select --</option>
-                    {products.filter(p => p.active).map(product => (
-                      <option key={product.id} value={product.id}>
-                        {product.name} - {formatCurrency(product.unit_price)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Quantity</label>
-                  <input
-                    type="number"
-                    value={newLine.quantity}
-                    onChange={(e) => setNewLine(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
-                    min="1"
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              <div style={{
-                display: 'flex',
-                gap: '12px',
-                marginTop: '24px'
-              }}>
-                <button
-                  onClick={() => setShowAddLine(false)}
-                  style={{
-                    flex: 1,
-                    padding: '10px 16px',
-                    border: `1px solid ${theme.border}`,
-                    backgroundColor: 'transparent',
-                    color: theme.text,
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={addLineItem}
-                  disabled={saving || !newLine.item_id}
-                  style={{
-                    flex: 1,
-                    padding: '10px 16px',
-                    backgroundColor: theme.accent,
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: (saving || !newLine.item_id) ? 'not-allowed' : 'pointer',
-                    opacity: (saving || !newLine.item_id) ? 0.6 : 1
-                  }}
-                >
-                  {saving ? 'Adding...' : 'Add Item'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Product Picker Modal */}
+      <ProductPickerModal
+        isOpen={showProductPicker}
+        onClose={() => setShowProductPicker(false)}
+        onSelect={handleProductSelect}
+      />
     </div>
   )
 }
