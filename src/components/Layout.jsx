@@ -1,4 +1,4 @@
-import { useState, createContext, useContext } from 'react'
+import { useState, createContext, useContext, useMemo } from 'react'
 import { useNavigate, NavLink, Outlet } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import FeedbackButton from './FeedbackButton'
@@ -42,7 +42,9 @@ import {
   UserCircle,
   Rocket,
   BookOpen,
-  Wrench
+  Wrench,
+  Settings as SettingsIcon,
+  X as XIcon
 } from 'lucide-react'
 
 // Theme context
@@ -153,8 +155,12 @@ export default function Layout() {
   const company = useStore((state) => state.company)
   const clearSession = useStore((state) => state.clearSession)
   const isDeveloper = useStore((state) => state.isDeveloper)
+  const aiModules = useStore((state) => state.aiModules) || []
+  const updateAgentPlacement = useStore((state) => state.updateAgentPlacement)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [expandedMenus, setExpandedMenus] = useState({})
+  const [showAgentSettings, setShowAgentSettings] = useState(false)
+  const [editingAgent, setEditingAgent] = useState(null)
 
   const toggleMenu = (key) => {
     setExpandedMenus(prev => ({ ...prev, [key]: !prev[key] }))
@@ -169,6 +175,73 @@ export default function Layout() {
   const companyAgents = useStore((state) => state.companyAgents) || []
   const recruitedAgents = companyAgents.filter(ca => ca.subscription_status === 'active')
 
+  // Helper to get effective section for an agent (user override > default)
+  const getAgentSection = (agent) => agent.user_menu_section || agent.default_menu_section
+  const getAgentParent = (agent) => agent.user_menu_parent !== undefined ? agent.user_menu_parent : agent.default_menu_parent
+
+  // Get agents for a specific section (optionally filtered by parent)
+  const getAgentsForSection = (sectionName, parentLabel = null) => {
+    return aiModules.filter(agent => {
+      const effectiveSection = getAgentSection(agent)
+      const effectiveParent = getAgentParent(agent)
+      if (effectiveSection !== sectionName) return false
+      if (parentLabel === null) {
+        // Section-level agents (no parent)
+        return !effectiveParent
+      }
+      return effectiveParent === parentLabel
+    })
+  }
+
+  // Menu sections for agent placement settings
+  const menuSectionOptions = [
+    { value: 'SALES_FLOW', label: 'Sales Flow' },
+    { value: 'CUSTOMERS', label: 'Customers' },
+    { value: 'OPERATIONS', label: 'Operations' },
+    { value: 'FINANCIAL', label: 'Financial' },
+    { value: 'TEAM', label: 'Team' }
+  ]
+
+  // Menu parent options per section
+  const menuParentOptions = {
+    SALES_FLOW: [
+      { value: '', label: '(Section level)' },
+      { value: 'Leads', label: 'Under Leads' },
+      { value: 'Lead Setter', label: 'Under Lead Setter' },
+      { value: 'Pipeline', label: 'Under Pipeline' },
+      { value: 'Quotes', label: 'Under Quotes' },
+      { value: 'Jobs', label: 'Under Jobs' }
+    ],
+    CUSTOMERS: [
+      { value: '', label: '(Section level)' },
+      { value: 'Customers', label: 'Under Customers' },
+      { value: 'Appointments', label: 'Under Appointments' }
+    ],
+    OPERATIONS: [
+      { value: '', label: '(Section level)' },
+      { value: 'Job Board', label: 'Under Job Board' },
+      { value: 'Products & Services', label: 'Under Products & Services' },
+      { value: 'Inventory', label: 'Under Inventory' }
+    ],
+    FINANCIAL: [
+      { value: '', label: '(Section level)' },
+      { value: 'Invoices', label: 'Under Invoices' },
+      { value: 'Payments', label: 'Under Payments' },
+      { value: 'Expenses', label: 'Under Expenses' }
+    ],
+    TEAM: [
+      { value: '', label: '(Section level)' },
+      { value: 'Employees', label: 'Under Employees' },
+      { value: 'Time Clock', label: 'Under Time Clock' }
+    ]
+  }
+
+  // Handle saving agent placement
+  const handleSaveAgentPlacement = async (agent, newSection, newParent) => {
+    await updateAgentPlacement(agent.id, newSection, newParent || null)
+    setEditingAgent(null)
+  }
+
   // Dashboard link (always visible at top)
   const dashboardItem = { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
 
@@ -181,53 +254,104 @@ export default function Layout() {
     { to: '/jobs', icon: Briefcase, label: 'Jobs', step: 5, hint: 'Won quotes become jobs', color: '#22c55e' }
   ]
 
-  // Grouped navigation structure - Consistent sections with tooltips
-  const navSections = [
+  // Base navigation sections (without dynamically placed agents)
+  const baseNavSections = [
     {
+      key: 'CUSTOMERS',
       title: 'CUSTOMERS',
       sectionIcon: Users,
-      items: [
+      baseItems: [
         { to: '/customers', icon: Users, label: 'Customers', hint: 'View and manage all your customers' },
         { to: '/appointments', icon: CalendarCheck, label: 'Appointments', hint: 'All scheduled meetings and site visits' }
       ]
     },
     {
+      key: 'OPERATIONS',
       title: 'OPERATIONS',
       sectionIcon: Wrench,
-      items: [
+      baseItems: [
         { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'PM workspace to schedule and track job sections' },
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
-        { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' },
-        { to: '/agents/freddy', icon: Bot, label: 'Freddy - Fleet AI', hint: 'AI fleet manager for vehicles equipment and maintenance', isAgent: true }
+        { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' }
       ]
     },
     {
+      key: 'FINANCIAL',
       title: 'FINANCIAL',
       sectionIcon: DollarSign,
-      items: [
+      baseItems: [
         { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Create and track customer invoices' },
         { to: '/lead-payments', icon: CreditCard, label: 'Payments', hint: 'Record and manage payments received' },
         { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and costs' }
       ]
     },
     {
+      key: 'TEAM',
       title: 'TEAM',
       sectionIcon: Users,
-      items: [
+      baseItems: [
         { to: '/employees', icon: UserCog, label: 'Employees', hint: 'Manage team members and roles' },
         { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' }
       ]
-    },
-    {
-      title: 'AI CREW',
-      sectionIcon: Bot,
-      items: [
-        { to: '/agents/lenard', icon: Bot, label: 'Lenard - Lighting AI', hint: 'AI-powered lighting audits and energy savings calculations', isAgent: true },
-        { to: '/agents/freddy', icon: Bot, label: 'Freddy - Fleet AI', hint: 'AI fleet manager for vehicles equipment and maintenance', isAgent: true }
-      ],
-      isAiSection: true
     }
   ]
+
+  // Build dynamic nav sections with agents injected
+  const navSections = useMemo(() => {
+    return baseNavSections.map(section => {
+      const items = []
+
+      // Add base items with any child agents
+      section.baseItems.forEach(item => {
+        items.push(item)
+        // Check for agents placed under this menu item
+        const childAgents = getAgentsForSection(section.key, item.label)
+        childAgents.forEach(agent => {
+          items.push({
+            to: agent.route_path,
+            icon: Bot,
+            label: agent.display_name,
+            hint: agent.description,
+            isAgent: true,
+            isChildAgent: true
+          })
+        })
+      })
+
+      // Add section-level agents (no parent)
+      const sectionAgents = getAgentsForSection(section.key, null)
+      sectionAgents.forEach(agent => {
+        items.push({
+          to: agent.route_path,
+          icon: Bot,
+          label: agent.display_name,
+          hint: agent.description,
+          isAgent: true
+        })
+      })
+
+      return {
+        title: section.title,
+        sectionIcon: section.sectionIcon,
+        items
+      }
+    })
+  }, [aiModules])
+
+  // AI CREW section - always shows all active agents
+  const aiCrewSection = useMemo(() => ({
+    title: 'AI CREW',
+    sectionIcon: Bot,
+    items: aiModules.map(agent => ({
+      to: agent.route_path,
+      icon: Bot,
+      label: agent.display_name,
+      hint: agent.description,
+      isAgent: true
+    })),
+    isAiSection: true,
+    hasSettings: true
+  }), [aiModules])
 
   // Agent icon mapping
   const agentIcons = {
@@ -235,10 +359,14 @@ export default function Layout() {
     'freddy': Truck
   }
 
-  // Active quoting agents for bidding/quoting assistance under Quotes
-  const quotingAgents = [
-    { id: 'lenard', name: 'Lenard - Lighting AI', description: 'AI-powered lighting audits and energy savings calculations', route: '/agents/lenard', active: true }
-  ].filter(agent => agent.active)
+  // Get agents placed under specific Sales Flow items
+  const getSalesFlowChildAgents = (parentLabel) => {
+    return aiModules.filter(agent => {
+      const section = getAgentSection(agent)
+      const parent = getAgentParent(agent)
+      return section === 'SALES_FLOW' && parent === parentLabel
+    })
+  }
 
   // Dev section - only shown for developers (handled separately for red styling)
   const devSection = isDeveloper ? {
@@ -260,19 +388,20 @@ export default function Layout() {
       style={({ isActive }) => ({
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
-        padding: '8px 12px',
-        borderRadius: '6px',
+        gap: item.isChildAgent ? '6px' : '10px',
+        padding: item.isChildAgent ? '5px 10px' : '8px 12px',
+        marginLeft: item.isChildAgent ? '28px' : 0,
+        borderRadius: item.isChildAgent ? '4px' : '6px',
         color: item.isAgent ? (isActive ? '#a855f7' : theme.textMuted) : (isActive ? theme.accent : theme.textMuted),
         backgroundColor: item.isAgent ? (isActive ? 'rgba(168,85,247,0.12)' : 'transparent') : (isActive ? theme.accentBg : 'transparent'),
         textDecoration: 'none',
-        fontSize: '13px',
+        fontSize: item.isChildAgent ? '11px' : '13px',
         fontWeight: isActive ? '500' : '400',
         transition: 'all 0.15s ease',
-        minHeight: mobile ? '44px' : '36px'
+        minHeight: mobile ? (item.isChildAgent ? '36px' : '44px') : (item.isChildAgent ? '28px' : '36px')
       })}
     >
-      <item.icon size={18} style={{ color: item.isAgent ? '#a855f7' : undefined }} />
+      <item.icon size={item.isChildAgent ? 12 : 18} style={{ color: item.isAgent ? '#a855f7' : undefined }} />
       {item.label}
     </NavLink>
   )
@@ -536,13 +665,13 @@ export default function Layout() {
                       <span style={{ flex: 1 }}>{item.label}</span>
                       <item.icon size={16} style={{ opacity: 0.6 }} />
                     </NavLink>
-                    {/* Quoting Agents - Child list under Quotes (step 4) */}
-                    {item.step === 4 && quotingAgents.length > 0 && (
+                    {/* Dynamic AI Agents - Child list under each Sales Flow item */}
+                    {getSalesFlowChildAgents(item.label).length > 0 && (
                       <div style={{ marginLeft: '34px', marginTop: '2px', marginBottom: '4px' }}>
-                        {quotingAgents.map(agent => (
+                        {getSalesFlowChildAgents(item.label).map(agent => (
                           <NavLink
                             key={agent.id}
-                            to={agent.route}
+                            to={agent.route_path}
                             title={agent.description}
                             style={({ isActive }) => ({
                               display: 'flex',
@@ -550,16 +679,16 @@ export default function Layout() {
                               gap: '6px',
                               padding: '5px 10px',
                               borderRadius: '4px',
-                              color: isActive ? '#3b82f6' : theme.textMuted,
-                              backgroundColor: isActive ? 'rgba(59,130,246,0.1)' : 'transparent',
+                              color: isActive ? '#a855f7' : theme.textMuted,
+                              backgroundColor: isActive ? 'rgba(168,85,247,0.1)' : 'transparent',
                               textDecoration: 'none',
                               fontSize: '11px',
                               fontWeight: isActive ? '500' : '400',
                               transition: 'all 0.15s ease'
                             })}
                           >
-                            <Bot size={12} />
-                            {agent.name}
+                            <Bot size={12} style={{ color: '#a855f7' }} />
+                            {agent.display_name}
                           </NavLink>
                         ))}
                       </div>
@@ -572,6 +701,72 @@ export default function Layout() {
             {navSections.map((section) => (
               <NavSection key={section.title} section={section} />
             ))}
+
+            {/* AI CREW Section with Settings */}
+            {aiModules.length > 0 && (
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  color: '#a855f7',
+                  letterSpacing: '0.05em',
+                  padding: '8px 12px 4px',
+                  textTransform: 'uppercase',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Bot size={12} />
+                    AI CREW
+                  </div>
+                  <button
+                    onClick={() => setShowAgentSettings(true)}
+                    title="Configure AI agent menu placement"
+                    style={{
+                      padding: '4px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      color: '#a855f7',
+                      cursor: 'pointer',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <SettingsIcon size={12} />
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                  {aiModules.map((agent) => (
+                    <NavLink
+                      key={agent.id}
+                      to={agent.route_path}
+                      title={agent.description}
+                      style={({ isActive }) => ({
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        color: isActive ? '#a855f7' : theme.textMuted,
+                        backgroundColor: isActive ? 'rgba(168,85,247,0.12)' : 'transparent',
+                        textDecoration: 'none',
+                        fontSize: '13px',
+                        fontWeight: isActive ? '500' : '400',
+                        transition: 'all 0.15s ease',
+                        minHeight: '36px'
+                      })}
+                    >
+                      <Bot size={18} style={{ color: '#a855f7' }} />
+                      {agent.display_name}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {devSection && <NavSection section={devSection} />}
           </nav>
 
@@ -837,22 +1032,23 @@ export default function Layout() {
                             </div>
                           </div>
                         </NavLink>
-                        {/* Quoting Agents - Child list under Quotes (step 4) - Mobile */}
-                        {item.step === 4 && quotingAgents.length > 0 && (
+                        {/* Dynamic AI Agents - Child list under each Sales Flow item - Mobile */}
+                        {getSalesFlowChildAgents(item.label).length > 0 && (
                           <div style={{ marginLeft: '36px', marginTop: '2px', marginBottom: '4px' }}>
-                            {quotingAgents.map(agent => (
+                            {getSalesFlowChildAgents(item.label).map(agent => (
                               <NavLink
                                 key={agent.id}
-                                to={agent.route}
+                                to={agent.route_path}
                                 onClick={() => setMobileMenuOpen(false)}
+                                title={agent.description}
                                 style={({ isActive }) => ({
                                   display: 'flex',
                                   alignItems: 'center',
                                   gap: '8px',
                                   padding: '8px 10px',
                                   borderRadius: '4px',
-                                  color: isActive ? '#3b82f6' : theme.textMuted,
-                                  backgroundColor: isActive ? 'rgba(59,130,246,0.1)' : 'transparent',
+                                  color: isActive ? '#a855f7' : theme.textMuted,
+                                  backgroundColor: isActive ? 'rgba(168,85,247,0.1)' : 'transparent',
                                   textDecoration: 'none',
                                   fontSize: '12px',
                                   fontWeight: isActive ? '500' : '400',
@@ -860,8 +1056,8 @@ export default function Layout() {
                                   minHeight: '36px'
                                 })}
                               >
-                                <Bot size={14} />
-                                {agent.name}
+                                <Bot size={14} style={{ color: '#a855f7' }} />
+                                {agent.display_name}
                               </NavLink>
                             ))}
                           </div>
@@ -874,6 +1070,73 @@ export default function Layout() {
                 {navSections.map((section) => (
                   <NavSection key={section.title} section={section} mobile />
                 ))}
+
+                {/* AI CREW Section with Settings - Mobile */}
+                {aiModules.length > 0 && (
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{
+                      fontSize: '10px',
+                      fontWeight: '600',
+                      color: '#a855f7',
+                      letterSpacing: '0.05em',
+                      padding: '8px 12px 4px',
+                      textTransform: 'uppercase',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Bot size={12} />
+                        AI CREW
+                      </div>
+                      <button
+                        onClick={() => setShowAgentSettings(true)}
+                        title="Configure AI agent menu placement"
+                        style={{
+                          padding: '4px',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          color: '#a855f7',
+                          cursor: 'pointer',
+                          borderRadius: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <SettingsIcon size={12} />
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                      {aiModules.map((agent) => (
+                        <NavLink
+                          key={agent.id}
+                          to={agent.route_path}
+                          onClick={() => setMobileMenuOpen(false)}
+                          title={agent.description}
+                          style={({ isActive }) => ({
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '10px 12px',
+                            borderRadius: '6px',
+                            color: isActive ? '#a855f7' : theme.textMuted,
+                            backgroundColor: isActive ? 'rgba(168,85,247,0.12)' : 'transparent',
+                            textDecoration: 'none',
+                            fontSize: '14px',
+                            fontWeight: isActive ? '500' : '400',
+                            transition: 'all 0.15s ease',
+                            minHeight: '44px'
+                          })}
+                        >
+                          <Bot size={18} style={{ color: '#a855f7' }} />
+                          {agent.display_name}
+                        </NavLink>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {devSection && <NavSection section={devSection} mobile />}
               </nav>
               <div style={{
@@ -959,6 +1222,207 @@ export default function Layout() {
           </div>
         </main>
       </div>
+
+      {/* Agent Settings Modal */}
+      {showAgentSettings && (
+        <>
+          <div
+            onClick={() => { setShowAgentSettings(false); setEditingAgent(null); }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 100
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              boxShadow: theme.shadowLg,
+              width: '90%',
+              maxWidth: '500px',
+              maxHeight: '80vh',
+              overflow: 'hidden',
+              zIndex: 101
+            }}
+          >
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Bot size={20} style={{ color: '#a855f7' }} />
+                <span style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
+                  AI Agent Placement
+                </span>
+              </div>
+              <button
+                onClick={() => { setShowAgentSettings(false); setEditingAgent(null); }}
+                style={{
+                  padding: '6px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: theme.textMuted,
+                  cursor: 'pointer',
+                  borderRadius: '4px'
+                }}
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: '16px 20px', overflowY: 'auto', maxHeight: 'calc(80vh - 60px)' }}>
+              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
+                Customize where each AI agent appears in your menu. Changes are saved automatically.
+              </p>
+
+              {aiModules.map(agent => {
+                const isEditing = editingAgent?.id === agent.id
+                const effectiveSection = getAgentSection(agent)
+                const effectiveParent = getAgentParent(agent)
+
+                return (
+                  <div
+                    key={agent.id}
+                    style={{
+                      padding: '12px',
+                      backgroundColor: isEditing ? theme.accentBg : theme.bg,
+                      borderRadius: '8px',
+                      marginBottom: '8px',
+                      border: `1px solid ${isEditing ? theme.accent : theme.border}`
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: isEditing ? '12px' : 0
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Bot size={18} style={{ color: '#a855f7' }} />
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                            {agent.display_name}
+                          </div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                            {menuSectionOptions.find(s => s.value === effectiveSection)?.label || effectiveSection}
+                            {effectiveParent && ` > ${effectiveParent}`}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setEditingAgent(isEditing ? null : agent)}
+                        style={{
+                          padding: '6px 12px',
+                          backgroundColor: isEditing ? theme.accent : 'transparent',
+                          border: `1px solid ${isEditing ? theme.accent : theme.border}`,
+                          borderRadius: '6px',
+                          color: isEditing ? '#fff' : theme.textMuted,
+                          fontSize: '12px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {isEditing ? 'Done' : 'Edit'}
+                      </button>
+                    </div>
+
+                    {isEditing && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div>
+                          <label style={{ fontSize: '12px', color: theme.textSecondary, display: 'block', marginBottom: '4px' }}>
+                            Menu Section
+                          </label>
+                          <select
+                            value={agent.user_menu_section || agent.default_menu_section}
+                            onChange={(e) => {
+                              const newSection = e.target.value
+                              handleSaveAgentPlacement(agent, newSection, '')
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '8px 10px',
+                              backgroundColor: theme.bgCard,
+                              border: `1px solid ${theme.border}`,
+                              borderRadius: '6px',
+                              color: theme.text,
+                              fontSize: '13px'
+                            }}
+                          >
+                            {menuSectionOptions.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '12px', color: theme.textSecondary, display: 'block', marginBottom: '4px' }}>
+                            Show Under
+                          </label>
+                          <select
+                            value={agent.user_menu_parent !== undefined ? (agent.user_menu_parent || '') : (agent.default_menu_parent || '')}
+                            onChange={(e) => {
+                              const currentSection = agent.user_menu_section || agent.default_menu_section
+                              handleSaveAgentPlacement(agent, currentSection, e.target.value)
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '8px 10px',
+                              backgroundColor: theme.bgCard,
+                              border: `1px solid ${theme.border}`,
+                              borderRadius: '6px',
+                              color: theme.text,
+                              fontSize: '13px'
+                            }}
+                          >
+                            {(menuParentOptions[agent.user_menu_section || agent.default_menu_section] || []).map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <button
+                          onClick={() => handleSaveAgentPlacement(agent, null, null)}
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: 'transparent',
+                            border: `1px solid ${theme.border}`,
+                            borderRadius: '6px',
+                            color: theme.textMuted,
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            alignSelf: 'flex-start'
+                          }}
+                        >
+                          Reset to Default
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {aiModules.length === 0 && (
+                <div style={{
+                  padding: '24px',
+                  textAlign: 'center',
+                  color: theme.textMuted
+                }}>
+                  <Bot size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
+                  <p>No AI agents installed yet.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Feedback Button */}
       <FeedbackButton />

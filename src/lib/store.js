@@ -61,6 +61,10 @@ export const useStore = create(
       leadSources: [],
       inventoryTypes: [],
       inventoryLocations: [],
+      jobStatuses: [],
+      jobSectionStatuses: [],
+      employeeRoles: [],
+      jobCalendars: [],
 
       // Labor Rates
       laborRates: [],
@@ -83,6 +87,9 @@ export const useStore = create(
       // Agents (Base Camp)
       agents: [],
       companyAgents: [],
+
+      // AI Modules (Dynamic menu agents)
+      aiModules: [],
 
       // Setters
       setCompany: (company) => set({ company, companyId: company?.id }),
@@ -148,13 +155,18 @@ export const useStore = create(
           serviceTypes: [],
           businessUnits: [],
           leadSources: [],
+          jobStatuses: [],
+          jobSectionStatuses: [],
+          employeeRoles: [],
+          jobCalendars: [],
           routes: [],
           bookings: [],
           leadPayments: [],
           utilityInvoices: [],
           incentives: [],
           agents: [],
-          companyAgents: []
+          companyAgents: [],
+          aiModules: []
         });
       },
 
@@ -529,7 +541,11 @@ export const useStore = create(
             businessUnits: parseSettingList('business_units'),
             leadSources: parseSettingList('lead_sources'),
             inventoryTypes: parseSettingList('inventory_types'),
-            inventoryLocations: parseSettingList('inventory_locations')
+            inventoryLocations: parseSettingList('inventory_locations'),
+            jobStatuses: parseSettingList('job_statuses'),
+            jobSectionStatuses: parseSettingList('job_section_statuses'),
+            employeeRoles: parseSettingList('employee_roles'),
+            jobCalendars: parseSettingList('job_calendars')
           });
         }
       },
@@ -733,6 +749,47 @@ export const useStore = create(
       },
 
       // ========================================
+      // FETCH FUNCTIONS - AI Modules
+      // ========================================
+
+      fetchAiModules: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('ai_modules')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('status', 'active')
+          .order('sort_order');
+
+        if (!error) set({ aiModules: data || [] });
+      },
+
+      updateAgentPlacement: async (agentId, userMenuSection, userMenuParent) => {
+        const { companyId, fetchAiModules } = get();
+        if (!companyId) return { error: 'No company selected' };
+
+        const { data, error } = await supabase
+          .from('ai_modules')
+          .update({
+            user_menu_section: userMenuSection || null,
+            user_menu_parent: userMenuParent || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', agentId)
+          .eq('company_id', companyId)
+          .select()
+          .single();
+
+        if (!error) {
+          await fetchAiModules();
+        }
+
+        return { data, error };
+      },
+
+      // ========================================
       // FETCH ALL DATA
       // ========================================
 
@@ -774,7 +831,8 @@ export const useStore = create(
           fetchIncentives,
           fetchAgents,
           fetchCompanyAgents,
-          fetchLaborRates
+          fetchLaborRates,
+          fetchAiModules
         } = get();
 
         // Fetch core data in parallel
@@ -810,7 +868,8 @@ export const useStore = create(
           fetchIncentives(),
           fetchAgents(),
           fetchCompanyAgents(),
-          fetchLaborRates()
+          fetchLaborRates(),
+          fetchAiModules()
         ]);
 
         set({ isLoading: false });
