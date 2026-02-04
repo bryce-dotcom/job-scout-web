@@ -168,8 +168,13 @@ export default function ProductsServices() {
 
   // Calculate labor cost for a product
   const getLaborCost = (product) => {
-    if (!product.allotted_time_hours || !defaultLaborRate) return 0
-    return product.allotted_time_hours * defaultLaborRate.rate_per_hour * (defaultLaborRate.multiplier || 1)
+    if (!product.allotted_time_hours) return 0
+    // Use product's selected rate or fall back to default
+    const rate = product.labor_rate_id
+      ? laborRates.find(r => r.id === product.labor_rate_id)
+      : defaultLaborRate
+    if (!rate) return 0
+    return product.allotted_time_hours * rate.rate_per_hour * (rate.multiplier || 1)
   }
 
   const [activeServiceType, setActiveServiceType] = useState('all')
@@ -190,7 +195,7 @@ export default function ProductsServices() {
   const [editingProduct, setEditingProduct] = useState(null)
   const [productForm, setProductForm] = useState({
     name: '', description: '', unit_price: '', cost: '', markup_percent: '',
-    taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: ''
+    taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: '', labor_rate_id: ''
   })
 
   // Labor rates panel state
@@ -355,7 +360,8 @@ export default function ProductsServices() {
         image_url: product.image_url || '',
         allotted_time_hours: product.allotted_time_hours || '',
         group_id: product.group_id,
-        type: product.type || ''
+        type: product.type || '',
+        labor_rate_id: product.labor_rate_id || ''
       })
     } else {
       setEditingProduct(null)
@@ -363,7 +369,8 @@ export default function ProductsServices() {
         name: '', description: '', unit_price: '', cost: '', markup_percent: '',
         taxable: true, active: true, image_url: '', allotted_time_hours: '',
         group_id: selectedGroup?.id || null,
-        type: selectedGroup?.service_type || (activeServiceType !== 'all' ? activeServiceType : (serviceTypes[0] || ''))
+        type: selectedGroup?.service_type || (activeServiceType !== 'all' ? activeServiceType : (serviceTypes[0] || '')),
+        labor_rate_id: ''
       })
     }
     setShowProductModal(true)
@@ -397,6 +404,7 @@ export default function ProductsServices() {
       image_url: productForm.image_url || null,
       allotted_time_hours: productForm.allotted_time_hours || null,
       group_id: productForm.group_id,
+      labor_rate_id: productForm.labor_rate_id || null,
       updated_at: new Date().toISOString()
     }
 
@@ -1364,9 +1372,27 @@ export default function ProductsServices() {
                   </div>
                 </div>
 
-                <div>
-                  <label style={labelStyle}>Allotted Time (hours)</label>
-                  <input type="number" name="allotted_time_hours" value={productForm.allotted_time_hours} onChange={handleProductChange} step="0.25" style={inputStyle} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>Allotted Time (hours)</label>
+                    <input type="number" name="allotted_time_hours" value={productForm.allotted_time_hours} onChange={handleProductChange} step="0.25" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Labor Rate</label>
+                    <select
+                      name="labor_rate_id"
+                      value={productForm.labor_rate_id || ''}
+                      onChange={(e) => setProductForm(prev => ({ ...prev, labor_rate_id: e.target.value ? parseInt(e.target.value) : null }))}
+                      style={inputStyle}
+                    >
+                      <option value="">Use Default Rate</option>
+                      {laborRates.filter(r => r.active).map(rate => (
+                        <option key={rate.id} value={rate.id}>
+                          {rate.name} (${parseFloat(rate.rate_per_hour).toFixed(2)}/hr){rate.is_default ? ' - Default' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div>
