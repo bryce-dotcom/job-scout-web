@@ -155,6 +155,7 @@ export default function ProductsServices() {
   const laborRates = useStore((state) => state.laborRates)
   const fetchProducts = useStore((state) => state.fetchProducts)
   const fetchLaborRates = useStore((state) => state.fetchLaborRates)
+  const fetchInventory = useStore((state) => state.fetchInventory)
 
   // Helper to get inventory count for a product
   const getInventoryCount = (productId) => {
@@ -175,6 +176,72 @@ export default function ProductsServices() {
       : defaultLaborRate
     if (!rate) return 0
     return product.allotted_time_hours * rate.rate_per_hour * (rate.multiplier || 1)
+  }
+
+  // Sync a single product to inventory (create record if active and doesn't exist)
+  const syncProductToInventory = async (productId, productName, isActive) => {
+    if (!isActive) return // Don't create inventory for inactive products
+
+    // Check if inventory record exists
+    const { data: existing } = await supabase
+      .from('inventory')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('product_id', productId)
+      .single()
+
+    if (!existing) {
+      // Create inventory record
+      await supabase.from('inventory').insert({
+        company_id: companyId,
+        product_id: productId,
+        name: productName,
+        item_id: `PRD-${productId}`,
+        inventory_type: 'Material',
+        quantity: 0,
+        min_quantity: 0,
+        location: null,
+        last_updated: new Date().toISOString()
+      })
+    }
+  }
+
+  // Sync all active products to inventory on page load
+  const syncAllProductsToInventory = async () => {
+    if (!products.length) return
+
+    const activeProducts = products.filter(p => p.active)
+    const productIds = activeProducts.map(p => p.id)
+
+    // Get all inventory records for these products
+    const { data: existingInventory } = await supabase
+      .from('inventory')
+      .select('product_id')
+      .eq('company_id', companyId)
+      .in('product_id', productIds)
+
+    const existingProductIds = new Set((existingInventory || []).map(i => i.product_id))
+
+    // Find products without inventory
+    const productsNeedingInventory = activeProducts.filter(p => !existingProductIds.has(p.id))
+
+    if (productsNeedingInventory.length > 0) {
+      // Bulk insert inventory records
+      const inventoryRecords = productsNeedingInventory.map(p => ({
+        company_id: companyId,
+        product_id: p.id,
+        name: p.name,
+        item_id: `PRD-${p.id}`,
+        inventory_type: 'Material',
+        quantity: 0,
+        min_quantity: 0,
+        location: null,
+        last_updated: new Date().toISOString()
+      }))
+
+      await supabase.from('inventory').insert(inventoryRecords)
+      await fetchInventory()
+    }
   }
 
   const [activeServiceType, setActiveServiceType] = useState('all')
@@ -222,7 +289,7 @@ export default function ProductsServices() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Fetch product groups
+  // Fetch product groups and data
   useEffect(() => {
     if (companyId) {
       fetchProductGroups()
@@ -230,6 +297,13 @@ export default function ProductsServices() {
       fetchLaborRates()
     }
   }, [companyId])
+
+  // Sync active products to inventory after products are loaded
+  useEffect(() => {
+    if (companyId && products.length > 0 && inventory.length >= 0) {
+      syncAllProductsToInventory()
+    }
+  }, [companyId, products.length])
 
   const fetchProductGroups = async () => {
     setLoading(true)
@@ -409,6 +483,7 @@ export default function ProductsServices() {
     }
 
     let result
+    let productId = editingProduct?.id
     if (editingProduct) {
       result = await supabase
         .from('products_services')
@@ -419,11 +494,21 @@ export default function ProductsServices() {
       result = await supabase
         .from('products_services')
         .insert([payload])
+        .select('id')
+        .single()
+      if (result.data) {
+        productId = result.data.id
+      }
     }
 
     if (result.error) {
       alert('Error saving product: ' + result.error.message)
     } else {
+      // Auto-sync to inventory if product is active
+      if (productForm.active && productId) {
+        await syncProductToInventory(productId, productForm.name, true)
+        await fetchInventory()
+      }
       await fetchProducts()
       setShowProductModal(false)
       setEditingProduct(null)
