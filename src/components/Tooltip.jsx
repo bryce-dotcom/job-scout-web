@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
  * Tooltip Component - Mobile Responsive PWA
  *
  * Shows tooltip on hover (desktop) or tap (mobile).
- * Position auto-adjusts to stay on screen.
+ * Uses position: fixed to escape overflow clipping.
  *
  * Usage:
  * <Tooltip text="This is a tooltip">
@@ -18,8 +18,9 @@ export default function Tooltip({
   delay = 200
 }) {
   const [isVisible, setIsVisible] = useState(false)
-  const [adjustedPosition, setAdjustedPosition] = useState(position)
   const [isMobile, setIsMobile] = useState(false)
+  const [tooltipStyle, setTooltipStyle] = useState({})
+  const [arrowStyle, setArrowStyle] = useState({})
   const triggerRef = useRef(null)
   const tooltipRef = useRef(null)
   const timeoutRef = useRef(null)
@@ -31,22 +32,60 @@ export default function Tooltip({
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  const positions = {
-    top: { bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: '8px' },
-    bottom: { top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: '8px' },
-    left: { right: '100%', top: '50%', transform: 'translateY(-50%)', marginRight: '8px' },
-    right: { left: '100%', top: '50%', transform: 'translateY(-50%)', marginLeft: '8px' }
-  }
+  // Calculate fixed position based on trigger element
+  const calculatePosition = () => {
+    if (!triggerRef.current) return
 
-  const arrowPositions = {
-    top: { bottom: '-4px', left: '50%', marginLeft: '-4px' },
-    bottom: { top: '-4px', left: '50%', marginLeft: '-4px' },
-    left: { right: '-4px', top: '50%', marginTop: '-4px' },
-    right: { left: '-4px', top: '50%', marginTop: '-4px' }
+    const rect = triggerRef.current.getBoundingClientRect()
+    const tooltipWidth = 250
+    const tooltipHeight = 60 // Approximate
+    const offset = 8
+
+    let style = {}
+    let arrow = {}
+
+    switch (position) {
+      case 'top':
+        style = {
+          left: rect.left + rect.width / 2,
+          top: rect.top - offset,
+          transform: 'translate(-50%, -100%)'
+        }
+        arrow = { bottom: '-4px', left: '50%', marginLeft: '-4px' }
+        break
+      case 'bottom':
+        style = {
+          left: rect.left + rect.width / 2,
+          top: rect.bottom + offset,
+          transform: 'translateX(-50%)'
+        }
+        arrow = { top: '-4px', left: '50%', marginLeft: '-4px' }
+        break
+      case 'left':
+        style = {
+          left: rect.left - offset,
+          top: rect.top + rect.height / 2,
+          transform: 'translate(-100%, -50%)'
+        }
+        arrow = { right: '-4px', top: '50%', marginTop: '-4px' }
+        break
+      case 'right':
+        style = {
+          left: rect.right + offset,
+          top: rect.top + rect.height / 2,
+          transform: 'translateY(-50%)'
+        }
+        arrow = { left: '-4px', top: '50%', marginTop: '-4px' }
+        break
+    }
+
+    setTooltipStyle(style)
+    setArrowStyle(arrow)
   }
 
   const show = () => {
     timeoutRef.current = setTimeout(() => {
+      calculatePosition()
       setIsVisible(true)
     }, isMobile ? 0 : delay)
   }
@@ -88,6 +127,19 @@ export default function Tooltip({
     }
   }, [isMobile, isVisible])
 
+  // Recalculate on scroll/resize while visible
+  useEffect(() => {
+    if (isVisible) {
+      const handleReposition = () => calculatePosition()
+      window.addEventListener('scroll', handleReposition, true)
+      window.addEventListener('resize', handleReposition)
+      return () => {
+        window.removeEventListener('scroll', handleReposition, true)
+        window.removeEventListener('resize', handleReposition)
+      }
+    }
+  }, [isVisible])
+
   useEffect(() => {
     return () => {
       if (timeoutRef.current) {
@@ -101,7 +153,7 @@ export default function Tooltip({
   return (
     <div
       ref={triggerRef}
-      style={{ position: 'relative', display: 'inline-flex', zIndex: isVisible ? 9999 : 'auto' }}
+      style={{ position: 'relative', display: 'inline-flex' }}
       onMouseEnter={!isMobile ? show : undefined}
       onMouseLeave={!isMobile ? hide : undefined}
       onClick={handleClick}
@@ -111,14 +163,14 @@ export default function Tooltip({
         <div
           ref={tooltipRef}
           style={{
-            position: 'absolute',
-            ...positions[position],
+            position: 'fixed',
+            ...tooltipStyle,
             padding: '8px 12px',
             backgroundColor: '#1f2937',
             color: '#fff',
             fontSize: isMobile ? '13px' : '12px',
             borderRadius: '6px',
-            zIndex: 9999,
+            zIndex: 99999,
             boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
             maxWidth: isMobile ? '200px' : '250px',
             whiteSpace: 'normal',
@@ -135,7 +187,7 @@ export default function Tooltip({
             height: '8px',
             backgroundColor: '#1f2937',
             transform: 'rotate(45deg)',
-            ...arrowPositions[position]
+            ...arrowStyle
           }} />
         </div>
       )}
