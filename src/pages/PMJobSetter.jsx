@@ -479,6 +479,15 @@ export default function PMJobSetter() {
       const sectionDate = new Date(section.scheduled_date)
       const sameDay = sectionDate.toDateString() === date.toDateString()
 
+      // Filter by selected calendar (via job's business unit)
+      if (selectedCalendar !== 'all') {
+        const job = jobs.find(j => j.id === section.job_id)
+        const cal = jobCalendars.find(c => c.id === selectedCalendar)
+        if (cal?.business_unit && job?.business_unit !== cal.business_unit) {
+          return false
+        }
+      }
+
       if (section.start_time) {
         const startHour = new Date(section.start_time).getHours()
         return sameDay && startHour === hour
@@ -1749,6 +1758,44 @@ export default function PMJobSetter() {
             </div>
           </div>
 
+          {/* Calendar Legend - show when viewing all calendars */}
+          {selectedCalendar === 'all' && jobCalendars.length > 0 && (
+            <div style={{
+              padding: '8px 16px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+              flexWrap: 'wrap',
+              backgroundColor: theme.bg
+            }}>
+              <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '500' }}>Calendars:</span>
+              {jobCalendars.map(cal => (
+                <div
+                  key={cal.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '11px',
+                    color: theme.textSecondary
+                  }}
+                >
+                  <div style={{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '2px',
+                    backgroundColor: cal.color
+                  }} />
+                  <span>{cal.name}</span>
+                  {cal.business_unit && (
+                    <span style={{ fontSize: '10px', color: theme.textMuted }}>({cal.business_unit})</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Calendar Grid */}
           <div style={{ flex: 1, overflow: 'auto' }}>
             <div style={{ display: 'flex', minWidth: '700px' }}>
@@ -1824,6 +1871,7 @@ export default function PMJobSetter() {
                           const job = jobs.find(j => j.id === section.job_id)
                           const calendar = job ? getCalendarForJob(job) : null
                           const statusColor = getSectionStatusColor(section.status)
+                          const calColor = calendar?.color || theme.accent
 
                           return (
                             <div
@@ -1832,22 +1880,34 @@ export default function PMJobSetter() {
                               onDragStart={(e) => handleSectionDragStart(e, section, job)}
                               onDragEnd={handleDragEnd}
                               style={{
-                                backgroundColor: statusColor.bg,
+                                backgroundColor: calendar ? `${calColor}15` : statusColor.bg,
                                 borderRadius: '4px',
                                 padding: '4px 6px',
                                 marginBottom: '2px',
                                 cursor: 'grab',
                                 fontSize: '10px',
-                                color: statusColor.text,
+                                color: calendar ? calColor : statusColor.text,
                                 fontWeight: '500',
-                                borderLeft: calendar ? `2px solid ${calendar.color}` : undefined,
+                                borderLeft: `3px solid ${calColor}`,
                                 whiteSpace: 'nowrap',
                                 overflow: 'hidden',
-                                textOverflow: 'ellipsis'
+                                textOverflow: 'ellipsis',
+                                position: 'relative'
                               }}
-                              title={`${section.name} - ${job?.title || 'Unknown Job'}`}
+                              title={`${section.name} - ${job?.title || 'Unknown Job'}${calendar ? ` (${calendar.name})` : ''}`}
                             >
-                              {section.name}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {calendar && (
+                                  <div style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    backgroundColor: calColor,
+                                    flexShrink: 0
+                                  }} />
+                                )}
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{section.name}</span>
+                              </div>
                             </div>
                           )
                         })}
@@ -1991,6 +2051,43 @@ export default function PMJobSetter() {
               </button>
             </div>
           </div>
+
+          {/* Calendar Legend for Gantt */}
+          {jobCalendars.length > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+              marginBottom: '12px',
+              padding: '10px 16px',
+              backgroundColor: theme.bgCard,
+              borderRadius: '8px',
+              border: `1px solid ${theme.border}`,
+              flexWrap: 'wrap'
+            }}>
+              <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500' }}>Calendar Colors:</span>
+              {jobCalendars.map(cal => (
+                <div
+                  key={cal.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '12px',
+                    color: theme.textSecondary
+                  }}
+                >
+                  <div style={{
+                    width: '14px',
+                    height: '14px',
+                    borderRadius: '3px',
+                    backgroundColor: cal.color
+                  }} />
+                  <span>{cal.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Gantt Chart */}
           <div
@@ -2158,6 +2255,8 @@ export default function PMJobSetter() {
                             if (!pos) return null
 
                             const statusColor = getSectionStatusColor(section.status)
+                            const calendar = getCalendarForJob(job)
+                            const barColor = calendar?.color || statusColor.text
 
                             return (
                               <div
@@ -2168,7 +2267,7 @@ export default function PMJobSetter() {
                                   left: `${pos.left}px`,
                                   width: `${pos.width}px`,
                                   height: '28px',
-                                  backgroundColor: statusColor.text,
+                                  backgroundColor: barColor,
                                   borderRadius: '4px',
                                   padding: '4px 6px',
                                   fontSize: '9px',
@@ -2179,9 +2278,10 @@ export default function PMJobSetter() {
                                   textOverflow: 'ellipsis',
                                   cursor: 'pointer',
                                   display: 'flex',
-                                  alignItems: 'center'
+                                  alignItems: 'center',
+                                  boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
                                 }}
-                                title={`${section.name} (${section.status})`}
+                                title={`${section.name} (${section.status})${calendar ? ` - ${calendar.name}` : ''}`}
                               >
                                 {section.name}
                               </div>
