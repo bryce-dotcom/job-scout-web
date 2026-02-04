@@ -41,7 +41,8 @@ import {
   Headphones,
   UserCircle,
   Rocket,
-  BookOpen
+  BookOpen,
+  Wrench
 } from 'lucide-react'
 
 // Theme context
@@ -180,55 +181,51 @@ export default function Layout() {
     { to: '/jobs', icon: Briefcase, label: 'Jobs', step: 5, hint: 'Won quotes become jobs', color: '#22c55e' }
   ]
 
-  // Grouped navigation structure - Clean 5-section menu
+  // Grouped navigation structure - Consistent sections with tooltips
   const navSections = [
     {
-      title: 'CRM',
+      title: 'CUSTOMERS',
       sectionIcon: Users,
       items: [
-        { to: '/customers', icon: Users, label: 'Customers' },
-        { to: '/appointments', icon: CalendarCheck, label: 'Appointments' }
+        { to: '/customers', icon: Users, label: 'Customers', hint: 'View and manage all your customers' },
+        { to: '/appointments', icon: CalendarCheck, label: 'Appointments', hint: 'All scheduled meetings and site visits' }
       ]
     },
     {
       title: 'OPERATIONS',
-      sectionIcon: Briefcase,
+      sectionIcon: Wrench,
       items: [
-        { to: '/job-board', icon: ClipboardList, label: 'Job Board' },
-        { to: '/jobs/calendar', icon: CalendarDays, label: 'Job Calendar' },
-        { to: '/routes', icon: Route, label: 'Routes' },
-        { to: '/inventory', icon: Warehouse, label: 'Inventory' },
-        { to: '/products', icon: Package, label: 'Products & Services' }
+        { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'PM workspace to schedule and track job sections' },
+        { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
+        { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' },
+        { to: '/agents/freddy', icon: Bot, label: 'Freddy - Fleet AI', hint: 'AI fleet manager for vehicles equipment and maintenance', isAgent: true }
       ]
     },
     {
       title: 'FINANCIAL',
       sectionIcon: DollarSign,
       items: [
-        { to: '/books', icon: BookOpen, label: 'Books' },
-        { to: '/invoices', icon: Receipt, label: 'Invoices' },
-        { to: '/lead-payments', icon: CreditCard, label: 'Payments' },
-        { to: '/expenses', icon: DollarSign, label: 'Expenses' }
+        { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Create and track customer invoices' },
+        { to: '/lead-payments', icon: CreditCard, label: 'Payments', hint: 'Record and manage payments received' },
+        { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and costs' }
       ]
     },
     {
       title: 'TEAM',
-      sectionIcon: UserCircle,
+      sectionIcon: Users,
       items: [
-        { to: '/employees', icon: UserCog, label: 'Employees' },
-        { to: '/time-clock', icon: Clock, label: 'Time Clock' },
-        { to: '/payroll', icon: DollarSign, label: 'Payroll' }
-      ],
-      hasCrewSection: true
+        { to: '/employees', icon: UserCog, label: 'Employees', hint: 'Manage team members and roles' },
+        { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' }
+      ]
     },
     {
-      title: 'BASE CAMP',
-      sectionIcon: Rocket,
+      title: 'AI CREW',
+      sectionIcon: Bot,
       items: [
-        { to: '/base-camp', icon: Tent, label: 'Agent Marketplace' },
-        { to: '/robot-marketplace', icon: Bot, label: 'Robot Marketplace' },
-        { to: '/settings', icon: Settings, label: 'Settings' }
-      ]
+        { to: '/agents/lenard', icon: Bot, label: 'Lenard - Lighting AI', hint: 'AI-powered lighting audits and energy savings calculations', isAgent: true },
+        { to: '/agents/freddy', icon: Bot, label: 'Freddy - Fleet AI', hint: 'AI fleet manager for vehicles equipment and maintenance', isAgent: true }
+      ],
+      isAiSection: true
     }
   ]
 
@@ -238,18 +235,16 @@ export default function Layout() {
     'freddy': Truck
   }
 
-  // Active quoting agents for bidding/quoting assistance
-  // TODO: Replace with ai_modules table query when available
+  // Active quoting agents for bidding/quoting assistance under Quotes
   const quotingAgents = [
-    { id: 'lenard', name: 'Lenard', description: 'Lighting audits', route: '/agents/lenard', active: true },
-    { id: 'hvac-bot', name: 'HVAC Helper', description: 'HVAC quotes', route: '/agents/hvac', active: false }
+    { id: 'lenard', name: 'Lenard - Lighting AI', description: 'AI-powered lighting audits and energy savings calculations', route: '/agents/lenard', active: true }
   ].filter(agent => agent.active)
 
   // Dev section - only shown for developers (handled separately for red styling)
   const devSection = isDeveloper ? {
     title: 'DEVELOPMENT & MAINT.',
     items: [
-      { to: '/admin/data-console', icon: Terminal, label: 'Data Console' }
+      { to: '/admin/data-console', icon: Terminal, label: 'Data Console', hint: 'Developer tools and database management' }
     ],
     isDev: true
   } : null
@@ -261,21 +256,23 @@ export default function Layout() {
       to={item.to}
       end={item.to === '/' || item.to === '/jobs' || item.to === '/lighting-audits'}
       onClick={() => mobile && setMobileMenuOpen(false)}
+      title={item.hint}
       style={({ isActive }) => ({
         display: 'flex',
         alignItems: 'center',
         gap: '10px',
         padding: '8px 12px',
         borderRadius: '6px',
-        color: isActive ? theme.accent : theme.textMuted,
-        backgroundColor: isActive ? theme.accentBg : 'transparent',
+        color: item.isAgent ? (isActive ? '#a855f7' : theme.textMuted) : (isActive ? theme.accent : theme.textMuted),
+        backgroundColor: item.isAgent ? (isActive ? 'rgba(168,85,247,0.12)' : 'transparent') : (isActive ? theme.accentBg : 'transparent'),
         textDecoration: 'none',
         fontSize: '13px',
         fontWeight: isActive ? '500' : '400',
-        transition: 'all 0.15s ease'
+        transition: 'all 0.15s ease',
+        minHeight: mobile ? '44px' : '36px'
       })}
     >
-      <item.icon size={18} />
+      <item.icon size={18} style={{ color: item.isAgent ? '#a855f7' : undefined }} />
       {item.label}
     </NavLink>
   )
@@ -342,104 +339,60 @@ export default function Layout() {
     )
   }
 
-  const NavSection = ({ section, mobile = false }) => (
-    <div style={{ marginBottom: '16px' }}>
-      <div style={{
-        fontSize: '10px',
-        fontWeight: '600',
-        color: section.isDev ? '#ef4444' : theme.textMuted,
-        letterSpacing: '0.05em',
-        padding: section.isDev ? '16px 12px 4px' : '8px 12px 4px',
-        textTransform: 'uppercase'
-      }}>
-        {section.title}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-        {section.items.map((item) => (
-          item.expandable ? (
-            <ExpandableNavItem key={item.key} item={item} mobile={mobile} />
-          ) : section.isDev ? (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => mobile && setMobileMenuOpen(false)}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                color: isActive ? '#f97316' : '#ef4444',
-                backgroundColor: isActive ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
-                textDecoration: 'none',
-                fontSize: '13px',
-                fontWeight: isActive ? '500' : '400',
-                transition: 'all 0.15s ease'
-              })}
-            >
-              <item.icon size={18} />
-              {item.label}
-            </NavLink>
-          ) : (
-            <NavItem key={item.to} item={item} mobile={mobile} />
-          )
-        ))}
-      </div>
-
-      {/* MY AI CREW - Boxed Section (only in TEAM section) */}
-      {section.hasCrewSection && recruitedAgents.length > 0 && (
+  const NavSection = ({ section, mobile = false }) => {
+    const SectionIcon = section.sectionIcon
+    return (
+      <div style={{ marginBottom: '16px' }}>
         <div style={{
-          margin: '8px 12px',
-          padding: '12px',
-          backgroundColor: 'rgba(168,85,247,0.1)',
-          border: '1px solid rgba(168,85,247,0.3)',
-          borderRadius: '8px'
+          fontSize: '10px',
+          fontWeight: '600',
+          color: section.isDev ? '#ef4444' : section.isAiSection ? '#a855f7' : theme.textMuted,
+          letterSpacing: '0.05em',
+          padding: section.isDev ? '16px 12px 4px' : '8px 12px 4px',
+          textTransform: 'uppercase',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
         }}>
-          <div style={{
-            fontSize: '10px',
-            fontWeight: '600',
-            color: '#a855f7',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            marginBottom: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}>
-            <Bot size={12} />
-            My AI Crew
-          </div>
-          {recruitedAgents.map(ca => {
-            const agent = ca.agent
-            const AgentIcon = agentIcons[agent?.slug] || Bot
-            return (
+          {SectionIcon && <SectionIcon size={12} />}
+          {section.title}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+          {section.items.map((item) => (
+            item.expandable ? (
+              <ExpandableNavItem key={item.key} item={item} mobile={mobile} />
+            ) : section.isDev ? (
               <NavLink
-                key={ca.id}
-                to={`/agents/${agent?.slug}`}
+                key={item.to}
+                to={item.to}
                 onClick={() => mobile && setMobileMenuOpen(false)}
+                title={item.hint}
                 style={({ isActive }) => ({
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
-                  padding: '6px 8px',
-                  borderRadius: '4px',
-                  color: isActive ? '#a855f7' : '#9ca3af',
-                  backgroundColor: isActive ? 'rgba(168,85,247,0.15)' : 'transparent',
+                  gap: '10px',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  color: isActive ? '#f97316' : '#ef4444',
+                  backgroundColor: isActive ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
                   textDecoration: 'none',
-                  fontSize: '12px',
+                  fontSize: '13px',
                   fontWeight: isActive ? '500' : '400',
-                  transition: 'all 0.15s ease'
+                  transition: 'all 0.15s ease',
+                  minHeight: mobile ? '44px' : '36px'
                 })}
               >
-                <AgentIcon size={14} />
-                {ca.custom_name || agent?.name}
+                <item.icon size={18} />
+                {item.label}
               </NavLink>
+            ) : (
+              <NavItem key={item.to} item={item} mobile={mobile} />
             )
-          })}
+          ))}
         </div>
-      )}
-    </div>
-  )
+      </div>
+    )
+  }
 
   return (
     <ThemeContext.Provider value={{ theme }}>
@@ -512,6 +465,7 @@ export default function Layout() {
               <NavLink
                 to="/"
                 end
+                title="Overview of your business metrics and activity"
                 style={({ isActive }) => ({
                   display: 'flex',
                   alignItems: 'center',
@@ -807,6 +761,7 @@ export default function Layout() {
                     to="/"
                     end
                     onClick={() => setMobileMenuOpen(false)}
+                    title="Overview of your business metrics and activity"
                     style={({ isActive }) => ({
                       display: 'flex',
                       alignItems: 'center',
@@ -818,7 +773,8 @@ export default function Layout() {
                       textDecoration: 'none',
                       fontSize: '14px',
                       fontWeight: '600',
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      minHeight: '44px'
                     })}
                   >
                     <LayoutDashboard size={20} />
