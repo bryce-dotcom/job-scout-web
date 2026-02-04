@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import {
   Plus, Pencil, X, User, Phone, Mail, Eye,
   DollarSign, Clock, Calendar, Briefcase, Lock,
-  Camera, FileText, Upload
+  Camera, FileText, Upload, Settings, Trash2
 } from 'lucide-react'
 
 // Role colors (OG DiX style)
@@ -24,13 +24,21 @@ const roleColors = {
   'Tech': '#a855f7',
   'Technician': '#a855f7',
   'Office': '#f97316',
-  'Finance': '#06b6d4'
+  'Finance': '#06b6d4',
+  'Project Manager': '#06b6d4'
 }
 
 const getRoleColor = (role) => roleColors[role] || '#6b7280'
 
-const ROLES = ['Field Tech', 'Installer', 'Sales', 'Setter', 'Office', 'Manager', 'Admin', 'Owner']
-const USER_ROLES = ['User', 'Admin', 'Owner']
+// Default values (used if settings not configured)
+const DEFAULT_JOB_TITLES = ['Field Tech', 'Installer', 'Sales', 'Setter', 'Office', 'Manager', 'Project Manager', 'Admin', 'Owner']
+const DEFAULT_ACCESS_LEVELS = [
+  { name: 'User', description: 'View only, can edit own profile' },
+  { name: 'Team Lead', description: 'Can view team members and schedules' },
+  { name: 'Manager', description: 'Can edit team members, view reports' },
+  { name: 'Admin', description: 'Full access except system settings' },
+  { name: 'Owner', description: 'Full access to everything' }
+]
 
 const emptyEmployee = {
   name: '',
@@ -72,6 +80,8 @@ export default function Employees() {
   const companyId = useStore((state) => state.companyId)
   const currentUser = useStore((state) => state.user)
   const fetchEmployees = useStore((state) => state.fetchEmployees)
+  const storeEmployeeRoles = useStore((state) => state.employeeRoles)
+  const fetchSettings = useStore((state) => state.fetchSettings)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || {
@@ -94,6 +104,13 @@ export default function Employees() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [showInactive, setShowInactive] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [settingsTab, setSettingsTab] = useState('job_titles')
+  const [jobTitles, setJobTitles] = useState([])
+  const [accessLevels, setAccessLevels] = useState([])
+  const [newJobTitle, setNewJobTitle] = useState('')
+  const [newAccessLevel, setNewAccessLevel] = useState({ name: '', description: '' })
+  const [savingSettings, setSavingSettings] = useState(false)
 
   // Check if current user is admin
   const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' ||
@@ -108,7 +125,107 @@ export default function Employees() {
       return
     }
     loadEmployees()
+    loadSettings()
   }, [companyId, navigate])
+
+  const loadSettings = async () => {
+    if (!companyId) return
+
+    // Load job_titles from settings
+    const { data: jobTitlesData } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('company_id', companyId)
+      .eq('key', 'job_titles')
+      .single()
+
+    if (jobTitlesData?.value) {
+      try {
+        const parsed = JSON.parse(jobTitlesData.value)
+        setJobTitles(parsed)
+      } catch {
+        setJobTitles(DEFAULT_JOB_TITLES)
+      }
+    } else {
+      setJobTitles(DEFAULT_JOB_TITLES)
+    }
+
+    // Load access_levels from settings
+    const { data: accessData } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('company_id', companyId)
+      .eq('key', 'access_levels')
+      .single()
+
+    if (accessData?.value) {
+      try {
+        const parsed = JSON.parse(accessData.value)
+        setAccessLevels(parsed)
+      } catch {
+        setAccessLevels(DEFAULT_ACCESS_LEVELS)
+      }
+    } else {
+      setAccessLevels(DEFAULT_ACCESS_LEVELS)
+    }
+  }
+
+  const saveJobTitles = async (titles) => {
+    setSavingSettings(true)
+    await supabase
+      .from('settings')
+      .upsert({
+        company_id: companyId,
+        key: 'job_titles',
+        value: JSON.stringify(titles),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'company_id,key' })
+    setJobTitles(titles)
+    setSavingSettings(false)
+  }
+
+  const saveAccessLevels = async (levels) => {
+    setSavingSettings(true)
+    await supabase
+      .from('settings')
+      .upsert({
+        company_id: companyId,
+        key: 'access_levels',
+        value: JSON.stringify(levels),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'company_id,key' })
+    setAccessLevels(levels)
+    await fetchSettings()
+    setSavingSettings(false)
+  }
+
+  const addJobTitle = () => {
+    if (!newJobTitle.trim()) return
+    const updated = [...jobTitles, newJobTitle.trim()]
+    saveJobTitles(updated)
+    setNewJobTitle('')
+  }
+
+  const removeJobTitle = (title) => {
+    const updated = jobTitles.filter(t => t !== title)
+    saveJobTitles(updated)
+  }
+
+  const addAccessLevel = () => {
+    if (!newAccessLevel.name.trim()) return
+    const updated = [...accessLevels, { name: newAccessLevel.name.trim(), description: newAccessLevel.description.trim() }]
+    saveAccessLevels(updated)
+    setNewAccessLevel({ name: '', description: '' })
+  }
+
+  const removeAccessLevel = (name) => {
+    const updated = accessLevels.filter(l => l.name !== name)
+    saveAccessLevels(updated)
+  }
+
+  // Use settings-driven values or defaults
+  const ROLES = jobTitles.length > 0 ? jobTitles : DEFAULT_JOB_TITLES
+  const USER_ROLES = accessLevels.length > 0 ? accessLevels.map(l => l.name) : DEFAULT_ACCESS_LEVELS.map(l => l.name)
 
   const loadEmployees = async () => {
     if (!companyId) return
@@ -501,25 +618,44 @@ export default function Employees() {
             Show inactive
           </label>
           {isAdmin && (
-            <button
-              onClick={openAddModal}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 16px',
-                backgroundColor: theme.accent,
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: '500',
-                cursor: 'pointer'
-              }}
-            >
-              <Plus size={20} />
-              Add Employee
-            </button>
+            <>
+              <button
+                onClick={() => setShowSettings(true)}
+                title="Team settings - manage job titles and access levels"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '10px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  color: theme.textMuted,
+                  cursor: 'pointer'
+                }}
+              >
+                <Settings size={20} />
+              </button>
+              <button
+                onClick={openAddModal}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 16px',
+                  backgroundColor: theme.accent,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                <Plus size={20} />
+                Add Employee
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1377,6 +1513,296 @@ export default function Employees() {
                 </div>
               )}
             </form>
+          </div>
+        </>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <>
+          <div
+            onClick={() => setShowSettings(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.4)',
+              zIndex: 50
+            }}
+          />
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            border: `1px solid ${theme.border}`,
+            width: '100%',
+            maxWidth: '500px',
+            maxHeight: '80vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 51
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Settings size={20} style={{ color: theme.accent }} />
+                <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
+                  Team Settings
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowSettings(false)}
+                style={{
+                  padding: '6px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: theme.textMuted,
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div style={{
+              display: 'flex',
+              borderBottom: `1px solid ${theme.border}`,
+              padding: '0 20px'
+            }}>
+              <button
+                onClick={() => setSettingsTab('job_titles')}
+                style={{
+                  padding: '12px 16px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  borderBottom: settingsTab === 'job_titles' ? `2px solid ${theme.accent}` : '2px solid transparent',
+                  color: settingsTab === 'job_titles' ? theme.accent : theme.textMuted,
+                  fontSize: '14px',
+                  fontWeight: settingsTab === 'job_titles' ? '600' : '400',
+                  cursor: 'pointer'
+                }}
+              >
+                Job Titles
+              </button>
+              <button
+                onClick={() => setSettingsTab('access_levels')}
+                style={{
+                  padding: '12px 16px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  borderBottom: settingsTab === 'access_levels' ? `2px solid ${theme.accent}` : '2px solid transparent',
+                  color: settingsTab === 'access_levels' ? theme.accent : theme.textMuted,
+                  fontSize: '14px',
+                  fontWeight: settingsTab === 'access_levels' ? '600' : '400',
+                  cursor: 'pointer'
+                }}
+              >
+                Access Levels
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
+              {settingsTab === 'job_titles' && (
+                <div>
+                  <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
+                    Job titles define what role an employee has in the company (e.g., Sales, Technician, Manager).
+                  </p>
+
+                  {/* Add new job title */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                    <input
+                      type="text"
+                      value={newJobTitle}
+                      onChange={(e) => setNewJobTitle(e.target.value)}
+                      placeholder="Add job title..."
+                      onKeyDown={(e) => e.key === 'Enter' && addJobTitle()}
+                      style={{
+                        flex: 1,
+                        padding: '10px 12px',
+                        backgroundColor: theme.bg,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: '8px',
+                        color: theme.text,
+                        fontSize: '14px'
+                      }}
+                    />
+                    <button
+                      onClick={addJobTitle}
+                      disabled={savingSettings || !newJobTitle.trim()}
+                      style={{
+                        padding: '10px 16px',
+                        backgroundColor: theme.accent,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        opacity: savingSettings || !newJobTitle.trim() ? 0.6 : 1
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {/* List of job titles */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {jobTitles.map((title, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '10px 12px',
+                          backgroundColor: theme.bg,
+                          borderRadius: '8px',
+                          border: `1px solid ${theme.border}`
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: getRoleColor(title)
+                          }} />
+                          <span style={{ fontSize: '14px', color: theme.text }}>{title}</span>
+                        </div>
+                        <button
+                          onClick={() => removeJobTitle(title)}
+                          style={{
+                            padding: '4px',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            color: theme.textMuted,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {settingsTab === 'access_levels' && (
+                <div>
+                  <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
+                    Access levels control what parts of the app an employee can see and edit.
+                  </p>
+
+                  {/* Add new access level */}
+                  <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                      <input
+                        type="text"
+                        value={newAccessLevel.name}
+                        onChange={(e) => setNewAccessLevel(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="Level name..."
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          backgroundColor: theme.bgCard,
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '8px',
+                          color: theme.text,
+                          fontSize: '14px'
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="text"
+                        value={newAccessLevel.description}
+                        onChange={(e) => setNewAccessLevel(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Description (optional)..."
+                        onKeyDown={(e) => e.key === 'Enter' && addAccessLevel()}
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          backgroundColor: theme.bgCard,
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '8px',
+                          color: theme.text,
+                          fontSize: '14px'
+                        }}
+                      />
+                      <button
+                        onClick={addAccessLevel}
+                        disabled={savingSettings || !newAccessLevel.name.trim()}
+                        style={{
+                          padding: '10px 16px',
+                          backgroundColor: theme.accent,
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          cursor: 'pointer',
+                          opacity: savingSettings || !newAccessLevel.name.trim() ? 0.6 : 1
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* List of access levels */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {accessLevels.map((level, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '12px',
+                          backgroundColor: theme.bg,
+                          borderRadius: '8px',
+                          border: `1px solid ${theme.border}`
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                            {level.name}
+                          </div>
+                          {level.description && (
+                            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                              {level.description}
+                            </div>
+                          )}
+                        </div>
+                        {level.name !== 'Owner' && (
+                          <button
+                            onClick={() => removeAccessLevel(level.name)}
+                            style={{
+                              padding: '4px',
+                              backgroundColor: 'transparent',
+                              border: 'none',
+                              color: theme.textMuted,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}

@@ -368,12 +368,26 @@ export default function Layout() {
     })
   }
 
-  // Dev section - only shown for developers (handled separately for red styling)
-  const devSection = isDeveloper ? {
-    title: 'DEVELOPMENT & MAINT.',
+  // Get current user's access level from store
+  const currentUserRole = user?.user_role || user?.role
+  const isAdminOrOwner = currentUserRole === 'Admin' || currentUserRole === 'Owner'
+
+  // Admin section - shown to Admin/Owner access levels
+  const adminSection = isAdminOrOwner ? {
+    title: 'ADMIN',
     sectionIcon: Terminal,
     items: [
-      { to: '/admin/data-console', icon: Terminal, label: 'Data Console', hint: 'Developer tools and database management' }
+      { to: '/admin/data-console', icon: Terminal, label: 'Data Console', hint: 'Database management and developer tools' }
+    ],
+    isAdmin: true
+  } : null
+
+  // Dev section - only shown for super admins (isDeveloper flag)
+  const devSection = isDeveloper ? {
+    title: 'SUPER ADMIN',
+    sectionIcon: Terminal,
+    items: [
+      { to: '/admin/data-console', icon: Terminal, label: 'Advanced Tools', hint: 'Super admin tools and system configuration' }
     ],
     isDev: true
   } : null
@@ -471,14 +485,20 @@ export default function Layout() {
 
   const NavSection = ({ section, mobile = false }) => {
     const SectionIcon = section.sectionIcon
+    const getSectionColor = () => {
+      if (section.isDev) return '#ef4444' // Red for super admin
+      if (section.isAdmin) return '#f59e0b' // Orange/amber for admin
+      if (section.isAiSection) return '#a855f7' // Purple for AI
+      return theme.textMuted
+    }
     return (
       <div style={{ marginBottom: '16px' }}>
         <div style={{
           fontSize: '10px',
           fontWeight: '600',
-          color: section.isDev ? '#ef4444' : section.isAiSection ? '#a855f7' : theme.textMuted,
+          color: getSectionColor(),
           letterSpacing: '0.05em',
-          padding: section.isDev ? '16px 12px 4px' : '8px 12px 4px',
+          padding: (section.isDev || section.isAdmin) ? '16px 12px 4px' : '8px 12px 4px',
           textTransform: 'uppercase',
           display: 'flex',
           alignItems: 'center',
@@ -505,6 +525,30 @@ export default function Layout() {
                   borderRadius: '6px',
                   color: isActive ? '#f97316' : '#ef4444',
                   backgroundColor: isActive ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
+                  textDecoration: 'none',
+                  fontSize: '13px',
+                  fontWeight: isActive ? '500' : '400',
+                  transition: 'all 0.15s ease',
+                  minHeight: mobile ? '44px' : '36px'
+                })}
+              >
+                <item.icon size={18} />
+                {item.label}
+              </NavLink>
+            ) : section.isAdmin ? (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => mobile && setMobileMenuOpen(false)}
+                title={item.hint}
+                style={({ isActive }) => ({
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  color: isActive ? '#f59e0b' : '#d97706',
+                  backgroundColor: isActive ? 'rgba(245, 158, 11, 0.12)' : 'transparent',
                   textDecoration: 'none',
                   fontSize: '13px',
                   fontWeight: isActive ? '500' : '400',
@@ -768,6 +812,7 @@ export default function Layout() {
               </div>
             )}
 
+            {adminSection && <NavSection section={adminSection} />}
             {devSection && <NavSection section={devSection} />}
           </nav>
 
@@ -1138,6 +1183,7 @@ export default function Layout() {
                   </div>
                 )}
 
+                {adminSection && <NavSection section={adminSection} mobile />}
                 {devSection && <NavSection section={devSection} mobile />}
               </nav>
               <div style={{
