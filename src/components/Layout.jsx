@@ -371,6 +371,7 @@ export default function Layout() {
   // Dev section - only shown for developers (handled separately for red styling)
   const devSection = isDeveloper ? {
     title: 'DEVELOPMENT & MAINT.',
+    sectionIcon: Terminal,
     items: [
       { to: '/admin/data-console', icon: Terminal, label: 'Data Console', hint: 'Developer tools and database management' }
     ],
