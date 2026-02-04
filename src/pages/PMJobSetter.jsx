@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -7,7 +7,8 @@ import HelpBadge from '../components/HelpBadge'
 import {
   ChevronDown, ChevronRight, ChevronLeft, X, Calendar, Clock, User, MapPin,
   RefreshCw, Filter, Search, Settings, Plus, Briefcase, CheckCircle2,
-  AlertCircle, PauseCircle, PlayCircle, ClipboardList, CalendarPlus, Trash2
+  AlertCircle, PauseCircle, PlayCircle, ClipboardList, CalendarPlus, Trash2,
+  LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -37,6 +38,14 @@ const sectionStatusColors = {
   'Verified': { bg: '#dbeafe', text: '#2563eb' }
 }
 
+// Gantt chart section colors (solid colors for blocks)
+const ganttSectionColors = {
+  'Not Started': '#9ca3af',  // gray
+  'In Progress': '#3b82f6',  // blue
+  'Complete': '#22c55e',     // green
+  'Verified': '#8b5cf6'      // purple
+}
+
 export default function PMJobSetter() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -60,6 +69,13 @@ export default function PMJobSetter() {
   const [filterPM, setFilterPM] = useState('')
   const [filterBusinessUnit, setFilterBusinessUnit] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+
+  // View Mode: 'kanban' or 'gantt'
+  const [viewMode, setViewMode] = useState('kanban')
+  const [ganttGroupBy, setGanttGroupBy] = useState('pm') // 'pm' or 'unit'
+  const [zoomLevel, setZoomLevel] = useState('week') // 'day', 'week', 'month'
+  const [ganttStartDate, setGanttStartDate] = useState(new Date())
+  const ganttRef = useRef(null)
 
   // Drag state
   const [draggedSection, setDraggedSection] = useState(null)
@@ -335,6 +351,182 @@ export default function PMJobSetter() {
     await fetchData()
   }
 
+  // Gantt Chart Helpers
+  const getGanttDateRange = () => {
+    const today = ganttStartDate
+    let start = new Date(today)
+    let end = new Date(today)
+    let colCount = 7
+    let colWidth = 120
+
+    if (zoomLevel === 'day') {
+      start.setDate(start.getDate() - 3)
+      end.setDate(start.getDate() + 6)
+      colCount = 7
+      colWidth = isMobile ? 80 : 120
+    } else if (zoomLevel === 'week') {
+      start.setDate(start.getDate() - start.getDay())
+      end.setDate(start.getDate() + 27) // 4 weeks
+      colCount = 28
+      colWidth = isMobile ? 30 : 40
+    } else if (zoomLevel === 'month') {
+      start.setDate(1)
+      end = new Date(start.getFullYear(), start.getMonth() + 3, 0) // 3 months
+      colCount = Math.ceil((end - start) / (1000 * 60 * 60 * 24))
+      colWidth = isMobile ? 10 : 15
+    }
+
+    return { start, end, colCount, colWidth }
+  }
+
+  const getGanttColumns = () => {
+    const { start, end, colWidth } = getGanttDateRange()
+    const cols = []
+    const current = new Date(start)
+
+    while (current <= end) {
+      cols.push({
+        date: new Date(current),
+        width: colWidth
+      })
+      current.setDate(current.getDate() + 1)
+    }
+    return cols
+  }
+
+  const getGroupedJobs = () => {
+    const filtered = getFilteredJobs()
+    const groups = {}
+
+    if (ganttGroupBy === 'pm') {
+      filtered.forEach(job => {
+        const key = job.pm?.id || 'unassigned'
+        const name = job.pm?.name || 'Unassigned'
+        if (!groups[key]) {
+          groups[key] = { id: key, name, jobs: [] }
+        }
+        groups[key].jobs.push(job)
+      })
+    } else {
+      filtered.forEach(job => {
+        const key = job.business_unit || 'other'
+        if (!groups[key]) {
+          groups[key] = { id: key, name: key || 'Other', jobs: [] }
+        }
+        groups[key].jobs.push(job)
+      })
+    }
+
+    return Object.values(groups)
+  }
+
+  const getSectionPosition = (section) => {
+    if (!section.scheduled_date) return null
+
+    const { start, colWidth } = getGanttDateRange()
+    const sectionDate = new Date(section.scheduled_date)
+    const daysDiff = Math.floor((sectionDate - start) / (1000 * 60 * 60 * 24))
+
+    if (daysDiff < 0) return null
+
+    const hours = parseFloat(section.estimated_hours) || 4
+    // Each hour = ~0.125 of a day width (8 hour day)
+    const widthDays = Math.max(0.5, hours / 8)
+
+    return {
+      left: daysDiff * colWidth,
+      width: Math.max(colWidth * widthDays, 40) // minimum 40px
+    }
+  }
+
+  const formatGanttDate = (date) => {
+    if (zoomLevel === 'day') {
+      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    } else if (zoomLevel === 'week') {
+      return date.getDate().toString()
+    } else {
+      return date.getDate() === 1 ? date.toLocaleDateString('en-US', { month: 'short' }) : ''
+    }
+  }
+
+  const isWeekend = (date) => {
+    const day = date.getDay()
+    return day === 0 || day === 6
+  }
+
+  // Gantt navigation
+  const prevGanttPeriod = () => {
+    setGanttStartDate(prev => {
+      const d = new Date(prev)
+      if (zoomLevel === 'day') d.setDate(d.getDate() - 7)
+      else if (zoomLevel === 'week') d.setDate(d.getDate() - 28)
+      else d.setMonth(d.getMonth() - 1)
+      return d
+    })
+  }
+
+  const nextGanttPeriod = () => {
+    setGanttStartDate(prev => {
+      const d = new Date(prev)
+      if (zoomLevel === 'day') d.setDate(d.getDate() + 7)
+      else if (zoomLevel === 'week') d.setDate(d.getDate() + 28)
+      else d.setMonth(d.getMonth() + 1)
+      return d
+    })
+  }
+
+  const goToGanttToday = () => {
+    setGanttStartDate(new Date())
+  }
+
+  // PDF Export
+  const exportGanttToPDF = async () => {
+    if (!ganttRef.current) return
+
+    try {
+      // Dynamically import html2canvas
+      const html2canvas = (await import('html2canvas')).default
+
+      const canvas = await html2canvas(ganttRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: theme.bgCard
+      })
+
+      // Create PDF using jspdf (dynamically import)
+      const { jsPDF } = await import('jspdf')
+
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'px',
+        format: [canvas.width / 2, canvas.height / 2 + 100]
+      })
+
+      // Add header
+      const company = useStore.getState().company
+      pdf.setFontSize(20)
+      pdf.setTextColor(44, 53, 48)
+      pdf.text(company?.name || 'Job Board', 40, 40)
+
+      pdf.setFontSize(12)
+      pdf.setTextColor(77, 90, 82)
+      pdf.text(`Gantt Chart - ${ganttGroupBy === 'pm' ? 'By Project Manager' : 'By Business Unit'}`, 40, 60)
+
+      const { start, end } = getGanttDateRange()
+      pdf.text(`${start.toLocaleDateString()} - ${end.toLocaleDateString()}`, 40, 75)
+      pdf.text(`Generated: ${new Date().toLocaleString()}`, 40, 90)
+
+      // Add the chart image
+      pdf.addImage(imgData, 'PNG', 20, 110, canvas.width / 2 - 40, canvas.height / 2 - 20)
+
+      pdf.save(`gantt-chart-${new Date().toISOString().split('T')[0]}.pdf`)
+    } catch (error) {
+      console.error('PDF export failed:', error)
+      alert('PDF export failed. Please try again.')
+    }
+  }
+
   // Styles
   const inputStyle = {
     width: '100%',
@@ -391,6 +583,58 @@ export default function PMJobSetter() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* View Toggle */}
+          <div style={{
+            display: 'flex',
+            backgroundColor: theme.bg,
+            borderRadius: '8px',
+            padding: '4px',
+            border: `1px solid ${theme.border}`
+          }}>
+            <button
+              onClick={() => setViewMode('kanban')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                minHeight: '36px',
+                backgroundColor: viewMode === 'kanban' ? theme.bgCard : 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: viewMode === 'kanban' ? theme.accent : theme.textMuted,
+                fontSize: '13px',
+                fontWeight: viewMode === 'kanban' ? '600' : '400',
+                cursor: 'pointer',
+                boxShadow: viewMode === 'kanban' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <LayoutGrid size={14} />
+              {!isMobile && 'Kanban'}
+            </button>
+            <button
+              onClick={() => setViewMode('gantt')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                minHeight: '36px',
+                backgroundColor: viewMode === 'gantt' ? theme.bgCard : 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: viewMode === 'gantt' ? theme.accent : theme.textMuted,
+                fontSize: '13px',
+                fontWeight: viewMode === 'gantt' ? '600' : '400',
+                cursor: 'pointer',
+                boxShadow: viewMode === 'gantt' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <GanttChart size={14} />
+              {!isMobile && 'Gantt'}
+            </button>
+          </div>
+
           {/* PM Filter */}
           <select
             value={filterPM}
@@ -467,7 +711,9 @@ export default function PMJobSetter() {
         </div>
       </div>
 
-      {/* Main Content - Split View */}
+      {/* Main Content */}
+      {viewMode === 'kanban' ? (
+      /* Kanban + Calendar Split View */
       <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden', flexDirection: isMobile ? 'column' : 'row' }}>
         {/* Left: Kanban Jobs */}
         <div style={{
@@ -972,6 +1218,462 @@ export default function PMJobSetter() {
           </div>
         </div>
       </div>
+      ) : (
+      /* Gantt Chart View */
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Gantt Controls */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '12px',
+          flexWrap: 'wrap',
+          gap: '8px'
+        }}>
+          {/* Navigation */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button
+              onClick={prevGanttPeriod}
+              style={{
+                padding: '8px 12px',
+                minWidth: '44px',
+                minHeight: '44px',
+                backgroundColor: 'transparent',
+                border: `1px solid ${theme.border}`,
+                borderRadius: '6px',
+                cursor: 'pointer',
+                color: theme.textSecondary,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              onClick={goToGanttToday}
+              style={{
+                padding: '8px 16px',
+                minHeight: '44px',
+                backgroundColor: '#22c55e',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                color: '#fff',
+                fontSize: '13px',
+                fontWeight: '600'
+              }}
+            >
+              Today
+            </button>
+            <button
+              onClick={nextGanttPeriod}
+              style={{
+                padding: '8px 12px',
+                minWidth: '44px',
+                minHeight: '44px',
+                backgroundColor: 'transparent',
+                border: `1px solid ${theme.border}`,
+                borderRadius: '6px',
+                cursor: 'pointer',
+                color: theme.textSecondary,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* Group By Toggle */}
+          <div style={{
+            display: 'flex',
+            backgroundColor: theme.bg,
+            borderRadius: '8px',
+            padding: '4px',
+            border: `1px solid ${theme.border}`
+          }}>
+            <button
+              onClick={() => setGanttGroupBy('pm')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                minHeight: '36px',
+                backgroundColor: ganttGroupBy === 'pm' ? theme.bgCard : 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: ganttGroupBy === 'pm' ? theme.accent : theme.textMuted,
+                fontSize: '12px',
+                fontWeight: ganttGroupBy === 'pm' ? '600' : '400',
+                cursor: 'pointer'
+              }}
+            >
+              <Users size={14} />
+              By PM
+            </button>
+            <button
+              onClick={() => setGanttGroupBy('unit')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                minHeight: '36px',
+                backgroundColor: ganttGroupBy === 'unit' ? theme.bgCard : 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: ganttGroupBy === 'unit' ? theme.accent : theme.textMuted,
+                fontSize: '12px',
+                fontWeight: ganttGroupBy === 'unit' ? '600' : '400',
+                cursor: 'pointer'
+              }}
+            >
+              <Building2 size={14} />
+              By Unit
+            </button>
+          </div>
+
+          {/* Zoom Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '12px', color: theme.textMuted, marginRight: '8px' }}>Zoom:</span>
+            {['day', 'week', 'month'].map(level => (
+              <button
+                key={level}
+                onClick={() => setZoomLevel(level)}
+                style={{
+                  padding: '8px 12px',
+                  minHeight: '36px',
+                  backgroundColor: zoomLevel === level ? theme.accent : 'transparent',
+                  border: `1px solid ${zoomLevel === level ? theme.accent : theme.border}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  color: zoomLevel === level ? '#fff' : theme.textSecondary,
+                  fontSize: '12px',
+                  fontWeight: zoomLevel === level ? '600' : '400',
+                  textTransform: 'capitalize'
+                }}
+              >
+                {level}
+              </button>
+            ))}
+          </div>
+
+          {/* Export Button */}
+          <button
+            onClick={exportGanttToPDF}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '10px 16px',
+              minHeight: '44px',
+              backgroundColor: theme.accent,
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: '#fff',
+              fontSize: '13px',
+              fontWeight: '500'
+            }}
+          >
+            <Download size={14} />
+            Export PDF
+          </button>
+        </div>
+
+        {/* Legend */}
+        <div style={{
+          display: 'flex',
+          gap: '16px',
+          marginBottom: '12px',
+          flexWrap: 'wrap'
+        }}>
+          {Object.entries(ganttSectionColors).map(([status, color]) => (
+            <div key={status} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{
+                width: '12px',
+                height: '12px',
+                backgroundColor: color,
+                borderRadius: '3px'
+              }} />
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>{status}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Gantt Chart Container */}
+        <div
+          ref={ganttRef}
+          style={{
+            flex: 1,
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            overflow: 'auto',
+            position: 'relative'
+          }}
+        >
+          {(() => {
+            const ganttCols = getGanttColumns()
+            const groups = getGroupedJobs()
+            const { colWidth } = getGanttDateRange()
+            const rowHeight = 60
+            const headerHeight = 50
+            const jobLabelWidth = 200
+
+            return (
+              <div style={{ minWidth: jobLabelWidth + ganttCols.length * colWidth, minHeight: 'fit-content' }}>
+                {/* Timeline Header */}
+                <div style={{
+                  display: 'flex',
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 2,
+                  backgroundColor: theme.bg
+                }}>
+                  {/* Empty corner */}
+                  <div style={{
+                    width: jobLabelWidth,
+                    flexShrink: 0,
+                    padding: '8px 12px',
+                    borderBottom: `1px solid ${theme.border}`,
+                    borderRight: `1px solid ${theme.border}`,
+                    fontWeight: '600',
+                    color: theme.text,
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}>
+                    {ganttGroupBy === 'pm' ? 'Project Manager / Jobs' : 'Business Unit / Jobs'}
+                  </div>
+                  {/* Date columns */}
+                  <div style={{ display: 'flex' }}>
+                    {ganttCols.map((col, i) => {
+                      const isWeekendDay = isWeekend(col.date)
+                      const isTodayCol = isToday(col.date)
+                      return (
+                        <div
+                          key={i}
+                          style={{
+                            width: colWidth,
+                            flexShrink: 0,
+                            padding: '4px',
+                            borderBottom: `1px solid ${theme.border}`,
+                            borderRight: `1px solid ${theme.border}`,
+                            backgroundColor: isTodayCol ? theme.accentBg : isWeekendDay ? 'rgba(0,0,0,0.03)' : 'transparent',
+                            textAlign: 'center',
+                            fontSize: zoomLevel === 'day' ? '10px' : '9px',
+                            color: isTodayCol ? theme.accent : theme.textMuted
+                          }}
+                        >
+                          {formatGanttDate(col.date)}
+                          {zoomLevel === 'week' && col.date.getDay() === 0 && (
+                            <div style={{ fontSize: '8px', marginTop: '2px' }}>
+                              {col.date.toLocaleDateString('en-US', { month: 'short' })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Groups and Jobs */}
+                {groups.map(group => (
+                  <div key={group.id}>
+                    {/* Group Header */}
+                    <div style={{
+                      display: 'flex',
+                      backgroundColor: theme.bg,
+                      position: 'sticky',
+                      left: 0
+                    }}>
+                      <div style={{
+                        width: jobLabelWidth,
+                        flexShrink: 0,
+                        padding: '10px 12px',
+                        borderBottom: `1px solid ${theme.border}`,
+                        borderRight: `1px solid ${theme.border}`,
+                        fontWeight: '600',
+                        color: theme.accent,
+                        fontSize: '13px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        {ganttGroupBy === 'pm' ? <User size={14} /> : <Building2 size={14} />}
+                        {group.name}
+                        <span style={{
+                          backgroundColor: theme.accentBg,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          color: theme.accent
+                        }}>
+                          {group.jobs.length}
+                        </span>
+                      </div>
+                      <div style={{ flex: 1, borderBottom: `1px solid ${theme.border}` }} />
+                    </div>
+
+                    {/* Jobs in Group */}
+                    {group.jobs.map(job => {
+                      const sections = getSectionsForJob(job.id)
+                      const progress = calculateJobProgress(job.id)
+
+                      return (
+                        <div
+                          key={job.id}
+                          style={{
+                            display: 'flex',
+                            minHeight: rowHeight,
+                            position: 'relative'
+                          }}
+                        >
+                          {/* Job Label */}
+                          <div
+                            style={{
+                              width: jobLabelWidth,
+                              flexShrink: 0,
+                              padding: '8px 12px',
+                              borderBottom: `1px solid ${theme.border}`,
+                              borderRight: `1px solid ${theme.border}`,
+                              backgroundColor: theme.bgCard,
+                              position: 'sticky',
+                              left: 0,
+                              zIndex: 1
+                            }}
+                          >
+                            <div style={{
+                              fontWeight: '500',
+                              color: theme.text,
+                              fontSize: '12px',
+                              marginBottom: '4px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {job.title || `Job #${job.id}`}
+                            </div>
+                            <div style={{
+                              fontSize: '10px',
+                              color: theme.textMuted,
+                              marginBottom: '4px'
+                            }}>
+                              {job.customer?.name}
+                            </div>
+                            {/* Mini progress bar */}
+                            <div style={{
+                              height: '4px',
+                              backgroundColor: theme.border,
+                              borderRadius: '2px',
+                              overflow: 'hidden'
+                            }}>
+                              <div style={{
+                                height: '100%',
+                                width: `${progress}%`,
+                                backgroundColor: progress === 100 ? '#22c55e' : theme.accent,
+                                borderRadius: '2px'
+                              }} />
+                            </div>
+                          </div>
+
+                          {/* Timeline Area */}
+                          <div style={{
+                            flex: 1,
+                            position: 'relative',
+                            borderBottom: `1px solid ${theme.border}`,
+                            display: 'flex'
+                          }}>
+                            {/* Background grid */}
+                            {ganttCols.map((col, i) => {
+                              const isWeekendDay = isWeekend(col.date)
+                              const isTodayCol = isToday(col.date)
+                              return (
+                                <div
+                                  key={i}
+                                  style={{
+                                    width: colWidth,
+                                    flexShrink: 0,
+                                    borderRight: `1px solid ${theme.border}`,
+                                    backgroundColor: isTodayCol ? 'rgba(90,99,73,0.08)' : isWeekendDay ? 'rgba(0,0,0,0.02)' : 'transparent'
+                                  }}
+                                />
+                              )
+                            })}
+
+                            {/* Section Blocks */}
+                            {sections.map(section => {
+                              const pos = getSectionPosition(section)
+                              if (!pos) return null
+
+                              const statusColor = ganttSectionColors[section.status] || ganttSectionColors['Not Started']
+
+                              return (
+                                <div
+                                  key={section.id}
+                                  style={{
+                                    position: 'absolute',
+                                    left: pos.left,
+                                    top: '8px',
+                                    width: pos.width,
+                                    height: rowHeight - 20,
+                                    backgroundColor: statusColor,
+                                    borderRadius: '4px',
+                                    padding: '4px 6px',
+                                    overflow: 'hidden',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.15)'
+                                  }}
+                                  title={`${section.name} - ${section.status} (${section.percent_of_job || 0}%)`}
+                                >
+                                  <div style={{
+                                    fontWeight: '500',
+                                    color: '#fff',
+                                    fontSize: '10px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    textShadow: '0 1px 1px rgba(0,0,0,0.2)'
+                                  }}>
+                                    {section.name}
+                                  </div>
+                                  <div style={{
+                                    fontSize: '9px',
+                                    color: 'rgba(255,255,255,0.8)',
+                                    marginTop: '2px'
+                                  }}>
+                                    {section.percent_of_job || 0}%
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+
+                {/* Empty state */}
+                {groups.length === 0 && (
+                  <div style={{
+                    padding: '40px',
+                    textAlign: 'center',
+                    color: theme.textMuted
+                  }}>
+                    No jobs found. Adjust filters or add new jobs.
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      </div>
+      )}
 
       {/* Add Section Modal */}
       {showSectionModal && selectedJob && (
