@@ -259,13 +259,6 @@ export default function Employees() {
     setLoading(true)
     setError(null)
 
-    // Build pay_type string for backwards compatibility
-    let payType = 'hourly'
-    if (formData.is_salary && formData.is_commission) payType = 'hybrid'
-    else if (formData.is_salary) payType = 'salary'
-    else if (formData.is_commission) payType = 'commission'
-    else if (formData.is_hourly) payType = 'hourly'
-
     const payload = {
       company_id: companyId,
       name: formData.name,
@@ -279,7 +272,6 @@ export default function Employees() {
       active: formData.active,
       headshot_url: formData.headshot_url || null,
       tax_classification: formData.tax_classification || 'W2',
-      pay_type: payType,
       is_hourly: formData.is_hourly,
       is_salary: formData.is_salary,
       is_commission: formData.is_commission,
