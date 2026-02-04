@@ -87,6 +87,40 @@ export default function Inventory() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
+  // Audio context for click sound
+  const audioContextRef = useRef(null)
+
+  // Play click sound and haptic feedback
+  const playClick = () => {
+    // Haptic feedback (vibrate on mobile)
+    if (navigator.vibrate) {
+      navigator.vibrate(10)
+    }
+
+    // Audio click using Web Audio API
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)()
+      }
+      const ctx = audioContextRef.current
+      const oscillator = ctx.createOscillator()
+      const gainNode = ctx.createGain()
+
+      oscillator.connect(gainNode)
+      gainNode.connect(ctx.destination)
+
+      oscillator.frequency.value = 1800
+      oscillator.type = 'sine'
+      gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05)
+
+      oscillator.start(ctx.currentTime)
+      oscillator.stop(ctx.currentTime + 0.05)
+    } catch (e) {
+      // Silent fail if audio not supported
+    }
+  }
+
   // Guard clause
   if (!companyId) return null
 
@@ -1164,7 +1198,7 @@ export default function Inventory() {
               marginBottom: '16px'
             }}>
               <button
-                onClick={() => setAdjustAmount(adjustAmount - 1)}
+                onClick={() => { playClick(); setAdjustAmount(adjustAmount - 1) }}
                 style={{
                   width: '52px', height: '52px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1189,7 +1223,7 @@ export default function Inventory() {
               </div>
 
               <button
-                onClick={() => setAdjustAmount(adjustAmount + 1)}
+                onClick={() => { playClick(); setAdjustAmount(adjustAmount + 1) }}
                 style={{
                   width: '52px', height: '52px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
