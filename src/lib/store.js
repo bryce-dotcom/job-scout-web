@@ -62,6 +62,9 @@ export const useStore = create(
       inventoryTypes: [],
       inventoryLocations: [],
 
+      // Labor Rates
+      laborRates: [],
+
       // Routes
       routes: [],
 
@@ -531,6 +534,21 @@ export const useStore = create(
         }
       },
 
+      // Fetch labor rates
+      fetchLaborRates: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('labor_rates')
+          .select('*')
+          .eq('company_id', companyId)
+          .order('is_default', { ascending: false })
+          .order('name');
+
+        if (!error) set({ laborRates: data || [] });
+      },
+
       // Helper to get a single setting value
       getSettingValue: (key) => {
         const { settings } = get();
@@ -755,7 +773,8 @@ export const useStore = create(
           fetchUtilityInvoices,
           fetchIncentives,
           fetchAgents,
-          fetchCompanyAgents
+          fetchCompanyAgents,
+          fetchLaborRates
         } = get();
 
         // Fetch core data in parallel
@@ -790,7 +809,8 @@ export const useStore = create(
           fetchUtilityInvoices(),
           fetchIncentives(),
           fetchAgents(),
-          fetchCompanyAgents()
+          fetchCompanyAgents(),
+          fetchLaborRates()
         ]);
 
         set({ isLoading: false });

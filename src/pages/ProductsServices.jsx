@@ -23,7 +23,7 @@ const defaultTheme = {
 }
 
 // Reusable Product Card component
-function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount }) {
+function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost }) {
   return (
     <div
       style={{
@@ -96,7 +96,7 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
           <div style={{ fontSize: '16px', fontWeight: '600', color: theme.accent }}>
             {formatCurrency(product.unit_price)}
           </div>
@@ -107,6 +107,12 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
             </div>
           )}
         </div>
+        {laborCost > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#8b5cf6', marginBottom: '10px' }}>
+            <DollarSign size={11} />
+            Labor: {formatCurrency(laborCost)}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '6px' }}>
           <button
@@ -146,13 +152,24 @@ export default function ProductsServices() {
   const serviceTypes = useStore((state) => state.serviceTypes)
   const products = useStore((state) => state.products)
   const inventory = useStore((state) => state.inventory)
+  const laborRates = useStore((state) => state.laborRates)
   const fetchProducts = useStore((state) => state.fetchProducts)
+  const fetchLaborRates = useStore((state) => state.fetchLaborRates)
 
   // Helper to get inventory count for a product
   const getInventoryCount = (productId) => {
     return inventory
       .filter(item => item.product_id === productId)
       .reduce((sum, item) => sum + (item.quantity || 0), 0)
+  }
+
+  // Get default labor rate
+  const defaultLaborRate = laborRates.find(r => r.is_default) || laborRates[0]
+
+  // Calculate labor cost for a product
+  const getLaborCost = (product) => {
+    if (!product.allotted_time_hours || !defaultLaborRate) return 0
+    return product.allotted_time_hours * defaultLaborRate.rate_per_hour * (defaultLaborRate.multiplier || 1)
   }
 
   const [activeServiceType, setActiveServiceType] = useState('all')
@@ -174,6 +191,13 @@ export default function ProductsServices() {
   const [productForm, setProductForm] = useState({
     name: '', description: '', unit_price: '', cost: '', markup_percent: '',
     taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: ''
+  })
+
+  // Labor rates panel state
+  const [showLaborRates, setShowLaborRates] = useState(false)
+  const [editingRate, setEditingRate] = useState(null)
+  const [rateForm, setRateForm] = useState({
+    name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false
   })
 
   const [saving, setSaving] = useState(false)
@@ -198,6 +222,7 @@ export default function ProductsServices() {
     if (companyId) {
       fetchProductGroups()
       fetchProducts()
+      fetchLaborRates()
     }
   }, [companyId])
 
@@ -435,6 +460,128 @@ export default function ProductsServices() {
     setUploading(false)
   }
 
+  // ============ LABOR RATE CRUD ============
+  const openRateForm = (rate = null) => {
+    if (rate) {
+      setEditingRate(rate)
+      setRateForm({
+        name: rate.name || '',
+        rate_per_hour: rate.rate_per_hour || '',
+        description: rate.description || '',
+        multiplier: rate.multiplier || '1.0',
+        active: rate.active ?? true,
+        is_default: rate.is_default ?? false
+      })
+    } else {
+      setEditingRate(null)
+      setRateForm({
+        name: '',
+        rate_per_hour: '',
+        description: '',
+        multiplier: '1.0',
+        active: true,
+        is_default: laborRates.length === 0 // First rate is default
+      })
+    }
+  }
+
+  const handleRateChange = (e) => {
+    const { name, value, type, checked } = e.target
+    setRateForm(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }))
+  }
+
+  const handleSaveRate = async () => {
+    if (!rateForm.name || !rateForm.rate_per_hour) {
+      alert('Name and Rate per Hour are required')
+      return
+    }
+
+    setSaving(true)
+
+    // If setting this as default, unset existing default first
+    if (rateForm.is_default && !editingRate?.is_default) {
+      await supabase
+        .from('labor_rates')
+        .update({ is_default: false, updated_at: new Date().toISOString() })
+        .eq('company_id', companyId)
+        .eq('is_default', true)
+    }
+
+    const payload = {
+      company_id: companyId,
+      name: rateForm.name,
+      rate_per_hour: parseFloat(rateForm.rate_per_hour),
+      description: rateForm.description || null,
+      multiplier: parseFloat(rateForm.multiplier) || 1.0,
+      active: rateForm.active,
+      is_default: rateForm.is_default,
+      updated_at: new Date().toISOString()
+    }
+
+    let result
+    if (editingRate) {
+      result = await supabase
+        .from('labor_rates')
+        .update(payload)
+        .eq('id', editingRate.id)
+        .eq('company_id', companyId)
+    } else {
+      result = await supabase
+        .from('labor_rates')
+        .insert([payload])
+    }
+
+    if (result.error) {
+      alert('Error saving rate: ' + result.error.message)
+    } else {
+      await fetchLaborRates()
+      setEditingRate(null)
+      setRateForm({ name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false })
+    }
+    setSaving(false)
+  }
+
+  const handleDeleteRate = async (rate) => {
+    // Don't allow deleting the only rate or the default rate without setting another
+    if (laborRates.length === 1) {
+      alert('Cannot delete the only labor rate. Create another rate first.')
+      return
+    }
+    if (rate.is_default) {
+      alert('Cannot delete the default rate. Set another rate as default first.')
+      return
+    }
+    if (!confirm(`Delete rate "${rate.name}"?`)) return
+
+    await supabase.from('labor_rates').delete().eq('id', rate.id).eq('company_id', companyId)
+    await fetchLaborRates()
+  }
+
+  const handleSetDefault = async (rate) => {
+    if (rate.is_default) return
+
+    setSaving(true)
+    // Unset existing default
+    await supabase
+      .from('labor_rates')
+      .update({ is_default: false, updated_at: new Date().toISOString() })
+      .eq('company_id', companyId)
+      .eq('is_default', true)
+
+    // Set new default
+    await supabase
+      .from('labor_rates')
+      .update({ is_default: true, updated_at: new Date().toISOString() })
+      .eq('id', rate.id)
+      .eq('company_id', companyId)
+
+    await fetchLaborRates()
+    setSaving(false)
+  }
+
   // Styles
   const inputStyle = {
     width: '100%',
@@ -517,19 +664,34 @@ export default function ProductsServices() {
             Add Product
           </button>
           {!selectedGroup && (
-            <Tooltip text="Manage product groups">
-              <button
-                onClick={() => setShowSettings(!showSettings)}
-                style={{
-                  ...buttonStyle,
-                  backgroundColor: showSettings ? theme.accent : theme.accentBg,
-                  color: showSettings ? '#fff' : theme.accent
-                }}
-              >
-                <Settings size={18} />
-                {!isMobile && 'Groups'}
-              </button>
-            </Tooltip>
+            <>
+              <Tooltip text="Manage labor rates">
+                <button
+                  onClick={() => { setShowLaborRates(!showLaborRates); setShowSettings(false) }}
+                  style={{
+                    ...buttonStyle,
+                    backgroundColor: showLaborRates ? '#8b5cf6' : 'rgba(139,92,246,0.12)',
+                    color: showLaborRates ? '#fff' : '#8b5cf6'
+                  }}
+                >
+                  <DollarSign size={18} />
+                  {!isMobile && 'Rates'}
+                </button>
+              </Tooltip>
+              <Tooltip text="Manage product groups">
+                <button
+                  onClick={() => { setShowSettings(!showSettings); setShowLaborRates(false) }}
+                  style={{
+                    ...buttonStyle,
+                    backgroundColor: showSettings ? theme.accent : theme.accentBg,
+                    color: showSettings ? '#fff' : theme.accent
+                  }}
+                >
+                  <Settings size={18} />
+                  {!isMobile && 'Groups'}
+                </button>
+              </Tooltip>
+            </>
           )}
         </div>
       </div>
@@ -604,7 +766,7 @@ export default function ProductsServices() {
                 gap: '16px'
               }}>
                 {groupProducts.map(product => (
-                  <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} inventoryCount={getInventoryCount(product.id)} />
+                  <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)} />
                 ))}
               </div>
             )
@@ -699,7 +861,7 @@ export default function ProductsServices() {
                     gap: '16px'
                   }}>
                     {ungroupedProducts.map(product => (
-                      <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} inventoryCount={getInventoryCount(product.id)} />
+                      <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)} />
                     ))}
                   </div>
                 </div>
@@ -899,6 +1061,215 @@ export default function ProductsServices() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Labor Rates Panel (inline) */}
+        {showLaborRates && !selectedGroup && (
+          <div style={{
+            width: isMobile ? '100%' : '360px',
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px',
+            position: isMobile ? 'fixed' : 'relative',
+            inset: isMobile ? '0' : 'auto',
+            zIndex: isMobile ? 50 : 'auto',
+            overflow: 'auto'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                {editingRate ? 'Edit Rate' : 'Labor Rates'}
+              </h2>
+              {isMobile && (
+                <button onClick={() => setShowLaborRates(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+                  <X size={20} />
+                </button>
+              )}
+            </div>
+
+            {/* Rate Form */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+              <div>
+                <label style={labelStyle}>Name *</label>
+                <input
+                  type="text"
+                  name="name"
+                  value={rateForm.name}
+                  onChange={handleRateChange}
+                  style={inputStyle}
+                  placeholder="e.g., Standard Rate"
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={labelStyle}>Rate/Hour *</label>
+                  <input
+                    type="number"
+                    name="rate_per_hour"
+                    value={rateForm.rate_per_hour}
+                    onChange={handleRateChange}
+                    step="0.01"
+                    style={inputStyle}
+                    placeholder="75.00"
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Multiplier</label>
+                  <input
+                    type="number"
+                    name="multiplier"
+                    value={rateForm.multiplier}
+                    onChange={handleRateChange}
+                    step="0.1"
+                    style={inputStyle}
+                    placeholder="1.0"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Description</label>
+                <input
+                  type="text"
+                  name="description"
+                  value={rateForm.description}
+                  onChange={handleRateChange}
+                  style={inputStyle}
+                  placeholder="e.g., Standard labor rate"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '24px', padding: '8px 0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    name="active"
+                    checked={rateForm.active}
+                    onChange={handleRateChange}
+                    style={{ width: '18px', height: '18px', accentColor: theme.accent }}
+                  />
+                  <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    name="is_default"
+                    checked={rateForm.is_default}
+                    onChange={handleRateChange}
+                    style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+                  />
+                  <span style={{ fontSize: '14px', color: theme.text }}>Default</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {editingRate && (
+                  <button
+                    onClick={() => { setEditingRate(null); setRateForm({ name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false }) }}
+                    style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  onClick={handleSaveRate}
+                  disabled={saving}
+                  style={{ ...buttonStyle, flex: 1, backgroundColor: '#8b5cf6', color: '#fff', opacity: saving ? 0.7 : 1 }}
+                >
+                  <Save size={16} />
+                  {saving ? 'Saving...' : (editingRate ? 'Update' : 'Add Rate')}
+                </button>
+              </div>
+            </div>
+
+            {/* Existing Rates List */}
+            <div>
+              <h3 style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, marginBottom: '12px', textTransform: 'uppercase' }}>
+                Existing Rates
+              </h3>
+              {laborRates.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                  No labor rates yet. Add your first rate above.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {laborRates.map(rate => (
+                    <div
+                      key={rate.id}
+                      style={{
+                        padding: '12px',
+                        backgroundColor: theme.bg,
+                        borderRadius: '8px',
+                        border: rate.is_default ? '2px solid #8b5cf6' : 'none',
+                        opacity: rate.active ? 1 : 0.6
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{rate.name}</span>
+                            {rate.is_default && (
+                              <span style={{
+                                fontSize: '10px',
+                                padding: '2px 6px',
+                                borderRadius: '8px',
+                                backgroundColor: '#8b5cf6',
+                                color: '#fff',
+                                fontWeight: '600'
+                              }}>
+                                DEFAULT
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '16px', fontWeight: '700', color: '#8b5cf6', marginTop: '4px' }}>
+                            ${parseFloat(rate.rate_per_hour).toFixed(2)}/hr
+                            {rate.multiplier && rate.multiplier !== 1 && (
+                              <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: '6px' }}>
+                                x{rate.multiplier}
+                              </span>
+                            )}
+                          </div>
+                          {rate.description && (
+                            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>{rate.description}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                        {!rate.is_default && (
+                          <button
+                            onClick={() => handleSetDefault(rate)}
+                            style={{
+                              flex: 1,
+                              ...buttonStyle,
+                              backgroundColor: 'rgba(139,92,246,0.12)',
+                              color: '#8b5cf6',
+                              padding: '6px',
+                              fontSize: '11px'
+                            }}
+                          >
+                            Set Default
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openRateForm(rate)}
+                          style={{ ...buttonStyle, backgroundColor: theme.accentBg, color: theme.accent, padding: '6px 10px' }}
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRate(rate)}
+                          style={{ ...buttonStyle, backgroundColor: '#fef2f2', color: '#dc2626', padding: '6px 10px' }}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
