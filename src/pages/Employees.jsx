@@ -38,6 +38,7 @@ const emptyEmployee = {
   phone: '',
   role: 'Field Tech',
   user_role: 'User',
+  is_developer: false,
   business_unit: '',
   employee_id: '',
   active: true,
@@ -98,6 +99,9 @@ export default function Employees() {
   const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' ||
     currentUser?.role === 'Admin' || currentUser?.role === 'Owner'
 
+  // Check if current user is owner (can grant developer access)
+  const isOwner = currentUser?.user_role === 'Owner' || currentUser?.role === 'Owner'
+
   useEffect(() => {
     if (!companyId) {
       navigate('/')
@@ -149,6 +153,7 @@ export default function Employees() {
       phone: employee.phone || '',
       role: employee.role || 'Field Tech',
       user_role: employee.user_role || 'User',
+      is_developer: employee.is_developer || false,
       business_unit: employee.business_unit || '',
       employee_id: employee.employee_id || '',
       active: employee.active !== false,
@@ -268,6 +273,7 @@ export default function Employees() {
       phone: formData.phone || null,
       role: formData.role,
       user_role: formData.user_role,
+      is_developer: formData.is_developer || false,
       business_unit: formData.business_unit || null,
       employee_id: formData.employee_id || null,
       active: formData.active,
@@ -1022,7 +1028,7 @@ export default function Employees() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Role</label>
+                    <label style={labelStyle}>Job Title</label>
                     <select
                       name="role"
                       value={formData.role}
@@ -1035,7 +1041,7 @@ export default function Employees() {
                   </div>
                   {isAdmin && (
                     <div>
-                      <label style={labelStyle}>User Role (Permissions)</label>
+                      <label style={labelStyle}>Access Level</label>
                       <select
                         name="user_role"
                         value={formData.user_role}
@@ -1048,6 +1054,41 @@ export default function Employees() {
                     </div>
                   )}
                 </div>
+
+                {/* Developer Access - Only Owners can grant this */}
+                {isOwner && (
+                  <div style={{
+                    marginBottom: '16px',
+                    padding: '12px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    borderRadius: '8px'
+                  }}>
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      cursor: isEditing ? 'pointer' : 'not-allowed'
+                    }}>
+                      <input
+                        type="checkbox"
+                        name="is_developer"
+                        checked={formData.is_developer}
+                        onChange={handleChange}
+                        disabled={!isEditing}
+                        style={{ accentColor: '#ef4444', width: '18px', height: '18px' }}
+                      />
+                      <div>
+                        <span style={{ fontSize: '14px', fontWeight: '500', color: '#ef4444' }}>
+                          Developer Access
+                        </span>
+                        <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                          Grants access to Data Console and developer tools
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                )}
 
                 {/* ===== PAY SECTION ===== */}
                 {canViewSensitiveInfo(viewingEmployee) && (
