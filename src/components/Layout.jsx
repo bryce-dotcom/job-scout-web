@@ -194,6 +194,7 @@ export default function Layout() {
       title: 'OPERATIONS',
       sectionIcon: Briefcase,
       items: [
+        { to: '/job-board', icon: ClipboardList, label: 'Job Board' },
         { to: '/jobs/calendar', icon: CalendarDays, label: 'Job Calendar' },
         { to: '/routes', icon: Route, label: 'Routes' },
         { to: '/inventory', icon: Warehouse, label: 'Inventory' },
