@@ -44,7 +44,8 @@ import {
   BookOpen,
   Wrench,
   Settings as SettingsIcon,
-  X as XIcon
+  X as XIcon,
+  Database
 } from 'lucide-react'
 
 // Theme context
@@ -375,19 +376,21 @@ export default function Layout() {
   // Admin section - shown to Admin/Owner access levels
   const adminSection = isAdminOrOwner ? {
     title: 'ADMIN',
-    sectionIcon: Terminal,
+    sectionIcon: Settings,
     items: [
-      { to: '/admin/data-console', icon: Terminal, label: 'Data Console', hint: 'Database management and developer tools' }
+      { to: '/settings', icon: Settings, label: 'Settings', hint: 'Company and app settings' },
+      { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' }
     ],
     isAdmin: true
   } : null
 
   // Dev section - only shown for super admins (isDeveloper flag)
   const devSection = isDeveloper ? {
-    title: 'SUPER ADMIN',
-    sectionIcon: Terminal,
+    title: 'DEV & MAINT.',
+    sectionIcon: Wrench,
     items: [
-      { to: '/admin/data-console', icon: Terminal, label: 'Advanced Tools', hint: 'Super admin tools and system configuration' }
+      { to: '/advanced-tools', icon: Wrench, label: 'Advanced Tools', hint: 'Advanced system tools and configuration' },
+      { to: '/admin/data-console', icon: Database, label: 'Data Console', hint: 'Database management and developer tools' }
     ],
     isDev: true
   } : null
