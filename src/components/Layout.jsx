@@ -237,6 +237,13 @@ export default function Layout() {
     'freddy': Truck
   }
 
+  // Active quoting agents for bidding/quoting assistance
+  // TODO: Replace with ai_modules table query when available
+  const quotingAgents = [
+    { id: 'lenard', name: 'Lenard', description: 'Lighting audits', route: '/agents/lenard', active: true },
+    { id: 'hvac-bot', name: 'HVAC Helper', description: 'HVAC quotes', route: '/agents/hvac', active: false }
+  ].filter(agent => agent.active)
+
   // Dev section - only shown for developers (handled separately for red styling)
   const devSection = isDeveloper ? {
     title: 'DEVELOPMENT & MAINT.',
@@ -537,43 +544,72 @@ export default function Layout() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                 {salesFlowItems.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    title={item.hint}
-                    style={({ isActive }) => ({
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      color: isActive ? item.color : theme.textMuted,
-                      backgroundColor: isActive ? item.color + '15' : 'transparent',
-                      textDecoration: 'none',
-                      fontSize: '13px',
-                      fontWeight: isActive ? '500' : '400',
-                      transition: 'all 0.15s ease',
-                      minHeight: '40px'
-                    })}
-                  >
-                    <div style={{
-                      width: '22px',
-                      height: '22px',
-                      borderRadius: '50%',
-                      backgroundColor: item.color + '20',
-                      color: item.color,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      flexShrink: 0
-                    }}>
-                      {item.step}
-                    </div>
-                    <span style={{ flex: 1 }}>{item.label}</span>
-                    <item.icon size={16} style={{ opacity: 0.6 }} />
-                  </NavLink>
+                  <div key={item.to}>
+                    <NavLink
+                      to={item.to}
+                      title={item.hint}
+                      style={({ isActive }) => ({
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        color: isActive ? item.color : theme.textMuted,
+                        backgroundColor: isActive ? item.color + '15' : 'transparent',
+                        textDecoration: 'none',
+                        fontSize: '13px',
+                        fontWeight: isActive ? '500' : '400',
+                        transition: 'all 0.15s ease',
+                        minHeight: '40px'
+                      })}
+                    >
+                      <div style={{
+                        width: '22px',
+                        height: '22px',
+                        borderRadius: '50%',
+                        backgroundColor: item.color + '20',
+                        color: item.color,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        flexShrink: 0
+                      }}>
+                        {item.step}
+                      </div>
+                      <span style={{ flex: 1 }}>{item.label}</span>
+                      <item.icon size={16} style={{ opacity: 0.6 }} />
+                    </NavLink>
+                    {/* Quoting Agents - Child list under Quotes (step 4) */}
+                    {item.step === 4 && quotingAgents.length > 0 && (
+                      <div style={{ marginLeft: '34px', marginTop: '2px', marginBottom: '4px' }}>
+                        {quotingAgents.map(agent => (
+                          <NavLink
+                            key={agent.id}
+                            to={agent.route}
+                            title={agent.description}
+                            style={({ isActive }) => ({
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '5px 10px',
+                              borderRadius: '4px',
+                              color: isActive ? '#3b82f6' : theme.textMuted,
+                              backgroundColor: isActive ? 'rgba(59,130,246,0.1)' : 'transparent',
+                              textDecoration: 'none',
+                              fontSize: '11px',
+                              fontWeight: isActive ? '500' : '400',
+                              transition: 'all 0.15s ease'
+                            })}
+                          >
+                            <Bot size={12} />
+                            {agent.name}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -803,47 +839,77 @@ export default function Layout() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     {salesFlowItems.map((item) => (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        onClick={() => setMobileMenuOpen(false)}
-                        style={({ isActive }) => ({
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '10px 12px',
-                          borderRadius: '6px',
-                          color: isActive ? item.color : theme.textMuted,
-                          backgroundColor: isActive ? item.color + '15' : 'transparent',
-                          textDecoration: 'none',
-                          fontSize: '14px',
-                          fontWeight: isActive ? '500' : '400',
-                          transition: 'all 0.15s ease',
-                          minHeight: '44px' // Touch-friendly
-                        })}
-                      >
-                        <div style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '50%',
-                          backgroundColor: item.color + '20',
-                          color: item.color,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '12px',
-                          fontWeight: '700',
-                          flexShrink: 0
-                        }}>
-                          {item.step}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div>{item.label}</div>
-                          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
-                            {item.hint}
+                      <div key={item.to}>
+                        <NavLink
+                          to={item.to}
+                          onClick={() => setMobileMenuOpen(false)}
+                          style={({ isActive }) => ({
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '10px 12px',
+                            borderRadius: '6px',
+                            color: isActive ? item.color : theme.textMuted,
+                            backgroundColor: isActive ? item.color + '15' : 'transparent',
+                            textDecoration: 'none',
+                            fontSize: '14px',
+                            fontWeight: isActive ? '500' : '400',
+                            transition: 'all 0.15s ease',
+                            minHeight: '44px' // Touch-friendly
+                          })}
+                        >
+                          <div style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            backgroundColor: item.color + '20',
+                            color: item.color,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '12px',
+                            fontWeight: '700',
+                            flexShrink: 0
+                          }}>
+                            {item.step}
                           </div>
-                        </div>
-                      </NavLink>
+                          <div style={{ flex: 1 }}>
+                            <div>{item.label}</div>
+                            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
+                              {item.hint}
+                            </div>
+                          </div>
+                        </NavLink>
+                        {/* Quoting Agents - Child list under Quotes (step 4) - Mobile */}
+                        {item.step === 4 && quotingAgents.length > 0 && (
+                          <div style={{ marginLeft: '36px', marginTop: '2px', marginBottom: '4px' }}>
+                            {quotingAgents.map(agent => (
+                              <NavLink
+                                key={agent.id}
+                                to={agent.route}
+                                onClick={() => setMobileMenuOpen(false)}
+                                style={({ isActive }) => ({
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  padding: '8px 10px',
+                                  borderRadius: '4px',
+                                  color: isActive ? '#3b82f6' : theme.textMuted,
+                                  backgroundColor: isActive ? 'rgba(59,130,246,0.1)' : 'transparent',
+                                  textDecoration: 'none',
+                                  fontSize: '12px',
+                                  fontWeight: isActive ? '500' : '400',
+                                  transition: 'all 0.15s ease',
+                                  minHeight: '36px'
+                                })}
+                              >
+                                <Bot size={14} />
+                                {agent.name}
+                              </NavLink>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>
