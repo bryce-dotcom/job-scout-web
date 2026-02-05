@@ -303,7 +303,7 @@ export const useStore = create(
           .from(TABLES.time_log)
           .select(QUERIES.timeLogs)
           .eq('company_id', companyId)
-          .order('clock_in', { ascending: false });
+          .order('created_at', { ascending: false });
 
         if (!error) set({ timeLogs: data || [] });
       },
@@ -316,7 +316,7 @@ export const useStore = create(
           .from(TABLES.expenses)
           .select(QUERIES.expenses)
           .eq('company_id', companyId)
-          .order('expense_date', { ascending: false });
+          .order('date', { ascending: false });
 
         if (!error) set({ expenses: data || [] });
       },
@@ -333,7 +333,7 @@ export const useStore = create(
           .from(TABLES.invoices)
           .select(QUERIES.invoices)
           .eq('company_id', companyId)
-          .order('invoice_date', { ascending: false });
+          .order('created_at', { ascending: false });
 
         if (!error) set({ invoices: data || [] });
       },
@@ -346,7 +346,7 @@ export const useStore = create(
           .from(TABLES.payments)
           .select(QUERIES.payments)
           .eq('company_id', companyId)
-          .order('payment_date', { ascending: false });
+          .order('date', { ascending: false });
 
         if (!error) set({ payments: data || [] });
       },
@@ -503,7 +503,7 @@ export const useStore = create(
           .from(TABLES.communications_log)
           .select(QUERIES.communications)
           .eq('company_id', companyId)
-          .order('communication_date', { ascending: false })
+          .order('sent_date', { ascending: false })
           .limit(100);
 
         if (!error) set({ communications: data || [] });
@@ -596,7 +596,7 @@ export const useStore = create(
           .from(TABLES.routes)
           .select(QUERIES.routes)
           .eq('company_id', companyId)
-          .order('route_date', { ascending: false });
+          .order('date', { ascending: false });
 
         if (!error) set({ routes: data || [] });
       },
@@ -630,7 +630,7 @@ export const useStore = create(
           .from(TABLES.lead_payments)
           .select(QUERIES.leadPayments)
           .eq('company_id', companyId)
-          .order('payment_date', { ascending: false });
+          .order('date_created', { ascending: false });
 
         if (!error) set({ leadPayments: data || [] });
       },
@@ -647,7 +647,7 @@ export const useStore = create(
           .from(TABLES.utility_invoices)
           .select(QUERIES.utilityInvoices)
           .eq('company_id', companyId)
-          .order('invoice_date', { ascending: false });
+          .order('created_at', { ascending: false });
 
         if (!error) set({ utilityInvoices: data || [] });
       },
