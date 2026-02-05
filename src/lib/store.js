@@ -421,7 +421,7 @@ export const useStore = create(
 
         const { data, error } = await supabase
           .from('lighting_audits')
-          .select('*, customer:customers(id, name), job:jobs(id, job_id), utility_provider:utility_providers(id, provider_name)')
+          .select('*')
           .eq('company_id', companyId)
           .order('created_at', { ascending: false });
 
@@ -472,7 +472,7 @@ export const useStore = create(
 
         const { data, error } = await supabase
           .from('utility_programs')
-          .select('*, utility_provider:utility_providers(id, provider_name)')
+          .select('*')
           .eq('company_id', companyId)
           .order('program_name');
 

@@ -153,21 +153,22 @@ export const QUERIES = {
   quoteLines: '*, item:products_services(id, name, description)',
   jobs: '*, customer:customers!customer_id(id, name, email, phone, address), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id)',
   jobLines: '*, item:products_services(id, name, description)',
-  invoices: '*, customer:customers!customer_id(id, name, email, phone, address), job:jobs!job_id(id, job_id, job_title)',
+  invoices: '*',
   invoiceLines: '*, item:products_services(id, name)',
-  payments: '*, invoice:invoices!invoice_id(id, invoice_id), customer:customers!customer_id(id, name)',
-  timeLogs: '*, employee:employees!employee_id(id, name), job:jobs!job_id(id, job_id, job_title)',
-  expenses: '*, employee:employees!employee_id(id, name), job:jobs!job_id(id, job_id)',
+  payments: '*',
+  timeLogs: '*',
+  expenses: '*',
   fleet: '*',
   fleetMaintenance: '*, fleet:fleet!fleet_id(id, name, vehicle_id)',
-  lightingAudits: '*, customer:customers!customer_id(id, name), utility_provider:utility_providers!utility_provider_id(id, provider_name)',
+  lightingAudits: '*',
   auditAreas: '*, audit:lighting_audits!audit_id(id, audit_id)',
-  routes: '*, assigned_to:employees!assigned_to_id(id, name), fleet:fleet!fleet_id(id, name)',
-  communications: '*, lead:leads!lead_id(id, customer_name), customer:customers!customer_id(id, name), employee:employees!employee_id(id, name)',
+  routes: '*',
+  communications: '*',
   bookings: '*',
-  leadPayments: '*, lead:leads!lead_id(id, customer_name, email, phone)',
-  utilityInvoices: '*, customer:customers!customer_id(id, name), utility_provider:utility_providers!utility_provider_id(id, provider_name)',
-  incentives: '*, job:jobs!job_id(id, job_id, job_title), program:utility_programs!program_id(id, program_name)'
+  leadPayments: '*',
+  utilityInvoices: '*',
+  utilityPrograms: '*',
+  incentives: '*'
 };
 
 export default TABLES;
