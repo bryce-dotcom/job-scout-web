@@ -65,7 +65,6 @@ export default function PMJobSetter() {
   // Data-driven statuses from store
   const storeJobStatuses = useStore((state) => state.jobStatuses)
   const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
-  const storeEmployeeRoles = useStore((state) => state.employeeRoles)
   const storeJobCalendars = useStore((state) => state.jobCalendars)
 
   // Normalize statuses to objects with id, name, color
@@ -82,7 +81,6 @@ export default function PMJobSetter() {
   // Use normalized versions
   const jobStatuses = normalizeStatuses(storeJobStatuses, defaultStatusColors)
   const sectionStatuses = normalizeStatuses(storeJobSectionStatuses, defaultStatusColors)
-  const employeeRoles = storeEmployeeRoles || []
   const jobCalendarsFromStore = storeJobCalendars || []
 
   // Data
@@ -93,11 +91,10 @@ export default function PMJobSetter() {
 
   // Settings modal state
   const [showSettingsModal, setShowSettingsModal] = useState(false)
-  const [settingsTab, setSettingsTab] = useState('job_statuses') // job_statuses, section_statuses, calendars, roles
+  const [settingsTab, setSettingsTab] = useState('job_statuses') // job_statuses, section_statuses, calendars
   const [statusForm, setStatusForm] = useState([])
   const [sectionStatusForm, setSectionStatusForm] = useState([])
   const [calendarsForm, setCalendarsForm] = useState([])
-  const [rolesForm, setRolesForm] = useState([])
   const [isSaving, setIsSaving] = useState(false)
 
   // Calendar management
@@ -204,7 +201,6 @@ export default function PMJobSetter() {
     setStatusForm(jobStatuses.map(s => ({ ...s })))
     setSectionStatusForm(sectionStatuses.map(s => ({ ...s })))
     setCalendarsForm(jobCalendars.map(c => ({ ...c })))
-    setRolesForm(employeeRoles.map(r => typeof r === 'string' ? r : r.name || r))
     setShowSettingsModal(true)
   }
 
@@ -253,10 +249,6 @@ export default function PMJobSetter() {
       await saveSetting('job_calendars', calendarsForm)
       setJobCalendars(calendarsForm)
 
-      // Save roles
-      const rolesToSave = rolesForm.filter(r => r?.trim())
-      await saveSetting('employee_roles', rolesToSave)
-
       // Refresh store settings
       await fetchSettings()
 
@@ -294,35 +286,6 @@ export default function PMJobSetter() {
     const updated = [...form]
     ;[updated[index], updated[index + 1]] = [updated[index + 1], updated[index]]
     formSetter(updated)
-  }
-
-  // Role form helpers
-  const addRole = () => {
-    setRolesForm([...rolesForm, ''])
-  }
-
-  const updateRole = (index, value) => {
-    const updated = [...rolesForm]
-    updated[index] = value
-    setRolesForm(updated)
-  }
-
-  const deleteRole = (index) => {
-    setRolesForm(rolesForm.filter((_, i) => i !== index))
-  }
-
-  const moveRoleUp = (index) => {
-    if (index === 0) return
-    const updated = [...rolesForm]
-    ;[updated[index - 1], updated[index]] = [updated[index], updated[index - 1]]
-    setRolesForm(updated)
-  }
-
-  const moveRoleDown = (index) => {
-    if (index >= rolesForm.length - 1) return
-    const updated = [...rolesForm]
-    ;[updated[index], updated[index + 1]] = [updated[index + 1], updated[index]]
-    setRolesForm(updated)
   }
 
   // Calendar form helpers
@@ -935,113 +898,6 @@ export default function PMJobSetter() {
       >
         <Plus size={16} />
         Add Status
-      </button>
-    </div>
-  )
-
-  // Render roles list in settings
-  const renderRolesList = () => (
-    <div>
-      <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '0 0 12px' }}>
-        Employee Roles
-      </h3>
-      {rolesForm.map((role, index) => {
-        const canMoveUp = index > 0
-        const canMoveDown = index < rolesForm.length - 1
-
-        return (
-          <div
-            key={index}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              marginBottom: '10px',
-              padding: '10px',
-              backgroundColor: theme.bg,
-              borderRadius: '6px'
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <button
-                onClick={() => moveRoleUp(index)}
-                disabled={!canMoveUp}
-                style={{
-                  padding: '2px',
-                  background: 'none',
-                  border: 'none',
-                  cursor: canMoveUp ? 'pointer' : 'default',
-                  color: canMoveUp ? theme.textSecondary : theme.border,
-                  opacity: canMoveUp ? 1 : 0.4
-                }}
-              >
-                <ChevronUp size={14} />
-              </button>
-              <button
-                onClick={() => moveRoleDown(index)}
-                disabled={!canMoveDown}
-                style={{
-                  padding: '2px',
-                  background: 'none',
-                  border: 'none',
-                  cursor: canMoveDown ? 'pointer' : 'default',
-                  color: canMoveDown ? theme.textSecondary : theme.border,
-                  opacity: canMoveDown ? 1 : 0.4
-                }}
-              >
-                <ChevronDown size={14} />
-              </button>
-            </div>
-
-            <input
-              type="text"
-              value={role}
-              onChange={(e) => updateRole(index, e.target.value)}
-              placeholder="Role name"
-              style={{
-                ...inputStyle,
-                flex: 1,
-                minHeight: '36px',
-                padding: '8px 10px'
-              }}
-            />
-            <button
-              onClick={() => deleteRole(index)}
-              style={{
-                padding: '8px',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: '#dc2626'
-              }}
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        )
-      })}
-
-      <button
-        onClick={addRole}
-        style={{
-          width: '100%',
-          padding: '10px',
-          backgroundColor: 'transparent',
-          border: `1px dashed ${theme.border}`,
-          borderRadius: '6px',
-          color: theme.textSecondary,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px',
-          fontSize: '13px',
-          marginTop: '8px',
-          minHeight: '44px'
-        }}
-      >
-        <Plus size={16} />
-        Add Role
       </button>
     </div>
   )
@@ -2332,7 +2188,7 @@ export default function PMJobSetter() {
                   Job Board Settings
                 </h2>
                 <p style={{ fontSize: '12px', color: theme.textMuted, margin: '2px 0 0' }}>
-                  Configure statuses, calendars, and roles
+                  Configure statuses and calendars
                 </p>
               </div>
               <button
@@ -2352,8 +2208,7 @@ export default function PMJobSetter() {
               {[
                 { id: 'job_statuses', label: 'Job Statuses' },
                 { id: 'section_statuses', label: 'Section Statuses' },
-                { id: 'calendars', label: 'Calendars' },
-                { id: 'roles', label: 'Roles' }
+                { id: 'calendars', label: 'Calendars' }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -2380,7 +2235,6 @@ export default function PMJobSetter() {
               {settingsTab === 'job_statuses' && renderStatusList(statusForm, setStatusForm, 'Job Statuses')}
               {settingsTab === 'section_statuses' && renderStatusList(sectionStatusForm, setSectionStatusForm, 'Section Statuses')}
               {settingsTab === 'calendars' && renderCalendarsList()}
-              {settingsTab === 'roles' && renderRolesList()}
             </div>
 
             {/* Modal Footer */}
