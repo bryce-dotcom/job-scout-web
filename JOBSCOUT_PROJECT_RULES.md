@@ -22,6 +22,9 @@ Users should understand how to use Job Scout without training. Every page, butto
 
 ## ARCHITECTURE RULES
 
+### Verify Column Names Before Querying
+Before writing ANY Supabase query, reference `DATABASE_SCHEMA.md` to verify column names exist. If a column is not listed in that file, it does not exist. This prevents 400 errors from misspelled or assumed column names.
+
 ### Multi-Tenant
 Every single query filters by `company_id`. No exceptions. Guard clause if no company_id.
 
@@ -224,6 +227,7 @@ Products are shown as visual tiles (like a POS system), not dropdowns. Users tap
 When building any new page:
 
 - [ ] Read this file first
+- [ ] Verify all column names against DATABASE_SCHEMA.md
 - [ ] Page title with optional HelpBadge
 - [ ] Empty state with guidance if no data
 - [ ] Tooltips on action buttons
