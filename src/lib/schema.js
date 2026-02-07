@@ -29,6 +29,8 @@ export const TABLES = {
   job_lines: 'job_lines',
   custom_forms: 'custom_forms',
   time_log: 'time_log',
+  time_clock: 'time_clock',
+  time_off_requests: 'time_off_requests',
   expenses: 'expenses',
 
   // Invoicing
@@ -37,6 +39,11 @@ export const TABLES = {
   payments: 'payments',
   utility_invoices: 'utility_invoices',
   incentives: 'incentives',
+
+  // Books
+  manual_expenses: 'manual_expenses',
+  assets: 'assets',
+  liabilities: 'liabilities',
 
   // Fleet
   fleet: 'fleet',
