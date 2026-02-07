@@ -20,7 +20,7 @@ const MALE_NAMES = new Set([
   'christopher','daniel','matthew','anthony','mark','donald','steven','paul','andrew','joshua',
   'kenneth','kevin','brian','george','timothy','ronald','edward','jason','jeffrey','ryan',
   'jacob','gary','nicholas','eric','jonathan','stephen','larry','justin','scott','brandon',
-  'benjamin','samuel','raymond','gregory','frank','alexander','patrick','jack','dennis','jerry',
+  'benjamin','bryce','samuel','raymond','gregory','frank','alexander','patrick','jack','dennis','jerry',
   'tyler','aaron','jose','nathan','henry','peter','douglas','adam','zachary','walter',
   'kyle','harold','carl','arthur','gerald','roger','keith','jeremy','terry','lawrence',
   'sean','christian','austin','jesse','dylan','billy','bruce','albert','willie','gabriel',
@@ -71,17 +71,17 @@ const FEMALE_NAMES = new Set([
 function getGenderTint(name) {
   if (!name) return null
   const firstName = name.trim().split(/\s+/)[0].toLowerCase()
-  if (MALE_NAMES.has(firstName)) return 'rgba(59, 130, 246, 0.15)'
-  if (FEMALE_NAMES.has(firstName)) return 'rgba(236, 72, 153, 0.15)'
+  if (MALE_NAMES.has(firstName)) return 'rgba(59, 130, 246, 0.25)'
+  if (FEMALE_NAMES.has(firstName)) return 'rgba(236, 72, 153, 0.25)'
   return null
 }
 
 function getGenderAccent(name) {
   if (!name) return null
   const firstName = name.trim().split(/\s+/)[0].toLowerCase()
-  if (MALE_NAMES.has(firstName)) return 'rgba(59, 130, 246, 0.5)'
-  if (FEMALE_NAMES.has(firstName)) return 'rgba(236, 72, 153, 0.5)'
-  return null
+  if (MALE_NAMES.has(firstName)) return '#3B82F6'
+  if (FEMALE_NAMES.has(firstName)) return '#EC4899'
+  return '#6B7280'
 }
 
 const theme = {
@@ -107,8 +107,7 @@ export default function EntityCard({
     overflow: 'hidden',
     backgroundColor: tint || theme.bgCard,
     border: `1px solid ${theme.border}`,
-    borderLeft: `4px solid ${accent || theme.border}`,
-    ...(isBusiness && { borderTop: `4px double ${theme.border}` }),
+    borderLeft: `5px solid ${accent}`,
     borderRadius: isBusiness ? '4px' : '40px 40px 12px 12px',
     padding: '16px',
     cursor: onClick ? 'pointer' : 'default',
@@ -132,28 +131,40 @@ export default function EntityCard({
   }
 
   return (
-    <div
-      style={cardStyle}
-      onClick={onClick}
-      onMouseEnter={onClick ? (e) => {
-        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'
-        e.currentTarget.style.transform = 'translateY(-1px)'
-      } : undefined}
-      onMouseLeave={onClick ? (e) => {
-        e.currentTarget.style.boxShadow = 'none'
-        e.currentTarget.style.transform = 'none'
-      } : undefined}
-    >
-      {/* Watermark icon */}
-      {isBusiness ? (
-        <Building2 size={80} style={watermarkStyle} color={theme.text} />
-      ) : (
-        <User size={80} style={watermarkStyle} color={theme.text} />
+    <div style={{ position: 'relative' }}>
+      {/* Triangular roof for business cards */}
+      {isBusiness && (
+        <div style={{
+          width: '100%',
+          height: '14px',
+          backgroundColor: 'rgba(90, 99, 73, 0.15)',
+          clipPath: 'polygon(0% 100%, 50% 0%, 100% 100%)',
+          borderRadius: '2px 2px 0 0'
+        }} />
       )}
+      <div
+        style={cardStyle}
+        onClick={onClick}
+        onMouseEnter={onClick ? (e) => {
+          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'
+          e.currentTarget.style.transform = 'translateY(-1px)'
+        } : undefined}
+        onMouseLeave={onClick ? (e) => {
+          e.currentTarget.style.boxShadow = 'none'
+          e.currentTarget.style.transform = 'none'
+        } : undefined}
+      >
+        {/* Watermark icon */}
+        {isBusiness ? (
+          <Building2 size={80} style={watermarkStyle} color={theme.text} />
+        ) : (
+          <User size={80} style={watermarkStyle} color={theme.text} />
+        )}
 
-      {/* Card content */}
-      <div style={contentStyle}>
-        {children}
+        {/* Card content */}
+        <div style={contentStyle}>
+          {children}
+        </div>
       </div>
     </div>
   )
