@@ -102,13 +102,15 @@ export default function EntityCard({
   const tint = getGenderTint(name)
   const accent = getGenderAccent(name)
 
+  const bg = tint || theme.bgCard
+
   const cardStyle = {
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: tint || theme.bgCard,
+    backgroundColor: bg,
     border: `1px solid ${theme.border}`,
     borderLeft: `5px solid ${accent}`,
-    borderRadius: isBusiness ? '4px' : '40px 40px 12px 12px',
+    borderRadius: isBusiness ? '4px' : '80px 80px 8px 8px',
     padding: '16px',
     cursor: onClick ? 'pointer' : 'default',
     transition: 'box-shadow 0.15s ease, transform 0.15s ease',
@@ -132,16 +134,34 @@ export default function EntityCard({
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Triangular roof for business cards */}
+      {/* Shed roof for business cards - slants lower-left to upper-right with 5px overhang */}
       {isBusiness && (
         <div style={{
-          width: '100%',
-          height: '14px',
-          backgroundColor: 'rgba(90, 99, 73, 0.15)',
-          clipPath: 'polygon(0% 100%, 50% 0%, 100% 100%)',
-          borderRadius: '2px 2px 0 0'
+          position: 'relative',
+          width: 'calc(100% + 10px)',
+          marginLeft: '-5px',
+          height: '16px',
+          backgroundColor: 'rgba(90, 99, 73, 0.22)',
+          clipPath: 'polygon(0% 100%, 0% 55%, 100% 0%, 100% 100%)',
+          boxShadow: '0 2px 3px rgba(0,0,0,0.08)'
         }} />
       )}
+
+      {/* Head bump for person cards - semicircle centered above card */}
+      {!isBusiness && (
+        <div style={{
+          width: '52px',
+          height: '26px',
+          backgroundColor: bg,
+          border: `1px solid ${theme.border}`,
+          borderBottom: 'none',
+          borderRadius: '26px 26px 0 0',
+          margin: '0 auto -1px',
+          position: 'relative',
+          zIndex: 2
+        }} />
+      )}
+
       <div
         style={cardStyle}
         onClick={onClick}
