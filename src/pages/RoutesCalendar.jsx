@@ -71,7 +71,7 @@ export default function RoutesCalendar() {
 
   const getRoutesForDate = (date) => {
     const dateStr = date.toISOString().split('T')[0]
-    return routes.filter(r => r.route_date === dateStr)
+    return routes.filter(r => r.date?.startsWith(dateStr))
   }
 
   const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))
@@ -245,7 +245,7 @@ export default function RoutesCalendar() {
                           whiteSpace: 'nowrap'
                         }}
                       >
-                        {route.route_name}
+                        {route.route_id}
                       </div>
                     )
                   })}

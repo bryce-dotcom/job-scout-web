@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ROUTE_STATUS } from '../lib/schema'
 import { Plus, Pencil, Trash2, X, Route, Search, Calendar, Truck, User, MapPin } from 'lucide-react'
 
 const defaultTheme = {
@@ -18,18 +17,10 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-const statusColors = {
-  'Planned': { bg: 'rgba(90,155,213,0.12)', color: '#5a9bd5' },
-  'In Progress': { bg: 'rgba(212,148,10,0.12)', color: '#d4940a' },
-  'Completed': { bg: 'rgba(74,124,89,0.12)', color: '#4a7c59' },
-  'Cancelled': { bg: 'rgba(194,90,90,0.12)', color: '#c25a5a' }
-}
-
 const emptyRoute = {
   route_id: '',
   date: new Date().toISOString().split('T')[0],
   team: '',
-  status: 'Planned',
   total_distance: '',
   total_time: ''
 }
@@ -48,7 +39,6 @@ export default function RoutesPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -65,8 +55,7 @@ export default function RoutesPage() {
     const matchesSearch = searchTerm === '' ||
       route.route_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       route.team?.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === 'all' || route.status === statusFilter
-    return matchesSearch && matchesStatus
+    return matchesSearch
   })
 
   const openAddModal = () => {
@@ -82,7 +71,6 @@ export default function RoutesPage() {
       route_id: route.route_id || '',
       date: route.date || '',
       team: route.team || '',
-      status: route.status || 'Planned',
       total_distance: route.total_distance || '',
       total_time: route.total_time || ''
     })
@@ -112,7 +100,6 @@ export default function RoutesPage() {
       route_id: formData.route_id || null,
       date: formData.date,
       team: formData.team || null,
-      status: formData.status,
       total_distance: formData.total_distance ? parseFloat(formData.total_distance) : null,
       total_time: formData.total_time ? parseFloat(formData.total_time) : null,
       updated_at: new Date().toISOString()
@@ -246,16 +233,6 @@ export default function RoutesPage() {
           />
         </div>
 
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ ...inputStyle, width: 'auto', minWidth: '150px' }}
-        >
-          <option value="all">All Statuses</option>
-          {ROUTE_STATUS.map(status => (
-            <option key={status} value={status}>{status}</option>
-          ))}
-        </select>
       </div>
 
       {/* Routes Grid */}
@@ -279,7 +256,6 @@ export default function RoutesPage() {
           gap: '16px'
         }}>
           {filteredRoutes.map((route) => {
-            const statusStyle = statusColors[route.status] || statusColors['Planned']
             return (
               <div
                 key={route.id}
@@ -294,16 +270,6 @@ export default function RoutesPage() {
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
                     {route.route_id || 'Unnamed Route'}
                   </h3>
-                  <span style={{
-                    padding: '4px 10px',
-                    backgroundColor: statusStyle.bg,
-                    color: statusStyle.color,
-                    borderRadius: '20px',
-                    fontSize: '12px',
-                    fontWeight: '500'
-                  }}>
-                    {route.status}
-                  </span>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
@@ -421,19 +387,9 @@ export default function RoutesPage() {
                   <input type="text" name="route_id" value={formData.route_id} onChange={handleChange} required style={inputStyle} placeholder="e.g., Downtown Morning Route" />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Date *</label>
-                    <input type="date" name="date" value={formData.date} onChange={handleChange} required style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Status</label>
-                    <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
-                      {ROUTE_STATUS.map(status => (
-                        <option key={status} value={status}>{status}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label style={labelStyle}>Date *</label>
+                  <input type="date" name="date" value={formData.date} onChange={handleChange} required style={inputStyle} />
                 </div>
 
                 <div>

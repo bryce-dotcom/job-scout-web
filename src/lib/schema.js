@@ -167,7 +167,7 @@ export const QUERIES = {
   expenses: '*',
   fleet: '*',
   fleetMaintenance: '*, asset:fleet!asset_id(id, name, asset_id)',
-  lightingAudits: '*, customer:customers!customer_id(id, name)',
+  lightingAudits: '*, customer:customers!customer_id(id, name), utility_provider:utility_providers!utility_provider_id(id, provider_name)',
   auditAreas: '*, audit:lighting_audits!audit_id(id, audit_id)',
   routes: '*',
   communications: '*, customer:customers!customer_id(id, name), employee:employees!employee_id(id, name)',

@@ -180,7 +180,7 @@ export default function SalesPipeline() {
 
   // Get stage value
   const getStageValue = (stageId) => {
-    return getLeadsForStage(stageId).reduce((sum, l) => sum + (parseFloat(l.estimated_value) || 0), 0)
+    return getLeadsForStage(stageId).reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)
   }
 
   // Check if appointment is today
@@ -264,7 +264,7 @@ export default function SalesPipeline() {
       .from('leads')
       .update({
         status: 'Won',
-        won_at: new Date().toISOString(),
+        converted_at: new Date().toISOString(),
         notes: selectedLead.notes
           ? `${selectedLead.notes}\n\nWON: ${wonNotes}`
           : `WON: ${wonNotes}`
@@ -286,8 +286,6 @@ export default function SalesPipeline() {
       .from('leads')
       .update({
         status: 'Lost',
-        lost_at: new Date().toISOString(),
-        lost_reason: lostReason,
         notes: selectedLead.notes
           ? `${selectedLead.notes}\n\nLOST: ${lostReason}`
           : `LOST: ${lostReason}`
@@ -437,8 +435,8 @@ export default function SalesPipeline() {
     active: { value: activeLeads.length, label: 'Active', color: null },
     won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
     lost: { value: lostLeadsList.length, label: 'Lost', color: '#64748b' },
-    totalValue: { value: formatCurrency(pipelineLeads.reduce((sum, l) => sum + (parseFloat(l.estimated_value) || 0), 0)), label: 'Value', color: null, isFormatted: true },
-    wonValue: { value: formatCurrency(wonLeadsList.reduce((sum, l) => sum + (parseFloat(l.estimated_value) || 0), 0)), label: 'Won Value', color: '#22c55e', isFormatted: true },
+    totalValue: { value: formatCurrency(pipelineLeads.reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)), label: 'Value', color: null, isFormatted: true },
+    wonValue: { value: formatCurrency(wonLeadsList.reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)), label: 'Won Value', color: '#22c55e', isFormatted: true },
     appointments: { value: leadsWithAppointments.length, label: 'Appts', color: '#3b82f6' },
     todayAppointments: { value: todayAppointments.length, label: 'Today', color: '#16a34a' },
     quoteSent: { value: quoteSentLeads.length, label: 'Quotes', color: '#8b5cf6' }
@@ -683,9 +681,9 @@ export default function SalesPipeline() {
                         </div>
                       )}
                     </div>
-                    {lead.estimated_value > 0 && (
+                    {parseFloat(lead.quote_amount) > 0 && (
                       <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '15px', flexShrink: 0 }}>
-                        {formatCurrency(lead.estimated_value)}
+                        {formatCurrency(lead.quote_amount)}
                       </div>
                     )}
                   </div>
@@ -983,13 +981,13 @@ export default function SalesPipeline() {
                     </div>
 
                     {/* Value */}
-                    {lead.estimated_value > 0 && (
+                    {parseFloat(lead.quote_amount) > 0 && (
                       <div style={{
                         color: '#16a34a',
                         fontSize: '13px',
                         fontWeight: '600'
                       }}>
-                        {formatCurrency(lead.estimated_value)}
+                        {formatCurrency(lead.quote_amount)}
                       </div>
                     )}
 
@@ -1198,11 +1196,11 @@ export default function SalesPipeline() {
                   <div style={{ fontSize: '13px', color: theme.text }}>{selectedLead.lead_source}</div>
                 </div>
               )}
-              {selectedLead.estimated_value > 0 && (
+              {parseFloat(selectedLead.quote_amount) > 0 && (
                 <div>
                   <div style={{ fontSize: '11px', color: theme.textMuted }}>Value</div>
                   <div style={{ fontSize: '13px', color: '#16a34a', fontWeight: '600' }}>
-                    {formatCurrency(selectedLead.estimated_value)}
+                    {formatCurrency(selectedLead.quote_amount)}
                   </div>
                 </div>
               )}

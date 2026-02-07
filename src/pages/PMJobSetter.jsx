@@ -360,7 +360,7 @@ export default function PMJobSetter() {
     }
     if (searchTerm) {
       filtered = filtered.filter(j =>
-        j.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        j.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         j.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         j.customer?.address?.toLowerCase().includes(searchTerm.toLowerCase())
       )
@@ -1380,7 +1380,7 @@ export default function PMJobSetter() {
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis'
                                   }}>
-                                    {job.title || `Job #${job.id}`}
+                                    {job.job_title || `Job #${job.id}`}
                                   </div>
                                   <div style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
                                     {job.customer?.name}
@@ -1750,7 +1750,7 @@ export default function PMJobSetter() {
                                 textOverflow: 'ellipsis',
                                 position: 'relative'
                               }}
-                              title={`${section.name} - ${job?.title || 'Unknown Job'}${calendar ? ` (${calendar.name})` : ''}`}
+                              title={`${section.name} - ${job?.job_title || 'Unknown Job'}${calendar ? ` (${calendar.name})` : ''}`}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 {calendar && (
@@ -2014,7 +2014,7 @@ export default function PMJobSetter() {
                           overflow: 'hidden',
                           textOverflow: 'ellipsis'
                         }}>
-                          {job.title || `Job #${job.id}`}
+                          {job.job_title || `Job #${job.id}`}
                         </span>
                       </div>
                     ))}

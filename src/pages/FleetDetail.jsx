@@ -143,7 +143,7 @@ export default function FleetDetail() {
 
     const insertData = {
       company_id: companyId,
-      asset_id: id,
+      asset_id: parseInt(id),
       type: maintenanceForm.type,
       date: maintenanceForm.date,
       mileage_hours: parseInt(maintenanceForm.mileage_hours) || asset.mileage_hours,
@@ -169,7 +169,7 @@ export default function FleetDetail() {
     nextPM.setDate(nextPM.getDate() + 90)
     updateData.next_pm_due = nextPM.toISOString().split('T')[0]
 
-    await supabase.from('fleet').update(updateData).eq('id', id)
+    await supabase.from('fleet').update(updateData).eq('id', parseInt(id))
 
     setShowMaintenanceModal(false)
     setMaintenanceForm({
@@ -188,7 +188,7 @@ export default function FleetDetail() {
 
     const insertData = {
       company_id: companyId,
-      asset_id: id,
+      asset_id: parseInt(id),
       rental_customer: rentalForm.rental_customer,
       start_date: rentalForm.start_date,
       end_date: rentalForm.end_date || null,
@@ -205,7 +205,7 @@ export default function FleetDetail() {
 
     // Update asset status if rental is active
     if (rentalForm.status === 'Active') {
-      await supabase.from('fleet').update({ status: 'In Use' }).eq('id', id)
+      await supabase.from('fleet').update({ status: 'In Use' }).eq('id', parseInt(id))
     }
 
     setShowRentalModal(false)
@@ -224,7 +224,7 @@ export default function FleetDetail() {
     const { error } = await supabase
       .from('fleet')
       .update({ mileage_hours: parseInt(newMileage) || 0 })
-      .eq('id', id)
+      .eq('id', parseInt(id))
 
     if (error) {
       alert('Error updating mileage: ' + error.message)
@@ -239,7 +239,7 @@ export default function FleetDetail() {
     const { error } = await supabase
       .from('fleet')
       .update({ status: newStatus })
-      .eq('id', id)
+      .eq('id', parseInt(id))
 
     if (error) {
       alert('Error updating status: ' + error.message)

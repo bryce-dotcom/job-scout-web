@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { PAYMENT_METHODS } from '../lib/schema'
 import { Plus, Pencil, Trash2, X, CreditCard, Search, DollarSign } from 'lucide-react'
 
 const defaultTheme = {
@@ -20,10 +19,10 @@ const defaultTheme = {
 
 const emptyPayment = {
   lead_id: '',
-  payment_date: new Date().toISOString().split('T')[0],
+  date_created: new Date().toISOString().split('T')[0],
   amount: '',
-  payment_method: '',
-  reference_number: '',
+  payment_id: '',
+  payment_status: 'Pending',
   notes: ''
 }
 
@@ -54,8 +53,8 @@ export default function LeadPayments() {
 
   const filteredPayments = leadPayments.filter(payment => {
     const matchesSearch = searchTerm === '' ||
-      payment.lead?.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.reference_number?.toLowerCase().includes(searchTerm.toLowerCase())
+      payment.lead_customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      payment.payment_id?.toLowerCase().includes(searchTerm.toLowerCase())
     return matchesSearch
   })
 
@@ -72,10 +71,10 @@ export default function LeadPayments() {
     setEditingPayment(payment)
     setFormData({
       lead_id: payment.lead_id || '',
-      payment_date: payment.payment_date || '',
+      date_created: payment.date_created || '',
       amount: payment.amount || '',
-      payment_method: payment.payment_method || '',
-      reference_number: payment.reference_number || '',
+      payment_id: payment.payment_id || '',
+      payment_status: payment.payment_status || 'Pending',
       notes: payment.notes || ''
     })
     setError(null)
@@ -102,10 +101,10 @@ export default function LeadPayments() {
     const payload = {
       company_id: companyId,
       lead_id: formData.lead_id || null,
-      payment_date: formData.payment_date,
+      date_created: formData.date_created,
       amount: parseFloat(formData.amount) || 0,
-      payment_method: formData.payment_method || null,
-      reference_number: formData.reference_number || null,
+      payment_id: formData.payment_id || null,
+      payment_status: formData.payment_status || 'Pending',
       notes: formData.notes || null,
       updated_at: new Date().toISOString()
     }
@@ -289,8 +288,8 @@ export default function LeadPayments() {
             <div>Date</div>
             <div>Lead</div>
             <div style={{ textAlign: 'right' }}>Amount</div>
-            <div>Method</div>
-            <div>Reference</div>
+            <div>Status</div>
+            <div>Payment ID</div>
             <div style={{ textAlign: 'right' }}>Actions</div>
           </div>
 
@@ -307,19 +306,19 @@ export default function LeadPayments() {
               }}
             >
               <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                {formatDate(payment.payment_date)}
+                {formatDate(payment.date_created)}
               </div>
               <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
-                {payment.lead?.customer_name || 'Unknown Lead'}
+                {payment.lead_customer_name || 'Unknown Lead'}
               </div>
               <div style={{ textAlign: 'right', fontWeight: '600', color: '#4a7c59' }}>
                 {formatCurrency(payment.amount)}
               </div>
               <div style={{ fontSize: '13px', color: theme.textSecondary }}>
-                {payment.payment_method || '-'}
+                {payment.payment_status || '-'}
               </div>
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                {payment.reference_number || '-'}
+                {payment.payment_id || '-'}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
                 <button
@@ -410,8 +409,8 @@ export default function LeadPayments() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Payment Date *</label>
-                    <input type="date" name="payment_date" value={formData.payment_date} onChange={handleChange} required style={inputStyle} />
+                    <label style={labelStyle}>Date Created *</label>
+                    <input type="date" name="date_created" value={formData.date_created} onChange={handleChange} required style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>Amount *</label>
@@ -421,17 +420,17 @@ export default function LeadPayments() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Payment Method</label>
-                    <select name="payment_method" value={formData.payment_method} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select method</option>
-                      {PAYMENT_METHODS.map(method => (
-                        <option key={method} value={method}>{method}</option>
-                      ))}
+                    <label style={labelStyle}>Payment Status</label>
+                    <select name="payment_status" value={formData.payment_status} onChange={handleChange} style={inputStyle}>
+                      <option value="Pending">Pending</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Failed">Failed</option>
+                      <option value="Refunded">Refunded</option>
                     </select>
                   </div>
                   <div>
-                    <label style={labelStyle}>Reference #</label>
-                    <input type="text" name="reference_number" value={formData.reference_number} onChange={handleChange} style={inputStyle} />
+                    <label style={labelStyle}>Payment ID</label>
+                    <input type="text" name="payment_id" value={formData.payment_id} onChange={handleChange} style={inputStyle} />
                   </div>
                 </div>
 

@@ -355,7 +355,7 @@ export default function LightingAudits() {
                         color: theme.accent,
                         marginTop: '4px'
                       }}>
-                        {audit.utility_provider.provider_name}
+                        {audit.utility_provider?.provider_name}
                       </div>
                     )}
                   </div>

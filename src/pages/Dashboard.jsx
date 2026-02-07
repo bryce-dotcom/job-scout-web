@@ -46,8 +46,11 @@ export default function Dashboard() {
   const inventory = useStore((state) => state.inventory)
   const fleet = useStore((state) => state.fleet)
   const appointments = useStore((state) => state.appointments)
+  const employees = useStore((state) => state.employees)
   const timeLogs = useStore((state) => state.timeLogs)
   const storePipelineStages = useStore((state) => state.pipelineStages)
+
+  const currentEmployee = employees.find(e => e.email === user?.email)
 
   const pipelineStages = storePipelineStages?.length > 0 ? storePipelineStages : DEFAULT_PIPELINE_STAGES
   const pipelineColors = Object.fromEntries(
@@ -69,11 +72,11 @@ export default function Dashboard() {
   }, [companyId, navigate])
 
   const checkActiveTimeLog = async () => {
-    if (!user?.id) return
+    if (!currentEmployee?.id) return
     const { data } = await supabase
       .from('time_log')
       .select('*')
-      .eq('employee_id', user.id)
+      .eq('employee_id', currentEmployee.id)
       .is('clock_out_time', null)
       .single()
 
@@ -98,7 +101,7 @@ export default function Dashboard() {
         .from('time_log')
         .insert({
           company_id: companyId,
-          employee_id: user.id,
+          employee_id: currentEmployee?.id,
           clock_in_time: new Date().toISOString()
         })
         .select()
@@ -419,7 +422,7 @@ export default function Dashboard() {
                   justifyContent: 'space-between'
                 }}
               >
-                <span style={{ fontSize: '13px', color: theme.text }}>{lead.name}</span>
+                <span style={{ fontSize: '13px', color: theme.text }}>{lead.customer_name}</span>
                 <span style={{ fontSize: '12px', color: theme.textMuted }}>{formatDate(lead.created_at)}</span>
               </div>
             ))}

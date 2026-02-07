@@ -659,18 +659,6 @@ export default function Leads() {
                     Quote
                   </span>
                 )}
-                {lead.estimated_value > 0 && (
-                  <span style={{
-                    fontSize: '11px',
-                    padding: '4px 8px',
-                    backgroundColor: '#fef3c7',
-                    color: '#d97706',
-                    borderRadius: '4px',
-                    fontWeight: '600'
-                  }}>
-                    ${lead.estimated_value.toLocaleString()}
-                  </span>
-                )}
               </div>
 
               {/* Quick Actions - shown below with separator */}

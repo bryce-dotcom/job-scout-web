@@ -153,7 +153,7 @@ export default function LightingAuditDetail() {
 
     const areaData = {
       company_id: companyId,
-      lighting_audit_id: id,
+      audit_id: parseInt(id),
       area_name: areaForm.area_name,
       ceiling_height: areaForm.ceiling_height || null,
       fixture_category: areaForm.fixture_category,
