@@ -29,9 +29,9 @@ const INCENTIVE_STATUS = ['Pending', 'Submitted', 'Approved', 'Paid', 'Rejected'
 
 const emptyIncentive = {
   job_id: '',
-  program_id: '',
+  utility_name: '',
   incentive_type: '',
-  amount: '',
+  incentive_amount: '',
   status: 'Pending',
   submission_date: '',
   approval_date: '',
@@ -69,15 +69,15 @@ export default function Incentives() {
 
   const filteredIncentives = incentives.filter(inc => {
     const matchesSearch = searchTerm === '' ||
-      inc.job?.job_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inc.program?.program_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(inc.job_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      inc.utility_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       inc.reference_number?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === 'all' || inc.status === statusFilter
     return matchesSearch && matchesStatus
   })
 
-  const totalPending = filteredIncentives.filter(i => i.status === 'Pending' || i.status === 'Submitted').reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
-  const totalPaid = filteredIncentives.filter(i => i.status === 'Paid').reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
+  const totalPending = filteredIncentives.filter(i => i.status === 'Pending' || i.status === 'Submitted').reduce((sum, i) => sum + (parseFloat(i.incentive_amount) || 0), 0)
+  const totalPaid = filteredIncentives.filter(i => i.status === 'Paid').reduce((sum, i) => sum + (parseFloat(i.incentive_amount) || 0), 0)
 
   const openAddModal = () => {
     setEditingIncentive(null)
@@ -90,9 +90,9 @@ export default function Incentives() {
     setEditingIncentive(incentive)
     setFormData({
       job_id: incentive.job_id || '',
-      program_id: incentive.program_id || '',
+      utility_name: incentive.utility_name || '',
       incentive_type: incentive.incentive_type || '',
-      amount: incentive.amount || '',
+      incentive_amount: incentive.incentive_amount || '',
       status: incentive.status || 'Pending',
       submission_date: incentive.submission_date || '',
       approval_date: incentive.approval_date || '',
@@ -124,7 +124,7 @@ export default function Incentives() {
     const payload = {
       company_id: companyId,
       job_id: formData.job_id || null,
-      incentive_amount: parseFloat(formData.amount) || 0,
+      incentive_amount: parseFloat(formData.incentive_amount) || 0,
       utility_name: formData.utility_name || null,
       status: formData.status,
       notes: formData.notes || null,
@@ -373,17 +373,17 @@ export default function Incentives() {
               >
                 <div>
                   <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
-                    {incentive.job?.job_id || 'No Job'}
+                    {incentive.job_id || 'No Job'}
                   </p>
                   <p style={{ fontSize: '12px', color: theme.textMuted }}>
-                    {incentive.program?.program_name || '-'}
+                    {incentive.utility_name || '-'}
                   </p>
                 </div>
                 <div style={{ fontSize: '14px', color: theme.textSecondary }}>
                   {incentive.incentive_type || '-'}
                 </div>
                 <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
-                  {formatCurrency(incentive.amount)}
+                  {formatCurrency(incentive.incentive_amount)}
                 </div>
                 <div>
                   <span style={{
@@ -486,13 +486,8 @@ export default function Incentives() {
                     </select>
                   </div>
                   <div>
-                    <label style={labelStyle}>Utility Program</label>
-                    <select name="program_id" value={formData.program_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select program</option>
-                      {utilityPrograms.map(prog => (
-                        <option key={prog.id} value={prog.id}>{prog.program_name}</option>
-                      ))}
-                    </select>
+                    <label style={labelStyle}>Utility Name</label>
+                    <input type="text" name="utility_name" value={formData.utility_name} onChange={handleChange} style={inputStyle} placeholder="Utility name" />
                   </div>
                 </div>
 
@@ -510,7 +505,7 @@ export default function Incentives() {
                   </div>
                   <div>
                     <label style={labelStyle}>Amount *</label>
-                    <input type="number" name="amount" value={formData.amount} onChange={handleChange} step="0.01" required style={inputStyle} />
+                    <input type="number" name="incentive_amount" value={formData.incentive_amount} onChange={handleChange} step="0.01" required style={inputStyle} />
                   </div>
                 </div>
 

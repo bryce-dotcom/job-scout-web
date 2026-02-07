@@ -52,8 +52,8 @@ export default function RebateRates() {
     fetchRebateRates()
   }, [companyId, navigate, fetchRebateRates])
 
-  const program = utilityPrograms.find(p => p.id === programId)
-  const programRates = rebateRates.filter(r => r.program_id === programId)
+  const program = utilityPrograms.find(p => p.id === parseInt(programId))
+  const programRates = rebateRates.filter(r => r.program_id === parseInt(programId))
 
   const handleSubmit = async (e) => {
     e.preventDefault()

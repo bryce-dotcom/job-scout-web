@@ -137,7 +137,7 @@ export default function RoutesPage() {
   }
 
   const handleDelete = async (route) => {
-    if (!confirm(`Delete route "${route.route_name}"?`)) return
+    if (!confirm(`Delete route "${route.route_id}"?`)) return
     await supabase.from('routes').delete().eq('id', route.id)
     await fetchRoutes()
   }
@@ -292,7 +292,7 @@ export default function RoutesPage() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
-                    {route.route_name || 'Unnamed Route'}
+                    {route.route_id || 'Unnamed Route'}
                   </h3>
                   <span style={{
                     padding: '4px 10px',
@@ -309,18 +309,12 @@ export default function RoutesPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: theme.textSecondary }}>
                     <Calendar size={16} />
-                    {formatDate(route.route_date)}
+                    {formatDate(route.date)}
                   </div>
-                  {route.assigned_to && (
+                  {route.team && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: theme.textSecondary }}>
                       <User size={16} />
-                      {route.assigned_to.name}
-                    </div>
-                  )}
-                  {route.fleet && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: theme.textSecondary }}>
-                      <Truck size={16} />
-                      {route.fleet.name}
+                      {route.team}
                     </div>
                   )}
                   {route.start_location && (
@@ -423,14 +417,14 @@ export default function RoutesPage() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
-                  <label style={labelStyle}>Route Name *</label>
-                  <input type="text" name="route_name" value={formData.route_name} onChange={handleChange} required style={inputStyle} placeholder="e.g., Downtown Morning Route" />
+                  <label style={labelStyle}>Route ID *</label>
+                  <input type="text" name="route_id" value={formData.route_id} onChange={handleChange} required style={inputStyle} placeholder="e.g., Downtown Morning Route" />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Route Date *</label>
-                    <input type="date" name="route_date" value={formData.route_date} onChange={handleChange} required style={inputStyle} />
+                    <label style={labelStyle}>Date *</label>
+                    <input type="date" name="date" value={formData.date} onChange={handleChange} required style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>Status</label>
@@ -442,25 +436,9 @@ export default function RoutesPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Assigned To</label>
-                    <select name="assigned_to" value={formData.assigned_to} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select employee</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Vehicle</label>
-                    <select name="fleet_id" value={formData.fleet_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select vehicle</option>
-                      {fleet.map(v => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label style={labelStyle}>Team</label>
+                  <input type="text" name="team" value={formData.team} onChange={handleChange} style={inputStyle} placeholder="Team name" />
                 </div>
 
                 <div>

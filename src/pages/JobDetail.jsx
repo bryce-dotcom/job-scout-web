@@ -295,7 +295,7 @@ export default function JobDetail() {
     setSaving(true)
 
     const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
-    const subtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
+    const subtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.total) || 0), 0)
     const discount = parseFloat(job.discount) || 0
     const total = subtotal - discount
 
@@ -543,7 +543,7 @@ export default function JobDetail() {
     )
   }
 
-  const subtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
+  const subtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.total) || 0), 0)
   const discount = parseFloat(job.discount) || 0
   const incentive = parseFloat(job.utility_incentive) || 0
   const total = subtotal - discount
@@ -1013,8 +1013,8 @@ export default function JobDetail() {
                       <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>{line.item?.name || 'Unknown'}</p>
                     </div>
                     <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{line.quantity}</div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{formatCurrency(line.unit_price)}</div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatCurrency(line.line_total)}</div>
+                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{formatCurrency(line.price)}</div>
+                    <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatCurrency(line.total)}</div>
                     <div style={{ textAlign: 'right' }}>
                       <button onClick={() => removeLineItem(line.id)} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}>
                         <Trash2 size={16} />

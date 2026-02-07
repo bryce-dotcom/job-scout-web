@@ -84,7 +84,7 @@ export default function QuoteDetail() {
       quote_id: parseInt(id),
       item_id: product.id,
       quantity: 1,
-      unit_price: totalPrice,
+      price: totalPrice,
       line_total: totalPrice
     }])
 
@@ -417,7 +417,7 @@ export default function QuoteDetail() {
                       {line.quantity}
                     </div>
                     <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>
-                      {formatCurrency(line.unit_price)}
+                      {formatCurrency(line.price)}
                     </div>
                     <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>
                       {formatCurrency(line.line_total)}

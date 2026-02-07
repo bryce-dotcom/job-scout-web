@@ -18,15 +18,10 @@ const defaultTheme = {
 }
 
 const emptyInvoice = {
-  customer_id: '',
-  utility_provider_id: '',
-  invoice_date: new Date().toISOString().split('T')[0],
-  billing_period_start: '',
-  billing_period_end: '',
-  account_number: '',
-  kwh_usage: '',
-  total_amount: '',
-  rate_per_kwh: '',
+  utility_name: '',
+  job_id: '',
+  amount: '',
+  payment_status: 'Pending',
   notes: ''
 }
 
@@ -58,13 +53,13 @@ export default function UtilityInvoices() {
 
   const filteredInvoices = utilityInvoices.filter(inv => {
     const matchesSearch = searchTerm === '' ||
-      inv.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inv.account_number?.toLowerCase().includes(searchTerm.toLowerCase())
+      inv.utility_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(inv.job_id || '').toLowerCase().includes(searchTerm.toLowerCase())
     return matchesSearch
   })
 
   const totalKwh = filteredInvoices.reduce((sum, inv) => sum + (parseFloat(inv.kwh_usage) || 0), 0)
-  const totalAmount = filteredInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total_amount) || 0), 0)
+  const totalAmount = filteredInvoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0)
 
   const openAddModal = () => {
     setEditingInvoice(null)
@@ -76,15 +71,10 @@ export default function UtilityInvoices() {
   const openEditModal = (invoice) => {
     setEditingInvoice(invoice)
     setFormData({
-      customer_id: invoice.customer_id || '',
-      utility_provider_id: invoice.utility_provider_id || '',
-      invoice_date: invoice.invoice_date || '',
-      billing_period_start: invoice.billing_period_start || '',
-      billing_period_end: invoice.billing_period_end || '',
-      account_number: invoice.account_number || '',
-      kwh_usage: invoice.kwh_usage || '',
-      total_amount: invoice.total_amount || '',
-      rate_per_kwh: invoice.rate_per_kwh || '',
+      utility_name: invoice.utility_name || '',
+      job_id: invoice.job_id || '',
+      amount: invoice.amount || '',
+      payment_status: invoice.payment_status || 'Pending',
       notes: invoice.notes || ''
     })
     setError(null)
@@ -112,7 +102,7 @@ export default function UtilityInvoices() {
       company_id: companyId,
       utility_name: formData.utility_name || null,
       job_id: formData.job_id || null,
-      amount: parseFloat(formData.total_amount) || null,
+      amount: parseFloat(formData.amount) || null,
       payment_status: formData.payment_status || 'Pending',
       notes: formData.notes || null,
       job_description: formData.job_description || null,
@@ -327,9 +317,9 @@ export default function UtilityInvoices() {
             textTransform: 'uppercase'
           }}>
             <div>Date</div>
-            <div>Customer</div>
-            <div>Provider</div>
-            <div style={{ textAlign: 'right' }}>kWh</div>
+            <div>Utility</div>
+            <div>Status</div>
+            <div style={{ textAlign: 'right' }}>Job</div>
             <div style={{ textAlign: 'right' }}>Amount</div>
             <div style={{ textAlign: 'right' }}>Actions</div>
           </div>
@@ -347,19 +337,19 @@ export default function UtilityInvoices() {
               }}
             >
               <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                {formatDate(invoice.invoice_date)}
+                {formatDate(invoice.created_at)}
               </div>
               <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
-                {invoice.customer?.name || '-'}
+                {invoice.utility_name || '-'}
               </div>
               <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                {invoice.utility_provider?.provider_name || '-'}
+                {invoice.payment_status || '-'}
               </div>
               <div style={{ textAlign: 'right', fontWeight: '500', color: theme.text }}>
-                {formatNumber(invoice.kwh_usage)}
+                {invoice.job_id || '-'}
               </div>
               <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
-                {formatCurrency(invoice.total_amount)}
+                {formatCurrency(invoice.amount)}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
                 <button
@@ -440,59 +430,27 @@ export default function UtilityInvoices() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Customer</label>
-                    <select name="customer_id" value={formData.customer_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select customer</option>
-                      {customers.map(cust => (
-                        <option key={cust.id} value={cust.id}>{cust.name}</option>
-                      ))}
-                    </select>
+                    <label style={labelStyle}>Utility Name *</label>
+                    <input type="text" name="utility_name" value={formData.utility_name} onChange={handleChange} required style={inputStyle} placeholder="Utility name" />
                   </div>
                   <div>
-                    <label style={labelStyle}>Utility Provider</label>
-                    <select name="utility_provider_id" value={formData.utility_provider_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select provider</option>
-                      {utilityProviders.map(prov => (
-                        <option key={prov.id} value={prov.id}>{prov.provider_name}</option>
-                      ))}
-                    </select>
+                    <label style={labelStyle}>Job ID</label>
+                    <input type="text" name="job_id" value={formData.job_id} onChange={handleChange} style={inputStyle} placeholder="Job ID" />
                   </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Invoice Date *</label>
-                    <input type="date" name="invoice_date" value={formData.invoice_date} onChange={handleChange} required style={inputStyle} />
+                    <label style={labelStyle}>Amount</label>
+                    <input type="number" name="amount" value={formData.amount} onChange={handleChange} step="0.01" style={inputStyle} />
                   </div>
                   <div>
-                    <label style={labelStyle}>Account Number</label>
-                    <input type="text" name="account_number" value={formData.account_number} onChange={handleChange} style={inputStyle} />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Billing Period Start</label>
-                    <input type="date" name="billing_period_start" value={formData.billing_period_start} onChange={handleChange} style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Billing Period End</label>
-                    <input type="date" name="billing_period_end" value={formData.billing_period_end} onChange={handleChange} style={inputStyle} />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>kWh Usage</label>
-                    <input type="number" name="kwh_usage" value={formData.kwh_usage} onChange={handleChange} step="0.01" style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Rate ($/kWh)</label>
-                    <input type="number" name="rate_per_kwh" value={formData.rate_per_kwh} onChange={handleChange} step="0.0001" style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Total Amount</label>
-                    <input type="number" name="total_amount" value={formData.total_amount} onChange={handleChange} step="0.01" style={inputStyle} />
+                    <label style={labelStyle}>Payment Status</label>
+                    <select name="payment_status" value={formData.payment_status} onChange={handleChange} style={inputStyle}>
+                      <option value="Pending">Pending</option>
+                      <option value="Paid">Paid</option>
+                      <option value="Overdue">Overdue</option>
+                    </select>
                   </div>
                 </div>
 

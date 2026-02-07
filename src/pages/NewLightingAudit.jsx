@@ -108,7 +108,7 @@ export default function NewLightingAudit() {
   // Set default salesperson to current user's employee record
   useEffect(() => {
     if (user?.id && employees.length > 0 && !basicInfo.salesperson_id) {
-      const currentEmployee = employees.find(e => e.user_id === user.id)
+      const currentEmployee = employees.find(e => e.email === user.email)
       if (currentEmployee) {
         setBasicInfo(prev => ({ ...prev, salesperson_id: currentEmployee.id }))
       }
@@ -122,19 +122,17 @@ export default function NewLightingAudit() {
       if (customer) {
         setBasicInfo(prev => ({
           ...prev,
-          address: customer.address || prev.address,
-          city: customer.city || prev.city,
-          state: customer.state || prev.state,
-          zip: customer.zip || prev.zip
+          address: customer.address || prev.address
         }))
       }
     }
   }, [basicInfo.customer_id, customers])
 
   // Filter rate schedules based on utility provider and building size
+  const selectedProvider = utilityProviders.find(prov => prov.id === basicInfo.utility_provider_id)
   const filteredRateSchedules = utilityPrograms.filter(p => {
     if (!basicInfo.utility_provider_id) return false
-    if (p.utility_provider_id !== basicInfo.utility_provider_id) return false
+    if (p.utility_name !== selectedProvider?.provider_name) return false
     // Match business size if the program has one specified
     if (p.business_size && p.business_size !== basicInfo.building_size) return false
     return true
@@ -567,7 +565,7 @@ export default function NewLightingAudit() {
                 >
                   <option value="">Select Salesperson</option>
                   {employees.map(e => (
-                    <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
+                    <option key={e.id} value={e.id}>{e.name}</option>
                   ))}
                 </select>
               </div>
@@ -1247,7 +1245,7 @@ export default function NewLightingAudit() {
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
               <div><span style={{ color: theme.textMuted }}>Customer:</span> {customers.find(c => c.id === basicInfo.customer_id)?.name || 'None'}</div>
-              <div><span style={{ color: theme.textMuted }}>Salesperson:</span> {employees.find(e => e.id === basicInfo.salesperson_id)?.first_name || 'None'} {employees.find(e => e.id === basicInfo.salesperson_id)?.last_name || ''}</div>
+              <div><span style={{ color: theme.textMuted }}>Salesperson:</span> {employees.find(e => e.id === basicInfo.salesperson_id)?.name || 'None'}</div>
               <div><span style={{ color: theme.textMuted }}>Location:</span> {basicInfo.city}, {basicInfo.state}</div>
               <div><span style={{ color: theme.textMuted }}>Building Size:</span> {buildingSizes.find(s => s.value === basicInfo.building_size)?.label || basicInfo.building_size}</div>
               <div><span style={{ color: theme.textMuted }}>Electric Rate:</span> ${basicInfo.electric_rate}/kWh</div>

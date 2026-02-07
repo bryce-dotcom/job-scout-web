@@ -96,11 +96,11 @@ export default function FleetDetail() {
     fetchFleetRentals()
   }, [companyId, navigate, fetchFleet, fetchFleetMaintenance, fetchFleetRentals])
 
-  const asset = fleet.find(a => a.id === id)
+  const asset = fleet.find(a => a.id === parseInt(id))
 
   // Filter maintenance and rentals for this asset
-  const assetMaintenance = fleetMaintenance.filter(m => m.asset_id === id)
-  const assetRentals = fleetRentals.filter(r => r.asset_id === id)
+  const assetMaintenance = fleetMaintenance.filter(m => m.asset_id === parseInt(id))
+  const assetRentals = fleetRentals.filter(r => r.asset_id === parseInt(id))
 
   if (!asset) {
     return (

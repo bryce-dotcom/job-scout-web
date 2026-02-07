@@ -854,13 +854,13 @@ export default function CustomerDetail() {
                           {job.status}
                         </span>
                       </div>
-                      {job.description && (
+                      {job.details && (
                         <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
-                          {job.description.length > 100 ? job.description.substring(0, 100) + '...' : job.description}
+                          {job.details.length > 100 ? job.details.substring(0, 100) + '...' : job.details}
                         </div>
                       )}
                       <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
-                        {job.scheduled_date && `Scheduled: ${new Date(job.scheduled_date).toLocaleDateString()}`}
+                        {job.start_date && `Scheduled: ${new Date(job.start_date).toLocaleDateString()}`}
                         {job.salesperson && ` - ${job.salesperson.name}`}
                       </div>
                     </div>

@@ -349,7 +349,7 @@ export default function InvoiceDetail() {
                         {formatCurrency(payment.amount)}
                       </p>
                       <p style={{ fontSize: '12px', color: theme.textMuted }}>
-                        {formatDate(payment.payment_date)} - {payment.payment_method}
+                        {formatDate(payment.date)} - {payment.method}
                       </p>
                     </div>
                     <span style={{

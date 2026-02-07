@@ -68,7 +68,7 @@ export default function TimeLog() {
     // Search filter
     const employee = employees.find(e => e.id === log.employee_id)
     const job = jobs.find(j => j.id === log.job_id)
-    const employeeName = employee ? `${employee.first_name} ${employee.last_name}`.toLowerCase() : ''
+    const employeeName = employee ? `${employee?.name || ''}`.toLowerCase() : ''
     const jobTitle = job?.job_title?.toLowerCase() || ''
     const searchLower = searchTerm.toLowerCase()
 
@@ -230,7 +230,7 @@ export default function TimeLog() {
     })
   }
 
-  const activeEmployees = employees.filter(e => e.status === 'Active')
+  const activeEmployees = employees.filter(e => e.active !== false)
   const activeJobs = jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled')
 
   return (
@@ -393,7 +393,7 @@ export default function TimeLog() {
                     >
                       <div>
                         <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
-                          {employee ? `${employee.first_name} ${employee.last_name}` : 'Unknown'}
+                          {employee ? `${employee?.name || ''}` : 'Unknown'}
                         </div>
                         <div style={{ fontSize: '12px', color: theme.textMuted }}>
                           {job?.job_title || 'No job'} - Started {formatTime(entry.clock_in_time)}
@@ -442,7 +442,7 @@ export default function TimeLog() {
               <option value="">Select Employee</option>
               {activeEmployees.map(emp => (
                 <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name}
+                  {emp.name}
                 </option>
               ))}
             </select>
@@ -546,7 +546,7 @@ export default function TimeLog() {
           <option value="all">All Employees</option>
           {employees.map(emp => (
             <option key={emp.id} value={emp.id}>
-              {emp.first_name} {emp.last_name}
+              {emp.name}
             </option>
           ))}
         </select>
@@ -727,7 +727,7 @@ export default function TimeLog() {
                       {formatDate(log.date)}
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: '14px', color: theme.text }}>
-                      {employee ? `${employee.first_name} ${employee.last_name}` : '-'}
+                      {employee ? `${employee?.name || ''}` : '-'}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       {job ? (
@@ -879,7 +879,7 @@ export default function TimeLog() {
                     <option value="">Select Employee</option>
                     {employees.map(emp => (
                       <option key={emp.id} value={emp.id}>
-                        {emp.first_name} {emp.last_name}
+                        {emp.name}
                       </option>
                     ))}
                   </select>

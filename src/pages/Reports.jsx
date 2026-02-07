@@ -113,7 +113,7 @@ export default function Reports() {
     const filteredJobs = filterByDate(jobs, 'start_date')
     const totalJobs = filteredJobs.length
     const completed = filteredJobs.filter(j => j.status === 'Completed').length
-    const totalRevenue = filteredJobs.reduce((sum, j) => sum + (parseFloat(j.total_amount) || 0), 0)
+    const totalRevenue = filteredJobs.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
     const avgJobValue = totalJobs > 0 ? totalRevenue / totalJobs : 0
 
     const byStatus = {}
@@ -122,25 +122,25 @@ export default function Reports() {
     })
 
     // Time tracking comparison
-    const totalAllotted = filteredJobs.reduce((sum, j) => sum + (parseFloat(j.time_allotted_hours) || 0), 0)
-    const totalTracked = filteredJobs.reduce((sum, j) => sum + (parseFloat(j.time_tracked_hours) || 0), 0)
+    const totalAllotted = filteredJobs.reduce((sum, j) => sum + (parseFloat(j.allotted_time_hours) || 0), 0)
+    const totalTracked = filteredJobs.reduce((sum, j) => sum + (parseFloat(j.time_tracked) || 0), 0)
 
     return { totalJobs, completed, totalRevenue, avgJobValue, byStatus, totalAllotted, totalTracked }
   }, [jobs, dateRange])
 
   // Financial Report Data
   const financialReportData = useMemo(() => {
-    const filteredInvoices = filterByDate(invoices, 'invoice_date')
-    const filteredPayments = filterByDate(payments, 'payment_date')
+    const filteredInvoices = filterByDate(invoices, 'created_at')
+    const filteredPayments = filterByDate(payments, 'date')
 
-    const totalInvoiced = filteredInvoices.reduce((sum, i) => sum + (parseFloat(i.total_amount) || 0), 0)
+    const totalInvoiced = filteredInvoices.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
     const totalCollected = filteredPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
     const outstanding = totalInvoiced - totalCollected
 
     // Revenue by month
     const revenueByMonth = {}
     filteredPayments.forEach(p => {
-      const month = p.payment_date?.substring(0, 7)
+      const month = p.date?.substring(0, 7)
       if (month) {
         revenueByMonth[month] = (revenueByMonth[month] || 0) + (parseFloat(p.amount) || 0)
       }
@@ -149,7 +149,8 @@ export default function Reports() {
     // Top customers
     const customerRevenue = {}
     filteredPayments.forEach(p => {
-      const customerName = p.invoice?.customer?.name || 'Unknown'
+      const matchedInvoice = invoices.find(inv => inv.id === p.invoice_id)
+      const customerName = matchedInvoice?.customer?.name || 'Unknown'
       customerRevenue[customerName] = (customerRevenue[customerName] || 0) + (parseFloat(p.amount) || 0)
     })
     const topCustomers = Object.entries(customerRevenue)
@@ -161,7 +162,7 @@ export default function Reports() {
 
   // Employee Report Data
   const employeeReportData = useMemo(() => {
-    const filteredLogs = filterByDate(timeLogs, 'clock_in')
+    const filteredLogs = filterByDate(timeLogs, 'clock_in_time')
 
     const hoursByEmployee = {}
     filteredLogs.forEach(log => {
@@ -170,8 +171,8 @@ export default function Reports() {
       if (!hoursByEmployee[empId]) {
         hoursByEmployee[empId] = { name: empName, hours: 0, jobs: new Set() }
       }
-      if (log.clock_in && log.clock_out) {
-        const hours = (new Date(log.clock_out) - new Date(log.clock_in)) / (1000 * 60 * 60)
+      if (log.clock_in_time && log.clock_out_time) {
+        const hours = (new Date(log.clock_out_time) - new Date(log.clock_in_time)) / (1000 * 60 * 60)
         hoursByEmployee[empId].hours += hours
       }
       if (log.job_id) {

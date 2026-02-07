@@ -74,7 +74,7 @@ export default function Dashboard() {
       .from('time_log')
       .select('*')
       .eq('employee_id', user.id)
-      .is('clock_out', null)
+      .is('clock_out_time', null)
       .single()
 
     if (data) {
@@ -88,7 +88,7 @@ export default function Dashboard() {
       // Clock out
       await supabase
         .from('time_log')
-        .update({ clock_out: new Date().toISOString() })
+        .update({ clock_out_time: new Date().toISOString() })
         .eq('id', activeTimeLog.id)
       setClockedIn(false)
       setActiveTimeLog(null)
@@ -99,7 +99,7 @@ export default function Dashboard() {
         .insert({
           company_id: companyId,
           employee_id: user.id,
-          clock_in: new Date().toISOString()
+          clock_in_time: new Date().toISOString()
         })
         .select()
         .single()
@@ -121,7 +121,7 @@ export default function Dashboard() {
   const pendingInvoices = invoices.filter(i => i.payment_status === 'Pending').length
 
   const thisMonthRevenue = payments
-    .filter(p => new Date(p.payment_date) >= firstOfMonth)
+    .filter(p => new Date(p.date) >= firstOfMonth)
     .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 
   // Pipeline counts
@@ -132,7 +132,7 @@ export default function Dashboard() {
   const totalPipeline = pipelineCounts.reduce((sum, p) => sum + p.count, 0)
 
   // Today's jobs
-  const todaysJobs = jobs.filter(j => j.start_date === todayStr)
+  const todaysJobs = jobs.filter(j => j.start_date?.startsWith(todayStr))
 
   // Recent activity
   const recentLeads = [...leads]
@@ -149,7 +149,7 @@ export default function Dashboard() {
   const overdueFleet = fleet.filter(f => f.next_pm_due && new Date(f.next_pm_due) < today)
   const overdueInvoices = invoices.filter(i => {
     if (i.payment_status !== 'Pending') return false
-    const invoiceDate = new Date(i.invoice_date)
+    const invoiceDate = new Date(i.created_at)
     const daysPending = Math.floor((today - invoiceDate) / (1000 * 60 * 60 * 24))
     return daysPending > 30
   })

@@ -75,8 +75,8 @@ export default function LightingAuditDetail() {
     fetchAuditAreas()
   }, [companyId, navigate, fetchLightingAudits, fetchAuditAreas])
 
-  const audit = lightingAudits.find(a => a.id === id)
-  const areas = auditAreas.filter(a => a.audit_id === id)
+  const audit = lightingAudits.find(a => a.id === parseInt(id))
+  const areas = auditAreas.filter(a => a.audit_id === parseInt(id))
 
   if (!audit) {
     return (

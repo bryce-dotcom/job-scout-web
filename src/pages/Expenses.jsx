@@ -65,8 +65,8 @@ export default function Expenses() {
       expense.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       expense.vendor?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory = categoryFilter === 'all' || expense.category === categoryFilter
-    const matchesDateStart = !dateRange.start || expense.expense_date >= dateRange.start
-    const matchesDateEnd = !dateRange.end || expense.expense_date <= dateRange.end
+    const matchesDateStart = !dateRange.start || expense.date >= dateRange.start
+    const matchesDateEnd = !dateRange.end || expense.date <= dateRange.end
     return matchesSearch && matchesCategory && matchesDateStart && matchesDateEnd
   })
 
@@ -82,7 +82,7 @@ export default function Expenses() {
   const openEditModal = (expense) => {
     setEditingExpense(expense)
     setFormData({
-      expense_date: expense.expense_date || '',
+      expense_date: expense.date || '',
       category: expense.category || '',
       description: expense.description || '',
       amount: expense.amount || '',
@@ -363,7 +363,7 @@ export default function Expenses() {
               }}
             >
               <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                {formatDate(expense.expense_date)}
+                {formatDate(expense.date)}
               </div>
               <div>
                 <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
@@ -389,7 +389,7 @@ export default function Expenses() {
                 {formatCurrency(expense.amount)}
               </div>
               <div style={{ fontSize: '13px', color: theme.textSecondary }}>
-                {expense.employee?.name || '-'}
+                {'-'}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
                 <button

@@ -113,17 +113,17 @@ export default function Books() {
   // Calculate financial stats
   const totalCashInBank = bankAccounts.reduce((sum, acc) => sum + (parseFloat(acc.current_balance) || 0), 0)
 
-  const unpaidInvoices = invoices?.filter(inv => inv.status !== 'Paid') || []
-  const totalReceivables = unpaidInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total_amount) || 0), 0)
+  const unpaidInvoices = invoices?.filter(inv => inv.payment_status !== 'Paid') || []
+  const totalReceivables = unpaidInvoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0)
 
   const currentMonth = new Date().getMonth()
   const currentYear = new Date().getFullYear()
   const paidInvoicesThisMonth = invoices?.filter(inv => {
-    if (inv.status !== 'Paid') return false
-    const date = new Date(inv.invoice_date)
+    if (inv.payment_status !== 'Paid') return false
+    const date = new Date(inv.created_at)
     return date.getMonth() === currentMonth && date.getFullYear() === currentYear
   }) || []
-  const monthlyRevenue = paidInvoicesThisMonth.reduce((sum, inv) => sum + (parseFloat(inv.total_amount) || 0), 0)
+  const monthlyRevenue = paidInvoicesThisMonth.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0)
 
   const totalAssetValue = assets.filter(a => a.status === 'active').reduce((sum, a) => sum + (parseFloat(a.current_value) || 0), 0)
   const totalLiabilities = liabilities.filter(l => l.status === 'active').reduce((sum, l) => sum + (parseFloat(l.current_balance) || 0), 0)

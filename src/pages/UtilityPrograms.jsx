@@ -31,7 +31,7 @@ export default function UtilityPrograms() {
   const [editing, setEditing] = useState(null)
   const [formData, setFormData] = useState({
     program_name: '',
-    utility_provider_id: '',
+    utility_name: '',
     state: '',
     program_type: 'Prescriptive',
     effective_date: '',
@@ -54,7 +54,7 @@ export default function UtilityPrograms() {
 
   const filteredPrograms = utilityPrograms.filter(p => {
     const name = p.program_name?.toLowerCase() || ''
-    const provider = p.utility_provider?.provider_name?.toLowerCase() || ''
+    const provider = p.utility_name?.toLowerCase() || ''
     const search = searchTerm.toLowerCase()
     return name.includes(search) || provider.includes(search)
   })
@@ -70,7 +70,7 @@ export default function UtilityPrograms() {
     const data = {
       company_id: companyId,
       program_name: formData.program_name,
-      utility_name: formData.utility_provider_id || null,
+      utility_name: formData.utility_name || null,
       state: formData.state || null,
       program_type: formData.program_type,
       effective_date: formData.effective_date || null,
@@ -94,7 +94,7 @@ export default function UtilityPrograms() {
     } else {
       setShowModal(false)
       setEditing(null)
-      setFormData({ program_name: '', utility_provider_id: '', state: '', program_type: 'Prescriptive', effective_date: '', expiration_date: '', max_cap_percent: '', dlc_required: false, pre_approval_required: false })
+      setFormData({ program_name: '', utility_name: '', state: '', program_type: 'Prescriptive', effective_date: '', expiration_date: '', max_cap_percent: '', dlc_required: false, pre_approval_required: false })
       fetchUtilityPrograms()
     }
   }
@@ -103,7 +103,7 @@ export default function UtilityPrograms() {
     setEditing(program)
     setFormData({
       program_name: program.program_name || '',
-      utility_provider_id: program.utility_provider_id || '',
+      utility_name: program.utility_name || '',
       state: program.state || '',
       program_type: program.program_type || 'Prescriptive',
       effective_date: program.effective_date || '',
@@ -143,7 +143,7 @@ export default function UtilityPrograms() {
                 <div>
                   <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>{program.program_name}</div>
                   <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                    {program.utility_provider?.provider_name || 'No Provider'} · {program.state || 'N/A'}
+                    {program.utility_name || 'No Provider'} · {program.state || 'N/A'}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -198,12 +198,10 @@ export default function UtilityPrograms() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>Utility Provider</label>
-                    <select value={formData.utility_provider_id} onChange={(e) => setFormData({ ...formData, utility_provider_id: e.target.value })}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }}>
-                      <option value="">Select Provider</option>
-                      {utilityProviders.map(p => <option key={p.id} value={p.id}>{p.provider_name}</option>)}
-                    </select>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>Utility Name</label>
+                    <input type="text" value={formData.utility_name} onChange={(e) => setFormData({ ...formData, utility_name: e.target.value })}
+                      placeholder="Utility name"
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }} />
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>State</label>
