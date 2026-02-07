@@ -8,6 +8,7 @@ import {
   Trophy, XCircle, ChevronRight, RefreshCw, MapPin, Settings, Trash2,
   ChevronUp, ChevronDown
 } from 'lucide-react'
+import EntityCard from '../components/EntityCard'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -656,18 +657,12 @@ export default function SalesPipeline() {
               }
 
               return stageLeads.map(lead => (
-                <div
+                <EntityCard
                   key={lead.id}
+                  name={lead.customer_name}
+                  businessName={lead.business_name}
                   onClick={() => navigate(`/leads/${lead.id}`)}
-                  style={{
-                    padding: '14px 16px',
-                    backgroundColor: theme.bgCard,
-                    borderRadius: '8px',
-                    marginBottom: '8px',
-                    border: `1px solid ${theme.border}`,
-                    cursor: 'pointer',
-                    transition: 'border-color 0.15s ease'
-                  }}
+                  style={{ marginBottom: '8px' }}
                 >
                   {/* TOP ROW: Name + Value */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
@@ -814,7 +809,7 @@ export default function SalesPipeline() {
                       </select>
                     </div>
                   )}
-                </div>
+                </EntityCard>
               ))
             })()}
           </div>
@@ -919,26 +914,17 @@ export default function SalesPipeline() {
                     draggable
                     onDragStart={(e) => handleDragStart(e, lead)}
                     onDragEnd={handleDragEnd}
-                    onClick={() => navigate(`/leads/${lead.id}`)}
                     style={{
-                      backgroundColor: theme.bgCard,
-                      borderRadius: '6px',
-                      padding: '10px',
-                      border: `1px solid ${theme.border}`,
-                      cursor: 'grab',
-                      transition: 'all 0.15s',
-                      boxShadow: draggedLead?.id === lead.id ? '0 4px 12px rgba(0,0,0,0.15)' : 'none',
-                      opacity: draggedLead?.id === lead.id ? 0.8 : 1
-                    }}
-                    onMouseEnter={(e) => {
-                      if (draggedLead?.id !== lead.id) {
-                        e.currentTarget.style.borderColor = theme.accent
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = theme.border
+                      opacity: draggedLead?.id === lead.id ? 0.8 : 1,
+                      boxShadow: draggedLead?.id === lead.id ? '0 4px 12px rgba(0,0,0,0.15)' : 'none'
                     }}
                   >
+                    <EntityCard
+                      name={lead.customer_name}
+                      businessName={lead.business_name}
+                      onClick={() => navigate(`/leads/${lead.id}`)}
+                      style={{ cursor: 'grab', padding: '10px' }}
+                    >
                     {/* Lead Name */}
                     <div style={{
                       fontWeight: '600',
@@ -1041,6 +1027,7 @@ export default function SalesPipeline() {
                         </span>
                       </div>
                     )}
+                    </EntityCard>
                   </div>
                 ))}
 
