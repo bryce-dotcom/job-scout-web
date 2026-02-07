@@ -30,14 +30,8 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-const pipelineStages = ['New Lead', 'Quoted', 'Under Review', 'Approved', 'Lost']
-const pipelineColors = {
-  'New Lead': '#5a9bd5',
-  'Quoted': '#f4b942',
-  'Under Review': '#9b59b6',
-  'Approved': '#4a7c59',
-  'Lost': '#c25a5a'
-}
+const DEFAULT_PIPELINE_STAGES = ['New Lead', 'Quoted', 'Under Review', 'Approved', 'Lost']
+const STAGE_COLOR_PALETTE = ['#5a9bd5', '#f4b942', '#9b59b6', '#4a7c59', '#c25a5a', '#e67e22', '#1abc9c', '#e74c3c']
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -53,6 +47,12 @@ export default function Dashboard() {
   const fleet = useStore((state) => state.fleet)
   const appointments = useStore((state) => state.appointments)
   const timeLogs = useStore((state) => state.timeLogs)
+  const storePipelineStages = useStore((state) => state.pipelineStages)
+
+  const pipelineStages = storePipelineStages?.length > 0 ? storePipelineStages : DEFAULT_PIPELINE_STAGES
+  const pipelineColors = Object.fromEntries(
+    pipelineStages.map((stage, i) => [stage, STAGE_COLOR_PALETTE[i % STAGE_COLOR_PALETTE.length]])
+  )
 
   const [clockedIn, setClockedIn] = useState(false)
   const [activeTimeLog, setActiveTimeLog] = useState(null)

@@ -65,6 +65,7 @@ export const useStore = create(
       jobSectionStatuses: [],
       employeeRoles: [],
       jobCalendars: [],
+      pipelineStages: [],
 
       // Labor Rates
       laborRates: [],
@@ -159,6 +160,7 @@ export const useStore = create(
           jobSectionStatuses: [],
           employeeRoles: [],
           jobCalendars: [],
+          pipelineStages: [],
           routes: [],
           bookings: [],
           leadPayments: [],
@@ -545,7 +547,8 @@ export const useStore = create(
             jobStatuses: parseSettingList('job_statuses'),
             jobSectionStatuses: parseSettingList('job_section_statuses'),
             employeeRoles: parseSettingList('employee_roles'),
-            jobCalendars: parseSettingList('job_calendars')
+            jobCalendars: parseSettingList('job_calendars'),
+            pipelineStages: parseSettingList('pipeline_stages')
           });
         }
       },
