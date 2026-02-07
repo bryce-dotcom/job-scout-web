@@ -9,6 +9,7 @@ import {
   MessageSquare, PhoneCall, PhoneOff, CalendarPlus, DollarSign,
   RefreshCw, Filter, Search, Settings, Trophy
 } from 'lucide-react'
+import EntityCard from '../components/EntityCard'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -857,40 +858,38 @@ export default function LeadSetter() {
                       draggable
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
-                      onClick={() => openLeadDetail(lead)}
-                      style={{
-                        backgroundColor: theme.bgCard,
-                        borderRadius: '6px',
-                        padding: '8px',
-                        border: `1px solid ${theme.border}`,
-                        cursor: 'grab',
-                        fontSize: '12px'
-                      }}
                     >
-                      <div style={{
-                        fontWeight: '600',
-                        color: theme.text,
-                        marginBottom: '4px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {lead.customer_name}
-                      </div>
-                      {lead.phone && (
-                        <div style={{ color: theme.textMuted, fontSize: '11px' }}>
-                          {lead.phone}
-                        </div>
-                      )}
-                      {lead.callback_date && stage.id === 'Callback' && (
+                      <EntityCard
+                        name={lead.customer_name}
+                        businessName={lead.business_name}
+                        onClick={() => openLeadDetail(lead)}
+                        style={{ cursor: 'grab', padding: '8px', fontSize: '12px' }}
+                      >
                         <div style={{
-                          marginTop: '4px',
-                          fontSize: '10px',
-                          color: new Date(lead.callback_date) <= new Date() ? '#ef4444' : '#f59e0b'
+                          fontWeight: '600',
+                          color: theme.text,
+                          marginBottom: '4px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
                         }}>
-                          📅 {new Date(lead.callback_date).toLocaleDateString()}
+                          {lead.customer_name}
                         </div>
-                      )}
+                        {lead.phone && (
+                          <div style={{ color: theme.textMuted, fontSize: '11px' }}>
+                            {lead.phone}
+                          </div>
+                        )}
+                        {lead.callback_date && stage.id === 'Callback' && (
+                          <div style={{
+                            marginTop: '4px',
+                            fontSize: '10px',
+                            color: new Date(lead.callback_date) <= new Date() ? '#ef4444' : '#f59e0b'
+                          }}>
+                            📅 {new Date(lead.callback_date).toLocaleDateString()}
+                          </div>
+                        )}
+                      </EntityCard>
                     </div>
                   ))}
 
