@@ -103,14 +103,18 @@ export default function EntityCard({
   const accent = getGenderAccent(name)
 
   const bg = tint || theme.bgCard
+  const personShadow = '0 4px 6px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.5)'
 
   const cardStyle = {
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: bg,
+    background: isBusiness
+      ? bg
+      : `linear-gradient(to bottom, ${bg}, ${tint ? bg.replace('0.25)', '0.18)') : '#fafafa'})`,
     border: `1px solid ${theme.border}`,
     borderLeft: `5px solid ${accent}`,
-    borderRadius: isBusiness ? '4px' : '80px 80px 8px 8px',
+    borderRadius: isBusiness ? '4px' : '16px',
+    boxShadow: isBusiness ? 'none' : personShadow,
     padding: '16px',
     cursor: onClick ? 'pointer' : 'default',
     transition: 'box-shadow 0.15s ease, transform 0.15s ease',
@@ -147,30 +151,17 @@ export default function EntityCard({
         }} />
       )}
 
-      {/* Head bump for person cards - semicircle centered above card */}
-      {!isBusiness && (
-        <div style={{
-          width: '52px',
-          height: '26px',
-          backgroundColor: bg,
-          border: `1px solid ${theme.border}`,
-          borderBottom: 'none',
-          borderRadius: '26px 26px 0 0',
-          margin: '0 auto -1px',
-          position: 'relative',
-          zIndex: 2
-        }} />
-      )}
-
       <div
         style={cardStyle}
         onClick={onClick}
         onMouseEnter={onClick ? (e) => {
-          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'
+          e.currentTarget.style.boxShadow = isBusiness
+            ? '0 4px 12px rgba(0,0,0,0.08)'
+            : '0 8px 16px rgba(0,0,0,0.12), 0 4px 6px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.5)'
           e.currentTarget.style.transform = 'translateY(-1px)'
         } : undefined}
         onMouseLeave={onClick ? (e) => {
-          e.currentTarget.style.boxShadow = 'none'
+          e.currentTarget.style.boxShadow = isBusiness ? 'none' : personShadow
           e.currentTarget.style.transform = 'none'
         } : undefined}
       >
