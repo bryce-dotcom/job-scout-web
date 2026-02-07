@@ -71,8 +71,8 @@ const FEMALE_NAMES = new Set([
 function getGenderTint(name) {
   if (!name) return null
   const firstName = name.trim().split(/\s+/)[0].toLowerCase()
-  if (MALE_NAMES.has(firstName)) return 'rgba(59, 130, 246, 0.25)'
-  if (FEMALE_NAMES.has(firstName)) return 'rgba(236, 72, 153, 0.25)'
+  if (MALE_NAMES.has(firstName)) return 'rgba(59, 130, 246, 0.12)'
+  if (FEMALE_NAMES.has(firstName)) return 'rgba(236, 72, 153, 0.12)'
   return null
 }
 
@@ -110,7 +110,7 @@ export default function EntityCard({
     overflow: 'hidden',
     background: isBusiness
       ? bg
-      : `linear-gradient(to bottom, ${bg}, ${tint ? bg.replace('0.25)', '0.18)') : '#fafafa'})`,
+      : `linear-gradient(to bottom, ${bg}, ${tint ? bg.replace('0.12)', '0.07)') : '#fafafa'})`,
     border: `1px solid ${theme.border}`,
     borderLeft: `5px solid ${accent}`,
     borderRadius: isBusiness ? '4px' : '16px',
