@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send } from 'lucide-react'
+import EntityCard from '../components/EntityCard'
 
 const LEAD_STATUSES = ['New', 'Assigned', 'Contacted', 'Callback', 'Appointment Set', 'Qualified', 'Not Qualified', 'Converted']
 
@@ -549,25 +550,11 @@ export default function Leads() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
           {filteredLeads.map((lead) => (
-            <div
+            <EntityCard
               key={lead.id}
+              name={lead.customer_name}
+              businessName={lead.business_name}
               onClick={() => navigate(`/leads/${lead.id}`)}
-              style={{
-                backgroundColor: theme.bgCard,
-                border: `1px solid ${theme.border}`,
-                borderRadius: '8px',
-                padding: '16px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = theme.accent
-                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = theme.border
-                e.currentTarget.style.boxShadow = 'none'
-              }}
             >
               {/* TOP ROW: Name + Status Badge */}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
@@ -733,7 +720,7 @@ export default function Leads() {
                   Quote
                 </button>
               </div>
-            </div>
+            </EntityCard>
           ))}
         </div>
       )}

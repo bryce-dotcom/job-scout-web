@@ -71,8 +71,16 @@ const FEMALE_NAMES = new Set([
 function getGenderTint(name) {
   if (!name) return null
   const firstName = name.trim().split(/\s+/)[0].toLowerCase()
-  if (MALE_NAMES.has(firstName)) return 'rgba(59, 130, 246, 0.08)'
-  if (FEMALE_NAMES.has(firstName)) return 'rgba(236, 72, 153, 0.08)'
+  if (MALE_NAMES.has(firstName)) return 'rgba(59, 130, 246, 0.15)'
+  if (FEMALE_NAMES.has(firstName)) return 'rgba(236, 72, 153, 0.15)'
+  return null
+}
+
+function getGenderAccent(name) {
+  if (!name) return null
+  const firstName = name.trim().split(/\s+/)[0].toLowerCase()
+  if (MALE_NAMES.has(firstName)) return 'rgba(59, 130, 246, 0.5)'
+  if (FEMALE_NAMES.has(firstName)) return 'rgba(236, 72, 153, 0.5)'
   return null
 }
 
@@ -92,27 +100,28 @@ export default function EntityCard({
 }) {
   const isBusiness = !!businessName
   const tint = getGenderTint(name)
+  const accent = getGenderAccent(name)
 
   const cardStyle = {
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: tint || theme.bgCard,
     border: `1px solid ${theme.border}`,
-    borderRadius: isBusiness ? '3px' : '20px 20px 10px 10px',
+    borderLeft: `4px solid ${accent || theme.border}`,
+    ...(isBusiness && { borderTop: `4px double ${theme.border}` }),
+    borderRadius: isBusiness ? '4px' : '40px 40px 12px 12px',
     padding: '16px',
     cursor: onClick ? 'pointer' : 'default',
     transition: 'box-shadow 0.15s ease, transform 0.15s ease',
-    ...(onClick && {
-      ':hover': { boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }
-    }),
     ...style
   }
 
   const watermarkStyle = {
     position: 'absolute',
-    top: isBusiness ? '8px' : '6px',
-    right: isBusiness ? '8px' : '8px',
-    opacity: 0.04,
+    top: '50%',
+    right: '16px',
+    transform: 'translateY(-50%)',
+    opacity: 0.06,
     pointerEvents: 'none',
     zIndex: 0
   }
@@ -137,9 +146,9 @@ export default function EntityCard({
     >
       {/* Watermark icon */}
       {isBusiness ? (
-        <Building2 size={64} style={watermarkStyle} color={theme.text} />
+        <Building2 size={80} style={watermarkStyle} color={theme.text} />
       ) : (
-        <User size={64} style={watermarkStyle} color={theme.text} />
+        <User size={80} style={watermarkStyle} color={theme.text} />
       )}
 
       {/* Card content */}
