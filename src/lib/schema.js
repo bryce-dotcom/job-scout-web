@@ -151,7 +151,7 @@ export const ROUTE_STATUS = ['Planned', 'In Progress', 'Completed', 'Cancelled']
 
 // Common select queries with joins
 export const QUERIES = {
-  employees: '*, department, role',
+  employees: '*, role',
   customers: '*, salesperson:employees(id, name)',
   leads: '*, salesperson:employees(id, name), lead_owner:employees!lead_owner_id(id, name), setter_owner:employees!setter_owner_id(id, name)',
   salesPipeline: '*, lead:leads!lead_id(id, customer_name, phone, email), customer:customers!customer_id(id, name), salesperson:employees!salesperson_id(id, name)',
@@ -166,7 +166,7 @@ export const QUERIES = {
   timeLogs: '*',
   expenses: '*',
   fleet: '*',
-  fleetMaintenance: '*, fleet:fleet!fleet_id(id, name, vehicle_id)',
+  fleetMaintenance: '*, asset:fleet!asset_id(id, name, asset_id)',
   lightingAudits: '*',
   auditAreas: '*, audit:lighting_audits!audit_id(id, audit_id)',
   routes: '*',

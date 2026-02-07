@@ -124,14 +124,9 @@ export default function Incentives() {
     const payload = {
       company_id: companyId,
       job_id: formData.job_id || null,
-      program_id: formData.program_id || null,
-      incentive_type: formData.incentive_type || null,
-      amount: parseFloat(formData.amount) || 0,
+      incentive_amount: parseFloat(formData.amount) || 0,
+      utility_name: formData.utility_name || null,
       status: formData.status,
-      submission_date: formData.submission_date || null,
-      approval_date: formData.approval_date || null,
-      payment_date: formData.payment_date || null,
-      reference_number: formData.reference_number || null,
       notes: formData.notes || null,
       updated_at: new Date().toISOString()
     }

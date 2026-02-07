@@ -53,14 +53,14 @@ export default function RebateRates() {
   }, [companyId, navigate, fetchRebateRates])
 
   const program = utilityPrograms.find(p => p.id === programId)
-  const programRates = rebateRates.filter(r => r.utility_program_id === programId)
+  const programRates = rebateRates.filter(r => r.program_id === programId)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
 
     const data = {
       company_id: companyId,
-      utility_program_id: programId,
+      program_id: programId,
       location_type: formData.location_type,
       fixture_category: formData.fixture_category,
       calc_method: formData.calc_method,

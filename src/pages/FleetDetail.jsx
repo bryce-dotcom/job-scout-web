@@ -99,8 +99,8 @@ export default function FleetDetail() {
   const asset = fleet.find(a => a.id === id)
 
   // Filter maintenance and rentals for this asset
-  const assetMaintenance = fleetMaintenance.filter(m => m.fleet_id === id)
-  const assetRentals = fleetRentals.filter(r => r.fleet_id === id)
+  const assetMaintenance = fleetMaintenance.filter(m => m.asset_id === id)
+  const assetRentals = fleetRentals.filter(r => r.asset_id === id)
 
   if (!asset) {
     return (
@@ -143,7 +143,7 @@ export default function FleetDetail() {
 
     const insertData = {
       company_id: companyId,
-      fleet_id: id,
+      asset_id: id,
       type: maintenanceForm.type,
       date: maintenanceForm.date,
       mileage_hours: parseInt(maintenanceForm.mileage_hours) || asset.mileage_hours,
@@ -188,7 +188,7 @@ export default function FleetDetail() {
 
     const insertData = {
       company_id: companyId,
-      fleet_id: id,
+      asset_id: id,
       rental_customer: rentalForm.rental_customer,
       start_date: rentalForm.start_date,
       end_date: rentalForm.end_date || null,

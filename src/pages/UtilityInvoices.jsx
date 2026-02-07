@@ -110,16 +110,12 @@ export default function UtilityInvoices() {
 
     const payload = {
       company_id: companyId,
-      customer_id: formData.customer_id || null,
-      utility_provider_id: formData.utility_provider_id || null,
-      invoice_date: formData.invoice_date,
-      billing_period_start: formData.billing_period_start || null,
-      billing_period_end: formData.billing_period_end || null,
-      account_number: formData.account_number || null,
-      kwh_usage: parseFloat(formData.kwh_usage) || null,
-      total_amount: parseFloat(formData.total_amount) || null,
-      rate_per_kwh: parseFloat(formData.rate_per_kwh) || null,
+      utility_name: formData.utility_name || null,
+      job_id: formData.job_id || null,
+      amount: parseFloat(formData.total_amount) || null,
+      payment_status: formData.payment_status || 'Pending',
       notes: formData.notes || null,
+      job_description: formData.job_description || null,
       updated_at: new Date().toISOString()
     }
 

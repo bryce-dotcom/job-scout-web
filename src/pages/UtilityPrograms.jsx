@@ -70,7 +70,7 @@ export default function UtilityPrograms() {
     const data = {
       company_id: companyId,
       program_name: formData.program_name,
-      utility_provider_id: formData.utility_provider_id || null,
+      utility_name: formData.utility_provider_id || null,
       state: formData.state || null,
       program_type: formData.program_type,
       effective_date: formData.effective_date || null,

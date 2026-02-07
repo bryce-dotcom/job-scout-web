@@ -120,17 +120,12 @@ export default function Expenses() {
 
     const payload = {
       company_id: companyId,
-      expense_date: formData.expense_date,
+      date: formData.expense_date,
       category: formData.category,
       description: formData.description,
       amount: parseFloat(formData.amount) || 0,
-      employee_id: formData.employee_id || null,
       job_id: formData.job_id || null,
-      vendor: formData.vendor || null,
-      receipt_url: formData.receipt_url || null,
-      reimbursable: formData.reimbursable,
-      reimbursed: formData.reimbursed,
-      notes: formData.notes || null,
+      status: formData.status || 'Pending',
       updated_at: new Date().toISOString()
     }
 

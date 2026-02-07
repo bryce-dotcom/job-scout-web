@@ -215,7 +215,7 @@ export default function CustomerDetail() {
   const handleSendQuote = async (quoteId) => {
     await supabase
       .from('quotes')
-      .update({ status: 'Sent', sent_at: new Date().toISOString() })
+      .update({ status: 'Sent', sent_date: new Date().toISOString() })
       .eq('id', quoteId)
 
     await fetchCustomerData()

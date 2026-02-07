@@ -263,14 +263,11 @@ export default function NewLightingAudit() {
         company_id: companyId,
         audit_id: generateAuditId(),
         customer_id: basicInfo.customer_id || null,
-        salesperson_id: basicInfo.salesperson_id || null,
-        building_size: basicInfo.building_size,
         address: basicInfo.address,
         city: basicInfo.city,
         state: basicInfo.state,
         zip: basicInfo.zip,
         utility_provider_id: basicInfo.utility_provider_id || null,
-        rate_schedule_id: basicInfo.rate_schedule_id || null,
         electric_rate: basicInfo.electric_rate,
         operating_hours: basicInfo.operating_hours,
         operating_days: basicInfo.operating_days,
@@ -299,7 +296,7 @@ export default function NewLightingAudit() {
       if (areas.length > 0) {
         const areaRecords = areas.map(area => ({
           company_id: companyId,
-          lighting_audit_id: audit.id,
+          audit_id: audit.id,
           area_name: area.area_name,
           ceiling_height: area.ceiling_height || null,
           fixture_category: area.fixture_category,
@@ -327,12 +324,9 @@ export default function NewLightingAudit() {
         const pipelineData = {
           company_id: companyId,
           customer_id: basicInfo.customer_id,
-          lighting_audit_id: audit.id,
           salesperson_id: basicInfo.salesperson_id || null,
           stage: 'Audit Created',
-          deal_name: `Lighting Audit - ${customer?.name || 'Unknown'}`,
-          estimated_value: calculations.est_project_cost,
-          probability: 25,
+          quote_amount: calculations.est_project_cost,
           notes: `Auto-created from lighting audit ${audit.audit_id}`
         }
 

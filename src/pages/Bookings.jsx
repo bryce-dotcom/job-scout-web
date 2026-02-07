@@ -123,7 +123,6 @@ export default function Bookings() {
       business_unit: formData.business_unit || null,
       preferred_date: formData.preferred_date || null,
       status: formData.status,
-      notes: formData.notes || null,
       updated_at: new Date().toISOString()
     }
 

@@ -139,7 +139,7 @@ export default function JobDetail() {
 
     const { data: jobData } = await supabase
       .from('jobs')
-      .select('*, customer:customers(id, name, email, phone, address, city, state, zip, company_name), salesperson:employees(id, name), quote:quotes(id, quote_id, quote_number), pm:employees!jobs_pm_id_fkey(id, name)')
+      .select('*, customer:customers(id, name, email, phone, address, business_name), salesperson:employees(id, name), quote:quotes(id, quote_id), pm:employees!jobs_pm_id_fkey(id, name)')
       .eq('id', id)
       .single()
 
@@ -184,8 +184,8 @@ export default function JobDetail() {
       job_id: parseInt(id),
       item_id: product.id,
       quantity: newLine.quantity,
-      unit_price: product.unit_price,
-      line_total: lineTotal
+      price: product.unit_price,
+      total: lineTotal
     }])
 
     await fetchJobData()
@@ -239,8 +239,8 @@ export default function JobDetail() {
         job_id: parseInt(id),
         item_id: ql.item_id,
         quantity: ql.quantity,
-        unit_price: ql.unit_price,
-        line_total: ql.line_total
+        price: ql.price,
+        total: ql.line_total || ql.total
       }))
 
       await supabase.from('job_lines').insert(jobLines)
@@ -309,8 +309,7 @@ export default function JobDetail() {
         amount: total,
         discount_applied: discount,
         payment_status: 'Pending',
-        job_description: job.job_title,
-        notes: job.notes
+        job_description: job.job_title
       }])
       .select()
       .single()

@@ -73,7 +73,7 @@ export default function InvoiceDetail() {
         .from('payments')
         .select('*')
         .eq('invoice_id', id)
-        .order('payment_date', { ascending: false })
+        .order('date', { ascending: false })
 
       setPayments(paymentsData || [])
     }
@@ -89,10 +89,9 @@ export default function InvoiceDetail() {
     await supabase.from('payments').insert([{
       company_id: companyId,
       invoice_id: parseInt(id),
-      customer_id: invoice.customer_id,
       amount: parseFloat(paymentData.amount),
-      payment_date: paymentData.date,
-      payment_method: paymentData.method,
+      date: paymentData.date,
+      method: paymentData.method,
       status: paymentData.status,
       notes: paymentData.notes || null
     }])

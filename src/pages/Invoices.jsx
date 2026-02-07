@@ -98,8 +98,7 @@ export default function Invoices() {
         payment_status: formData.payment_status || 'Pending',
         discount_applied: formData.discount_applied || null,
         credit_card_fee: formData.credit_card_fee || null,
-        job_description: formData.job_description || null,
-        notes: formData.notes || null
+        job_description: formData.job_description || null
       }])
       .select()
       .single()

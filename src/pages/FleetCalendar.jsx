@@ -85,7 +85,7 @@ export default function FleetCalendar() {
     // Rentals - show on start, end, and in-between dates
     fleetRentals.forEach(rental => {
       if (!rental.start_date) return
-      const asset = fleet.find(a => a.id === rental.fleet_id)
+      const asset = fleet.find(a => a.id === rental.asset_id)
       if (!asset) return
 
       const startDate = new Date(rental.start_date).toISOString().split('T')[0]

@@ -26,16 +26,12 @@ const statusColors = {
 }
 
 const emptyRoute = {
-  route_name: '',
-  route_date: new Date().toISOString().split('T')[0],
-  assigned_to: '',
-  fleet_id: '',
+  route_id: '',
+  date: new Date().toISOString().split('T')[0],
+  team: '',
   status: 'Planned',
-  start_location: '',
-  end_location: '',
-  estimated_distance: '',
-  estimated_duration: '',
-  notes: ''
+  total_distance: '',
+  total_time: ''
 }
 
 export default function RoutesPage() {
@@ -67,8 +63,8 @@ export default function RoutesPage() {
 
   const filteredRoutes = routes.filter(route => {
     const matchesSearch = searchTerm === '' ||
-      route.route_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      route.assigned_to?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+      route.route_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      route.team?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === 'all' || route.status === statusFilter
     return matchesSearch && matchesStatus
   })
@@ -83,16 +79,12 @@ export default function RoutesPage() {
   const openEditModal = (route) => {
     setEditingRoute(route)
     setFormData({
-      route_name: route.route_name || '',
-      route_date: route.route_date || '',
-      assigned_to: route.assigned_to_id || '',
-      fleet_id: route.fleet_id || '',
+      route_id: route.route_id || '',
+      date: route.date || '',
+      team: route.team || '',
       status: route.status || 'Planned',
-      start_location: route.start_location || '',
-      end_location: route.end_location || '',
-      estimated_distance: route.estimated_distance || '',
-      estimated_duration: route.estimated_duration || '',
-      notes: route.notes || ''
+      total_distance: route.total_distance || '',
+      total_time: route.total_time || ''
     })
     setError(null)
     setShowModal(true)
@@ -117,16 +109,12 @@ export default function RoutesPage() {
 
     const payload = {
       company_id: companyId,
-      route_name: formData.route_name,
-      route_date: formData.route_date,
-      assigned_to_id: formData.assigned_to || null,
-      fleet_id: formData.fleet_id || null,
+      route_id: formData.route_id || null,
+      date: formData.date,
+      team: formData.team || null,
       status: formData.status,
-      start_location: formData.start_location || null,
-      end_location: formData.end_location || null,
-      estimated_distance: formData.estimated_distance ? parseFloat(formData.estimated_distance) : null,
-      estimated_duration: formData.estimated_duration ? parseFloat(formData.estimated_duration) : null,
-      notes: formData.notes || null,
+      total_distance: formData.total_distance ? parseFloat(formData.total_distance) : null,
+      total_time: formData.total_time ? parseFloat(formData.total_time) : null,
       updated_at: new Date().toISOString()
     }
 

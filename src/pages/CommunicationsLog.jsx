@@ -112,10 +112,9 @@ export default function CommunicationsLog() {
       type: formData.type,
       recipient: formData.recipient,
       status: formData.status,
-      notes: formData.notes || null,
+      response: formData.notes || null,
       employee_id: user?.id,
-      sent_date: new Date().toISOString(),
-      communication_date: new Date().toISOString().split('T')[0]
+      sent_date: new Date().toISOString()
     }
 
     const { error } = await supabase.from('communications_log').insert(data)
