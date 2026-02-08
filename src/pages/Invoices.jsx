@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle } from 'lucide-react'
+import EntityCard from '../components/EntityCard'
 
 // Light theme fallback
 const defaultTheme = {
@@ -287,55 +288,24 @@ export default function Invoices() {
           </p>
         </div>
       ) : (
-        <div style={{
-          backgroundColor: theme.bgCard,
-          borderRadius: '12px',
-          border: `1px solid ${theme.border}`,
-          overflow: 'hidden'
-        }}>
-          {/* Table Header */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 2fr 1fr 120px 100px 80px',
-            gap: '16px',
-            padding: '14px 20px',
-            backgroundColor: theme.accentBg,
-            borderBottom: `1px solid ${theme.border}`,
-            fontSize: '12px',
-            fontWeight: '600',
-            color: theme.textMuted,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px'
-          }}>
-            <div>Invoice</div>
-            <div>Customer / Job</div>
-            <div style={{ textAlign: 'right' }}>Amount</div>
-            <div style={{ textAlign: 'center' }}>Status</div>
-            <div>Date</div>
-            <div></div>
-          </div>
-
-          {/* Table Body */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {filteredInvoices.map((invoice) => {
             const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
             return (
-              <div
+              <EntityCard
                 key={invoice.id}
-                style={{
+                name={invoice.customer?.name}
+                businessName={invoice.customer?.business_name}
+                onClick={() => navigate(`/invoices/${invoice.id}`)}
+                style={{ padding: '16px 20px' }}
+              >
+                <div style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 2fr 1fr 120px 100px 80px',
                   gap: '16px',
-                  padding: '16px 20px',
-                  borderBottom: `1px solid ${theme.border}`,
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.15s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                onClick={() => navigate(`/invoices/${invoice.id}`)}
-              >
+                  alignItems: 'center'
+                }}>
                 <div>
                   <p style={{ fontWeight: '600', color: theme.accent, fontSize: '14px' }}>
                     {invoice.invoice_id}
@@ -395,7 +365,8 @@ export default function Invoices() {
                   )}
                   <ChevronRight size={20} style={{ color: theme.textMuted }} />
                 </div>
-              </div>
+                </div>
+              </EntityCard>
             )
           })}
         </div>
