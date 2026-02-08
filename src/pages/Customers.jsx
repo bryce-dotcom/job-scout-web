@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Pencil, Trash2, X, User, Phone, Mail, Building2, Search } from 'lucide-react'
+import EntityCard from '../components/EntityCard'
 
 const emptyCustomer = {
   name: '',
@@ -307,25 +308,11 @@ export default function Customers() {
           gap: '16px'
         }}>
           {filteredCustomers.map((customer) => (
-            <div
+            <EntityCard
               key={customer.id}
+              name={customer.name}
+              businessName={customer.business_name}
               onClick={() => navigate(`/customers/${customer.id}`)}
-              style={{
-                backgroundColor: theme.bgCard,
-                borderRadius: '12px',
-                border: `1px solid ${theme.border}`,
-                padding: '20px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = theme.bgCardHover
-                e.currentTarget.style.borderColor = theme.textMuted
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = theme.bgCard
-                e.currentTarget.style.borderColor = theme.border
-              }}
             >
               <div style={{
                 display: 'flex',
@@ -455,7 +442,7 @@ export default function Customers() {
                   </span>
                 )}
               </div>
-            </div>
+            </EntityCard>
           ))}
         </div>
       )}
