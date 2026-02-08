@@ -115,7 +115,29 @@ export default function DataConsoleUtilities() {
 
   const handleDeleteProvider = async (provider) => {
     if (!confirm(`Delete ${provider.provider_name}? This will also delete all programs and rates.`)) return
-    await supabase.from('utility_providers').delete().eq('id', provider.id)
+    console.log('Deleting provider:', provider.id, provider.provider_name)
+    // Delete rates for all programs under this provider first
+    const { data: providerPrograms } = await supabase
+      .from('utility_programs')
+      .select('id')
+      .eq('utility_name', provider.provider_name)
+    if (providerPrograms?.length) {
+      for (const prog of providerPrograms) {
+        const { error: rateErr } = await supabase.from('rebate_rates').delete().eq('program_id', prog.id)
+        if (rateErr) console.error('Error deleting rates for program', prog.id, rateErr)
+      }
+    }
+    // Delete programs for this provider
+    const { error: progErr } = await supabase.from('utility_programs').delete().eq('utility_name', provider.provider_name)
+    if (progErr) console.error('Error deleting programs:', progErr)
+    // Delete the provider
+    const { error } = await supabase.from('utility_providers').delete().eq('id', provider.id)
+    if (error) {
+      console.error('Error deleting provider:', error)
+      alert('Delete failed: ' + error.message)
+      return
+    }
+    console.log('Provider deleted successfully')
     await fetchProviders()
     if (selectedProvider?.id === provider.id) {
       setSelectedProvider(null)
@@ -141,8 +163,19 @@ export default function DataConsoleUtilities() {
   }
 
   const handleDeleteProgram = async (program) => {
-    if (!confirm(`Delete ${program.program_name}?`)) return
-    await supabase.from('utility_programs').delete().eq('id', program.id)
+    if (!confirm(`Delete ${program.program_name}? This will also delete its rates.`)) return
+    console.log('Deleting program:', program.id, program.program_name)
+    // Delete rates for this program first (FK constraint)
+    const { error: rateErr } = await supabase.from('rebate_rates').delete().eq('program_id', program.id)
+    if (rateErr) console.error('Error deleting rates:', rateErr)
+    // Delete the program
+    const { error } = await supabase.from('utility_programs').delete().eq('id', program.id)
+    if (error) {
+      console.error('Error deleting program:', error)
+      alert('Delete failed: ' + error.message)
+      return
+    }
+    console.log('Program deleted successfully')
     await fetchPrograms(selectedProvider.provider_name)
     if (selectedProgram?.id === program.id) {
       setSelectedProgram(null)
@@ -169,16 +202,43 @@ export default function DataConsoleUtilities() {
 
   const handleDeleteRate = async (rate) => {
     if (!confirm('Delete this rate?')) return
-    await supabase.from('rebate_rates').delete().eq('id', rate.id)
+    console.log('Deleting rate:', rate.id)
+    const { error } = await supabase.from('rebate_rates').delete().eq('id', rate.id)
+    if (error) {
+      console.error('Error deleting rate:', error)
+      alert('Delete failed: ' + error.message)
+      return
+    }
+    console.log('Rate deleted successfully')
     await fetchRates(selectedProgram.id)
   }
 
   // Delete All handlers
   const handleDeleteAllProviders = async () => {
     if (!confirm(`Delete ALL ${filteredProviders.length} providers${stateFilter ? ` in ${stateFilter}` : ''}? This will also delete their programs and rates. This cannot be undone.`)) return
+    console.log('Delete All Providers: starting, count =', filteredProviders.length)
+    let errors = 0
     for (const p of filteredProviders) {
-      await supabase.from('utility_providers').delete().eq('id', p.id)
+      // Delete rates for all programs under this provider first
+      const { data: providerPrograms } = await supabase
+        .from('utility_programs')
+        .select('id')
+        .eq('utility_name', p.provider_name)
+      if (providerPrograms?.length) {
+        for (const prog of providerPrograms) {
+          const { error: rateErr } = await supabase.from('rebate_rates').delete().eq('program_id', prog.id)
+          if (rateErr) { console.error('Error deleting rates for program', prog.id, rateErr); errors++ }
+        }
+      }
+      // Delete programs for this provider
+      const { error: progErr } = await supabase.from('utility_programs').delete().eq('utility_name', p.provider_name)
+      if (progErr) { console.error('Error deleting programs for provider', p.provider_name, progErr); errors++ }
+      // Delete the provider
+      const { error } = await supabase.from('utility_providers').delete().eq('id', p.id)
+      if (error) { console.error('Error deleting provider', p.id, error); errors++ }
     }
+    if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
+    console.log('Delete All Providers: complete')
     await fetchProviders()
     setSelectedProvider(null)
   }
@@ -186,9 +246,20 @@ export default function DataConsoleUtilities() {
   const handleDeleteAllPrograms = async () => {
     if (!selectedProvider) return
     if (!confirm(`Delete ALL ${programs.length} programs for ${selectedProvider.provider_name}? This will also delete their rates. This cannot be undone.`)) return
+    console.log('Delete All Programs: starting, count =', programs.length)
+    let errors = 0
+    // Delete rates first for all programs (FK constraint)
     for (const p of programs) {
-      await supabase.from('utility_programs').delete().eq('id', p.id)
+      const { error: rateErr } = await supabase.from('rebate_rates').delete().eq('program_id', p.id)
+      if (rateErr) { console.error('Error deleting rates for program', p.id, rateErr); errors++ }
     }
+    // Then delete all programs
+    for (const p of programs) {
+      const { error } = await supabase.from('utility_programs').delete().eq('id', p.id)
+      if (error) { console.error('Error deleting program', p.id, error); errors++ }
+    }
+    if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
+    console.log('Delete All Programs: complete')
     await fetchPrograms(selectedProvider.provider_name)
     setSelectedProgram(null)
   }
@@ -196,9 +267,14 @@ export default function DataConsoleUtilities() {
   const handleDeleteAllRates = async () => {
     if (!selectedProgram) return
     if (!confirm(`Delete ALL ${rates.length} rates for ${selectedProgram.program_name}? This cannot be undone.`)) return
+    console.log('Delete All Rates: starting, count =', rates.length)
+    let errors = 0
     for (const r of rates) {
-      await supabase.from('rebate_rates').delete().eq('id', r.id)
+      const { error } = await supabase.from('rebate_rates').delete().eq('id', r.id)
+      if (error) { console.error('Error deleting rate', r.id, error); errors++ }
     }
+    if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
+    console.log('Delete All Rates: complete')
     await fetchRates(selectedProgram.id)
   }
 
