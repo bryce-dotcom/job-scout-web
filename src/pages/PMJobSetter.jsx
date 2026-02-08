@@ -11,6 +11,7 @@ import {
   LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2,
   Palette, Edit2, Layers, ChevronUp
 } from 'lucide-react'
+import EntityCard from '../components/EntityCard'
 
 // Default calendar colors for visual distinction
 const calendarColors = [
@@ -162,7 +163,7 @@ export default function PMJobSetter() {
     // Fetch jobs with customer and PM info
     const { data: jobsData } = await supabase
       .from('jobs')
-      .select('*, customer:customers(id, name, address), pm:employees!jobs_pm_id_fkey(id, name)')
+      .select('*, customer:customers(id, name, business_name, address), pm:employees!jobs_pm_id_fkey(id, name)')
       .eq('company_id', companyId)
       .order('start_date', { ascending: true })
 
@@ -539,6 +540,19 @@ export default function PMJobSetter() {
   const handleStatusDrop = async (e, statusId) => {
     e.preventDefault()
     setDragOverStatus(null)
+
+    if (!draggedSection) return
+
+    await supabase
+      .from('job_sections')
+      .update({
+        status: statusId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', draggedSection.id)
+
+    setDraggedSection(null)
+    await fetchData()
   }
 
   // Add new section
@@ -1345,14 +1359,10 @@ export default function PMJobSetter() {
                         return (
                           <div key={job.id}>
                             {/* Job Card */}
-                            <div
-                              style={{
-                                backgroundColor: theme.bgCard,
-                                borderRadius: '6px',
-                                border: `1px solid ${theme.border}`,
-                                overflow: 'hidden',
-                                borderLeft: calendar ? `3px solid ${calendar.color}` : undefined
-                              }}
+                            <EntityCard
+                              name={job.customer?.name}
+                              businessName={job.customer?.business_name}
+                              style={{ padding: '0px', overflow: 'hidden', fontSize: '12px' }}
                             >
                               {/* Job Header */}
                               <div
@@ -1525,7 +1535,7 @@ export default function PMJobSetter() {
                                   </button>
                                 </div>
                               )}
-                            </div>
+                            </EntityCard>
                           </div>
                         )
                       })}
