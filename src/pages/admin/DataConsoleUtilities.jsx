@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
 import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, FormToggle, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
-import { Plus, Search, Edit2, Trash2, Download, Upload, Zap } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader } from 'lucide-react'
 
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
@@ -32,6 +32,16 @@ export default function DataConsoleUtilities() {
   const [editingProgram, setEditingProgram] = useState(null)
   const [editingRate, setEditingRate] = useState(null)
   const [saving, setSaving] = useState(false)
+
+  // AI Research state
+  const [researchState, setResearchState] = useState('')
+  const [researching, setResearching] = useState(false)
+  const [researchResults, setResearchResults] = useState(null)
+  const [showResearchModal, setShowResearchModal] = useState(false)
+  const [checkedProviders, setCheckedProviders] = useState({})
+  const [checkedPrograms, setCheckedPrograms] = useState({})
+  const [checkedRates, setCheckedRates] = useState({})
+  const [importing, setImporting] = useState(false)
 
   useEffect(() => {
     fetchProviders()
@@ -163,6 +173,180 @@ export default function DataConsoleUtilities() {
     await fetchRates(selectedProgram.id)
   }
 
+  // Delete All handlers
+  const handleDeleteAllProviders = async () => {
+    if (!confirm(`Delete ALL ${filteredProviders.length} providers${stateFilter ? ` in ${stateFilter}` : ''}? This will also delete their programs and rates. This cannot be undone.`)) return
+    for (const p of filteredProviders) {
+      await supabase.from('utility_providers').delete().eq('id', p.id)
+    }
+    await fetchProviders()
+    setSelectedProvider(null)
+  }
+
+  const handleDeleteAllPrograms = async () => {
+    if (!selectedProvider) return
+    if (!confirm(`Delete ALL ${programs.length} programs for ${selectedProvider.provider_name}? This will also delete their rates. This cannot be undone.`)) return
+    for (const p of programs) {
+      await supabase.from('utility_programs').delete().eq('id', p.id)
+    }
+    await fetchPrograms(selectedProvider.provider_name)
+    setSelectedProgram(null)
+  }
+
+  const handleDeleteAllRates = async () => {
+    if (!selectedProgram) return
+    if (!confirm(`Delete ALL ${rates.length} rates for ${selectedProgram.program_name}? This cannot be undone.`)) return
+    for (const r of rates) {
+      await supabase.from('rebate_rates').delete().eq('id', r.id)
+    }
+    await fetchRates(selectedProgram.id)
+  }
+
+  // AI Research
+  const handleAIResearch = async () => {
+    if (!researchState) {
+      alert('Please select a state from the Research dropdown first.')
+      return
+    }
+
+    setResearching(true)
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-utility-research`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({ state: researchState === 'ALL' ? 'all US states' : researchState })
+        }
+      )
+
+      const data = await response.json()
+
+      if (data?.success && data?.results) {
+        setResearchResults(data.results)
+        // Default all items to checked
+        const pChecked = {}
+        data.results.providers.forEach((_, i) => { pChecked[i] = true })
+        setCheckedProviders(pChecked)
+        const prChecked = {}
+        data.results.programs.forEach((_, i) => { prChecked[i] = true })
+        setCheckedPrograms(prChecked)
+        const rChecked = {}
+        data.results.rates.forEach((_, i) => { rChecked[i] = true })
+        setCheckedRates(rChecked)
+        setShowResearchModal(true)
+      } else {
+        alert('Research failed: ' + (data?.error || 'Unknown error'))
+      }
+    } catch (err) {
+      alert('Research error: ' + err.message)
+    }
+    setResearching(false)
+  }
+
+  const handleImportSelected = async () => {
+    if (!researchResults) return
+    setImporting(true)
+
+    try {
+      // 1. Insert selected providers
+      const selectedProvidersList = researchResults.providers.filter((_, i) => checkedProviders[i])
+      const providerNameMap = {} // provider_name -> inserted provider
+
+      for (const p of selectedProvidersList) {
+        const { data, error } = await supabase
+          .from('utility_providers')
+          .insert({
+            provider_name: p.provider_name,
+            state: p.state,
+            service_territory: p.service_territory || null,
+            has_rebate_program: p.has_rebate_program ?? true,
+            rebate_program_url: p.rebate_program_url || null,
+            contact_phone: p.contact_phone || null,
+            notes: p.notes || null
+          })
+          .select()
+          .single()
+
+        if (error) {
+          console.error('Provider insert error:', error)
+          continue
+        }
+        providerNameMap[p.provider_name] = data
+      }
+
+      // 2. Insert selected programs
+      const selectedProgramsList = researchResults.programs.filter((_, i) => checkedPrograms[i])
+      const programNameMap = {} // "provider_name|program_name" -> inserted program
+
+      for (const pr of selectedProgramsList) {
+        // Only insert if the provider was also imported (or already exists)
+        const { data, error } = await supabase
+          .from('utility_programs')
+          .insert({
+            utility_name: pr.provider_name,
+            program_name: pr.program_name,
+            program_type: pr.program_type || 'Prescriptive',
+            business_size: pr.business_size || 'All',
+            dlc_required: pr.dlc_required ?? false,
+            pre_approval_required: pr.pre_approval_required ?? false,
+            program_url: pr.program_url || null,
+            max_cap_percent: pr.max_cap_percent || null,
+            annual_cap_dollars: pr.annual_cap_dollars || null
+          })
+          .select()
+          .single()
+
+        if (error) {
+          console.error('Program insert error:', error)
+          continue
+        }
+        programNameMap[`${pr.provider_name}|${pr.program_name}`] = data
+      }
+
+      // 3. Insert selected rates
+      const selectedRatesList = researchResults.rates.filter((_, i) => checkedRates[i])
+
+      for (const r of selectedRatesList) {
+        const programKey = `${r.provider_name}|${r.program_name}`
+        const program = programNameMap[programKey]
+        if (!program) {
+          console.warn('Skipping rate - program not found:', programKey)
+          continue
+        }
+
+        const { error } = await supabase
+          .from('rebate_rates')
+          .insert({
+            program_id: program.id,
+            fixture_category: r.fixture_category,
+            calc_method: r.calc_method || 'Per Watt Reduced',
+            rate: r.rate,
+            rate_unit: r.rate_unit || '/watt',
+            min_watts: r.min_watts || null,
+            max_watts: r.max_watts || null,
+            notes: r.notes || null
+          })
+
+        if (error) {
+          console.error('Rate insert error:', error)
+        }
+      }
+
+      // Refresh data
+      await fetchProviders()
+      setSelectedProvider(null)
+      setShowResearchModal(false)
+      setResearchResults(null)
+    } catch (err) {
+      alert('Import error: ' + err.message)
+    }
+    setImporting(false)
+  }
+
   const filteredProviders = providers.filter(p => {
     const matchesSearch = p.provider_name?.toLowerCase().includes(providerSearch.toLowerCase())
     const matchesState = !stateFilter || p.state === stateFilter
@@ -171,6 +355,16 @@ export default function DataConsoleUtilities() {
 
   const totalPrograms = programs.length
   const totalRates = rates.length
+
+  // Checkbox helper
+  const Checkbox = ({ checked, onChange }) => (
+    <div
+      onClick={(e) => { e.stopPropagation(); onChange(!checked) }}
+      style={{ cursor: 'pointer', color: checked ? adminTheme.accent : adminTheme.textMuted, flexShrink: 0 }}
+    >
+      {checked ? <CheckSquare size={18} /> : <Square size={18} />}
+    </div>
+  )
 
   return (
     <div style={{ padding: '24px', height: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column' }}>
@@ -182,22 +376,43 @@ export default function DataConsoleUtilities() {
           <span style={{ color: adminTheme.textMuted, fontSize: '13px' }}>
             {providers.length} Providers | {programs.length} Programs | {rates.length} Rates
           </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Research:</span>
+            <select
+              value={researchState}
+              onChange={(e) => setResearchState(e.target.value)}
+              style={{
+                padding: '8px',
+                backgroundColor: adminTheme.bgInput,
+                border: `1px solid ${adminTheme.border}`,
+                borderRadius: '6px',
+                color: adminTheme.text,
+                fontSize: '13px'
+              }}
+            >
+              <option value="">Select</option>
+              <option value="ALL">All States</option>
+              {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
           <button
-            onClick={() => alert('Coming in Phase 5')}
+            onClick={handleAIResearch}
+            disabled={researching || !researchState}
             style={{
               padding: '8px 16px',
-              backgroundColor: adminTheme.accentBg,
+              backgroundColor: (researching || !researchState) ? adminTheme.border : adminTheme.accentBg,
               border: 'none',
               borderRadius: '8px',
-              color: adminTheme.accent,
+              color: (researching || !researchState) ? adminTheme.textMuted : adminTheme.accent,
               fontSize: '13px',
-              cursor: 'pointer',
+              cursor: (researching || !researchState) ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '6px'
             }}
           >
-            <Zap size={16} /> AI Research
+            {researching ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Zap size={16} />}
+            {researching ? 'Researching...' : 'AI Research'}
           </button>
         </div>
       </div>
@@ -217,23 +432,44 @@ export default function DataConsoleUtilities() {
           <div style={{ padding: '16px', borderBottom: `1px solid ${adminTheme.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <span style={{ color: adminTheme.text, fontWeight: '600' }}>Utility Providers</span>
-              <button
-                onClick={() => setEditingProvider({ provider_name: '', state: '', has_rebate_program: true })}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: adminTheme.accent,
-                  border: 'none',
-                  borderRadius: '6px',
-                  color: '#fff',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <Plus size={14} /> Add
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {filteredProviders.length > 0 && (
+                  <button
+                    onClick={handleDeleteAllProviders}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${adminTheme.error}`,
+                      borderRadius: '6px',
+                      color: adminTheme.error,
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <Trash2 size={14} /> Delete All
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditingProvider({ provider_name: '', state: '', has_rebate_program: true })}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: adminTheme.accent,
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Plus size={14} /> Add
+                </button>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
@@ -328,24 +564,45 @@ export default function DataConsoleUtilities() {
               <span style={{ color: adminTheme.text, fontWeight: '600' }}>
                 {selectedProvider ? `${selectedProvider.provider_name} Programs` : 'Programs'}
               </span>
-              <button
-                onClick={() => setEditingProgram({ program_name: '', program_type: 'Prescriptive', business_size: 'All' })}
-                disabled={!selectedProvider}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: selectedProvider ? adminTheme.accent : adminTheme.border,
-                  border: 'none',
-                  borderRadius: '6px',
-                  color: '#fff',
-                  fontSize: '12px',
-                  cursor: selectedProvider ? 'pointer' : 'not-allowed',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <Plus size={14} /> Add
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {programs.length > 0 && (
+                  <button
+                    onClick={handleDeleteAllPrograms}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${adminTheme.error}`,
+                      borderRadius: '6px',
+                      color: adminTheme.error,
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <Trash2 size={14} /> Delete All
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditingProgram({ program_name: '', program_type: 'Prescriptive', business_size: 'All' })}
+                  disabled={!selectedProvider}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: selectedProvider ? adminTheme.accent : adminTheme.border,
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '12px',
+                    cursor: selectedProvider ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Plus size={14} /> Add
+                </button>
+              </div>
             </div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -415,24 +672,45 @@ export default function DataConsoleUtilities() {
               <span style={{ color: adminTheme.text, fontWeight: '600' }}>
                 {selectedProgram ? `${selectedProgram.program_name} Rates` : 'Rates'}
               </span>
-              <button
-                onClick={() => setEditingRate({ fixture_category: 'Linear', calc_method: 'Per Watt Reduced', rate: 0 })}
-                disabled={!selectedProgram}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: selectedProgram ? adminTheme.accent : adminTheme.border,
-                  border: 'none',
-                  borderRadius: '6px',
-                  color: '#fff',
-                  fontSize: '12px',
-                  cursor: selectedProgram ? 'pointer' : 'not-allowed',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <Plus size={14} /> Add
-              </button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {rates.length > 0 && (
+                  <button
+                    onClick={handleDeleteAllRates}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${adminTheme.error}`,
+                      borderRadius: '6px',
+                      color: adminTheme.error,
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <Trash2 size={14} /> Delete All
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditingRate({ fixture_category: 'Linear', calc_method: 'Per Watt Reduced', rate: 0 })}
+                  disabled={!selectedProgram}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: selectedProgram ? adminTheme.accent : adminTheme.border,
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '12px',
+                    cursor: selectedProgram ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Plus size={14} /> Add
+                </button>
+              </div>
             </div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -636,6 +914,230 @@ export default function DataConsoleUtilities() {
               <FormTextarea value={editingRate.notes} onChange={(v) => setEditingRate({ ...editingRate, notes: v })} />
             </FormField>
             <ModalFooter onCancel={() => setEditingRate(null)} onSave={handleSaveRate} saving={saving} />
+          </>
+        )}
+      </AdminModal>
+
+      {/* AI Research Review Modal */}
+      <AdminModal
+        isOpen={showResearchModal}
+        onClose={() => setShowResearchModal(false)}
+        title={`AI Research Results — ${researchResults?.providers?.[0]?.state || ''}`}
+        width="900px"
+      >
+        {researchResults && (
+          <>
+            <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+            {/* Providers Section */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '15px' }}>
+                  Providers ({researchResults.providers.length})
+                </span>
+                <button
+                  onClick={() => {
+                    const allChecked = researchResults.providers.every((_, i) => checkedProviders[i])
+                    const next = {}
+                    researchResults.providers.forEach((_, i) => { next[i] = !allChecked })
+                    setCheckedProviders(next)
+                  }}
+                  style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
+                >
+                  {researchResults.providers.every((_, i) => checkedProviders[i]) ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {researchResults.providers.map((p, i) => (
+                  <div key={i} style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '10px 12px',
+                    backgroundColor: adminTheme.bgInput,
+                    borderRadius: '8px',
+                    border: `1px solid ${adminTheme.border}`
+                  }}>
+                    <Checkbox checked={!!checkedProviders[i]} onChange={(v) => setCheckedProviders({ ...checkedProviders, [i]: v })} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '14px' }}>{p.provider_name}</span>
+                        <Badge>{p.state}</Badge>
+                        {p.has_rebate_program && <Badge color="accent">Rebate Program</Badge>}
+                      </div>
+                      {p.service_territory && (
+                        <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '4px' }}>
+                          Territory: {p.service_territory}
+                        </div>
+                      )}
+                      {p.notes && (
+                        <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '2px' }}>
+                          {p.notes}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Programs Section */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '15px' }}>
+                  Programs ({researchResults.programs.length})
+                </span>
+                <button
+                  onClick={() => {
+                    const allChecked = researchResults.programs.every((_, i) => checkedPrograms[i])
+                    const next = {}
+                    researchResults.programs.forEach((_, i) => { next[i] = !allChecked })
+                    setCheckedPrograms(next)
+                  }}
+                  style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
+                >
+                  {researchResults.programs.every((_, i) => checkedPrograms[i]) ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {researchResults.programs.map((pr, i) => (
+                  <div key={i} style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '10px 12px',
+                    backgroundColor: adminTheme.bgInput,
+                    borderRadius: '8px',
+                    border: `1px solid ${adminTheme.border}`
+                  }}>
+                    <Checkbox checked={!!checkedPrograms[i]} onChange={(v) => setCheckedPrograms({ ...checkedPrograms, [i]: v })} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '14px' }}>{pr.program_name}</span>
+                        <Badge color="accent">{pr.program_type}</Badge>
+                        <Badge>{pr.business_size || 'All'}</Badge>
+                      </div>
+                      <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '4px' }}>
+                        {pr.provider_name}
+                        {pr.dlc_required && ' • DLC Required'}
+                        {pr.pre_approval_required && ' • Pre-Approval Required'}
+                      </div>
+                      {pr.max_cap_percent && (
+                        <div style={{ color: adminTheme.textMuted, fontSize: '12px' }}>
+                          Max cap: {pr.max_cap_percent}%
+                          {pr.annual_cap_dollars && ` • Annual cap: $${pr.annual_cap_dollars.toLocaleString()}`}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Rates Section */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '15px' }}>
+                  Rates ({researchResults.rates.length})
+                </span>
+                <button
+                  onClick={() => {
+                    const allChecked = researchResults.rates.every((_, i) => checkedRates[i])
+                    const next = {}
+                    researchResults.rates.forEach((_, i) => { next[i] = !allChecked })
+                    setCheckedRates(next)
+                  }}
+                  style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
+                >
+                  {researchResults.rates.every((_, i) => checkedRates[i]) ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {researchResults.rates.map((r, i) => (
+                  <div key={i} style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    padding: '10px 12px',
+                    backgroundColor: adminTheme.bgInput,
+                    borderRadius: '8px',
+                    border: `1px solid ${adminTheme.border}`
+                  }}>
+                    <Checkbox checked={!!checkedRates[i]} onChange={(v) => setCheckedRates({ ...checkedRates, [i]: v })} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '14px' }}>{r.fixture_category}</span>
+                        <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '14px' }}>
+                          ${r.rate}{r.rate_unit || '/watt'}
+                        </span>
+                        <Badge>{r.calc_method}</Badge>
+                      </div>
+                      <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '4px' }}>
+                        {r.provider_name} — {r.program_name}
+                        {(r.min_watts || r.max_watts) && ` • ${r.min_watts || 0}W–${r.max_watts || '∞'}W`}
+                      </div>
+                      {r.notes && (
+                        <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '2px', fontStyle: 'italic' }}>
+                          {r.notes}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Import Footer */}
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: '24px',
+              paddingTop: '16px',
+              borderTop: `1px solid ${adminTheme.border}`
+            }}>
+              <span style={{ color: adminTheme.textMuted, fontSize: '13px' }}>
+                {Object.values(checkedProviders).filter(Boolean).length} providers,{' '}
+                {Object.values(checkedPrograms).filter(Boolean).length} programs,{' '}
+                {Object.values(checkedRates).filter(Boolean).length} rates selected
+              </span>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setShowResearchModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: adminTheme.bgHover,
+                    color: adminTheme.text,
+                    border: `1px solid ${adminTheme.border}`,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImportSelected}
+                  disabled={importing}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: importing ? adminTheme.border : adminTheme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: importing ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {importing ? 'Importing...' : 'Import Selected'}
+                </button>
+              </div>
+            </div>
           </>
         )}
       </AdminModal>
