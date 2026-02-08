@@ -7,6 +7,7 @@ import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin,
   Play, CheckCircle, FileText, ChevronRight, User
 } from 'lucide-react'
+import EntityCard from '../components/EntityCard'
 
 // Light theme fallback
 const defaultTheme = {
@@ -433,25 +434,12 @@ export default function Jobs() {
             const invoiceStyle = invoiceStatusColors[job.invoice_status] || invoiceStatusColors['Not Invoiced']
 
             return (
-              <div
+              <EntityCard
                 key={job.id}
-                style={{
-                  backgroundColor: theme.bgCard,
-                  borderRadius: '12px',
-                  border: `1px solid ${theme.border}`,
-                  padding: '16px 20px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = theme.bgCardHover
-                  e.currentTarget.style.borderColor = theme.accent
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = theme.bgCard
-                  e.currentTarget.style.borderColor = theme.border
-                }}
+                name={job.customer?.name}
+                businessName={job.customer?.business_name}
                 onClick={() => navigate(`/jobs/${job.id}`)}
+                style={{ padding: '16px 20px' }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
                   {/* Main Info */}
@@ -589,7 +577,7 @@ export default function Jobs() {
                     <ChevronRight size={20} style={{ color: theme.textMuted }} />
                   </div>
                 </div>
-              </div>
+              </EntityCard>
             )
           })}
         </div>
