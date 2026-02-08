@@ -72,10 +72,10 @@ export default function RebateRates() {
 
     let error
     if (editing) {
-      const result = await supabase.from('rebate_rates').update(data).eq('id', editing.id)
+      const result = await supabase.from('incentive_measures').update(data).eq('id', editing.id)
       error = result.error
     } else {
-      const result = await supabase.from('rebate_rates').insert(data)
+      const result = await supabase.from('incentive_measures').insert(data)
       error = result.error
     }
 
@@ -105,7 +105,7 @@ export default function RebateRates() {
 
   const handleDelete = async (rateId) => {
     if (!confirm('Delete this rebate rate?')) return
-    const { error } = await supabase.from('rebate_rates').delete().eq('id', rateId)
+    const { error } = await supabase.from('incentive_measures').delete().eq('id', rateId)
     if (error) {
       alert('Error deleting: ' + error.message)
     } else {

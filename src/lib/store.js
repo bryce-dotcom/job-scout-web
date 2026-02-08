@@ -486,7 +486,7 @@ export const useStore = create(
         if (!companyId) return;
 
         const { data, error } = await supabase
-          .from('rebate_rates')
+          .from('incentive_measures')
           .select('*, program:utility_programs(id, program_name)')
           .eq('company_id', companyId);
 

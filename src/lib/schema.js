@@ -59,7 +59,7 @@ export const TABLES = {
   audit_areas: 'audit_areas',
   audit_area_fixtures: 'audit_area_fixtures',
   fixture_types: 'fixture_types',
-  rebate_rates: 'rebate_rates',
+  incentive_measures: 'incentive_measures',
   rebate_update_log: 'rebate_update_log',
   utility_programs: 'utility_programs',
   utility_providers: 'utility_providers',

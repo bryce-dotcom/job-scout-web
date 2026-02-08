@@ -88,7 +88,7 @@ export default function DataConsoleUtilities() {
   const fetchRates = async (programId) => {
     setLoading(l => ({ ...l, rates: true }))
     const { data } = await supabase
-      .from('rebate_rates')
+      .from('incentive_measures')
       .select('*')
       .eq('program_id', programId)
       .order('fixture_category')
@@ -123,7 +123,7 @@ export default function DataConsoleUtilities() {
       .eq('utility_name', provider.provider_name)
     if (providerPrograms?.length) {
       for (const prog of providerPrograms) {
-        const { error: rateErr } = await supabase.from('rebate_rates').delete().eq('program_id', prog.id)
+        const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', prog.id)
         if (rateErr) console.error('Error deleting rates for program', prog.id, rateErr)
       }
     }
@@ -166,7 +166,7 @@ export default function DataConsoleUtilities() {
     if (!confirm(`Delete ${program.program_name}? This will also delete its rates.`)) return
     console.log('Deleting program:', program.id, program.program_name)
     // Delete rates for this program first (FK constraint)
-    const { error: rateErr } = await supabase.from('rebate_rates').delete().eq('program_id', program.id)
+    const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', program.id)
     if (rateErr) console.error('Error deleting rates:', rateErr)
     // Delete the program
     const { error } = await supabase.from('utility_programs').delete().eq('id', program.id)
@@ -188,9 +188,9 @@ export default function DataConsoleUtilities() {
     try {
       const data = { ...editingRate, program_id: selectedProgram.id }
       if (editingRate.id) {
-        await supabase.from('rebate_rates').update(data).eq('id', editingRate.id)
+        await supabase.from('incentive_measures').update(data).eq('id', editingRate.id)
       } else {
-        await supabase.from('rebate_rates').insert(data)
+        await supabase.from('incentive_measures').insert(data)
       }
       await fetchRates(selectedProgram.id)
       setEditingRate(null)
@@ -203,7 +203,7 @@ export default function DataConsoleUtilities() {
   const handleDeleteRate = async (rate) => {
     if (!confirm('Delete this rate?')) return
     console.log('Deleting rate:', rate.id)
-    const { error } = await supabase.from('rebate_rates').delete().eq('id', rate.id)
+    const { error } = await supabase.from('incentive_measures').delete().eq('id', rate.id)
     if (error) {
       console.error('Error deleting rate:', error)
       alert('Delete failed: ' + error.message)
@@ -226,7 +226,7 @@ export default function DataConsoleUtilities() {
         .eq('utility_name', p.provider_name)
       if (providerPrograms?.length) {
         for (const prog of providerPrograms) {
-          const { error: rateErr } = await supabase.from('rebate_rates').delete().eq('program_id', prog.id)
+          const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', prog.id)
           if (rateErr) { console.error('Error deleting rates for program', prog.id, rateErr); errors++ }
         }
       }
@@ -250,7 +250,7 @@ export default function DataConsoleUtilities() {
     let errors = 0
     // Delete rates first for all programs (FK constraint)
     for (const p of programs) {
-      const { error: rateErr } = await supabase.from('rebate_rates').delete().eq('program_id', p.id)
+      const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', p.id)
       if (rateErr) { console.error('Error deleting rates for program', p.id, rateErr); errors++ }
     }
     // Then delete all programs
@@ -270,7 +270,7 @@ export default function DataConsoleUtilities() {
     console.log('Delete All Rates: starting, count =', rates.length)
     let errors = 0
     for (const r of rates) {
-      const { error } = await supabase.from('rebate_rates').delete().eq('id', r.id)
+      const { error } = await supabase.from('incentive_measures').delete().eq('id', r.id)
       if (error) { console.error('Error deleting rate', r.id, error); errors++ }
     }
     if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
@@ -395,15 +395,17 @@ export default function DataConsoleUtilities() {
         }
 
         const { error } = await supabase
-          .from('rebate_rates')
+          .from('incentive_measures')
           .insert({
             program_id: program.id,
             fixture_category: r.fixture_category,
             calc_method: r.calc_method || 'Per Watt Reduced',
             rate: r.rate,
+            rate_value: r.rate,
             rate_unit: r.rate_unit || '/watt',
             min_watts: r.min_watts || null,
             max_watts: r.max_watts || null,
+            measure_type: r.measure_type || 'LED Retrofit',
             notes: r.notes || null
           })
 

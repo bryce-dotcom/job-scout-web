@@ -5,7 +5,7 @@ import { Upload, Download, FileText, CheckCircle, AlertCircle, X } from 'lucide-
 
 const TABLES = [
   'companies', 'employees', 'customers', 'leads', 'jobs', 'quotes', 'invoices',
-  'lighting_audits', 'audit_areas', 'utility_providers', 'utility_programs', 'rebate_rates',
+  'lighting_audits', 'audit_areas', 'utility_providers', 'utility_programs', 'incentive_measures',
   'agents', 'company_agents', 'products_services'
 ]
 

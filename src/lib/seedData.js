@@ -226,7 +226,7 @@ export async function clearAllData(companyId, currentUserId) {
       'quotes',
       'audit_areas',
       'lighting_audits',
-      'rebate_rates',
+      'incentive_measures',
       'utility_programs',
       'utility_providers',
       'fixture_types',
