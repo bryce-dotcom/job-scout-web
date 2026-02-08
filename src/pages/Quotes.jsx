@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar } from 'lucide-react'
+import EntityCard from '../components/EntityCard'
 
 // Light theme fallback
 const defaultTheme = {
@@ -304,29 +305,14 @@ export default function Quotes() {
             const customerName = quote.customer?.name || quote.lead?.customer_name || 'No customer'
 
             return (
-              <div
+              <EntityCard
                 key={quote.id}
+                name={customerName}
+                businessName={quote.customer?.business_name || quote.lead?.business_name}
                 onClick={() => navigate(`/quotes/${quote.id}`)}
-                style={{
-                  backgroundColor: theme.bgCard,
-                  borderRadius: '12px',
-                  border: `1px solid ${theme.border}`,
-                  padding: '16px 20px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '16px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = theme.bgCardHover
-                  e.currentTarget.style.borderColor = theme.accent
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = theme.bgCard
-                  e.currentTarget.style.borderColor = theme.border
-                }}
+                style={{ padding: '16px 20px' }}
               >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 {/* Quote Number & Customer */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -394,7 +380,8 @@ export default function Quotes() {
 
                 {/* Arrow */}
                 <ChevronRight size={20} style={{ color: theme.textMuted }} />
-              </div>
+                </div>
+              </EntityCard>
             )
           })}
         </div>
