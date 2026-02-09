@@ -1366,6 +1366,56 @@ export default function DataConsoleUtilities() {
                 <Badge color="accent">{viewingProgram.program_type}</Badge>
                 <Badge>{viewingProgram.business_size || 'All'}</Badge>
               </div>
+              {(viewingProgram.program_url || viewingProgram.pdf_url) && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                  {viewingProgram.program_url && (
+                    <a
+                      href={viewingProgram.program_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        padding: '6px 14px',
+                        backgroundColor: adminTheme.accentBg,
+                        color: adminTheme.accent,
+                        border: `1px solid ${adminTheme.accent}`,
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        textDecoration: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <ExternalLink size={14} /> View Program Website
+                    </a>
+                  )}
+                  {viewingProgram.pdf_url && (
+                    <a
+                      href={viewingProgram.pdf_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        padding: '6px 14px',
+                        backgroundColor: adminTheme.bgInput,
+                        color: adminTheme.text,
+                        border: `1px solid ${adminTheme.border}`,
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        textDecoration: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Download size={14} /> Download PDF
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
             <DetailRow label="Provider" value={viewingProgram.utility_name} />
             <DetailRow label="Program Type" value={viewingProgram.program_type} />
