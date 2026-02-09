@@ -93,7 +93,7 @@ export default function LightingAudits() {
   }
 
   return (
-    <div className="page-padding" style={{ padding: '24px' }}>
+    <div className="page-padding audit-list-root" style={{ padding: '24px' }}>
       <style>{`
         @media (max-width: 768px) {
           .audit-list-filters { gap: 8px !important; }
@@ -102,7 +102,15 @@ export default function LightingAudits() {
           .audit-list-filters select { width: 100% !important; font-size: 16px !important; }
           .audit-card-header { flex-direction: column !important; gap: 8px !important; }
           .audit-card-header > div:last-child { text-align: left !important; }
-          .audit-list-new-btn { width: 100% !important; justify-content: center !important; }
+          .audit-list-new-btn { width: 100% !important; justify-content: center !important; min-height: 48px !important; border-radius: 10px !important; }
+          .audit-card-stats { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+        }
+        @media (max-width: 480px) {
+          .audit-list-root .stat-grid > div { padding: 12px !important; }
+          .audit-list-root .stat-grid > div > div:last-child { font-size: 22px !important; }
+          .audit-card-stats > div > div:first-child { font-size: 10px !important; }
+          .audit-card-stats > div > div:last-child { font-size: 14px !important; font-weight: 600 !important; }
+          .audit-list-root .audit-card { padding: 14px !important; }
         }
       `}</style>
       {/* Header */}
@@ -309,6 +317,7 @@ export default function LightingAudits() {
             return (
               <div
                 key={audit.id}
+                className="audit-card"
                 onClick={() => navigate(`/lighting-audits/${audit.id}`)}
                 style={{
                   backgroundColor: theme.bgCard,
@@ -374,7 +383,7 @@ export default function LightingAudits() {
                   </div>
                 </div>
 
-                <div style={{
+                <div className="audit-card-stats" style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
                   gap: '16px',

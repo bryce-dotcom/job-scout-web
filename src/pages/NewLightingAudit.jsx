@@ -564,26 +564,37 @@ export default function NewLightingAudit() {
   return (
     <div className="audit-root page-padding" style={{ padding: '24px' }}>
       <style>{`
+        @media (max-width: 768px) {
+          .audit-root input, .audit-root select, .audit-root textarea { font-size: 16px !important; }
+          .audit-area-modal input, .audit-area-modal select, .audit-area-modal textarea { font-size: 16px !important; }
+          .audit-rate-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .audit-root .stat-grid > div { padding: 12px 10px !important; }
+          .audit-root .stat-grid > div > div:last-of-type { font-size: 20px !important; }
+          .audit-nav button { min-height: 48px !important; }
+          .audit-area-actions button { min-width: 44px !important; min-height: 44px !important; padding: 10px 14px !important; }
+        }
         @media (max-width: 480px) {
           .audit-root { padding: 12px !important; }
-          .audit-step-card { padding: 16px !important; }
+          .audit-step-card { padding: 14px !important; }
           .audit-steps { gap: 4px !important; }
-          .audit-step { padding: 8px 4px !important; font-size: 11px !important; }
+          .audit-step { padding: 10px 6px !important; font-size: 13px !important; min-height: 44px !important; display: flex !important; align-items: center !important; justify-content: center !important; }
           .audit-step-prefix { display: none !important; }
           .audit-header h1 { font-size: 20px !important; }
-          .audit-form-grid-2 { grid-template-columns: 1fr !important; }
-          .audit-form-grid-3 { grid-template-columns: 1fr !important; }
-          .audit-rate-grid { grid-template-columns: 1fr 1fr !important; }
-          .audit-size-grid { grid-template-columns: 1fr 1fr 1fr !important; }
+          .audit-form-grid-2, .audit-form-grid-3 { grid-template-columns: 1fr !important; }
+          .audit-rate-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+          .audit-size-grid { gap: 8px !important; }
           .audit-area-stats { grid-template-columns: 1fr 1fr !important; }
           .audit-review-details { grid-template-columns: 1fr !important; }
           .audit-nav { gap: 8px !important; }
-          .audit-nav button { padding: 10px 16px !important; font-size: 13px !important; }
-          .audit-area-modal { max-width: calc(100% - 16px) !important; padding: 16px !important; }
-          .audit-modal-grid-2 { grid-template-columns: 1fr !important; }
-          .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
+          .audit-nav button { flex: 1 !important; justify-content: center !important; padding: 14px 16px !important; font-size: 16px !important; min-height: 48px !important; border-radius: 10px !important; }
+          .audit-root .stat-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+          .audit-root .stat-grid > div { padding: 10px !important; }
+          .audit-root .stat-grid > div > div:first-of-type { font-size: 11px !important; }
+          .audit-root .stat-grid > div > div:last-of-type { font-size: 18px !important; }
+          .audit-area-modal { max-width: 100% !important; max-height: 100% !important; width: 100% !important; height: 100% !important; border-radius: 0 !important; padding: 16px !important; }
+          .audit-modal-grid-2, .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
           .audit-modal-footer { flex-direction: column !important; }
-          .audit-modal-footer button { width: 100% !important; }
+          .audit-modal-footer button { width: 100% !important; min-height: 48px !important; font-size: 16px !important; border-radius: 10px !important; }
         }
       `}</style>
       {/* Header */}
@@ -1229,7 +1240,7 @@ export default function NewLightingAudit() {
                         {area.fixture_category} · {area.fixture_count} fixtures
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div className="audit-area-actions" style={{ display: 'flex', gap: '8px' }}>
                       <button
                         onClick={() => handleEditArea(index)}
                         style={{

@@ -337,18 +337,29 @@ export default function LightingAuditDetail() {
   return (
     <div className="audit-detail-root page-padding" style={{ padding: '24px' }}>
       <style>{`
+        @media (max-width: 768px) {
+          .audit-detail-root input, .audit-detail-root select, .audit-detail-root textarea { font-size: 16px !important; }
+          .audit-area-modal input, .audit-area-modal select, .audit-area-modal textarea { font-size: 16px !important; }
+          .audit-detail-root .stat-grid > div { padding: 14px 10px !important; }
+          .audit-detail-root .stat-grid > div > div:last-of-type { font-size: 20px !important; }
+          .audit-area-actions button { min-width: 44px !important; min-height: 44px !important; padding: 10px 14px !important; }
+        }
         @media (max-width: 480px) {
           .audit-detail-root { padding: 12px !important; }
           .audit-detail-header { flex-direction: column !important; align-items: stretch !important; gap: 12px !important; }
           .audit-detail-header h1 { font-size: 20px !important; }
-          .audit-detail-actions { width: 100%; }
-          .audit-detail-actions button { width: 100% !important; justify-content: center !important; }
+          .audit-detail-actions { width: 100% !important; flex-direction: column !important; }
+          .audit-detail-actions button { width: 100% !important; justify-content: center !important; min-height: 48px !important; font-size: 16px !important; border-radius: 10px !important; }
           .audit-detail-info { padding: 12px !important; }
-          .audit-area-modal { max-width: calc(100% - 16px) !important; padding: 16px !important; }
-          .audit-modal-grid-2 { grid-template-columns: 1fr !important; }
-          .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
+          .audit-detail-root .stat-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+          .audit-detail-root .stat-grid > div { padding: 10px !important; }
+          .audit-detail-root .stat-grid > div > svg { display: none !important; }
+          .audit-detail-root .stat-grid > div > div:first-of-type { font-size: 11px !important; margin-bottom: 2px !important; }
+          .audit-detail-root .stat-grid > div > div:last-of-type { font-size: 18px !important; }
+          .audit-area-modal { max-width: 100% !important; max-height: 100% !important; width: 100% !important; height: 100% !important; border-radius: 0 !important; padding: 16px !important; }
+          .audit-modal-grid-2, .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
           .audit-modal-footer { flex-direction: column !important; }
-          .audit-modal-footer button { width: 100% !important; }
+          .audit-modal-footer button { width: 100% !important; min-height: 48px !important; font-size: 16px !important; border-radius: 10px !important; }
         }
       `}</style>
       {/* Header */}
@@ -692,7 +703,7 @@ export default function LightingAuditDetail() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                  <div className="audit-area-actions" style={{ display: 'flex', gap: '6px' }}>
                     <button
                       onClick={() => handleEditArea(area)}
                       style={{
