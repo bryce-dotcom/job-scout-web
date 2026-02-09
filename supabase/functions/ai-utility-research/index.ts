@@ -38,24 +38,34 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 16000,
-        system: `You are a utility rebate research assistant. Your job is to research electric utility providers in a given US state and their commercial LED lighting rebate programs.
+        max_tokens: 32000,
+        system: `You are a utility rebate and electric rate research assistant. Your job is to research electric utility providers in a given US state, their commercial LED lighting incentive programs, and their published electric rate schedules.
+
+CRITICAL — YEAR VERIFICATION:
+- For every program, find the effective date or publication year of the source document
+- Include the year in the program name like "Wattsmart Business (2026)"
+- Return the year as a separate "source_year" field (integer)
+- If you cannot verify the year, set source_year to null and note "Year unverified" in notes
 
 Research thoroughly and return accurate, structured JSON data. Focus on:
 1. Major electric utility providers in the state
-2. Their commercial/industrial LED lighting rebate programs
-3. Specific rebate rates per fixture category
+2. Their commercial/industrial LED lighting incentive programs with DEEP detail
+3. Specific incentive rates per fixture category and measure type — actual $/watt amounts, caps, and requirements
+4. Published electric rate schedules — $/kWh rates, demand charges, customer categories
 
 Important guidelines:
 - Only include utilities that actually serve the state
-- For rebate rates, focus on LED retrofit/replacement incentives
+- For incentive measures, focus on LED retrofit/replacement incentives
 - Use "Per Watt Reduced" as the default calc_method unless the program specifically uses per-fixture incentives
 - rate_unit should be "/watt" for per-watt-reduced or "/fixture" for per-fixture
 - fixture_category must be one of: Linear, High Bay, Low Bay, Outdoor Area, Outdoor Wall, Decorative, Refrigeration, Other
+- measure_type examples: LED Retrofit, LED New Construction, LED Exterior, Controls, DLC Listed
 - program_type must be one of: Prescriptive, Custom, Midstream
 - business_size must be one of: Small, Medium, Large, All
 - If you cannot find specific rate data, provide your best estimate based on typical utility programs in that region and note it in the notes field
 - Include the program URL if you can find it
+- For rate schedules, include all major customer categories (Residential, Small Commercial, Large Commercial, Industrial)
+- rate_per_kwh should be the average or base rate in dollars (e.g. 0.0845 for 8.45 cents/kWh)
 
 Return ONLY valid JSON with this exact structure, no other text:
 {
@@ -73,33 +83,52 @@ Return ONLY valid JSON with this exact structure, no other text:
   "programs": [
     {
       "provider_name": "must match a provider_name above",
-      "program_name": "string",
+      "program_name": "string — include year like 'Program Name (2026)'",
       "program_type": "Prescriptive|Custom|Midstream",
       "business_size": "Small|Medium|Large|All",
       "dlc_required": true/false,
       "pre_approval_required": true/false,
       "program_url": "url or empty string",
       "max_cap_percent": number or null,
-      "annual_cap_dollars": number or null
+      "annual_cap_dollars": number or null,
+      "source_year": number or null
     }
   ],
-  "rates": [
+  "incentives": [
     {
       "provider_name": "must match a provider_name above",
       "program_name": "must match a program_name above",
       "fixture_category": "Linear|High Bay|Low Bay|Outdoor Area|Outdoor Wall|Decorative|Refrigeration|Other",
+      "measure_type": "LED Retrofit|LED New Construction|LED Exterior|Controls|DLC Listed|Other",
       "calc_method": "Per Watt Reduced|Per Fixture|Custom",
       "rate": number,
+      "rate_value": number,
       "rate_unit": "/watt or /fixture",
+      "cap_amount": number or null,
+      "cap_percent": number or null,
+      "requirements": "string describing eligibility requirements or empty string",
       "min_watts": number or null,
       "max_watts": number or null,
+      "notes": "string"
+    }
+  ],
+  "rate_schedules": [
+    {
+      "provider_name": "must match a provider_name above",
+      "schedule_name": "string — e.g. 'Schedule 6 - General Service'",
+      "customer_category": "Residential|Small Commercial|Large Commercial|Industrial|Agricultural",
+      "rate_per_kwh": number (in dollars, e.g. 0.0845),
+      "demand_charge": number or null ($/kW),
+      "time_of_use": true/false,
+      "effective_date": "YYYY-MM-DD or empty string",
+      "description": "string",
       "notes": "string"
     }
   ]
 }`,
         messages: [{
           role: 'user',
-          content: `Research all major electric utility providers in ${state} and their commercial LED lighting rebate programs. Include specific rebate rates for different fixture categories where available. Return the structured JSON as specified.`
+          content: `Research all major electric utility providers in ${state} and their commercial LED lighting incentive programs. Include specific incentive rates for different fixture categories and measure types where available. Also research their published electric rate schedules for all customer categories. Verify the year/effective date of each program document. Return the structured JSON as specified.`
         }]
       })
     });
@@ -120,8 +149,31 @@ Return ONLY valid JSON with this exact structure, no other text:
     if (jsonMatch) {
       const results = JSON.parse(jsonMatch[0]);
 
+      // Backward compat: normalize "rates" → "incentives" if AI returns old key
+      if (results.rates && !results.incentives) {
+        results.incentives = results.rates;
+        delete results.rates;
+      }
+
+      // Default rate_schedules to empty array if missing
+      if (!results.rate_schedules) {
+        results.rate_schedules = [];
+      }
+
+      // Ensure rate_value is populated on each incentive
+      if (results.incentives) {
+        for (const inc of results.incentives) {
+          if (inc.rate_value == null && inc.rate != null) {
+            inc.rate_value = inc.rate;
+          }
+          if (inc.rate == null && inc.rate_value != null) {
+            inc.rate = inc.rate_value;
+          }
+        }
+      }
+
       // Validate structure
-      if (!results.providers || !results.programs || !results.rates) {
+      if (!results.providers || !results.programs || !results.incentives) {
         return new Response(JSON.stringify({ success: false, error: 'Invalid response structure', raw: content }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });

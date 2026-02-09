@@ -16,11 +16,20 @@ const FIXTURE_CATEGORIES = [
   'Linear', 'High Bay', 'Low Bay', 'Outdoor Area', 'Outdoor Wall', 'Decorative', 'Refrigeration', 'Other'
 ]
 
+const MEASURE_TYPES = [
+  'LED Retrofit', 'LED New Construction', 'LED Exterior', 'Controls', 'DLC Listed', 'Other'
+]
+
+const CUSTOMER_CATEGORIES = [
+  'Residential', 'Small Commercial', 'Large Commercial', 'Industrial', 'Agricultural'
+]
+
 export default function DataConsoleUtilities() {
   const [providers, setProviders] = useState([])
   const [programs, setPrograms] = useState([])
-  const [rates, setRates] = useState([])
-  const [loading, setLoading] = useState({ providers: true, programs: false, rates: false })
+  const [incentives, setIncentives] = useState([])
+  const [rateSchedules, setRateSchedules] = useState([])
+  const [loading, setLoading] = useState({ providers: true, programs: false, incentives: false, rateSchedules: false })
 
   const [selectedProvider, setSelectedProvider] = useState(null)
   const [selectedProgram, setSelectedProgram] = useState(null)
@@ -30,7 +39,8 @@ export default function DataConsoleUtilities() {
 
   const [editingProvider, setEditingProvider] = useState(null)
   const [editingProgram, setEditingProgram] = useState(null)
-  const [editingRate, setEditingRate] = useState(null)
+  const [editingIncentive, setEditingIncentive] = useState(null)
+  const [editingRateSchedule, setEditingRateSchedule] = useState(null)
   const [saving, setSaving] = useState(false)
 
   // AI Research state
@@ -40,7 +50,8 @@ export default function DataConsoleUtilities() {
   const [showResearchModal, setShowResearchModal] = useState(false)
   const [checkedProviders, setCheckedProviders] = useState({})
   const [checkedPrograms, setCheckedPrograms] = useState({})
-  const [checkedRates, setCheckedRates] = useState({})
+  const [checkedIncentives, setCheckedIncentives] = useState({})
+  const [checkedRateSchedules, setCheckedRateSchedules] = useState({})
   const [importing, setImporting] = useState(false)
 
   useEffect(() => {
@@ -50,17 +61,19 @@ export default function DataConsoleUtilities() {
   useEffect(() => {
     if (selectedProvider) {
       fetchPrograms(selectedProvider.provider_name)
+      fetchRateSchedules(selectedProvider.id)
     } else {
       setPrograms([])
       setSelectedProgram(null)
+      setRateSchedules([])
     }
   }, [selectedProvider])
 
   useEffect(() => {
     if (selectedProgram) {
-      fetchRates(selectedProgram.id)
+      fetchIncentives(selectedProgram.id)
     } else {
-      setRates([])
+      setIncentives([])
     }
   }, [selectedProgram])
 
@@ -85,15 +98,26 @@ export default function DataConsoleUtilities() {
     setLoading(l => ({ ...l, programs: false }))
   }
 
-  const fetchRates = async (programId) => {
-    setLoading(l => ({ ...l, rates: true }))
+  const fetchIncentives = async (programId) => {
+    setLoading(l => ({ ...l, incentives: true }))
     const { data } = await supabase
       .from('incentive_measures')
       .select('*')
       .eq('program_id', programId)
       .order('fixture_category')
-    setRates(data || [])
-    setLoading(l => ({ ...l, rates: false }))
+    setIncentives(data || [])
+    setLoading(l => ({ ...l, incentives: false }))
+  }
+
+  const fetchRateSchedules = async (providerId) => {
+    setLoading(l => ({ ...l, rateSchedules: true }))
+    const { data } = await supabase
+      .from('utility_rate_schedules')
+      .select('*')
+      .eq('provider_id', providerId)
+      .order('schedule_name')
+    setRateSchedules(data || [])
+    setLoading(l => ({ ...l, rateSchedules: false }))
   }
 
   // Provider CRUD
@@ -114,30 +138,27 @@ export default function DataConsoleUtilities() {
   }
 
   const handleDeleteProvider = async (provider) => {
-    if (!confirm(`Delete ${provider.provider_name}? This will also delete all programs and rates.`)) return
-    console.log('Deleting provider:', provider.id, provider.provider_name)
-    // Delete rates for all programs under this provider first
+    if (!confirm(`Delete ${provider.provider_name}? This will also delete all programs, incentives, and rate schedules.`)) return
+    // Delete incentives for all programs under this provider first
     const { data: providerPrograms } = await supabase
       .from('utility_programs')
       .select('id')
       .eq('utility_name', provider.provider_name)
     if (providerPrograms?.length) {
       for (const prog of providerPrograms) {
-        const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', prog.id)
-        if (rateErr) console.error('Error deleting rates for program', prog.id, rateErr)
+        await supabase.from('incentive_measures').delete().eq('program_id', prog.id)
       }
     }
-    // Delete programs for this provider
-    const { error: progErr } = await supabase.from('utility_programs').delete().eq('utility_name', provider.provider_name)
-    if (progErr) console.error('Error deleting programs:', progErr)
+    // Delete rate schedules for this provider
+    await supabase.from('utility_rate_schedules').delete().eq('provider_id', provider.id)
+    // Delete programs
+    await supabase.from('utility_programs').delete().eq('utility_name', provider.provider_name)
     // Delete the provider
     const { error } = await supabase.from('utility_providers').delete().eq('id', provider.id)
     if (error) {
-      console.error('Error deleting provider:', error)
       alert('Delete failed: ' + error.message)
       return
     }
-    console.log('Provider deleted successfully')
     await fetchProviders()
     if (selectedProvider?.id === provider.id) {
       setSelectedProvider(null)
@@ -163,63 +184,85 @@ export default function DataConsoleUtilities() {
   }
 
   const handleDeleteProgram = async (program) => {
-    if (!confirm(`Delete ${program.program_name}? This will also delete its rates.`)) return
-    console.log('Deleting program:', program.id, program.program_name)
-    // Delete rates for this program first (FK constraint)
-    const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', program.id)
-    if (rateErr) console.error('Error deleting rates:', rateErr)
-    // Delete the program
+    if (!confirm(`Delete ${program.program_name}? This will also delete its incentives.`)) return
+    await supabase.from('incentive_measures').delete().eq('program_id', program.id)
     const { error } = await supabase.from('utility_programs').delete().eq('id', program.id)
     if (error) {
-      console.error('Error deleting program:', error)
       alert('Delete failed: ' + error.message)
       return
     }
-    console.log('Program deleted successfully')
     await fetchPrograms(selectedProvider.provider_name)
     if (selectedProgram?.id === program.id) {
       setSelectedProgram(null)
     }
   }
 
-  // Rate CRUD
-  const handleSaveRate = async () => {
+  // Incentive CRUD
+  const handleSaveIncentive = async () => {
     setSaving(true)
     try {
-      const data = { ...editingRate, program_id: selectedProgram.id }
-      if (editingRate.id) {
-        await supabase.from('incentive_measures').update(data).eq('id', editingRate.id)
+      const data = {
+        ...editingIncentive,
+        program_id: selectedProgram.id,
+        rate: editingIncentive.rate_value ?? editingIncentive.rate,
+        rate_value: editingIncentive.rate_value ?? editingIncentive.rate
+      }
+      if (editingIncentive.id) {
+        await supabase.from('incentive_measures').update(data).eq('id', editingIncentive.id)
       } else {
         await supabase.from('incentive_measures').insert(data)
       }
-      await fetchRates(selectedProgram.id)
-      setEditingRate(null)
+      await fetchIncentives(selectedProgram.id)
+      setEditingIncentive(null)
     } catch (err) {
       alert('Error: ' + err.message)
     }
     setSaving(false)
   }
 
-  const handleDeleteRate = async (rate) => {
-    if (!confirm('Delete this rate?')) return
-    console.log('Deleting rate:', rate.id)
-    const { error } = await supabase.from('incentive_measures').delete().eq('id', rate.id)
+  const handleDeleteIncentive = async (incentive) => {
+    if (!confirm('Delete this incentive?')) return
+    const { error } = await supabase.from('incentive_measures').delete().eq('id', incentive.id)
     if (error) {
-      console.error('Error deleting rate:', error)
       alert('Delete failed: ' + error.message)
       return
     }
-    console.log('Rate deleted successfully')
-    await fetchRates(selectedProgram.id)
+    await fetchIncentives(selectedProgram.id)
+  }
+
+  // Rate Schedule CRUD
+  const handleSaveRateSchedule = async () => {
+    setSaving(true)
+    try {
+      const data = { ...editingRateSchedule, provider_id: selectedProvider.id }
+      if (editingRateSchedule.id) {
+        await supabase.from('utility_rate_schedules').update(data).eq('id', editingRateSchedule.id)
+      } else {
+        await supabase.from('utility_rate_schedules').insert(data)
+      }
+      await fetchRateSchedules(selectedProvider.id)
+      setEditingRateSchedule(null)
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setSaving(false)
+  }
+
+  const handleDeleteRateSchedule = async (schedule) => {
+    if (!confirm('Delete this rate schedule?')) return
+    const { error } = await supabase.from('utility_rate_schedules').delete().eq('id', schedule.id)
+    if (error) {
+      alert('Delete failed: ' + error.message)
+      return
+    }
+    await fetchRateSchedules(selectedProvider.id)
   }
 
   // Delete All handlers
   const handleDeleteAllProviders = async () => {
-    if (!confirm(`Delete ALL ${filteredProviders.length} providers${stateFilter ? ` in ${stateFilter}` : ''}? This will also delete their programs and rates. This cannot be undone.`)) return
-    console.log('Delete All Providers: starting, count =', filteredProviders.length)
+    if (!confirm(`Delete ALL ${filteredProviders.length} providers${stateFilter ? ` in ${stateFilter}` : ''}? This will also delete their programs, incentives, and rate schedules. This cannot be undone.`)) return
     let errors = 0
     for (const p of filteredProviders) {
-      // Delete rates for all programs under this provider first
       const { data: providerPrograms } = await supabase
         .from('utility_programs')
         .select('id')
@@ -227,55 +270,60 @@ export default function DataConsoleUtilities() {
       if (providerPrograms?.length) {
         for (const prog of providerPrograms) {
           const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', prog.id)
-          if (rateErr) { console.error('Error deleting rates for program', prog.id, rateErr); errors++ }
+          if (rateErr) errors++
         }
       }
-      // Delete programs for this provider
+      const { error: schedErr } = await supabase.from('utility_rate_schedules').delete().eq('provider_id', p.id)
+      if (schedErr) errors++
       const { error: progErr } = await supabase.from('utility_programs').delete().eq('utility_name', p.provider_name)
-      if (progErr) { console.error('Error deleting programs for provider', p.provider_name, progErr); errors++ }
-      // Delete the provider
+      if (progErr) errors++
       const { error } = await supabase.from('utility_providers').delete().eq('id', p.id)
-      if (error) { console.error('Error deleting provider', p.id, error); errors++ }
+      if (error) errors++
     }
     if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
-    console.log('Delete All Providers: complete')
     await fetchProviders()
     setSelectedProvider(null)
   }
 
   const handleDeleteAllPrograms = async () => {
     if (!selectedProvider) return
-    if (!confirm(`Delete ALL ${programs.length} programs for ${selectedProvider.provider_name}? This will also delete their rates. This cannot be undone.`)) return
-    console.log('Delete All Programs: starting, count =', programs.length)
+    if (!confirm(`Delete ALL ${programs.length} programs for ${selectedProvider.provider_name}? This will also delete their incentives. This cannot be undone.`)) return
     let errors = 0
-    // Delete rates first for all programs (FK constraint)
     for (const p of programs) {
       const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', p.id)
-      if (rateErr) { console.error('Error deleting rates for program', p.id, rateErr); errors++ }
+      if (rateErr) errors++
     }
-    // Then delete all programs
     for (const p of programs) {
       const { error } = await supabase.from('utility_programs').delete().eq('id', p.id)
-      if (error) { console.error('Error deleting program', p.id, error); errors++ }
+      if (error) errors++
     }
     if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
-    console.log('Delete All Programs: complete')
     await fetchPrograms(selectedProvider.provider_name)
     setSelectedProgram(null)
   }
 
-  const handleDeleteAllRates = async () => {
+  const handleDeleteAllIncentives = async () => {
     if (!selectedProgram) return
-    if (!confirm(`Delete ALL ${rates.length} rates for ${selectedProgram.program_name}? This cannot be undone.`)) return
-    console.log('Delete All Rates: starting, count =', rates.length)
+    if (!confirm(`Delete ALL ${incentives.length} incentives for ${selectedProgram.program_name}? This cannot be undone.`)) return
     let errors = 0
-    for (const r of rates) {
+    for (const r of incentives) {
       const { error } = await supabase.from('incentive_measures').delete().eq('id', r.id)
-      if (error) { console.error('Error deleting rate', r.id, error); errors++ }
+      if (error) errors++
     }
     if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
-    console.log('Delete All Rates: complete')
-    await fetchRates(selectedProgram.id)
+    await fetchIncentives(selectedProgram.id)
+  }
+
+  const handleDeleteAllRateSchedules = async () => {
+    if (!selectedProvider) return
+    if (!confirm(`Delete ALL ${rateSchedules.length} rate schedules for ${selectedProvider.provider_name}? This cannot be undone.`)) return
+    let errors = 0
+    for (const s of rateSchedules) {
+      const { error } = await supabase.from('utility_rate_schedules').delete().eq('id', s.id)
+      if (error) errors++
+    }
+    if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
+    await fetchRateSchedules(selectedProvider.id)
   }
 
   // AI Research
@@ -302,17 +350,28 @@ export default function DataConsoleUtilities() {
       const data = await response.json()
 
       if (data?.success && data?.results) {
-        setResearchResults(data.results)
+        const results = data.results
+        // Normalize: if old "rates" key present, map to "incentives"
+        if (results.rates && !results.incentives) {
+          results.incentives = results.rates
+          delete results.rates
+        }
+        if (!results.rate_schedules) results.rate_schedules = []
+
+        setResearchResults(results)
         // Default all items to checked
         const pChecked = {}
-        data.results.providers.forEach((_, i) => { pChecked[i] = true })
+        results.providers.forEach((_, i) => { pChecked[i] = true })
         setCheckedProviders(pChecked)
         const prChecked = {}
-        data.results.programs.forEach((_, i) => { prChecked[i] = true })
+        results.programs.forEach((_, i) => { prChecked[i] = true })
         setCheckedPrograms(prChecked)
-        const rChecked = {}
-        data.results.rates.forEach((_, i) => { rChecked[i] = true })
-        setCheckedRates(rChecked)
+        const iChecked = {}
+        results.incentives.forEach((_, i) => { iChecked[i] = true })
+        setCheckedIncentives(iChecked)
+        const rsChecked = {}
+        results.rate_schedules.forEach((_, i) => { rsChecked[i] = true })
+        setCheckedRateSchedules(rsChecked)
         setShowResearchModal(true)
       } else {
         alert('Research failed: ' + (data?.error || 'Unknown error'))
@@ -330,7 +389,7 @@ export default function DataConsoleUtilities() {
     try {
       // 1. Insert selected providers
       const selectedProvidersList = researchResults.providers.filter((_, i) => checkedProviders[i])
-      const providerNameMap = {} // provider_name -> inserted provider
+      const providerNameMap = {}
 
       for (const p of selectedProvidersList) {
         const { data, error } = await supabase
@@ -356,10 +415,9 @@ export default function DataConsoleUtilities() {
 
       // 2. Insert selected programs
       const selectedProgramsList = researchResults.programs.filter((_, i) => checkedPrograms[i])
-      const programNameMap = {} // "provider_name|program_name" -> inserted program
+      const programNameMap = {}
 
       for (const pr of selectedProgramsList) {
-        // Only insert if the provider was also imported (or already exists)
         const { data, error } = await supabase
           .from('utility_programs')
           .insert({
@@ -371,7 +429,8 @@ export default function DataConsoleUtilities() {
             pre_approval_required: pr.pre_approval_required ?? false,
             program_url: pr.program_url || null,
             max_cap_percent: pr.max_cap_percent || null,
-            annual_cap_dollars: pr.annual_cap_dollars || null
+            annual_cap_dollars: pr.annual_cap_dollars || null,
+            source_year: pr.source_year || null
           })
           .select()
           .single()
@@ -383,14 +442,14 @@ export default function DataConsoleUtilities() {
         programNameMap[`${pr.provider_name}|${pr.program_name}`] = data
       }
 
-      // 3. Insert selected rates
-      const selectedRatesList = researchResults.rates.filter((_, i) => checkedRates[i])
+      // 3. Insert selected incentives
+      const selectedIncentivesList = researchResults.incentives.filter((_, i) => checkedIncentives[i])
 
-      for (const r of selectedRatesList) {
+      for (const r of selectedIncentivesList) {
         const programKey = `${r.provider_name}|${r.program_name}`
         const program = programNameMap[programKey]
         if (!program) {
-          console.warn('Skipping rate - program not found:', programKey)
+          console.warn('Skipping incentive - program not found:', programKey)
           continue
         }
 
@@ -399,18 +458,51 @@ export default function DataConsoleUtilities() {
           .insert({
             program_id: program.id,
             fixture_category: r.fixture_category,
+            measure_type: r.measure_type || 'LED Retrofit',
             calc_method: r.calc_method || 'Per Watt Reduced',
-            rate: r.rate,
-            rate_value: r.rate,
+            rate: r.rate_value ?? r.rate,
+            rate_value: r.rate_value ?? r.rate,
             rate_unit: r.rate_unit || '/watt',
+            cap_amount: r.cap_amount || null,
+            cap_percent: r.cap_percent || null,
+            requirements: r.requirements || null,
             min_watts: r.min_watts || null,
             max_watts: r.max_watts || null,
-            measure_type: r.measure_type || 'LED Retrofit',
             notes: r.notes || null
           })
 
         if (error) {
-          console.error('Rate insert error:', error)
+          console.error('Incentive insert error:', error)
+        }
+      }
+
+      // 4. Insert selected rate schedules
+      const selectedSchedulesList = researchResults.rate_schedules.filter((_, i) => checkedRateSchedules[i])
+
+      for (const rs of selectedSchedulesList) {
+        // Match provider_name to get provider_id
+        const provider = providerNameMap[rs.provider_name]
+        if (!provider) {
+          console.warn('Skipping rate schedule - provider not found:', rs.provider_name)
+          continue
+        }
+
+        const { error } = await supabase
+          .from('utility_rate_schedules')
+          .insert({
+            provider_id: provider.id,
+            schedule_name: rs.schedule_name,
+            customer_category: rs.customer_category || null,
+            rate_per_kwh: rs.rate_per_kwh || null,
+            demand_charge: rs.demand_charge || null,
+            time_of_use: rs.time_of_use ?? false,
+            effective_date: rs.effective_date || null,
+            description: rs.description || null,
+            notes: rs.notes || null
+          })
+
+        if (error) {
+          console.error('Rate schedule insert error:', error)
         }
       }
 
@@ -431,9 +523,6 @@ export default function DataConsoleUtilities() {
     return matchesSearch && matchesState
   })
 
-  const totalPrograms = programs.length
-  const totalRates = rates.length
-
   // Checkbox helper
   const Checkbox = ({ checked, onChange }) => (
     <div
@@ -452,7 +541,7 @@ export default function DataConsoleUtilities() {
         </h1>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <span style={{ color: adminTheme.textMuted, fontSize: '13px' }}>
-            {providers.length} Providers | {programs.length} Programs | {rates.length} Rates
+            {providers.length} Providers | {programs.length} Programs | {incentives.length} Incentives | {rateSchedules.length} Schedules
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Research:</span>
@@ -495,11 +584,11 @@ export default function DataConsoleUtilities() {
         </div>
       </div>
 
-      {/* Three Panel Layout */}
-      <div style={{ display: 'flex', gap: '16px', flex: 1, overflow: 'hidden' }}>
-        {/* Left Panel - Providers */}
+      {/* Four Panel Layout */}
+      <div style={{ display: 'flex', gap: '12px', flex: 1, overflow: 'hidden' }}>
+        {/* Panel 1 - Providers */}
         <div style={{
-          width: '30%',
+          width: '25%',
           backgroundColor: adminTheme.bgCard,
           border: `1px solid ${adminTheme.border}`,
           borderRadius: '10px',
@@ -507,73 +596,74 @@ export default function DataConsoleUtilities() {
           flexDirection: 'column',
           overflow: 'hidden'
         }}>
-          <div style={{ padding: '16px', borderBottom: `1px solid ${adminTheme.border}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <span style={{ color: adminTheme.text, fontWeight: '600' }}>Utility Providers</span>
-              <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '13px' }}>Providers</span>
+              <div style={{ display: 'flex', gap: '4px' }}>
                 {filteredProviders.length > 0 && (
                   <button
                     onClick={handleDeleteAllProviders}
                     style={{
-                      padding: '6px 12px',
+                      padding: '4px 8px',
                       backgroundColor: 'transparent',
                       border: `1px solid ${adminTheme.error}`,
                       borderRadius: '6px',
                       color: adminTheme.error,
-                      fontSize: '12px',
+                      fontSize: '11px',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '4px'
+                      gap: '3px'
                     }}
                   >
-                    <Trash2 size={14} /> Delete All
+                    <Trash2 size={12} /> All
                   </button>
                 )}
                 <button
                   onClick={() => setEditingProvider({ provider_name: '', state: '', has_rebate_program: true })}
                   style={{
-                    padding: '6px 12px',
+                    padding: '4px 8px',
                     backgroundColor: adminTheme.accent,
                     border: 'none',
                     borderRadius: '6px',
                     color: '#fff',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px'
+                    gap: '3px'
                   }}
                 >
-                  <Plus size={14} /> Add
+                  <Plus size={12} /> Add
                 </button>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '6px' }}>
               <input
                 placeholder="Search..."
                 value={providerSearch}
                 onChange={(e) => setProviderSearch(e.target.value)}
                 style={{
                   flex: 1,
-                  padding: '8px 10px',
+                  padding: '6px 8px',
                   backgroundColor: adminTheme.bgInput,
                   border: `1px solid ${adminTheme.border}`,
                   borderRadius: '6px',
                   color: adminTheme.text,
-                  fontSize: '13px'
+                  fontSize: '12px'
                 }}
               />
               <select
                 value={stateFilter}
                 onChange={(e) => setStateFilter(e.target.value)}
                 style={{
-                  padding: '8px',
+                  padding: '6px',
                   backgroundColor: adminTheme.bgInput,
                   border: `1px solid ${adminTheme.border}`,
                   borderRadius: '6px',
                   color: adminTheme.text,
-                  fontSize: '13px'
+                  fontSize: '12px',
+                  width: '60px'
                 }}
               >
                 <option value="">All</option>
@@ -585,14 +675,14 @@ export default function DataConsoleUtilities() {
             {loading.providers ? (
               <div style={{ padding: '20px', textAlign: 'center', color: adminTheme.textMuted }}>Loading...</div>
             ) : filteredProviders.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: adminTheme.textMuted }}>No providers</div>
+              <div style={{ padding: '20px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>No providers</div>
             ) : (
               filteredProviders.map(p => (
                 <div
                   key={p.id}
                   onClick={() => setSelectedProvider(p)}
                   style={{
-                    padding: '12px 16px',
+                    padding: '10px 12px',
                     borderBottom: `1px solid ${adminTheme.border}`,
                     cursor: 'pointer',
                     backgroundColor: selectedProvider?.id === p.id ? adminTheme.accentBg : 'transparent',
@@ -607,18 +697,18 @@ export default function DataConsoleUtilities() {
                     if (selectedProvider?.id !== p.id) e.currentTarget.style.backgroundColor = 'transparent'
                   }}
                 >
-                  <div>
-                    <div style={{ color: adminTheme.text, fontSize: '14px', fontWeight: '500' }}>{p.provider_name}</div>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.provider_name}</div>
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '3px' }}>
                       <Badge>{p.state}</Badge>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => setEditingProvider(p)} style={{ padding: '4px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
-                      <Edit2 size={14} />
+                  <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => setEditingProvider(p)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
+                      <Edit2 size={13} />
                     </button>
-                    <button onClick={() => handleDeleteProvider(p)} style={{ padding: '4px', background: 'none', border: 'none', color: adminTheme.error, cursor: 'pointer' }}>
-                      <Trash2 size={14} />
+                    <button onClick={() => handleDeleteProvider(p)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.error, cursor: 'pointer' }}>
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 </div>
@@ -627,9 +717,9 @@ export default function DataConsoleUtilities() {
           </div>
         </div>
 
-        {/* Middle Panel - Programs */}
+        {/* Panel 2 - Programs */}
         <div style={{
-          width: '35%',
+          width: '25%',
           backgroundColor: adminTheme.bgCard,
           border: `1px solid ${adminTheme.border}`,
           borderRadius: '10px',
@@ -637,61 +727,61 @@ export default function DataConsoleUtilities() {
           flexDirection: 'column',
           overflow: 'hidden'
         }}>
-          <div style={{ padding: '16px', borderBottom: `1px solid ${adminTheme.border}` }}>
+          <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: adminTheme.text, fontWeight: '600' }}>
-                {selectedProvider ? `${selectedProvider.provider_name} Programs` : 'Programs'}
+              <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '13px' }}>
+                {selectedProvider ? 'Programs' : 'Programs'}
               </span>
-              <div style={{ display: 'flex', gap: '6px' }}>
+              <div style={{ display: 'flex', gap: '4px' }}>
                 {programs.length > 0 && (
                   <button
                     onClick={handleDeleteAllPrograms}
                     style={{
-                      padding: '6px 12px',
+                      padding: '4px 8px',
                       backgroundColor: 'transparent',
                       border: `1px solid ${adminTheme.error}`,
                       borderRadius: '6px',
                       color: adminTheme.error,
-                      fontSize: '12px',
+                      fontSize: '11px',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '4px'
+                      gap: '3px'
                     }}
                   >
-                    <Trash2 size={14} /> Delete All
+                    <Trash2 size={12} /> All
                   </button>
                 )}
                 <button
                   onClick={() => setEditingProgram({ program_name: '', program_type: 'Prescriptive', business_size: 'All' })}
                   disabled={!selectedProvider}
                   style={{
-                    padding: '6px 12px',
+                    padding: '4px 8px',
                     backgroundColor: selectedProvider ? adminTheme.accent : adminTheme.border,
                     border: 'none',
                     borderRadius: '6px',
                     color: '#fff',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     cursor: selectedProvider ? 'pointer' : 'not-allowed',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px'
+                    gap: '3px'
                   }}
                 >
-                  <Plus size={14} /> Add
+                  <Plus size={12} /> Add
                 </button>
               </div>
             </div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {!selectedProvider ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: adminTheme.textMuted }}>
-                Select a provider to view programs
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                Select a provider
               </div>
             ) : loading.programs ? (
               <div style={{ padding: '20px', textAlign: 'center', color: adminTheme.textMuted }}>Loading...</div>
             ) : programs.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: adminTheme.textMuted }}>
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
                 No programs found
               </div>
             ) : (
@@ -700,7 +790,7 @@ export default function DataConsoleUtilities() {
                   key={p.id}
                   onClick={() => setSelectedProgram(p)}
                   style={{
-                    padding: '12px 16px',
+                    padding: '10px 12px',
                     borderBottom: `1px solid ${adminTheme.border}`,
                     cursor: 'pointer',
                     backgroundColor: selectedProgram?.id === p.id ? adminTheme.accentBg : 'transparent'
@@ -713,19 +803,20 @@ export default function DataConsoleUtilities() {
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ color: adminTheme.text, fontSize: '14px', fontWeight: '500' }}>{p.program_name}</div>
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.program_name}</div>
+                      <div style={{ display: 'flex', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
                         <Badge color="accent">{p.program_type}</Badge>
                         <Badge>{p.business_size || 'All'}</Badge>
+                        {p.source_year && <Badge color="accent">{p.source_year}</Badge>}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => setEditingProgram(p)} style={{ padding: '4px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
-                        <Edit2 size={14} />
+                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => setEditingProgram(p)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
+                        <Edit2 size={13} />
                       </button>
-                      <button onClick={() => handleDeleteProgram(p)} style={{ padding: '4px', background: 'none', border: 'none', color: adminTheme.error, cursor: 'pointer' }}>
-                        <Trash2 size={14} />
+                      <button onClick={() => handleDeleteProgram(p)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.error, cursor: 'pointer' }}>
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -735,9 +826,9 @@ export default function DataConsoleUtilities() {
           </div>
         </div>
 
-        {/* Right Panel - Rates */}
+        {/* Panel 3 - Incentives */}
         <div style={{
-          width: '35%',
+          width: '25%',
           backgroundColor: adminTheme.bgCard,
           border: `1px solid ${adminTheme.border}`,
           borderRadius: '10px',
@@ -745,92 +836,206 @@ export default function DataConsoleUtilities() {
           flexDirection: 'column',
           overflow: 'hidden'
         }}>
-          <div style={{ padding: '16px', borderBottom: `1px solid ${adminTheme.border}` }}>
+          <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: adminTheme.text, fontWeight: '600' }}>
-                {selectedProgram ? `${selectedProgram.program_name} Rates` : 'Rates'}
+              <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '13px' }}>
+                Incentives
               </span>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                {rates.length > 0 && (
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {incentives.length > 0 && (
                   <button
-                    onClick={handleDeleteAllRates}
+                    onClick={handleDeleteAllIncentives}
                     style={{
-                      padding: '6px 12px',
+                      padding: '4px 8px',
                       backgroundColor: 'transparent',
                       border: `1px solid ${adminTheme.error}`,
                       borderRadius: '6px',
                       color: adminTheme.error,
-                      fontSize: '12px',
+                      fontSize: '11px',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '4px'
+                      gap: '3px'
                     }}
                   >
-                    <Trash2 size={14} /> Delete All
+                    <Trash2 size={12} /> All
                   </button>
                 )}
                 <button
-                  onClick={() => setEditingRate({ fixture_category: 'Linear', calc_method: 'Per Watt Reduced', rate: 0 })}
+                  onClick={() => setEditingIncentive({ fixture_category: 'Linear', measure_type: 'LED Retrofit', calc_method: 'Per Watt Reduced', rate_value: 0, rate_unit: '/watt' })}
                   disabled={!selectedProgram}
                   style={{
-                    padding: '6px 12px',
+                    padding: '4px 8px',
                     backgroundColor: selectedProgram ? adminTheme.accent : adminTheme.border,
                     border: 'none',
                     borderRadius: '6px',
                     color: '#fff',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     cursor: selectedProgram ? 'pointer' : 'not-allowed',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px'
+                    gap: '3px'
                   }}
                 >
-                  <Plus size={14} /> Add
+                  <Plus size={12} /> Add
                 </button>
               </div>
             </div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {!selectedProgram ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: adminTheme.textMuted }}>
-                Select a program to view rates
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                Select a program
               </div>
-            ) : loading.rates ? (
+            ) : loading.incentives ? (
               <div style={{ padding: '20px', textAlign: 'center', color: adminTheme.textMuted }}>Loading...</div>
-            ) : rates.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: adminTheme.textMuted }}>
-                No rates defined
+            ) : incentives.length === 0 ? (
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                No incentives defined
               </div>
             ) : (
-              rates.map(r => (
+              incentives.map(r => (
                 <div
                   key={r.id}
                   style={{
-                    padding: '12px 16px',
+                    padding: '10px 12px',
                     borderBottom: `1px solid ${adminTheme.border}`
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ color: adminTheme.text, fontSize: '14px', fontWeight: '500' }}>
-                        {r.fixture_category}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '500' }}>{r.fixture_category}</span>
+                        {r.measure_type && <Badge>{r.measure_type}</Badge>}
                       </div>
-                      <div style={{ color: adminTheme.accent, fontSize: '16px', fontWeight: '600', marginTop: '4px' }}>
-                        ${r.rate} {r.rate_unit || '/watt'}
+                      <div style={{ color: adminTheme.accent, fontSize: '15px', fontWeight: '600', marginTop: '3px' }}>
+                        ${r.rate_value ?? r.rate} {r.rate_unit || '/watt'}
                       </div>
+                      <div style={{ display: 'flex', gap: '4px', marginTop: '2px', flexWrap: 'wrap' }}>
+                        <Badge>{r.calc_method}</Badge>
+                        {r.cap_amount && <span style={{ color: adminTheme.textMuted, fontSize: '11px' }}>Cap: ${r.cap_amount}</span>}
+                        {r.cap_percent && <span style={{ color: adminTheme.textMuted, fontSize: '11px' }}>Cap: {r.cap_percent}%</span>}
+                      </div>
+                      {r.requirements && (
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {r.requirements}
+                        </div>
+                      )}
                       {(r.min_watts || r.max_watts) && (
-                        <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '2px' }}>
-                          {r.min_watts || 0}W - {r.max_watts || '∞'}W
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px' }}>
+                          {r.min_watts || 0}W - {r.max_watts || '\u221E'}W
                         </div>
                       )}
                     </div>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <button onClick={() => setEditingRate(r)} style={{ padding: '4px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
-                        <Edit2 size={14} />
+                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
+                      <button onClick={() => setEditingIncentive(r)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
+                        <Edit2 size={13} />
                       </button>
-                      <button onClick={() => handleDeleteRate(r)} style={{ padding: '4px', background: 'none', border: 'none', color: adminTheme.error, cursor: 'pointer' }}>
-                        <Trash2 size={14} />
+                      <button onClick={() => handleDeleteIncentive(r)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.error, cursor: 'pointer' }}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Panel 4 - Rate Schedules */}
+        <div style={{
+          width: '25%',
+          backgroundColor: adminTheme.bgCard,
+          border: `1px solid ${adminTheme.border}`,
+          borderRadius: '10px',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
+          <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '13px' }}>
+                Rate Schedules
+              </span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {rateSchedules.length > 0 && (
+                  <button
+                    onClick={handleDeleteAllRateSchedules}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${adminTheme.error}`,
+                      borderRadius: '6px',
+                      color: adminTheme.error,
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px'
+                    }}
+                  >
+                    <Trash2 size={12} /> All
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditingRateSchedule({ schedule_name: '', customer_category: 'Small Commercial', rate_per_kwh: 0, time_of_use: false })}
+                  disabled={!selectedProvider}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: selectedProvider ? adminTheme.accent : adminTheme.border,
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: selectedProvider ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px'
+                  }}
+                >
+                  <Plus size={12} /> Add
+                </button>
+              </div>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {!selectedProvider ? (
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                Select a provider
+              </div>
+            ) : loading.rateSchedules ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: adminTheme.textMuted }}>Loading...</div>
+            ) : rateSchedules.length === 0 ? (
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                No rate schedules
+              </div>
+            ) : (
+              rateSchedules.map(s => (
+                <div
+                  key={s.id}
+                  style={{
+                    padding: '10px 12px',
+                    borderBottom: `1px solid ${adminTheme.border}`
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '600' }}>{s.schedule_name}</div>
+                      <div style={{ display: 'flex', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
+                        {s.customer_category && <Badge>{s.customer_category}</Badge>}
+                        {s.time_of_use && <Badge color="accent">TOU</Badge>}
+                      </div>
+                      <div style={{ color: adminTheme.accent, fontSize: '14px', fontWeight: '600', marginTop: '3px' }}>
+                        {s.rate_per_kwh != null ? `$${Number(s.rate_per_kwh).toFixed(4)}/kWh` : '-'}
+                        {s.demand_charge ? <span style={{ color: adminTheme.textMuted, fontSize: '12px', fontWeight: '400', marginLeft: '8px' }}>${s.demand_charge}/kW</span> : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
+                      <button onClick={() => setEditingRateSchedule(s)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
+                        <Edit2 size={13} />
+                      </button>
+                      <button onClick={() => handleDeleteRateSchedule(s)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.error, cursor: 'pointer' }}>
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -910,12 +1115,15 @@ export default function DataConsoleUtilities() {
                 />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
               <FormField label="Effective Date">
                 <FormInput type="date" value={editingProgram.effective_date?.split('T')[0]} onChange={(v) => setEditingProgram({ ...editingProgram, effective_date: v })} />
               </FormField>
               <FormField label="Expiration Date">
                 <FormInput type="date" value={editingProgram.expiration_date?.split('T')[0]} onChange={(v) => setEditingProgram({ ...editingProgram, expiration_date: v })} />
+              </FormField>
+              <FormField label="Source Year">
+                <FormInput type="number" value={editingProgram.source_year} onChange={(v) => setEditingProgram({ ...editingProgram, source_year: v ? parseInt(v) : null })} placeholder="e.g. 2026" />
               </FormField>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -938,21 +1146,31 @@ export default function DataConsoleUtilities() {
         )}
       </AdminModal>
 
-      {/* Rate Modal */}
-      <AdminModal isOpen={!!editingRate} onClose={() => setEditingRate(null)} title={editingRate?.id ? 'Edit Rate' : 'Add Rate'}>
-        {editingRate && (
+      {/* Incentive Modal */}
+      <AdminModal isOpen={!!editingIncentive} onClose={() => setEditingIncentive(null)} title={editingIncentive?.id ? 'Edit Incentive' : 'Add Incentive'} width="600px">
+        {editingIncentive && (
           <>
-            <FormField label="Fixture Category" required>
-              <FormSelect
-                value={editingRate.fixture_category}
-                onChange={(v) => setEditingRate({ ...editingRate, fixture_category: v })}
-                options={FIXTURE_CATEGORIES.map(c => ({ value: c, label: c }))}
-              />
-            </FormField>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <FormField label="Fixture Category" required>
+                <FormSelect
+                  value={editingIncentive.fixture_category}
+                  onChange={(v) => setEditingIncentive({ ...editingIncentive, fixture_category: v })}
+                  options={FIXTURE_CATEGORIES.map(c => ({ value: c, label: c }))}
+                />
+              </FormField>
+              <FormField label="Measure Type">
+                <FormSelect
+                  value={editingIncentive.measure_type}
+                  onChange={(v) => setEditingIncentive({ ...editingIncentive, measure_type: v })}
+                  options={MEASURE_TYPES.map(m => ({ value: m, label: m }))}
+                  placeholder="Select type"
+                />
+              </FormField>
+            </div>
             <FormField label="Location Type">
               <FormSelect
-                value={editingRate.location_type}
-                onChange={(v) => setEditingRate({ ...editingRate, location_type: v })}
+                value={editingIncentive.location_type}
+                onChange={(v) => setEditingIncentive({ ...editingIncentive, location_type: v })}
                 options={[
                   { value: 'Indoor', label: 'Indoor' },
                   { value: 'Outdoor', label: 'Outdoor' },
@@ -963,8 +1181,8 @@ export default function DataConsoleUtilities() {
             </FormField>
             <FormField label="Calculation Method" required>
               <FormSelect
-                value={editingRate.calc_method}
-                onChange={(v) => setEditingRate({ ...editingRate, calc_method: v })}
+                value={editingIncentive.calc_method}
+                onChange={(v) => setEditingIncentive({ ...editingIncentive, calc_method: v })}
                 options={[
                   { value: 'Per Watt Reduced', label: 'Per Watt Reduced' },
                   { value: 'Per Fixture', label: 'Per Fixture' },
@@ -973,25 +1191,82 @@ export default function DataConsoleUtilities() {
               />
             </FormField>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <FormField label="Rate" required>
-                <FormInput type="number" step="0.01" value={editingRate.rate} onChange={(v) => setEditingRate({ ...editingRate, rate: parseFloat(v) })} />
+              <FormField label="Rate Value" required>
+                <FormInput type="number" step="0.01" value={editingIncentive.rate_value} onChange={(v) => setEditingIncentive({ ...editingIncentive, rate_value: parseFloat(v) })} />
               </FormField>
               <FormField label="Rate Unit">
-                <FormInput value={editingRate.rate_unit} onChange={(v) => setEditingRate({ ...editingRate, rate_unit: v })} placeholder="e.g., /watt, /fixture" />
+                <FormInput value={editingIncentive.rate_unit} onChange={(v) => setEditingIncentive({ ...editingIncentive, rate_unit: v })} placeholder="e.g., /watt, /fixture" />
+              </FormField>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <FormField label="Cap Amount ($)">
+                <FormInput type="number" step="0.01" value={editingIncentive.cap_amount} onChange={(v) => setEditingIncentive({ ...editingIncentive, cap_amount: v ? parseFloat(v) : null })} />
+              </FormField>
+              <FormField label="Cap Percent (%)">
+                <FormInput type="number" step="0.1" value={editingIncentive.cap_percent} onChange={(v) => setEditingIncentive({ ...editingIncentive, cap_percent: v ? parseFloat(v) : null })} />
               </FormField>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <FormField label="Min Watts">
-                <FormInput type="number" value={editingRate.min_watts} onChange={(v) => setEditingRate({ ...editingRate, min_watts: parseInt(v) })} />
+                <FormInput type="number" value={editingIncentive.min_watts} onChange={(v) => setEditingIncentive({ ...editingIncentive, min_watts: parseInt(v) })} />
               </FormField>
               <FormField label="Max Watts">
-                <FormInput type="number" value={editingRate.max_watts} onChange={(v) => setEditingRate({ ...editingRate, max_watts: parseInt(v) })} />
+                <FormInput type="number" value={editingIncentive.max_watts} onChange={(v) => setEditingIncentive({ ...editingIncentive, max_watts: parseInt(v) })} />
               </FormField>
             </div>
-            <FormField label="Notes">
-              <FormTextarea value={editingRate.notes} onChange={(v) => setEditingRate({ ...editingRate, notes: v })} />
+            <FormField label="Requirements">
+              <FormTextarea value={editingIncentive.requirements} onChange={(v) => setEditingIncentive({ ...editingIncentive, requirements: v })} placeholder="Eligibility requirements..." />
             </FormField>
-            <ModalFooter onCancel={() => setEditingRate(null)} onSave={handleSaveRate} saving={saving} />
+            <FormField label="Notes">
+              <FormTextarea value={editingIncentive.notes} onChange={(v) => setEditingIncentive({ ...editingIncentive, notes: v })} />
+            </FormField>
+            <ModalFooter onCancel={() => setEditingIncentive(null)} onSave={handleSaveIncentive} saving={saving} />
+          </>
+        )}
+      </AdminModal>
+
+      {/* Rate Schedule Modal */}
+      <AdminModal isOpen={!!editingRateSchedule} onClose={() => setEditingRateSchedule(null)} title={editingRateSchedule?.id ? 'Edit Rate Schedule' : 'Add Rate Schedule'} width="550px">
+        {editingRateSchedule && (
+          <>
+            <FormField label="Schedule Name" required>
+              <FormInput value={editingRateSchedule.schedule_name} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, schedule_name: v })} placeholder="e.g. Schedule 6 - General Service" />
+            </FormField>
+            <FormField label="Customer Category">
+              <FormSelect
+                value={editingRateSchedule.customer_category}
+                onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, customer_category: v })}
+                options={CUSTOMER_CATEGORIES.map(c => ({ value: c, label: c }))}
+                placeholder="Select category"
+              />
+            </FormField>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <FormField label="Rate ($/kWh)" required>
+                <FormInput type="number" step="0.0001" value={editingRateSchedule.rate_per_kwh} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, rate_per_kwh: parseFloat(v) })} placeholder="e.g. 0.0845" />
+              </FormField>
+              <FormField label="Demand Charge ($/kW)">
+                <FormInput type="number" step="0.01" value={editingRateSchedule.demand_charge} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, demand_charge: v ? parseFloat(v) : null })} />
+              </FormField>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <FormField label="Effective Date">
+                <FormInput type="date" value={editingRateSchedule.effective_date?.split('T')[0]} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, effective_date: v || null })} />
+              </FormField>
+              <div style={{ paddingTop: '24px' }}>
+                <FormToggle
+                  checked={editingRateSchedule.time_of_use}
+                  onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, time_of_use: v })}
+                  label="Time of Use"
+                />
+              </div>
+            </div>
+            <FormField label="Description">
+              <FormTextarea value={editingRateSchedule.description} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, description: v })} />
+            </FormField>
+            <FormField label="Notes">
+              <FormTextarea value={editingRateSchedule.notes} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, notes: v })} />
+            </FormField>
+            <ModalFooter onCancel={() => setEditingRateSchedule(null)} onSave={handleSaveRateSchedule} saving={saving} />
           </>
         )}
       </AdminModal>
@@ -1000,17 +1275,17 @@ export default function DataConsoleUtilities() {
       <AdminModal
         isOpen={showResearchModal}
         onClose={() => setShowResearchModal(false)}
-        title={`AI Research Results — ${researchResults?.providers?.[0]?.state || ''}`}
-        width="900px"
+        title={`AI Research Results \u2014 ${researchResults?.providers?.[0]?.state || ''}`}
+        width="1000px"
       >
         {researchResults && (
           <>
             <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
 
             {/* Providers Section */}
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '15px' }}>
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
                   Providers ({researchResults.providers.length})
                 </span>
                 <button
@@ -1025,32 +1300,27 @@ export default function DataConsoleUtilities() {
                   {researchResults.providers.every((_, i) => checkedProviders[i]) ? 'Deselect All' : 'Select All'}
                 </button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {researchResults.providers.map((p, i) => (
                   <div key={i} style={{
                     display: 'flex',
                     alignItems: 'flex-start',
-                    gap: '10px',
-                    padding: '10px 12px',
+                    gap: '8px',
+                    padding: '8px 10px',
                     backgroundColor: adminTheme.bgInput,
-                    borderRadius: '8px',
+                    borderRadius: '6px',
                     border: `1px solid ${adminTheme.border}`
                   }}>
                     <Checkbox checked={!!checkedProviders[i]} onChange={(v) => setCheckedProviders({ ...checkedProviders, [i]: v })} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '14px' }}>{p.provider_name}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{p.provider_name}</span>
                         <Badge>{p.state}</Badge>
                         {p.has_rebate_program && <Badge color="accent">Rebate Program</Badge>}
                       </div>
                       {p.service_territory && (
-                        <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '4px' }}>
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>
                           Territory: {p.service_territory}
-                        </div>
-                      )}
-                      {p.notes && (
-                        <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '2px' }}>
-                          {p.notes}
                         </div>
                       )}
                     </div>
@@ -1060,9 +1330,9 @@ export default function DataConsoleUtilities() {
             </div>
 
             {/* Programs Section */}
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '15px' }}>
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
                   Programs ({researchResults.programs.length})
                 </span>
                 <button
@@ -1077,33 +1347,94 @@ export default function DataConsoleUtilities() {
                   {researchResults.programs.every((_, i) => checkedPrograms[i]) ? 'Deselect All' : 'Select All'}
                 </button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {researchResults.programs.map((pr, i) => (
                   <div key={i} style={{
                     display: 'flex',
                     alignItems: 'flex-start',
-                    gap: '10px',
-                    padding: '10px 12px',
+                    gap: '8px',
+                    padding: '8px 10px',
                     backgroundColor: adminTheme.bgInput,
-                    borderRadius: '8px',
+                    borderRadius: '6px',
                     border: `1px solid ${adminTheme.border}`
                   }}>
                     <Checkbox checked={!!checkedPrograms[i]} onChange={(v) => setCheckedPrograms({ ...checkedPrograms, [i]: v })} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '14px' }}>{pr.program_name}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{pr.program_name}</span>
                         <Badge color="accent">{pr.program_type}</Badge>
                         <Badge>{pr.business_size || 'All'}</Badge>
+                        {pr.source_year && (
+                          <span style={{
+                            padding: '1px 6px',
+                            backgroundColor: '#22c55e20',
+                            color: '#22c55e',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            {pr.source_year}
+                          </span>
+                        )}
                       </div>
-                      <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '4px' }}>
+                      <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>
                         {pr.provider_name}
-                        {pr.dlc_required && ' • DLC Required'}
-                        {pr.pre_approval_required && ' • Pre-Approval Required'}
+                        {pr.dlc_required && ' \u2022 DLC Required'}
+                        {pr.pre_approval_required && ' \u2022 Pre-Approval Required'}
                       </div>
-                      {pr.max_cap_percent && (
-                        <div style={{ color: adminTheme.textMuted, fontSize: '12px' }}>
-                          Max cap: {pr.max_cap_percent}%
-                          {pr.annual_cap_dollars && ` • Annual cap: $${pr.annual_cap_dollars.toLocaleString()}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Incentives Section */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
+                  Incentives ({researchResults.incentives.length})
+                </span>
+                <button
+                  onClick={() => {
+                    const allChecked = researchResults.incentives.every((_, i) => checkedIncentives[i])
+                    const next = {}
+                    researchResults.incentives.forEach((_, i) => { next[i] = !allChecked })
+                    setCheckedIncentives(next)
+                  }}
+                  style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
+                >
+                  {researchResults.incentives.every((_, i) => checkedIncentives[i]) ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {researchResults.incentives.map((r, i) => (
+                  <div key={i} style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    backgroundColor: adminTheme.bgInput,
+                    borderRadius: '6px',
+                    border: `1px solid ${adminTheme.border}`
+                  }}>
+                    <Checkbox checked={!!checkedIncentives[i]} onChange={(v) => setCheckedIncentives({ ...checkedIncentives, [i]: v })} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{r.fixture_category}</span>
+                        {r.measure_type && <Badge>{r.measure_type}</Badge>}
+                        <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '13px' }}>
+                          ${r.rate_value ?? r.rate}{r.rate_unit || '/watt'}
+                        </span>
+                        <Badge>{r.calc_method}</Badge>
+                      </div>
+                      <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>
+                        {r.provider_name} \u2014 {r.program_name}
+                        {r.cap_amount && ` \u2022 Cap: $${r.cap_amount}`}
+                        {r.cap_percent && ` \u2022 Cap: ${r.cap_percent}%`}
+                      </div>
+                      {r.requirements && (
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px', fontStyle: 'italic' }}>
+                          {r.requirements}
                         </div>
                       )}
                     </div>
@@ -1112,58 +1443,63 @@ export default function DataConsoleUtilities() {
               </div>
             </div>
 
-            {/* Rates Section */}
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '15px' }}>
-                  Rates ({researchResults.rates.length})
-                </span>
-                <button
-                  onClick={() => {
-                    const allChecked = researchResults.rates.every((_, i) => checkedRates[i])
-                    const next = {}
-                    researchResults.rates.forEach((_, i) => { next[i] = !allChecked })
-                    setCheckedRates(next)
-                  }}
-                  style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
-                >
-                  {researchResults.rates.every((_, i) => checkedRates[i]) ? 'Deselect All' : 'Select All'}
-                </button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {researchResults.rates.map((r, i) => (
-                  <div key={i} style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '10px',
-                    padding: '10px 12px',
-                    backgroundColor: adminTheme.bgInput,
-                    borderRadius: '8px',
-                    border: `1px solid ${adminTheme.border}`
-                  }}>
-                    <Checkbox checked={!!checkedRates[i]} onChange={(v) => setCheckedRates({ ...checkedRates, [i]: v })} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '14px' }}>{r.fixture_category}</span>
-                        <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '14px' }}>
-                          ${r.rate}{r.rate_unit || '/watt'}
-                        </span>
-                        <Badge>{r.calc_method}</Badge>
-                      </div>
-                      <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '4px' }}>
-                        {r.provider_name} — {r.program_name}
-                        {(r.min_watts || r.max_watts) && ` • ${r.min_watts || 0}W–${r.max_watts || '∞'}W`}
-                      </div>
-                      {r.notes && (
-                        <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginTop: '2px', fontStyle: 'italic' }}>
-                          {r.notes}
+            {/* Rate Schedules Section */}
+            {researchResults.rate_schedules.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
+                    Rate Schedules ({researchResults.rate_schedules.length})
+                  </span>
+                  <button
+                    onClick={() => {
+                      const allChecked = researchResults.rate_schedules.every((_, i) => checkedRateSchedules[i])
+                      const next = {}
+                      researchResults.rate_schedules.forEach((_, i) => { next[i] = !allChecked })
+                      setCheckedRateSchedules(next)
+                    }}
+                    style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    {researchResults.rate_schedules.every((_, i) => checkedRateSchedules[i]) ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {researchResults.rate_schedules.map((rs, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '8px',
+                      padding: '8px 10px',
+                      backgroundColor: adminTheme.bgInput,
+                      borderRadius: '6px',
+                      border: `1px solid ${adminTheme.border}`
+                    }}>
+                      <Checkbox checked={!!checkedRateSchedules[i]} onChange={(v) => setCheckedRateSchedules({ ...checkedRateSchedules, [i]: v })} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{rs.schedule_name}</span>
+                          {rs.customer_category && <Badge>{rs.customer_category}</Badge>}
+                          {rs.time_of_use && <Badge color="accent">TOU</Badge>}
                         </div>
-                      )}
+                        <div style={{ display: 'flex', gap: '12px', marginTop: '2px' }}>
+                          <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '13px' }}>
+                            {rs.rate_per_kwh != null ? `$${Number(rs.rate_per_kwh).toFixed(4)}/kWh` : '-'}
+                          </span>
+                          {rs.demand_charge && (
+                            <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>
+                              ${rs.demand_charge}/kW demand
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px' }}>
+                          {rs.provider_name}
+                          {rs.effective_date && ` \u2022 Effective: ${rs.effective_date}`}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Import Footer */}
             <div style={{
@@ -1171,14 +1507,15 @@ export default function DataConsoleUtilities() {
               gap: '12px',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginTop: '24px',
+              marginTop: '20px',
               paddingTop: '16px',
               borderTop: `1px solid ${adminTheme.border}`
             }}>
-              <span style={{ color: adminTheme.textMuted, fontSize: '13px' }}>
+              <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>
                 {Object.values(checkedProviders).filter(Boolean).length} providers,{' '}
                 {Object.values(checkedPrograms).filter(Boolean).length} programs,{' '}
-                {Object.values(checkedRates).filter(Boolean).length} rates selected
+                {Object.values(checkedIncentives).filter(Boolean).length} incentives,{' '}
+                {Object.values(checkedRateSchedules).filter(Boolean).length} schedules
               </span>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button
