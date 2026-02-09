@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
 import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, FormToggle, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
-import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader, ExternalLink } from 'lucide-react'
 
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
@@ -42,6 +42,12 @@ export default function DataConsoleUtilities() {
   const [editingIncentive, setEditingIncentive] = useState(null)
   const [editingRateSchedule, setEditingRateSchedule] = useState(null)
   const [saving, setSaving] = useState(false)
+
+  // Detail modal state
+  const [viewingProvider, setViewingProvider] = useState(null)
+  const [viewingProgram, setViewingProgram] = useState(null)
+  const [viewingIncentive, setViewingIncentive] = useState(null)
+  const [viewingRateSchedule, setViewingRateSchedule] = useState(null)
 
   // AI Research state
   const [researchState, setResearchState] = useState('')
@@ -523,6 +529,23 @@ export default function DataConsoleUtilities() {
     return matchesSearch && matchesState
   })
 
+  // Detail row helper for detail modals
+  const DetailRow = ({ label, value, isUrl }) => {
+    if (value === null || value === undefined || value === '') return null
+    return (
+      <div style={{ display: 'flex', padding: '8px 0', borderBottom: `1px solid ${adminTheme.border}` }}>
+        <span style={{ color: adminTheme.textMuted, fontSize: '13px', width: '160px', flexShrink: 0 }}>{label}</span>
+        {isUrl ? (
+          <a href={value} target="_blank" rel="noopener noreferrer" style={{ color: adminTheme.accent, fontSize: '13px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', wordBreak: 'break-all' }}>
+            {value} <ExternalLink size={12} />
+          </a>
+        ) : (
+          <span style={{ color: adminTheme.text, fontSize: '13px', flex: 1, wordBreak: 'break-word' }}>{String(value)}</span>
+        )}
+      </div>
+    )
+  }
+
   // Checkbox helper
   const Checkbox = ({ checked, onChange }) => (
     <div
@@ -697,7 +720,7 @@ export default function DataConsoleUtilities() {
                     if (selectedProvider?.id !== p.id) e.currentTarget.style.backgroundColor = 'transparent'
                   }}
                 >
-                  <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ minWidth: 0, flex: 1 }} onClick={(e) => { e.stopPropagation(); setSelectedProvider(p); setViewingProvider(p) }}>
                     <div style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.provider_name}</div>
                     <div style={{ display: 'flex', gap: '6px', marginTop: '3px' }}>
                       <Badge>{p.state}</Badge>
@@ -803,7 +826,7 @@ export default function DataConsoleUtilities() {
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ minWidth: 0, flex: 1 }} onClick={(e) => { e.stopPropagation(); setSelectedProgram(p); setViewingProgram(p) }}>
                       <div style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.program_name}</div>
                       <div style={{ display: 'flex', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
                         <Badge color="accent">{p.program_type}</Badge>
@@ -897,10 +920,14 @@ export default function DataConsoleUtilities() {
               incentives.map(r => (
                 <div
                   key={r.id}
+                  onClick={() => setViewingIncentive(r)}
                   style={{
                     padding: '10px 12px',
-                    borderBottom: `1px solid ${adminTheme.border}`
+                    borderBottom: `1px solid ${adminTheme.border}`,
+                    cursor: 'pointer'
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = adminTheme.bgHover }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
@@ -927,7 +954,7 @@ export default function DataConsoleUtilities() {
                         </div>
                       )}
                     </div>
-                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => setEditingIncentive(r)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
                         <Edit2 size={13} />
                       </button>
@@ -1013,10 +1040,14 @@ export default function DataConsoleUtilities() {
               rateSchedules.map(s => (
                 <div
                   key={s.id}
+                  onClick={() => setViewingRateSchedule(s)}
                   style={{
                     padding: '10px 12px',
-                    borderBottom: `1px solid ${adminTheme.border}`
+                    borderBottom: `1px solid ${adminTheme.border}`,
+                    cursor: 'pointer'
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = adminTheme.bgHover }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
@@ -1030,7 +1061,7 @@ export default function DataConsoleUtilities() {
                         {s.demand_charge ? <span style={{ color: adminTheme.textMuted, fontSize: '12px', fontWeight: '400', marginLeft: '8px' }}>${s.demand_charge}/kW</span> : ''}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => setEditingRateSchedule(s)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
                         <Edit2 size={13} />
                       </button>
@@ -1268,6 +1299,167 @@ export default function DataConsoleUtilities() {
             </FormField>
             <ModalFooter onCancel={() => setEditingRateSchedule(null)} onSave={handleSaveRateSchedule} saving={saving} />
           </>
+        )}
+      </AdminModal>
+
+      {/* Provider Detail Modal */}
+      <AdminModal isOpen={!!viewingProvider} onClose={() => setViewingProvider(null)} title="Provider Details" width="550px">
+        {viewingProvider && (
+          <div>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: adminTheme.text, fontSize: '18px', fontWeight: '600' }}>{viewingProvider.provider_name}</div>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                <Badge>{viewingProvider.state}</Badge>
+                <Badge color={viewingProvider.has_rebate_program ? 'accent' : undefined}>
+                  {viewingProvider.has_rebate_program ? 'Has Rebate Program' : 'No Rebate Program'}
+                </Badge>
+              </div>
+            </div>
+            <DetailRow label="State" value={viewingProvider.state} />
+            <DetailRow label="Service Territory" value={viewingProvider.service_territory} />
+            <DetailRow label="Contact Phone" value={viewingProvider.contact_phone} />
+            <DetailRow label="Website" value={viewingProvider.rebate_program_url} isUrl />
+            <DetailRow label="Has Rebate Program" value={viewingProvider.has_rebate_program ? 'Yes' : 'No'} />
+            <DetailRow label="Notes" value={viewingProvider.notes} />
+            {programs.length > 0 && (
+              <div style={{ marginTop: '16px' }}>
+                <div style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>
+                  Linked Programs ({programs.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {programs.map(prog => (
+                    <div key={prog.id} style={{
+                      padding: '8px 10px',
+                      backgroundColor: adminTheme.bgInput,
+                      borderRadius: '6px',
+                      border: `1px solid ${adminTheme.border}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <span style={{ color: adminTheme.text, fontSize: '13px' }}>{prog.program_name}</span>
+                      <Badge color="accent">{prog.program_type}</Badge>
+                      {prog.source_year && <Badge color="accent">{prog.source_year}</Badge>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </AdminModal>
+
+      {/* Program Detail Modal */}
+      <AdminModal isOpen={!!viewingProgram} onClose={() => setViewingProgram(null)} title="Program Details" width="600px">
+        {viewingProgram && (
+          <div>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ color: adminTheme.text, fontSize: '18px', fontWeight: '600' }}>{viewingProgram.program_name}</span>
+                {viewingProgram.source_year && (
+                  <span style={{ padding: '2px 8px', backgroundColor: '#22c55e20', color: '#22c55e', borderRadius: '4px', fontSize: '13px', fontWeight: '600' }}>
+                    {viewingProgram.source_year}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                <Badge color="accent">{viewingProgram.program_type}</Badge>
+                <Badge>{viewingProgram.business_size || 'All'}</Badge>
+              </div>
+            </div>
+            <DetailRow label="Provider" value={viewingProgram.utility_name} />
+            <DetailRow label="Program Type" value={viewingProgram.program_type} />
+            <DetailRow label="Business Size" value={viewingProgram.business_size} />
+            <DetailRow label="Source Year" value={viewingProgram.source_year} />
+            <DetailRow label="Effective Date" value={viewingProgram.effective_date?.split('T')[0]} />
+            <DetailRow label="Expiration Date" value={viewingProgram.expiration_date?.split('T')[0]} />
+            <DetailRow label="Pre-Approval Required" value={viewingProgram.pre_approval_required ? 'Yes' : 'No'} />
+            <DetailRow label="DLC Required" value={viewingProgram.dlc_required ? 'Yes' : 'No'} />
+            <DetailRow label="Max Cap Percent" value={viewingProgram.max_cap_percent ? `${viewingProgram.max_cap_percent}%` : null} />
+            <DetailRow label="Annual Cap" value={viewingProgram.annual_cap_dollars ? `$${Number(viewingProgram.annual_cap_dollars).toLocaleString()}` : null} />
+            <DetailRow label="Program URL" value={viewingProgram.program_url} isUrl />
+            <DetailRow label="Notes" value={viewingProgram.notes} />
+            {incentives.length > 0 && (
+              <div style={{ marginTop: '16px' }}>
+                <div style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>
+                  Linked Incentives ({incentives.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {incentives.map(inc => (
+                    <div key={inc.id} style={{
+                      padding: '8px 10px',
+                      backgroundColor: adminTheme.bgInput,
+                      borderRadius: '6px',
+                      border: `1px solid ${adminTheme.border}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      flexWrap: 'wrap'
+                    }}>
+                      <span style={{ color: adminTheme.text, fontSize: '13px' }}>{inc.fixture_category}</span>
+                      {inc.measure_type && <Badge>{inc.measure_type}</Badge>}
+                      <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '13px' }}>
+                        ${inc.rate_value ?? inc.rate}{inc.rate_unit || '/watt'}
+                      </span>
+                      <Badge>{inc.calc_method}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </AdminModal>
+
+      {/* Incentive Detail Modal */}
+      <AdminModal isOpen={!!viewingIncentive} onClose={() => setViewingIncentive(null)} title="Incentive Details" width="550px">
+        {viewingIncentive && (
+          <div>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ color: adminTheme.text, fontSize: '18px', fontWeight: '600' }}>{viewingIncentive.fixture_category}</span>
+                {viewingIncentive.measure_type && <Badge>{viewingIncentive.measure_type}</Badge>}
+              </div>
+              <div style={{ color: adminTheme.accent, fontSize: '22px', fontWeight: '700', marginTop: '6px' }}>
+                ${viewingIncentive.rate_value ?? viewingIncentive.rate} {viewingIncentive.rate_unit || '/watt'}
+              </div>
+            </div>
+            <DetailRow label="Measure Type" value={viewingIncentive.measure_type} />
+            <DetailRow label="Fixture Category" value={viewingIncentive.fixture_category} />
+            <DetailRow label="Calculation Method" value={viewingIncentive.calc_method} />
+            <DetailRow label="Rate Value" value={viewingIncentive.rate_value ?? viewingIncentive.rate} />
+            <DetailRow label="Rate Unit" value={viewingIncentive.rate_unit} />
+            <DetailRow label="Min Watts" value={viewingIncentive.min_watts} />
+            <DetailRow label="Max Watts" value={viewingIncentive.max_watts} />
+            <DetailRow label="Cap Amount" value={viewingIncentive.cap_amount ? `$${viewingIncentive.cap_amount}` : null} />
+            <DetailRow label="Cap Percent" value={viewingIncentive.cap_percent ? `${viewingIncentive.cap_percent}%` : null} />
+            <DetailRow label="Requirements" value={viewingIncentive.requirements} />
+            <DetailRow label="Location Type" value={viewingIncentive.location_type} />
+            <DetailRow label="Notes" value={viewingIncentive.notes} />
+          </div>
+        )}
+      </AdminModal>
+
+      {/* Rate Schedule Detail Modal */}
+      <AdminModal isOpen={!!viewingRateSchedule} onClose={() => setViewingRateSchedule(null)} title="Rate Schedule Details" width="550px">
+        {viewingRateSchedule && (
+          <div>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: adminTheme.text, fontSize: '18px', fontWeight: '600' }}>{viewingRateSchedule.schedule_name}</div>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                {viewingRateSchedule.customer_category && <Badge>{viewingRateSchedule.customer_category}</Badge>}
+                {viewingRateSchedule.time_of_use && <Badge color="accent">Time of Use</Badge>}
+              </div>
+            </div>
+            <DetailRow label="Schedule Name" value={viewingRateSchedule.schedule_name} />
+            <DetailRow label="Customer Category" value={viewingRateSchedule.customer_category} />
+            <DetailRow label="Rate per kWh" value={viewingRateSchedule.rate_per_kwh != null ? `$${Number(viewingRateSchedule.rate_per_kwh).toFixed(4)}/kWh` : null} />
+            <DetailRow label="Demand Charge" value={viewingRateSchedule.demand_charge ? `$${viewingRateSchedule.demand_charge}/kW` : null} />
+            <DetailRow label="Time of Use" value={viewingRateSchedule.time_of_use ? 'Yes' : 'No'} />
+            <DetailRow label="Description" value={viewingRateSchedule.description} />
+            <DetailRow label="Effective Date" value={viewingRateSchedule.effective_date?.split('T')[0]} />
+            <DetailRow label="Notes" value={viewingRateSchedule.notes} />
+          </div>
         )}
       </AdminModal>
 
