@@ -562,7 +562,7 @@ export default function NewLightingAudit() {
   const ledProducts = products.filter(p => p.type === 'Product')
 
   return (
-    <div className="audit-root" style={{ padding: '24px' }}>
+    <div className="audit-root page-padding" style={{ padding: '24px' }}>
       <style>{`
         @media (max-width: 480px) {
           .audit-root { padding: 12px !important; }
@@ -659,7 +659,7 @@ export default function NewLightingAudit() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Customer and Salesperson */}
-            <div className="audit-form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div className="audit-form-grid-2 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
                 <label style={{
                   display: 'block',
@@ -748,7 +748,7 @@ export default function NewLightingAudit() {
               />
             </div>
 
-            <div className="audit-form-grid-3" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
+            <div className="audit-form-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
               <div>
                 <label style={{
                   display: 'block',
@@ -1035,7 +1035,7 @@ export default function NewLightingAudit() {
             </div>
 
             {/* Electric Rate and Operating Schedule */}
-            <div className="audit-form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            <div className="audit-form-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
               <div>
                 <label style={{
                   display: 'block',
@@ -1359,7 +1359,7 @@ export default function NewLightingAudit() {
           </h2>
 
           {/* Summary Stats */}
-          <div style={{
+          <div className="stat-grid" style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
             gap: '16px',
@@ -1411,7 +1411,7 @@ export default function NewLightingAudit() {
             </div>
           </div>
 
-          <div style={{
+          <div className="stat-grid" style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
             gap: '16px',
@@ -1571,7 +1571,7 @@ export default function NewLightingAudit() {
           justifyContent: 'center',
           zIndex: 1000
         }}>
-          <div className="audit-area-modal" style={{
+          <div className="audit-area-modal modal-content" style={{
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             padding: '24px',
@@ -1732,7 +1732,7 @@ export default function NewLightingAudit() {
                 />
               </div>
 
-              <div className="audit-modal-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-2 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1796,7 +1796,7 @@ export default function NewLightingAudit() {
                 </div>
               </div>
 
-              <div className="audit-modal-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',

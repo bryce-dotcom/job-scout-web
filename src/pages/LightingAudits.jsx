@@ -93,9 +93,20 @@ export default function LightingAudits() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="page-padding" style={{ padding: '24px' }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .audit-list-filters { gap: 8px !important; }
+          .audit-list-filters > * { min-width: 0 !important; flex: 1 1 100% !important; }
+          .audit-list-filters input,
+          .audit-list-filters select { width: 100% !important; font-size: 16px !important; }
+          .audit-card-header { flex-direction: column !important; gap: 8px !important; }
+          .audit-card-header > div:last-child { text-align: left !important; }
+          .audit-list-new-btn { width: 100% !important; justify-content: center !important; }
+        }
+      `}</style>
       {/* Header */}
-      <div style={{
+      <div className="page-header" style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -109,17 +120,18 @@ export default function LightingAudits() {
         </div>
 
         <button
+          className="audit-list-new-btn"
           onClick={() => navigate('/lighting-audits/new')}
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            padding: '10px 20px',
+            padding: '12px 20px',
             backgroundColor: theme.accent,
             color: '#ffffff',
             border: 'none',
             borderRadius: '8px',
-            fontSize: '14px',
+            fontSize: '16px',
             fontWeight: '500',
             cursor: 'pointer'
           }}
@@ -130,7 +142,7 @@ export default function LightingAudits() {
       </div>
 
       {/* Stats Cards */}
-      <div style={{
+      <div className="stat-grid" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: '16px',
@@ -198,7 +210,7 @@ export default function LightingAudits() {
       </div>
 
       {/* Filters */}
-      <div style={{
+      <div className="audit-list-filters" style={{
         display: 'flex',
         gap: '12px',
         marginBottom: '20px',
@@ -309,7 +321,7 @@ export default function LightingAudits() {
                 onMouseOver={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
                 onMouseOut={(e) => e.currentTarget.style.backgroundColor = theme.bgCard}
               >
-                <div style={{
+                <div className="audit-card-header" style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'flex-start',
@@ -320,7 +332,8 @@ export default function LightingAudits() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '12px',
-                      marginBottom: '4px'
+                      marginBottom: '4px',
+                      flexWrap: 'wrap'
                     }}>
                       <span style={{
                         fontSize: '16px',

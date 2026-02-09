@@ -335,7 +335,7 @@ export default function LightingAuditDetail() {
   }
 
   return (
-    <div className="audit-detail-root" style={{ padding: '24px' }}>
+    <div className="audit-detail-root page-padding" style={{ padding: '24px' }}>
       <style>{`
         @media (max-width: 480px) {
           .audit-detail-root { padding: 12px !important; }
@@ -352,7 +352,7 @@ export default function LightingAuditDetail() {
         }
       `}</style>
       {/* Header */}
-      <div className="audit-detail-header" style={{
+      <div className="audit-detail-header page-header" style={{
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'space-between',
@@ -395,7 +395,7 @@ export default function LightingAuditDetail() {
           </div>
         </div>
 
-        <div className="audit-detail-actions" style={{ display: 'flex', gap: '8px' }}>
+        <div className="audit-detail-actions button-group" style={{ display: 'flex', gap: '8px' }}>
           {audit.status === 'Draft' && (
             <button
               onClick={() => updateStatus('In Progress')}
@@ -503,7 +503,7 @@ export default function LightingAuditDetail() {
       </div>
 
       {/* Summary Cards */}
-      <div style={{
+      <div className="stat-grid" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
         gap: '16px',
@@ -791,7 +791,7 @@ export default function LightingAuditDetail() {
           justifyContent: 'center',
           zIndex: 1000
         }}>
-          <div className="audit-area-modal" style={{
+          <div className="audit-area-modal modal-content" style={{
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             padding: '24px',
@@ -960,7 +960,7 @@ export default function LightingAuditDetail() {
                 />
               </div>
 
-              <div className="audit-modal-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-2 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1023,7 +1023,7 @@ export default function LightingAuditDetail() {
                 </div>
               </div>
 
-              <div className="audit-modal-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1193,7 +1193,7 @@ export default function LightingAuditDetail() {
               </label>
             </div>
 
-            <div className="audit-modal-footer" style={{
+            <div className="audit-modal-footer button-group" style={{
               display: 'flex',
               gap: '12px',
               marginTop: '24px',
