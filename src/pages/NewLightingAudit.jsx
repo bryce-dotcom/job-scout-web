@@ -563,6 +563,17 @@ export default function NewLightingAudit() {
 
   return (
     <div style={{ padding: '24px' }}>
+      <style>{`
+        @media (max-width: 480px) {
+          .audit-rate-grid { grid-template-columns: 1fr 1fr !important; }
+          .audit-size-grid { grid-template-columns: 1fr !important; }
+          .audit-area-modal { max-width: calc(100% - 16px) !important; padding: 16px !important; }
+          .audit-modal-grid-2 { grid-template-columns: 1fr !important; }
+          .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
+          .audit-modal-footer { flex-direction: column !important; }
+          .audit-modal-footer button { width: 100% !important; }
+        }
+      `}</style>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -865,7 +876,7 @@ export default function NewLightingAudit() {
               </label>
 
               {basicInfo.utility_provider_id && rateSchedules.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(rateSchedules.length, 4)}, 1fr)`, gap: '10px' }}>
+                <div className="audit-rate-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(rateSchedules.length, 4)}, 1fr)`, gap: '10px' }}>
                   {rateSchedules.map((sched, idx) => {
                     const isSelected = basicInfo.rate_schedule_id === String(sched.id)
                     const IconComponent = BUILDING_ICONS[sched.customer_category] || DEFAULT_BUILDING_ICON
@@ -953,7 +964,7 @@ export default function NewLightingAudit() {
                   <div style={{ padding: '12px', textAlign: 'center', color: theme.textMuted, fontSize: '13px', marginBottom: '8px' }}>
                     No rate schedules found for this provider. Select a building size manually:
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                  <div className="audit-size-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                     {buildingSizes.map(size => {
                       const isSelected = basicInfo.building_size === size.value
                       const icons = { small: Building, medium: Building2, large: Factory }
@@ -1547,7 +1558,7 @@ export default function NewLightingAudit() {
           justifyContent: 'center',
           zIndex: 1000
         }}>
-          <div style={{
+          <div className="audit-area-modal" style={{
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             padding: '24px',
@@ -1708,7 +1719,7 @@ export default function NewLightingAudit() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1772,7 +1783,7 @@ export default function NewLightingAudit() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1943,7 +1954,7 @@ export default function NewLightingAudit() {
               </label>
             </div>
 
-            <div style={{
+            <div className="audit-modal-footer" style={{
               display: 'flex',
               gap: '12px',
               marginTop: '24px',

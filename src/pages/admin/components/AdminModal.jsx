@@ -20,7 +20,15 @@ export default function AdminModal({ isOpen, onClose, title, children, width = '
         zIndex: 1000
       }}
     >
+      <style>{`
+        @media (max-width: 480px) {
+          .admin-modal-inner { max-width: calc(100% - 16px) !important; max-height: 85vh !important; }
+          .admin-modal-footer { flex-direction: column !important; }
+          .admin-modal-footer button { width: 100% !important; }
+        }
+      `}</style>
       <div
+        className="admin-modal-inner"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: adminTheme.bgCard,
@@ -201,7 +209,7 @@ export function FormToggle({ checked, onChange, label }) {
 // Modal footer buttons
 export function ModalFooter({ onCancel, onSave, saving, saveLabel = 'Save' }) {
   return (
-    <div style={{
+    <div className="admin-modal-footer" style={{
       display: 'flex',
       gap: '12px',
       justifyContent: 'flex-end',

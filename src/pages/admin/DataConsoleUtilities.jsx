@@ -613,6 +613,11 @@ export default function DataConsoleUtilities() {
         @media (max-width: 900px) { .util-grid { grid-template-columns: 1fr; } }
         .util-panel { min-width: 0; min-height: 280px; display: flex; flex-direction: column; overflow: hidden; }
         @media (max-width: 1400px) { .util-panel { min-height: 300px; } }
+        @media (max-width: 480px) {
+          .util-grid { gap: 8px; }
+          .util-panel { min-height: 200px; }
+          .util-panel button { min-height: 36px; }
+        }
       `}</style>
 
       {/* Four Panel Layout */}

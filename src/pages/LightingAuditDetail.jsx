@@ -336,6 +336,15 @@ export default function LightingAuditDetail() {
 
   return (
     <div style={{ padding: '24px' }}>
+      <style>{`
+        @media (max-width: 480px) {
+          .audit-area-modal { max-width: calc(100% - 16px) !important; padding: 16px !important; }
+          .audit-modal-grid-2 { grid-template-columns: 1fr !important; }
+          .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
+          .audit-modal-footer { flex-direction: column !important; }
+          .audit-modal-footer button { width: 100% !important; }
+        }
+      `}</style>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -776,7 +785,7 @@ export default function LightingAuditDetail() {
           justifyContent: 'center',
           zIndex: 1000
         }}>
-          <div style={{
+          <div className="audit-area-modal" style={{
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             padding: '24px',
@@ -945,7 +954,7 @@ export default function LightingAuditDetail() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1008,7 +1017,7 @@ export default function LightingAuditDetail() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1178,7 +1187,7 @@ export default function LightingAuditDetail() {
               </label>
             </div>
 
-            <div style={{
+            <div className="audit-modal-footer" style={{
               display: 'flex',
               gap: '12px',
               marginTop: '24px',
