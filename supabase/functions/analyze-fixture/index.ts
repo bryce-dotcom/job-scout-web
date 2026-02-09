@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { imageBase64, auditContext } = await req.json();
+    const { imageBase64, auditContext, availableProducts } = await req.json();
 
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 
@@ -20,6 +20,17 @@ serve(async (req) => {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
+    }
+
+    // Build product list for matching
+    let productContext = '';
+    if (availableProducts && availableProducts.length > 0) {
+      productContext = `\n\nAVAILABLE LED REPLACEMENT PRODUCTS (match the best one based on fixture type and wattage):
+${availableProducts.map((p: { id: string; name: string; description?: string; wattage?: number }) =>
+  `- ID: "${p.id}" | Name: "${p.name}"${p.description ? ` | Description: ${p.description}` : ''}${p.wattage ? ` | Wattage: ${p.wattage}W` : ''}`
+).join('\n')}
+
+Choose the most appropriate product based on the fixture type, category, and wattage range. Set recommended_product_id to the product's ID string, or "" if no good match.`;
     }
 
     // Call Claude Vision API
@@ -48,20 +59,39 @@ serve(async (req) => {
               type: 'text',
               text: `You are Lenard, an expert lighting auditor. Analyze this photo of a lighting fixture or space.
 
-Identify and return JSON with:
+Identify and return JSON with ALL of these fields:
 {
-  "fixture_type": "type of fixture (e.g., 4ft T8 Troffer, High Bay, Wall Pack, etc.)",
+  "area_name": "descriptive name for this area/fixture group (e.g., 'Main Office 4ft Troffers', 'Warehouse High Bays')",
+  "fixture_type": "specific type (e.g., 4ft T8 Troffer, High Bay, Wall Pack, etc.)",
   "fixture_category": "Indoor Linear | Indoor High Bay | Outdoor | Decorative | Other",
   "lamp_type": "T8 | T12 | T5 | Metal Halide | HPS | Incandescent | LED | CFL | Other",
   "lamp_count": number of lamps/bulbs per fixture,
   "fixture_count": estimated number of this fixture type visible,
   "existing_wattage_per_fixture": estimated total watts per fixture,
+  "led_replacement_wattage": recommended LED replacement wattage per fixture,
   "ceiling_height_estimate": estimated ceiling height in feet if visible,
   "mounting_type": "Recessed | Surface | Suspended | Wall | Pole",
   "condition": "Good | Fair | Poor",
+  "recommended_product_id": "ID of best matching product from available list, or empty string",
   "notes": "any other observations about the space or fixtures",
   "confidence": "High | Medium | Low"
 }
+
+LED REPLACEMENT WATTAGE GUIDELINES:
+- 4ft T8 (32W per lamp, 2-lamp = 64W): Replace with 30-40W LED troffer
+- 4ft T8 (32W per lamp, 4-lamp = 128W): Replace with 50-65W LED troffer
+- 4ft T12 (40W per lamp, 2-lamp = 80W): Replace with 30-40W LED troffer
+- 8ft T8 (59W per lamp, 2-lamp = 118W): Replace with 65-80W LED strip
+- 8ft T12 (75W per lamp, 2-lamp = 150W): Replace with 65-80W LED strip
+- Metal Halide 250W: Replace with 100-120W LED high bay
+- Metal Halide 400W: Replace with 150-180W LED high bay
+- Metal Halide 1000W: Replace with 300-400W LED high bay
+- HPS 150W: Replace with 50-70W LED
+- HPS 250W: Replace with 100-120W LED
+- HPS 400W: Replace with 150-180W LED
+- Wall Pack 150W HPS: Replace with 40-60W LED wall pack
+- 100W Incandescent: Replace with 12-15W LED
+${productContext}
 
 Context about this audit:
 - Area name: ${auditContext?.areaName || 'Unknown'}

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, ArrowRight, Check, Plus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Plus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse, Sparkles } from 'lucide-react'
 
 const buildingSizes = [
   { value: 'small', label: 'Small', description: '<10,000 sq ft, <50kW demand' },
@@ -494,6 +494,14 @@ export default function NewLightingAudit() {
       const base64 = ev.target.result.split(',')[1]
 
       try {
+        // Build product list for AI matching
+        const productList = ledProducts.map(p => ({
+          id: p.id,
+          name: p.name,
+          description: p.description || '',
+          wattage: p.unit_price ? undefined : undefined // wattage not stored separately
+        }))
+
         const response = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-fixture`,
           {
@@ -507,7 +515,8 @@ export default function NewLightingAudit() {
               auditContext: {
                 areaName: areaForm.area_name || 'Unknown Area',
                 buildingType: 'Commercial'
-              }
+              },
+              availableProducts: productList
             })
           }
         )
@@ -517,15 +526,18 @@ export default function NewLightingAudit() {
         if (data?.success && data?.analysis) {
           setAiResult(data.analysis)
 
-          // Auto-fill form fields
+          // Auto-fill ALL form fields
+          const a = data.analysis
           setAreaForm(prev => ({
             ...prev,
-            area_name: prev.area_name || data.analysis.fixture_type || '',
-            fixture_category: mapCategory(data.analysis.fixture_category),
-            fixture_count: data.analysis.fixture_count || prev.fixture_count,
-            existing_wattage: data.analysis.existing_wattage_per_fixture || prev.existing_wattage,
-            ceiling_height: data.analysis.ceiling_height_estimate || prev.ceiling_height,
-            override_notes: data.analysis.notes ? `AI Notes: ${data.analysis.notes}` : prev.override_notes
+            area_name: a.area_name || prev.area_name || a.fixture_type || '',
+            fixture_category: mapCategory(a.fixture_category),
+            fixture_count: a.fixture_count || prev.fixture_count,
+            existing_wattage: a.existing_wattage_per_fixture || prev.existing_wattage,
+            ceiling_height: a.ceiling_height_estimate || prev.ceiling_height,
+            led_wattage: a.led_replacement_wattage || prev.led_wattage,
+            led_replacement_id: a.recommended_product_id || prev.led_replacement_id,
+            override_notes: a.notes ? `AI Notes: ${a.notes}` : prev.override_notes
           }))
         } else {
           alert('Lenard had trouble analyzing this photo. Please try again or fill in manually.')
@@ -1668,13 +1680,16 @@ export default function NewLightingAudit() {
 
               <div>
                 <label style={{
-                  display: 'block',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
                   fontSize: '13px',
                   fontWeight: '500',
                   color: theme.textSecondary,
                   marginBottom: '6px'
                 }}>
                   Area Name *
+                  {aiResult?.area_name && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
                 </label>
                 <input
                   type="text"
@@ -1696,13 +1711,16 @@ export default function NewLightingAudit() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
-                    display: 'block',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
                     fontSize: '13px',
                     fontWeight: '500',
                     color: theme.textSecondary,
                     marginBottom: '6px'
                   }}>
                     Fixture Category
+                    {aiResult?.fixture_category && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
                   </label>
                   <select
                     value={areaForm.fixture_category}
@@ -1725,13 +1743,16 @@ export default function NewLightingAudit() {
 
                 <div>
                   <label style={{
-                    display: 'block',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
                     fontSize: '13px',
                     fontWeight: '500',
                     color: theme.textSecondary,
                     marginBottom: '6px'
                   }}>
                     Ceiling Height (ft)
+                    {aiResult?.ceiling_height_estimate && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
                   </label>
                   <input
                     type="number"
@@ -1754,13 +1775,16 @@ export default function NewLightingAudit() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
-                    display: 'block',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
                     fontSize: '13px',
                     fontWeight: '500',
                     color: theme.textSecondary,
                     marginBottom: '6px'
                   }}>
                     Fixture Count *
+                    {aiResult?.fixture_count && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
                   </label>
                   <input
                     type="number"
@@ -1781,13 +1805,16 @@ export default function NewLightingAudit() {
 
                 <div>
                   <label style={{
-                    display: 'block',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
                     fontSize: '13px',
                     fontWeight: '500',
                     color: theme.textSecondary,
                     marginBottom: '6px'
                   }}>
                     Existing Watts
+                    {aiResult?.existing_wattage_per_fixture && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
                   </label>
                   <input
                     type="number"
@@ -1808,13 +1835,16 @@ export default function NewLightingAudit() {
 
                 <div>
                   <label style={{
-                    display: 'block',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
                     fontSize: '13px',
                     fontWeight: '500',
                     color: theme.textSecondary,
                     marginBottom: '6px'
                   }}>
                     LED Watts
+                    {aiResult?.led_replacement_wattage && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
                   </label>
                   <input
                     type="number"
@@ -1836,13 +1866,16 @@ export default function NewLightingAudit() {
 
               <div>
                 <label style={{
-                  display: 'block',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
                   fontSize: '13px',
                   fontWeight: '500',
                   color: theme.textSecondary,
                   marginBottom: '6px'
                 }}>
                   LED Replacement Product
+                  {aiResult?.recommended_product_id && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
                 </label>
                 <select
                   value={areaForm.led_replacement_id}
