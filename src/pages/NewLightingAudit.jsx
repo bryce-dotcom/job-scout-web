@@ -562,11 +562,23 @@ export default function NewLightingAudit() {
   const ledProducts = products.filter(p => p.type === 'Product')
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="audit-root" style={{ padding: '24px' }}>
       <style>{`
         @media (max-width: 480px) {
+          .audit-root { padding: 12px !important; }
+          .audit-step-card { padding: 16px !important; }
+          .audit-steps { gap: 4px !important; }
+          .audit-step { padding: 8px 4px !important; font-size: 11px !important; }
+          .audit-step-prefix { display: none !important; }
+          .audit-header h1 { font-size: 20px !important; }
+          .audit-form-grid-2 { grid-template-columns: 1fr !important; }
+          .audit-form-grid-3 { grid-template-columns: 1fr !important; }
           .audit-rate-grid { grid-template-columns: 1fr 1fr !important; }
-          .audit-size-grid { grid-template-columns: 1fr !important; }
+          .audit-size-grid { grid-template-columns: 1fr 1fr 1fr !important; }
+          .audit-area-stats { grid-template-columns: 1fr 1fr !important; }
+          .audit-review-details { grid-template-columns: 1fr !important; }
+          .audit-nav { gap: 8px !important; }
+          .audit-nav button { padding: 10px 16px !important; font-size: 13px !important; }
           .audit-area-modal { max-width: calc(100% - 16px) !important; padding: 16px !important; }
           .audit-modal-grid-2 { grid-template-columns: 1fr !important; }
           .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
@@ -575,7 +587,7 @@ export default function NewLightingAudit() {
         }
       `}</style>
       {/* Header */}
-      <div style={{
+      <div className="audit-header" style={{
         display: 'flex',
         alignItems: 'center',
         gap: '16px',
@@ -600,7 +612,7 @@ export default function NewLightingAudit() {
       </div>
 
       {/* Steps Indicator */}
-      <div style={{
+      <div className="audit-steps" style={{
         display: 'flex',
         gap: '8px',
         marginBottom: '24px'
@@ -608,6 +620,7 @@ export default function NewLightingAudit() {
         {[1, 2, 3].map(s => (
           <div
             key={s}
+            className="audit-step"
             onClick={() => s < step && setStep(s)}
             style={{
               flex: 1,
@@ -622,14 +635,14 @@ export default function NewLightingAudit() {
               border: `1px solid ${step >= s ? theme.accent : theme.border}`
             }}
           >
-            Step {s}: {s === 1 ? 'Basic Info' : s === 2 ? 'Audit Areas' : 'Review'}
+            <span className="audit-step-prefix">Step {s}: </span>{s === 1 ? 'Basic Info' : s === 2 ? 'Audit Areas' : 'Review'}
           </div>
         ))}
       </div>
 
       {/* Step 1 - Basic Info */}
       {step === 1 && (
-        <div style={{
+        <div className="audit-step-card" style={{
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
@@ -646,7 +659,7 @@ export default function NewLightingAudit() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Customer and Salesperson */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div className="audit-form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
                 <label style={{
                   display: 'block',
@@ -735,7 +748,7 @@ export default function NewLightingAudit() {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
+            <div className="audit-form-grid-3" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
               <div>
                 <label style={{
                   display: 'block',
@@ -992,7 +1005,7 @@ export default function NewLightingAudit() {
                   </div>
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                <div className="audit-size-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                   {buildingSizes.map(size => {
                     const isSelected = basicInfo.building_size === size.value
                     const icons = { small: Building, medium: Building2, large: Factory }
@@ -1022,7 +1035,7 @@ export default function NewLightingAudit() {
             </div>
 
             {/* Electric Rate and Operating Schedule */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            <div className="audit-form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
               <div>
                 <label style={{
                   display: 'block',
@@ -1144,7 +1157,7 @@ export default function NewLightingAudit() {
 
       {/* Step 2 - Audit Areas */}
       {step === 2 && (
-        <div style={{
+        <div className="audit-step-card" style={{
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
@@ -1247,7 +1260,7 @@ export default function NewLightingAudit() {
                     </div>
                   </div>
 
-                  <div style={{
+                  <div className="audit-area-stats" style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(4, 1fr)',
                     gap: '12px'
@@ -1282,7 +1295,7 @@ export default function NewLightingAudit() {
             </div>
           )}
 
-          <div style={{
+          <div className="audit-nav" style={{
             marginTop: '24px',
             display: 'flex',
             justifyContent: 'space-between'
@@ -1330,7 +1343,7 @@ export default function NewLightingAudit() {
 
       {/* Step 3 - Review */}
       {step === 3 && (
-        <div style={{
+        <div className="audit-step-card" style={{
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
@@ -1462,7 +1475,7 @@ export default function NewLightingAudit() {
             <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
               Audit Details
             </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
+            <div className="audit-review-details" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
               <div><span style={{ color: theme.textMuted }}>Customer:</span> {customers.find(c => c.id === basicInfo.customer_id)?.name || 'None'}</div>
               <div><span style={{ color: theme.textMuted }}>Salesperson:</span> {employees.find(e => e.id === basicInfo.salesperson_id)?.name || 'None'}</div>
               <div><span style={{ color: theme.textMuted }}>Location:</span> {basicInfo.city}, {basicInfo.state}</div>
@@ -1498,7 +1511,7 @@ export default function NewLightingAudit() {
             ))}
           </div>
 
-          <div style={{
+          <div className="audit-nav" style={{
             display: 'flex',
             justifyContent: 'space-between'
           }}>

@@ -335,9 +335,15 @@ export default function LightingAuditDetail() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="audit-detail-root" style={{ padding: '24px' }}>
       <style>{`
         @media (max-width: 480px) {
+          .audit-detail-root { padding: 12px !important; }
+          .audit-detail-header { flex-direction: column !important; align-items: stretch !important; gap: 12px !important; }
+          .audit-detail-header h1 { font-size: 20px !important; }
+          .audit-detail-actions { width: 100%; }
+          .audit-detail-actions button { width: 100% !important; justify-content: center !important; }
+          .audit-detail-info { padding: 12px !important; }
           .audit-area-modal { max-width: calc(100% - 16px) !important; padding: 16px !important; }
           .audit-modal-grid-2 { grid-template-columns: 1fr !important; }
           .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
@@ -346,7 +352,7 @@ export default function LightingAuditDetail() {
         }
       `}</style>
       {/* Header */}
-      <div style={{
+      <div className="audit-detail-header" style={{
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'space-between',
@@ -389,7 +395,7 @@ export default function LightingAuditDetail() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="audit-detail-actions" style={{ display: 'flex', gap: '8px' }}>
           {audit.status === 'Draft' && (
             <button
               onClick={() => updateStatus('In Progress')}
@@ -456,7 +462,7 @@ export default function LightingAuditDetail() {
       </div>
 
       {/* Info Section */}
-      <div style={{
+      <div className="audit-detail-info" style={{
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
         border: `1px solid ${theme.border}`,
