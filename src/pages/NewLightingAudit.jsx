@@ -212,7 +212,7 @@ export default function NewLightingAudit() {
     : utilityProviders
 
   // Filter rate schedules based on utility provider and building size
-  const selectedProvider = utilityProviders.find(prov => prov.id === basicInfo.utility_provider_id)
+  const selectedProvider = utilityProviders.find(prov => String(prov.id) === String(basicInfo.utility_provider_id))
   const filteredRateSchedules = utilityPrograms.filter(p => {
     if (!basicInfo.utility_provider_id) return false
     if (p.utility_name !== selectedProvider?.provider_name) return false

@@ -462,7 +462,7 @@ export const useStore = create(
         const { data, error } = await supabase
           .from('utility_providers')
           .select('*')
-          .eq('company_id', companyId)
+          .or(`company_id.eq.${companyId},company_id.is.null`)
           .order('provider_name');
 
         if (!error) set({ utilityProviders: data || [] });
@@ -475,7 +475,7 @@ export const useStore = create(
         const { data, error } = await supabase
           .from('utility_programs')
           .select('*')
-          .eq('company_id', companyId)
+          .or(`company_id.eq.${companyId},company_id.is.null`)
           .order('program_name');
 
         if (!error) set({ utilityPrograms: data || [] });
@@ -488,7 +488,7 @@ export const useStore = create(
         const { data, error } = await supabase
           .from('incentive_measures')
           .select('*, program:utility_programs(id, program_name)')
-          .eq('company_id', companyId);
+          .or(`company_id.eq.${companyId},company_id.is.null`);
 
         if (!error) set({ rebateRates: data || [] });
       },
