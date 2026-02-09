@@ -607,17 +607,21 @@ export default function DataConsoleUtilities() {
         </div>
       </div>
 
+      <style>{`
+        .util-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; flex: 1; overflow: auto; min-height: 0; }
+        @media (max-width: 1400px) { .util-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 900px) { .util-grid { grid-template-columns: 1fr; } }
+        .util-panel { min-width: 0; min-height: 280px; display: flex; flex-direction: column; overflow: hidden; }
+        @media (max-width: 1400px) { .util-panel { min-height: 300px; } }
+      `}</style>
+
       {/* Four Panel Layout */}
-      <div style={{ display: 'flex', gap: '12px', flex: 1, overflow: 'hidden' }}>
+      <div className="util-grid">
         {/* Panel 1 - Providers */}
-        <div style={{
-          width: '25%',
+        <div className="util-panel" style={{
           backgroundColor: adminTheme.bgCard,
           border: `1px solid ${adminTheme.border}`,
           borderRadius: '10px',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
         }}>
           <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -741,14 +745,10 @@ export default function DataConsoleUtilities() {
         </div>
 
         {/* Panel 2 - Programs */}
-        <div style={{
-          width: '25%',
+        <div className="util-panel" style={{
           backgroundColor: adminTheme.bgCard,
           border: `1px solid ${adminTheme.border}`,
           borderRadius: '10px',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
         }}>
           <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -850,14 +850,10 @@ export default function DataConsoleUtilities() {
         </div>
 
         {/* Panel 3 - Incentives */}
-        <div style={{
-          width: '25%',
+        <div className="util-panel" style={{
           backgroundColor: adminTheme.bgCard,
           border: `1px solid ${adminTheme.border}`,
           borderRadius: '10px',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
         }}>
           <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -970,14 +966,10 @@ export default function DataConsoleUtilities() {
         </div>
 
         {/* Panel 4 - Rate Schedules */}
-        <div style={{
-          width: '25%',
+        <div className="util-panel" style={{
           backgroundColor: adminTheme.bgCard,
           border: `1px solid ${adminTheme.border}`,
           borderRadius: '10px',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
         }}>
           <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
