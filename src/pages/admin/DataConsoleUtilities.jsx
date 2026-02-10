@@ -923,6 +923,8 @@ export default function DataConsoleUtilities() {
             energy_star_required: pm.energy_star_required ?? false,
             hours_requirement: pm.hours_requirement || null,
             source_page: pm.source_page || null,
+            source_pdf_url: pm.source_pdf_url || null,
+            needs_pdf_upload: pm.needs_pdf_upload ?? true,
             notes: pm.notes || null
           })
 
@@ -1670,6 +1672,18 @@ export default function DataConsoleUtilities() {
                         <Badge>{m.measure_category}</Badge>
                         {m.dlc_required && <Badge color="accent">DLC</Badge>}
                         {m.application_type && <Badge>{m.application_type}</Badge>}
+                        {m.needs_pdf_upload && (
+                          <span style={{
+                            padding: '1px 5px',
+                            backgroundColor: '#eab30820',
+                            color: '#eab308',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: '600'
+                          }}>
+                            Needs PDF
+                          </span>
+                        )}
                       </div>
                       {(m.baseline_wattage != null || m.replacement_wattage != null) && (
                         <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>
@@ -2985,9 +2999,29 @@ export default function DataConsoleUtilities() {
             {researchResults.prescriptive_measures.length > 0 && (
               <div style={{ marginBottom: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
-                    Prescriptive Measures ({researchResults.prescriptive_measures.length})
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
+                      Prescriptive Measures ({researchResults.prescriptive_measures.length})
+                    </span>
+                    {(() => {
+                      const pdfCount = researchResults.prescriptive_measures.filter(pm => !pm.needs_pdf_upload).length
+                      const aiCount = researchResults.prescriptive_measures.filter(pm => pm.needs_pdf_upload).length
+                      return (
+                        <>
+                          {pdfCount > 0 && (
+                            <span style={{ padding: '1px 6px', backgroundColor: '#22c55e20', color: '#22c55e', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
+                              {pdfCount} from PDF
+                            </span>
+                          )}
+                          {aiCount > 0 && (
+                            <span style={{ padding: '1px 6px', backgroundColor: '#eab30820', color: '#eab308', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
+                              {aiCount} need PDF upload
+                            </span>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </div>
                   <button
                     onClick={() => {
                       const allChecked = researchResults.prescriptive_measures.every((_, i) => checkedPrescriptive[i])
@@ -3020,6 +3054,30 @@ export default function DataConsoleUtilities() {
                           </span>
                           <Badge>{pm.measure_category}</Badge>
                           {pm.dlc_required && <Badge color="accent">DLC</Badge>}
+                          {pm.needs_pdf_upload && (
+                            <span style={{
+                              padding: '1px 6px',
+                              backgroundColor: '#eab30820',
+                              color: '#eab308',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: '600'
+                            }}>
+                              Needs PDF
+                            </span>
+                          )}
+                          {pm.source_pdf_url && (
+                            <span style={{
+                              padding: '1px 6px',
+                              backgroundColor: '#22c55e20',
+                              color: '#22c55e',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: '600'
+                            }}>
+                              From PDF
+                            </span>
+                          )}
                         </div>
                         {(pm.baseline_equipment || pm.replacement_equipment) && (
                           <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>

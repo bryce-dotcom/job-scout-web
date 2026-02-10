@@ -95,6 +95,7 @@ CRITICAL GUIDELINES:
 - business_size must be one of: Small, Medium, Large, All
 - rate_per_kwh in dollars (e.g. 0.0845 for 8.45 cents/kWh)
 - For fields you cannot find data for, set to null — do not omit the field
+- For prescriptive_measures: set needs_pdf_upload to true on EVERY measure. These are from general knowledge, not from actual PDF documents. Use descriptive measure names (e.g. "T8 4ft Linear to LED Tube" not just "Linear"). If you don't know specific incentive amounts from training data, use your best estimate and set needs_pdf_upload: true. The user will upload the actual PDF later for verified data.
 
 Return ONLY valid JSON with this exact structure, no other text:
 {
@@ -209,6 +210,7 @@ Return ONLY valid JSON with this exact structure, no other text:
       "energy_star_required": true/false,
       "hours_requirement": number or null,
       "source_page": "page reference from PDF or null",
+      "needs_pdf_upload": true,
       "notes": "special conditions"
     }
   ],
@@ -298,120 +300,210 @@ Return the structured JSON as specified. Maximize completeness at every level.`
         });
       }
 
-      // Optional: fetch PDFs from program URLs and extract prescriptive measures
+      // Phase 2: Smart PDF discovery — fetch program HTML pages and scrape PDF links
       if (fetch_pdfs && results.programs?.length > 0) {
-        const pdfPrograms = results.programs.filter(
-          (p: { program_url?: string }) => p.program_url && p.program_url.toLowerCase().endsWith('.pdf')
-        ).slice(0, 2); // Max 2 PDFs
+        const programsWithUrls = results.programs.filter(
+          (p: { program_url?: string }) => p.program_url && p.program_url.startsWith('http')
+        ).slice(0, 5); // Check up to 5 program pages
 
-        if (pdfPrograms.length > 0) {
-          const pdfStartTime = Date.now();
-          const PDF_TIME_LIMIT = 60000; // 60 seconds total for PDF fetching
+        const pdfStartTime = Date.now();
+        const PDF_TIME_LIMIT = 90000; // 90 seconds total
+        const discoveredPdfs: { url: string; program_name: string; provider_name: string }[] = [];
 
-          for (const prog of pdfPrograms) {
-            if (Date.now() - pdfStartTime > PDF_TIME_LIMIT) {
-              console.log('PDF fetch time limit reached, skipping remaining PDFs');
-              break;
+        // Step 1: Fetch HTML pages and extract PDF links
+        for (const prog of programsWithUrls) {
+          if (Date.now() - pdfStartTime > PDF_TIME_LIMIT) break;
+
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
+            const htmlResponse = await fetch(prog.program_url, {
+              signal: controller.signal,
+              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; JobScout/1.0)' }
+            });
+            clearTimeout(timeout);
+
+            if (!htmlResponse.ok) {
+              console.log(`HTML fetch failed for ${prog.program_url}: ${htmlResponse.status}`);
+              continue;
             }
 
-            try {
-              const controller = new AbortController();
-              const timeout = setTimeout(() => controller.abort(), 10000);
-              const pdfResponse = await fetch(prog.program_url, { signal: controller.signal });
-              clearTimeout(timeout);
+            const contentType = htmlResponse.headers.get('content-type') || '';
 
-              if (!pdfResponse.ok) {
-                console.log(`PDF fetch failed for ${prog.program_url}: ${pdfResponse.status}`);
-                continue;
+            // If the URL itself is a PDF (content-type check)
+            if (contentType.includes('application/pdf')) {
+              discoveredPdfs.push({
+                url: prog.program_url,
+                program_name: prog.program_name,
+                provider_name: prog.provider_name
+              });
+              continue;
+            }
+
+            // Parse HTML to find PDF links
+            const html = await htmlResponse.text();
+            const pdfLinkRegex = /href=["']([^"']*\.pdf(?:\?[^"']*)?)['"]/gi;
+            let match;
+            const baseUrl = new URL(prog.program_url);
+            const seenUrls = new Set<string>();
+
+            while ((match = pdfLinkRegex.exec(html)) !== null) {
+              let pdfUrl = match[1];
+
+              // Resolve relative URLs
+              if (pdfUrl.startsWith('/')) {
+                pdfUrl = `${baseUrl.protocol}//${baseUrl.host}${pdfUrl}`;
+              } else if (!pdfUrl.startsWith('http')) {
+                const pathParts = baseUrl.pathname.split('/');
+                pathParts.pop();
+                pdfUrl = `${baseUrl.protocol}//${baseUrl.host}${pathParts.join('/')}/${pdfUrl}`;
               }
 
-              const pdfBuffer = await pdfResponse.arrayBuffer();
-              const pdfBase64 = base64Encode(new Uint8Array(pdfBuffer));
+              // Filter: only keep PDFs that look like rebate/incentive documents
+              const lowerUrl = pdfUrl.toLowerCase();
+              const relevantTerms = [
+                'rebate', 'incentive', 'prescriptive', 'measure', 'worksheet',
+                'lighting', 'hvac', 'motor', 'commercial', 'business', 'energy',
+                'efficiency', 'program', 'application', 'schedule', 'tariff', 'rate'
+              ];
+              const isRelevant = relevantTerms.some(term => lowerUrl.includes(term));
 
-              // Skip if too large
-              if (pdfBase64.length > 32 * 1024 * 1024) {
-                console.log(`PDF too large for ${prog.program_url}`);
-                continue;
+              if (isRelevant && !seenUrls.has(pdfUrl)) {
+                seenUrls.add(pdfUrl);
+                discoveredPdfs.push({
+                  url: pdfUrl,
+                  program_name: prog.program_name,
+                  provider_name: prog.provider_name
+                });
               }
+            }
+          } catch (htmlErr) {
+            console.log(`HTML fetch error for ${prog.program_url}: ${(htmlErr as Error).message}`);
+            continue;
+          }
+        }
 
-              // Call Claude to extract measures from the PDF
-              const pdfExtractResponse = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-api-key': ANTHROPIC_API_KEY,
-                  'anthropic-version': '2023-06-01',
-                  'anthropic-beta': 'pdfs-2024-09-25'
-                },
-                body: JSON.stringify({
-                  model: 'claude-sonnet-4-20250514',
-                  max_tokens: 64000,
-                  system: `Extract every prescriptive measure line item from this utility rebate PDF. Return JSON with this structure:
+        // Step 2: Fetch and parse discovered PDFs (max 3)
+        const pdfsToProcess = discoveredPdfs.slice(0, 3);
+        console.log(`Discovered ${discoveredPdfs.length} PDF links, processing ${pdfsToProcess.length}`);
+
+        for (const pdfInfo of pdfsToProcess) {
+          if (Date.now() - pdfStartTime > PDF_TIME_LIMIT) {
+            console.log('PDF processing time limit reached');
+            break;
+          }
+
+          try {
+            const pdfController = new AbortController();
+            const pdfTimeout = setTimeout(() => pdfController.abort(), 15000);
+            const pdfResponse = await fetch(pdfInfo.url, {
+              signal: pdfController.signal,
+              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; JobScout/1.0)' }
+            });
+            clearTimeout(pdfTimeout);
+
+            if (!pdfResponse.ok) {
+              console.log(`PDF fetch failed for ${pdfInfo.url}: ${pdfResponse.status}`);
+              continue;
+            }
+
+            const pdfBuffer = await pdfResponse.arrayBuffer();
+            const pdfBase64 = base64Encode(new Uint8Array(pdfBuffer));
+
+            // Skip if too large (>20MB base64)
+            if (pdfBase64.length > 20 * 1024 * 1024) {
+              console.log(`PDF too large: ${pdfInfo.url}`);
+              continue;
+            }
+
+            // Call Claude to extract measures from the PDF
+            const pdfExtractResponse = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'anthropic-beta': 'pdfs-2024-09-25'
+              },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 64000,
+                system: `Extract every prescriptive measure line item from this utility rebate/incentive PDF. Return JSON:
 {
   "prescriptive_measures": [
     {
       "measure_code": "string or null",
-      "measure_name": "string",
+      "measure_name": "exact name from document",
       "measure_category": "Lighting|HVAC|Motors|Refrigeration|Building Envelope",
       "measure_subcategory": "string",
-      "baseline_equipment": "string",
+      "baseline_equipment": "what is being replaced",
       "baseline_wattage": number or null,
-      "replacement_equipment": "string",
+      "replacement_equipment": "what replaces it",
       "replacement_wattage": number or null,
       "incentive_amount": number,
       "incentive_unit": "per_fixture|per_lamp|per_watt_reduced|per_kw|flat|per_ton",
       "application_type": "retrofit|new_construction|both",
       "dlc_required": true/false,
+      "dlc_tier": "Standard|Premium or null",
       "energy_star_required": true/false,
+      "location_type": "interior|exterior|parking|refrigerated or null",
       "source_page": "string or null",
       "notes": "string"
     }
   ]
-}`,
-                  messages: [{
-                    role: 'user',
-                    content: [
-                      {
-                        type: 'document',
-                        source: {
-                          type: 'base64',
-                          media_type: 'application/pdf',
-                          data: pdfBase64
-                        }
-                      },
-                      {
-                        type: 'text',
-                        text: `Extract all prescriptive measure line items from this PDF for program "${prog.program_name}" by "${prog.provider_name}". Return structured JSON.`
+}
+Extract EVERY line item. Do not summarize or skip rows.`,
+                messages: [{
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'document',
+                      source: {
+                        type: 'base64',
+                        media_type: 'application/pdf',
+                        data: pdfBase64
                       }
-                    ]
-                  }]
-                })
-              });
+                    },
+                    {
+                      type: 'text',
+                      text: `Extract all prescriptive measure line items from this PDF for program "${pdfInfo.program_name}" by "${pdfInfo.provider_name}". Return structured JSON.`
+                    }
+                  ]
+                }]
+              })
+            });
 
-              const pdfData = await pdfExtractResponse.json();
-              const pdfContent = pdfData.content?.[0]?.text || '';
-              const pdfJsonMatch = pdfContent.match(/\{[\s\S]*\}/);
+            const pdfData = await pdfExtractResponse.json();
+            const pdfContent = pdfData.content?.[0]?.text || '';
+            const pdfJsonMatch = pdfContent.match(/\{[\s\S]*\}/);
 
-              if (pdfJsonMatch) {
-                const pdfResults = JSON.parse(pdfJsonMatch[0]);
-                if (pdfResults.prescriptive_measures?.length > 0) {
-                  // Add provider_name and program_name to each measure
-                  for (const pm of pdfResults.prescriptive_measures) {
-                    pm.provider_name = prog.provider_name;
-                    pm.program_name = prog.program_name;
-                  }
-                  results.prescriptive_measures = [
-                    ...results.prescriptive_measures,
-                    ...pdfResults.prescriptive_measures
-                  ];
-                  console.log(`Extracted ${pdfResults.prescriptive_measures.length} measures from PDF: ${prog.program_url}`);
+            if (pdfJsonMatch) {
+              const pdfResults = JSON.parse(pdfJsonMatch[0]);
+              if (pdfResults.prescriptive_measures?.length > 0) {
+                for (const pm of pdfResults.prescriptive_measures) {
+                  pm.provider_name = pdfInfo.provider_name;
+                  pm.program_name = pdfInfo.program_name;
+                  pm.needs_pdf_upload = false; // Verified from actual PDF
+                  pm.source_pdf_url = pdfInfo.url;
                 }
+                results.prescriptive_measures = [
+                  ...results.prescriptive_measures,
+                  ...pdfResults.prescriptive_measures
+                ];
+                console.log(`Extracted ${pdfResults.prescriptive_measures.length} measures from PDF: ${pdfInfo.url}`);
               }
-            } catch (pdfErr) {
-              console.log(`PDF extraction error for ${prog.program_url}: ${pdfErr.message}`);
-              continue;
             }
+          } catch (pdfErr) {
+            console.log(`PDF extraction error for ${pdfInfo.url}: ${(pdfErr as Error).message}`);
+            continue;
           }
+        }
+      }
+
+      // Flag AI-only prescriptive measures that need PDF upload
+      for (const pm of (results.prescriptive_measures as Record<string, unknown>[])) {
+        if (pm.needs_pdf_upload === undefined || pm.needs_pdf_upload === null) {
+          pm.needs_pdf_upload = true;
         }
       }
 
