@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
 import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, FormToggle, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
-import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader, ExternalLink } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader, ExternalLink, FileUp } from 'lucide-react'
 
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
@@ -83,6 +83,15 @@ export default function DataConsoleUtilities() {
   const [checkedRateSchedules, setCheckedRateSchedules] = useState({})
   const [checkedPrescriptive, setCheckedPrescriptive] = useState({})
   const [importing, setImporting] = useState(false)
+
+  // PDF parsing state
+  const [pdfParsing, setPdfParsing] = useState(false)
+  const [pdfResults, setPdfResults] = useState(null)
+  const [showPdfReviewModal, setShowPdfReviewModal] = useState(false)
+  const [pdfDocumentType, setPdfDocumentType] = useState('rebate_program')
+  const [checkedPdfItems, setCheckedPdfItems] = useState({})
+  const [fetchPdfs, setFetchPdfs] = useState(false)
+  const pdfFileInputRef = useRef(null)
 
   useEffect(() => {
     fetchProviders()
@@ -415,6 +424,173 @@ export default function DataConsoleUtilities() {
     await fetchPrescriptiveMeasures(selectedProgram.id)
   }
 
+  // PDF Upload handlers
+  const handlePdfUpload = (docType) => {
+    setPdfDocumentType(docType)
+    if (pdfFileInputRef.current) {
+      pdfFileInputRef.current.value = ''
+      pdfFileInputRef.current.click()
+    }
+  }
+
+  const handlePdfFileSelected = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.type !== 'application/pdf') {
+      alert('Please select a PDF file.')
+      return
+    }
+
+    if (file.size > 30 * 1024 * 1024) {
+      alert('PDF file must be under 30MB.')
+      return
+    }
+
+    setPdfParsing(true)
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const result = reader.result
+          const base64Data = result.split(',')[1]
+          resolve(base64Data)
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-utility-pdf`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({
+            pdf_base64: base64,
+            document_type: pdfDocumentType,
+            program_name: selectedProgram?.program_name || null,
+            provider_name: selectedProvider?.provider_name || null
+          })
+        }
+      )
+
+      const data = await response.json()
+
+      if (data?.success && data?.results) {
+        setPdfResults(data.results)
+        // Default all items to checked
+        const items = data.document_type === 'rebate_program'
+          ? data.results.prescriptive_measures || []
+          : data.results.rate_schedules || []
+        const checked = {}
+        items.forEach((_, i) => { checked[i] = true })
+        setCheckedPdfItems(checked)
+        setShowPdfReviewModal(true)
+      } else {
+        alert('PDF parsing failed: ' + (data?.error || 'Unknown error'))
+      }
+    } catch (err) {
+      alert('PDF parsing error: ' + err.message)
+    }
+    setPdfParsing(false)
+  }
+
+  const handleImportPdfResults = async () => {
+    if (!pdfResults) return
+    setImporting(true)
+
+    try {
+      if (pdfDocumentType === 'rebate_program') {
+        const measures = (pdfResults.prescriptive_measures || []).filter((_, i) => checkedPdfItems[i])
+        if (!selectedProgram) {
+          alert('No program selected to import measures into.')
+          setImporting(false)
+          return
+        }
+        let errors = 0
+        for (const pm of measures) {
+          const { error } = await supabase
+            .from('prescriptive_measures')
+            .insert({
+              program_id: selectedProgram.id,
+              measure_code: pm.measure_code || null,
+              measure_name: pm.measure_name,
+              measure_category: pm.measure_category || 'Lighting',
+              measure_subcategory: pm.measure_subcategory || null,
+              baseline_equipment: pm.baseline_equipment || null,
+              baseline_wattage: pm.baseline_wattage || null,
+              replacement_equipment: pm.replacement_equipment || null,
+              replacement_wattage: pm.replacement_wattage || null,
+              incentive_amount: pm.incentive_amount,
+              incentive_unit: pm.incentive_unit || 'per_fixture',
+              incentive_formula: pm.incentive_formula || null,
+              max_incentive: pm.max_incentive || null,
+              location_type: pm.location_type || null,
+              application_type: pm.application_type || 'retrofit',
+              dlc_required: pm.dlc_required ?? false,
+              dlc_tier: pm.dlc_tier || null,
+              energy_star_required: pm.energy_star_required ?? false,
+              hours_requirement: pm.hours_requirement || null,
+              source_page: pm.source_page || null,
+              notes: pm.notes || null
+            })
+          if (error) {
+            console.error('PDF measure insert error:', error)
+            errors++
+          }
+        }
+        if (errors > 0) alert(`Imported with ${errors} error(s).`)
+        await fetchPrescriptiveMeasures(selectedProgram.id)
+      } else {
+        const schedules = (pdfResults.rate_schedules || []).filter((_, i) => checkedPdfItems[i])
+        if (!selectedProvider) {
+          alert('No provider selected to import rate schedules into.')
+          setImporting(false)
+          return
+        }
+        let errors = 0
+        for (const rs of schedules) {
+          const { error } = await supabase
+            .from('utility_rate_schedules')
+            .insert({
+              provider_id: selectedProvider.id,
+              schedule_name: rs.schedule_name,
+              customer_category: rs.customer_category || null,
+              rate_type: rs.rate_type || 'Flat',
+              rate_per_kwh: rs.rate_per_kwh || null,
+              peak_rate_per_kwh: rs.peak_rate_per_kwh || null,
+              off_peak_rate_per_kwh: rs.off_peak_rate_per_kwh || null,
+              summer_rate_per_kwh: rs.summer_rate_per_kwh || null,
+              winter_rate_per_kwh: rs.winter_rate_per_kwh || null,
+              demand_charge: rs.demand_charge || null,
+              min_demand_charge: rs.min_demand_charge || null,
+              customer_charge: rs.customer_charge || null,
+              time_of_use: rs.time_of_use ?? false,
+              effective_date: rs.effective_date || null,
+              source_url: rs.source_url || null,
+              description: rs.description || null,
+              notes: rs.notes || null
+            })
+          if (error) {
+            console.error('PDF rate schedule insert error:', error)
+            errors++
+          }
+        }
+        if (errors > 0) alert(`Imported with ${errors} error(s).`)
+        await fetchRateSchedules(selectedProvider.id)
+      }
+
+      setShowPdfReviewModal(false)
+      setPdfResults(null)
+    } catch (err) {
+      alert('Import error: ' + err.message)
+    }
+    setImporting(false)
+  }
+
   // AI Research
   const handleAIResearch = async () => {
     if (!researchState) {
@@ -432,7 +608,7 @@ export default function DataConsoleUtilities() {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
           },
-          body: JSON.stringify({ state: researchState === 'ALL' ? 'all US states' : researchState })
+          body: JSON.stringify({ state: researchState === 'ALL' ? 'all US states' : researchState, fetch_pdfs: fetchPdfs })
         }
       )
 
@@ -746,6 +922,15 @@ export default function DataConsoleUtilities() {
               {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: adminTheme.textMuted, fontSize: '11px' }}>
+            <input
+              type="checkbox"
+              checked={fetchPdfs}
+              onChange={(e) => setFetchPdfs(e.target.checked)}
+              style={{ accentColor: adminTheme.accent }}
+            />
+            Fetch PDFs
+          </label>
           <button
             onClick={handleAIResearch}
             disabled={researching || !researchState}
@@ -1164,6 +1349,25 @@ export default function DataConsoleUtilities() {
                   </button>
                 )}
                 <button
+                  onClick={() => handlePdfUpload('rate_schedule')}
+                  disabled={!selectedProvider || pdfParsing}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${selectedProvider && !pdfParsing ? adminTheme.accent : adminTheme.border}`,
+                    borderRadius: '6px',
+                    color: selectedProvider && !pdfParsing ? adminTheme.accent : adminTheme.textMuted,
+                    fontSize: '11px',
+                    cursor: selectedProvider && !pdfParsing ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px'
+                  }}
+                >
+                  {pdfParsing && pdfDocumentType === 'rate_schedule' ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <FileUp size={12} />}
+                  PDF
+                </button>
+                <button
                   onClick={() => setEditingRateSchedule({ schedule_name: '', customer_category: 'Small Commercial', rate_per_kwh: 0, time_of_use: false })}
                   disabled={!selectedProvider}
                   style={{
@@ -1266,6 +1470,25 @@ export default function DataConsoleUtilities() {
                     <Trash2 size={12} /> All
                   </button>
                 )}
+                <button
+                  onClick={() => handlePdfUpload('rebate_program')}
+                  disabled={!selectedProgram || pdfParsing}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${selectedProgram && !pdfParsing ? adminTheme.accent : adminTheme.border}`,
+                    borderRadius: '6px',
+                    color: selectedProgram && !pdfParsing ? adminTheme.accent : adminTheme.textMuted,
+                    fontSize: '11px',
+                    cursor: selectedProgram && !pdfParsing ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px'
+                  }}
+                >
+                  {pdfParsing && pdfDocumentType === 'rebate_program' ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <FileUp size={12} />}
+                  PDF
+                </button>
                 <button
                   onClick={() => setEditingPrescriptive({ measure_name: '', measure_category: 'Lighting', incentive_amount: 0, incentive_unit: 'per_fixture', application_type: 'retrofit', dlc_required: false, energy_star_required: false })}
                   disabled={!selectedProgram}
@@ -1984,6 +2207,240 @@ export default function DataConsoleUtilities() {
             <DetailRow label="Source Page" value={viewingPrescriptive.source_page} />
             <DetailRow label="Notes" value={viewingPrescriptive.notes} />
           </div>
+        )}
+      </AdminModal>
+
+      {/* Hidden PDF file input */}
+      <input ref={pdfFileInputRef} type="file" accept="application/pdf" onChange={handlePdfFileSelected} style={{ display: 'none' }} />
+
+      {/* PDF Review Modal */}
+      <AdminModal
+        isOpen={showPdfReviewModal}
+        onClose={() => setShowPdfReviewModal(false)}
+        title={`PDF Extraction Results — ${pdfDocumentType === 'rebate_program' ? 'Prescriptive Measures' : 'Rate Schedules'}`}
+        width="900px"
+      >
+        {pdfResults && (
+          <>
+            <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+            {/* Document Info */}
+            {pdfResults.document_info && (
+              <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: adminTheme.bgInput, borderRadius: '8px', border: `1px solid ${adminTheme.border}` }}>
+                <div style={{ color: adminTheme.text, fontSize: '14px', fontWeight: '600' }}>
+                  {pdfResults.document_info.document_title || pdfResults.document_info.program_name || pdfResults.document_info.tariff_name || 'PDF Document'}
+                </div>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '4px', flexWrap: 'wrap' }}>
+                  {pdfResults.document_info.utility_name && (
+                    <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Utility: {pdfResults.document_info.utility_name}</span>
+                  )}
+                  {pdfResults.document_info.effective_date && (
+                    <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Effective: {pdfResults.document_info.effective_date}</span>
+                  )}
+                  {pdfResults.document_info.total_pages_analyzed && (
+                    <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Pages: {pdfResults.document_info.total_pages_analyzed}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Prescriptive Measures from PDF */}
+            {pdfDocumentType === 'rebate_program' && (pdfResults.prescriptive_measures || []).length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
+                    Prescriptive Measures ({pdfResults.prescriptive_measures.length})
+                  </span>
+                  <button
+                    onClick={() => {
+                      const items = pdfResults.prescriptive_measures
+                      const allChecked = items.every((_, i) => checkedPdfItems[i])
+                      const next = {}
+                      items.forEach((_, i) => { next[i] = !allChecked })
+                      setCheckedPdfItems(next)
+                    }}
+                    style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    {(pdfResults.prescriptive_measures || []).every((_, i) => checkedPdfItems[i]) ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '500px', overflowY: 'auto' }}>
+                  {pdfResults.prescriptive_measures.map((pm, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '8px',
+                      padding: '8px 10px',
+                      backgroundColor: adminTheme.bgInput,
+                      borderRadius: '6px',
+                      border: `1px solid ${adminTheme.border}`
+                    }}>
+                      <Checkbox checked={!!checkedPdfItems[i]} onChange={(v) => setCheckedPdfItems({ ...checkedPdfItems, [i]: v })} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{pm.measure_name}</span>
+                          <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '13px' }}>
+                            ${pm.incentive_amount} {pm.incentive_unit?.replace('_', '/')}
+                          </span>
+                          <Badge>{pm.measure_category}</Badge>
+                          {pm.dlc_required && <Badge color="accent">DLC</Badge>}
+                          {pm.energy_star_required && <Badge color="accent">ES</Badge>}
+                        </div>
+                        {(pm.baseline_equipment || pm.replacement_equipment) && (
+                          <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>
+                            {pm.baseline_equipment || '?'}
+                            {pm.baseline_wattage != null && ` (${pm.baseline_wattage}W)`}
+                            {' → '}
+                            {pm.replacement_equipment || '?'}
+                            {pm.replacement_wattage != null && ` (${pm.replacement_wattage}W)`}
+                          </div>
+                        )}
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px' }}>
+                          {pm.application_type && `${pm.application_type}`}
+                          {pm.location_type && ` • ${pm.location_type}`}
+                          {pm.measure_code && ` • Code: ${pm.measure_code}`}
+                          {pm.source_page && ` • Page ${pm.source_page}`}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Rate Schedules from PDF */}
+            {pdfDocumentType === 'rate_schedule' && (pdfResults.rate_schedules || []).length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
+                    Rate Schedules ({pdfResults.rate_schedules.length})
+                  </span>
+                  <button
+                    onClick={() => {
+                      const items = pdfResults.rate_schedules
+                      const allChecked = items.every((_, i) => checkedPdfItems[i])
+                      const next = {}
+                      items.forEach((_, i) => { next[i] = !allChecked })
+                      setCheckedPdfItems(next)
+                    }}
+                    style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    {(pdfResults.rate_schedules || []).every((_, i) => checkedPdfItems[i]) ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '500px', overflowY: 'auto' }}>
+                  {pdfResults.rate_schedules.map((rs, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '8px',
+                      padding: '8px 10px',
+                      backgroundColor: adminTheme.bgInput,
+                      borderRadius: '6px',
+                      border: `1px solid ${adminTheme.border}`
+                    }}>
+                      <Checkbox checked={!!checkedPdfItems[i]} onChange={(v) => setCheckedPdfItems({ ...checkedPdfItems, [i]: v })} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{rs.schedule_name}</span>
+                          {rs.customer_category && <Badge>{rs.customer_category}</Badge>}
+                          {rs.rate_type && rs.rate_type !== 'Flat' && <Badge color="accent">{rs.rate_type}</Badge>}
+                          {rs.time_of_use && <Badge color="accent">TOU</Badge>}
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', marginTop: '2px', flexWrap: 'wrap' }}>
+                          <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '13px' }}>
+                            {rs.rate_per_kwh != null ? `$${Number(rs.rate_per_kwh).toFixed(4)}/kWh` : '-'}
+                          </span>
+                          {rs.peak_rate_per_kwh != null && (
+                            <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Peak: ${Number(rs.peak_rate_per_kwh).toFixed(4)}</span>
+                          )}
+                          {rs.off_peak_rate_per_kwh != null && (
+                            <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Off-Peak: ${Number(rs.off_peak_rate_per_kwh).toFixed(4)}</span>
+                          )}
+                          {rs.demand_charge && (
+                            <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>${rs.demand_charge}/kW demand</span>
+                          )}
+                          {rs.customer_charge && (
+                            <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>${rs.customer_charge}/mo</span>
+                          )}
+                        </div>
+                        {rs.description && (
+                          <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px' }}>{rs.description}</div>
+                        )}
+                        {rs.source_page && (
+                          <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px' }}>Page {rs.source_page}</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {pdfDocumentType === 'rebate_program' && !(pdfResults.prescriptive_measures?.length > 0) && (
+              <div style={{ padding: '40px', textAlign: 'center', color: adminTheme.textMuted }}>No prescriptive measures found in this PDF.</div>
+            )}
+            {pdfDocumentType === 'rate_schedule' && !(pdfResults.rate_schedules?.length > 0) && (
+              <div style={{ padding: '40px', textAlign: 'center', color: adminTheme.textMuted }}>No rate schedules found in this PDF.</div>
+            )}
+
+            {/* Import Footer */}
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: '20px',
+              paddingTop: '16px',
+              borderTop: `1px solid ${adminTheme.border}`
+            }}>
+              <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>
+                {Object.values(checkedPdfItems).filter(Boolean).length} of{' '}
+                {pdfDocumentType === 'rebate_program'
+                  ? (pdfResults.prescriptive_measures || []).length + ' measures'
+                  : (pdfResults.rate_schedules || []).length + ' schedules'
+                } selected
+                {pdfDocumentType === 'rebate_program' && selectedProgram && ` → ${selectedProgram.program_name}`}
+                {pdfDocumentType === 'rate_schedule' && selectedProvider && ` → ${selectedProvider.provider_name}`}
+              </span>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setShowPdfReviewModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: adminTheme.bgHover,
+                    color: adminTheme.text,
+                    border: `1px solid ${adminTheme.border}`,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImportPdfResults}
+                  disabled={importing || Object.values(checkedPdfItems).filter(Boolean).length === 0}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: importing ? adminTheme.border : adminTheme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: importing ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {importing ? 'Importing...' : 'Import Selected'}
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </AdminModal>
 

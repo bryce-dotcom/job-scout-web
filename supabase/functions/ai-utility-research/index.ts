@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { state } = await req.json();
+    const { state, fetch_pdfs } = await req.json();
 
     if (!state) {
       return new Response(JSON.stringify({ success: false, error: 'State is required' }), {
@@ -267,6 +268,123 @@ Return the structured JSON as specified.`
         return new Response(JSON.stringify({ success: false, error: 'Invalid response structure', raw: content }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
+      }
+
+      // Optional: fetch PDFs from program URLs and extract prescriptive measures
+      if (fetch_pdfs && results.programs?.length > 0) {
+        const pdfPrograms = results.programs.filter(
+          (p: { program_url?: string }) => p.program_url && p.program_url.toLowerCase().endsWith('.pdf')
+        ).slice(0, 2); // Max 2 PDFs
+
+        if (pdfPrograms.length > 0) {
+          const pdfStartTime = Date.now();
+          const PDF_TIME_LIMIT = 60000; // 60 seconds total for PDF fetching
+
+          for (const prog of pdfPrograms) {
+            if (Date.now() - pdfStartTime > PDF_TIME_LIMIT) {
+              console.log('PDF fetch time limit reached, skipping remaining PDFs');
+              break;
+            }
+
+            try {
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 10000);
+              const pdfResponse = await fetch(prog.program_url, { signal: controller.signal });
+              clearTimeout(timeout);
+
+              if (!pdfResponse.ok) {
+                console.log(`PDF fetch failed for ${prog.program_url}: ${pdfResponse.status}`);
+                continue;
+              }
+
+              const pdfBuffer = await pdfResponse.arrayBuffer();
+              const pdfBase64 = base64Encode(new Uint8Array(pdfBuffer));
+
+              // Skip if too large
+              if (pdfBase64.length > 32 * 1024 * 1024) {
+                console.log(`PDF too large for ${prog.program_url}`);
+                continue;
+              }
+
+              // Call Claude to extract measures from the PDF
+              const pdfExtractResponse = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-api-key': ANTHROPIC_API_KEY,
+                  'anthropic-version': '2023-06-01',
+                  'anthropic-beta': 'pdfs-2024-09-25'
+                },
+                body: JSON.stringify({
+                  model: 'claude-sonnet-4-20250514',
+                  max_tokens: 64000,
+                  system: `Extract every prescriptive measure line item from this utility rebate PDF. Return JSON with this structure:
+{
+  "prescriptive_measures": [
+    {
+      "measure_code": "string or null",
+      "measure_name": "string",
+      "measure_category": "Lighting|HVAC|Motors|Refrigeration|Building Envelope",
+      "measure_subcategory": "string",
+      "baseline_equipment": "string",
+      "baseline_wattage": number or null,
+      "replacement_equipment": "string",
+      "replacement_wattage": number or null,
+      "incentive_amount": number,
+      "incentive_unit": "per_fixture|per_lamp|per_watt_reduced|per_kw|flat|per_ton",
+      "application_type": "retrofit|new_construction|both",
+      "dlc_required": true/false,
+      "energy_star_required": true/false,
+      "source_page": "string or null",
+      "notes": "string"
+    }
+  ]
+}`,
+                  messages: [{
+                    role: 'user',
+                    content: [
+                      {
+                        type: 'document',
+                        source: {
+                          type: 'base64',
+                          media_type: 'application/pdf',
+                          data: pdfBase64
+                        }
+                      },
+                      {
+                        type: 'text',
+                        text: `Extract all prescriptive measure line items from this PDF for program "${prog.program_name}" by "${prog.provider_name}". Return structured JSON.`
+                      }
+                    ]
+                  }]
+                })
+              });
+
+              const pdfData = await pdfExtractResponse.json();
+              const pdfContent = pdfData.content?.[0]?.text || '';
+              const pdfJsonMatch = pdfContent.match(/\{[\s\S]*\}/);
+
+              if (pdfJsonMatch) {
+                const pdfResults = JSON.parse(pdfJsonMatch[0]);
+                if (pdfResults.prescriptive_measures?.length > 0) {
+                  // Add provider_name and program_name to each measure
+                  for (const pm of pdfResults.prescriptive_measures) {
+                    pm.provider_name = prog.provider_name;
+                    pm.program_name = prog.program_name;
+                  }
+                  results.prescriptive_measures = [
+                    ...results.prescriptive_measures,
+                    ...pdfResults.prescriptive_measures
+                  ];
+                  console.log(`Extracted ${pdfResults.prescriptive_measures.length} measures from PDF: ${prog.program_url}`);
+                }
+              }
+            } catch (pdfErr) {
+              console.log(`PDF extraction error for ${prog.program_url}: ${pdfErr.message}`);
+              continue;
+            }
+          }
+        }
       }
 
       return new Response(JSON.stringify({ success: true, results }), {
