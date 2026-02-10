@@ -1129,7 +1129,7 @@
 
 ---
 
-## rebate_rates
+## incentive_measures (renamed from rebate_rates)
 
 | Column | Type | Default |
 |--------|------|---------|
@@ -1146,6 +1146,23 @@
 | min_watts | integer | |
 | max_watts | integer | |
 | notes | text | |
+| measure_type | text | |
+| rate_value | numeric | |
+| cap_amount | numeric | |
+| cap_percent | numeric | |
+| requirements | text | |
+| measure_category | text | 'Lighting' |
+| measure_subcategory | text | |
+| equipment_requirements | text | |
+| installation_requirements | text | |
+| baseline_description | text | |
+| replacement_description | text | |
+| useful_life_years | integer | |
+| tier | text | |
+| effective_date | date | |
+| expiration_date | date | |
+| per_unit_cap | numeric | |
+| project_cap_percent | numeric | |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 
@@ -1435,6 +1452,26 @@
 | pdf_url | text | |
 | last_verified | date | |
 | ai_can_update | boolean | false |
+| source_year | integer | |
+| program_category | text | 'Lighting' |
+| delivery_mechanism | text | |
+| eligible_sectors | text[] | |
+| eligible_building_types | text[] | |
+| min_demand_kw | numeric | |
+| max_demand_kw | numeric | |
+| min_annual_kwh | numeric | |
+| application_required | boolean | false |
+| post_inspection_required | boolean | false |
+| contractor_prequalification | boolean | false |
+| required_documents | text[] | |
+| stacking_allowed | boolean | true |
+| stacking_rules | text | |
+| stacking_exclusions | text[] | |
+| funding_status | text | 'Open' |
+| funding_budget | numeric | |
+| processing_time_days | integer | |
+| rebate_payment_method | text | |
+| program_notes_ai | text | |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 
@@ -1459,6 +1496,34 @@
 
 ---
 
+## utility_rate_schedules
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | integer | PK |
+| company_id | integer | FK companies.id |
+| provider_id | integer | FK utility_providers.id |
+| schedule_name | text | NOT NULL |
+| customer_category | text | |
+| rate_per_kwh | numeric | |
+| demand_charge | numeric | |
+| time_of_use | boolean | false |
+| description | text | |
+| effective_date | date | |
+| notes | text | |
+| rate_type | text | 'Flat' |
+| peak_rate_per_kwh | numeric | |
+| off_peak_rate_per_kwh | numeric | |
+| summer_rate_per_kwh | numeric | |
+| winter_rate_per_kwh | numeric | |
+| min_demand_charge | numeric | |
+| customer_charge | numeric | |
+| source_url | text | |
+| created_at | timestamptz | now() |
+| updated_at | timestamptz | |
+
+---
+
 ## webhook_form
 
 | Column | Type | Default |
@@ -1477,4 +1542,4 @@
 
 ---
 
-*66 tables total. Queried from live Supabase OpenAPI spec.*
+*67 tables total (rebate_rates renamed to incentive_measures, utility_rate_schedules added). Updated February 10, 2026.*

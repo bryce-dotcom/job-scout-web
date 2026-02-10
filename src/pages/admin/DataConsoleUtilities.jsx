@@ -17,7 +17,27 @@ const FIXTURE_CATEGORIES = [
 ]
 
 const MEASURE_TYPES = [
-  'LED Retrofit', 'LED New Construction', 'LED Exterior', 'Controls', 'DLC Listed', 'Other'
+  'LED Retrofit', 'LED New Construction', 'LED Exterior', 'Controls', 'DLC Listed', 'VFD', 'Rooftop Unit', 'Walk-in Cooler', 'Insulation', 'Other'
+]
+
+const MEASURE_CATEGORIES = [
+  'Lighting', 'HVAC', 'Motors', 'Refrigeration', 'Building Envelope', 'Controls', 'Other'
+]
+
+const PROGRAM_CATEGORIES = [
+  'Lighting', 'HVAC', 'Motors', 'Refrigeration', 'Building Envelope', 'Comprehensive'
+]
+
+const DELIVERY_MECHANISMS = [
+  'Prescriptive', 'Custom', 'Midstream', 'Direct Install', 'SMBE', 'SBDI'
+]
+
+const FUNDING_STATUSES = [
+  'Open', 'Waitlisted', 'Exhausted', 'Paused'
+]
+
+const RATE_TYPES = [
+  'Flat', 'Tiered', 'Time-of-Use', 'Seasonal', 'Demand'
 ]
 
 const CUSTOMER_CATEGORIES = [
@@ -430,13 +450,27 @@ export default function DataConsoleUtilities() {
             utility_name: pr.provider_name,
             program_name: pr.program_name,
             program_type: pr.program_type || 'Prescriptive',
+            program_category: pr.program_category || 'Lighting',
+            delivery_mechanism: pr.delivery_mechanism || null,
             business_size: pr.business_size || 'All',
             dlc_required: pr.dlc_required ?? false,
             pre_approval_required: pr.pre_approval_required ?? false,
+            application_required: pr.application_required ?? false,
+            post_inspection_required: pr.post_inspection_required ?? false,
+            contractor_prequalification: pr.contractor_prequalification ?? false,
             program_url: pr.program_url || null,
             max_cap_percent: pr.max_cap_percent || null,
             annual_cap_dollars: pr.annual_cap_dollars || null,
-            source_year: pr.source_year || null
+            source_year: pr.source_year || null,
+            eligible_sectors: pr.eligible_sectors || null,
+            eligible_building_types: pr.eligible_building_types || null,
+            required_documents: pr.required_documents || null,
+            stacking_allowed: pr.stacking_allowed ?? true,
+            stacking_rules: pr.stacking_rules || null,
+            funding_status: pr.funding_status || 'Open',
+            processing_time_days: pr.processing_time_days || null,
+            rebate_payment_method: pr.rebate_payment_method || null,
+            program_notes_ai: pr.program_notes_ai || null
           })
           .select()
           .single()
@@ -464,14 +498,24 @@ export default function DataConsoleUtilities() {
           .insert({
             program_id: program.id,
             fixture_category: r.fixture_category,
+            measure_category: r.measure_category || 'Lighting',
+            measure_subcategory: r.measure_subcategory || null,
             measure_type: r.measure_type || 'LED Retrofit',
             calc_method: r.calc_method || 'Per Watt Reduced',
             rate: r.rate_value ?? r.rate,
             rate_value: r.rate_value ?? r.rate,
             rate_unit: r.rate_unit || '/watt',
+            tier: r.tier || null,
             cap_amount: r.cap_amount || null,
             cap_percent: r.cap_percent || null,
+            per_unit_cap: r.per_unit_cap || null,
+            equipment_requirements: r.equipment_requirements || null,
+            installation_requirements: r.installation_requirements || null,
+            baseline_description: r.baseline_description || null,
+            replacement_description: r.replacement_description || null,
             requirements: r.requirements || null,
+            effective_date: r.effective_date || null,
+            expiration_date: r.expiration_date || null,
             min_watts: r.min_watts || null,
             max_watts: r.max_watts || null,
             notes: r.notes || null
@@ -499,10 +543,18 @@ export default function DataConsoleUtilities() {
             provider_id: provider.id,
             schedule_name: rs.schedule_name,
             customer_category: rs.customer_category || null,
+            rate_type: rs.rate_type || 'Flat',
             rate_per_kwh: rs.rate_per_kwh || null,
+            peak_rate_per_kwh: rs.peak_rate_per_kwh || null,
+            off_peak_rate_per_kwh: rs.off_peak_rate_per_kwh || null,
+            summer_rate_per_kwh: rs.summer_rate_per_kwh || null,
+            winter_rate_per_kwh: rs.winter_rate_per_kwh || null,
             demand_charge: rs.demand_charge || null,
+            min_demand_charge: rs.min_demand_charge || null,
+            customer_charge: rs.customer_charge || null,
             time_of_use: rs.time_of_use ?? false,
             effective_date: rs.effective_date || null,
+            source_url: rs.source_url || null,
             description: rs.description || null,
             notes: rs.notes || null
           })
@@ -1347,7 +1399,7 @@ export default function DataConsoleUtilities() {
       </AdminModal>
 
       {/* Program Detail Modal */}
-      <AdminModal isOpen={!!viewingProgram} onClose={() => setViewingProgram(null)} title="Program Details" width="600px">
+      <AdminModal isOpen={!!viewingProgram} onClose={() => setViewingProgram(null)} title="Program Details" width="650px">
         {viewingProgram && (
           <div>
             <div style={{ marginBottom: '16px' }}>
@@ -1358,56 +1410,31 @@ export default function DataConsoleUtilities() {
                     {viewingProgram.source_year}
                   </span>
                 )}
+                {viewingProgram.funding_status && viewingProgram.funding_status !== 'Open' && (
+                  <span style={{ padding: '2px 8px', backgroundColor: viewingProgram.funding_status === 'Exhausted' ? '#ef444420' : '#f59e0b20', color: viewingProgram.funding_status === 'Exhausted' ? '#ef4444' : '#f59e0b', borderRadius: '4px', fontSize: '12px', fontWeight: '600' }}>
+                    {viewingProgram.funding_status}
+                  </span>
+                )}
               </div>
-              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
                 <Badge color="accent">{viewingProgram.program_type}</Badge>
+                {viewingProgram.delivery_mechanism && viewingProgram.delivery_mechanism !== viewingProgram.program_type && (
+                  <Badge color="accent">{viewingProgram.delivery_mechanism}</Badge>
+                )}
                 <Badge>{viewingProgram.business_size || 'All'}</Badge>
+                {viewingProgram.program_category && viewingProgram.program_category !== 'Lighting' && (
+                  <Badge>{viewingProgram.program_category}</Badge>
+                )}
               </div>
               {(viewingProgram.program_url || viewingProgram.pdf_url) && (
-                <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                   {viewingProgram.program_url && (
-                    <a
-                      href={viewingProgram.program_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '6px 14px',
-                        backgroundColor: adminTheme.accentBg,
-                        color: adminTheme.accent,
-                        border: `1px solid ${adminTheme.accent}`,
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        textDecoration: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        cursor: 'pointer'
-                      }}
-                    >
+                    <a href={viewingProgram.program_url} target="_blank" rel="noopener noreferrer" style={{ padding: '6px 14px', backgroundColor: adminTheme.accentBg, color: adminTheme.accent, border: `1px solid ${adminTheme.accent}`, borderRadius: '6px', fontSize: '13px', fontWeight: '500', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <ExternalLink size={14} /> View Program Website
                     </a>
                   )}
                   {viewingProgram.pdf_url && (
-                    <a
-                      href={viewingProgram.pdf_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '6px 14px',
-                        backgroundColor: adminTheme.bgInput,
-                        color: adminTheme.text,
-                        border: `1px solid ${adminTheme.border}`,
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        textDecoration: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        cursor: 'pointer'
-                      }}
-                    >
+                    <a href={viewingProgram.pdf_url} target="_blank" rel="noopener noreferrer" style={{ padding: '6px 14px', backgroundColor: adminTheme.bgInput, color: adminTheme.text, border: `1px solid ${adminTheme.border}`, borderRadius: '6px', fontSize: '13px', fontWeight: '500', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <Download size={14} /> Download PDF
                     </a>
                   )}
@@ -1416,15 +1443,29 @@ export default function DataConsoleUtilities() {
             </div>
             <DetailRow label="Provider" value={viewingProgram.utility_name} />
             <DetailRow label="Program Type" value={viewingProgram.program_type} />
+            <DetailRow label="Delivery Mechanism" value={viewingProgram.delivery_mechanism} />
+            <DetailRow label="Program Category" value={viewingProgram.program_category} />
             <DetailRow label="Business Size" value={viewingProgram.business_size} />
             <DetailRow label="Source Year" value={viewingProgram.source_year} />
             <DetailRow label="Effective Date" value={viewingProgram.effective_date?.split('T')[0]} />
             <DetailRow label="Expiration Date" value={viewingProgram.expiration_date?.split('T')[0]} />
+            <DetailRow label="Funding Status" value={viewingProgram.funding_status} />
+            <DetailRow label="Processing Time" value={viewingProgram.processing_time_days ? `${viewingProgram.processing_time_days} days` : null} />
+            <DetailRow label="Payment Method" value={viewingProgram.rebate_payment_method} />
             <DetailRow label="Pre-Approval Required" value={viewingProgram.pre_approval_required ? 'Yes' : 'No'} />
+            <DetailRow label="Application Required" value={viewingProgram.application_required ? 'Yes' : 'No'} />
+            <DetailRow label="Post-Inspection" value={viewingProgram.post_inspection_required ? 'Yes' : 'No'} />
+            <DetailRow label="Contractor Prequal" value={viewingProgram.contractor_prequalification ? 'Yes' : 'No'} />
             <DetailRow label="DLC Required" value={viewingProgram.dlc_required ? 'Yes' : 'No'} />
             <DetailRow label="Max Cap Percent" value={viewingProgram.max_cap_percent ? `${viewingProgram.max_cap_percent}%` : null} />
             <DetailRow label="Annual Cap" value={viewingProgram.annual_cap_dollars ? `$${Number(viewingProgram.annual_cap_dollars).toLocaleString()}` : null} />
+            <DetailRow label="Eligible Sectors" value={viewingProgram.eligible_sectors?.length ? viewingProgram.eligible_sectors.join(', ') : null} />
+            <DetailRow label="Building Types" value={viewingProgram.eligible_building_types?.length ? viewingProgram.eligible_building_types.join(', ') : null} />
+            <DetailRow label="Required Documents" value={viewingProgram.required_documents?.length ? viewingProgram.required_documents.join(', ') : null} />
+            <DetailRow label="Stacking Allowed" value={viewingProgram.stacking_allowed === false ? 'No' : viewingProgram.stacking_allowed === true ? 'Yes' : null} />
+            <DetailRow label="Stacking Rules" value={viewingProgram.stacking_rules} />
             <DetailRow label="Program URL" value={viewingProgram.program_url} isUrl />
+            <DetailRow label="AI Notes" value={viewingProgram.program_notes_ai} />
             <DetailRow label="Notes" value={viewingProgram.notes} />
             {incentives.length > 0 && (
               <div style={{ marginTop: '16px' }}>
@@ -1459,20 +1500,30 @@ export default function DataConsoleUtilities() {
       </AdminModal>
 
       {/* Incentive Detail Modal */}
-      <AdminModal isOpen={!!viewingIncentive} onClose={() => setViewingIncentive(null)} title="Incentive Details" width="550px">
+      <AdminModal isOpen={!!viewingIncentive} onClose={() => setViewingIncentive(null)} title="Incentive Details" width="600px">
         {viewingIncentive && (
           <div>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span style={{ color: adminTheme.text, fontSize: '18px', fontWeight: '600' }}>{viewingIncentive.fixture_category}</span>
                 {viewingIncentive.measure_type && <Badge>{viewingIncentive.measure_type}</Badge>}
+                {viewingIncentive.measure_category && viewingIncentive.measure_category !== 'Lighting' && (
+                  <Badge color="accent">{viewingIncentive.measure_category}</Badge>
+                )}
+                {viewingIncentive.tier && <Badge color="accent">{viewingIncentive.tier}</Badge>}
               </div>
               <div style={{ color: adminTheme.accent, fontSize: '22px', fontWeight: '700', marginTop: '6px' }}>
                 ${viewingIncentive.rate_value ?? viewingIncentive.rate} {viewingIncentive.rate_unit || '/watt'}
               </div>
+              {viewingIncentive.measure_subcategory && (
+                <div style={{ color: adminTheme.textMuted, fontSize: '13px', marginTop: '4px' }}>{viewingIncentive.measure_subcategory}</div>
+              )}
             </div>
+            <DetailRow label="Measure Category" value={viewingIncentive.measure_category} />
+            <DetailRow label="Subcategory" value={viewingIncentive.measure_subcategory} />
             <DetailRow label="Measure Type" value={viewingIncentive.measure_type} />
             <DetailRow label="Fixture Category" value={viewingIncentive.fixture_category} />
+            <DetailRow label="Tier" value={viewingIncentive.tier} />
             <DetailRow label="Calculation Method" value={viewingIncentive.calc_method} />
             <DetailRow label="Rate Value" value={viewingIncentive.rate_value ?? viewingIncentive.rate} />
             <DetailRow label="Rate Unit" value={viewingIncentive.rate_unit} />
@@ -1480,7 +1531,15 @@ export default function DataConsoleUtilities() {
             <DetailRow label="Max Watts" value={viewingIncentive.max_watts} />
             <DetailRow label="Cap Amount" value={viewingIncentive.cap_amount ? `$${viewingIncentive.cap_amount}` : null} />
             <DetailRow label="Cap Percent" value={viewingIncentive.cap_percent ? `${viewingIncentive.cap_percent}%` : null} />
+            <DetailRow label="Per Unit Cap" value={viewingIncentive.per_unit_cap ? `$${viewingIncentive.per_unit_cap}` : null} />
+            <DetailRow label="Project Cap %" value={viewingIncentive.project_cap_percent ? `${viewingIncentive.project_cap_percent}%` : null} />
+            <DetailRow label="Equipment Req." value={viewingIncentive.equipment_requirements} />
+            <DetailRow label="Installation Req." value={viewingIncentive.installation_requirements} />
+            <DetailRow label="Baseline" value={viewingIncentive.baseline_description} />
+            <DetailRow label="Replacement" value={viewingIncentive.replacement_description} />
             <DetailRow label="Requirements" value={viewingIncentive.requirements} />
+            <DetailRow label="Effective Date" value={viewingIncentive.effective_date?.split('T')[0]} />
+            <DetailRow label="Expiration Date" value={viewingIncentive.expiration_date?.split('T')[0]} />
             <DetailRow label="Location Type" value={viewingIncentive.location_type} />
             <DetailRow label="Notes" value={viewingIncentive.notes} />
           </div>
@@ -1488,23 +1547,35 @@ export default function DataConsoleUtilities() {
       </AdminModal>
 
       {/* Rate Schedule Detail Modal */}
-      <AdminModal isOpen={!!viewingRateSchedule} onClose={() => setViewingRateSchedule(null)} title="Rate Schedule Details" width="550px">
+      <AdminModal isOpen={!!viewingRateSchedule} onClose={() => setViewingRateSchedule(null)} title="Rate Schedule Details" width="600px">
         {viewingRateSchedule && (
           <div>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ color: adminTheme.text, fontSize: '18px', fontWeight: '600' }}>{viewingRateSchedule.schedule_name}</div>
-              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
                 {viewingRateSchedule.customer_category && <Badge>{viewingRateSchedule.customer_category}</Badge>}
+                {viewingRateSchedule.rate_type && viewingRateSchedule.rate_type !== 'Flat' && <Badge color="accent">{viewingRateSchedule.rate_type}</Badge>}
                 {viewingRateSchedule.time_of_use && <Badge color="accent">Time of Use</Badge>}
+              </div>
+              <div style={{ color: adminTheme.accent, fontSize: '22px', fontWeight: '700', marginTop: '8px' }}>
+                {viewingRateSchedule.rate_per_kwh != null ? `$${Number(viewingRateSchedule.rate_per_kwh).toFixed(4)}/kWh` : '-'}
               </div>
             </div>
             <DetailRow label="Schedule Name" value={viewingRateSchedule.schedule_name} />
             <DetailRow label="Customer Category" value={viewingRateSchedule.customer_category} />
-            <DetailRow label="Rate per kWh" value={viewingRateSchedule.rate_per_kwh != null ? `$${Number(viewingRateSchedule.rate_per_kwh).toFixed(4)}/kWh` : null} />
+            <DetailRow label="Rate Type" value={viewingRateSchedule.rate_type} />
+            <DetailRow label="Base Rate" value={viewingRateSchedule.rate_per_kwh != null ? `$${Number(viewingRateSchedule.rate_per_kwh).toFixed(4)}/kWh` : null} />
+            <DetailRow label="Peak Rate" value={viewingRateSchedule.peak_rate_per_kwh != null ? `$${Number(viewingRateSchedule.peak_rate_per_kwh).toFixed(4)}/kWh` : null} />
+            <DetailRow label="Off-Peak Rate" value={viewingRateSchedule.off_peak_rate_per_kwh != null ? `$${Number(viewingRateSchedule.off_peak_rate_per_kwh).toFixed(4)}/kWh` : null} />
+            <DetailRow label="Summer Rate" value={viewingRateSchedule.summer_rate_per_kwh != null ? `$${Number(viewingRateSchedule.summer_rate_per_kwh).toFixed(4)}/kWh` : null} />
+            <DetailRow label="Winter Rate" value={viewingRateSchedule.winter_rate_per_kwh != null ? `$${Number(viewingRateSchedule.winter_rate_per_kwh).toFixed(4)}/kWh` : null} />
             <DetailRow label="Demand Charge" value={viewingRateSchedule.demand_charge ? `$${viewingRateSchedule.demand_charge}/kW` : null} />
+            <DetailRow label="Min Demand Charge" value={viewingRateSchedule.min_demand_charge ? `$${viewingRateSchedule.min_demand_charge}/mo` : null} />
+            <DetailRow label="Customer Charge" value={viewingRateSchedule.customer_charge ? `$${viewingRateSchedule.customer_charge}/mo` : null} />
             <DetailRow label="Time of Use" value={viewingRateSchedule.time_of_use ? 'Yes' : 'No'} />
             <DetailRow label="Description" value={viewingRateSchedule.description} />
             <DetailRow label="Effective Date" value={viewingRateSchedule.effective_date?.split('T')[0]} />
+            <DetailRow label="Source URL" value={viewingRateSchedule.source_url} isUrl />
             <DetailRow label="Notes" value={viewingRateSchedule.notes} />
           </div>
         )}
@@ -1618,8 +1689,13 @@ export default function DataConsoleUtilities() {
                       </div>
                       <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>
                         {pr.provider_name}
+                        {pr.delivery_mechanism && pr.delivery_mechanism !== pr.program_type && ` \u2022 ${pr.delivery_mechanism}`}
+                        {pr.program_category && pr.program_category !== 'Lighting' && ` \u2022 ${pr.program_category}`}
                         {pr.dlc_required && ' \u2022 DLC Required'}
-                        {pr.pre_approval_required && ' \u2022 Pre-Approval Required'}
+                        {pr.pre_approval_required && ' \u2022 Pre-Approval'}
+                        {pr.funding_status && pr.funding_status !== 'Open' && ` \u2022 ${pr.funding_status}`}
+                        {pr.stacking_allowed === false && ' \u2022 No Stacking'}
+                        {pr.required_documents?.length > 0 && ` \u2022 ${pr.required_documents.length} docs required`}
                       </div>
                     </div>
                   </div>
@@ -1660,7 +1736,9 @@ export default function DataConsoleUtilities() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{r.fixture_category}</span>
+                        {r.measure_category && r.measure_category !== 'Lighting' && <Badge color="accent">{r.measure_category}</Badge>}
                         {r.measure_type && <Badge>{r.measure_type}</Badge>}
+                        {r.tier && <Badge color="accent">{r.tier}</Badge>}
                         <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '13px' }}>
                           ${r.rate_value ?? r.rate}{r.rate_unit || '/watt'}
                         </span>
@@ -1670,7 +1748,16 @@ export default function DataConsoleUtilities() {
                         {r.provider_name} \u2014 {r.program_name}
                         {r.cap_amount && ` \u2022 Cap: $${r.cap_amount}`}
                         {r.cap_percent && ` \u2022 Cap: ${r.cap_percent}%`}
+                        {r.effective_date && ` \u2022 From: ${r.effective_date}`}
+                        {r.expiration_date && ` \u2022 Until: ${r.expiration_date}`}
                       </div>
+                      {(r.equipment_requirements || r.baseline_description) && (
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px' }}>
+                          {r.equipment_requirements && `Equip: ${r.equipment_requirements}`}
+                          {r.equipment_requirements && r.baseline_description && ' \u2022 '}
+                          {r.baseline_description && `Baseline: ${r.baseline_description}`}
+                        </div>
+                      )}
                       {r.requirements && (
                         <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px', fontStyle: 'italic' }}>
                           {r.requirements}
@@ -1717,12 +1804,23 @@ export default function DataConsoleUtilities() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                           <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{rs.schedule_name}</span>
                           {rs.customer_category && <Badge>{rs.customer_category}</Badge>}
+                          {rs.rate_type && rs.rate_type !== 'Flat' && <Badge color="accent">{rs.rate_type}</Badge>}
                           {rs.time_of_use && <Badge color="accent">TOU</Badge>}
                         </div>
-                        <div style={{ display: 'flex', gap: '12px', marginTop: '2px' }}>
+                        <div style={{ display: 'flex', gap: '12px', marginTop: '2px', flexWrap: 'wrap' }}>
                           <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '13px' }}>
                             {rs.rate_per_kwh != null ? `$${Number(rs.rate_per_kwh).toFixed(4)}/kWh` : '-'}
                           </span>
+                          {rs.peak_rate_per_kwh != null && (
+                            <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>
+                              Peak: ${Number(rs.peak_rate_per_kwh).toFixed(4)}
+                            </span>
+                          )}
+                          {rs.off_peak_rate_per_kwh != null && (
+                            <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>
+                              Off-Peak: ${Number(rs.off_peak_rate_per_kwh).toFixed(4)}
+                            </span>
+                          )}
                           {rs.demand_charge && (
                             <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>
                               ${rs.demand_charge}/kW demand
@@ -1732,6 +1830,7 @@ export default function DataConsoleUtilities() {
                         <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px' }}>
                           {rs.provider_name}
                           {rs.effective_date && ` \u2022 Effective: ${rs.effective_date}`}
+                          {rs.source_url && ` \u2022 Source available`}
                         </div>
                       </div>
                     </div>

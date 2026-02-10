@@ -39,7 +39,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 32000,
-        system: `You are a utility rebate and electric rate research assistant. Your job is to research electric utility providers in a given US state, their commercial LED lighting incentive programs, and their published electric rate schedules.
+        system: `You are a utility rebate and electric rate research assistant. Your job is to research electric utility providers in a given US state, their commercial energy efficiency incentive programs (lighting, HVAC, motors, refrigeration, building envelope), and their published electric rate schedules.
 
 CRITICAL — YEAR VERIFICATION:
 - For every program, find the effective date or publication year of the source document
@@ -49,23 +49,30 @@ CRITICAL — YEAR VERIFICATION:
 
 Research thoroughly and return accurate, structured JSON data. Focus on:
 1. Major electric utility providers in the state
-2. Their commercial/industrial LED lighting incentive programs with DEEP detail
-3. Specific incentive rates per fixture category and measure type — actual $/watt amounts, caps, and requirements
-4. Published electric rate schedules — $/kWh rates, demand charges, customer categories
+2. Their commercial/industrial energy efficiency incentive programs with DEEP detail
+3. Specific incentive rates per fixture/equipment category and measure type — actual $/watt amounts, $/unit amounts, caps, and requirements
+4. Published electric rate schedules — $/kWh rates (flat, TOU, seasonal), demand charges, customer categories
+5. Program eligibility rules, required documentation, stacking rules, and funding status
 
 Important guidelines:
 - Only include utilities that actually serve the state
-- For incentive measures, focus on LED retrofit/replacement incentives
-- Use "Per Watt Reduced" as the default calc_method unless the program specifically uses per-fixture incentives
-- rate_unit should be "/watt" for per-watt-reduced or "/fixture" for per-fixture
+- For incentive measures, include LED retrofit/replacement AND other efficiency measures (HVAC, motors, refrigeration, building envelope) if the utility offers them
+- Use "Per Watt Reduced" as the default calc_method for lighting unless the program specifically uses per-fixture incentives
+- rate_unit should be "/watt" for per-watt-reduced or "/fixture" for per-fixture or "/unit" for equipment
 - fixture_category must be one of: Linear, High Bay, Low Bay, Outdoor Area, Outdoor Wall, Decorative, Refrigeration, Other
-- measure_type examples: LED Retrofit, LED New Construction, LED Exterior, Controls, DLC Listed
+- measure_type examples: LED Retrofit, LED New Construction, LED Exterior, Controls, DLC Listed, VFD, Rooftop Unit, Walk-in Cooler, Insulation
 - program_type must be one of: Prescriptive, Custom, Midstream
+- delivery_mechanism: more specific track — Prescriptive, Custom, Midstream, Direct Install, SMBE (Small/Medium Business Energy), SBDI (Small Business Direct Install), or null
 - business_size must be one of: Small, Medium, Large, All
 - If you cannot find specific rate data, provide your best estimate based on typical utility programs in that region and note it in the notes field
 - Include the program URL if you can find it
 - For rate schedules, include all major customer categories (Residential, Small Commercial, Large Commercial, Industrial)
 - rate_per_kwh should be the average or base rate in dollars (e.g. 0.0845 for 8.45 cents/kWh)
+- For TOU schedules, include peak and off-peak rates separately
+- For seasonal schedules, include summer and winter rates separately
+- Research what documents are required to apply (W9, invoices, photos, spec sheets, DLC certificates, etc.)
+- Check if incentives from different programs can be stacked/combined
+- Note the funding status — is the program open, waitlisted, or funds exhausted?
 
 Return ONLY valid JSON with this exact structure, no other text:
 {
@@ -85,28 +92,52 @@ Return ONLY valid JSON with this exact structure, no other text:
       "provider_name": "must match a provider_name above",
       "program_name": "string — include year like 'Program Name (2026)'",
       "program_type": "Prescriptive|Custom|Midstream",
+      "program_category": "Lighting|HVAC|Motors|Refrigeration|Building Envelope|Comprehensive",
+      "delivery_mechanism": "Prescriptive|Custom|Midstream|Direct Install|SMBE|SBDI or null",
       "business_size": "Small|Medium|Large|All",
       "dlc_required": true/false,
       "pre_approval_required": true/false,
+      "application_required": true/false,
+      "post_inspection_required": true/false,
+      "contractor_prequalification": true/false,
       "program_url": "url or empty string",
       "max_cap_percent": number or null,
       "annual_cap_dollars": number or null,
-      "source_year": number or null
+      "source_year": number or null,
+      "eligible_sectors": ["Commercial","Industrial","Agricultural","Institutional","Multifamily"] or null,
+      "eligible_building_types": ["Office","Warehouse","Retail","Restaurant","School","Hospital","Manufacturing"] or null,
+      "required_documents": ["W9","Invoice","Pre-photo","Post-photo","Spec sheets","DLC certificate"] or null,
+      "stacking_allowed": true/false,
+      "stacking_rules": "string describing what can/cannot combine, or empty string",
+      "funding_status": "Open|Waitlisted|Exhausted|Paused",
+      "processing_time_days": number or null,
+      "rebate_payment_method": "Check|Bill Credit|Direct Deposit or null",
+      "program_notes_ai": "string — tips, gotchas, common rejection reasons for AI agents"
     }
   ],
   "incentives": [
     {
       "provider_name": "must match a provider_name above",
       "program_name": "must match a program_name above",
+      "measure_category": "Lighting|HVAC|Motors|Refrigeration|Building Envelope|Controls|Other",
+      "measure_subcategory": "string — e.g. LED Tube, VFD, Rooftop Unit, Walk-in Cooler, Insulation",
       "fixture_category": "Linear|High Bay|Low Bay|Outdoor Area|Outdoor Wall|Decorative|Refrigeration|Other",
       "measure_type": "LED Retrofit|LED New Construction|LED Exterior|Controls|DLC Listed|Other",
       "calc_method": "Per Watt Reduced|Per Fixture|Custom",
       "rate": number,
       "rate_value": number,
-      "rate_unit": "/watt or /fixture",
+      "rate_unit": "/watt or /fixture or /unit",
+      "tier": "string — e.g. Tier 1, Tier 2, Premium, or null",
       "cap_amount": number or null,
       "cap_percent": number or null,
-      "requirements": "string describing eligibility requirements or empty string",
+      "per_unit_cap": number or null,
+      "equipment_requirements": "string — e.g. Must be DLC 5.1 Premium, ENERGY STAR certified",
+      "installation_requirements": "string — e.g. Must be installed by certified contractor",
+      "baseline_description": "string — what existing equipment must be, e.g. Existing T12 fluorescent",
+      "replacement_description": "string — what replacement must be, e.g. DLC-listed LED tube or fixture",
+      "requirements": "string describing general eligibility requirements or empty string",
+      "effective_date": "YYYY-MM-DD or null",
+      "expiration_date": "YYYY-MM-DD or null",
       "min_watts": number or null,
       "max_watts": number or null,
       "notes": "string"
@@ -117,10 +148,18 @@ Return ONLY valid JSON with this exact structure, no other text:
       "provider_name": "must match a provider_name above",
       "schedule_name": "string — e.g. 'Schedule 6 - General Service'",
       "customer_category": "Residential|Small Commercial|Large Commercial|Industrial|Agricultural",
+      "rate_type": "Flat|Tiered|Time-of-Use|Seasonal|Demand",
       "rate_per_kwh": number (in dollars, e.g. 0.0845),
+      "peak_rate_per_kwh": number or null (on-peak for TOU),
+      "off_peak_rate_per_kwh": number or null (off-peak for TOU),
+      "summer_rate_per_kwh": number or null,
+      "winter_rate_per_kwh": number or null,
       "demand_charge": number or null ($/kW),
+      "min_demand_charge": number or null (minimum monthly),
+      "customer_charge": number or null (fixed monthly charge),
       "time_of_use": true/false,
       "effective_date": "YYYY-MM-DD or empty string",
+      "source_url": "url to tariff document or empty string",
       "description": "string",
       "notes": "string"
     }
@@ -128,7 +167,15 @@ Return ONLY valid JSON with this exact structure, no other text:
 }`,
         messages: [{
           role: 'user',
-          content: `Research all major electric utility providers in ${state} and their commercial LED lighting incentive programs. Include specific incentive rates for different fixture categories and measure types where available. Also research their published electric rate schedules for all customer categories. Verify the year/effective date of each program document. Return the structured JSON as specified.`
+          content: `Research all major electric utility providers in ${state} and their commercial energy efficiency incentive programs. Include:
+1. Specific incentive rates for different fixture/equipment categories and measure types (lighting, HVAC, motors, refrigeration, building envelope)
+2. Published electric rate schedules for all customer categories, including TOU and seasonal rates where available
+3. Program eligibility rules: required documents, pre-approval requirements, contractor prequalification, eligible building types and business sectors
+4. Stacking rules: which programs can combine and which cannot
+5. Funding status: is the program still accepting applications?
+6. Delivery mechanisms: Prescriptive, Custom, Midstream, Direct Install, SMBE, SBDI tracks
+7. Verify the year/effective date of each program document
+Return the structured JSON as specified.`
         }]
       })
     });
