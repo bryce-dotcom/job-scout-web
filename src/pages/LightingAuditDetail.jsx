@@ -360,6 +360,12 @@ export default function LightingAuditDetail() {
           .audit-modal-grid-2, .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
           .audit-modal-footer { flex-direction: column !important; }
           .audit-modal-footer button { width: 100% !important; min-height: 48px !important; font-size: 16px !important; border-radius: 10px !important; }
+
+          /* Lenard photo section compact */
+          .lenard-photo { padding: 16px !important; border-width: 1px !important; }
+          .lenard-photo-emoji { font-size: 24px !important; margin-bottom: 4px !important; }
+          .lenard-photo-buttons { flex-direction: column !important; gap: 10px !important; }
+          .lenard-photo-buttons > label { width: 100% !important; text-align: center !important; padding: 14px 20px !important; font-size: 16px !important; border-radius: 10px !important; box-sizing: border-box !important; }
         }
       `}</style>
       {/* Header */}
@@ -823,7 +829,7 @@ export default function LightingAuditDetail() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* Lenard AI Photo Analysis */}
               {!editingArea && (
-                <div style={{
+                <div className="lenard-photo" style={{
                   backgroundColor: 'rgba(90, 99, 73, 0.1)',
                   border: '2px dashed #5a6349',
                   borderRadius: '12px',
@@ -832,14 +838,14 @@ export default function LightingAuditDetail() {
                 }}>
                   {!photoPreview ? (
                     <>
-                      <div style={{ fontSize: '32px', marginBottom: '8px' }}>📸</div>
+                      <div className="lenard-photo-emoji" style={{ fontSize: '32px', marginBottom: '8px' }}>📸</div>
                       <p style={{ color: '#5a6349', fontWeight: '600', marginBottom: '8px', margin: '0 0 8px' }}>
                         Let Lenard identify your fixtures
                       </p>
                       <p style={{ color: '#7d8a7f', fontSize: '14px', marginBottom: '16px', margin: '0 0 16px' }}>
                         Take a photo or upload an image and AI will auto-fill the form
                       </p>
-                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                      <div className="lenard-photo-buttons" style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                         <label style={{
                           padding: '10px 20px',
                           backgroundColor: '#5a6349',

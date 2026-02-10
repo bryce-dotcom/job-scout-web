@@ -581,8 +581,30 @@ export default function NewLightingAudit() {
           .audit-step-prefix { display: none !important; }
           .audit-header h1 { font-size: 20px !important; }
           .audit-form-grid-2, .audit-form-grid-3 { grid-template-columns: 1fr !important; }
-          .audit-rate-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+
+          /* Rate schedule cards: horizontal scroll single row */
+          .audit-rate-grid {
+            display: flex !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            scroll-snap-type: x mandatory !important;
+            padding-bottom: 6px !important;
+            gap: 8px !important;
+          }
+          .audit-rate-grid > div {
+            flex: 0 0 130px !important;
+            scroll-snap-align: start !important;
+            padding: 10px 8px !important;
+          }
+          .audit-rate-grid > div > svg { width: 22px !important; height: 22px !important; margin-bottom: 2px !important; }
+          .audit-rate-grid::-webkit-scrollbar { height: 3px; }
+          .audit-rate-grid::-webkit-scrollbar-thumb { background: rgba(90,99,73,0.3); border-radius: 2px; }
+
+          /* Building size cards: compact */
           .audit-size-grid { gap: 8px !important; }
+          .audit-size-grid > div { padding: 10px 6px !important; }
+          .audit-size-grid > div > svg { width: 24px !important; height: 24px !important; margin-bottom: 2px !important; }
+
           .audit-area-stats { grid-template-columns: 1fr 1fr !important; }
           .audit-review-details { grid-template-columns: 1fr !important; }
           .audit-nav { gap: 8px !important; }
@@ -591,10 +613,18 @@ export default function NewLightingAudit() {
           .audit-root .stat-grid > div { padding: 10px !important; }
           .audit-root .stat-grid > div > div:first-of-type { font-size: 11px !important; }
           .audit-root .stat-grid > div > div:last-of-type { font-size: 18px !important; }
+
+          /* Full-screen modal */
           .audit-area-modal { max-width: 100% !important; max-height: 100% !important; width: 100% !important; height: 100% !important; border-radius: 0 !important; padding: 16px !important; }
           .audit-modal-grid-2, .audit-modal-grid-3 { grid-template-columns: 1fr !important; }
           .audit-modal-footer { flex-direction: column !important; }
           .audit-modal-footer button { width: 100% !important; min-height: 48px !important; font-size: 16px !important; border-radius: 10px !important; }
+
+          /* Lenard photo section compact */
+          .lenard-photo { padding: 16px !important; border-width: 1px !important; }
+          .lenard-photo-emoji { font-size: 28px !important; margin-bottom: 6px !important; }
+          .lenard-photo-buttons { flex-direction: column !important; gap: 10px !important; }
+          .lenard-photo-buttons > label { width: 100% !important; text-align: center !important; padding: 14px 20px !important; font-size: 16px !important; border-radius: 10px !important; box-sizing: border-box !important; }
         }
       `}</style>
       {/* Header */}
@@ -1142,7 +1172,7 @@ export default function NewLightingAudit() {
             </div>
           </div>
 
-          <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+          <div className="audit-nav" style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
             <button
               onClick={() => setStep(2)}
               style={{
@@ -1603,7 +1633,7 @@ export default function NewLightingAudit() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* Lenard AI Photo Analysis */}
               {editingAreaIndex === null && (
-                <div style={{
+                <div className="lenard-photo" style={{
                   backgroundColor: 'rgba(90, 99, 73, 0.1)',
                   border: '2px dashed #5a6349',
                   borderRadius: '12px',
@@ -1612,14 +1642,14 @@ export default function NewLightingAudit() {
                 }}>
                   {!photoPreview ? (
                     <>
-                      <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔦</div>
+                      <div className="lenard-photo-emoji" style={{ fontSize: '40px', marginBottom: '12px' }}>🔦</div>
                       <p style={{ color: '#5a6349', fontWeight: '600', marginBottom: '4px', margin: '0 0 4px' }}>
                         Let Lenard identify your fixtures
                       </p>
                       <p style={{ color: '#7d8a7f', fontSize: '14px', marginBottom: '20px', margin: '0 0 20px' }}>
                         Snap a photo and AI will auto-fill the form
                       </p>
-                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                      <div className="lenard-photo-buttons" style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
                         <label style={{
                           padding: '12px 24px',
                           backgroundColor: '#5a6349',
