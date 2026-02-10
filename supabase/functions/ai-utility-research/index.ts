@@ -40,51 +40,61 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 64000,
-        system: `You are a utility rebate and electric rate research assistant. Your job is to research electric utility providers in a given US state, their commercial energy efficiency incentive programs (lighting, HVAC, motors, refrigeration, building envelope), and their published electric rate schedules.
+        system: `You are a utility rebate and electric rate research assistant. Your job is to research electric utility providers in a given US state, their commercial energy efficiency incentive programs (lighting, HVAC, motors, refrigeration, building envelope), their published electric rate schedules, and their available forms/documents.
 
-CRITICAL — YEAR VERIFICATION:
-- For every program, find the effective date or publication year of the source document
-- Include the year in the program name like "Wattsmart Business (2026)"
-- Return the year as a separate "source_year" field (integer)
-- If you cannot verify the year, set source_year to null and note "Year unverified" in notes
+RESEARCH BENCHMARK HIERARCHY — Research in this order, filling every level:
 
-Research thoroughly and return accurate, structured JSON data. Focus on:
-1. Major electric utility providers in the state
-2. Their commercial/industrial energy efficiency incentive programs with DEEP detail
-3. Specific incentive rates per fixture/equipment category and measure type — actual $/watt amounts, $/unit amounts, caps, and requirements
-4. Published electric rate schedules — $/kWh rates (flat, TOU, seasonal), demand charges, customer categories
-5. Program eligibility rules, required documentation, stacking rules, and funding status
+Level 1: UTILITY DISCOVERY
+- Find all utilities in the state (electric, gas, co-ops)
+- Service territories, contact info, website
+- Does each utility have a rebate program?
 
-Important guidelines:
-- Only include utilities that actually serve the state
-- For incentive measures, include LED retrofit/replacement AND other efficiency measures (HVAC, motors, refrigeration, building envelope) if the utility offers them
-- Use "Per Watt Reduced" as the default calc_method for lighting unless the program specifically uses per-fixture incentives
-- rate_unit should be "/watt" for per-watt-reduced or "/fixture" for per-fixture or "/unit" for equipment
+Level 2: PROGRAM DISCOVERY (for each utility)
+- All incentive/rebate programs
+- Latest program year/version (include in name like "Program Name (2026)")
+- Program type (Prescriptive, Custom, Midstream, Direct Install, SMBE, SBDI)
+- Program URL + PDF URL
+
+Level 3: PROGRAM DETAILS (for each program)
+- Qualification rules (business size, demand kW, annual kWh)
+- Caps (% of project, annual $, per-measure)
+- Required documentation list (W9, invoices, photos, spec sheets, DLC certs)
+- Pre-approval required? Post-inspection required? Contractor prequalification?
+- Stacking rules (what combines, what doesn't)
+- Funding status (Open, Waitlisted, Exhausted, Paused)
+- Processing time, payment method (check, bill credit, direct deposit)
+
+Level 4: MEASURE CATEGORIES (within each program)
+- Incentive rates for: Lighting, HVAC, Motors/VFDs, Refrigeration, Building Envelope, Controls, Solar/Batteries, Custom/Calculated
+- Calculation methods, tiers, caps per category
+
+Level 5: PRESCRIPTIVE MEASURES (within each category)
+- Every specific line item from rebate tables (utilities often have 20-100+ measures)
+- Measure name, code, baseline/replacement equipment+wattage
+- Exact incentive amount + unit ($/watt, $/fixture, $/kW, flat)
+- DLC/ENERGY STAR requirements, location type, application type
+- Source page reference from PDF
+
+Level 6: RATE SCHEDULES
+- Schedule name + number, customer category
+- Rate type, $/kWh rates (base, peak, off-peak, summer, winter)
+- Demand charge, customer charge, tariff PDF URL
+
+Level 7: FORMS & DOCUMENTS
+- For each program, identify available forms: Application, Worksheet, Pre-approval, W9, Invoice template, Checklist, Verification
+- Include the URL where each form can be downloaded
+- Note the form version year and whether it's required
+
+CRITICAL GUIDELINES:
+- Do NOT hardcode any utility names — work generically for any state
+- Verify the year/effective date of each program document
+- If you cannot verify the year, set source_year to null and note "Year unverified"
+- rate_unit should be "/watt" for per-watt-reduced, "/fixture" for per-fixture, "/unit" for equipment
 - fixture_category must be one of: Linear, High Bay, Low Bay, Outdoor Area, Outdoor Wall, Decorative, Refrigeration, Other
-- measure_type examples: LED Retrofit, LED New Construction, LED Exterior, Controls, DLC Listed, VFD, Rooftop Unit, Walk-in Cooler, Insulation
 - program_type must be one of: Prescriptive, Custom, Midstream
-- delivery_mechanism: more specific track — Prescriptive, Custom, Midstream, Direct Install, SMBE (Small/Medium Business Energy), SBDI (Small Business Direct Install), or null
 - business_size must be one of: Small, Medium, Large, All
-- If you cannot find specific rate data, provide your best estimate based on typical utility programs in that region and note it in the notes field
-- Include the program URL if you can find it
-- For rate schedules, include all major customer categories (Residential, Small Commercial, Large Commercial, Industrial)
-- rate_per_kwh should be the average or base rate in dollars (e.g. 0.0845 for 8.45 cents/kWh)
-- For TOU schedules, include peak and off-peak rates separately
-- For seasonal schedules, include summer and winter rates separately
-- Research what documents are required to apply (W9, invoices, photos, spec sheets, DLC certificates, etc.)
-- Check if incentives from different programs can be stacked/combined
-- Note the funding status — is the program open, waitlisted, or funds exhausted?
-
-PRESCRIPTIVE MEASURE LINE ITEMS — CRITICAL:
-- For EVERY program found, search for the actual prescriptive measure documentation (rebate worksheets, applications, measure lists, PDF rebate tables)
-- Extract EVERY specific line item from rebate tables — specific fixture types, wattages, rebate amounts per unit
-- Do NOT hardcode any utility names — this must work generically for any utility in any state
-- Return as many specific measures as possible — utilities often have 20-50+ line items per program
-- Include baseline equipment descriptions, replacement equipment descriptions, exact wattages, and exact incentive dollar amounts
-- If a utility publishes a prescriptive rebate worksheet or measure list, extract every row from it
-- Categorize each measure into the appropriate category and subcategory
-- Note whether DLC listing or ENERGY STAR certification is required for each measure
-- Include the source page reference from the PDF document when available
+- rate_per_kwh in dollars (e.g. 0.0845 for 8.45 cents/kWh)
+- For fields you cannot find data for, set to null — do not omit the field
 
 Return ONLY valid JSON with this exact structure, no other text:
 {
@@ -201,20 +211,33 @@ Return ONLY valid JSON with this exact structure, no other text:
       "source_page": "page reference from PDF or null",
       "notes": "special conditions"
     }
+  ],
+  "forms": [
+    {
+      "provider_name": "must match a provider_name above",
+      "program_name": "must match a program_name above or null for provider-level forms",
+      "form_name": "string — e.g. 'Prescriptive Rebate Application'",
+      "form_type": "Application|Worksheet|Pre-approval|W9|Invoice|Checklist|Verification",
+      "form_url": "url to download form or empty string",
+      "version_year": number or null,
+      "is_required": true/false,
+      "form_notes": "string"
+    }
   ]
 }`,
         messages: [{
           role: 'user',
-          content: `Research all major electric utility providers in ${state} and their commercial energy efficiency incentive programs. Include:
-1. Specific incentive rates for different fixture/equipment categories and measure types (lighting, HVAC, motors, refrigeration, building envelope)
-2. Published electric rate schedules for all customer categories, including TOU and seasonal rates where available
-3. Program eligibility rules: required documents, pre-approval requirements, contractor prequalification, eligible building types and business sectors
-4. Stacking rules: which programs can combine and which cannot
-5. Funding status: is the program still accepting applications?
-6. Delivery mechanisms: Prescriptive, Custom, Midstream, Direct Install, SMBE, SBDI tracks
-7. Verify the year/effective date of each program document
-8. PRESCRIPTIVE MEASURE LINE ITEMS: For every program, find the prescriptive rebate worksheets, measure lists, or rebate tables. Extract EVERY individual line item — specific fixture types, baseline and replacement wattages, exact rebate dollar amounts per unit, measure codes, DLC/ENERGY STAR requirements, and any location or application type restrictions. Utilities often have 20-50+ individual prescriptive measures per program — return as many as you can find.
-Return the structured JSON as specified.`
+          content: `Research all major electric utility providers in ${state} following the benchmark hierarchy (Levels 1-7):
+
+Level 1 — UTILITIES: Find all electric/gas utilities and co-ops serving ${state}
+Level 2 — PROGRAMS: All incentive/rebate programs per utility, with URLs and year
+Level 3 — DETAILS: Qualification rules, caps, required docs, stacking, funding status
+Level 4 — CATEGORIES: Incentive rates per measure category (Lighting, HVAC, Motors, Refrigeration, Building Envelope, Controls)
+Level 5 — PRESCRIPTIVE MEASURES: Extract EVERY line item from rebate tables — specific fixture types, baseline/replacement wattages, exact $/unit amounts, DLC/ENERGY STAR requirements. Utilities often have 20-100+ measures per program.
+Level 6 — RATES: All published rate schedules, TOU rates, seasonal rates, demand charges
+Level 7 — FORMS: Application forms, rebate worksheets, pre-approval forms, checklists — include download URLs
+
+Return the structured JSON as specified. Maximize completeness at every level.`
         }]
       })
     });
@@ -261,6 +284,11 @@ Return the structured JSON as specified.`
       // Default prescriptive_measures to empty array if missing
       if (!results.prescriptive_measures) {
         results.prescriptive_measures = [];
+      }
+
+      // Default forms to empty array if missing
+      if (!results.forms) {
+        results.forms = [];
       }
 
       // Validate structure
@@ -387,7 +415,49 @@ Return the structured JSON as specified.`
         }
       }
 
-      return new Response(JSON.stringify({ success: true, results }), {
+      // Calculate completeness score across benchmark levels
+      const levelScores: Record<string, { name: string; score: number; count: number }> = {};
+      const scoreLevels = [
+        { level: 1, name: 'Utility Discovery', key: 'providers', required: ['provider_name', 'state', 'has_rebate_program'], optional: ['service_territory', 'rebate_program_url', 'contact_phone'] },
+        { level: 2, name: 'Program Discovery', key: 'programs', required: ['provider_name', 'program_name', 'program_type'], optional: ['program_category', 'delivery_mechanism', 'program_url', 'source_year'] },
+        { level: 3, name: 'Program Details', key: 'programs', required: ['program_name'], optional: ['max_cap_percent', 'annual_cap_dollars', 'required_documents', 'pre_approval_required', 'stacking_allowed', 'funding_status', 'processing_time_days'] },
+        { level: 4, name: 'Measure Categories', key: 'incentives', required: ['provider_name', 'program_name', 'fixture_category', 'rate_value'], optional: ['measure_category', 'calc_method', 'rate_unit', 'tier', 'cap_amount'] },
+        { level: 5, name: 'Prescriptive Measures', key: 'prescriptive_measures', required: ['provider_name', 'program_name', 'measure_name', 'incentive_amount'], optional: ['measure_code', 'baseline_equipment', 'baseline_wattage', 'replacement_equipment', 'incentive_unit', 'dlc_required', 'source_page'] },
+        { level: 6, name: 'Rate Schedules', key: 'rate_schedules', required: ['provider_name', 'schedule_name', 'rate_per_kwh'], optional: ['customer_category', 'rate_type', 'peak_rate_per_kwh', 'demand_charge', 'source_url'] },
+        { level: 7, name: 'Forms & Documents', key: 'forms', required: ['form_name', 'form_type'], optional: ['form_url', 'version_year', 'is_required'] }
+      ];
+
+      let totalWeighted = 0;
+      let weightedFilled = 0;
+      const weights: Record<number, number> = { 1: 10, 2: 15, 3: 15, 4: 15, 5: 25, 6: 10, 7: 10 };
+      const missing_data: string[] = [];
+
+      for (const sl of scoreLevels) {
+        const items = (results as Record<string, unknown[]>)[sl.key] || [];
+        let filled = 0;
+        let total = 0;
+        for (const item of items) {
+          const rec = item as Record<string, unknown>;
+          for (const f of [...sl.required, ...sl.optional]) {
+            total++;
+            if (rec[f] != null && rec[f] !== '' && rec[f] !== false) filled++;
+          }
+        }
+        const score = total > 0 ? Math.round((filled / total) * 100) : 0;
+        levelScores[sl.level] = { name: sl.name, score, count: items.length };
+        const w = weights[sl.level] || 10;
+        totalWeighted += w;
+        weightedFilled += (score / 100) * w;
+        if (items.length === 0) {
+          missing_data.push(`Level ${sl.level} (${sl.name}): No data found`);
+        } else if (score < 50) {
+          missing_data.push(`Level ${sl.level} (${sl.name}): Only ${score}% complete — needs PDF upload`);
+        }
+      }
+
+      const completeness_score = totalWeighted > 0 ? Math.round((weightedFilled / totalWeighted) * 100) : 0;
+
+      return new Response(JSON.stringify({ success: true, results, completeness_score, level_scores: levelScores, missing_data }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }

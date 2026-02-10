@@ -50,7 +50,8 @@ export default function DataConsoleUtilities() {
   const [incentives, setIncentives] = useState([])
   const [rateSchedules, setRateSchedules] = useState([])
   const [prescriptiveMeasures, setPrescriptiveMeasures] = useState([])
-  const [loading, setLoading] = useState({ providers: true, programs: false, incentives: false, rateSchedules: false, prescriptive: false })
+  const [forms, setForms] = useState([])
+  const [loading, setLoading] = useState({ providers: true, programs: false, incentives: false, rateSchedules: false, prescriptive: false, forms: false })
 
   const [selectedProvider, setSelectedProvider] = useState(null)
   const [selectedProgram, setSelectedProgram] = useState(null)
@@ -63,6 +64,7 @@ export default function DataConsoleUtilities() {
   const [editingIncentive, setEditingIncentive] = useState(null)
   const [editingRateSchedule, setEditingRateSchedule] = useState(null)
   const [editingPrescriptive, setEditingPrescriptive] = useState(null)
+  const [editingForm, setEditingForm] = useState(null)
   const [saving, setSaving] = useState(false)
 
   // Detail modal state
@@ -82,6 +84,7 @@ export default function DataConsoleUtilities() {
   const [checkedIncentives, setCheckedIncentives] = useState({})
   const [checkedRateSchedules, setCheckedRateSchedules] = useState({})
   const [checkedPrescriptive, setCheckedPrescriptive] = useState({})
+  const [checkedForms, setCheckedForms] = useState({})
   const [importing, setImporting] = useState(false)
 
   // PDF parsing state
@@ -101,10 +104,12 @@ export default function DataConsoleUtilities() {
     if (selectedProvider) {
       fetchPrograms(selectedProvider.provider_name)
       fetchRateSchedules(selectedProvider.id)
+      fetchForms(selectedProvider.id, null)
     } else {
       setPrograms([])
       setSelectedProgram(null)
       setRateSchedules([])
+      setForms([])
     }
   }, [selectedProvider])
 
@@ -112,9 +117,11 @@ export default function DataConsoleUtilities() {
     if (selectedProgram) {
       fetchIncentives(selectedProgram.id)
       fetchPrescriptiveMeasures(selectedProgram.id)
+      if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram.id)
     } else {
       setIncentives([])
       setPrescriptiveMeasures([])
+      if (selectedProvider) fetchForms(selectedProvider.id, null)
     }
   }, [selectedProgram])
 
@@ -172,6 +179,74 @@ export default function DataConsoleUtilities() {
     setLoading(l => ({ ...l, prescriptive: false }))
   }
 
+  const fetchForms = async (providerId, programId) => {
+    setLoading(l => ({ ...l, forms: true }))
+    let query = supabase
+      .from('utility_forms')
+      .select('*')
+      .eq('provider_id', providerId)
+      .order('form_name')
+    if (programId) {
+      query = query.or(`program_id.eq.${programId},program_id.is.null`)
+    }
+    const { data } = await query
+    setForms(data || [])
+    setLoading(l => ({ ...l, forms: false }))
+  }
+
+  // Form CRUD
+  const handleSaveForm = async () => {
+    setSaving(true)
+    try {
+      const data = {
+        ...editingForm,
+        provider_id: selectedProvider?.id || null,
+        program_id: selectedProgram?.id || editingForm.program_id || null
+      }
+      if (editingForm.id) {
+        await supabase.from('utility_forms').update(data).eq('id', editingForm.id)
+      } else {
+        await supabase.from('utility_forms').insert(data)
+      }
+      if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
+      setEditingForm(null)
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setSaving(false)
+  }
+
+  const handleDeleteForm = async (form) => {
+    if (!confirm('Delete this form?')) return
+    const { error } = await supabase.from('utility_forms').delete().eq('id', form.id)
+    if (error) {
+      alert('Delete failed: ' + error.message)
+      return
+    }
+    if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
+  }
+
+  const handleDeleteAllForms = async () => {
+    if (!selectedProvider) return
+    if (!confirm(`Delete ALL ${forms.length} forms? This cannot be undone.`)) return
+    let errors = 0
+    for (const f of forms) {
+      const { error } = await supabase.from('utility_forms').delete().eq('id', f.id)
+      if (error) errors++
+    }
+    if (errors > 0) alert(`Completed with ${errors} error(s).`)
+    fetchForms(selectedProvider.id, selectedProgram?.id || null)
+  }
+
+  const handlePublishForm = async (form) => {
+    const { error } = await supabase.from('utility_forms').update({ status: 'published' }).eq('id', form.id)
+    if (error) {
+      alert('Publish failed: ' + error.message)
+      return
+    }
+    if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
+  }
+
   // Provider CRUD
   const handleSaveProvider = async () => {
     setSaving(true)
@@ -202,7 +277,8 @@ export default function DataConsoleUtilities() {
         await supabase.from('prescriptive_measures').delete().eq('program_id', prog.id)
       }
     }
-    // Delete rate schedules for this provider
+    // Delete forms and rate schedules for this provider
+    await supabase.from('utility_forms').delete().eq('provider_id', provider.id)
     await supabase.from('utility_rate_schedules').delete().eq('provider_id', provider.id)
     // Delete programs
     await supabase.from('utility_programs').delete().eq('utility_name', provider.provider_name)
@@ -329,6 +405,8 @@ export default function DataConsoleUtilities() {
           if (pmErr) errors++
         }
       }
+      const { error: formErr } = await supabase.from('utility_forms').delete().eq('provider_id', p.id)
+      if (formErr) errors++
       const { error: schedErr } = await supabase.from('utility_rate_schedules').delete().eq('provider_id', p.id)
       if (schedErr) errors++
       const { error: progErr } = await supabase.from('utility_programs').delete().eq('utility_name', p.provider_name)
@@ -623,6 +701,7 @@ export default function DataConsoleUtilities() {
         }
         if (!results.rate_schedules) results.rate_schedules = []
         if (!results.prescriptive_measures) results.prescriptive_measures = []
+        if (!results.forms) results.forms = []
 
         setResearchResults(results)
         // Default all items to checked
@@ -641,6 +720,9 @@ export default function DataConsoleUtilities() {
         const pmChecked = {}
         results.prescriptive_measures.forEach((_, i) => { pmChecked[i] = true })
         setCheckedPrescriptive(pmChecked)
+        const fChecked = {}
+        results.forms.forEach((_, i) => { fChecked[i] = true })
+        setCheckedForms(fChecked)
         setShowResearchModal(true)
       } else {
         alert('Research failed: ' + (data?.error || 'Unknown error'))
@@ -849,6 +931,42 @@ export default function DataConsoleUtilities() {
         }
       }
 
+      // 6. Insert selected forms
+      const selectedFormsList = researchResults.forms.filter((_, i) => checkedForms[i])
+
+      for (const f of selectedFormsList) {
+        const provider = providerNameMap[f.provider_name]
+        if (!provider) {
+          console.warn('Skipping form - provider not found:', f.provider_name)
+          continue
+        }
+
+        let programId = null
+        if (f.program_name) {
+          const programKey = `${f.provider_name}|${f.program_name}`
+          const program = programNameMap[programKey]
+          if (program) programId = program.id
+        }
+
+        const { error } = await supabase
+          .from('utility_forms')
+          .insert({
+            provider_id: provider.id,
+            program_id: programId,
+            form_name: f.form_name,
+            form_type: f.form_type || 'Application',
+            form_url: f.form_url || null,
+            version_year: f.version_year || null,
+            is_required: f.is_required ?? false,
+            form_notes: f.form_notes || null,
+            status: 'dev'
+          })
+
+        if (error) {
+          console.error('Form insert error:', error)
+        }
+      }
+
       // Refresh data
       await fetchProviders()
       setSelectedProvider(null)
@@ -901,7 +1019,7 @@ export default function DataConsoleUtilities() {
         </h1>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <span style={{ color: adminTheme.textMuted, fontSize: '13px' }}>
-            {providers.length} Providers | {programs.length} Programs | {incentives.length} Incentives | {prescriptiveMeasures.length} Prescriptive | {rateSchedules.length} Schedules
+            {providers.length} Providers | {programs.length} Programs | {incentives.length} Incentives | {prescriptiveMeasures.length} Prescriptive | {rateSchedules.length} Schedules | {forms.length} Forms
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Research:</span>
@@ -954,7 +1072,8 @@ export default function DataConsoleUtilities() {
       </div>
 
       <style>{`
-        .util-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; flex: 1; overflow: auto; min-height: 0; }
+        .util-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; flex: 1; overflow: auto; min-height: 0; }
+        @media (max-width: 1800px) { .util-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 1600px) { .util-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 1200px) { .util-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 900px) { .util-grid { grid-template-columns: 1fr; } }
@@ -1573,6 +1692,124 @@ export default function DataConsoleUtilities() {
             )}
           </div>
         </div>
+        {/* Panel 6 - Forms */}
+        <div className="util-panel" style={{
+          backgroundColor: adminTheme.bgCard,
+          border: `1px solid ${adminTheme.border}`,
+          borderRadius: '10px',
+        }}>
+          <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '13px' }}>
+                Forms
+              </span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {forms.length > 0 && (
+                  <button
+                    onClick={handleDeleteAllForms}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${adminTheme.error}`,
+                      borderRadius: '6px',
+                      color: adminTheme.error,
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px'
+                    }}
+                  >
+                    <Trash2 size={12} /> All
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditingForm({ form_name: '', form_type: 'Application', form_url: '', is_required: false, status: 'dev' })}
+                  disabled={!selectedProvider}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: selectedProvider ? adminTheme.accent : adminTheme.border,
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: selectedProvider ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px'
+                  }}
+                >
+                  <Plus size={12} /> Add
+                </button>
+              </div>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {!selectedProvider ? (
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                Select a provider
+              </div>
+            ) : loading.forms ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: adminTheme.textMuted }}>Loading...</div>
+            ) : forms.length === 0 ? (
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                No forms
+              </div>
+            ) : (
+              forms.map(f => (
+                <div
+                  key={f.id}
+                  style={{
+                    padding: '10px 12px',
+                    borderBottom: `1px solid ${adminTheme.border}`,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = adminTheme.bgHover }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {f.form_name}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
+                        <Badge>{f.form_type}</Badge>
+                        <Badge color={f.status === 'published' ? 'accent' : undefined}>
+                          {f.status === 'published' ? 'Published' : 'Dev'}
+                        </Badge>
+                        {f.is_required && <Badge color="accent">Required</Badge>}
+                        {f.version_year && <Badge>{f.version_year}</Badge>}
+                      </div>
+                      {f.form_url && (
+                        <a
+                          href={f.form_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ color: adminTheme.accent, fontSize: '11px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '3px' }}
+                        >
+                          <ExternalLink size={11} /> View
+                        </a>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
+                      {f.status !== 'published' && (
+                        <button onClick={() => handlePublishForm(f)} title="Publish" style={{ padding: '3px', background: 'none', border: 'none', color: '#22c55e', cursor: 'pointer' }}>
+                          <Upload size={13} />
+                        </button>
+                      )}
+                      <button onClick={() => setEditingForm(f)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
+                        <Edit2 size={13} />
+                      </button>
+                      <button onClick={() => handleDeleteForm(f)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.error, cursor: 'pointer' }}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Provider Modal */}
@@ -1916,6 +2153,48 @@ export default function DataConsoleUtilities() {
               <FormTextarea value={editingPrescriptive.notes} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, notes: v })} />
             </FormField>
             <ModalFooter onCancel={() => setEditingPrescriptive(null)} onSave={handleSavePrescriptive} saving={saving} />
+          </>
+        )}
+      </AdminModal>
+
+      {/* Form Modal */}
+      <AdminModal isOpen={!!editingForm} onClose={() => setEditingForm(null)} title={editingForm?.id ? 'Edit Form' : 'Add Form'} width="500px">
+        {editingForm && (
+          <>
+            <FormField label="Form Name" required>
+              <FormInput value={editingForm.form_name} onChange={(v) => setEditingForm({ ...editingForm, form_name: v })} placeholder="e.g. Prescriptive Rebate Application" />
+            </FormField>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <FormField label="Form Type" required>
+                <FormSelect
+                  value={editingForm.form_type}
+                  onChange={(v) => setEditingForm({ ...editingForm, form_type: v })}
+                  options={[
+                    { value: 'Application', label: 'Application' },
+                    { value: 'Worksheet', label: 'Worksheet' },
+                    { value: 'Pre-approval', label: 'Pre-approval' },
+                    { value: 'W9', label: 'W9' },
+                    { value: 'Invoice', label: 'Invoice' },
+                    { value: 'Checklist', label: 'Checklist' },
+                    { value: 'Verification', label: 'Verification' }
+                  ]}
+                />
+              </FormField>
+              <FormField label="Version Year">
+                <FormInput type="number" value={editingForm.version_year} onChange={(v) => setEditingForm({ ...editingForm, version_year: v ? parseInt(v) : null })} placeholder="e.g. 2026" />
+              </FormField>
+            </div>
+            <FormField label="Form URL">
+              <FormInput value={editingForm.form_url} onChange={(v) => setEditingForm({ ...editingForm, form_url: v })} placeholder="https://..." />
+            </FormField>
+            <div style={{ display: 'flex', gap: '24px', margin: '16px 0' }}>
+              <FormToggle checked={editingForm.is_required} onChange={(v) => setEditingForm({ ...editingForm, is_required: v })} label="Required" />
+              <FormToggle checked={editingForm.status === 'published'} onChange={(v) => setEditingForm({ ...editingForm, status: v ? 'published' : 'dev' })} label="Published" />
+            </div>
+            <FormField label="Notes">
+              <FormTextarea value={editingForm.form_notes} onChange={(v) => setEditingForm({ ...editingForm, form_notes: v })} />
+            </FormField>
+            <ModalFooter onCancel={() => setEditingForm(null)} onSave={handleSaveForm} saving={saving} />
           </>
         )}
       </AdminModal>
@@ -2763,6 +3042,56 @@ export default function DataConsoleUtilities() {
               </div>
             )}
 
+            {/* Forms Section */}
+            {researchResults.forms.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
+                    Forms ({researchResults.forms.length})
+                  </span>
+                  <button
+                    onClick={() => {
+                      const allChecked = researchResults.forms.every((_, i) => checkedForms[i])
+                      const next = {}
+                      researchResults.forms.forEach((_, i) => { next[i] = !allChecked })
+                      setCheckedForms(next)
+                    }}
+                    style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    {researchResults.forms.every((_, i) => checkedForms[i]) ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {researchResults.forms.map((f, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '8px',
+                      padding: '8px 10px',
+                      backgroundColor: adminTheme.bgInput,
+                      borderRadius: '6px',
+                      border: `1px solid ${adminTheme.border}`
+                    }}>
+                      <Checkbox checked={!!checkedForms[i]} onChange={(v) => setCheckedForms({ ...checkedForms, [i]: v })} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{f.form_name}</span>
+                          <Badge>{f.form_type}</Badge>
+                          {f.is_required && <Badge color="accent">Required</Badge>}
+                          {f.version_year && <Badge>{f.version_year}</Badge>}
+                        </div>
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>
+                          {f.provider_name}
+                          {f.program_name && ` — ${f.program_name}`}
+                          {f.form_url && ' • URL available'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Import Footer */}
             <div style={{
               display: 'flex',
@@ -2778,7 +3107,8 @@ export default function DataConsoleUtilities() {
                 {Object.values(checkedPrograms).filter(Boolean).length} programs,{' '}
                 {Object.values(checkedIncentives).filter(Boolean).length} incentives,{' '}
                 {Object.values(checkedRateSchedules).filter(Boolean).length} schedules,{' '}
-                {Object.values(checkedPrescriptive).filter(Boolean).length} prescriptive
+                {Object.values(checkedPrescriptive).filter(Boolean).length} prescriptive,{' '}
+                {Object.values(checkedForms).filter(Boolean).length} forms
               </span>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button

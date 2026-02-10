@@ -1457,6 +1457,27 @@
 
 ---
 
+## utility_forms
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | integer | PK |
+| company_id | integer | FK companies.id |
+| provider_id | integer | FK utility_providers.id |
+| program_id | integer | FK utility_programs.id |
+| form_name | text | |
+| form_type | text | 'Application' |
+| form_url | text | |
+| form_file | text | |
+| version_year | integer | |
+| is_required | boolean | false |
+| form_notes | text | |
+| status | text | 'dev' |
+| created_at | timestamptz | now() |
+| updated_at | timestamptz | |
+
+---
+
 ## utility_invoices
 
 | Column | Type | Default |
@@ -1589,4 +1610,4 @@
 
 ---
 
-*68 tables total (rebate_rates renamed to incentive_measures, utility_rate_schedules and prescriptive_measures added). Updated February 10, 2026.*
+*69 tables total (utility_forms added for forms library). Updated February 10, 2026.*
