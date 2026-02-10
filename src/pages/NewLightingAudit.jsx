@@ -574,8 +574,8 @@ export default function NewLightingAudit() {
           .audit-area-actions button { min-width: 44px !important; min-height: 44px !important; padding: 10px 14px !important; }
         }
         @media (max-width: 480px) {
-          .audit-root { padding: 12px !important; }
-          .audit-step-card { padding: 14px !important; }
+          .audit-root { padding: 12px !important; overflow-x: hidden !important; max-width: 100vw !important; box-sizing: border-box !important; }
+          .audit-step-card { padding: 14px !important; overflow: hidden !important; }
           .audit-steps { gap: 4px !important; }
           .audit-step { padding: 10px 6px !important; font-size: 13px !important; min-height: 44px !important; display: flex !important; align-items: center !important; justify-content: center !important; }
           .audit-step-prefix { display: none !important; }
@@ -590,6 +590,9 @@ export default function NewLightingAudit() {
             scroll-snap-type: x mandatory !important;
             padding-bottom: 6px !important;
             gap: 8px !important;
+            max-width: 100% !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
           }
           .audit-rate-grid > div {
             flex: 0 0 130px !important;
