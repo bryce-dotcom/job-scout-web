@@ -49,7 +49,8 @@ export default function DataConsoleUtilities() {
   const [programs, setPrograms] = useState([])
   const [incentives, setIncentives] = useState([])
   const [rateSchedules, setRateSchedules] = useState([])
-  const [loading, setLoading] = useState({ providers: true, programs: false, incentives: false, rateSchedules: false })
+  const [prescriptiveMeasures, setPrescriptiveMeasures] = useState([])
+  const [loading, setLoading] = useState({ providers: true, programs: false, incentives: false, rateSchedules: false, prescriptive: false })
 
   const [selectedProvider, setSelectedProvider] = useState(null)
   const [selectedProgram, setSelectedProgram] = useState(null)
@@ -61,6 +62,7 @@ export default function DataConsoleUtilities() {
   const [editingProgram, setEditingProgram] = useState(null)
   const [editingIncentive, setEditingIncentive] = useState(null)
   const [editingRateSchedule, setEditingRateSchedule] = useState(null)
+  const [editingPrescriptive, setEditingPrescriptive] = useState(null)
   const [saving, setSaving] = useState(false)
 
   // Detail modal state
@@ -68,6 +70,7 @@ export default function DataConsoleUtilities() {
   const [viewingProgram, setViewingProgram] = useState(null)
   const [viewingIncentive, setViewingIncentive] = useState(null)
   const [viewingRateSchedule, setViewingRateSchedule] = useState(null)
+  const [viewingPrescriptive, setViewingPrescriptive] = useState(null)
 
   // AI Research state
   const [researchState, setResearchState] = useState('')
@@ -78,6 +81,7 @@ export default function DataConsoleUtilities() {
   const [checkedPrograms, setCheckedPrograms] = useState({})
   const [checkedIncentives, setCheckedIncentives] = useState({})
   const [checkedRateSchedules, setCheckedRateSchedules] = useState({})
+  const [checkedPrescriptive, setCheckedPrescriptive] = useState({})
   const [importing, setImporting] = useState(false)
 
   useEffect(() => {
@@ -98,8 +102,10 @@ export default function DataConsoleUtilities() {
   useEffect(() => {
     if (selectedProgram) {
       fetchIncentives(selectedProgram.id)
+      fetchPrescriptiveMeasures(selectedProgram.id)
     } else {
       setIncentives([])
+      setPrescriptiveMeasures([])
     }
   }, [selectedProgram])
 
@@ -146,6 +152,17 @@ export default function DataConsoleUtilities() {
     setLoading(l => ({ ...l, rateSchedules: false }))
   }
 
+  const fetchPrescriptiveMeasures = async (programId) => {
+    setLoading(l => ({ ...l, prescriptive: true }))
+    const { data } = await supabase
+      .from('prescriptive_measures')
+      .select('*')
+      .eq('program_id', programId)
+      .order('measure_name')
+    setPrescriptiveMeasures(data || [])
+    setLoading(l => ({ ...l, prescriptive: false }))
+  }
+
   // Provider CRUD
   const handleSaveProvider = async () => {
     setSaving(true)
@@ -173,6 +190,7 @@ export default function DataConsoleUtilities() {
     if (providerPrograms?.length) {
       for (const prog of providerPrograms) {
         await supabase.from('incentive_measures').delete().eq('program_id', prog.id)
+        await supabase.from('prescriptive_measures').delete().eq('program_id', prog.id)
       }
     }
     // Delete rate schedules for this provider
@@ -210,8 +228,9 @@ export default function DataConsoleUtilities() {
   }
 
   const handleDeleteProgram = async (program) => {
-    if (!confirm(`Delete ${program.program_name}? This will also delete its incentives.`)) return
+    if (!confirm(`Delete ${program.program_name}? This will also delete its incentives and prescriptive measures.`)) return
     await supabase.from('incentive_measures').delete().eq('program_id', program.id)
+    await supabase.from('prescriptive_measures').delete().eq('program_id', program.id)
     const { error } = await supabase.from('utility_programs').delete().eq('id', program.id)
     if (error) {
       alert('Delete failed: ' + error.message)
@@ -297,6 +316,8 @@ export default function DataConsoleUtilities() {
         for (const prog of providerPrograms) {
           const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', prog.id)
           if (rateErr) errors++
+          const { error: pmErr } = await supabase.from('prescriptive_measures').delete().eq('program_id', prog.id)
+          if (pmErr) errors++
         }
       }
       const { error: schedErr } = await supabase.from('utility_rate_schedules').delete().eq('provider_id', p.id)
@@ -313,11 +334,13 @@ export default function DataConsoleUtilities() {
 
   const handleDeleteAllPrograms = async () => {
     if (!selectedProvider) return
-    if (!confirm(`Delete ALL ${programs.length} programs for ${selectedProvider.provider_name}? This will also delete their incentives. This cannot be undone.`)) return
+    if (!confirm(`Delete ALL ${programs.length} programs for ${selectedProvider.provider_name}? This will also delete their incentives and prescriptive measures. This cannot be undone.`)) return
     let errors = 0
     for (const p of programs) {
       const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', p.id)
       if (rateErr) errors++
+      const { error: pmErr } = await supabase.from('prescriptive_measures').delete().eq('program_id', p.id)
+      if (pmErr) errors++
     }
     for (const p of programs) {
       const { error } = await supabase.from('utility_programs').delete().eq('id', p.id)
@@ -352,6 +375,46 @@ export default function DataConsoleUtilities() {
     await fetchRateSchedules(selectedProvider.id)
   }
 
+  // Prescriptive Measure CRUD
+  const handleSavePrescriptive = async () => {
+    setSaving(true)
+    try {
+      const data = { ...editingPrescriptive, program_id: selectedProgram.id }
+      if (editingPrescriptive.id) {
+        await supabase.from('prescriptive_measures').update(data).eq('id', editingPrescriptive.id)
+      } else {
+        await supabase.from('prescriptive_measures').insert(data)
+      }
+      await fetchPrescriptiveMeasures(selectedProgram.id)
+      setEditingPrescriptive(null)
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setSaving(false)
+  }
+
+  const handleDeletePrescriptive = async (measure) => {
+    if (!confirm('Delete this prescriptive measure?')) return
+    const { error } = await supabase.from('prescriptive_measures').delete().eq('id', measure.id)
+    if (error) {
+      alert('Delete failed: ' + error.message)
+      return
+    }
+    await fetchPrescriptiveMeasures(selectedProgram.id)
+  }
+
+  const handleDeleteAllPrescriptive = async () => {
+    if (!selectedProgram) return
+    if (!confirm(`Delete ALL ${prescriptiveMeasures.length} prescriptive measures for ${selectedProgram.program_name}? This cannot be undone.`)) return
+    let errors = 0
+    for (const m of prescriptiveMeasures) {
+      const { error } = await supabase.from('prescriptive_measures').delete().eq('id', m.id)
+      if (error) errors++
+    }
+    if (errors > 0) alert(`Completed with ${errors} error(s).`)
+    await fetchPrescriptiveMeasures(selectedProgram.id)
+  }
+
   // AI Research
   const handleAIResearch = async () => {
     if (!researchState) {
@@ -383,6 +446,7 @@ export default function DataConsoleUtilities() {
           delete results.rates
         }
         if (!results.rate_schedules) results.rate_schedules = []
+        if (!results.prescriptive_measures) results.prescriptive_measures = []
 
         setResearchResults(results)
         // Default all items to checked
@@ -398,6 +462,9 @@ export default function DataConsoleUtilities() {
         const rsChecked = {}
         results.rate_schedules.forEach((_, i) => { rsChecked[i] = true })
         setCheckedRateSchedules(rsChecked)
+        const pmChecked = {}
+        results.prescriptive_measures.forEach((_, i) => { pmChecked[i] = true })
+        setCheckedPrescriptive(pmChecked)
         setShowResearchModal(true)
       } else {
         alert('Research failed: ' + (data?.error || 'Unknown error'))
@@ -564,6 +631,48 @@ export default function DataConsoleUtilities() {
         }
       }
 
+      // 5. Insert selected prescriptive measures
+      const selectedPrescriptiveList = researchResults.prescriptive_measures.filter((_, i) => checkedPrescriptive[i])
+
+      for (const pm of selectedPrescriptiveList) {
+        const programKey = `${pm.provider_name}|${pm.program_name}`
+        const program = programNameMap[programKey]
+        if (!program) {
+          console.warn('Skipping prescriptive measure - program not found:', programKey)
+          continue
+        }
+
+        const { error } = await supabase
+          .from('prescriptive_measures')
+          .insert({
+            program_id: program.id,
+            measure_code: pm.measure_code || null,
+            measure_name: pm.measure_name,
+            measure_category: pm.measure_category || 'Lighting',
+            measure_subcategory: pm.measure_subcategory || null,
+            baseline_equipment: pm.baseline_equipment || null,
+            baseline_wattage: pm.baseline_wattage || null,
+            replacement_equipment: pm.replacement_equipment || null,
+            replacement_wattage: pm.replacement_wattage || null,
+            incentive_amount: pm.incentive_amount,
+            incentive_unit: pm.incentive_unit || 'per_fixture',
+            incentive_formula: pm.incentive_formula || null,
+            max_incentive: pm.max_incentive || null,
+            location_type: pm.location_type || null,
+            application_type: pm.application_type || 'retrofit',
+            dlc_required: pm.dlc_required ?? false,
+            dlc_tier: pm.dlc_tier || null,
+            energy_star_required: pm.energy_star_required ?? false,
+            hours_requirement: pm.hours_requirement || null,
+            source_page: pm.source_page || null,
+            notes: pm.notes || null
+          })
+
+        if (error) {
+          console.error('Prescriptive measure insert error:', error)
+        }
+      }
+
       // Refresh data
       await fetchProviders()
       setSelectedProvider(null)
@@ -616,7 +725,7 @@ export default function DataConsoleUtilities() {
         </h1>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <span style={{ color: adminTheme.textMuted, fontSize: '13px' }}>
-            {providers.length} Providers | {programs.length} Programs | {incentives.length} Incentives | {rateSchedules.length} Schedules
+            {providers.length} Providers | {programs.length} Programs | {incentives.length} Incentives | {prescriptiveMeasures.length} Prescriptive | {rateSchedules.length} Schedules
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Research:</span>
@@ -660,8 +769,9 @@ export default function DataConsoleUtilities() {
       </div>
 
       <style>{`
-        .util-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; flex: 1; overflow: auto; min-height: 0; }
-        @media (max-width: 1400px) { .util-grid { grid-template-columns: repeat(2, 1fr); } }
+        .util-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; flex: 1; overflow: auto; min-height: 0; }
+        @media (max-width: 1600px) { .util-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 1200px) { .util-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 900px) { .util-grid { grid-template-columns: 1fr; } }
         .util-panel { min-width: 0; min-height: 280px; display: flex; flex-direction: column; overflow: hidden; }
         @media (max-width: 1400px) { .util-panel { min-height: 300px; } }
@@ -672,7 +782,7 @@ export default function DataConsoleUtilities() {
         }
       `}</style>
 
-      {/* Four Panel Layout */}
+      {/* Five Panel Layout */}
       <div className="util-grid">
         {/* Panel 1 - Providers */}
         <div className="util-panel" style={{
@@ -1124,6 +1234,122 @@ export default function DataConsoleUtilities() {
             )}
           </div>
         </div>
+
+        {/* Panel 5 - Prescriptive Measures */}
+        <div className="util-panel" style={{
+          backgroundColor: adminTheme.bgCard,
+          border: `1px solid ${adminTheme.border}`,
+          borderRadius: '10px',
+        }}>
+          <div style={{ padding: '12px', borderBottom: `1px solid ${adminTheme.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '13px' }}>
+                Prescriptive Measures
+              </span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {prescriptiveMeasures.length > 0 && (
+                  <button
+                    onClick={handleDeleteAllPrescriptive}
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${adminTheme.error}`,
+                      borderRadius: '6px',
+                      color: adminTheme.error,
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px'
+                    }}
+                  >
+                    <Trash2 size={12} /> All
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditingPrescriptive({ measure_name: '', measure_category: 'Lighting', incentive_amount: 0, incentive_unit: 'per_fixture', application_type: 'retrofit', dlc_required: false, energy_star_required: false })}
+                  disabled={!selectedProgram}
+                  style={{
+                    padding: '4px 8px',
+                    backgroundColor: selectedProgram ? adminTheme.accent : adminTheme.border,
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: selectedProgram ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px'
+                  }}
+                >
+                  <Plus size={12} /> Add
+                </button>
+              </div>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {!selectedProgram ? (
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                Select a program
+              </div>
+            ) : loading.prescriptive ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: adminTheme.textMuted }}>Loading...</div>
+            ) : prescriptiveMeasures.length === 0 ? (
+              <div style={{ padding: '40px 16px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                No prescriptive measures
+              </div>
+            ) : (
+              prescriptiveMeasures.map(m => (
+                <div
+                  key={m.id}
+                  onClick={() => setViewingPrescriptive(m)}
+                  style={{
+                    padding: '10px 12px',
+                    borderBottom: `1px solid ${adminTheme.border}`,
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = adminTheme.bgHover }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ color: adminTheme.text, fontSize: '13px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {m.measure_name}
+                      </div>
+                      {(m.baseline_equipment || m.replacement_equipment) && (
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {m.baseline_equipment || '?'} → {m.replacement_equipment || '?'}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
+                        <span style={{ color: adminTheme.accent, fontSize: '14px', fontWeight: '600' }}>
+                          ${m.incentive_amount} {m.incentive_unit?.replace('_', '/')}
+                        </span>
+                        <Badge>{m.measure_category}</Badge>
+                        {m.dlc_required && <Badge color="accent">DLC</Badge>}
+                        {m.application_type && <Badge>{m.application_type}</Badge>}
+                      </div>
+                      {(m.baseline_wattage != null || m.replacement_wattage != null) && (
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>
+                          {m.baseline_wattage || '?'}W → {m.replacement_wattage || '?'}W
+                          {m.watts_reduced != null && ` (${m.watts_reduced}W saved)`}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => setEditingPrescriptive(m)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.textMuted, cursor: 'pointer' }}>
+                        <Edit2 size={13} />
+                      </button>
+                      <button onClick={() => handleDeletePrescriptive(m)} style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.error, cursor: 'pointer' }}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Provider Modal */}
@@ -1347,6 +1573,126 @@ export default function DataConsoleUtilities() {
               <FormTextarea value={editingRateSchedule.notes} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, notes: v })} />
             </FormField>
             <ModalFooter onCancel={() => setEditingRateSchedule(null)} onSave={handleSaveRateSchedule} saving={saving} />
+          </>
+        )}
+      </AdminModal>
+
+      {/* Prescriptive Measure Modal */}
+      <AdminModal isOpen={!!editingPrescriptive} onClose={() => setEditingPrescriptive(null)} title={editingPrescriptive?.id ? 'Edit Prescriptive Measure' : 'Add Prescriptive Measure'} width="650px">
+        {editingPrescriptive && (
+          <>
+            <FormField label="Measure Name" required>
+              <FormInput value={editingPrescriptive.measure_name} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, measure_name: v })} placeholder="e.g. T8 4ft Linear to LED Tube" />
+            </FormField>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              <FormField label="Category" required>
+                <FormSelect
+                  value={editingPrescriptive.measure_category}
+                  onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, measure_category: v })}
+                  options={MEASURE_CATEGORIES.map(c => ({ value: c, label: c }))}
+                />
+              </FormField>
+              <FormField label="Subcategory">
+                <FormInput value={editingPrescriptive.measure_subcategory} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, measure_subcategory: v })} placeholder="e.g. Linear, VFD" />
+              </FormField>
+              <FormField label="Measure Code">
+                <FormInput value={editingPrescriptive.measure_code} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, measure_code: v })} />
+              </FormField>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <FormField label="Baseline Equipment">
+                <FormInput value={editingPrescriptive.baseline_equipment} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, baseline_equipment: v })} placeholder="e.g. T8 4ft 32W 2-lamp" />
+              </FormField>
+              <FormField label="Replacement Equipment">
+                <FormInput value={editingPrescriptive.replacement_equipment} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, replacement_equipment: v })} placeholder="e.g. DLC LED Tube 18W" />
+              </FormField>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <FormField label="Baseline Wattage">
+                <FormInput type="number" value={editingPrescriptive.baseline_wattage} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, baseline_wattage: v ? parseFloat(v) : null })} />
+              </FormField>
+              <FormField label="Replacement Wattage">
+                <FormInput type="number" value={editingPrescriptive.replacement_wattage} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, replacement_wattage: v ? parseFloat(v) : null })} />
+              </FormField>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              <FormField label="Incentive Amount" required>
+                <FormInput type="number" step="0.01" value={editingPrescriptive.incentive_amount} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, incentive_amount: parseFloat(v) })} />
+              </FormField>
+              <FormField label="Incentive Unit" required>
+                <FormSelect
+                  value={editingPrescriptive.incentive_unit}
+                  onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, incentive_unit: v })}
+                  options={[
+                    { value: 'per_fixture', label: 'Per Fixture' },
+                    { value: 'per_lamp', label: 'Per Lamp' },
+                    { value: 'per_watt_reduced', label: 'Per Watt Reduced' },
+                    { value: 'per_kw', label: 'Per kW' },
+                    { value: 'flat', label: 'Flat' },
+                    { value: 'per_ton', label: 'Per Ton' }
+                  ]}
+                />
+              </FormField>
+              <FormField label="Max Incentive ($)">
+                <FormInput type="number" step="0.01" value={editingPrescriptive.max_incentive} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, max_incentive: v ? parseFloat(v) : null })} />
+              </FormField>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <FormField label="Application Type">
+                <FormSelect
+                  value={editingPrescriptive.application_type}
+                  onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, application_type: v })}
+                  options={[
+                    { value: 'retrofit', label: 'Retrofit' },
+                    { value: 'new_construction', label: 'New Construction' },
+                    { value: 'both', label: 'Both' }
+                  ]}
+                />
+              </FormField>
+              <FormField label="Location Type">
+                <FormSelect
+                  value={editingPrescriptive.location_type}
+                  onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, location_type: v })}
+                  options={[
+                    { value: 'interior', label: 'Interior' },
+                    { value: 'exterior', label: 'Exterior' },
+                    { value: 'parking', label: 'Parking' },
+                    { value: 'refrigerated', label: 'Refrigerated' }
+                  ]}
+                  placeholder="Select location"
+                />
+              </FormField>
+            </div>
+            <div style={{ display: 'flex', gap: '24px', margin: '16px 0' }}>
+              <FormToggle checked={editingPrescriptive.dlc_required} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, dlc_required: v })} label="DLC Required" />
+              <FormToggle checked={editingPrescriptive.energy_star_required} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, energy_star_required: v })} label="ENERGY STAR Required" />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <FormField label="DLC Tier">
+                <FormSelect
+                  value={editingPrescriptive.dlc_tier}
+                  onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, dlc_tier: v })}
+                  options={[
+                    { value: 'Standard', label: 'Standard' },
+                    { value: 'Premium', label: 'Premium' }
+                  ]}
+                  placeholder="Select tier"
+                />
+              </FormField>
+              <FormField label="Hours Requirement">
+                <FormInput type="number" value={editingPrescriptive.hours_requirement} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, hours_requirement: v ? parseInt(v) : null })} placeholder="Min annual hours" />
+              </FormField>
+            </div>
+            <FormField label="Incentive Formula">
+              <FormInput value={editingPrescriptive.incentive_formula} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, incentive_formula: v })} placeholder="Formula if complex calc" />
+            </FormField>
+            <FormField label="Source Page">
+              <FormInput value={editingPrescriptive.source_page} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, source_page: v })} placeholder="Page reference from PDF" />
+            </FormField>
+            <FormField label="Notes">
+              <FormTextarea value={editingPrescriptive.notes} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, notes: v })} />
+            </FormField>
+            <ModalFooter onCancel={() => setEditingPrescriptive(null)} onSave={handleSavePrescriptive} saving={saving} />
           </>
         )}
       </AdminModal>
@@ -1577,6 +1923,66 @@ export default function DataConsoleUtilities() {
             <DetailRow label="Effective Date" value={viewingRateSchedule.effective_date?.split('T')[0]} />
             <DetailRow label="Source URL" value={viewingRateSchedule.source_url} isUrl />
             <DetailRow label="Notes" value={viewingRateSchedule.notes} />
+          </div>
+        )}
+      </AdminModal>
+
+      {/* Prescriptive Measure Detail Modal */}
+      <AdminModal isOpen={!!viewingPrescriptive} onClose={() => setViewingPrescriptive(null)} title="Prescriptive Measure Details" width="650px">
+        {viewingPrescriptive && (
+          <div>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: adminTheme.text, fontSize: '18px', fontWeight: '600' }}>{viewingPrescriptive.measure_name}</div>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                <Badge>{viewingPrescriptive.measure_category}</Badge>
+                {viewingPrescriptive.measure_subcategory && <Badge>{viewingPrescriptive.measure_subcategory}</Badge>}
+                {viewingPrescriptive.application_type && <Badge color="accent">{viewingPrescriptive.application_type}</Badge>}
+                {viewingPrescriptive.dlc_required && <Badge color="accent">DLC {viewingPrescriptive.dlc_tier || ''}</Badge>}
+                {viewingPrescriptive.energy_star_required && <Badge color="accent">ENERGY STAR</Badge>}
+              </div>
+              <div style={{ color: adminTheme.accent, fontSize: '22px', fontWeight: '700', marginTop: '8px' }}>
+                ${viewingPrescriptive.incentive_amount} {viewingPrescriptive.incentive_unit?.replace('_', '/')}
+              </div>
+              {(viewingPrescriptive.baseline_equipment || viewingPrescriptive.replacement_equipment) && (
+                <div style={{ marginTop: '8px', padding: '10px', backgroundColor: adminTheme.bgInput, borderRadius: '6px', border: `1px solid ${adminTheme.border}` }}>
+                  <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginBottom: '4px' }}>Equipment Conversion</div>
+                  <div style={{ color: adminTheme.text, fontSize: '13px' }}>
+                    {viewingPrescriptive.baseline_equipment || '?'}
+                    {viewingPrescriptive.baseline_wattage != null && ` (${viewingPrescriptive.baseline_wattage}W)`}
+                    <span style={{ color: adminTheme.accent, margin: '0 8px' }}>→</span>
+                    {viewingPrescriptive.replacement_equipment || '?'}
+                    {viewingPrescriptive.replacement_wattage != null && ` (${viewingPrescriptive.replacement_wattage}W)`}
+                  </div>
+                  {viewingPrescriptive.watts_reduced != null && (
+                    <div style={{ color: '#22c55e', fontSize: '13px', fontWeight: '600', marginTop: '4px' }}>
+                      {viewingPrescriptive.watts_reduced}W saved per unit
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <DetailRow label="Measure Code" value={viewingPrescriptive.measure_code} />
+            <DetailRow label="Category" value={viewingPrescriptive.measure_category} />
+            <DetailRow label="Subcategory" value={viewingPrescriptive.measure_subcategory} />
+            <DetailRow label="Baseline Equipment" value={viewingPrescriptive.baseline_equipment} />
+            <DetailRow label="Baseline Wattage" value={viewingPrescriptive.baseline_wattage != null ? `${viewingPrescriptive.baseline_wattage}W` : null} />
+            <DetailRow label="Replacement Equipment" value={viewingPrescriptive.replacement_equipment} />
+            <DetailRow label="Replacement Wattage" value={viewingPrescriptive.replacement_wattage != null ? `${viewingPrescriptive.replacement_wattage}W` : null} />
+            <DetailRow label="Watts Reduced" value={viewingPrescriptive.watts_reduced != null ? `${viewingPrescriptive.watts_reduced}W` : null} />
+            <DetailRow label="Incentive Amount" value={`$${viewingPrescriptive.incentive_amount}`} />
+            <DetailRow label="Incentive Unit" value={viewingPrescriptive.incentive_unit?.replace('_', '/')} />
+            <DetailRow label="Max Incentive" value={viewingPrescriptive.max_incentive ? `$${viewingPrescriptive.max_incentive}` : null} />
+            <DetailRow label="Incentive Formula" value={viewingPrescriptive.incentive_formula} />
+            <DetailRow label="Application Type" value={viewingPrescriptive.application_type} />
+            <DetailRow label="Location Type" value={viewingPrescriptive.location_type} />
+            <DetailRow label="DLC Required" value={viewingPrescriptive.dlc_required ? 'Yes' : 'No'} />
+            <DetailRow label="DLC Tier" value={viewingPrescriptive.dlc_tier} />
+            <DetailRow label="ENERGY STAR" value={viewingPrescriptive.energy_star_required ? 'Yes' : 'No'} />
+            <DetailRow label="Hours Requirement" value={viewingPrescriptive.hours_requirement ? `${viewingPrescriptive.hours_requirement} hrs/yr` : null} />
+            <DetailRow label="Effective Date" value={viewingPrescriptive.effective_date?.split('T')[0]} />
+            <DetailRow label="Expiration Date" value={viewingPrescriptive.expiration_date?.split('T')[0]} />
+            <DetailRow label="Source Page" value={viewingPrescriptive.source_page} />
+            <DetailRow label="Notes" value={viewingPrescriptive.notes} />
           </div>
         )}
       </AdminModal>
@@ -1839,6 +2245,67 @@ export default function DataConsoleUtilities() {
               </div>
             )}
 
+            {/* Prescriptive Measures Section */}
+            {researchResults.prescriptive_measures.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ color: adminTheme.text, fontWeight: '600', fontSize: '14px' }}>
+                    Prescriptive Measures ({researchResults.prescriptive_measures.length})
+                  </span>
+                  <button
+                    onClick={() => {
+                      const allChecked = researchResults.prescriptive_measures.every((_, i) => checkedPrescriptive[i])
+                      const next = {}
+                      researchResults.prescriptive_measures.forEach((_, i) => { next[i] = !allChecked })
+                      setCheckedPrescriptive(next)
+                    }}
+                    style={{ background: 'none', border: 'none', color: adminTheme.accent, fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    {researchResults.prescriptive_measures.every((_, i) => checkedPrescriptive[i]) ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {researchResults.prescriptive_measures.map((pm, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '8px',
+                      padding: '8px 10px',
+                      backgroundColor: adminTheme.bgInput,
+                      borderRadius: '6px',
+                      border: `1px solid ${adminTheme.border}`
+                    }}>
+                      <Checkbox checked={!!checkedPrescriptive[i]} onChange={(v) => setCheckedPrescriptive({ ...checkedPrescriptive, [i]: v })} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{ color: adminTheme.text, fontWeight: '500', fontSize: '13px' }}>{pm.measure_name}</span>
+                          <span style={{ color: adminTheme.accent, fontWeight: '600', fontSize: '13px' }}>
+                            ${pm.incentive_amount} {pm.incentive_unit?.replace('_', '/')}
+                          </span>
+                          <Badge>{pm.measure_category}</Badge>
+                          {pm.dlc_required && <Badge color="accent">DLC</Badge>}
+                        </div>
+                        {(pm.baseline_equipment || pm.replacement_equipment) && (
+                          <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '2px' }}>
+                            {pm.baseline_equipment || '?'}
+                            {pm.baseline_wattage != null && ` (${pm.baseline_wattage}W)`}
+                            {' → '}
+                            {pm.replacement_equipment || '?'}
+                            {pm.replacement_wattage != null && ` (${pm.replacement_wattage}W)`}
+                          </div>
+                        )}
+                        <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginTop: '1px' }}>
+                          {pm.provider_name} — {pm.program_name}
+                          {pm.application_type && ` • ${pm.application_type}`}
+                          {pm.location_type && ` • ${pm.location_type}`}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Import Footer */}
             <div style={{
               display: 'flex',
@@ -1853,7 +2320,8 @@ export default function DataConsoleUtilities() {
                 {Object.values(checkedProviders).filter(Boolean).length} providers,{' '}
                 {Object.values(checkedPrograms).filter(Boolean).length} programs,{' '}
                 {Object.values(checkedIncentives).filter(Boolean).length} incentives,{' '}
-                {Object.values(checkedRateSchedules).filter(Boolean).length} schedules
+                {Object.values(checkedRateSchedules).filter(Boolean).length} schedules,{' '}
+                {Object.values(checkedPrescriptive).filter(Boolean).length} prescriptive
               </span>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button

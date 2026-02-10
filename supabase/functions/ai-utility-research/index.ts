@@ -38,7 +38,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 32000,
+        max_tokens: 64000,
         system: `You are a utility rebate and electric rate research assistant. Your job is to research electric utility providers in a given US state, their commercial energy efficiency incentive programs (lighting, HVAC, motors, refrigeration, building envelope), and their published electric rate schedules.
 
 CRITICAL — YEAR VERIFICATION:
@@ -73,6 +73,17 @@ Important guidelines:
 - Research what documents are required to apply (W9, invoices, photos, spec sheets, DLC certificates, etc.)
 - Check if incentives from different programs can be stacked/combined
 - Note the funding status — is the program open, waitlisted, or funds exhausted?
+
+PRESCRIPTIVE MEASURE LINE ITEMS — CRITICAL:
+- For EVERY program found, search for the actual prescriptive measure documentation (rebate worksheets, applications, measure lists, PDF rebate tables)
+- Extract EVERY specific line item from rebate tables — specific fixture types, wattages, rebate amounts per unit
+- Do NOT hardcode any utility names — this must work generically for any utility in any state
+- Return as many specific measures as possible — utilities often have 20-50+ line items per program
+- Include baseline equipment descriptions, replacement equipment descriptions, exact wattages, and exact incentive dollar amounts
+- If a utility publishes a prescriptive rebate worksheet or measure list, extract every row from it
+- Categorize each measure into the appropriate category and subcategory
+- Note whether DLC listing or ENERGY STAR certification is required for each measure
+- Include the source page reference from the PDF document when available
 
 Return ONLY valid JSON with this exact structure, no other text:
 {
@@ -163,6 +174,32 @@ Return ONLY valid JSON with this exact structure, no other text:
       "description": "string",
       "notes": "string"
     }
+  ],
+  "prescriptive_measures": [
+    {
+      "provider_name": "must match a provider_name above",
+      "program_name": "must match a program_name above",
+      "measure_code": "utility's internal code or null",
+      "measure_name": "exact name from utility docs, e.g. T8 4ft Linear to LED Tube",
+      "measure_category": "Lighting|HVAC|Motors|Refrigeration|Building Envelope",
+      "measure_subcategory": "Linear|High Bay|Low Bay|Outdoor Area|Outdoor Wall|Decorative|Refrigeration|VFD|RTU|Other",
+      "baseline_equipment": "what is being replaced, e.g. T8 4ft 32W 2-lamp fluorescent",
+      "baseline_wattage": number or null,
+      "replacement_equipment": "what it becomes, e.g. DLC-listed LED Tube Type A/B 18W",
+      "replacement_wattage": number or null,
+      "incentive_amount": number,
+      "incentive_unit": "per_fixture|per_lamp|per_watt_reduced|per_kw|flat|per_ton",
+      "incentive_formula": "formula if complex calc, or null",
+      "max_incentive": number or null,
+      "location_type": "interior|exterior|parking|refrigerated or null",
+      "application_type": "retrofit|new_construction|both",
+      "dlc_required": true/false,
+      "dlc_tier": "Standard|Premium or null",
+      "energy_star_required": true/false,
+      "hours_requirement": number or null,
+      "source_page": "page reference from PDF or null",
+      "notes": "special conditions"
+    }
   ]
 }`,
         messages: [{
@@ -175,6 +212,7 @@ Return ONLY valid JSON with this exact structure, no other text:
 5. Funding status: is the program still accepting applications?
 6. Delivery mechanisms: Prescriptive, Custom, Midstream, Direct Install, SMBE, SBDI tracks
 7. Verify the year/effective date of each program document
+8. PRESCRIPTIVE MEASURE LINE ITEMS: For every program, find the prescriptive rebate worksheets, measure lists, or rebate tables. Extract EVERY individual line item — specific fixture types, baseline and replacement wattages, exact rebate dollar amounts per unit, measure codes, DLC/ENERGY STAR requirements, and any location or application type restrictions. Utilities often have 20-50+ individual prescriptive measures per program — return as many as you can find.
 Return the structured JSON as specified.`
         }]
       })
@@ -217,6 +255,11 @@ Return the structured JSON as specified.`
             inc.rate = inc.rate_value;
           }
         }
+      }
+
+      // Default prescriptive_measures to empty array if missing
+      if (!results.prescriptive_measures) {
+        results.prescriptive_measures = [];
       }
 
       // Validate structure
