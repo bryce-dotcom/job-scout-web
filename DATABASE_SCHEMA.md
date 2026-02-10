@@ -1006,6 +1006,53 @@
 
 ---
 
+## prescriptive_measures
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | integer | PK |
+| company_id | integer | FK companies.id |
+| program_id | integer | FK utility_programs.id, NOT NULL |
+| measure_code | text | |
+| measure_name | text | NOT NULL |
+| measure_category | text | 'Lighting' |
+| measure_subcategory | text | |
+| baseline_equipment | text | |
+| baseline_wattage | numeric | |
+| baseline_lamp_count | integer | |
+| baseline_condition | text | |
+| replacement_equipment | text | |
+| replacement_wattage | numeric | |
+| replacement_lamp_count | integer | |
+| watts_reduced | numeric | GENERATED (baseline_wattage - replacement_wattage) |
+| incentive_amount | numeric | NOT NULL |
+| incentive_unit | text | 'per_fixture' |
+| incentive_formula | text | |
+| max_incentive | numeric | |
+| max_project_percent | numeric | |
+| min_quantity | integer | |
+| max_quantity | integer | |
+| location_type | text | |
+| application_type | text | 'retrofit' |
+| building_type | text | |
+| hours_requirement | integer | |
+| dlc_required | boolean | false |
+| dlc_tier | text | |
+| energy_star_required | boolean | false |
+| other_certification | text | |
+| effective_date | date | |
+| expiration_date | date | |
+| is_active | boolean | true |
+| source_page | text | |
+| source_url | text | |
+| source_notes | text | |
+| notes | text | |
+| ai_match_keywords | text[] | |
+| created_at | timestamptz | now() |
+| updated_at | timestamptz | |
+
+---
+
 ## pipeline_stages
 
 | Column | Type | Default |
@@ -1542,4 +1589,4 @@
 
 ---
 
-*67 tables total (rebate_rates renamed to incentive_measures, utility_rate_schedules added). Updated February 10, 2026.*
+*68 tables total (rebate_rates renamed to incentive_measures, utility_rate_schedules and prescriptive_measures added). Updated February 10, 2026.*
