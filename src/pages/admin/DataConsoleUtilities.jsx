@@ -769,6 +769,17 @@ export default function DataConsoleUtilities() {
       const programNameMap = {}
 
       for (const pr of selectedProgramsList) {
+        // Coerce types: eligible_building_types must be text[], source_year must be integer
+        const eligibleBT = Array.isArray(pr.eligible_building_types)
+          ? pr.eligible_building_types
+          : pr.eligible_building_types ? [pr.eligible_building_types] : null
+        const eligibleSec = Array.isArray(pr.eligible_sectors)
+          ? pr.eligible_sectors
+          : pr.eligible_sectors ? [pr.eligible_sectors] : null
+        const reqDocs = Array.isArray(pr.required_documents)
+          ? pr.required_documents
+          : pr.required_documents ? [pr.required_documents] : null
+
         const { data, error } = await supabase
           .from('utility_programs')
           .insert({
@@ -784,16 +795,16 @@ export default function DataConsoleUtilities() {
             post_inspection_required: pr.post_inspection_required ?? false,
             contractor_prequalification: pr.contractor_prequalification ?? false,
             program_url: pr.program_url || null,
-            max_cap_percent: pr.max_cap_percent || null,
-            annual_cap_dollars: pr.annual_cap_dollars || null,
-            source_year: pr.source_year || null,
-            eligible_sectors: pr.eligible_sectors || null,
-            eligible_building_types: pr.eligible_building_types || null,
-            required_documents: pr.required_documents || null,
+            max_cap_percent: pr.max_cap_percent != null ? parseInt(pr.max_cap_percent) || null : null,
+            annual_cap_dollars: pr.annual_cap_dollars != null ? parseFloat(pr.annual_cap_dollars) || null : null,
+            source_year: pr.source_year ? parseInt(pr.source_year) || null : null,
+            eligible_sectors: eligibleSec,
+            eligible_building_types: eligibleBT,
+            required_documents: reqDocs,
             stacking_allowed: pr.stacking_allowed ?? true,
             stacking_rules: pr.stacking_rules || null,
             funding_status: pr.funding_status || 'Open',
-            processing_time_days: pr.processing_time_days || null,
+            processing_time_days: pr.processing_time_days ? parseInt(pr.processing_time_days) || null : null,
             rebate_payment_method: pr.rebate_payment_method || null,
             program_notes_ai: pr.program_notes_ai || null
           })
@@ -958,7 +969,7 @@ export default function DataConsoleUtilities() {
             form_name: f.form_name,
             form_type: f.form_type || 'Application',
             form_url: f.form_url || null,
-            version_year: f.version_year || null,
+            version_year: f.version_year ? parseInt(f.version_year) || null : null,
             is_required: f.is_required ?? false,
             form_notes: f.form_notes || null,
             status: 'dev'
