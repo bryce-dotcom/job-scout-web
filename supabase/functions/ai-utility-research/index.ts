@@ -96,18 +96,19 @@ TYPE RULES: source_year and version_year must be integers (2025 not "2025"). eli
 
 CRITICAL RULES:
 1. TWO ARRAYS — "incentives" (rate card summaries per tier) AND "prescriptive_measures" (specific line items with wattages). You MUST populate BOTH.
-2. Lighting: show No Controls, Networked Controls, LLLC tiers. Show Linear, High Bay, Exterior.
-3. HVAC: VFD ($/HP), Heat Pump ($/ton), RTU ($/ton), Chillers.
-4. Also: Refrigeration, Motors, Building Envelope if offered.
-5. measure_code prefix: LT-, HV-, MT-, RF-, BE-
-6. needs_pdf_upload: always true
-7. incentive_formula: show the math like "(64W-36W) x $0.60 = $16.80"
-8. Rate schedules: find ALL published commercial rate schedules for each major utility. Include small commercial, medium/demand, large/TOU, AND any special schedules (agricultural, irrigation, lighting, industrial). Search for "[utility] tariff schedule" or "[utility] rate book". Aim for 5-8 schedules for the primary utility.
-9. rate and rate_value must BOTH be populated with same number.
-10. rate_per_kwh in dollars (0.0845 = 8.45 cents/kWh).
-11. program_name includes year: "Name (2025)".
-12. Find 3-8 providers. Major programs should have 15-25 prescriptive measures.
-13. For unknown fields, set to null. Never omit fields.
+2. EVERY program in the programs array MUST have at least 2 incentives AND 2 prescriptive_measures linked to it (matching provider_name + program_name). If a program has different rates or delivery than the main program, show its specific rates. Express/streamlined programs often have higher incentive percentages — show those.
+3. Lighting: show No Controls, Networked Controls, LLLC tiers. Show Linear, High Bay, Exterior.
+4. HVAC: VFD ($/HP), Heat Pump ($/ton), RTU ($/ton), Chillers.
+5. Also: Refrigeration, Motors, Building Envelope if offered.
+6. measure_code prefix: LT-, HV-, MT-, RF-, BE-
+7. needs_pdf_upload: always true
+8. incentive_formula: show the math like "(64W-36W) x $0.60 = $16.80"
+9. Rate schedules: find ALL published commercial rate schedules for each major utility. Include small commercial, medium/demand, large/TOU, AND any special schedules (agricultural, irrigation, lighting, industrial). Search for "[utility] tariff schedule" or "[utility] rate book". Aim for 5-8 schedules for the primary utility.
+10. rate and rate_value must BOTH be populated with same number.
+11. rate_per_kwh in dollars (0.0845 = 8.45 cents/kWh).
+12. program_name includes year: "Name (2025)".
+13. Find 3-8 providers. Major programs should have 15-25 prescriptive measures total across all its programs.
+14. For unknown fields, set to null. Never omit fields.
 
 FIELD COMPLETENESS — every record MUST populate these fields (search if needed):
 • providers: ALWAYS include rebate_program_url (search "[name] energy efficiency" for URL) and contact_phone (search "[name] contact us"). If truly unfindable, set null — but TRY.
