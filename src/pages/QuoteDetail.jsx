@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator } from 'lucide-react'
 
 // Light theme fallback
 const defaultTheme = {
@@ -31,6 +31,7 @@ export default function QuoteDetail() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const products = useStore((state) => state.products)
+  const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
   const fetchQuotes = useStore((state) => state.fetchQuotes)
 
   const [quote, setQuote] = useState(null)
@@ -38,6 +39,7 @@ export default function QuoteDetail() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showProductPicker, setShowProductPicker] = useState(false)
+  const [calculatingIncentive, setCalculatingIncentive] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -148,6 +150,84 @@ export default function QuoteDetail() {
     if (!confirm('Convert this quote to a job?')) return
     await approveQuote()
     alert('Quote approved! Jobs module ready for conversion.')
+  }
+
+  const calculateIncentive = async () => {
+    if (!quote.audit_id) {
+      alert('This quote is not linked to a lighting audit. Link an audit first to auto-calculate incentives.')
+      return
+    }
+    if (!prescriptiveMeasures || prescriptiveMeasures.length === 0) {
+      alert('No prescriptive measures data available. Enrich utility PDFs in the Data Console first.')
+      return
+    }
+
+    setCalculatingIncentive(true)
+    try {
+      // Load audit and its areas
+      const { data: audit } = await supabase
+        .from('lighting_audits')
+        .select('*')
+        .eq('id', quote.audit_id)
+        .single()
+
+      if (!audit) {
+        alert('Linked audit not found.')
+        setCalculatingIncentive(false)
+        return
+      }
+
+      const { data: areas } = await supabase
+        .from('audit_areas')
+        .select('*')
+        .eq('audit_id', quote.audit_id)
+
+      if (!areas || areas.length === 0) {
+        alert('No audit areas found for the linked audit.')
+        setCalculatingIncentive(false)
+        return
+      }
+
+      let totalIncentive = 0
+
+      for (const area of areas) {
+        const areaWattsReduced = (area.fixture_count || 0) * ((area.existing_wattage || 0) - (area.led_wattage || 0))
+
+        // Match prescriptive measures by category/wattage/provider
+        const match = prescriptiveMeasures.find(pm => {
+          if (pm.measure_category !== 'Lighting') return false
+          const subcatMatch = pm.measure_subcategory?.toLowerCase() === area.fixture_category?.toLowerCase()
+          const wattageClose = pm.baseline_wattage && area.existing_wattage
+            ? Math.abs(pm.baseline_wattage - area.existing_wattage) / area.existing_wattage < 0.2
+            : false
+          const providerMatch = !audit.utility_provider_id || pm.program?.provider_id === audit.utility_provider_id
+          return (subcatMatch || wattageClose) && providerMatch
+        })
+
+        if (match) {
+          const amount = match.incentive_amount || 0
+          const unit = match.incentive_unit || 'per_fixture'
+          if (unit === 'per_watt_reduced') {
+            totalIncentive += areaWattsReduced * amount
+          } else if (unit === 'per_fixture' || unit === 'per_lamp') {
+            totalIncentive += (area.fixture_count || 0) * amount
+          } else if (unit === 'per_kw') {
+            totalIncentive += (areaWattsReduced / 1000) * amount
+          } else {
+            totalIncentive += amount
+          }
+        }
+      }
+
+      if (totalIncentive > 0) {
+        await updateQuoteField('utility_incentive', Math.round(totalIncentive * 100) / 100)
+      } else {
+        alert('No matching prescriptive measures found for the audit fixture types. Check that utility PDFs have been enriched for this provider.')
+      }
+    } catch (err) {
+      alert('Error calculating incentive: ' + err.message)
+    }
+    setCalculatingIncentive(false)
   }
 
   const formatCurrency = (amount) => {
@@ -538,7 +618,32 @@ export default function QuoteDetail() {
                 alignItems: 'center',
                 fontSize: '14px'
               }}>
-                <span style={{ color: theme.textSecondary }}>Utility Incentive</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: theme.textSecondary }}>Utility Incentive</span>
+                  {quote.audit_id && (
+                    <button
+                      onClick={calculateIncentive}
+                      disabled={calculatingIncentive || saving}
+                      title="Auto-calculate from audit prescriptive measures"
+                      style={{
+                        padding: '3px 6px',
+                        backgroundColor: '#4a7c59',
+                        border: 'none',
+                        borderRadius: '4px',
+                        color: '#fff',
+                        fontSize: '11px',
+                        cursor: (calculatingIncentive || saving) ? 'not-allowed' : 'pointer',
+                        opacity: (calculatingIncentive || saving) ? 0.6 : 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}
+                    >
+                      <Calculator size={12} />
+                      {calculatingIncentive ? '...' : 'Calc'}
+                    </button>
+                  )}
+                </div>
                 <input
                   type="number"
                   value={quote.utility_incentive || ''}

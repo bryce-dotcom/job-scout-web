@@ -1046,6 +1046,8 @@
 | source_page | text | |
 | source_url | text | |
 | source_notes | text | |
+| needs_pdf_upload | boolean | false |
+| source_pdf_url | text | |
 | notes | text | |
 | ai_match_keywords | text[] | |
 | created_at | timestamptz | now() |
@@ -1210,6 +1212,8 @@
 | expiration_date | date | |
 | per_unit_cap | numeric | |
 | project_cap_percent | numeric | |
+| source_pdf_url | text | |
+| pdf_verified | boolean | false |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 
@@ -1540,6 +1544,9 @@
 | processing_time_days | integer | |
 | rebate_payment_method | text | |
 | program_notes_ai | text | |
+| pdf_enrichment_status | text | 'pending' |
+| pdf_enriched_at | timestamptz | |
+| pdf_storage_path | text | |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 
@@ -1587,6 +1594,7 @@
 | min_demand_charge | numeric | |
 | customer_charge | numeric | |
 | source_url | text | |
+| pdf_storage_path | text | |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 
@@ -1610,4 +1618,4 @@
 
 ---
 
-*69 tables total (utility_forms added for forms library). Updated February 10, 2026.*
+*69 tables total. PDF enrichment columns added February 18, 2026. Updated February 18, 2026.*

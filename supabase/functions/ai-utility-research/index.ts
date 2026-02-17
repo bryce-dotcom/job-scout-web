@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -167,11 +166,10 @@ function calculateCompleteness(results: Record<string, unknown[]>) {
   return { completeness_score, level_scores: levelScores, missing_data };
 }
 
-// ── PDF Enrichment (optional) ────────────────────────────────────────────────
+// ── PDF Discovery (lightweight — actual processing deferred to UI) ────────────
 
-async function enrichWithPdfs(
+async function discoverPdfUrls(
   results: Record<string, unknown[]>,
-  apiKey: string,
   timeLimit: number
 ) {
   const programs = (results.programs || []) as Record<string, unknown>[];
@@ -180,7 +178,7 @@ async function enrichWithPdfs(
     .slice(0, 5);
 
   const pdfStartTime = Date.now();
-  const discoveredPdfs: { url: string; program_name: string; provider_name: string }[] = [];
+  const discoveredPdfs: { url: string; program_name: string; provider_name: string; type: string }[] = [];
 
   for (const prog of programsWithUrls) {
     if (Date.now() - pdfStartTime > timeLimit) break;
@@ -196,7 +194,7 @@ async function enrichWithPdfs(
 
       const contentType = htmlResponse.headers.get('content-type') || '';
       if (contentType.includes('application/pdf')) {
-        discoveredPdfs.push({ url: String(prog.program_url), program_name: String(prog.program_name), provider_name: String(prog.provider_name) });
+        discoveredPdfs.push({ url: String(prog.program_url), program_name: String(prog.program_name), provider_name: String(prog.provider_name), type: 'rebate_program' });
         continue;
       }
 
@@ -217,55 +215,18 @@ async function enrichWithPdfs(
         const relevant = ['rebate','incentive','prescriptive','measure','worksheet','lighting','hvac','commercial','business','energy','efficiency','application','schedule','tariff','rate'];
         if (relevant.some(t => lower.includes(t)) && !seenUrls.has(pdfUrl)) {
           seenUrls.add(pdfUrl);
-          discoveredPdfs.push({ url: pdfUrl, program_name: String(prog.program_name), provider_name: String(prog.provider_name) });
+          // Classify the PDF type based on URL keywords
+          const isForm = ['application','form','worksheet'].some(t => lower.includes(t)) && !['rebate','incentive','measure','prescriptive'].some(t => lower.includes(t));
+          const isRate = ['schedule','tariff','rate'].some(t => lower.includes(t)) && !['rebate','incentive'].some(t => lower.includes(t));
+          const pdfType = isForm ? 'form' : isRate ? 'rate_schedule' : 'rebate_program';
+          discoveredPdfs.push({ url: pdfUrl, program_name: String(prog.program_name), provider_name: String(prog.provider_name), type: pdfType });
         }
       }
     } catch { continue; }
   }
 
-  const pdfsToProcess = discoveredPdfs.slice(0, 3);
-  console.log(`PDF enrichment: discovered ${discoveredPdfs.length}, processing ${pdfsToProcess.length}`);
-
-  for (const pdfInfo of pdfsToProcess) {
-    if (Date.now() - pdfStartTime > timeLimit) break;
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 15000);
-      const pdfRes = await fetch(pdfInfo.url, { signal: ctrl.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; JobScout/1.0)' } });
-      clearTimeout(t);
-      if (!pdfRes.ok) continue;
-
-      const buf = await pdfRes.arrayBuffer();
-      const b64 = base64Encode(new Uint8Array(buf));
-      if (b64.length > 20 * 1024 * 1024) continue;
-
-      const pdfText = await callClaude(apiKey,
-        `Extract every prescriptive measure from this utility rebate PDF. Return JSON:
-{"prescriptive_measures":[{"measure_code":"string","measure_name":"string","measure_category":"Lighting|HVAC|Motors|Refrigeration|Building Envelope","measure_subcategory":"string","baseline_equipment":"string","baseline_wattage":null,"replacement_equipment":"string","replacement_wattage":null,"incentive_amount":0,"incentive_unit":"per_fixture|per_watt_reduced|per_kw|flat|per_ton","dlc_required":false,"energy_star_required":false,"location_type":"interior|exterior|null","source_page":"string","notes":"string"}]}
-Extract EVERY line item. Do not skip rows.`,
-        `Extract all prescriptive measures from this PDF for "${pdfInfo.program_name}" by "${pdfInfo.provider_name}".`,
-        { maxTokens: 32000, beta: 'pdfs-2024-09-25' }
-      );
-
-      const pdfResults = extractJson(pdfText);
-      if (pdfResults?.prescriptive_measures && Array.isArray(pdfResults.prescriptive_measures)) {
-        for (const pm of pdfResults.prescriptive_measures as Record<string, unknown>[]) {
-          pm.provider_name = pdfInfo.provider_name;
-          pm.program_name = pdfInfo.program_name;
-          pm.needs_pdf_upload = false;
-          pm.source_pdf_url = pdfInfo.url;
-        }
-        results.prescriptive_measures = [
-          ...(results.prescriptive_measures || []),
-          ...pdfResults.prescriptive_measures as unknown[]
-        ];
-        console.log(`PDF: extracted ${(pdfResults.prescriptive_measures as unknown[]).length} measures from ${pdfInfo.url}`);
-      }
-    } catch (e) {
-      console.log(`PDF error: ${(e as Error).message}`);
-      continue;
-    }
-  }
+  console.log(`PDF discovery: found ${discoveredPdfs.length} PDFs`);
+  return discoveredPdfs;
 }
 
 // ── Main Handler ─────────────────────────────────────────────────────────────
@@ -356,12 +317,13 @@ Return the structured JSON.`,
 
     console.log(`[Normalize] providers: ${results.providers.length}, programs: ${results.programs.length}, incentives: ${results.incentives.length}, measures: ${results.prescriptive_measures.length}, schedules: ${results.rate_schedules.length}, forms: ${results.forms.length}`);
 
-    // ─── Optional: PDF enrichment ───────────────────────────────────────
+    // ─── Optional: PDF discovery (lightweight — no processing) ─────────
+    let discovered_pdfs: { url: string; program_name: string; provider_name: string; type: string }[] = [];
     if (fetch_pdfs) {
-      const pdfTimeLimit = Math.min(90000, Math.max(30000, 240000 - elapsed()));
-      console.log(`[PDF] Enrichment with ${pdfTimeLimit}ms budget...`);
-      await enrichWithPdfs(results, ANTHROPIC_API_KEY, pdfTimeLimit);
-      console.log(`[PDF] Done in ${elapsed()}ms`);
+      const pdfTimeLimit = Math.min(30000, Math.max(10000, 120000 - elapsed()));
+      console.log(`[PDF] Discovery with ${pdfTimeLimit}ms budget...`);
+      discovered_pdfs = await discoverPdfUrls(results, pdfTimeLimit);
+      console.log(`[PDF] Found ${discovered_pdfs.length} PDFs in ${elapsed()}ms`);
     }
 
     // ─── Score and return ───────────────────────────────────────────────
@@ -372,6 +334,7 @@ Return the structured JSON.`,
     return new Response(JSON.stringify({
       success: true,
       results,
+      discovered_pdfs,
       completeness_score,
       level_scores,
       missing_data,

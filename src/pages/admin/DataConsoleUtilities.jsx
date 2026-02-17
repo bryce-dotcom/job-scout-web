@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
 import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, FormToggle, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
-import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader, ExternalLink, FileUp } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader, ExternalLink, FileUp, RefreshCw, Check, X, StopCircle } from 'lucide-react'
 
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
@@ -95,6 +95,14 @@ export default function DataConsoleUtilities() {
   const [checkedPdfItems, setCheckedPdfItems] = useState({})
   const [fetchPdfs, setFetchPdfs] = useState(false)
   const pdfFileInputRef = useRef(null)
+
+  // PDF Enrichment state
+  const [enriching, setEnriching] = useState(false)
+  const [enrichCancelled, setEnrichCancelled] = useState(false)
+  const enrichCancelledRef = useRef(false)
+  const [showEnrichModal, setShowEnrichModal] = useState(false)
+  const [enrichProgress, setEnrichProgress] = useState({ current: 0, total: 0, currentFile: '', results: [] })
+  const [discoveredPdfs, setDiscoveredPdfs] = useState([])
 
   useEffect(() => {
     fetchProviders()
@@ -991,6 +999,240 @@ export default function DataConsoleUtilities() {
     setImporting(false)
   }
 
+  // ── PDF Enrichment ──────────────────────────────────────────────────────────
+
+  const discoverProviderPdfs = () => {
+    if (!selectedProvider) return []
+    const pdfs = []
+    const seen = new Set()
+
+    // Programs with pdf_url
+    for (const prog of programs) {
+      if (prog.pdf_url && !seen.has(prog.pdf_url)) {
+        seen.add(prog.pdf_url)
+        pdfs.push({
+          url: prog.pdf_url,
+          type: 'rebate_program',
+          label: prog.program_name,
+          programId: prog.id,
+          programName: prog.program_name,
+          skip: prog.pdf_enrichment_status === 'complete'
+        })
+      }
+      // Program page URLs that are direct PDF links
+      if (prog.program_url && prog.program_url.toLowerCase().endsWith('.pdf') && !seen.has(prog.program_url)) {
+        seen.add(prog.program_url)
+        pdfs.push({
+          url: prog.program_url,
+          type: 'rebate_program',
+          label: prog.program_name,
+          programId: prog.id,
+          programName: prog.program_name,
+          skip: prog.pdf_enrichment_status === 'complete'
+        })
+      }
+    }
+
+    // Rate schedules with source_url ending in .pdf
+    for (const rs of rateSchedules) {
+      if (rs.source_url && rs.source_url.toLowerCase().endsWith('.pdf') && !seen.has(rs.source_url)) {
+        seen.add(rs.source_url)
+        pdfs.push({
+          url: rs.source_url,
+          type: 'rate_schedule',
+          label: rs.schedule_name,
+          scheduleId: rs.id,
+          skip: !!rs.pdf_storage_path
+        })
+      }
+    }
+
+    // Forms with form_url but no form_file
+    for (const f of forms) {
+      if (f.form_url && !f.form_file && !seen.has(f.form_url)) {
+        seen.add(f.form_url)
+        pdfs.push({
+          url: f.form_url,
+          type: 'form',
+          label: f.form_name,
+          formId: f.id,
+          skip: false
+        })
+      }
+    }
+
+    return pdfs
+  }
+
+  const buildStoragePath = (pdf) => {
+    const state = selectedProvider?.state || 'XX'
+    const slug = (selectedProvider?.provider_name || 'unknown')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    const typeDir = pdf.type === 'rebate_program' ? 'rebate' : pdf.type === 'rate_schedule' ? 'tariff' : 'form'
+    // Extract filename from URL
+    let filename = 'document.pdf'
+    try {
+      const urlPath = new URL(pdf.url).pathname
+      const parts = urlPath.split('/')
+      filename = parts[parts.length - 1] || 'document.pdf'
+      if (!filename.endsWith('.pdf')) filename += '.pdf'
+    } catch { /* use default */ }
+    return `${state}/${slug}/${typeDir}/${filename}`
+  }
+
+  const handleEnrichPdfs = async () => {
+    const pdfs = discoverProviderPdfs()
+    const toProcess = pdfs.filter(p => !p.skip)
+
+    if (toProcess.length === 0) {
+      alert('No PDFs to process. All have been enriched already.')
+      return
+    }
+
+    setDiscoveredPdfs(pdfs)
+    setEnrichCancelled(false)
+    enrichCancelledRef.current = false
+    setEnrichProgress({ current: 0, total: toProcess.length, currentFile: '', results: [] })
+    setShowEnrichModal(true)
+    setEnriching(true)
+
+    const results = []
+    let idx = 0
+
+    for (const pdf of toProcess) {
+      if (enrichCancelledRef.current) break
+      idx++
+
+      const filename = pdf.url.split('/').pop() || pdf.url
+      setEnrichProgress(prev => ({ ...prev, current: idx, currentFile: filename }))
+
+      try {
+        const storagePath = buildStoragePath(pdf)
+
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-utility-pdf`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({
+              pdf_url: pdf.url,
+              document_type: pdf.type,
+              program_name: pdf.programName || null,
+              provider_name: selectedProvider?.provider_name || null,
+              store_in_storage: true,
+              storage_path: storagePath
+            })
+          }
+        )
+
+        const data = await response.json()
+
+        if (!data?.success) {
+          results.push({ pdf, status: 'failed', error: data?.error || 'Unknown error', count: 0 })
+          // Mark program as failed
+          if (pdf.programId) {
+            await supabase.from('utility_programs').update({ pdf_enrichment_status: 'failed' }).eq('id', pdf.programId)
+          }
+          setEnrichProgress(prev => ({ ...prev, results: [...prev.results, { ...pdf, status: 'failed', error: data?.error, count: 0 }] }))
+          continue
+        }
+
+        let itemCount = 0
+
+        if (pdf.type === 'rebate_program' && data.results?.prescriptive_measures) {
+          // Upsert prescriptive measures
+          const measures = data.results.prescriptive_measures
+          for (const pm of measures) {
+            await supabase.from('prescriptive_measures').insert({
+              program_id: pdf.programId,
+              measure_code: pm.measure_code || null,
+              measure_name: pm.measure_name,
+              measure_category: pm.measure_category || 'Lighting',
+              measure_subcategory: pm.measure_subcategory || null,
+              baseline_equipment: pm.baseline_equipment || null,
+              baseline_wattage: pm.baseline_wattage || null,
+              replacement_equipment: pm.replacement_equipment || null,
+              replacement_wattage: pm.replacement_wattage || null,
+              incentive_amount: pm.incentive_amount,
+              incentive_unit: pm.incentive_unit || 'per_fixture',
+              incentive_formula: pm.incentive_formula || null,
+              max_incentive: pm.max_incentive || null,
+              location_type: pm.location_type || null,
+              application_type: pm.application_type || 'retrofit',
+              dlc_required: pm.dlc_required ?? false,
+              dlc_tier: pm.dlc_tier || null,
+              energy_star_required: pm.energy_star_required ?? false,
+              hours_requirement: pm.hours_requirement || null,
+              source_page: pm.source_page || null,
+              source_pdf_url: pdf.url,
+              needs_pdf_upload: false,
+              notes: pm.notes || null
+            })
+          }
+          itemCount = measures.length
+          // Update program status
+          if (pdf.programId) {
+            await supabase.from('utility_programs').update({
+              pdf_enrichment_status: 'complete',
+              pdf_enriched_at: new Date().toISOString(),
+              pdf_storage_path: data.storage_path || null
+            }).eq('id', pdf.programId)
+          }
+        } else if (pdf.type === 'rate_schedule' && data.results?.rate_schedules) {
+          // Update rate schedule with storage path
+          if (pdf.scheduleId) {
+            await supabase.from('utility_rate_schedules').update({
+              pdf_storage_path: data.storage_path || null
+            }).eq('id', pdf.scheduleId)
+          }
+          itemCount = data.results.rate_schedules.length
+        } else if (pdf.type === 'form') {
+          // Update form with storage path
+          if (pdf.formId) {
+            await supabase.from('utility_forms').update({
+              form_file: data.storage_path || null
+            }).eq('id', pdf.formId)
+          }
+          itemCount = 1
+        }
+
+        results.push({ pdf, status: 'success', count: itemCount })
+        setEnrichProgress(prev => ({ ...prev, results: [...prev.results, { ...pdf, status: 'success', count: itemCount }] }))
+
+        // Wait 30s between non-form PDFs for rate limiting
+        if (pdf.type !== 'form' && idx < toProcess.length && !enrichCancelledRef.current) {
+          setEnrichProgress(prev => ({ ...prev, currentFile: 'Waiting 30s (rate limit)...' }))
+          await new Promise(r => setTimeout(r, 30000))
+        }
+      } catch (err) {
+        results.push({ pdf, status: 'failed', error: err.message, count: 0 })
+        setEnrichProgress(prev => ({ ...prev, results: [...prev.results, { ...pdf, status: 'failed', error: err.message, count: 0 }] }))
+        if (pdf.programId) {
+          await supabase.from('utility_programs').update({ pdf_enrichment_status: 'failed' }).eq('id', pdf.programId)
+        }
+      }
+    }
+
+    setEnriching(false)
+    setEnrichProgress(prev => ({ ...prev, currentFile: enrichCancelledRef.current ? 'Cancelled' : 'Complete' }))
+
+    // Refresh data
+    if (selectedProvider) {
+      fetchPrograms(selectedProvider.provider_name)
+      fetchRateSchedules(selectedProvider.id)
+      fetchForms(selectedProvider.id, selectedProgram?.id || null)
+      if (selectedProgram) fetchPrescriptiveMeasures(selectedProgram.id)
+    }
+  }
+
+  const handleCancelEnrich = () => {
+    enrichCancelledRef.current = true
+    setEnrichCancelled(true)
+  }
+
   const filteredProviders = providers.filter(p => {
     const matchesSearch = p.provider_name?.toLowerCase().includes(providerSearch.toLowerCase())
     const matchesState = !stateFilter || p.state === stateFilter
@@ -1081,6 +1323,27 @@ export default function DataConsoleUtilities() {
             {researching ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Zap size={16} />}
             {researching ? 'Researching...' : 'AI Research'}
           </button>
+          {selectedProvider && (
+            <button
+              onClick={handleEnrichPdfs}
+              disabled={enriching || !selectedProvider}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: enriching ? adminTheme.border : '#4a7c59',
+                border: 'none',
+                borderRadius: '8px',
+                color: enriching ? adminTheme.textMuted : '#fff',
+                fontSize: '13px',
+                cursor: enriching ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              {enriching ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={16} />}
+              {enriching ? 'Enriching...' : `Enrich PDFs (${discoverProviderPdfs().filter(p => !p.skip).length})`}
+            </button>
+          )}
         </div>
       </div>
 
@@ -3217,6 +3480,103 @@ export default function DataConsoleUtilities() {
             </div>
           </>
         )}
+      </AdminModal>
+
+      {/* PDF Enrichment Progress Modal */}
+      <AdminModal isOpen={showEnrichModal} onClose={() => { if (!enriching) setShowEnrichModal(false) }} title="PDF Enrichment" width="600px">
+        <div style={{ padding: '20px' }}>
+          {/* Progress bar */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ color: adminTheme.text, fontSize: '14px', fontWeight: '500' }}>
+                Processing {enrichProgress.current}/{enrichProgress.total} PDFs
+              </span>
+              <span style={{ color: adminTheme.textMuted, fontSize: '13px' }}>
+                {enrichProgress.total > 0 ? Math.round((enrichProgress.current / enrichProgress.total) * 100) : 0}%
+              </span>
+            </div>
+            <div style={{ height: '8px', backgroundColor: adminTheme.bgHover, borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${enrichProgress.total > 0 ? (enrichProgress.current / enrichProgress.total) * 100 : 0}%`,
+                backgroundColor: '#4a7c59',
+                borderRadius: '4px',
+                transition: 'width 0.3s'
+              }} />
+            </div>
+          </div>
+
+          {/* Current file */}
+          {enrichProgress.currentFile && (
+            <div style={{ padding: '8px 12px', backgroundColor: adminTheme.bgHover, borderRadius: '6px', marginBottom: '16px' }}>
+              <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>Current: </span>
+              <span style={{ color: adminTheme.text, fontSize: '12px', wordBreak: 'break-all' }}>{enrichProgress.currentFile}</span>
+            </div>
+          )}
+
+          {/* Results list */}
+          <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' }}>
+            {enrichProgress.results.map((r, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0',
+                borderBottom: `1px solid ${adminTheme.border}`
+              }}>
+                {r.status === 'success' ? (
+                  <Check size={16} style={{ color: '#4a7c59', flexShrink: 0 }} />
+                ) : (
+                  <X size={16} style={{ color: adminTheme.error, flexShrink: 0 }} />
+                )}
+                <span style={{ color: adminTheme.text, fontSize: '13px', flex: 1 }}>
+                  {r.label || r.url?.split('/').pop()}
+                </span>
+                <span style={{ color: adminTheme.textMuted, fontSize: '11px', flexShrink: 0 }}>
+                  {r.status === 'success'
+                    ? `${r.count} item${r.count !== 1 ? 's' : ''}`
+                    : r.error?.substring(0, 40) || 'Failed'
+                  }
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            {enriching ? (
+              <button
+                onClick={handleCancelEnrich}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: adminTheme.error,
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <StopCircle size={14} /> Stop
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowEnrichModal(false)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: adminTheme.accent,
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                Done
+              </button>
+            )}
+          </div>
+        </div>
       </AdminModal>
     </div>
   )

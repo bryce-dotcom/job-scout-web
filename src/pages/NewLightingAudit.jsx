@@ -123,6 +123,7 @@ export default function NewLightingAudit() {
   const utilityProviders = useStore((state) => state.utilityProviders)
   const utilityPrograms = useStore((state) => state.utilityPrograms)
   const rebateRates = useStore((state) => state.rebateRates)
+  const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
   const fetchLightingAudits = useStore((state) => state.fetchLightingAudits)
   const fetchAuditAreas = useStore((state) => state.fetchAuditAreas)
   const fetchSalesPipeline = useStore((state) => state.fetchSalesPipeline)
@@ -277,11 +278,42 @@ export default function NewLightingAudit() {
     const annual_savings_kwh = (watts_reduced * annual_hours) / 1000
     const annual_savings_dollars = annual_savings_kwh * basicInfo.electric_rate
 
-    // Calculate rebate (simplified - sum of area rebates)
+    // Calculate rebate — try PDF-verified prescriptive_measures first, fall back to incentive_measures
     let estimated_rebate = 0
     areas.forEach(area => {
       const areaWattsReduced = (area.fixture_count || 0) * ((area.existing_wattage || 0) - (area.led_wattage || 0))
-      // Find applicable rebate rate
+
+      // 1. Try prescriptive_measures (PDF-verified, precise)
+      const pmMatch = (prescriptiveMeasures || []).find(pm => {
+        if (pm.measure_category !== 'Lighting') return false
+        // Match subcategory to fixture_category
+        const subcatMatch = pm.measure_subcategory?.toLowerCase() === area.fixture_category?.toLowerCase()
+        // Match baseline wattage within 20% tolerance
+        const wattageClose = pm.baseline_wattage && area.existing_wattage
+          ? Math.abs(pm.baseline_wattage - area.existing_wattage) / area.existing_wattage < 0.2
+          : false
+        // Match provider if audit has one selected
+        const providerMatch = !basicInfo.utility_provider_id || pm.program?.provider_id === basicInfo.utility_provider_id
+        return (subcatMatch || wattageClose) && providerMatch
+      })
+
+      if (pmMatch) {
+        // Use prescriptive measure amount
+        const amount = pmMatch.incentive_amount || 0
+        const unit = pmMatch.incentive_unit || 'per_fixture'
+        if (unit === 'per_watt_reduced') {
+          estimated_rebate += areaWattsReduced * amount
+        } else if (unit === 'per_fixture' || unit === 'per_lamp') {
+          estimated_rebate += (area.fixture_count || 0) * amount
+        } else if (unit === 'per_kw') {
+          estimated_rebate += (areaWattsReduced / 1000) * amount
+        } else {
+          estimated_rebate += amount
+        }
+        return
+      }
+
+      // 2. Fall back to incentive_measures (AI-estimated rates)
       const rate = rebateRates.find(r =>
         r.fixture_category === area.fixture_category
       )

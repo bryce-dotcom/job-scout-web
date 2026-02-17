@@ -82,6 +82,9 @@ export const useStore = create(
       // Utility Invoices
       utilityInvoices: [],
 
+      // Prescriptive Measures (PDF-verified)
+      prescriptiveMeasures: [],
+
       // Incentives
       incentives: [],
 
@@ -165,6 +168,7 @@ export const useStore = create(
           bookings: [],
           leadPayments: [],
           utilityInvoices: [],
+          prescriptiveMeasures: [],
           incentives: [],
           agents: [],
           companyAgents: [],
@@ -491,6 +495,19 @@ export const useStore = create(
           .or(`company_id.eq.${companyId},company_id.is.null`);
 
         if (!error) set({ rebateRates: data || [] });
+      },
+
+      fetchPrescriptiveMeasures: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        const { data, error } = await supabase
+          .from('prescriptive_measures')
+          .select('*, program:utility_programs(id, program_name, utility_name, provider_id)')
+          .eq('is_active', true)
+          .or(`company_id.eq.${companyId},company_id.is.null`);
+
+        if (!error) set({ prescriptiveMeasures: data || [] });
       },
 
       // ========================================
@@ -825,6 +842,7 @@ export const useStore = create(
           fetchUtilityProviders,
           fetchUtilityPrograms,
           fetchRebateRates,
+          fetchPrescriptiveMeasures,
           fetchSettings,
           fetchCommunications,
           fetchRoutes,
@@ -862,6 +880,7 @@ export const useStore = create(
           fetchUtilityProviders(),
           fetchUtilityPrograms(),
           fetchRebateRates(),
+          fetchPrescriptiveMeasures(),
           fetchSettings(),
           fetchCommunications(),
           fetchRoutes(),

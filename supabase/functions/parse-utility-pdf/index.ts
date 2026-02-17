@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -85,23 +86,35 @@ serve(async (req) => {
   }
 
   try {
-    const { pdf_base64, pdf_url, document_type, program_name, provider_name } = await req.json();
+    const {
+      pdf_base64,
+      pdf_url,
+      document_type,
+      program_name,
+      provider_name,
+      store_in_storage,
+      storage_path
+    } = await req.json();
 
-    if (!document_type || !['rebate_program', 'rate_schedule'].includes(document_type)) {
-      return new Response(JSON.stringify({ success: false, error: 'document_type must be "rebate_program" or "rate_schedule"' }), {
+    if (!document_type || !['rebate_program', 'rate_schedule', 'form'].includes(document_type)) {
+      return new Response(JSON.stringify({ success: false, error: 'document_type must be "rebate_program", "rate_schedule", or "form"' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     let pdfData = pdf_base64;
+    let pdfBuffer: ArrayBuffer | null = null;
 
     // If URL provided, fetch the PDF
     if (pdf_url && !pdfData) {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
-        const pdfResponse = await fetch(pdf_url, { signal: controller.signal });
+        const pdfResponse = await fetch(pdf_url, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; JobScout/1.0)' }
+        });
         clearTimeout(timeout);
 
         if (!pdfResponse.ok) {
@@ -111,10 +124,10 @@ serve(async (req) => {
           });
         }
 
-        const pdfBuffer = await pdfResponse.arrayBuffer();
+        pdfBuffer = await pdfResponse.arrayBuffer();
         pdfData = base64Encode(new Uint8Array(pdfBuffer));
       } catch (fetchErr) {
-        return new Response(JSON.stringify({ success: false, error: `PDF fetch error: ${fetchErr.message}` }), {
+        return new Response(JSON.stringify({ success: false, error: `PDF fetch error: ${(fetchErr as Error).message}` }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
@@ -132,6 +145,50 @@ serve(async (req) => {
     if (pdfData.length > 32 * 1024 * 1024) {
       return new Response(JSON.stringify({ success: false, error: 'PDF exceeds 32MB limit' }), {
         status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Upload to Supabase Storage if requested
+    let storagePath: string | null = null;
+    if (store_in_storage && storage_path) {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+
+        // Convert base64 to Uint8Array for upload
+        const binaryData = pdfBuffer
+          ? new Uint8Array(pdfBuffer)
+          : Uint8Array.from(atob(pdfData), c => c.charCodeAt(0));
+
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from('utility-pdfs')
+          .upload(storage_path, binaryData, {
+            contentType: 'application/pdf',
+            upsert: true
+          });
+
+        if (uploadError) {
+          console.error('Storage upload error:', uploadError);
+        } else {
+          storagePath = storage_path;
+          console.log(`PDF uploaded to utility-pdfs/${storage_path}`);
+        }
+      } catch (storageErr) {
+        console.error('Storage upload failed:', (storageErr as Error).message);
+        // Continue — extraction is still valuable even if storage fails
+      }
+    }
+
+    // For 'form' type, skip extraction — just store the PDF
+    if (document_type === 'form') {
+      return new Response(JSON.stringify({
+        success: true,
+        document_type,
+        storage_path: storagePath,
+        results: null
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -185,7 +242,59 @@ serve(async (req) => {
     const data = await response.json();
 
     if (data.error) {
-      return new Response(JSON.stringify({ success: false, error: data.error.message || 'Anthropic API error' }), {
+      // Retry once on rate limit
+      if (data.error.message?.includes('rate limit')) {
+        console.log('Rate limited, waiting 61s before retry...');
+        await new Promise(r => setTimeout(r, 61000));
+        const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'anthropic-beta': 'pdfs-2024-09-25'
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 64000,
+            system: systemPrompt,
+            messages: [{
+              role: 'user',
+              content: [
+                {
+                  type: 'document',
+                  source: {
+                    type: 'base64',
+                    media_type: 'application/pdf',
+                    data: pdfData
+                  }
+                },
+                {
+                  type: 'text',
+                  text: `Extract all ${document_type === 'rebate_program' ? 'prescriptive measure line items' : 'rate schedule information'} from this PDF document.${contextNote}\n\nReturn the structured JSON as specified.`
+                }
+              ]
+            }]
+          })
+        });
+        const retryData = await retryResponse.json();
+        if (retryData.error) {
+          return new Response(JSON.stringify({ success: false, error: retryData.error.message || 'Anthropic API error (after retry)', storage_path: storagePath }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        const retryContent = retryData.content?.[0]?.text || '';
+        const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
+        if (retryJsonMatch) {
+          const results = JSON.parse(retryJsonMatch[0]);
+          return new Response(JSON.stringify({ success: true, document_type, results, storage_path: storagePath }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      return new Response(JSON.stringify({ success: false, error: data.error.message || 'Anthropic API error', storage_path: storagePath }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -198,17 +307,17 @@ serve(async (req) => {
     if (jsonMatch) {
       const results = JSON.parse(jsonMatch[0]);
 
-      return new Response(JSON.stringify({ success: true, document_type, results }), {
+      return new Response(JSON.stringify({ success: true, document_type, results, storage_path: storagePath }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    return new Response(JSON.stringify({ success: false, error: 'Could not parse extraction results', raw: content }), {
+    return new Response(JSON.stringify({ success: false, error: 'Could not parse extraction results', raw: content, storage_path: storagePath }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
+    return new Response(JSON.stringify({ success: false, error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
