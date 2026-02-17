@@ -44,8 +44,8 @@ async function callClaude(
     if (data.error) {
       const msg = data.error.message || 'Anthropic API error';
       if (msg.includes('rate limit') && attempt < retries) {
-        console.log(`Rate limited, waiting 30s before retry...`);
-        await wait(30000);
+        console.log(`Rate limited, waiting 61s before retry...`);
+        await wait(61000);
         continue;
       }
       throw new Error(msg);
@@ -102,7 +102,7 @@ CRITICAL RULES:
 5. measure_code prefix: LT-, HV-, MT-, RF-, BE-
 6. needs_pdf_upload: always true
 7. incentive_formula: show the math like "(64W-36W) x $0.60 = $16.80"
-8. Rate schedules: small, medium (demand), large (TOU) — at least 3 per major utility.
+8. Rate schedules: find ALL published commercial rate schedules for each major utility. Include small commercial, medium/demand, large/TOU, AND any special schedules (agricultural, irrigation, lighting, industrial). Search for "[utility] tariff schedule" or "[utility] rate book". Aim for 5-8 schedules for the primary utility.
 9. rate and rate_value must BOTH be populated with same number.
 10. rate_per_kwh in dollars (0.0845 = 8.45 cents/kWh).
 11. program_name includes year: "Name (2025)".
@@ -305,15 +305,15 @@ For each provider, find:
 - Level 1: Provider details — name, territory, URL, phone. SEARCH for each provider's website and contact page.
 - Level 2: All incentive/rebate programs with year and URLs
 - Level 3: Program qualification details — pre_approval_required (bool), stacking_allowed (bool), annual_cap_dollars, eligible_sectors, required_documents, funding_status, processing_time_days, rebate_payment_method, program_notes_ai
-- Level 4: Incentive rate card — one row per measure_category + tier combo. Include measure_category, fixture_category, calc_method, rate_unit, tier, equipment_requirements, baseline_description.
-- Level 5: 15-25 prescriptive_measures with ALL fields. Every measure MUST have baseline_wattage (estimate from equipment if needed), dlc_required (true for lighting, false otherwise), location_type (interior/exterior/null). Include incentive_formula with math.
-- Level 6: Rate schedules — at least 3 per major utility (small/medium/large). Include demand_charge, customer_charge, source_url, description, customer_category, rate_type.
+- Level 4: Incentive rate card — one row per measure_category + tier combo. EVERY incentive MUST have: measure_category, fixture_category (use "Other" for HVAC/motors), calc_method, rate_unit, tier (use "Standard" if only one tier), equipment_requirements, baseline_description, replacement_description.
+- Level 5: 15-25 prescriptive_measures with ALL fields filled. Every measure MUST have: baseline_wattage (estimate from equipment if exact unknown), replacement_wattage (estimate if needed), dlc_required (true for lighting, false otherwise), location_type (interior/exterior/null for non-lighting), incentive_formula with actual math, measure_subcategory.
+- Level 6: ALL published rate schedules for each major utility — not just 3. Include small commercial, medium/demand, large/TOU, agricultural/irrigation, lighting, industrial. Search "[utility] tariff rate book" for the full list. Each must have demand_charge, customer_charge, source_url, description, customer_category, rate_type.
 - Level 7: Forms — include provider_name, form_url, version_year, is_required for each.
 
 Search for actual utility program pages. Prioritize field completeness — every field in the schema should be populated (use null only when truly unknown). Maximize completeness at every level.
 
 Return the structured JSON.`,
-      { webSearch: 5, maxTokens: 32000 }
+      { webSearch: 4, maxTokens: 32000 }
     );
 
     console.log(`[Research] API call done in ${elapsed()}ms`);
