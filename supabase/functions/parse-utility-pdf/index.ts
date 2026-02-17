@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encode as base64Encode, decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -104,7 +103,7 @@ serve(async (req) => {
     }
 
     let pdfData = pdf_base64;
-    let pdfBuffer: ArrayBuffer | null = null;
+    let pdfBytes: Uint8Array | null = null;
 
     // If URL provided, fetch the PDF
     if (pdf_url && !pdfData) {
@@ -118,14 +117,19 @@ serve(async (req) => {
         clearTimeout(timeout);
 
         if (!pdfResponse.ok) {
-          return new Response(JSON.stringify({ success: false, error: `Failed to fetch PDF: ${pdfResponse.status}` }), {
+          const errMsg = pdfResponse.status === 404
+            ? 'PDF not found — URL may be outdated'
+            : pdfResponse.status === 403
+            ? 'PDF access denied — website may block automated downloads'
+            : `Failed to fetch PDF: ${pdfResponse.status}`;
+          return new Response(JSON.stringify({ success: false, error: errMsg }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        pdfBuffer = await pdfResponse.arrayBuffer();
-        pdfData = base64Encode(new Uint8Array(pdfBuffer));
+        pdfBytes = new Uint8Array(await pdfResponse.arrayBuffer());
+        pdfData = base64Encode(pdfBytes);
       } catch (fetchErr) {
         return new Response(JSON.stringify({ success: false, error: `PDF fetch error: ${(fetchErr as Error).message}` }), {
           status: 400,
@@ -149,28 +153,30 @@ serve(async (req) => {
       });
     }
 
-    // Upload to Supabase Storage if requested
+    // Upload to Supabase Storage if requested (direct REST API — no JS client needed)
     let storagePath: string | null = null;
     if (store_in_storage && storage_path) {
       try {
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
         const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
-        // Convert base64 to Uint8Array for upload
-        const binaryData = pdfBuffer
-          ? new Uint8Array(pdfBuffer)
-          : Uint8Array.from(atob(pdfData), c => c.charCodeAt(0));
+        // Use saved raw bytes, or decode from base64 using std library
+        const binaryData = pdfBytes || base64Decode(pdfData);
 
-        const { error: uploadError } = await supabaseAdmin.storage
-          .from('utility-pdfs')
-          .upload(storage_path, binaryData, {
-            contentType: 'application/pdf',
-            upsert: true
-          });
+        const uploadUrl = `${supabaseUrl}/storage/v1/object/utility-pdfs/${storage_path}`;
+        const uploadRes = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'Content-Type': 'application/pdf',
+            'x-upsert': 'true'
+          },
+          body: binaryData
+        });
 
-        if (uploadError) {
-          console.error('Storage upload error:', uploadError);
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          console.error('Storage upload error:', uploadRes.status, errText);
         } else {
           storagePath = storage_path;
           console.log(`PDF uploaded to utility-pdfs/${storage_path}`);
