@@ -734,8 +734,8 @@ export default function Layout() {
               <NavSection key={section.title} section={section} />
             ))}
 
-            {/* AI CREW Section with Settings — only show agents NOT already placed in another section */}
-            {aiModules.length > 0 && (() => {
+            {/* AI CREW Section with Settings */}
+            {(() => {
               const unplacedAgents = aiModules.filter(agent => {
                 const section = getAgentSection(agent)
                 return !section || section === 'AI_CREW'
@@ -757,56 +757,54 @@ export default function Layout() {
                       <Bot size={12} />
                       AI CREW
                     </div>
-                    <button
-                      onClick={() => setShowAgentSettings(true)}
-                      title="Configure AI agent menu placement"
-                      style={{
-                        padding: '4px',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        color: '#a855f7',
-                        cursor: 'pointer',
-                        borderRadius: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <SettingsIcon size={12} />
-                    </button>
+                    {aiModules.length > 0 && (
+                      <button
+                        onClick={() => setShowAgentSettings(true)}
+                        title="Configure AI agent menu placement"
+                        style={{
+                          padding: '4px',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          color: '#a855f7',
+                          cursor: 'pointer',
+                          borderRadius: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <SettingsIcon size={12} />
+                      </button>
+                    )}
                   </div>
-                  {unplacedAgents.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                      {unplacedAgents.map((agent) => (
-                        <NavLink
-                          key={agent.id}
-                          to={agent.route_path}
-                          title={agent.description}
-                          style={({ isActive }) => ({
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            padding: '8px 12px',
-                            borderRadius: '6px',
-                            color: isActive ? '#a855f7' : theme.textMuted,
-                            backgroundColor: isActive ? 'rgba(168,85,247,0.12)' : 'transparent',
-                            textDecoration: 'none',
-                            fontSize: '13px',
-                            fontWeight: isActive ? '500' : '400',
-                            transition: 'all 0.15s ease',
-                            minHeight: '36px'
-                          })}
-                        >
-                          <Bot size={18} style={{ color: '#a855f7' }} />
-                          {agent.display_name}
-                        </NavLink>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ padding: '6px 12px', color: theme.textMuted, fontSize: '11px', fontStyle: 'italic' }}>
-                      All agents placed in other sections
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                    <NavItem item={{ to: '/base-camp', icon: Tent, label: 'Base Camp', hint: 'Browse and recruit AI experts' }} />
+                    <NavItem item={{ to: '/my-crew', icon: Users, label: 'My Crew', hint: 'Manage your recruited AI agents' }} />
+                    {unplacedAgents.map((agent) => (
+                      <NavLink
+                        key={agent.id}
+                        to={agent.route_path}
+                        title={agent.description}
+                        style={({ isActive }) => ({
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          color: isActive ? '#a855f7' : theme.textMuted,
+                          backgroundColor: isActive ? 'rgba(168,85,247,0.12)' : 'transparent',
+                          textDecoration: 'none',
+                          fontSize: '13px',
+                          fontWeight: isActive ? '500' : '400',
+                          transition: 'all 0.15s ease',
+                          minHeight: '36px'
+                        })}
+                      >
+                        <Bot size={18} style={{ color: '#a855f7' }} />
+                        {agent.display_name}
+                      </NavLink>
+                    ))}
+                  </div>
                 </div>
               )
             })()}
@@ -1116,8 +1114,8 @@ export default function Layout() {
                   <NavSection key={section.title} section={section} mobile />
                 ))}
 
-                {/* AI CREW Section with Settings - Mobile — only unplaced agents */}
-                {aiModules.length > 0 && (() => {
+                {/* AI CREW Section with Settings - Mobile */}
+                {(() => {
                   const unplacedAgents = aiModules.filter(agent => {
                     const section = getAgentSection(agent)
                     return !section || section === 'AI_CREW'
@@ -1139,57 +1137,55 @@ export default function Layout() {
                           <Bot size={12} />
                           AI CREW
                         </div>
-                        <button
-                          onClick={() => setShowAgentSettings(true)}
-                          title="Configure AI agent menu placement"
-                          style={{
-                            padding: '4px',
-                            backgroundColor: 'transparent',
-                            border: 'none',
-                            color: '#a855f7',
-                            cursor: 'pointer',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          <SettingsIcon size={12} />
-                        </button>
+                        {aiModules.length > 0 && (
+                          <button
+                            onClick={() => setShowAgentSettings(true)}
+                            title="Configure AI agent menu placement"
+                            style={{
+                              padding: '4px',
+                              backgroundColor: 'transparent',
+                              border: 'none',
+                              color: '#a855f7',
+                              cursor: 'pointer',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <SettingsIcon size={12} />
+                          </button>
+                        )}
                       </div>
-                      {unplacedAgents.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                          {unplacedAgents.map((agent) => (
-                            <NavLink
-                              key={agent.id}
-                              to={agent.route_path}
-                              onClick={() => setMobileMenuOpen(false)}
-                              title={agent.description}
-                              style={({ isActive }) => ({
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                                padding: '10px 12px',
-                                borderRadius: '6px',
-                                color: isActive ? '#a855f7' : theme.textMuted,
-                                backgroundColor: isActive ? 'rgba(168,85,247,0.12)' : 'transparent',
-                                textDecoration: 'none',
-                                fontSize: '14px',
-                                fontWeight: isActive ? '500' : '400',
-                                transition: 'all 0.15s ease',
-                                minHeight: '44px'
-                              })}
-                            >
-                              <Bot size={18} style={{ color: '#a855f7' }} />
-                              {agent.display_name}
-                            </NavLink>
-                          ))}
-                        </div>
-                      ) : (
-                        <div style={{ padding: '6px 12px', color: theme.textMuted, fontSize: '11px', fontStyle: 'italic' }}>
-                          All agents placed in other sections
-                        </div>
-                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                        <NavItem item={{ to: '/base-camp', icon: Tent, label: 'Base Camp', hint: 'Browse and recruit AI experts' }} mobile />
+                        <NavItem item={{ to: '/my-crew', icon: Users, label: 'My Crew', hint: 'Manage your recruited AI agents' }} mobile />
+                        {unplacedAgents.map((agent) => (
+                          <NavLink
+                            key={agent.id}
+                            to={agent.route_path}
+                            onClick={() => setMobileMenuOpen(false)}
+                            title={agent.description}
+                            style={({ isActive }) => ({
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              padding: '10px 12px',
+                              borderRadius: '6px',
+                              color: isActive ? '#a855f7' : theme.textMuted,
+                              backgroundColor: isActive ? 'rgba(168,85,247,0.12)' : 'transparent',
+                              textDecoration: 'none',
+                              fontSize: '14px',
+                              fontWeight: isActive ? '500' : '400',
+                              transition: 'all 0.15s ease',
+                              minHeight: '44px'
+                            })}
+                          >
+                            <Bot size={18} style={{ color: '#a855f7' }} />
+                            {agent.display_name}
+                          </NavLink>
+                        ))}
+                      </div>
                     </div>
                   )
                 })()}
