@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, AI_CATEGORY_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
-import { ArrowLeft, ArrowRight, Check, Plus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Plus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse, Sparkles, Search, UserPlus, X } from 'lucide-react'
 
 const buildingSizes = [
   { value: 'small', label: 'Small', description: '<10,000 sq ft, <50kW demand' },
@@ -142,6 +142,14 @@ export default function NewLightingAudit() {
   const [rateSchedules, setRateSchedules] = useState([])
   const [loadingSchedules, setLoadingSchedules] = useState(false)
 
+  // Customer search & add-new
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
+  const [newCustomer, setNewCustomer] = useState({ name: '', email: '', phone: '', address: '' })
+  const [savingCustomer, setSavingCustomer] = useState(false)
+  const fetchCustomers = useStore((state) => state.fetchCustomers)
+
   // Step 2 - Areas
   const [areas, setAreas] = useState([])
   const [showAreaModal, setShowAreaModal] = useState(false)
@@ -190,7 +198,7 @@ export default function NewLightingAudit() {
   // Auto-fill address from customer
   useEffect(() => {
     if (basicInfo.customer_id) {
-      const customer = customers.find(c => c.id === basicInfo.customer_id)
+      const customer = customers.find(c => c.id === parseInt(basicInfo.customer_id))
       if (customer) {
         setBasicInfo(prev => ({
           ...prev,
@@ -199,6 +207,67 @@ export default function NewLightingAudit() {
       }
     }
   }, [basicInfo.customer_id, customers])
+
+  // Sync customer search text with selected customer
+  useEffect(() => {
+    if (basicInfo.customer_id && customers.length > 0) {
+      const c = customers.find(c => c.id === parseInt(basicInfo.customer_id))
+      if (c && customerSearch !== c.name) setCustomerSearch(c.name || '')
+    }
+  }, [basicInfo.customer_id, customers])
+
+  // Filtered customer list for search
+  const filteredCustomers = customerSearch.trim()
+    ? customers.filter(c =>
+        (c.name || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
+        (c.email || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
+        (c.phone || '').includes(customerSearch) ||
+        (c.business_name || '').toLowerCase().includes(customerSearch.toLowerCase())
+      )
+    : customers
+
+  const selectedCustomer = customers.find(c => c.id === parseInt(basicInfo.customer_id))
+
+  const handleSelectCustomer = (customer) => {
+    setBasicInfo(prev => ({ ...prev, customer_id: customer.id }))
+    setCustomerSearch(customer.name || '')
+    setShowCustomerDropdown(false)
+  }
+
+  const handleClearCustomer = () => {
+    setBasicInfo(prev => ({ ...prev, customer_id: '' }))
+    setCustomerSearch('')
+  }
+
+  const handleAddNewCustomer = async () => {
+    if (!newCustomer.name.trim()) {
+      alert('Customer name is required')
+      return
+    }
+    setSavingCustomer(true)
+    const { data, error } = await supabase
+      .from('customers')
+      .insert({
+        company_id: companyId,
+        name: newCustomer.name.trim(),
+        email: newCustomer.email.trim() || null,
+        phone: newCustomer.phone.trim() || null,
+        address: newCustomer.address.trim() || null
+      })
+      .select()
+      .single()
+
+    setSavingCustomer(false)
+    if (error) {
+      alert('Error adding customer: ' + error.message)
+    } else {
+      await fetchCustomers()
+      setBasicInfo(prev => ({ ...prev, customer_id: data.id, address: data.address || prev.address }))
+      setCustomerSearch(data.name)
+      setShowNewCustomerForm(false)
+      setNewCustomer({ name: '', email: '', phone: '', address: '' })
+    }
+  }
 
   // Filter providers by detected state
   const filteredUtilityProviders = basicInfo.state
@@ -439,12 +508,12 @@ export default function NewLightingAudit() {
         company_id: companyId,
         audit_id: generateAuditId(),
         created_by: user?.email || null,
-        customer_id: basicInfo.customer_id || null,
+        customer_id: basicInfo.customer_id ? parseInt(basicInfo.customer_id) : null,
         address: basicInfo.address,
         city: basicInfo.city,
         state: basicInfo.state,
         zip: basicInfo.zip,
-        utility_provider_id: basicInfo.utility_provider_id || null,
+        utility_provider_id: basicInfo.utility_provider_id ? parseInt(basicInfo.utility_provider_id) : null,
         rate_schedule: basicInfo.rate_schedule || null,
         electric_rate: basicInfo.electric_rate,
         operating_hours: basicInfo.operating_hours,
@@ -505,10 +574,10 @@ export default function NewLightingAudit() {
 
       // Create sales pipeline entry for tracking
       if (basicInfo.customer_id) {
-        const customer = customers.find(c => c.id === basicInfo.customer_id)
+        const customer = customers.find(c => c.id === parseInt(basicInfo.customer_id))
         const pipelineData = {
           company_id: companyId,
-          customer_id: basicInfo.customer_id,
+          customer_id: parseInt(basicInfo.customer_id),
           salesperson_id: basicInfo.salesperson_id || null,
           stage: 'Audit Created',
           quote_amount: calculations.est_project_cost,
@@ -803,7 +872,7 @@ export default function NewLightingAudit() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Customer and Salesperson */}
             <div className="audit-form-grid-2 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div>
+              <div style={{ position: 'relative' }}>
                 <label style={{
                   display: 'block',
                   fontSize: '13px',
@@ -813,24 +882,98 @@ export default function NewLightingAudit() {
                 }}>
                   Customer *
                 </label>
-                <select
-                  value={basicInfo.customer_id}
-                  onChange={(e) => setBasicInfo({ ...basicInfo, customer_id: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '8px',
-                    border: `1px solid ${theme.border}`,
-                    backgroundColor: theme.bg,
-                    color: theme.text,
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="">Select Customer</option>
-                  {customers.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <div style={{ position: 'relative' }}>
+                  <Search size={16} style={{
+                    position: 'absolute', left: '10px', top: '50%',
+                    transform: 'translateY(-50%)', color: theme.textMuted, pointerEvents: 'none'
+                  }} />
+                  <input
+                    type="text"
+                    placeholder="Search or add customer..."
+                    value={customerSearch}
+                    onChange={(e) => {
+                      setCustomerSearch(e.target.value)
+                      setShowCustomerDropdown(true)
+                      if (basicInfo.customer_id) setBasicInfo(prev => ({ ...prev, customer_id: '' }))
+                    }}
+                    onFocus={() => setShowCustomerDropdown(true)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 32px 10px 34px',
+                      borderRadius: '8px',
+                      border: `1px solid ${basicInfo.customer_id ? theme.accent : theme.border}`,
+                      backgroundColor: theme.bg,
+                      color: theme.text,
+                      fontSize: '14px'
+                    }}
+                  />
+                  {basicInfo.customer_id && (
+                    <button onClick={handleClearCustomer} style={{
+                      position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                      background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '2px'
+                    }}>
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                {showCustomerDropdown && (
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                    borderRadius: '8px', marginTop: '4px', maxHeight: '220px', overflowY: 'auto',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                  }}>
+                    <button
+                      onClick={() => {
+                        setShowNewCustomerForm(true)
+                        setShowCustomerDropdown(false)
+                        setNewCustomer({ name: customerSearch.trim(), email: '', phone: '', address: '' })
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                        padding: '10px 12px', border: 'none', borderBottom: `1px solid ${theme.border}`,
+                        backgroundColor: theme.accentBg, color: theme.accent,
+                        fontSize: '14px', fontWeight: '600', cursor: 'pointer', textAlign: 'left'
+                      }}
+                    >
+                      <UserPlus size={16} /> Add New Customer{customerSearch.trim() ? `: "${customerSearch.trim()}"` : ''}
+                    </button>
+                    {filteredCustomers.length === 0 ? (
+                      <div style={{ padding: '12px', color: theme.textMuted, fontSize: '13px', textAlign: 'center' }}>
+                        No customers found
+                      </div>
+                    ) : (
+                      filteredCustomers.slice(0, 20).map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => handleSelectCustomer(c)}
+                          style={{
+                            display: 'block', width: '100%', padding: '10px 12px',
+                            border: 'none', borderBottom: `1px solid ${theme.border}`,
+                            backgroundColor: 'transparent', color: theme.text,
+                            fontSize: '14px', cursor: 'pointer', textAlign: 'left'
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
+                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <div style={{ fontWeight: '500' }}>{c.name}</div>
+                          {(c.email || c.phone) && (
+                            <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                              {[c.email, c.phone].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+                {/* Click-away listener */}
+                {showCustomerDropdown && (
+                  <div
+                    onClick={() => setShowCustomerDropdown(false)}
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 49 }}
+                  />
+                )}
               </div>
 
               <div>
@@ -1619,7 +1762,7 @@ export default function NewLightingAudit() {
               Audit Details
             </h3>
             <div className="audit-review-details" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
-              <div><span style={{ color: theme.textMuted }}>Customer:</span> {customers.find(c => c.id === basicInfo.customer_id)?.name || 'None'}</div>
+              <div><span style={{ color: theme.textMuted }}>Customer:</span> {selectedCustomer?.name || 'None'}</div>
               <div><span style={{ color: theme.textMuted }}>Salesperson:</span> {employees.find(e => e.id === basicInfo.salesperson_id)?.name || 'None'}</div>
               <div><span style={{ color: theme.textMuted }}>Location:</span> {basicInfo.city}, {basicInfo.state}</div>
               <div><span style={{ color: theme.textMuted }}>Building Size:</span> {buildingSizes.find(s => s.value === basicInfo.building_size)?.label || basicInfo.building_size}</div>
@@ -2223,6 +2366,64 @@ export default function NewLightingAudit() {
                 }}
               >
                 {editingAreaIndex !== null ? 'Update' : 'Add'} Area
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add New Customer Modal */}
+      {showNewCustomerForm && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1100
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard, borderRadius: '16px',
+            padding: '24px', width: '100%', maxWidth: '420px', margin: '16px'
+          }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: theme.text, marginBottom: '16px' }}>
+              Add New Customer
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '4px' }}>Name *</label>
+                <input type="text" value={newCustomer.name}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '4px' }}>Email</label>
+                <input type="email" value={newCustomer.email}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '4px' }}>Phone</label>
+                <input type="tel" value={newCustomer.phone}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '4px' }}>Address</label>
+                <input type="text" value={newCustomer.address}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowNewCustomerForm(false)}
+                style={{ padding: '10px 20px', backgroundColor: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={handleAddNewCustomer} disabled={savingCustomer}
+                style={{ padding: '10px 20px', backgroundColor: theme.accent, color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', opacity: savingCustomer ? 0.6 : 1 }}>
+                {savingCustomer ? 'Saving...' : 'Add Customer'}
               </button>
             </div>
           </div>

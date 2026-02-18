@@ -213,12 +213,12 @@ export default function LightingAuditDetail() {
     const { error } = await supabase
       .from('lighting_audits')
       .update({
-        customer_id: editData.customer_id || null,
+        customer_id: editData.customer_id ? parseInt(editData.customer_id) : null,
         address: editData.address,
         city: editData.city,
         state: editData.state,
         zip: editData.zip,
-        utility_provider_id: editData.utility_provider_id || null,
+        utility_provider_id: editData.utility_provider_id ? parseInt(editData.utility_provider_id) : null,
         electric_rate: parseFloat(editData.electric_rate) || 0.12,
         operating_hours: parseInt(editData.operating_hours) || 10,
         operating_days: parseInt(editData.operating_days) || 260
@@ -521,7 +521,7 @@ export default function LightingAuditDetail() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
               <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
-                {audit.customer?.name || 'Lighting Audit'}
+                {audit.customer?.name || customers.find(c => c.id === audit.customer_id)?.name || 'Lighting Audit'}
               </h1>
               <span style={{
                 padding: '4px 12px',
