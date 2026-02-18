@@ -3,7 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
 import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, FormToggle, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
-import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader, ExternalLink, FileUp, RefreshCw, Check, X, StopCircle } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader, ExternalLink, FileUp, RefreshCw, Check, X, StopCircle, Map, Sparkles, FileText } from 'lucide-react'
+import { extractFormFields } from '../../lib/pdfFormFiller'
 
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
@@ -103,6 +104,43 @@ export default function DataConsoleUtilities() {
   const [showEnrichModal, setShowEnrichModal] = useState(false)
   const [enrichProgress, setEnrichProgress] = useState({ current: 0, total: 0, currentFile: '', results: [] })
   const [discoveredPdfs, setDiscoveredPdfs] = useState([])
+
+  // Field mapping state
+  const [mappingForm, setMappingForm] = useState(null)
+  const [mappingFields, setMappingFields] = useState([])
+  const [fieldMapping, setFieldMapping] = useState({})
+  const [mappingLoading, setMappingLoading] = useState(false)
+  const [smartMapLoading, setSmartMapLoading] = useState(false)
+  const formUploadRef = useRef(null)
+
+  const DATA_PATHS = [
+    { value: '', label: '— None —' },
+    { value: 'customer.name', label: 'Customer Name' },
+    { value: 'customer.email', label: 'Customer Email' },
+    { value: 'customer.phone', label: 'Customer Phone' },
+    { value: 'customer.address', label: 'Customer Address' },
+    { value: 'audit.address', label: 'Project Address' },
+    { value: 'audit.city', label: 'Project City' },
+    { value: 'audit.state', label: 'Project State' },
+    { value: 'audit.zip', label: 'Project Zip' },
+    { value: 'provider.provider_name', label: 'Utility Name' },
+    { value: 'provider.contact_phone', label: 'Utility Phone' },
+    { value: 'salesperson.name', label: 'Salesperson Name' },
+    { value: 'salesperson.phone', label: 'Salesperson Phone' },
+    { value: 'salesperson.email', label: 'Salesperson Email' },
+    { value: 'quote.quote_amount', label: 'Project Cost' },
+    { value: 'quote.utility_incentive', label: 'Incentive Amount' },
+    { value: 'quote.discount', label: 'Discount' },
+    { value: 'audit.total_fixtures', label: 'Total Fixtures' },
+    { value: 'audit.total_existing_watts', label: 'Total Existing Watts' },
+    { value: 'audit.total_proposed_watts', label: 'Total Proposed Watts' },
+    { value: 'audit.annual_savings_kwh', label: 'Annual kWh Savings' },
+    { value: 'audit.annual_savings_dollars', label: 'Annual $ Savings' },
+    { value: 'audit.estimated_rebate', label: 'Estimated Rebate' },
+    { value: 'audit_areas.fixture_count.sum', label: 'Sum: Fixture Count' },
+    { value: 'audit_areas.area_watts_reduced.sum', label: 'Sum: Watts Reduced' },
+    { value: 'today', label: "Today's Date" },
+  ]
 
   useEffect(() => {
     fetchProviders()
@@ -253,6 +291,154 @@ export default function DataConsoleUtilities() {
       return
     }
     if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
+  }
+
+  // Field mapping functions
+  const handleMapFields = async (form) => {
+    setMappingForm(form)
+    setMappingFields([])
+    setFieldMapping(form.field_mapping || {})
+    setMappingLoading(true)
+
+    try {
+      let pdfBytes = null
+
+      // Try to fetch from storage first
+      if (form.form_file) {
+        const { data } = supabase.storage.from('utility-pdfs').getPublicUrl(form.form_file)
+        if (data?.publicUrl) {
+          const res = await fetch(data.publicUrl)
+          if (res.ok) pdfBytes = new Uint8Array(await res.arrayBuffer())
+        }
+      }
+
+      // Fall back to form_url
+      if (!pdfBytes && form.form_url) {
+        try {
+          const res = await fetch(form.form_url)
+          if (res.ok) pdfBytes = new Uint8Array(await res.arrayBuffer())
+        } catch { /* URL may be dead */ }
+      }
+
+      if (!pdfBytes) {
+        alert('Could not fetch PDF. Upload the file manually using the upload button.')
+        setMappingLoading(false)
+        return
+      }
+
+      const fields = await extractFormFields(pdfBytes)
+      setMappingFields(fields)
+
+      // Preserve existing mappings, add empty entries for new fields
+      const existing = form.field_mapping || {}
+      const merged = {}
+      for (const f of fields) {
+        merged[f.name] = existing[f.name] || ''
+      }
+      setFieldMapping(merged)
+    } catch (err) {
+      alert('Error reading PDF fields: ' + err.message)
+    }
+    setMappingLoading(false)
+  }
+
+  const handleUploadFormPdf = async (form, file) => {
+    if (!file || !selectedProvider) return
+    const state = selectedProvider.state || 'XX'
+    const slug = selectedProvider.provider_name.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const storagePath = `${state}/${slug}/forms/${safeName}`
+
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const { error } = await supabase.storage.from('utility-pdfs').upload(storagePath, bytes, {
+        contentType: 'application/pdf',
+        upsert: true
+      })
+      if (error) throw error
+
+      await supabase.from('utility_forms').update({ form_file: storagePath }).eq('id', form.id)
+      if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
+
+      // If mapping modal is open, reload fields
+      if (mappingForm?.id === form.id) {
+        const fields = await extractFormFields(bytes)
+        setMappingFields(fields)
+        const existing = fieldMapping || {}
+        const merged = {}
+        for (const f of fields) {
+          merged[f.name] = existing[f.name] || ''
+        }
+        setFieldMapping(merged)
+      }
+    } catch (err) {
+      alert('Upload failed: ' + err.message)
+    }
+  }
+
+  const handleSmartMap = async () => {
+    if (mappingFields.length === 0) return
+    setSmartMapLoading(true)
+    try {
+      let pdfBase64 = null
+
+      // Fetch PDF to send to Claude
+      if (mappingForm.form_file) {
+        const { data } = supabase.storage.from('utility-pdfs').getPublicUrl(mappingForm.form_file)
+        if (data?.publicUrl) {
+          const res = await fetch(data.publicUrl)
+          if (res.ok) {
+            const buf = await res.arrayBuffer()
+            pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(buf).slice(0, 5242880)))
+          }
+        }
+      }
+
+      const fieldNames = mappingFields.map(f => f.name)
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await supabase.functions.invoke('parse-utility-pdf', {
+        body: {
+          pdf_base64: pdfBase64,
+          document_type: 'form_field_analysis',
+          field_names: fieldNames,
+          provider_name: selectedProvider?.provider_name
+        }
+      })
+
+      if (res.data?.success && res.data.results?.field_mappings) {
+        const suggestions = res.data.results.field_mappings
+        const updated = { ...fieldMapping }
+        for (const [field, path] of Object.entries(suggestions)) {
+          if (path && DATA_PATHS.some(dp => dp.value === path)) {
+            updated[field] = path
+          }
+        }
+        setFieldMapping(updated)
+      } else {
+        alert('Smart mapping failed: ' + (res.data?.error || 'Unknown error'))
+      }
+    } catch (err) {
+      alert('Smart map error: ' + err.message)
+    }
+    setSmartMapLoading(false)
+  }
+
+  const handleSaveMapping = async () => {
+    if (!mappingForm) return
+    setSaving(true)
+    try {
+      // Filter out empty mappings
+      const cleaned = {}
+      for (const [field, path] of Object.entries(fieldMapping)) {
+        if (path) cleaned[field] = path
+      }
+      await supabase.from('utility_forms').update({ field_mapping: Object.keys(cleaned).length > 0 ? cleaned : null }).eq('id', mappingForm.id)
+      if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
+      setMappingForm(null)
+    } catch (err) {
+      alert('Save mapping error: ' + err.message)
+    }
+    setSaving(false)
   }
 
   // Provider CRUD
@@ -2066,6 +2252,8 @@ export default function DataConsoleUtilities() {
                         </Badge>
                         {f.is_required && <Badge color="accent">Required</Badge>}
                         {f.version_year && <Badge>{f.version_year}</Badge>}
+                        {f.form_file && <Badge color="accent">PDF</Badge>}
+                        {f.field_mapping && <Badge color="accent">Mapped</Badge>}
                       </div>
                       {f.form_url && (
                         <a
@@ -2080,6 +2268,18 @@ export default function DataConsoleUtilities() {
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
+                      <button onClick={() => handleMapFields(f)} title="Map Fields" style={{ padding: '3px', background: 'none', border: 'none', color: f.field_mapping ? '#22c55e' : adminTheme.accent, cursor: 'pointer' }}>
+                        <Map size={13} />
+                      </button>
+                      <label title="Upload PDF" style={{ padding: '3px', background: 'none', border: 'none', color: adminTheme.accent, cursor: 'pointer', display: 'flex' }}>
+                        <FileUp size={13} />
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          style={{ display: 'none' }}
+                          onChange={(e) => { if (e.target.files[0]) handleUploadFormPdf(f, e.target.files[0]); e.target.value = '' }}
+                        />
+                      </label>
                       {f.status !== 'published' && (
                         <button onClick={() => handlePublishForm(f)} title="Publish" style={{ padding: '3px', background: 'none', border: 'none', color: '#22c55e', cursor: 'pointer' }}>
                           <Upload size={13} />
@@ -2484,6 +2684,145 @@ export default function DataConsoleUtilities() {
             </FormField>
             <ModalFooter onCancel={() => setEditingForm(null)} onSave={handleSaveForm} saving={saving} />
           </>
+        )}
+      </AdminModal>
+
+      {/* Field Mapping Modal */}
+      <AdminModal isOpen={!!mappingForm} onClose={() => setMappingForm(null)} title={`Map Fields — ${mappingForm?.form_name || ''}`} width="700px">
+        {mappingForm && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <span style={{ color: adminTheme.textMuted, fontSize: '12px' }}>
+                {mappingFields.length} fields found • {Object.values(fieldMapping).filter(Boolean).length} mapped
+              </span>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {!mappingForm.form_file && (
+                  <label style={{
+                    padding: '5px 10px',
+                    backgroundColor: adminTheme.bgInput,
+                    border: `1px solid ${adminTheme.border}`,
+                    borderRadius: '6px',
+                    color: adminTheme.text,
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    <FileUp size={12} /> Upload PDF
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      style={{ display: 'none' }}
+                      onChange={(e) => { if (e.target.files[0]) handleUploadFormPdf(mappingForm, e.target.files[0]); e.target.value = '' }}
+                    />
+                  </label>
+                )}
+                <button
+                  onClick={handleSmartMap}
+                  disabled={smartMapLoading || mappingFields.length === 0}
+                  style={{
+                    padding: '5px 10px',
+                    backgroundColor: smartMapLoading ? adminTheme.border : '#7c3aed',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: smartMapLoading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  {smartMapLoading ? <Loader size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  {smartMapLoading ? 'Analyzing...' : 'Smart Map'}
+                </button>
+              </div>
+            </div>
+
+            {mappingLoading ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: adminTheme.textMuted }}>
+                <Loader size={20} className="animate-spin" style={{ marginBottom: '8px' }} />
+                <div>Extracting form fields...</div>
+              </div>
+            ) : mappingFields.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
+                No fillable fields found. Upload a fillable PDF to get started.
+              </div>
+            ) : (
+              <div style={{ maxHeight: '400px', overflowY: 'auto', border: `1px solid ${adminTheme.border}`, borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: adminTheme.bgInput, position: 'sticky', top: 0 }}>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', color: adminTheme.text, fontWeight: '600', borderBottom: `1px solid ${adminTheme.border}` }}>PDF Field</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', color: adminTheme.text, fontWeight: '600', borderBottom: `1px solid ${adminTheme.border}`, width: '40%' }}>Data Path</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mappingFields.map((field, i) => (
+                      <tr key={field.name} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : adminTheme.bgInput }}>
+                        <td style={{ padding: '6px 10px', color: adminTheme.text, borderBottom: `1px solid ${adminTheme.border}` }}>
+                          <div style={{ fontWeight: '500' }}>{field.name}</div>
+                          <div style={{ color: adminTheme.textMuted, fontSize: '10px' }}>{field.type}{field.value ? ` • "${field.value}"` : ''}</div>
+                        </td>
+                        <td style={{ padding: '6px 10px', borderBottom: `1px solid ${adminTheme.border}` }}>
+                          <select
+                            value={fieldMapping[field.name] || ''}
+                            onChange={(e) => setFieldMapping(prev => ({ ...prev, [field.name]: e.target.value }))}
+                            style={{
+                              width: '100%',
+                              padding: '4px 6px',
+                              backgroundColor: adminTheme.bgInput,
+                              border: `1px solid ${fieldMapping[field.name] ? '#22c55e' : adminTheme.border}`,
+                              borderRadius: '4px',
+                              color: adminTheme.text,
+                              fontSize: '11px'
+                            }}
+                          >
+                            {DATA_PATHS.map(dp => (
+                              <option key={dp.value} value={dp.value}>{dp.label}{dp.value ? ` (${dp.value})` : ''}</option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <button
+                onClick={() => setMappingForm(null)}
+                style={{
+                  padding: '6px 16px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${adminTheme.border}`,
+                  borderRadius: '6px',
+                  color: adminTheme.textMuted,
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveMapping}
+                disabled={saving}
+                style={{
+                  padding: '6px 16px',
+                  backgroundColor: adminTheme.accent,
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  fontSize: '12px',
+                  cursor: saving ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {saving ? 'Saving...' : 'Save Mapping'}
+              </button>
+            </div>
+          </div>
         )}
       </AdminModal>
 

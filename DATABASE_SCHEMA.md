@@ -1476,6 +1476,7 @@
 | version_year | integer | |
 | is_required | boolean | false |
 | form_notes | text | |
+| field_mapping | jsonb | Maps PDF form field names to data paths (e.g. {"Customer Name": "customer.name"}) |
 | status | text | 'dev' |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |

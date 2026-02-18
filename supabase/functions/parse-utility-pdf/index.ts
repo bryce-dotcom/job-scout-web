@@ -44,6 +44,49 @@ Return ONLY valid JSON:
   }
 }`;
 
+const FORM_FIELD_ANALYSIS_PROMPT = `You are a utility rebate application form analyst. Given a list of PDF form field names, map each field to the most likely database data path.
+
+Available data paths:
+- customer.name — Customer/business name
+- customer.email — Customer email
+- customer.phone — Customer phone number
+- customer.address — Customer mailing address
+- audit.address — Project/service address
+- audit.city — Project city
+- audit.state — Project state
+- audit.zip — Project zip code
+- provider.provider_name — Utility company name
+- provider.contact_phone — Utility contact phone
+- salesperson.name — Sales representative name
+- salesperson.phone — Sales rep phone
+- salesperson.email — Sales rep email
+- quote.quote_amount — Total project cost
+- quote.utility_incentive — Estimated incentive/rebate amount
+- quote.discount — Discount amount
+- audit.total_fixtures — Total fixture count
+- audit.total_existing_watts — Total existing wattage
+- audit.total_proposed_watts — Total proposed wattage
+- audit.annual_savings_kwh — Annual kWh savings
+- audit.annual_savings_dollars — Annual dollar savings
+- audit.estimated_rebate — Estimated rebate from audit
+- audit_areas.fixture_count.sum — Sum of fixtures across all areas
+- audit_areas.area_watts_reduced.sum — Sum of watts reduced across all areas
+- today — Today's date (MM/DD/YYYY)
+
+For each PDF field name, suggest the best matching data path. If no data path is a good match, use null.
+
+Return ONLY valid JSON:
+{
+  "field_mappings": {
+    "PDF Field Name": "data.path" or null,
+    ...
+  },
+  "confidence_notes": {
+    "PDF Field Name": "brief explanation of why this mapping was chosen",
+    ...
+  }
+}`;
+
 const RATE_SCHEDULE_PROMPT = `You are a utility rate tariff analyst. Extract all rate schedule information from this PDF document.
 
 For each rate schedule/tier found, extract:
@@ -92,11 +135,12 @@ serve(async (req) => {
       program_name,
       provider_name,
       store_in_storage,
-      storage_path
+      storage_path,
+      field_names
     } = await req.json();
 
-    if (!document_type || !['rebate_program', 'rate_schedule', 'form'].includes(document_type)) {
-      return new Response(JSON.stringify({ success: false, error: 'document_type must be "rebate_program", "rate_schedule", or "form"' }), {
+    if (!document_type || !['rebate_program', 'rate_schedule', 'form', 'form_field_analysis'].includes(document_type)) {
+      return new Response(JSON.stringify({ success: false, error: 'document_type must be "rebate_program", "rate_schedule", "form", or "form_field_analysis"' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -187,7 +231,7 @@ serve(async (req) => {
       }
     }
 
-    // For 'form' type, skip extraction — just store the PDF
+    // For 'form' type (no field analysis), skip extraction — just store the PDF
     if (document_type === 'form') {
       return new Response(JSON.stringify({
         success: true,
@@ -207,11 +251,40 @@ serve(async (req) => {
       });
     }
 
-    const systemPrompt = document_type === 'rebate_program' ? REBATE_PROGRAM_PROMPT : RATE_SCHEDULE_PROMPT;
+    const systemPrompt = document_type === 'form_field_analysis'
+      ? FORM_FIELD_ANALYSIS_PROMPT
+      : document_type === 'rebate_program'
+      ? REBATE_PROGRAM_PROMPT
+      : RATE_SCHEDULE_PROMPT;
 
     let contextNote = '';
     if (program_name) contextNote += `\nProgram: ${program_name}`;
     if (provider_name) contextNote += `\nUtility Provider: ${provider_name}`;
+
+    // Build user message content
+    const userContent: Array<Record<string, unknown>> = [
+      {
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: 'application/pdf',
+          data: pdfData
+        }
+      }
+    ];
+
+    if (document_type === 'form_field_analysis') {
+      const fieldList = (field_names || []).join('\n- ');
+      userContent.push({
+        type: 'text',
+        text: `This is a fillable utility rebate application PDF. Here are the form field names extracted from it:\n\n- ${fieldList}\n\nMap each field to the best matching database data path.${contextNote}\n\nReturn the structured JSON as specified.`
+      });
+    } else {
+      userContent.push({
+        type: 'text',
+        text: `Extract all ${document_type === 'rebate_program' ? 'prescriptive measure line items' : 'rate schedule information'} from this PDF document.${contextNote}\n\nReturn the structured JSON as specified.`
+      });
+    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -227,20 +300,7 @@ serve(async (req) => {
         system: systemPrompt,
         messages: [{
           role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: {
-                type: 'base64',
-                media_type: 'application/pdf',
-                data: pdfData
-              }
-            },
-            {
-              type: 'text',
-              text: `Extract all ${document_type === 'rebate_program' ? 'prescriptive measure line items' : 'rate schedule information'} from this PDF document.${contextNote}\n\nReturn the structured JSON as specified.`
-            }
-          ]
+          content: userContent
         }]
       })
     });

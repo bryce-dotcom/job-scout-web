@@ -4,7 +4,9 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText } from 'lucide-react'
+import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
+import { resolveAllMappings } from '../lib/dataPathResolver'
 
 // Light theme fallback
 const defaultTheme = {
@@ -40,6 +42,8 @@ export default function QuoteDetail() {
   const [saving, setSaving] = useState(false)
   const [showProductPicker, setShowProductPicker] = useState(false)
   const [calculatingIncentive, setCalculatingIncentive] = useState(false)
+  const [rebateForms, setRebateForms] = useState([])
+  const [fillingForm, setFillingForm] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -72,9 +76,98 @@ export default function QuoteDetail() {
         .order('id')
 
       setLineItems(lines || [])
+
+      // Load mapped rebate forms if quote has an audit
+      if (quoteData.audit_id) {
+        const { data: audit } = await supabase
+          .from('lighting_audits')
+          .select('utility_provider_id')
+          .eq('id', quoteData.audit_id)
+          .single()
+        if (audit?.utility_provider_id) {
+          const { data: mappedForms } = await supabase
+            .from('utility_forms')
+            .select('*')
+            .eq('provider_id', audit.utility_provider_id)
+            .not('field_mapping', 'is', null)
+          setRebateForms(mappedForms || [])
+        }
+      }
     }
 
     setLoading(false)
+  }
+
+  const handleFillRebateForm = async (form) => {
+    setFillingForm(true)
+    try {
+      // Load full data context
+      const { data: audit } = await supabase
+        .from('lighting_audits')
+        .select('*')
+        .eq('id', quote.audit_id)
+        .single()
+
+      const { data: areas } = await supabase
+        .from('audit_areas')
+        .select('*')
+        .eq('audit_id', quote.audit_id)
+
+      const { data: provider } = audit?.utility_provider_id
+        ? await supabase.from('utility_providers').select('*').eq('id', audit.utility_provider_id).single()
+        : { data: null }
+
+      const customer = quote.customer || quote.lead
+      const salesperson = quote.salesperson
+
+      const dataContext = {
+        customer: {
+          name: customer?.name || customer?.customer_name || '',
+          email: customer?.email || '',
+          phone: customer?.phone || '',
+          address: customer?.address || '',
+        },
+        audit: audit || {},
+        quote: quote || {},
+        provider: provider || {},
+        salesperson: salesperson || {},
+        audit_areas: areas || [],
+        lines: [],
+      }
+
+      // Resolve all mappings
+      const fieldValues = resolveAllMappings(form.field_mapping, dataContext)
+
+      // Fetch PDF
+      let pdfBytes = null
+      if (form.form_file) {
+        const { data } = supabase.storage.from('utility-pdfs').getPublicUrl(form.form_file)
+        if (data?.publicUrl) {
+          const res = await fetch(data.publicUrl)
+          if (res.ok) pdfBytes = new Uint8Array(await res.arrayBuffer())
+        }
+      }
+      if (!pdfBytes && form.form_url) {
+        const res = await fetch(form.form_url)
+        if (res.ok) pdfBytes = new Uint8Array(await res.arrayBuffer())
+      }
+
+      if (!pdfBytes) {
+        alert('Could not fetch the PDF form. The file may need to be re-uploaded in the Data Console.')
+        setFillingForm(false)
+        return
+      }
+
+      // Fill and download
+      const filledBytes = await fillPdfForm(pdfBytes, fieldValues)
+      const providerSlug = (provider?.provider_name || 'form').replace(/[^a-zA-Z0-9]/g, '_')
+      const customerSlug = (customer?.name || customer?.customer_name || 'customer').replace(/[^a-zA-Z0-9]/g, '_')
+      const date = new Date().toISOString().slice(0, 10)
+      downloadPdf(filledBytes, `${providerSlug}_${form.form_name.replace(/[^a-zA-Z0-9]/g, '_')}_${customerSlug}_${date}.pdf`)
+    } catch (err) {
+      alert('Error filling form: ' + err.message)
+    }
+    setFillingForm(false)
   }
 
   const handleProductSelect = async (product, laborCost, totalPrice) => {
@@ -803,6 +896,39 @@ export default function QuoteDetail() {
                   <Briefcase size={18} />
                   Convert to Job
                 </button>
+              )}
+
+              {rebateForms.length > 0 && (
+                <>
+                  <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '10px', marginTop: '4px' }}>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>Rebate Forms</div>
+                  </div>
+                  {rebateForms.map(form => (
+                    <button
+                      key={form.id}
+                      onClick={() => handleFillRebateForm(form)}
+                      disabled={fillingForm || saving}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        padding: '10px 16px',
+                        backgroundColor: '#4a6b7c',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        cursor: (fillingForm || saving) ? 'not-allowed' : 'pointer',
+                        opacity: (fillingForm || saving) ? 0.6 : 1
+                      }}
+                    >
+                      <FileText size={16} />
+                      {fillingForm ? 'Filling...' : `Fill ${form.form_name}`}
+                    </button>
+                  ))}
+                </>
               )}
             </div>
           </div>
