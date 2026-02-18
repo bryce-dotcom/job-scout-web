@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { supabase } from '../lib/supabase'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
+import { photoQueue } from '../lib/photoQueue'
 import { ArrowLeft, Plus, Minus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText } from 'lucide-react'
 
 // Light theme fallback
@@ -60,6 +60,7 @@ export default function LightingAuditDetail() {
   const [photoPreview, setPhotoPreview] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [aiResult, setAiResult] = useState(null)
+  const [photoQueued, setPhotoQueued] = useState(false)
   const [areaForm, setAreaForm] = useState({
     area_name: '',
     ceiling_height: '',
@@ -342,15 +343,48 @@ export default function LightingAuditDetail() {
     base64Reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1]
 
-      try {
-        // Build product list for AI matching
-        const productList = ledProducts.map(p => ({
-          id: p.id,
-          name: p.name,
-          description: p.description || '',
-          wattage: undefined
+      // Build context for AI analysis
+      const productList = ledProducts.map(p => ({
+        id: p.id, name: p.name, description: p.description || ''
+      }))
+      const auditContext = {
+        areaName: areaForm.area_name || 'Unknown Area',
+        buildingType: audit?.building_type || 'Commercial',
+        utilityProvider: utilityProviders.find(p => p.id === audit?.utility_provider_id)?.provider_name || null,
+        operatingHours: (audit?.operating_hours && audit?.operating_days) ? audit.operating_hours * audit.operating_days : null
+      }
+      const ftData = (fixtureTypes || []).map(ft => ({
+        fixture_name: ft.fixture_name, category: ft.category,
+        lamp_type: ft.lamp_type, system_wattage: ft.system_wattage,
+        led_replacement_watts: ft.led_replacement_watts
+      }))
+      const pmData = (prescriptiveMeasures || [])
+        .filter(pm => pm.measure_category === 'Lighting' && pm.is_active)
+        .slice(0, 30)
+        .map(pm => ({
+          measure_name: pm.measure_name, baseline_equipment: pm.baseline_equipment,
+          baseline_wattage: pm.baseline_wattage, replacement_equipment: pm.replacement_equipment,
+          replacement_wattage: pm.replacement_wattage, incentive_amount: pm.incentive_amount,
+          incentive_unit: pm.incentive_unit
         }))
 
+      // If offline, queue the photo for later analysis
+      if (!navigator.onLine) {
+        await photoQueue.enqueue({
+          imageBase64: base64,
+          auditContext,
+          availableProducts: productList,
+          fixtureTypes: ftData,
+          prescriptiveMeasures: pmData,
+          areaId: editingArea?.id || null,
+          auditId: id
+        })
+        setPhotoQueued(true)
+        setAnalyzing(false)
+        return
+      }
+
+      try {
         const response = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-fixture`,
           {
@@ -361,32 +395,10 @@ export default function LightingAuditDetail() {
             },
             body: JSON.stringify({
               imageBase64: base64,
-              auditContext: {
-                areaName: areaForm.area_name || 'Unknown Area',
-                buildingType: audit?.building_type || 'Commercial',
-                utilityProvider: utilityProviders.find(p => p.id === audit?.utility_provider_id)?.provider_name || null,
-                operatingHours: (audit?.operating_hours && audit?.operating_days) ? audit.operating_hours * audit.operating_days : null
-              },
+              auditContext,
               availableProducts: productList,
-              fixtureTypes: (fixtureTypes || []).map(ft => ({
-                fixture_name: ft.fixture_name,
-                category: ft.category,
-                lamp_type: ft.lamp_type,
-                system_wattage: ft.system_wattage,
-                led_replacement_watts: ft.led_replacement_watts
-              })),
-              prescriptiveMeasures: (prescriptiveMeasures || [])
-                .filter(pm => pm.measure_category === 'Lighting' && pm.is_active)
-                .slice(0, 30)
-                .map(pm => ({
-                  measure_name: pm.measure_name,
-                  baseline_equipment: pm.baseline_equipment,
-                  baseline_wattage: pm.baseline_wattage,
-                  replacement_equipment: pm.replacement_equipment,
-                  replacement_wattage: pm.replacement_wattage,
-                  incentive_amount: pm.incentive_amount,
-                  incentive_unit: pm.incentive_unit
-                }))
+              fixtureTypes: ftData,
+              prescriptiveMeasures: pmData
             })
           }
         )
@@ -418,7 +430,17 @@ export default function LightingAuditDetail() {
         }
       } catch (err) {
         console.error('Error calling analyze-fixture:', err)
-        alert('Could not connect to Lenard. Please try again.')
+        // Network error — queue for later
+        await photoQueue.enqueue({
+          imageBase64: base64,
+          auditContext,
+          availableProducts: productList,
+          fixtureTypes: ftData,
+          prescriptiveMeasures: pmData,
+          areaId: editingArea?.id || null,
+          auditId: id
+        })
+        setPhotoQueued(true)
       }
 
       setAnalyzing(false)
@@ -431,6 +453,7 @@ export default function LightingAuditDetail() {
     setPhotoPreview(null)
     setAiResult(null)
     setAnalyzing(false)
+    setPhotoQueued(false)
   }
 
   return (
@@ -1061,6 +1084,16 @@ export default function LightingAuditDetail() {
                           <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔦</div>
                           <p style={{ fontWeight: '600', margin: '0 0 4px' }}>Lenard is analyzing...</p>
                           <p style={{ fontSize: '14px', color: '#7d8a7f', margin: 0 }}>Identifying fixtures, counting, estimating wattage</p>
+                        </div>
+                      ) : photoQueued ? (
+                        <div style={{
+                          backgroundColor: 'rgba(184,134,11,0.1)',
+                          padding: '12px 16px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(184,134,11,0.3)'
+                        }}>
+                          <p style={{ fontWeight: '600', margin: '0 0 4px', color: '#b8860b' }}>📷 Photo saved</p>
+                          <p style={{ fontSize: '13px', color: '#7d8a7f', margin: 0 }}>AI analysis will run when back online. Fill in details manually for now.</p>
                         </div>
                       ) : aiResult ? (
                         <div style={{

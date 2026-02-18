@@ -57,6 +57,7 @@ import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
 import OfflineBanner from './components/OfflineBanner'
 import { syncQueue } from './lib/syncQueue'
+import { photoQueue } from './lib/photoQueue'
 
 // Light theme fallback
 const defaultTheme = {
@@ -166,10 +167,16 @@ function App() {
   // Periodic sync for queued offline changes (every 30s when online)
   useEffect(() => {
     const interval = setInterval(() => {
-      if (navigator.onLine) syncQueue.processQueue()
+      if (navigator.onLine) {
+        syncQueue.processQueue()
+        photoQueue.processQueue()
+      }
     }, 30000)
     // Also try to sync on initial load
-    if (navigator.onLine) syncQueue.processQueue()
+    if (navigator.onLine) {
+      syncQueue.processQueue()
+      photoQueue.processQueue()
+    }
     return () => clearInterval(interval)
   }, [])
 

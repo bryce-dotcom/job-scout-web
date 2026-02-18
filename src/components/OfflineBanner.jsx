@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { WifiOff, Wifi, RefreshCw } from 'lucide-react'
 import { syncQueue } from '../lib/syncQueue'
 import { onSyncUpdate } from '../lib/syncQueue'
+import { photoQueue } from '../lib/photoQueue'
 
 export default function OfflineBanner() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
@@ -28,8 +29,9 @@ export default function OfflineBanner() {
       setIsOnline(true)
       if (wasOffline) {
         setShowReconnected(true)
-        // Auto-sync queued changes
+        // Auto-sync queued changes + photos
         await syncQueue.processQueue()
+        await photoQueue.processQueue()
         await refreshPending()
         setTimeout(() => setShowReconnected(false), 3000)
       }
