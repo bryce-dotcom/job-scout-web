@@ -10,14 +10,18 @@ async function querySupabase(table: string, params: string = ''): Promise<any[]>
   const url = `${Deno.env.get('SUPABASE_URL')}/rest/v1/${table}?${params}`;
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!key) return [];
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'apikey': key,
-    }
-  });
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'apikey': key,
+      }
+    });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
 }
 
 serve(async (req) => {
@@ -37,122 +41,119 @@ serve(async (req) => {
       });
     }
 
-    // Fetch all 4 reference tables in parallel
-    const [categories, lampTypesRef, wattageRef, visualGuide] = await Promise.all([
-      querySupabase('fixture_categories', 'order=category_code'),
-      querySupabase('lamp_types', 'order=lamp_code'),
+    // Fetch wattage reference and visual guide (the two most useful tables)
+    const [wattageRef, visualGuide] = await Promise.all([
       querySupabase('fixture_wattage_reference', 'order=category_code,lamp_code,lamp_count'),
-      querySupabase('visual_identification_guide', 'order=category_code,feature_name'),
+      querySupabase('visual_identification_guide', 'select=category_code,feature_name,identification_tips,common_mistakes&order=category_code,feature_name'),
     ]);
 
-    // === BUILD ENRICHED PROMPT ===
+    // === BUILD COMPACT PROMPT SECTIONS ===
 
-    // Section 1: Fixture Categories
-    let categoriesSection = '';
-    if (categories.length > 0) {
-      categoriesSection = `\n\n=== FIXTURE CATEGORIES ===
-${categories.map((c: any) =>
-  `- ${c.category_code}: ${c.category_name} — ${c.description || ''}. Mounting: ${c.typical_mounting || 'N/A'}. Ceiling: ${c.typical_ceiling_height || 'N/A'}. Applications: ${(c.typical_applications || []).join(', ')}`
-).join('\n')}`;
-    }
-
-    // Section 2: Lamp Types
-    let lampTypesSection = '';
-    if (lampTypesRef.length > 0) {
-      lampTypesSection = `\n\n=== LAMP TYPES ===
-${lampTypesRef.map((lt: any) =>
-  `- ${lt.lamp_code}: ${lt.lamp_name} (${lt.technology}). ${lt.visual_characteristics || ''}. Ballast: ${lt.ballast_required ? lt.ballast_type || 'Yes' : 'None'}. ${lt.being_phased_out ? 'BEING PHASED OUT.' : ''}`
-).join('\n')}`;
-    }
-
-    // Section 3: System Wattage Reference (THE CRITICAL TABLE)
-    let wattageSection = '';
+    // Wattage lookup table — compact CSV-style format
+    let wattageTable = '';
     if (wattageRef.length > 0) {
-      wattageSection = `\n\n=== SYSTEM WATTAGE REFERENCE (use this as your primary lookup) ===
-IMPORTANT: These are EXACT system wattages including ballast losses. Always use this table instead of guessing.
+      wattageTable = `
 
+WATTAGE LOOKUP TABLE (fixture_id | description | system_watts → led_watts):
 ${wattageRef.map((w: any) =>
-  `${w.fixture_id}: ${w.fixture_description} | System: ${w.system_wattage}W → LED: ${w.led_replacement_watts}W | ${w.visual_identification || ''}`
+  `${w.fixture_id} | ${w.lamp_count || 1}×${w.lamp_code} ${w.lamp_length || ''} ${w.category_code} | ${w.system_wattage}W → ${w.led_replacement_watts}W LED`
 ).join('\n')}`;
     }
 
-    // Section 4: Visual Identification Guide
-    let visualSection = '';
+    // Visual ID tips — only the most useful disambiguation tips, compact
+    let visualTips = '';
     if (visualGuide.length > 0) {
-      visualSection = `\n\n=== VISUAL IDENTIFICATION GUIDE ===
+      visualTips = `
+
+KEY VISUAL IDENTIFICATION TIPS:
 ${visualGuide.map((v: any) =>
-  `[${v.category_code}] ${v.feature_name}: ${v.identification_tips || ''} Common mistakes: ${v.common_mistakes || 'None'}. Photo clues: ${(v.photo_clues || []).join('; ')}`
+  `• ${v.feature_name}: ${v.identification_tips || ''} MISTAKE TO AVOID: ${v.common_mistakes || 'none'}`
 ).join('\n')}`;
     }
 
-    // Section 5: Company Fixture Types (from client)
-    let companyFixtureSection = '';
+    // Company fixture types (from client)
+    let companyFixtures = '';
     if (fixtureTypes && fixtureTypes.length > 0) {
-      companyFixtureSection = `\n\n=== COMPANY FIXTURE TYPES (company-specific overrides, prioritize these when matched) ===
+      companyFixtures = `
+
+COMPANY FIXTURE TYPES (use these if the fixture matches):
 ${fixtureTypes.map((ft: any) =>
-  `- ${ft.fixture_name}: ${ft.category} / ${ft.lamp_type} / ${ft.system_wattage}W existing → ${ft.led_replacement_watts}W LED`
+  `• ${ft.fixture_name}: ${ft.category}/${ft.lamp_type} ${ft.system_wattage}W → ${ft.led_replacement_watts}W LED`
 ).join('\n')}`;
     }
 
-    // Section 6: Available Products (from client)
-    let productSection = '';
+    // Available products (from client)
+    let productList = '';
     if (availableProducts && availableProducts.length > 0) {
-      productSection = `\n\n=== AVAILABLE LED REPLACEMENT PRODUCTS (match the best one) ===
+      productList = `
+
+AVAILABLE LED PRODUCTS (pick best match, set recommended_product_id to its ID or ""):
 ${availableProducts.map((p: any) =>
-  `- ID: "${p.id}" | Name: "${p.name}"${p.description ? ` | ${p.description}` : ''}${p.wattage ? ` | ${p.wattage}W` : ''}`
-).join('\n')}
-Set recommended_product_id to the product's ID string, or "" if no good match.`;
+  `ID:"${p.id}" ${p.name}${p.description ? ` — ${p.description}` : ''}`
+).join('\n')}`;
     }
 
-    // Section 7: Prescriptive Measures / Rebates (from client)
-    let rebateSection = '';
+    // Prescriptive measures for rebate eligibility (from client)
+    let rebates = '';
     if (prescriptiveMeasures && prescriptiveMeasures.length > 0) {
-      rebateSection = `\n\n=== PRESCRIPTIVE MEASURES / REBATES (check for rebate eligibility) ===
+      rebates = `
+
+REBATE MEASURES (check if fixture matches a baseline below):
 ${prescriptiveMeasures.map((pm: any) =>
-  `- ${pm.measure_name}: Baseline ${pm.baseline_equipment || '?'} (${pm.baseline_wattage || '?'}W) → Replacement ${pm.replacement_equipment || '?'} (${pm.replacement_wattage || '?'}W) | Incentive: $${pm.incentive_amount || 0} ${pm.incentive_unit || 'per_fixture'}`
-).join('\n')}
-After identifying the fixture, check if it matches any baseline equipment above. If so, set rebate_eligible=true and estimated_rebate_per_fixture to the incentive_amount.`;
+  `• ${pm.measure_name}: ${pm.baseline_equipment || '?'} ${pm.baseline_wattage || '?'}W → ${pm.replacement_equipment || '?'} ${pm.replacement_wattage || '?'}W = $${pm.incentive_amount || 0}/${pm.incentive_unit || 'fixture'}`
+).join('\n')}`;
     }
 
-    // Section 8: Audit Context
-    const contextSection = `\n\n=== AUDIT CONTEXT ===
-- Area name: ${auditContext?.areaName || 'Unknown'}
-- Building type: ${auditContext?.buildingType || 'Commercial'}${auditContext?.utilityProvider ? `\n- Utility provider: ${auditContext.utilityProvider}` : ''}${auditContext?.operatingHours ? `\n- Annual operating hours: ${auditContext.operatingHours}` : ''}`;
+    // Audit context
+    const ctx = auditContext || {};
+    const contextLine = `Area: ${ctx.areaName || 'Unknown'} | Building: ${ctx.buildingType || 'Commercial'}${ctx.utilityProvider ? ` | Utility: ${ctx.utilityProvider}` : ''}${ctx.operatingHours ? ` | Hours/yr: ${ctx.operatingHours}` : ''}`;
 
-    // Build the full prompt
-    const promptText = `You are Lenard, an expert lighting auditor with deep knowledge of commercial and industrial lighting systems. Analyze this photo of a lighting fixture or space.
+    // Build the full prompt — image analysis instructions FIRST, reference data AFTER
+    const promptText = `You are Lenard, an expert commercial lighting auditor. CAREFULLY analyze this photo.
 
-INSTRUCTIONS:
-1. Identify the fixture CATEGORY from the photo (troffer, high bay, wall pack, etc.)
-2. Identify the LAMP TYPE (T12, T8, T5, T5HO, MH, HPS, CFL, incandescent, halogen, LED)
-3. Count lamps per fixture
-4. Look up the EXACT SYSTEM WATTAGE from the reference table below (includes ballast losses)
-5. Get the LED replacement wattage from the same reference table row
-6. Match the best replacement product from the available products list
-7. Check prescriptive measures for rebate eligibility
+STEP 1 — LOOK AT THE PHOTO FIRST. Describe what you actually see:
+- What SHAPE is the fixture? (rectangular/square recessed in ceiling grid = TROFFER, round hole in ceiling = RECESSED CAN, bare tubes on surface = STRIP, box on wall = WALL PACK, hanging from chains = HIGH BAY)
+- Is it RECESSED into a drop ceiling grid, SURFACE mounted, SUSPENDED, or WALL mounted?
+- Can you see the TUBES/LAMPS? How many? Are they long straight tubes (fluorescent) or a single bulb?
+- How THICK are the tubes? (1.5" thick = T12, 1" = T8, thin 5/8" = T5)
+- What is the light COLOR? (amber/orange = HPS, white/blue = MH, neutral white = fluorescent/LED)
 
-Return JSON with ALL of these fields:
+CRITICAL DISTINCTIONS:
+- TROFFER = rectangular fixture RECESSED into a drop ceiling grid (2x4 or 2x2 tiles). Has a flat/prismatic/parabolic lens. Contains fluorescent tubes. This is the MOST COMMON commercial fixture.
+- RECESSED CAN = small ROUND hole in ceiling with a single bulb (incandescent, CFL, halogen, or LED). Typically 4-8 inch diameter circle.
+- STRIP = bare channel with exposed tubes, NO lens, surface-mounted or chain-hung
+- WRAP = surface-mounted with curved acrylic lens around it
+- If you see a RECTANGULAR fixture with LONG TUBES in a DROP CEILING — that is a TROFFER, not a recessed can.
+
+STEP 2 — After identifying what you see, look up the EXACT wattage from the table below. Do NOT guess wattages — use the table.
+
+STEP 3 — Return ONLY this JSON:
 {
-  "area_name": "descriptive name for this area/fixture group (e.g., 'Main Office 4ft Troffers', 'Warehouse High Bays')",
-  "fixture_type": "specific type (e.g., 4ft T8 Troffer 2-lamp, 400W Metal Halide High Bay, etc.)",
+  "area_name": "descriptive name (e.g., 'Main Office 2x4 Troffers')",
+  "fixture_type": "specific type (e.g., '4ft T8 Troffer 2-lamp')",
   "fixture_category": "Indoor Linear | Indoor High Bay | Outdoor | Decorative | Other",
   "lamp_type": "T12 | T8 | T5 | T5HO | MH | HPS | MV | CFL | Incandescent | Halogen | LED | Other",
-  "lamp_count": number of lamps/bulbs per fixture,
-  "fixture_count": estimated number of this fixture type visible,
-  "existing_wattage_per_fixture": exact system watts from reference table (includes ballast),
-  "led_replacement_wattage": recommended LED replacement wattage from reference table,
-  "ceiling_height_estimate": estimated ceiling height in feet if visible,
+  "lamp_count": number_of_lamps_per_fixture,
+  "fixture_count": number_visible_in_photo,
+  "existing_wattage_per_fixture": system_watts_from_table,
+  "led_replacement_wattage": led_watts_from_table,
+  "ceiling_height_estimate": feet_or_null,
   "mounting_type": "Recessed | Surface | Suspended | Wall | Pole",
   "condition": "Good | Fair | Poor",
-  "recommended_product_id": "ID of best matching product from available list, or empty string",
-  "rebate_eligible": true/false based on prescriptive measures match,
-  "estimated_rebate_per_fixture": dollar amount per fixture if rebate eligible, or null,
-  "notes": "any other observations about the space or fixtures",
+  "recommended_product_id": "product_id_or_empty_string",
+  "rebate_eligible": true_or_false,
+  "estimated_rebate_per_fixture": dollars_or_null,
+  "notes": "observations",
   "confidence": "High | Medium | Low"
 }
-${categoriesSection}${lampTypesSection}${wattageSection}${visualSection}${companyFixtureSection}${productSection}${rebateSection}${contextSection}
+
+Context: ${contextLine}
+${wattageTable}${visualTips}${companyFixtures}${productList}${rebates}
 
 Only return valid JSON, no other text.`;
+
+    // Log prompt size for debugging
+    console.log(`Lenard prompt: ${promptText.length} chars, wattageRef: ${wattageRef.length} rows, visualGuide: ${visualGuide.length} rows`);
 
     // Call Claude Vision API
     const response = await fetch('https://api.anthropic.com/v1/messages', {
