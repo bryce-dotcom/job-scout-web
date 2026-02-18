@@ -389,7 +389,10 @@ export default function DataConsoleUtilities() {
           const res = await fetch(data.publicUrl)
           if (res.ok) {
             const buf = await res.arrayBuffer()
-            pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(buf).slice(0, 5242880)))
+            const bytes = new Uint8Array(buf)
+            let binary = ''
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+            pdfBase64 = btoa(binary)
           }
         }
       }
