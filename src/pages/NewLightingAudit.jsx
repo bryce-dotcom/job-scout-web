@@ -450,16 +450,16 @@ export default function NewLightingAudit() {
         operating_hours: basicInfo.operating_hours,
         operating_days: basicInfo.operating_days,
         status: 'Draft',
-        total_fixtures: calculations.total_fixtures,
-        total_existing_watts: calculations.total_existing_watts,
-        total_proposed_watts: calculations.total_proposed_watts,
-        watts_reduced: calculations.watts_reduced,
-        annual_savings_kwh: calculations.annual_savings_kwh,
-        annual_savings_dollars: calculations.annual_savings_dollars,
-        estimated_rebate: calculations.estimated_rebate,
-        est_project_cost: calculations.est_project_cost,
-        net_cost: calculations.net_cost,
-        payback_months: calculations.payback_months
+        total_fixtures: Math.round(calculations.total_fixtures) || 0,
+        total_existing_watts: Math.round(calculations.total_existing_watts) || 0,
+        total_proposed_watts: Math.round(calculations.total_proposed_watts) || 0,
+        watts_reduced: Math.round(calculations.watts_reduced) || 0,
+        annual_savings_kwh: Math.round(calculations.annual_savings_kwh) || 0,
+        annual_savings_dollars: Math.round(calculations.annual_savings_dollars * 100) / 100 || 0,
+        estimated_rebate: Math.round(calculations.estimated_rebate * 100) / 100 || 0,
+        est_project_cost: Math.round(calculations.est_project_cost * 100) / 100 || 0,
+        net_cost: Math.round(calculations.net_cost * 100) / 100 || 0,
+        payback_months: Math.round(calculations.payback_months * 10) / 10 || 0
       }
 
       const { data: audit, error: auditError } = await supabase

@@ -193,12 +193,12 @@ export default function LightingAuditDetail() {
     const { error } = await supabase
       .from('lighting_audits')
       .update({
-        total_fixtures,
-        total_existing_watts,
-        total_proposed_watts,
-        watts_reduced,
-        annual_savings_kwh,
-        annual_savings_dollars
+        total_fixtures: Math.round(total_fixtures) || 0,
+        total_existing_watts: Math.round(total_existing_watts) || 0,
+        total_proposed_watts: Math.round(total_proposed_watts) || 0,
+        watts_reduced: Math.round(watts_reduced) || 0,
+        annual_savings_kwh: Math.round(annual_savings_kwh) || 0,
+        annual_savings_dollars: Math.round(annual_savings_dollars * 100) / 100 || 0
       })
       .eq('id', id)
 
