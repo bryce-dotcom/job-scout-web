@@ -109,6 +109,7 @@ export default function DataConsoleUtilities() {
   const [mappingForm, setMappingForm] = useState(null)
   const [mappingFields, setMappingFields] = useState([])
   const [fieldMapping, setFieldMapping] = useState({})
+  const [fieldLabels, setFieldLabels] = useState({})
   const [mappingLoading, setMappingLoading] = useState(false)
   const [smartMapLoading, setSmartMapLoading] = useState(false)
   const formUploadRef = useRef(null)
@@ -298,6 +299,7 @@ export default function DataConsoleUtilities() {
     setMappingForm(form)
     setMappingFields([])
     setFieldMapping(form.field_mapping || {})
+    setFieldLabels({})
     setMappingLoading(true)
 
     try {
@@ -450,6 +452,10 @@ export default function DataConsoleUtilities() {
           }
         }
         setFieldMapping(updated)
+        // Store human-readable labels from Claude
+        if (res.data.results.field_labels) {
+          setFieldLabels(res.data.results.field_labels)
+        }
       } else {
         alert('Smart mapping failed: ' + (res.data?.error || 'Unknown error'))
       }
@@ -2798,7 +2804,8 @@ export default function DataConsoleUtilities() {
                     {mappingFields.map((field, i) => (
                       <tr key={field.name} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : adminTheme.bgInput }}>
                         <td style={{ padding: '6px 10px', color: adminTheme.text, borderBottom: `1px solid ${adminTheme.border}` }}>
-                          <div style={{ fontWeight: '500' }}>{field.name}</div>
+                          <div style={{ fontWeight: '500' }}>{fieldLabels[field.name] || field.name}</div>
+                          {fieldLabels[field.name] && <div style={{ color: adminTheme.textMuted, fontSize: '10px', fontFamily: 'monospace' }}>{field.name}</div>}
                           <div style={{ color: adminTheme.textMuted, fontSize: '10px' }}>{field.type}{field.value ? ` • "${field.value}"` : ''}</div>
                         </td>
                         <td style={{ padding: '6px 10px', borderBottom: `1px solid ${adminTheme.border}` }}>

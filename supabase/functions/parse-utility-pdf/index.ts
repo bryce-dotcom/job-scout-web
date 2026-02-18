@@ -44,7 +44,12 @@ Return ONLY valid JSON:
   }
 }`;
 
-const FORM_FIELD_ANALYSIS_PROMPT = `You are a utility rebate application form analyst. Given a list of PDF form field names, map each field to the most likely database data path.
+const FORM_FIELD_ANALYSIS_PROMPT = `You are a utility rebate application form analyst. You will receive a fillable PDF and a list of its internal field names (which are often cryptic like "f1_01" or "topmostSubform[0].Page1[0].f1_07[0]").
+
+Your job:
+1. LOOK at the PDF visually to understand the form layout
+2. For each field name, identify what it actually represents on the form (e.g. "f1_01" might be "Name" on line 1)
+3. Map each field to the best matching database data path, or null if no match
 
 Available data paths:
 - customer.name — Customer/business name
@@ -73,16 +78,14 @@ Available data paths:
 - audit_areas.area_watts_reduced.sum — Sum of watts reduced across all areas
 - today — Today's date (MM/DD/YYYY)
 
-For each PDF field name, suggest the best matching data path. If no data path is a good match, use null.
-
 Return ONLY valid JSON:
 {
   "field_mappings": {
     "PDF Field Name": "data.path" or null,
     ...
   },
-  "confidence_notes": {
-    "PDF Field Name": "brief explanation of why this mapping was chosen",
+  "field_labels": {
+    "PDF Field Name": "Human-readable label for this field based on the PDF layout (e.g. 'Name (line 1)', 'Address', 'SSN', 'Tax Classification - LLC')",
     ...
   }
 }`;
