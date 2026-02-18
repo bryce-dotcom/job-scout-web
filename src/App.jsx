@@ -55,6 +55,7 @@ import FreddyWorkspace from './pages/agents/freddy/FreddyWorkspace'
 import DataConsole from './pages/admin/DataConsole'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
+import OfflineBanner from './components/OfflineBanner'
 
 // Light theme fallback
 const defaultTheme = {
@@ -163,6 +164,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <OfflineBanner />
       <ToastContainer />
       <Routes>
         <Route path="/login" element={<Login />} />
