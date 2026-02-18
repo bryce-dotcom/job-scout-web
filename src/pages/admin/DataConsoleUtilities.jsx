@@ -312,37 +312,44 @@ export default function DataConsoleUtilities() {
         }
       }
 
-      // Fall back to form_url — fetch via edge function to avoid CORS
+      // Fall back to form_url — try direct fetch first, then edge function
       if (!pdfBytes && form.form_url) {
+        // Direct browser fetch (works when site allows CORS)
         try {
-          const state = selectedProvider?.state || 'XX'
-          const slug = (selectedProvider?.provider_name || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '_')
-          const urlName = form.form_url.split('/').pop()?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'form.pdf'
-          const storagePath = `${state}/${slug}/forms/${urlName}`
+          const res = await fetch(form.form_url)
+          if (res.ok) pdfBytes = new Uint8Array(await res.arrayBuffer())
+        } catch { /* CORS or network error — try edge function next */ }
 
-          const res = await supabase.functions.invoke('parse-utility-pdf', {
-            body: {
-              pdf_url: form.form_url,
-              document_type: 'form',
-              store_in_storage: true,
-              storage_path: storagePath
+        // If direct fetch failed, route through edge function (server-side, no CORS)
+        if (!pdfBytes) {
+          try {
+            const state = selectedProvider?.state || 'XX'
+            const slug = (selectedProvider?.provider_name || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '_')
+            const urlName = form.form_url.split('/').pop()?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'form.pdf'
+            const storagePath = `${state}/${slug}/forms/${urlName}`
+
+            const res = await supabase.functions.invoke('parse-utility-pdf', {
+              body: {
+                pdf_url: form.form_url,
+                document_type: 'form',
+                store_in_storage: true,
+                storage_path: storagePath
+              }
+            })
+
+            if (res.data?.success && res.data?.storage_path) {
+              await supabase.from('utility_forms').update({ form_file: res.data.storage_path }).eq('id', form.id)
+              form.form_file = res.data.storage_path
+              if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
+
+              const { data: urlData } = supabase.storage.from('utility-pdfs').getPublicUrl(res.data.storage_path)
+              if (urlData?.publicUrl) {
+                const storageRes = await fetch(urlData.publicUrl)
+                if (storageRes.ok) pdfBytes = new Uint8Array(await storageRes.arrayBuffer())
+              }
             }
-          })
-
-          if (res.data?.success && res.data?.storage_path) {
-            // Update form record with storage path
-            await supabase.from('utility_forms').update({ form_file: res.data.storage_path }).eq('id', form.id)
-            form.form_file = res.data.storage_path
-            if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
-
-            // Now fetch from storage
-            const { data: urlData } = supabase.storage.from('utility-pdfs').getPublicUrl(res.data.storage_path)
-            if (urlData?.publicUrl) {
-              const storageRes = await fetch(urlData.publicUrl)
-              if (storageRes.ok) pdfBytes = new Uint8Array(await storageRes.arrayBuffer())
-            }
-          }
-        } catch { /* URL may be dead or blocked */ }
+          } catch { /* URL may be dead */ }
+        }
       }
 
       if (!pdfBytes) {
