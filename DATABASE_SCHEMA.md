@@ -1620,4 +1620,78 @@
 
 ---
 
-*69 tables total. PDF enrichment columns added February 18, 2026. Updated February 18, 2026.*
+## fixture_categories (GLOBAL — no company_id)
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | integer | PK |
+| category_code | text | UNIQUE NOT NULL |
+| category_name | text | NOT NULL |
+| description | text | |
+| typical_mounting | text | |
+| typical_ceiling_height | text | |
+| typical_applications | text[] | |
+| created_at | timestamptz | now() |
+
+---
+
+## lamp_types (GLOBAL — no company_id)
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | integer | PK |
+| lamp_code | text | UNIQUE NOT NULL |
+| lamp_name | text | NOT NULL |
+| technology | text | NOT NULL |
+| description | text | |
+| visual_characteristics | text | |
+| typical_life_hours | integer | |
+| warmup_time | text | |
+| dimmable | boolean | false |
+| contains_mercury | boolean | false |
+| ballast_required | boolean | false |
+| ballast_type | text | |
+| being_phased_out | boolean | false |
+| created_at | timestamptz | now() |
+
+---
+
+## fixture_wattage_reference (GLOBAL — no company_id)
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | integer | PK |
+| fixture_id | text | UNIQUE NOT NULL |
+| category_code | text | FK fixture_categories.category_code |
+| lamp_code | text | FK lamp_types.lamp_code |
+| fixture_description | text | NOT NULL |
+| lamp_count | integer | |
+| lamp_length | text | |
+| system_wattage | integer | NOT NULL |
+| ballast_type | text | |
+| lumens_initial | integer | |
+| lumens_mean | integer | |
+| led_replacement_watts | integer | NOT NULL |
+| led_replacement_description | text | |
+| visual_identification | text | |
+| notes | text | |
+| created_at | timestamptz | now() |
+
+---
+
+## visual_identification_guide (GLOBAL — no company_id)
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | integer | PK |
+| category_code | text | FK fixture_categories.category_code |
+| feature_name | text | NOT NULL |
+| feature_description | text | |
+| identification_tips | text | |
+| common_mistakes | text | |
+| photo_clues | text[] | |
+| created_at | timestamptz | now() |
+
+---
+
+*73 tables total. Fixture reference data added February 20, 2026. Updated February 20, 2026.*

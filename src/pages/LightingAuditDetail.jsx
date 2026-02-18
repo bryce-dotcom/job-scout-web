@@ -40,6 +40,8 @@ export default function LightingAuditDetail() {
   const fixtureTypes = useStore((state) => state.fixtureTypes)
   const customers = useStore((state) => state.customers)
   const utilityProviders = useStore((state) => state.utilityProviders)
+  const utilityPrograms = useStore((state) => state.utilityPrograms)
+  const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
   const fetchLightingAudits = useStore((state) => state.fetchLightingAudits)
   const fetchAuditAreas = useStore((state) => state.fetchAuditAreas)
 
@@ -390,7 +392,9 @@ export default function LightingAuditDetail() {
               imageBase64: base64,
               auditContext: {
                 areaName: areaForm.area_name || 'Unknown Area',
-                buildingType: audit?.building_type || 'Commercial'
+                buildingType: audit?.building_type || 'Commercial',
+                utilityProvider: utilityProviders.find(p => p.id === audit?.utility_provider_id)?.provider_name || null,
+                operatingHours: (audit?.operating_hours && audit?.operating_days) ? audit.operating_hours * audit.operating_days : null
               },
               availableProducts: productList,
               fixtureTypes: (fixtureTypes || []).map(ft => ({
@@ -399,7 +403,19 @@ export default function LightingAuditDetail() {
                 lamp_type: ft.lamp_type,
                 system_wattage: ft.system_wattage,
                 led_replacement_watts: ft.led_replacement_watts
-              }))
+              })),
+              prescriptiveMeasures: (prescriptiveMeasures || [])
+                .filter(pm => pm.measure_category === 'Lighting' && pm.is_active)
+                .slice(0, 30)
+                .map(pm => ({
+                  measure_name: pm.measure_name,
+                  baseline_equipment: pm.baseline_equipment,
+                  baseline_wattage: pm.baseline_wattage,
+                  replacement_equipment: pm.replacement_equipment,
+                  replacement_wattage: pm.replacement_wattage,
+                  incentive_amount: pm.incentive_amount,
+                  incentive_unit: pm.incentive_unit
+                }))
             })
           }
         )
@@ -421,7 +437,10 @@ export default function LightingAuditDetail() {
             ceiling_height: a.ceiling_height_estimate || prev.ceiling_height,
             led_wattage: a.led_replacement_wattage || prev.led_wattage,
             led_replacement_id: a.recommended_product_id || prev.led_replacement_id,
-            override_notes: a.notes ? `AI Notes: ${a.notes}` : prev.override_notes
+            override_notes: [
+              a.notes ? `AI: ${a.notes}` : '',
+              a.rebate_eligible ? `Rebate eligible (~$${a.estimated_rebate_per_fixture}/fixture)` : ''
+            ].filter(Boolean).join('. ') || prev.override_notes
           }))
         } else {
           alert('Lenard had trouble analyzing this photo. Please try again or fill in manually.')
