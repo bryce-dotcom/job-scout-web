@@ -77,6 +77,12 @@ async function getPendingCount() {
   return all.filter(e => e.status === 'pending' || e.status === 'failed').length
 }
 
+// Get count of items that exhausted all retries
+async function getStuckCount() {
+  const all = await offlineDb.getAll('_syncQueue')
+  return all.filter(e => e.status === 'failed' && e.retries >= 10).length
+}
+
 // Get all queue entries (for debugging / UI)
 async function getQueue() {
   return await offlineDb.getAll('_syncQueue')
@@ -93,7 +99,7 @@ async function processQueue() {
   try {
     const queue = await offlineDb.getAll('_syncQueue')
     const pending = queue
-      .filter(e => e.status === 'pending' || (e.status === 'failed' && e.retries < 3))
+      .filter(e => e.status === 'pending' || (e.status === 'failed' && e.retries < 10))
       .sort((a, b) => a.createdAt - b.createdAt)
 
     if (pending.length === 0) {
@@ -204,6 +210,7 @@ export const syncQueue = {
   enqueue,
   processQueue,
   getPendingCount,
+  getStuckCount,
   getQueue,
   clearSynced,
   isProcessing

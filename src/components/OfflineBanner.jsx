@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { WifiOff, Wifi, RefreshCw } from 'lucide-react'
+import { WifiOff, Wifi, RefreshCw, AlertTriangle } from 'lucide-react'
 import { syncQueue } from '../lib/syncQueue'
 import { onSyncUpdate } from '../lib/syncQueue'
 import { photoQueue } from '../lib/photoQueue'
@@ -9,11 +9,14 @@ export default function OfflineBanner() {
   const [showReconnected, setShowReconnected] = useState(false)
   const [wasOffline, setWasOffline] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
+  const [stuckCount, setStuckCount] = useState(0)
   const [syncing, setSyncing] = useState(false)
 
   const refreshPending = useCallback(async () => {
     const count = await syncQueue.getPendingCount()
+    const stuck = await syncQueue.getStuckCount()
     setPendingCount(count)
+    setStuckCount(stuck)
     setSyncing(syncQueue.isProcessing())
   }, [])
 
@@ -50,13 +53,21 @@ export default function OfflineBanner() {
   }, [wasOffline, refreshPending])
 
   // Show nothing if online with no pending items and not reconnecting
-  if (isOnline && !showReconnected && pendingCount === 0 && !syncing) return null
+  if (isOnline && !showReconnected && pendingCount === 0 && !syncing && stuckCount === 0) return null
 
   // Determine banner state
   let bgColor = '#b8860b' // amber = offline
   let content = null
 
-  if (syncing) {
+  if (stuckCount > 0 && isOnline && !syncing) {
+    bgColor = '#dc2626' // red = stuck/failed
+    content = (
+      <>
+        <AlertTriangle size={16} />
+        {stuckCount} change{stuckCount !== 1 ? 's' : ''} failed to sync — data is saved locally, contact support if this persists
+      </>
+    )
+  } else if (syncing) {
     bgColor = '#3b82f6' // blue = syncing
     content = (
       <>

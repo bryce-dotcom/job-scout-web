@@ -164,6 +164,15 @@ function App() {
     }
   }, [companyId, fetchAllData])
 
+  // Request persistent storage so the browser won't evict offline data
+  useEffect(() => {
+    if (navigator.storage?.persist) {
+      navigator.storage.persist().then(granted => {
+        if (granted) console.log('[PWA] Persistent storage granted')
+      })
+    }
+  }, [])
+
   // Periodic sync for queued offline changes (every 30s when online)
   useEffect(() => {
     const interval = setInterval(() => {
