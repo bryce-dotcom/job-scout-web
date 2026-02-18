@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { supabase } from './supabase';
 import { TABLES, QUERIES } from './schema';
 import { offlineDb } from './offlineDb';
+import { syncQueue } from './syncQueue';
 
 export const useStore = create(
   persist(
@@ -1239,6 +1240,231 @@ export const useStore = create(
         }
 
         return { data, error };
+      },
+
+      // ========================================
+      // OFFLINE MUTATION METHODS
+      // ========================================
+
+      // --- Lighting Audits ---
+      createLightingAudit: async (auditData) => {
+        const tempId = `temp_${crypto.randomUUID()}`
+        const record = { ...auditData, id: tempId, created_at: new Date().toISOString() }
+        set(state => ({ lightingAudits: [record, ...state.lightingAudits] }))
+        await offlineDb.put('lightingAudits', record)
+        await syncQueue.enqueue({ table: 'lightingAudits', operation: 'insert', data: auditData, tempId })
+        if (navigator.onLine) syncQueue.processQueue()
+        return tempId
+      },
+      updateLightingAudit: async (id, changes) => {
+        set(state => ({ lightingAudits: state.lightingAudits.map(a => String(a.id) === String(id) ? { ...a, ...changes } : a) }))
+        const full = get().lightingAudits.find(a => String(a.id) === String(id))
+        if (full) await offlineDb.put('lightingAudits', full)
+        await syncQueue.enqueue({ table: 'lightingAudits', operation: 'update', data: { id, ...changes } })
+        if (navigator.onLine) syncQueue.processQueue()
+      },
+      deleteLightingAudit: async (id) => {
+        set(state => ({ lightingAudits: state.lightingAudits.filter(a => String(a.id) !== String(id)) }))
+        await offlineDb.remove('lightingAudits', id)
+        if (!String(id).startsWith('temp_')) {
+          await syncQueue.enqueue({ table: 'lightingAudits', operation: 'delete', data: { id } })
+          if (navigator.onLine) syncQueue.processQueue()
+        }
+      },
+
+      // --- Audit Areas ---
+      createAuditArea: async (areaData) => {
+        const tempId = `temp_${crypto.randomUUID()}`
+        const record = { ...areaData, id: tempId, created_at: new Date().toISOString() }
+        set(state => ({ auditAreas: [...state.auditAreas, record] }))
+        await offlineDb.put('auditAreas', record)
+        const parentTempId = typeof areaData.audit_id === 'string' && areaData.audit_id.startsWith('temp_') ? areaData.audit_id : null
+        await syncQueue.enqueue({ table: 'auditAreas', operation: 'insert', data: areaData, tempId, parentTempId, parentFkField: 'audit_id' })
+        if (navigator.onLine) syncQueue.processQueue()
+        return tempId
+      },
+      updateAuditArea: async (id, changes) => {
+        set(state => ({ auditAreas: state.auditAreas.map(a => String(a.id) === String(id) ? { ...a, ...changes } : a) }))
+        const full = get().auditAreas.find(a => String(a.id) === String(id))
+        if (full) await offlineDb.put('auditAreas', full)
+        await syncQueue.enqueue({ table: 'auditAreas', operation: 'update', data: { id, ...changes } })
+        if (navigator.onLine) syncQueue.processQueue()
+      },
+      deleteAuditArea: async (id) => {
+        set(state => ({ auditAreas: state.auditAreas.filter(a => String(a.id) !== String(id)) }))
+        await offlineDb.remove('auditAreas', id)
+        if (!String(id).startsWith('temp_')) {
+          await syncQueue.enqueue({ table: 'auditAreas', operation: 'delete', data: { id } })
+          if (navigator.onLine) syncQueue.processQueue()
+        }
+      },
+
+      // --- Customers ---
+      createCustomer: async (custData) => {
+        const tempId = `temp_${crypto.randomUUID()}`
+        const record = { ...custData, id: tempId, created_at: new Date().toISOString() }
+        set(state => ({ customers: [...state.customers, record] }))
+        await offlineDb.put('customers', record)
+        await syncQueue.enqueue({ table: 'customers', operation: 'insert', data: custData, tempId })
+        if (navigator.onLine) syncQueue.processQueue()
+        return tempId
+      },
+      updateCustomer: async (id, changes) => {
+        set(state => ({ customers: state.customers.map(c => String(c.id) === String(id) ? { ...c, ...changes } : c) }))
+        const full = get().customers.find(c => String(c.id) === String(id))
+        if (full) await offlineDb.put('customers', full)
+        await syncQueue.enqueue({ table: 'customers', operation: 'update', data: { id, ...changes } })
+        if (navigator.onLine) syncQueue.processQueue()
+      },
+
+      // --- Leads ---
+      createLead: async (leadData) => {
+        const tempId = `temp_${crypto.randomUUID()}`
+        const record = { ...leadData, id: tempId, created_at: new Date().toISOString() }
+        set(state => ({ leads: [record, ...state.leads] }))
+        await offlineDb.put('leads', record)
+        await syncQueue.enqueue({ table: 'leads', operation: 'insert', data: leadData, tempId })
+        if (navigator.onLine) syncQueue.processQueue()
+        return tempId
+      },
+      updateLead: async (id, changes) => {
+        set(state => ({ leads: state.leads.map(l => String(l.id) === String(id) ? { ...l, ...changes } : l) }))
+        const full = get().leads.find(l => String(l.id) === String(id))
+        if (full) await offlineDb.put('leads', full)
+        await syncQueue.enqueue({ table: 'leads', operation: 'update', data: { id, ...changes } })
+        if (navigator.onLine) syncQueue.processQueue()
+      },
+      deleteLead: async (id) => {
+        set(state => ({ leads: state.leads.filter(l => String(l.id) !== String(id)) }))
+        await offlineDb.remove('leads', id)
+        if (!String(id).startsWith('temp_')) {
+          await syncQueue.enqueue({ table: 'leads', operation: 'delete', data: { id } })
+          if (navigator.onLine) syncQueue.processQueue()
+        }
+      },
+
+      // --- Sales Pipeline ---
+      createSalesPipeline: async (pipeData) => {
+        const tempId = `temp_${crypto.randomUUID()}`
+        const record = { ...pipeData, id: tempId, created_at: new Date().toISOString() }
+        set(state => ({ salesPipeline: [record, ...state.salesPipeline] }))
+        await offlineDb.put('salesPipeline', record)
+        const parentTempId = typeof pipeData.lead_id === 'string' && pipeData.lead_id.startsWith('temp_') ? pipeData.lead_id : null
+        await syncQueue.enqueue({ table: 'salesPipeline', operation: 'insert', data: pipeData, tempId, parentTempId, parentFkField: 'lead_id' })
+        if (navigator.onLine) syncQueue.processQueue()
+        return tempId
+      },
+      updateSalesPipeline: async (id, changes) => {
+        set(state => ({ salesPipeline: state.salesPipeline.map(p => String(p.id) === String(id) ? { ...p, ...changes } : p) }))
+        const full = get().salesPipeline.find(p => String(p.id) === String(id))
+        if (full) await offlineDb.put('salesPipeline', full)
+        await syncQueue.enqueue({ table: 'salesPipeline', operation: 'update', data: { id, ...changes } })
+        if (navigator.onLine) syncQueue.processQueue()
+      },
+
+      // --- Quotes ---
+      createQuote: async (quoteData) => {
+        const tempId = `temp_${crypto.randomUUID()}`
+        const record = { ...quoteData, id: tempId, created_at: new Date().toISOString() }
+        set(state => ({ quotes: [record, ...state.quotes] }))
+        await offlineDb.put('quotes', record)
+        await syncQueue.enqueue({ table: 'quotes', operation: 'insert', data: quoteData, tempId })
+        if (navigator.onLine) syncQueue.processQueue()
+        return tempId
+      },
+      updateQuote: async (id, changes) => {
+        set(state => ({ quotes: state.quotes.map(q => String(q.id) === String(id) ? { ...q, ...changes } : q) }))
+        const full = get().quotes.find(q => String(q.id) === String(id))
+        if (full) await offlineDb.put('quotes', full)
+        await syncQueue.enqueue({ table: 'quotes', operation: 'update', data: { id, ...changes } })
+        if (navigator.onLine) syncQueue.processQueue()
+      },
+      deleteQuote: async (id) => {
+        set(state => ({ quotes: state.quotes.filter(q => String(q.id) !== String(id)) }))
+        await offlineDb.remove('quotes', id)
+        if (!String(id).startsWith('temp_')) {
+          await syncQueue.enqueue({ table: 'quotes', operation: 'delete', data: { id } })
+          if (navigator.onLine) syncQueue.processQueue()
+        }
+      },
+
+      // --- Quote Lines ---
+      createQuoteLine: async (lineData) => {
+        const tempId = `temp_${crypto.randomUUID()}`
+        const record = { ...lineData, id: tempId, created_at: new Date().toISOString() }
+        set(state => ({ quoteLines: [...(state.quoteLines || []), record] }))
+        await offlineDb.put('quoteLines', record)
+        const parentTempId = typeof lineData.quote_id === 'string' && lineData.quote_id.startsWith('temp_') ? lineData.quote_id : null
+        await syncQueue.enqueue({ table: 'quoteLines', operation: 'insert', data: lineData, tempId, parentTempId, parentFkField: 'quote_id' })
+        if (navigator.onLine) syncQueue.processQueue()
+        return tempId
+      },
+      updateQuoteLine: async (id, changes) => {
+        set(state => ({ quoteLines: (state.quoteLines || []).map(l => String(l.id) === String(id) ? { ...l, ...changes } : l) }))
+        const full = (get().quoteLines || []).find(l => String(l.id) === String(id))
+        if (full) await offlineDb.put('quoteLines', full)
+        await syncQueue.enqueue({ table: 'quoteLines', operation: 'update', data: { id, ...changes } })
+        if (navigator.onLine) syncQueue.processQueue()
+      },
+      deleteQuoteLine: async (id) => {
+        set(state => ({ quoteLines: (state.quoteLines || []).filter(l => String(l.id) !== String(id)) }))
+        await offlineDb.remove('quoteLines', id)
+        if (!String(id).startsWith('temp_')) {
+          await syncQueue.enqueue({ table: 'quoteLines', operation: 'delete', data: { id } })
+          if (navigator.onLine) syncQueue.processQueue()
+        }
+      },
+
+      // --- Appointments ---
+      createAppointment: async (apptData) => {
+        const tempId = `temp_${crypto.randomUUID()}`
+        const record = { ...apptData, id: tempId, created_at: new Date().toISOString() }
+        set(state => ({ appointments: [...state.appointments, record] }))
+        await offlineDb.put('appointments', record)
+        await syncQueue.enqueue({ table: 'appointments', operation: 'insert', data: apptData, tempId })
+        if (navigator.onLine) syncQueue.processQueue()
+        return tempId
+      },
+      updateAppointment: async (id, changes) => {
+        set(state => ({ appointments: state.appointments.map(a => String(a.id) === String(id) ? { ...a, ...changes } : a) }))
+        const full = get().appointments.find(a => String(a.id) === String(id))
+        if (full) await offlineDb.put('appointments', full)
+        await syncQueue.enqueue({ table: 'appointments', operation: 'update', data: { id, ...changes } })
+        if (navigator.onLine) syncQueue.processQueue()
+      },
+      deleteAppointment: async (id) => {
+        set(state => ({ appointments: state.appointments.filter(a => String(a.id) !== String(id)) }))
+        await offlineDb.remove('appointments', id)
+        if (!String(id).startsWith('temp_')) {
+          await syncQueue.enqueue({ table: 'appointments', operation: 'delete', data: { id } })
+          if (navigator.onLine) syncQueue.processQueue()
+        }
+      },
+
+      // --- Job Sections (Job Board) ---
+      createJobSection: async (sectionData) => {
+        const tempId = `temp_${crypto.randomUUID()}`
+        const record = { ...sectionData, id: tempId, created_at: new Date().toISOString() }
+        set(state => ({ jobSections: [...(state.jobSections || []), record] }))
+        await offlineDb.put('jobSections', record)
+        await syncQueue.enqueue({ table: 'jobSections', operation: 'insert', data: sectionData, tempId })
+        if (navigator.onLine) syncQueue.processQueue()
+        return tempId
+      },
+      updateJobSection: async (id, changes) => {
+        set(state => ({ jobSections: (state.jobSections || []).map(s => String(s.id) === String(id) ? { ...s, ...changes } : s) }))
+        const full = (get().jobSections || []).find(s => String(s.id) === String(id))
+        if (full) await offlineDb.put('jobSections', full)
+        await syncQueue.enqueue({ table: 'jobSections', operation: 'update', data: { id, ...changes } })
+        if (navigator.onLine) syncQueue.processQueue()
+      },
+      deleteJobSection: async (id) => {
+        set(state => ({ jobSections: (state.jobSections || []).filter(s => String(s.id) !== String(id)) }))
+        await offlineDb.remove('jobSections', id)
+        if (!String(id).startsWith('temp_')) {
+          await syncQueue.enqueue({ table: 'jobSections', operation: 'delete', data: { id } })
+          if (navigator.onLine) syncQueue.processQueue()
+        }
       },
 
       // ========================================

@@ -56,6 +56,7 @@ import DataConsole from './pages/admin/DataConsole'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
 import OfflineBanner from './components/OfflineBanner'
+import { syncQueue } from './lib/syncQueue'
 
 // Light theme fallback
 const defaultTheme = {
@@ -161,6 +162,16 @@ function App() {
       fetchAllData()
     }
   }, [companyId, fetchAllData])
+
+  // Periodic sync for queued offline changes (every 30s when online)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (navigator.onLine) syncQueue.processQueue()
+    }, 30000)
+    // Also try to sync on initial load
+    if (navigator.onLine) syncQueue.processQueue()
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <BrowserRouter>
