@@ -440,10 +440,20 @@ export const useStore = create(
 
         const { data, error } = await supabase
           .from('audit_areas')
-          .select('*, audit:lighting_audits(id, audit_id), led_replacement:products_services(id, name)')
+          .select('*, audit:lighting_audits(id, audit_id), led_product:products_services!led_replacement_id(id, name)')
           .eq('company_id', companyId);
 
-        if (!error) set({ auditAreas: data || [] });
+        if (error) {
+          console.error('fetchAuditAreas error:', error.message);
+          // Fallback: try without joins
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('audit_areas')
+            .select('*')
+            .eq('company_id', companyId);
+          if (!fallbackError) set({ auditAreas: fallbackData || [] });
+        } else {
+          set({ auditAreas: data || [] });
+        }
       },
 
       fetchFixtureTypes: async () => {

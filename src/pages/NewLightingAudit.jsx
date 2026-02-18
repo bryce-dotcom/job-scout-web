@@ -476,25 +476,31 @@ export default function NewLightingAudit() {
           company_id: companyId,
           audit_id: audit.id,
           area_name: area.area_name,
-          ceiling_height: area.ceiling_height || null,
+          ceiling_height: area.ceiling_height ? parseFloat(area.ceiling_height) : null,
           fixture_category: area.fixture_category,
           lighting_type: area.lighting_type || null,
-          fixture_count: area.fixture_count,
-          existing_wattage: area.existing_wattage,
-          led_replacement_id: area.led_replacement_id || null,
-          led_wattage: area.led_wattage,
-          total_existing_watts: area.total_existing_watts,
-          total_led_watts: area.total_led_watts,
-          area_watts_reduced: area.area_watts_reduced,
-          confirmed: area.confirmed,
+          fixture_count: parseInt(area.fixture_count) || 1,
+          existing_wattage: parseInt(area.existing_wattage) || 0,
+          led_replacement_id: area.led_replacement_id ? parseInt(area.led_replacement_id) : null,
+          led_wattage: parseInt(area.led_wattage) || 0,
+          total_existing_watts: parseInt(area.total_existing_watts) || 0,
+          total_led_watts: parseInt(area.total_led_watts) || 0,
+          area_watts_reduced: parseInt(area.area_watts_reduced) || 0,
+          confirmed: area.confirmed || false,
           override_notes: area.override_notes || null
         }))
 
+        console.log('Inserting area records:', JSON.stringify(areaRecords, null, 2))
         const { error: areasError } = await supabase
           .from('audit_areas')
           .insert(areaRecords)
 
-        if (areasError) throw areasError
+        if (areasError) {
+          console.error('Area insert failed:', areasError)
+          throw areasError
+        }
+      } else {
+        console.warn('No areas to save - areas array is empty')
       }
 
       // Create sales pipeline entry for tracking
