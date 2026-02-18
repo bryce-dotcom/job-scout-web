@@ -74,6 +74,19 @@ export default function LightingAuditDetail() {
     fetchAuditAreas()
   }, [companyId, navigate, fetchLightingAudits, fetchAuditAreas])
 
+  // Filter products by fixture category keywords — must be before early return to keep hooks order stable
+  const ledProducts = useMemo(() => {
+    const allProducts = products.filter(p => p.type === 'Product')
+    if (!areaForm.fixture_category || areaForm.fixture_category === 'Other') return allProducts
+    const keywords = PRODUCT_CATEGORY_KEYWORDS[areaForm.fixture_category] || []
+    if (keywords.length === 0) return allProducts
+    const filtered = allProducts.filter(p => {
+      const searchText = `${p.name} ${p.description || ''}`.toLowerCase()
+      return keywords.some(kw => searchText.includes(kw))
+    })
+    return filtered.length > 0 ? filtered : allProducts
+  }, [products, areaForm.fixture_category])
+
   const audit = lightingAudits.find(a => a.id === parseInt(id))
   const areas = auditAreas.filter(a => a.audit_id === parseInt(id))
 
@@ -287,19 +300,6 @@ export default function LightingAuditDetail() {
       setTimeout(recalculateAudit, 500)
     }
   }
-
-  // Filter products by fixture category keywords when possible, fall back to all products
-  const ledProducts = useMemo(() => {
-    const allProducts = products.filter(p => p.type === 'Product')
-    if (!areaForm.fixture_category || areaForm.fixture_category === 'Other') return allProducts
-    const keywords = PRODUCT_CATEGORY_KEYWORDS[areaForm.fixture_category] || []
-    if (keywords.length === 0) return allProducts
-    const filtered = allProducts.filter(p => {
-      const searchText = `${p.name} ${p.description || ''}`.toLowerCase()
-      return keywords.some(kw => searchText.includes(kw))
-    })
-    return filtered.length > 0 ? filtered : allProducts
-  }, [products, areaForm.fixture_category])
 
   // Map AI category to our categories
   const mapCategory = (aiCategory) => AI_CATEGORY_MAP[aiCategory] || 'Linear'
