@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download } from 'lucide-react'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 
@@ -85,12 +85,12 @@ export default function QuoteDetail() {
           .eq('id', quoteData.audit_id)
           .single()
         if (audit?.utility_provider_id) {
-          const { data: mappedForms } = await supabase
+          const { data: providerForms } = await supabase
             .from('utility_forms')
             .select('*')
             .eq('provider_id', audit.utility_provider_id)
-            .not('field_mapping', 'is', null)
-          setRebateForms(mappedForms || [])
+            .eq('status', 'published')
+          setRebateForms(providerForms || [])
         }
       }
     }
@@ -132,7 +132,12 @@ export default function QuoteDetail() {
         provider: provider || {},
         salesperson: salesperson || {},
         audit_areas: areas || [],
-        lines: [],
+        lines: lineItems.map(li => ({
+          item_name: li.item_name || li.item?.name || '',
+          quantity: li.quantity || 0,
+          price: li.price || 0,
+          line_total: li.line_total || 0,
+        })),
       }
 
       // Resolve all mappings
@@ -166,6 +171,39 @@ export default function QuoteDetail() {
       downloadPdf(filledBytes, `${providerSlug}_${form.form_name.replace(/[^a-zA-Z0-9]/g, '_')}_${customerSlug}_${date}.pdf`)
     } catch (err) {
       alert('Error filling form: ' + err.message)
+    }
+    setFillingForm(false)
+  }
+
+  const handleDownloadBlankForm = async (form) => {
+    setFillingForm(true)
+    try {
+      let pdfBytes = null
+      if (form.form_file) {
+        const { data } = supabase.storage.from('utility-pdfs').getPublicUrl(form.form_file)
+        if (data?.publicUrl) {
+          const res = await fetch(data.publicUrl)
+          if (res.ok) pdfBytes = new Uint8Array(await res.arrayBuffer())
+        }
+      }
+      if (!pdfBytes && form.form_url) {
+        // Fetch through edge function to avoid CORS
+        const res = await supabase.functions.invoke('parse-utility-pdf', {
+          body: { pdf_url: form.form_url, document_type: 'form', store_in_storage: false }
+        })
+        if (res.data?.pdf_base64) {
+          const binary = atob(res.data.pdf_base64)
+          pdfBytes = new Uint8Array(binary.length)
+          for (let i = 0; i < binary.length; i++) pdfBytes[i] = binary.charCodeAt(i)
+        }
+      }
+      if (pdfBytes) {
+        downloadPdf(pdfBytes, `${form.form_name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`)
+      } else {
+        alert('Could not download form PDF.')
+      }
+    } catch (err) {
+      alert('Download error: ' + err.message)
     }
     setFillingForm(false)
   }
@@ -282,33 +320,46 @@ export default function QuoteDetail() {
       }
 
       let totalIncentive = 0
+      const today = new Date().toISOString().slice(0, 10)
 
       for (const area of areas) {
         const areaWattsReduced = (area.fixture_count || 0) * ((area.existing_wattage || 0) - (area.led_wattage || 0))
 
-        // Match prescriptive measures by category/wattage/provider
-        const match = prescriptiveMeasures.find(pm => {
+        // Filter prescriptive measures: require subcategory match, skip expired
+        const matches = prescriptiveMeasures.filter(pm => {
           if (pm.measure_category !== 'Lighting') return false
-          const subcatMatch = pm.measure_subcategory?.toLowerCase() === area.fixture_category?.toLowerCase()
-          const wattageClose = pm.baseline_wattage && area.existing_wattage
-            ? Math.abs(pm.baseline_wattage - area.existing_wattage) / area.existing_wattage < 0.2
-            : false
+          if (pm.measure_subcategory?.toLowerCase() !== area.fixture_category?.toLowerCase()) return false
+          if (pm.expiration_date && pm.expiration_date < today) return false
           const providerMatch = !audit.utility_provider_id || pm.program?.provider_id === audit.utility_provider_id
-          return (subcatMatch || wattageClose) && providerMatch
+          return providerMatch
         })
+
+        // Pick closest wattage match
+        const match = matches.length > 0
+          ? matches.reduce((best, pm) => {
+              const diff = Math.abs((pm.baseline_wattage || 0) - (area.existing_wattage || 0))
+              const bestDiff = Math.abs((best.baseline_wattage || 0) - (area.existing_wattage || 0))
+              return diff < bestDiff ? pm : best
+            })
+          : null
 
         if (match) {
           const amount = match.incentive_amount || 0
           const unit = match.incentive_unit || 'per_fixture'
+          let areaIncentive = 0
           if (unit === 'per_watt_reduced') {
-            totalIncentive += areaWattsReduced * amount
+            areaIncentive = areaWattsReduced * amount
           } else if (unit === 'per_fixture' || unit === 'per_lamp') {
-            totalIncentive += (area.fixture_count || 0) * amount
+            areaIncentive = (area.fixture_count || 0) * amount
           } else if (unit === 'per_kw') {
-            totalIncentive += (areaWattsReduced / 1000) * amount
+            areaIncentive = (areaWattsReduced / 1000) * amount
           } else {
-            totalIncentive += amount
+            areaIncentive = amount
           }
+          if (match.max_incentive && areaIncentive > match.max_incentive) {
+            areaIncentive = match.max_incentive
+          }
+          totalIncentive += areaIncentive
         }
       }
 
@@ -903,7 +954,7 @@ export default function QuoteDetail() {
                   <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '10px', marginTop: '4px' }}>
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>Rebate Forms</div>
                   </div>
-                  {rebateForms.map(form => (
+                  {rebateForms.filter(f => f.field_mapping).map(form => (
                     <button
                       key={form.id}
                       onClick={() => handleFillRebateForm(form)}
@@ -926,6 +977,31 @@ export default function QuoteDetail() {
                     >
                       <FileText size={16} />
                       {fillingForm ? 'Filling...' : `Fill ${form.form_name}`}
+                    </button>
+                  ))}
+                  {rebateForms.filter(f => !f.field_mapping && (f.form_file || f.form_url)).map(form => (
+                    <button
+                      key={form.id}
+                      onClick={() => handleDownloadBlankForm(form)}
+                      disabled={fillingForm || saving}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        padding: '10px 16px',
+                        backgroundColor: 'transparent',
+                        color: theme.accent,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        cursor: (fillingForm || saving) ? 'not-allowed' : 'pointer',
+                        opacity: (fillingForm || saving) ? 0.6 : 1
+                      }}
+                    >
+                      <Download size={16} />
+                      {form.form_name}
                     </button>
                   ))}
                 </>

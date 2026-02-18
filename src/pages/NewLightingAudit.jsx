@@ -284,32 +284,45 @@ export default function NewLightingAudit() {
       const areaWattsReduced = (area.fixture_count || 0) * ((area.existing_wattage || 0) - (area.led_wattage || 0))
 
       // 1. Try prescriptive_measures (PDF-verified, precise)
-      const pmMatch = (prescriptiveMeasures || []).find(pm => {
+      const today = new Date().toISOString().slice(0, 10)
+      const pmMatches = (prescriptiveMeasures || []).filter(pm => {
         if (pm.measure_category !== 'Lighting') return false
-        // Match subcategory to fixture_category
-        const subcatMatch = pm.measure_subcategory?.toLowerCase() === area.fixture_category?.toLowerCase()
-        // Match baseline wattage within 20% tolerance
-        const wattageClose = pm.baseline_wattage && area.existing_wattage
-          ? Math.abs(pm.baseline_wattage - area.existing_wattage) / area.existing_wattage < 0.2
-          : false
+        // Require subcategory match
+        if (pm.measure_subcategory?.toLowerCase() !== area.fixture_category?.toLowerCase()) return false
+        // Skip expired measures
+        if (pm.expiration_date && pm.expiration_date < today) return false
         // Match provider if audit has one selected
         const providerMatch = !basicInfo.utility_provider_id || pm.program?.provider_id === basicInfo.utility_provider_id
-        return (subcatMatch || wattageClose) && providerMatch
+        return providerMatch
       })
 
+      // Pick closest wattage match
+      const pmMatch = pmMatches.length > 0
+        ? pmMatches.reduce((best, pm) => {
+            const diff = Math.abs((pm.baseline_wattage || 0) - (area.existing_wattage || 0))
+            const bestDiff = Math.abs((best.baseline_wattage || 0) - (area.existing_wattage || 0))
+            return diff < bestDiff ? pm : best
+          })
+        : null
+
       if (pmMatch) {
-        // Use prescriptive measure amount
         const amount = pmMatch.incentive_amount || 0
         const unit = pmMatch.incentive_unit || 'per_fixture'
+        let areaIncentive = 0
         if (unit === 'per_watt_reduced') {
-          estimated_rebate += areaWattsReduced * amount
+          areaIncentive = areaWattsReduced * amount
         } else if (unit === 'per_fixture' || unit === 'per_lamp') {
-          estimated_rebate += (area.fixture_count || 0) * amount
+          areaIncentive = (area.fixture_count || 0) * amount
         } else if (unit === 'per_kw') {
-          estimated_rebate += (areaWattsReduced / 1000) * amount
+          areaIncentive = (areaWattsReduced / 1000) * amount
         } else {
-          estimated_rebate += amount
+          areaIncentive = amount
         }
+        // Enforce max incentive cap
+        if (pmMatch.max_incentive && areaIncentive > pmMatch.max_incentive) {
+          areaIncentive = pmMatch.max_incentive
+        }
+        estimated_rebate += areaIncentive
         return
       }
 

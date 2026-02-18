@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Plus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles } from 'lucide-react'
+import { ArrowLeft, Plus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText } from 'lucide-react'
 
 // Light theme fallback
 const defaultTheme = {
@@ -113,6 +113,53 @@ export default function LightingAuditDetail() {
     } else {
       fetchLightingAudits()
     }
+  }
+
+  const handleCreateQuote = async () => {
+    if (!audit) return
+
+    const { data: quote, error } = await supabase
+      .from('quotes')
+      .insert({
+        company_id: companyId,
+        lead_id: audit.lead_id || null,
+        audit_id: audit.id,
+        audit_type: 'lighting',
+        quote_amount: audit.est_project_cost || 0,
+        utility_incentive: audit.estimated_rebate || 0,
+        status: 'Draft'
+      })
+      .select()
+      .single()
+
+    if (error) {
+      alert('Error creating quote: ' + error.message)
+      return
+    }
+
+    // Copy audit areas to quote lines with product pricing
+    const { data: areaData } = await supabase
+      .from('audit_areas')
+      .select('*, led_product:products_services!led_replacement_id(id, name, price)')
+      .eq('audit_id', audit.id)
+
+    if (areaData?.length) {
+      const lines = areaData.map(area => {
+        const qty = area.fixture_count || 1
+        const unitPrice = area.led_product?.price || (((area.existing_wattage || 0) - (area.led_wattage || 0)) * 5)
+        return {
+          quote_id: quote.id,
+          item_name: `${area.area_name} - LED Retrofit`,
+          item_id: area.led_replacement_id || null,
+          quantity: qty,
+          price: Math.round(unitPrice * 100) / 100,
+          line_total: Math.round(qty * unitPrice * 100) / 100
+        }
+      })
+      await supabase.from('quote_lines').insert(lines)
+    }
+
+    navigate(`/quotes/${quote.id}`)
   }
 
   const recalculateAudit = async () => {
@@ -473,6 +520,27 @@ export default function LightingAuditDetail() {
             >
               <Send size={16} />
               Submit for Rebate
+            </button>
+          )}
+          {(audit.status === 'Completed' || audit.status === 'Submitted') && (
+            <button
+              onClick={handleCreateQuote}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '10px 16px',
+                backgroundColor: '#4a6b7c',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer'
+              }}
+            >
+              <FileText size={16} />
+              Create Quote
             </button>
           )}
         </div>

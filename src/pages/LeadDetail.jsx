@@ -136,6 +136,7 @@ export default function LeadDetail() {
         audit_id: audit.id,
         audit_type: 'lighting',
         quote_amount: audit.est_project_cost || 0,
+        utility_incentive: audit.estimated_rebate || 0,
         status: 'Draft'
       })
       .select()
@@ -153,25 +154,30 @@ export default function LeadDetail() {
       .update({ quote_id: quote.id })
       .eq('id', lead.id)
 
-    // Copy audit areas to quote lines
+    // Copy audit areas to quote lines with product pricing
     const { data: areas } = await supabase
       .from('audit_areas')
-      .select('*')
+      .select('*, led_product:products_services!led_replacement_id(id, name, price)')
       .eq('audit_id', audit.id)
 
     if (areas?.length) {
-      const lines = areas.map(area => ({
-        quote_id: quote.id,
-        description: `${area.area_name} - LED Retrofit`,
-        quantity: area.fixture_count || 1,
-        unit_price: area.area_cost || 0,
-        line_total: (area.fixture_count || 1) * (area.area_cost || 0)
-      }))
+      const lines = areas.map(area => {
+        const qty = area.fixture_count || 1
+        const unitPrice = area.led_product?.price || (((area.existing_wattage || 0) - (area.led_wattage || 0)) * 5)
+        return {
+          quote_id: quote.id,
+          item_name: `${area.area_name} - LED Retrofit`,
+          item_id: area.led_replacement_id || null,
+          quantity: qty,
+          price: Math.round(unitPrice * 100) / 100,
+          line_total: Math.round(qty * unitPrice * 100) / 100
+        }
+      })
       await supabase.from('quote_lines').insert(lines)
     }
 
     await fetchLeadData()
-    alert('Quote created from audit!')
+    navigate(`/quotes/${quote.id}`)
   }
 
   // Open quote creation modal

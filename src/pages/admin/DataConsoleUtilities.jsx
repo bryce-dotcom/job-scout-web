@@ -140,6 +140,8 @@ export default function DataConsoleUtilities() {
     { value: 'audit.estimated_rebate', label: 'Estimated Rebate' },
     { value: 'audit_areas.fixture_count.sum', label: 'Sum: Fixture Count' },
     { value: 'audit_areas.area_watts_reduced.sum', label: 'Sum: Watts Reduced' },
+    { value: 'lines.quantity.sum', label: 'Sum: Line Quantities' },
+    { value: 'lines.line_total.sum', label: 'Sum: Line Totals' },
     { value: 'today', label: "Today's Date" },
   ]
 
