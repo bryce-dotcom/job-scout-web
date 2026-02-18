@@ -232,6 +232,21 @@ export default function LightingAuditDetail() {
     }
   }
 
+  const handleDeleteAudit = async () => {
+    if (!confirm('Delete this audit and all its areas? This cannot be undone.')) return
+
+    // Delete areas first (foreign key constraint)
+    await supabase.from('audit_areas').delete().eq('audit_id', parseInt(id))
+
+    const { error } = await supabase.from('lighting_audits').delete().eq('id', parseInt(id))
+    if (error) {
+      alert('Error deleting audit: ' + error.message)
+    } else {
+      await Promise.all([fetchLightingAudits(), fetchAuditAreas()])
+      navigate('/lighting-audits')
+    }
+  }
+
   const handleAddArea = async () => {
     if (!areaForm.area_name) {
       alert('Please enter an area name')
@@ -525,6 +540,25 @@ export default function LightingAuditDetail() {
           >
             <Edit size={16} />
             Edit
+          </button>
+          <button
+            onClick={handleDeleteAudit}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '10px 16px',
+              backgroundColor: 'rgba(194,90,90,0.1)',
+              color: '#c25a5a',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Trash2 size={16} />
+            Delete
           </button>
           {audit.status === 'Draft' && (
             <button

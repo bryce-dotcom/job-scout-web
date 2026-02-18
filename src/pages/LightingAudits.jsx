@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ClipboardList, Search, Plus, Zap, DollarSign, TrendingDown } from 'lucide-react'
+import { ClipboardList, Search, Plus, Zap, DollarSign, TrendingDown, User } from 'lucide-react'
 
 // Light theme fallback
 const defaultTheme = {
@@ -29,6 +29,7 @@ const statusColors = {
 export default function LightingAudits() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const user = useStore((state) => state.user)
   const lightingAudits = useStore((state) => state.lightingAudits)
   const utilityProviders = useStore((state) => state.utilityProviders)
   const fetchLightingAudits = useStore((state) => state.fetchLightingAudits)
@@ -36,6 +37,7 @@ export default function LightingAudits() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterProvider, setFilterProvider] = useState('all')
+  const [showMyAudits, setShowMyAudits] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -68,6 +70,11 @@ export default function LightingAudits() {
 
     // Provider filter
     if (filterProvider !== 'all' && audit.utility_provider_id !== filterProvider) {
+      return false
+    }
+
+    // My Audits filter
+    if (showMyAudits && user?.email && audit.created_by !== user.email) {
       return false
     }
 
@@ -291,6 +298,27 @@ export default function LightingAudits() {
             </option>
           ))}
         </select>
+
+        <button
+          onClick={() => setShowMyAudits(!showMyAudits)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '10px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${showMyAudits ? theme.accent : theme.border}`,
+            backgroundColor: showMyAudits ? theme.accentBg : theme.bgCard,
+            color: showMyAudits ? theme.accent : theme.textSecondary,
+            fontSize: '14px',
+            fontWeight: showMyAudits ? '600' : '400',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <User size={16} />
+          My Audits
+        </button>
       </div>
 
       {/* Audits List */}

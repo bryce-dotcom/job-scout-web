@@ -438,6 +438,7 @@ export default function NewLightingAudit() {
       const auditData = {
         company_id: companyId,
         audit_id: generateAuditId(),
+        created_by: user?.email || null,
         customer_id: basicInfo.customer_id || null,
         address: basicInfo.address,
         city: basicInfo.city,
