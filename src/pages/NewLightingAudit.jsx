@@ -177,7 +177,7 @@ export default function NewLightingAudit() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
-  // Audible click for counter buttons (Web Audio API)
+  // Audible click + haptic vibration for counter buttons
   const playClick = () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)()
@@ -190,6 +190,7 @@ export default function NewLightingAudit() {
       osc.start()
       osc.stop(ctx.currentTime + 0.04)
     } catch (e) { /* silent fallback */ }
+    try { navigator.vibrate?.(15) } catch (e) { /* no vibration support */ }
   }
 
   useEffect(() => {
