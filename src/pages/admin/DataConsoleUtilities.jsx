@@ -337,15 +337,18 @@ export default function DataConsoleUtilities() {
               }
             })
 
-            if (res.data?.success && res.data?.storage_path) {
-              await supabase.from('utility_forms').update({ form_file: res.data.storage_path }).eq('id', form.id)
-              form.form_file = res.data.storage_path
-              if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
-
-              const { data: urlData } = supabase.storage.from('utility-pdfs').getPublicUrl(res.data.storage_path)
-              if (urlData?.publicUrl) {
-                const storageRes = await fetch(urlData.publicUrl)
-                if (storageRes.ok) pdfBytes = new Uint8Array(await storageRes.arrayBuffer())
+            if (res.data?.success) {
+              // Save storage path to form record
+              if (res.data.storage_path) {
+                await supabase.from('utility_forms').update({ form_file: res.data.storage_path }).eq('id', form.id)
+                form.form_file = res.data.storage_path
+                if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
+              }
+              // Decode PDF directly from returned base64
+              if (res.data.pdf_base64) {
+                const binary = atob(res.data.pdf_base64)
+                pdfBytes = new Uint8Array(binary.length)
+                for (let i = 0; i < binary.length; i++) pdfBytes[i] = binary.charCodeAt(i)
               }
             }
           } catch { /* URL may be dead */ }

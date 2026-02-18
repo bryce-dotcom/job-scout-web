@@ -231,12 +231,13 @@ serve(async (req) => {
       }
     }
 
-    // For 'form' type (no field analysis), skip extraction — just store the PDF
+    // For 'form' type (no field analysis), skip extraction — return PDF data + store
     if (document_type === 'form') {
       return new Response(JSON.stringify({
         success: true,
         document_type,
         storage_path: storagePath,
+        pdf_base64: pdfData,
         results: null
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
