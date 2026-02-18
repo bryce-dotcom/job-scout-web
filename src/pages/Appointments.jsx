@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { APPOINTMENT_STATUS } from '../lib/schema'
@@ -40,6 +39,9 @@ export default function Appointments() {
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
   const fetchAppointments = useStore((state) => state.fetchAppointments)
+  const createAppointment = useStore((state) => state.createAppointment)
+  const updateAppointment = useStore((state) => state.updateAppointment)
+  const deleteAppointment = useStore((state) => state.deleteAppointment)
 
   const calendarRef = useRef(null)
 
@@ -141,15 +143,14 @@ export default function Appointments() {
       payload.setter_id = user?.id || null
     }
 
-    let result
-    if (editingAppointment) {
-      result = await supabase.from('appointments').update(payload).eq('id', editingAppointment.id)
-    } else {
-      result = await supabase.from('appointments').insert([payload])
-    }
-
-    if (result.error) {
-      setError(result.error.message)
+    try {
+      if (editingAppointment) {
+        await updateAppointment(editingAppointment.id, payload)
+      } else {
+        await createAppointment(payload)
+      }
+    } catch (e) {
+      setError(e.message)
       setLoading(false)
       return
     }
@@ -163,9 +164,8 @@ export default function Appointments() {
 
   const handleDelete = async (apt) => {
     if (!confirm(`Delete appointment "${apt.title}"?`)) return
-    await supabase.from('appointments').delete().eq('id', apt.id)
+    await deleteAppointment(apt.id)
     calendarRef.current?.refresh()
-    await fetchAppointments()
     closeModal()
   }
 

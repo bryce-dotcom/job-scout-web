@@ -29,6 +29,10 @@ export default function LeadDetail() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const employees = useStore((state) => state.employees)
+  const createQuote = useStore((state) => state.createQuote)
+  const createQuoteLine = useStore((state) => state.createQuoteLine)
+  const updateLead = useStore((state) => state.updateLead)
+  const updateQuote = useStore((state) => state.updateQuote)
 
   const [lead, setLead] = useState(null)
   const [audits, setAudits] = useState([])
@@ -128,56 +132,39 @@ export default function LeadDetail() {
 
   // Create quote from audit
   const handleCreateQuoteFromAudit = async (audit) => {
-    const { data: quote, error } = await supabase
-      .from('quotes')
-      .insert({
-        company_id: companyId,
-        lead_id: lead.id,
-        audit_id: audit.id,
-        audit_type: 'lighting',
-        quote_amount: audit.est_project_cost || 0,
-        utility_incentive: audit.estimated_rebate || 0,
-        status: 'Draft'
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Error creating quote:', error)
-      alert('Error creating quote: ' + error.message)
-      return
-    }
+    const quoteTempId = await createQuote({
+      company_id: companyId,
+      lead_id: lead.id,
+      audit_id: audit.id,
+      audit_type: 'lighting',
+      quote_amount: audit.est_project_cost || 0,
+      utility_incentive: audit.estimated_rebate || 0,
+      status: 'Draft'
+    })
 
     // Update lead with quote
-    await supabase
-      .from('leads')
-      .update({ quote_id: quote.id })
-      .eq('id', lead.id)
+    await updateLead(lead.id, { quote_id: quoteTempId })
 
-    // Copy audit areas to quote lines with product pricing
-    const { data: areas } = await supabase
-      .from('audit_areas')
-      .select('*, led_product:products_services!led_replacement_id(id, name, price)')
-      .eq('audit_id', audit.id)
+    // Use audit areas from store instead of fetching from supabase
+    const storeAuditAreas = useStore.getState().auditAreas
+    const areas = storeAuditAreas.filter(a => String(a.audit_id) === String(audit.id))
 
-    if (areas?.length) {
-      const lines = areas.map(area => {
+    if (areas.length > 0) {
+      for (const area of areas) {
         const qty = area.fixture_count || 1
-        const unitPrice = area.led_product?.price || (((area.existing_wattage || 0) - (area.led_wattage || 0)) * 5)
-        return {
-          quote_id: quote.id,
+        const unitPrice = (((area.existing_wattage || 0) - (area.led_wattage || 0)) * 5)
+        await createQuoteLine({
+          quote_id: quoteTempId,
           item_name: `${area.area_name} - LED Retrofit`,
           item_id: area.led_replacement_id || null,
           quantity: qty,
           price: Math.round(unitPrice * 100) / 100,
           line_total: Math.round(qty * unitPrice * 100) / 100
-        }
-      })
-      await supabase.from('quote_lines').insert(lines)
+        })
+      }
     }
 
-    await fetchLeadData()
-    navigate(`/quotes/${quote.id}`)
+    navigate(`/quotes/${quoteTempId}`)
   }
 
   // Open quote creation modal
@@ -249,54 +236,33 @@ export default function LeadDetail() {
 
     setSavingQuote(true)
 
-    // Create quote
-    const { data: quote, error: quoteError } = await supabase
-      .from('quotes')
-      .insert({
-        company_id: companyId,
-        lead_id: lead.id,
-        quote_amount: quoteTotal,
-        discount: parseFloat(quoteDiscount) || 0,
-        status: 'Draft',
-        notes: quoteNotes || null
-      })
-      .select()
-      .single()
-
-    if (quoteError) {
-      console.error('Error creating quote:', quoteError)
-      alert('Error creating quote: ' + quoteError.message)
-      setSavingQuote(false)
-      return
-    }
+    const quoteTempId = await createQuote({
+      company_id: companyId,
+      lead_id: lead.id,
+      quote_amount: quoteTotal,
+      discount: parseFloat(quoteDiscount) || 0,
+      status: 'Draft',
+      notes: quoteNotes || null
+    })
 
     // Create quote lines
-    const linesToInsert = quoteLines.map(line => ({
-      quote_id: quote.id,
-      item_id: line.product_id,
-      item_name: line.description,
-      quantity: parseFloat(line.quantity) || 1,
-      price: parseFloat(line.unit_price) || 0,
-      line_total: line.line_total || 0
-    }))
-
-    const { error: linesError } = await supabase
-      .from('quote_lines')
-      .insert(linesToInsert)
-
-    if (linesError) {
-      console.error('Error creating quote lines:', linesError)
+    for (const line of quoteLines) {
+      await createQuoteLine({
+        quote_id: quoteTempId,
+        item_id: line.product_id,
+        item_name: line.description,
+        quantity: parseFloat(line.quantity) || 1,
+        price: parseFloat(line.unit_price) || 0,
+        line_total: line.line_total || 0
+      })
     }
 
     // Update lead with quote_id and status
-    await supabase
-      .from('leads')
-      .update({
-        quote_id: quote.id,
-        status: 'Quote Sent',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', lead.id)
+    await updateLead(lead.id, {
+      quote_id: quoteTempId,
+      status: 'Quote Sent',
+      updated_at: new Date().toISOString()
+    })
 
     setSavingQuote(false)
     setShowQuoteModal(false)
@@ -305,16 +271,8 @@ export default function LeadDetail() {
 
   // Mark quote as sent
   const handleSendQuote = async (quoteId) => {
-    await supabase
-      .from('quotes')
-      .update({ status: 'Sent', sent_at: new Date().toISOString() })
-      .eq('id', quoteId)
-
-    await supabase
-      .from('leads')
-      .update({ status: 'Quote Sent' })
-      .eq('id', lead.id)
-
+    await updateQuote(quoteId, { status: 'Sent', sent_at: new Date().toISOString() })
+    await updateLead(lead.id, { status: 'Quote Sent' })
     await fetchLeadData()
     alert('Quote marked as sent!')
   }

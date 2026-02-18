@@ -35,6 +35,9 @@ export default function QuoteDetail() {
   const products = useStore((state) => state.products)
   const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
   const fetchQuotes = useStore((state) => state.fetchQuotes)
+  const createQuoteLine = useStore((state) => state.createQuoteLine)
+  const deleteQuoteLine = useStore((state) => state.deleteQuoteLine)
+  const updateQuote = useStore((state) => state.updateQuote)
 
   const [quote, setQuote] = useState(null)
   const [lineItems, setLineItems] = useState([])
@@ -212,14 +215,14 @@ export default function QuoteDetail() {
     setSaving(true)
     setShowProductPicker(false)
 
-    await supabase.from('quote_lines').insert([{
+    await createQuoteLine({
       company_id: companyId,
-      quote_id: parseInt(id),
+      quote_id: id,
       item_id: product.id,
       quantity: 1,
       price: totalPrice,
       line_total: totalPrice
-    }])
+    })
 
     await updateQuoteTotal()
     await fetchQuoteData()
@@ -228,41 +231,29 @@ export default function QuoteDetail() {
 
   const removeLineItem = async (lineId) => {
     setSaving(true)
-    await supabase.from('quote_lines').delete().eq('id', lineId)
+    await deleteQuoteLine(lineId)
     await updateQuoteTotal()
     await fetchQuoteData()
     setSaving(false)
   }
 
   const updateQuoteTotal = async () => {
-    const { data: lines } = await supabase
-      .from('quote_lines')
-      .select('line_total')
-      .eq('quote_id', id)
-
-    const total = (lines || []).reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
-
-    await supabase.from('quotes').update({
-      quote_amount: total,
-      updated_at: new Date().toISOString()
-    }).eq('id', id)
+    // Use store's quoteLines instead of fetching from supabase
+    const allQuoteLines = useStore.getState().quoteLines || []
+    const lines = allQuoteLines.filter(l => String(l.quote_id) === String(id))
+    const total = lines.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
+    await updateQuote(id, { quote_amount: total, updated_at: new Date().toISOString() })
   }
 
   const updateQuoteField = async (field, value) => {
     setSaving(true)
-    await supabase.from('quotes').update({
-      [field]: value,
-      updated_at: new Date().toISOString()
-    }).eq('id', id)
+    await updateQuote(id, { [field]: value, updated_at: new Date().toISOString() })
     await fetchQuoteData()
     setSaving(false)
   }
 
   const sendQuote = async () => {
-    await updateQuoteField('status', 'Sent')
-    await supabase.from('quotes').update({
-      sent_date: new Date().toISOString()
-    }).eq('id', id)
+    await updateQuote(id, { status: 'Sent', sent_date: new Date().toISOString(), updated_at: new Date().toISOString() })
     await fetchQuoteData()
     await fetchQuotes()
   }

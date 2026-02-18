@@ -35,7 +35,11 @@ export default function Leads() {
   const serviceTypes = useStore((state) => state.serviceTypes)
   const leadSources = useStore((state) => state.leadSources)
   const fetchLeads = useStore((state) => state.fetchLeads)
-  const fetchCustomers = useStore((state) => state.fetchCustomers)
+  const createLead = useStore((state) => state.createLead)
+  const updateLead = useStore((state) => state.updateLead)
+  const deleteLead = useStore((state) => state.deleteLead)
+  const createCustomer = useStore((state) => state.createCustomer)
+  const createAppointment = useStore((state) => state.createAppointment)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || {
@@ -193,20 +197,18 @@ export default function Leads() {
       updated_at: new Date().toISOString()
     }
 
-    let result
-    if (editingLead) {
-      result = await supabase.from('leads').update(payload).eq('id', editingLead.id)
-    } else {
-      result = await supabase.from('leads').insert([payload])
-    }
-
-    if (result.error) {
-      setError(result.error.message)
+    try {
+      if (editingLead) {
+        await updateLead(editingLead.id, payload)
+      } else {
+        await createLead(payload)
+      }
+    } catch (e) {
+      setError(e.message)
       setLoading(false)
       return
     }
 
-    await fetchLeads()
     closeModal()
     setLoading(false)
   }
@@ -223,15 +225,11 @@ export default function Leads() {
     if (!selectedLead || !assignSetterId) return
     setLoading(true)
 
-    const { error } = await supabase.from('leads').update({
+    await updateLead(selectedLead.id, {
       setter_owner_id: parseInt(assignSetterId),
       status: 'Assigned',
       updated_at: new Date().toISOString()
-    }).eq('id', selectedLead.id)
-
-    if (!error) {
-      await fetchLeads()
-    }
+    })
 
     setShowAssignModal(false)
     setSelectedLead(null)
@@ -258,7 +256,7 @@ export default function Leads() {
     const startTime = new Date(appointmentData.start_time)
     const endTime = appointmentData.end_time ? new Date(appointmentData.end_time) : new Date(startTime.getTime() + 60 * 60 * 1000)
 
-    const { data: appointment, error } = await supabase.from('appointments').insert([{
+    const apptTempId = await createAppointment({
       company_id: companyId,
       lead_id: selectedLead.id,
       title: appointmentData.title,
@@ -270,17 +268,14 @@ export default function Leads() {
       setter_id: user?.id,
       lead_owner_id: selectedLead.lead_owner_id,
       status: 'Scheduled'
-    }]).select().single()
+    })
 
-    if (!error && appointment) {
-      await supabase.from('leads').update({
-        status: 'Appointment Set',
-        appointment_time: startTime.toISOString(),
-        appointment_id: appointment.id,
-        updated_at: new Date().toISOString()
-      }).eq('id', selectedLead.id)
-      await fetchLeads()
-    }
+    await updateLead(selectedLead.id, {
+      status: 'Appointment Set',
+      appointment_time: startTime.toISOString(),
+      appointment_id: apptTempId,
+      updated_at: new Date().toISOString()
+    })
 
     setShowAppointmentModal(false)
     setSelectedLead(null)
@@ -294,7 +289,7 @@ export default function Leads() {
   const handleConvertToCustomer = async (lead) => {
     if (!confirm(`Convert ${lead.customer_name} to a customer?`)) return
 
-    const { data: customer, error } = await supabase.from('customers').insert([{
+    const custTempId = await createCustomer({
       company_id: companyId,
       name: lead.customer_name,
       business_name: lead.business_name,
@@ -305,17 +300,13 @@ export default function Leads() {
       salesperson_id: lead.salesperson_id,
       status: 'Active',
       notes: lead.notes
-    }]).select().single()
+    })
 
-    if (!error && customer) {
-      await supabase.from('leads').update({
-        status: 'Converted',
-        customer_id: customer.id,
-        updated_at: new Date().toISOString()
-      }).eq('id', lead.id)
-      await fetchLeads()
-      await fetchCustomers()
-    }
+    await updateLead(lead.id, {
+      status: 'Converted',
+      customer_id: custTempId,
+      updated_at: new Date().toISOString()
+    })
   }
 
   const formatDate = (dateStr) => {
@@ -326,10 +317,7 @@ export default function Leads() {
   const handleDelete = async (lead) => {
     if (!confirm(`Delete lead "${lead.customer_name}"? This cannot be undone.`)) return
 
-    const { error } = await supabase.from('leads').delete().eq('id', lead.id)
-    if (!error) {
-      await fetchLeads()
-    }
+    await deleteLead(lead.id)
   }
 
   // CSV Import
@@ -463,11 +451,10 @@ export default function Leads() {
 
   // Quick inline update for lead owner
   const handleQuickOwnerChange = async (lead, newOwnerId) => {
-    const { error } = await supabase.from('leads').update({
+    await updateLead(lead.id, {
       lead_owner_id: newOwnerId ? parseInt(newOwnerId) : null,
       updated_at: new Date().toISOString()
-    }).eq('id', lead.id)
-    if (!error) await fetchLeads()
+    })
   }
 
   // Quick inline update for setter
@@ -480,8 +467,7 @@ export default function Leads() {
     if (newSetterId && lead.status === 'New') {
       updates.status = 'Assigned'
     }
-    const { error } = await supabase.from('leads').update(updates).eq('id', lead.id)
-    if (!error) await fetchLeads()
+    await updateLead(lead.id, updates)
   }
 
   const inputStyle = {

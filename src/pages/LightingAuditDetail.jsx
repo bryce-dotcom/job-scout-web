@@ -44,6 +44,13 @@ export default function LightingAuditDetail() {
   const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
   const fetchLightingAudits = useStore((state) => state.fetchLightingAudits)
   const fetchAuditAreas = useStore((state) => state.fetchAuditAreas)
+  const createQuote = useStore((state) => state.createQuote)
+  const createQuoteLine = useStore((state) => state.createQuoteLine)
+  const updateLightingAudit = useStore((state) => state.updateLightingAudit)
+  const createAuditArea = useStore((state) => state.createAuditArea)
+  const updateAuditArea = useStore((state) => state.updateAuditArea)
+  const deleteAuditArea = useStore((state) => state.deleteAuditArea)
+  const deleteLightingAudit = useStore((state) => state.deleteLightingAudit)
 
   const [showAreaModal, setShowAreaModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -108,8 +115,8 @@ export default function LightingAuditDetail() {
     return filtered.length > 0 ? filtered : allProducts
   }, [products, areaForm.fixture_category])
 
-  const audit = lightingAudits.find(a => a.id === parseInt(id))
-  const areas = auditAreas.filter(a => a.audit_id === parseInt(id))
+  const audit = lightingAudits.find(a => String(a.id) === String(id))
+  const areas = auditAreas.filter(a => String(a.audit_id) === String(id))
 
   if (!audit) {
     return (
@@ -136,89 +143,63 @@ export default function LightingAuditDetail() {
   }
 
   const updateStatus = async (newStatus) => {
-    const { error } = await supabase
-      .from('lighting_audits')
-      .update({ status: newStatus })
-      .eq('id', id)
-
-    if (error) {
+    try {
+      await updateLightingAudit(id, { status: newStatus })
+    } catch (error) {
       alert('Error updating status: ' + error.message)
-    } else {
-      fetchLightingAudits()
     }
   }
 
   const handleCreateQuote = async () => {
     if (!audit) return
 
-    const { data: quote, error } = await supabase
-      .from('quotes')
-      .insert({
-        company_id: companyId,
-        lead_id: audit.lead_id || null,
-        audit_id: audit.id,
-        audit_type: 'lighting',
-        quote_amount: audit.est_project_cost || 0,
-        utility_incentive: audit.estimated_rebate || 0,
-        status: 'Draft'
-      })
-      .select()
-      .single()
-
-    if (error) {
-      alert('Error creating quote: ' + error.message)
-      return
+    const quoteData = {
+      company_id: companyId,
+      lead_id: audit.lead_id || null,
+      audit_id: audit.id,
+      audit_type: 'lighting',
+      quote_amount: audit.est_project_cost || 0,
+      utility_incentive: audit.estimated_rebate || 0,
+      status: 'Draft'
     }
+    const quoteTempId = await createQuote(quoteData)
 
-    // Copy audit areas to quote lines with product pricing
-    const { data: areaData } = await supabase
-      .from('audit_areas')
-      .select('*, led_product:products_services!led_replacement_id(id, name, price)')
-      .eq('audit_id', audit.id)
-
-    if (areaData?.length) {
-      const lines = areaData.map(area => {
+    // Use areas from store instead of fetching from supabase
+    if (areas.length > 0) {
+      for (const area of areas) {
         const qty = area.fixture_count || 1
         const unitPrice = area.led_product?.price || (((area.existing_wattage || 0) - (area.led_wattage || 0)) * 5)
-        return {
-          quote_id: quote.id,
+        await createQuoteLine({
+          quote_id: quoteTempId,
           item_name: `${area.area_name} - LED Retrofit`,
           item_id: area.led_replacement_id || null,
           quantity: qty,
           price: Math.round(unitPrice * 100) / 100,
           line_total: Math.round(qty * unitPrice * 100) / 100
-        }
-      })
-      await supabase.from('quote_lines').insert(lines)
+        })
+      }
     }
 
-    navigate(`/quotes/${quote.id}`)
+    navigate(`/quotes/${quoteTempId}`)
   }
 
   const recalculateAudit = async () => {
-    // Recalculate totals based on areas
     const total_fixtures = areas.reduce((sum, a) => sum + (a.fixture_count || 0), 0)
     const total_existing_watts = areas.reduce((sum, a) => sum + (a.total_existing_watts || 0), 0)
     const total_proposed_watts = areas.reduce((sum, a) => sum + (a.total_led_watts || 0), 0)
     const watts_reduced = total_existing_watts - total_proposed_watts
-
     const annual_hours = (audit.operating_hours || 10) * (audit.operating_days || 260)
     const annual_savings_kwh = (watts_reduced * annual_hours) / 1000
     const annual_savings_dollars = annual_savings_kwh * (audit.electric_rate || 0.12)
 
-    const { error } = await supabase
-      .from('lighting_audits')
-      .update({
-        total_fixtures: Math.round(total_fixtures) || 0,
-        total_existing_watts: Math.round(total_existing_watts) || 0,
-        total_proposed_watts: Math.round(total_proposed_watts) || 0,
-        watts_reduced: Math.round(watts_reduced) || 0,
-        annual_savings_kwh: Math.round(annual_savings_kwh) || 0,
-        annual_savings_dollars: Math.round(annual_savings_dollars * 100) / 100 || 0
-      })
-      .eq('id', id)
-
-    if (!error) fetchLightingAudits()
+    await updateLightingAudit(id, {
+      total_fixtures: Math.round(total_fixtures) || 0,
+      total_existing_watts: Math.round(total_existing_watts) || 0,
+      total_proposed_watts: Math.round(total_proposed_watts) || 0,
+      watts_reduced: Math.round(watts_reduced) || 0,
+      annual_savings_kwh: Math.round(annual_savings_kwh) || 0,
+      annual_savings_dollars: Math.round(annual_savings_dollars * 100) / 100 || 0
+    })
   }
 
   const openEditModal = () => {
@@ -226,43 +207,30 @@ export default function LightingAuditDetail() {
   }
 
   const handleSaveAudit = async (editData) => {
-    const { error } = await supabase
-      .from('lighting_audits')
-      .update({
-        customer_id: editData.customer_id ? parseInt(editData.customer_id) : null,
-        address: editData.address,
-        city: editData.city,
-        state: editData.state,
-        zip: editData.zip,
-        utility_provider_id: editData.utility_provider_id ? parseInt(editData.utility_provider_id) : null,
-        electric_rate: parseFloat(editData.electric_rate) || 0.12,
-        operating_hours: parseInt(editData.operating_hours) || 10,
-        operating_days: parseInt(editData.operating_days) || 260
-      })
-      .eq('id', id)
-
-    if (error) {
-      alert('Error saving: ' + error.message)
-    } else {
-      setShowEditModal(false)
-      await fetchLightingAudits()
-      recalculateAudit()
-    }
+    await updateLightingAudit(id, {
+      customer_id: editData.customer_id ? parseInt(editData.customer_id) : null,
+      address: editData.address,
+      city: editData.city,
+      state: editData.state,
+      zip: editData.zip,
+      utility_provider_id: editData.utility_provider_id ? parseInt(editData.utility_provider_id) : null,
+      electric_rate: parseFloat(editData.electric_rate) || 0.12,
+      operating_hours: parseInt(editData.operating_hours) || 10,
+      operating_days: parseInt(editData.operating_days) || 260
+    })
+    setShowEditModal(false)
+    recalculateAudit()
   }
 
   const handleDeleteAudit = async () => {
     if (!confirm('Delete this audit and all its areas? This cannot be undone.')) return
 
-    // Delete areas first (foreign key constraint)
-    await supabase.from('audit_areas').delete().eq('audit_id', parseInt(id))
-
-    const { error } = await supabase.from('lighting_audits').delete().eq('id', parseInt(id))
-    if (error) {
-      alert('Error deleting audit: ' + error.message)
-    } else {
-      await Promise.all([fetchLightingAudits(), fetchAuditAreas()])
-      navigate('/lighting-audits')
+    // Delete areas first
+    for (const area of areas) {
+      await deleteAuditArea(area.id)
     }
+    await deleteLightingAudit(id)
+    navigate('/lighting-audits')
   }
 
   const handleAddArea = async () => {
@@ -280,7 +248,7 @@ export default function LightingAuditDetail() {
 
     const areaData = {
       company_id: companyId,
-      audit_id: parseInt(id),
+      audit_id: String(id).startsWith('temp_') ? id : parseInt(id),
       area_name: areaForm.area_name,
       ceiling_height: areaForm.ceiling_height || null,
       fixture_category: areaForm.fixture_category,
@@ -298,16 +266,13 @@ export default function LightingAuditDetail() {
 
     let error
     if (editingArea) {
-      const result = await supabase
-        .from('audit_areas')
-        .update(areaData)
-        .eq('id', editingArea.id)
-      error = result.error
+      try {
+        await updateAuditArea(editingArea.id, areaData)
+      } catch (e) { error = e }
     } else {
-      const result = await supabase
-        .from('audit_areas')
-        .insert(areaData)
-      error = result.error
+      try {
+        await createAuditArea(areaData)
+      } catch (e) { error = e }
     }
 
     if (error) {
@@ -328,8 +293,8 @@ export default function LightingAuditDetail() {
         override_notes: ''
       })
       clearPhotoState()
-      fetchAuditAreas()
-      setTimeout(recalculateAudit, 500) // Recalculate after fetch
+      // No need to fetchAuditAreas() - optimistic updates handle it
+      setTimeout(recalculateAudit, 500)
     }
   }
 
@@ -352,18 +317,8 @@ export default function LightingAuditDetail() {
 
   const handleDeleteArea = async (areaId) => {
     if (!confirm('Delete this area?')) return
-
-    const { error } = await supabase
-      .from('audit_areas')
-      .delete()
-      .eq('id', areaId)
-
-    if (error) {
-      alert('Error deleting area: ' + error.message)
-    } else {
-      fetchAuditAreas()
-      setTimeout(recalculateAudit, 500)
-    }
+    await deleteAuditArea(areaId)
+    setTimeout(recalculateAudit, 500)
   }
 
   // Map AI category to our categories

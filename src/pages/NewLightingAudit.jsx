@@ -115,9 +115,9 @@ export default function NewLightingAudit() {
   const utilityPrograms = useStore((state) => state.utilityPrograms)
   const rebateRates = useStore((state) => state.rebateRates)
   const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
-  const fetchLightingAudits = useStore((state) => state.fetchLightingAudits)
-  const fetchAuditAreas = useStore((state) => state.fetchAuditAreas)
-  const fetchSalesPipeline = useStore((state) => state.fetchSalesPipeline)
+  const createLightingAudit = useStore((state) => state.createLightingAudit)
+  const createAuditArea = useStore((state) => state.createAuditArea)
+  const createSalesPipeline = useStore((state) => state.createSalesPipeline)
 
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
@@ -519,7 +519,6 @@ export default function NewLightingAudit() {
     setSaving(true)
 
     try {
-      // Create audit record
       const auditData = {
         company_id: companyId,
         audit_id: generateAuditId(),
@@ -547,68 +546,45 @@ export default function NewLightingAudit() {
         payback_months: Math.round(calculations.payback_months * 10) / 10 || 0
       }
 
-      const { data: audit, error: auditError } = await supabase
-        .from('lighting_audits')
-        .insert(auditData)
-        .select()
-        .single()
-
-      if (auditError) throw auditError
+      const tempId = await createLightingAudit(auditData)
 
       // Create area records
       if (areas.length > 0) {
-        const areaRecords = areas.map(area => ({
-          company_id: companyId,
-          audit_id: audit.id,
-          area_name: area.area_name,
-          ceiling_height: area.ceiling_height ? parseFloat(area.ceiling_height) : null,
-          fixture_category: area.fixture_category,
-          lighting_type: area.lighting_type || null,
-          fixture_count: parseInt(area.fixture_count) || 1,
-          existing_wattage: parseInt(area.existing_wattage) || 0,
-          led_replacement_id: area.led_replacement_id ? parseInt(area.led_replacement_id) : null,
-          led_wattage: parseInt(area.led_wattage) || 0,
-          total_existing_watts: parseInt(area.total_existing_watts) || 0,
-          total_led_watts: parseInt(area.total_led_watts) || 0,
-          area_watts_reduced: parseInt(area.area_watts_reduced) || 0,
-          confirmed: area.confirmed || false,
-          override_notes: area.override_notes || null
-        }))
-
-        console.log('Inserting area records:', JSON.stringify(areaRecords, null, 2))
-        const { error: areasError } = await supabase
-          .from('audit_areas')
-          .insert(areaRecords)
-
-        if (areasError) {
-          console.error('Area insert failed:', areasError)
-          throw areasError
+        for (const area of areas) {
+          await createAuditArea({
+            company_id: companyId,
+            audit_id: tempId,
+            area_name: area.area_name,
+            ceiling_height: area.ceiling_height ? parseFloat(area.ceiling_height) : null,
+            fixture_category: area.fixture_category,
+            lighting_type: area.lighting_type || null,
+            fixture_count: parseInt(area.fixture_count) || 1,
+            existing_wattage: parseInt(area.existing_wattage) || 0,
+            led_replacement_id: area.led_replacement_id ? parseInt(area.led_replacement_id) : null,
+            led_wattage: parseInt(area.led_wattage) || 0,
+            total_existing_watts: parseInt(area.total_existing_watts) || 0,
+            total_led_watts: parseInt(area.total_led_watts) || 0,
+            area_watts_reduced: parseInt(area.area_watts_reduced) || 0,
+            confirmed: area.confirmed || false,
+            override_notes: area.override_notes || null
+          })
         }
-      } else {
-        console.warn('No areas to save - areas array is empty')
       }
 
       // Create sales pipeline entry for tracking
       if (basicInfo.customer_id) {
         const customer = customers.find(c => c.id === parseInt(basicInfo.customer_id))
-        const pipelineData = {
+        await createSalesPipeline({
           company_id: companyId,
           customer_id: parseInt(basicInfo.customer_id),
           salesperson_id: basicInfo.salesperson_id || null,
           stage: 'Audit Created',
           quote_amount: calculations.est_project_cost,
-          notes: `Auto-created from lighting audit ${audit.audit_id}`
-        }
-
-        await supabase.from('sales_pipeline').insert(pipelineData)
-        fetchSalesPipeline?.()
+          notes: `Auto-created from lighting audit ${auditData.audit_id}`
+        })
       }
 
-      // Refresh data before navigating so detail page has areas
-      await Promise.all([fetchLightingAudits(), fetchAuditAreas()])
-
-      // Navigate to detail
-      navigate(`/lighting-audits/${audit.id}`)
+      navigate(`/lighting-audits/${tempId}`)
     } catch (error) {
       alert('Error saving audit: ' + error.message)
     } finally {

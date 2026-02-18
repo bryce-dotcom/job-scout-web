@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Pencil, Trash2, X, User, Phone, Mail, Building2, Search } from 'lucide-react'
@@ -30,6 +29,8 @@ export default function Customers() {
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
+  const createCustomer = useStore((state) => state.createCustomer)
+  const updateCustomer = useStore((state) => state.updateCustomer)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -130,25 +131,18 @@ export default function Customers() {
       updated_at: new Date().toISOString()
     }
 
-    let result
-    if (editingCustomer) {
-      result = await supabase
-        .from('customers')
-        .update(payload)
-        .eq('id', editingCustomer.id)
-    } else {
-      result = await supabase
-        .from('customers')
-        .insert([payload])
-    }
-
-    if (result.error) {
-      setError(result.error.message)
+    try {
+      if (editingCustomer) {
+        await updateCustomer(editingCustomer.id, payload)
+      } else {
+        await createCustomer(payload)
+      }
+    } catch (e) {
+      setError(e.message)
       setLoading(false)
       return
     }
 
-    await fetchCustomers()
     closeModal()
     setLoading(false)
   }
@@ -157,14 +151,7 @@ export default function Customers() {
   const handleDelete = async (customer) => {
     if (!confirm(`Are you sure you want to deactivate ${customer.name}?`)) return
 
-    const { error } = await supabase
-      .from('customers')
-      .update({ status: 'Inactive', updated_at: new Date().toISOString() })
-      .eq('id', customer.id)
-
-    if (!error) {
-      await fetchCustomers()
-    }
+    await updateCustomer(customer.id, { status: 'Inactive', updated_at: new Date().toISOString() })
   }
 
   const getStatusStyle = (status) => {

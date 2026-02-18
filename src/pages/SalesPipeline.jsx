@@ -51,6 +51,7 @@ export default function SalesPipeline() {
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
+  const updateLead = useStore((state) => state.updateLead)
 
   // Pipeline state
   const [pipelineLeads, setPipelineLeads] = useState([])
@@ -233,13 +234,10 @@ export default function SalesPipeline() {
     }
 
     // Update lead status
-    await supabase
-      .from('leads')
-      .update({
-        status: targetStageId,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', draggedLead.id)
+    await updateLead(draggedLead.id, {
+      status: targetStageId,
+      updated_at: new Date().toISOString()
+    })
 
     setDraggedLead(null)
     await fetchPipelineLeads()
@@ -261,16 +259,13 @@ export default function SalesPipeline() {
   const handleMarkAsWon = async () => {
     if (!selectedLead) return
 
-    await supabase
-      .from('leads')
-      .update({
-        status: 'Won',
-        converted_at: new Date().toISOString(),
-        notes: selectedLead.notes
-          ? `${selectedLead.notes}\n\nWON: ${wonNotes}`
-          : `WON: ${wonNotes}`
-      })
-      .eq('id', selectedLead.id)
+    await updateLead(selectedLead.id, {
+      status: 'Won',
+      converted_at: new Date().toISOString(),
+      notes: selectedLead.notes
+        ? `${selectedLead.notes}\n\nWON: ${wonNotes}`
+        : `WON: ${wonNotes}`
+    })
 
     setShowWonModal(false)
     setWonNotes('')
@@ -283,15 +278,12 @@ export default function SalesPipeline() {
   const handleMarkAsLost = async () => {
     if (!selectedLead || !lostReason) return
 
-    await supabase
-      .from('leads')
-      .update({
-        status: 'Lost',
-        notes: selectedLead.notes
-          ? `${selectedLead.notes}\n\nLOST: ${lostReason}`
-          : `LOST: ${lostReason}`
-      })
-      .eq('id', selectedLead.id)
+    await updateLead(selectedLead.id, {
+      status: 'Lost',
+      notes: selectedLead.notes
+        ? `${selectedLead.notes}\n\nLOST: ${lostReason}`
+        : `LOST: ${lostReason}`
+    })
 
     setShowLostModal(false)
     setLostReason('')
@@ -782,10 +774,7 @@ export default function SalesPipeline() {
                             setSelectedLead(lead)
                             setShowLostModal(true)
                           } else {
-                            await supabase
-                              .from('leads')
-                              .update({ status: newStatus, updated_at: new Date().toISOString() })
-                              .eq('id', lead.id)
+                            await updateLead(lead.id, { status: newStatus, updated_at: new Date().toISOString() })
                             await fetchPipelineLeads()
                           }
                         }}

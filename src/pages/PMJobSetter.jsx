@@ -62,6 +62,8 @@ export default function PMJobSetter() {
   const employees = useStore((state) => state.employees)
   const businessUnits = useStore((state) => state.businessUnits)
   const fetchSettings = useStore((state) => state.fetchSettings)
+  const createJobSection = useStore((state) => state.createJobSection)
+  const updateJobSection = useStore((state) => state.updateJobSection)
 
   // Data-driven statuses from store
   const storeJobStatuses = useStore((state) => state.jobStatuses)
@@ -543,13 +545,10 @@ export default function PMJobSetter() {
 
     if (!draggedSection) return
 
-    await supabase
-      .from('job_sections')
-      .update({
-        status: statusId,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', draggedSection.id)
+    await updateJobSection(draggedSection.id, {
+      status: statusId,
+      updated_at: new Date().toISOString()
+    })
 
     setDraggedSection(null)
     await fetchData()
@@ -560,7 +559,7 @@ export default function PMJobSetter() {
     e.preventDefault()
     if (!selectedJob || !sectionForm.name) return
 
-    await supabase.from('job_sections').insert({
+    await createJobSection({
       company_id: companyId,
       job_id: selectedJob.id,
       name: sectionForm.name,
@@ -581,10 +580,7 @@ export default function PMJobSetter() {
 
   // Update section status
   const updateSectionStatus = async (sectionId, newStatus) => {
-    await supabase
-      .from('job_sections')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', sectionId)
+    await updateJobSection(sectionId, { status: newStatus, updated_at: new Date().toISOString() })
     await fetchData()
   }
 
