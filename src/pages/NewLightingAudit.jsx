@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, AI_CATEGORY_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
+import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
 import { ArrowLeft, ArrowRight, Check, Plus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse, Sparkles, Search, UserPlus, X } from 'lucide-react'
 
 const buildingSizes = [
@@ -685,7 +685,7 @@ export default function NewLightingAudit() {
             ...prev,
             area_name: a.area_name || prev.area_name || a.fixture_type || '',
             fixture_category: mapCategory(a.fixture_category),
-            lighting_type: a.lamp_type || prev.lighting_type,
+            lighting_type: AI_LAMP_TYPE_MAP[a.lamp_type] || a.lamp_type || prev.lighting_type,
             fixture_count: a.fixture_count || prev.fixture_count,
             existing_wattage: a.existing_wattage_per_fixture || prev.existing_wattage,
             ceiling_height: a.ceiling_height_estimate || prev.ceiling_height,
