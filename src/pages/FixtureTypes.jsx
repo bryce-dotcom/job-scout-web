@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
+import { FIXTURE_CATEGORIES, LAMP_TYPES } from '../lib/lightingConstants'
 import { Lightbulb, Plus, Edit, Search } from 'lucide-react'
 
 const defaultTheme = {
@@ -17,8 +18,8 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-const categories = ['Linear', 'High Bay', 'Low Bay', 'Outdoor', 'Recessed', 'Track', 'Wall Pack', 'Flood', 'Area Light', 'Canopy', 'Other']
-const lampTypes = ['T12', 'T8', 'T5', 'HID', 'Metal Halide', 'HPS', 'Incandescent', 'CFL', 'LED', 'Other']
+const categories = FIXTURE_CATEGORIES
+const lampTypes = LAMP_TYPES
 
 export default function FixtureTypes() {
   const navigate = useNavigate()

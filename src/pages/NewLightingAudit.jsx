@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
+import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, AI_CATEGORY_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
 import { ArrowLeft, ArrowRight, Check, Plus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse, Sparkles } from 'lucide-react'
 
 const buildingSizes = [
@@ -99,19 +100,7 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-const fixtureCategories = [
-  'Linear',
-  'High Bay',
-  'Low Bay',
-  'Outdoor',
-  'Recessed',
-  'Track',
-  'Wall Pack',
-  'Flood',
-  'Area Light',
-  'Canopy',
-  'Other'
-]
+// fixtureCategories and lampTypes now imported from lightingConstants.js
 
 export default function NewLightingAudit() {
   const navigate = useNavigate()
@@ -120,6 +109,8 @@ export default function NewLightingAudit() {
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
   const products = useStore((state) => state.products)
+  const fixtureTypes = useStore((state) => state.fixtureTypes)
+  const fetchFixtureTypes = useStore((state) => state.fetchFixtureTypes)
   const utilityProviders = useStore((state) => state.utilityProviders)
   const utilityPrograms = useStore((state) => state.utilityPrograms)
   const rebateRates = useStore((state) => state.rebateRates)
@@ -165,10 +156,11 @@ export default function NewLightingAudit() {
     area_name: '',
     ceiling_height: '',
     fixture_category: 'Linear',
+    lighting_type: '',
     fixture_count: 1,
-    existing_wattage: 0,
+    existing_wattage: '',
     led_replacement_id: '',
-    led_wattage: 0,
+    led_wattage: '',
     confirmed: false,
     override_notes: ''
   })
@@ -182,7 +174,8 @@ export default function NewLightingAudit() {
       navigate('/')
       return
     }
-  }, [companyId, navigate])
+    fetchFixtureTypes()
+  }, [companyId, navigate, fetchFixtureTypes])
 
   // Set default salesperson to current user's employee record
   useEffect(() => {
@@ -266,6 +259,26 @@ export default function NewLightingAudit() {
     }
     fetchSchedules()
   }, [basicInfo.utility_provider_id])
+
+  // Auto-suggest wattage from fixture_types when lighting_type + category match
+  useEffect(() => {
+    if (!areaForm.lighting_type || !areaForm.fixture_category) return
+    // Don't override if user already has a value
+    if (areaForm.existing_wattage && parseInt(areaForm.existing_wattage) > 0) return
+
+    const match = (fixtureTypes || []).find(ft =>
+      ft.lamp_type === areaForm.lighting_type &&
+      ft.category === areaForm.fixture_category
+    )
+
+    if (match?.system_wattage) {
+      setAreaForm(prev => ({
+        ...prev,
+        existing_wattage: match.system_wattage,
+        led_wattage: match.led_replacement_watts || prev.led_wattage
+      }))
+    }
+  }, [areaForm.lighting_type, areaForm.fixture_category])
 
   // Calculate totals
   const calculations = (() => {
@@ -369,11 +382,17 @@ export default function NewLightingAudit() {
       return
     }
 
+    const qty = parseInt(areaForm.fixture_count) || 1
+    const existW = parseInt(areaForm.existing_wattage) || 0
+    const newW = parseInt(areaForm.led_wattage) || 0
     const newArea = {
       ...areaForm,
-      total_existing_watts: areaForm.fixture_count * areaForm.existing_wattage,
-      total_led_watts: areaForm.fixture_count * areaForm.led_wattage,
-      area_watts_reduced: areaForm.fixture_count * (areaForm.existing_wattage - areaForm.led_wattage)
+      fixture_count: qty,
+      existing_wattage: existW,
+      led_wattage: newW,
+      total_existing_watts: qty * existW,
+      total_led_watts: qty * newW,
+      area_watts_reduced: qty * (existW - newW)
     }
 
     if (editingAreaIndex !== null) {
@@ -390,10 +409,11 @@ export default function NewLightingAudit() {
       area_name: '',
       ceiling_height: '',
       fixture_category: 'Linear',
+      lighting_type: '',
       fixture_count: 1,
-      existing_wattage: 0,
+      existing_wattage: '',
       led_replacement_id: '',
-      led_wattage: 0,
+      led_wattage: '',
       confirmed: false,
       override_notes: ''
     })
@@ -457,6 +477,7 @@ export default function NewLightingAudit() {
           area_name: area.area_name,
           ceiling_height: area.ceiling_height || null,
           fixture_category: area.fixture_category,
+          lighting_type: area.lighting_type || null,
           fixture_count: area.fixture_count,
           existing_wattage: area.existing_wattage,
           led_replacement_id: area.led_replacement_id || null,
@@ -508,17 +529,8 @@ export default function NewLightingAudit() {
     return '$' + parseFloat(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })
   }
 
-  // Map AI category to our categories
-  const mapCategory = (aiCategory) => {
-    const mapping = {
-      'Indoor Linear': 'Linear',
-      'Indoor High Bay': 'High Bay',
-      'Outdoor': 'Outdoor',
-      'Decorative': 'Other',
-      'Other': 'Other'
-    }
-    return mapping[aiCategory] || 'Linear'
-  }
+  // Map AI category to our categories (now uses shared AI_CATEGORY_MAP)
+  const mapCategory = (aiCategory) => AI_CATEGORY_MAP[aiCategory] || 'Linear'
 
   // Handle photo capture for Lenard AI analysis
   const handlePhotoCapture = async (e) => {
@@ -561,7 +573,14 @@ export default function NewLightingAudit() {
                 areaName: areaForm.area_name || 'Unknown Area',
                 buildingType: 'Commercial'
               },
-              availableProducts: productList
+              availableProducts: productList,
+              fixtureTypes: (fixtureTypes || []).map(ft => ({
+                fixture_name: ft.fixture_name,
+                category: ft.category,
+                lamp_type: ft.lamp_type,
+                system_wattage: ft.system_wattage,
+                led_replacement_watts: ft.led_replacement_watts
+              }))
             })
           }
         )
@@ -577,6 +596,7 @@ export default function NewLightingAudit() {
             ...prev,
             area_name: a.area_name || prev.area_name || a.fixture_type || '',
             fixture_category: mapCategory(a.fixture_category),
+            lighting_type: a.lamp_type || prev.lighting_type,
             fixture_count: a.fixture_count || prev.fixture_count,
             existing_wattage: a.existing_wattage_per_fixture || prev.existing_wattage,
             ceiling_height: a.ceiling_height_estimate || prev.ceiling_height,
@@ -604,7 +624,18 @@ export default function NewLightingAudit() {
     setAnalyzing(false)
   }
 
-  const ledProducts = products.filter(p => p.type === 'Product')
+  // Filter products by fixture category keywords when possible, fall back to all products
+  const ledProducts = useMemo(() => {
+    const allProducts = products.filter(p => p.type === 'Product')
+    if (!areaForm.fixture_category || areaForm.fixture_category === 'Other') return allProducts
+    const keywords = PRODUCT_CATEGORY_KEYWORDS[areaForm.fixture_category] || []
+    if (keywords.length === 0) return allProducts
+    const filtered = allProducts.filter(p => {
+      const searchText = `${p.name} ${p.description || ''}`.toLowerCase()
+      return keywords.some(kw => searchText.includes(kw))
+    })
+    return filtered.length > 0 ? filtered : allProducts
+  }, [products, areaForm.fixture_category])
 
   return (
     <div className="audit-root page-padding" style={{ padding: '24px' }}>
@@ -1315,7 +1346,7 @@ export default function NewLightingAudit() {
                         {area.area_name}
                       </div>
                       <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                        {area.fixture_category} · {area.fixture_count} fixtures
+                        {area.fixture_category}{area.lighting_type ? ` (${area.lighting_type})` : ''} · {area.fixture_count} fixtures
                       </div>
                     </div>
                     <div className="audit-area-actions" style={{ display: 'flex', gap: '8px' }}>
@@ -1361,7 +1392,7 @@ export default function NewLightingAudit() {
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '11px', color: theme.textMuted }}>LED Watts</div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted }}>New Watts</div>
                       <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
                         {area.led_wattage}W × {area.fixture_count}
                       </div>
@@ -1592,7 +1623,7 @@ export default function NewLightingAudit() {
                 borderBottom: i < areas.length - 1 ? `1px solid ${theme.border}` : 'none',
                 fontSize: '13px'
               }}>
-                <span>{area.area_name} ({area.fixture_count} {area.fixture_category})</span>
+                <span>{area.area_name} ({area.fixture_count} {area.fixture_category}{area.lighting_type ? ` - ${area.lighting_type}` : ''})</span>
                 <span style={{ color: '#4a7c59', fontWeight: '500' }}>
                   -{(area.fixture_count * (area.existing_wattage - area.led_wattage)).toLocaleString()}W
                 </span>
@@ -1821,7 +1852,7 @@ export default function NewLightingAudit() {
                 />
               </div>
 
-              <div className="audit-modal-grid-2 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1848,8 +1879,41 @@ export default function NewLightingAudit() {
                       fontSize: '14px'
                     }}
                   >
-                    {fixtureCategories.map(cat => (
+                    {FIXTURE_CATEGORIES.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: theme.textSecondary,
+                    marginBottom: '6px'
+                  }}>
+                    Lighting Type
+                    {aiResult?.lamp_type && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
+                  </label>
+                  <select
+                    value={areaForm.lighting_type}
+                    onChange={(e) => setAreaForm({ ...areaForm, lighting_type: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${theme.border}`,
+                      backgroundColor: theme.bg,
+                      color: theme.text,
+                      fontSize: '14px'
+                    }}
+                  >
+                    <option value="">Select Type</option>
+                    {LAMP_TYPES.map(lt => (
+                      <option key={lt} value={lt}>{lt}</option>
                     ))}
                   </select>
                 </div>
@@ -1902,8 +1966,8 @@ export default function NewLightingAudit() {
                   <input
                     type="number"
                     min="1"
-                    value={areaForm.fixture_count}
-                    onChange={(e) => setAreaForm({ ...areaForm, fixture_count: parseInt(e.target.value) || 1 })}
+                    value={areaForm.fixture_count || ''}
+                    onChange={(e) => setAreaForm({ ...areaForm, fixture_count: e.target.value === '' ? '' : (parseInt(e.target.value) || 1) })}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -1932,8 +1996,8 @@ export default function NewLightingAudit() {
                   <input
                     type="number"
                     min="0"
-                    value={areaForm.existing_wattage}
-                    onChange={(e) => setAreaForm({ ...areaForm, existing_wattage: parseInt(e.target.value) || 0 })}
+                    value={areaForm.existing_wattage || ''}
+                    onChange={(e) => setAreaForm({ ...areaForm, existing_wattage: e.target.value === '' ? '' : (parseInt(e.target.value) || 0) })}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -1956,14 +2020,14 @@ export default function NewLightingAudit() {
                     color: theme.textSecondary,
                     marginBottom: '6px'
                   }}>
-                    LED Watts
+                    New Watts
                     {aiResult?.led_replacement_wattage && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
                   </label>
                   <input
                     type="number"
                     min="0"
-                    value={areaForm.led_wattage}
-                    onChange={(e) => setAreaForm({ ...areaForm, led_wattage: parseInt(e.target.value) || 0 })}
+                    value={areaForm.led_wattage || ''}
+                    onChange={(e) => setAreaForm({ ...areaForm, led_wattage: e.target.value === '' ? '' : (parseInt(e.target.value) || 0) })}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -1977,6 +2041,36 @@ export default function NewLightingAudit() {
                 </div>
               </div>
 
+              {/* Quick-select wattage buttons */}
+              {areaForm.lighting_type && COMMON_WATTAGES[areaForm.lighting_type]?.length > 0 && (
+                <div>
+                  <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '6px', display: 'block' }}>
+                    Common {areaForm.lighting_type} wattages:
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {COMMON_WATTAGES[areaForm.lighting_type].map(w => (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setAreaForm(prev => ({ ...prev, existing_wattage: w }))}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          border: `1px solid ${parseInt(areaForm.existing_wattage) === w ? theme.accent : theme.border}`,
+                          backgroundColor: parseInt(areaForm.existing_wattage) === w ? theme.accentBg : theme.bg,
+                          color: parseInt(areaForm.existing_wattage) === w ? theme.accent : theme.textSecondary,
+                          fontSize: '13px',
+                          fontWeight: parseInt(areaForm.existing_wattage) === w ? '600' : '400',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {w}W
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label style={{
                   display: 'flex',
@@ -1987,7 +2081,7 @@ export default function NewLightingAudit() {
                   color: theme.textSecondary,
                   marginBottom: '6px'
                 }}>
-                  LED Replacement Product
+                  Replacement Product
                   {aiResult?.recommended_product_id && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
                 </label>
                 <select
@@ -2070,10 +2164,11 @@ export default function NewLightingAudit() {
                     area_name: '',
                     ceiling_height: '',
                     fixture_category: 'Linear',
+                    lighting_type: '',
                     fixture_count: 1,
-                    existing_wattage: 0,
+                    existing_wattage: '',
                     led_replacement_id: '',
-                    led_wattage: 0,
+                    led_wattage: '',
                     confirmed: false,
                     override_notes: ''
                   })

@@ -152,6 +152,7 @@
 | ai_analysis_json | text | |
 | fixture_type_detected | text | |
 | fixture_category | text | |
+| lighting_type | text | |
 | fixture_count | integer | |
 | existing_wattage | integer | |
 | total_existing_watts | integer | |

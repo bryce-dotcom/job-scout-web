@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { imageBase64, auditContext, availableProducts } = await req.json();
+    const { imageBase64, auditContext, availableProducts, fixtureTypes } = await req.json();
 
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 
@@ -31,6 +31,17 @@ ${availableProducts.map((p: { id: string; name: string; description?: string; wa
 ).join('\n')}
 
 Choose the most appropriate product based on the fixture type, category, and wattage range. Set recommended_product_id to the product's ID string, or "" if no good match.`;
+    }
+
+    // Build fixture types reference for better wattage accuracy
+    let fixtureTypeContext = '';
+    if (fixtureTypes && fixtureTypes.length > 0) {
+      fixtureTypeContext = `\n\nCOMPANY FIXTURE TYPE REFERENCE (use these for accurate wattage matching when the fixture matches):
+${fixtureTypes.map((ft: { fixture_name: string; category: string; lamp_type: string; system_wattage: number; led_replacement_watts: number }) =>
+  `- ${ft.fixture_name}: ${ft.category} / ${ft.lamp_type} / ${ft.system_wattage}W existing → ${ft.led_replacement_watts}W LED`
+).join('\n')}
+
+When the fixture in the photo matches one of these types, use the system_wattage for existing_wattage_per_fixture and led_replacement_watts for led_replacement_wattage.`;
     }
 
     // Call Claude Vision API
@@ -64,7 +75,7 @@ Identify and return JSON with ALL of these fields:
   "area_name": "descriptive name for this area/fixture group (e.g., 'Main Office 4ft Troffers', 'Warehouse High Bays')",
   "fixture_type": "specific type (e.g., 4ft T8 Troffer, High Bay, Wall Pack, etc.)",
   "fixture_category": "Indoor Linear | Indoor High Bay | Outdoor | Decorative | Other",
-  "lamp_type": "T8 | T12 | T5 | Metal Halide | HPS | Incandescent | LED | CFL | Other",
+  "lamp_type": "T12 | T8 | T5 | HID | Metal Halide | HPS | Incandescent | CFL | LED | Other",
   "lamp_count": number of lamps/bulbs per fixture,
   "fixture_count": estimated number of this fixture type visible,
   "existing_wattage_per_fixture": estimated total watts per fixture,
@@ -91,7 +102,7 @@ LED REPLACEMENT WATTAGE GUIDELINES:
 - HPS 400W: Replace with 150-180W LED
 - Wall Pack 150W HPS: Replace with 40-60W LED wall pack
 - 100W Incandescent: Replace with 12-15W LED
-${productContext}
+${productContext}${fixtureTypeContext}
 
 Context about this audit:
 - Area name: ${auditContext?.areaName || 'Unknown'}
