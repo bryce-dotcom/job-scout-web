@@ -512,9 +512,8 @@ export default function NewLightingAudit() {
         fetchSalesPipeline?.()
       }
 
-      // Refresh data
-      fetchLightingAudits()
-      fetchAuditAreas()
+      // Refresh data before navigating so detail page has areas
+      await Promise.all([fetchLightingAudits(), fetchAuditAreas()])
 
       // Navigate to detail
       navigate(`/lighting-audits/${audit.id}`)

@@ -38,10 +38,13 @@ export default function LightingAuditDetail() {
   const auditAreas = useStore((state) => state.auditAreas)
   const products = useStore((state) => state.products)
   const fixtureTypes = useStore((state) => state.fixtureTypes)
+  const customers = useStore((state) => state.customers)
+  const utilityProviders = useStore((state) => state.utilityProviders)
   const fetchLightingAudits = useStore((state) => state.fetchLightingAudits)
   const fetchAuditAreas = useStore((state) => state.fetchAuditAreas)
 
   const [showAreaModal, setShowAreaModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [editingArea, setEditingArea] = useState(null)
 
   // Lenard AI Photo Analysis state
@@ -198,6 +201,35 @@ export default function LightingAuditDetail() {
       .eq('id', id)
 
     if (!error) fetchLightingAudits()
+  }
+
+  const openEditModal = () => {
+    setShowEditModal(true)
+  }
+
+  const handleSaveAudit = async (editData) => {
+    const { error } = await supabase
+      .from('lighting_audits')
+      .update({
+        customer_id: editData.customer_id || null,
+        address: editData.address,
+        city: editData.city,
+        state: editData.state,
+        zip: editData.zip,
+        utility_provider_id: editData.utility_provider_id || null,
+        electric_rate: parseFloat(editData.electric_rate) || 0.12,
+        operating_hours: parseInt(editData.operating_hours) || 10,
+        operating_days: parseInt(editData.operating_days) || 260
+      })
+      .eq('id', id)
+
+    if (error) {
+      alert('Error saving: ' + error.message)
+    } else {
+      setShowEditModal(false)
+      await fetchLightingAudits()
+      recalculateAudit()
+    }
   }
 
   const handleAddArea = async () => {
@@ -475,6 +507,25 @@ export default function LightingAuditDetail() {
         </div>
 
         <div className="audit-detail-actions button-group" style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={openEditModal}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '10px 16px',
+              backgroundColor: theme.bgCard,
+              color: theme.textSecondary,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Edit size={16} />
+            Edit
+          </button>
           {audit.status === 'Draft' && (
             <button
               onClick={() => updateStatus('In Progress')}
@@ -1412,6 +1463,173 @@ export default function LightingAuditDetail() {
           </div>
         </div>
       )}
+
+      {/* Edit Audit Modal */}
+      {showEditModal && (
+        <EditAuditModal
+          audit={audit}
+          customers={customers}
+          utilityProviders={utilityProviders}
+          theme={theme}
+          onSave={handleSaveAudit}
+          onClose={() => setShowEditModal(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onClose }) {
+  const [form, setForm] = useState({
+    customer_id: audit.customer_id || '',
+    address: audit.address || '',
+    city: audit.city || '',
+    state: audit.state || '',
+    zip: audit.zip || '',
+    utility_provider_id: audit.utility_provider_id || '',
+    electric_rate: audit.electric_rate || 0.12,
+    operating_hours: audit.operating_hours || 10,
+    operating_days: audit.operating_days || 260
+  })
+  const [saving, setSaving] = useState(false)
+
+  const filteredProviders = form.state
+    ? utilityProviders.filter(p => p.state === form.state)
+    : utilityProviders
+
+  const handleSubmit = async () => {
+    setSaving(true)
+    await onSave(form)
+    setSaving(false)
+  }
+
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '8px',
+    border: `1px solid ${theme.border}`,
+    backgroundColor: theme.bg,
+    color: theme.text,
+    fontSize: '14px'
+  }
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: '500',
+    color: theme.textSecondary,
+    marginBottom: '6px'
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 1000
+    }}>
+      <div className="audit-area-modal modal-content" style={{
+        backgroundColor: theme.bgCard,
+        borderRadius: '16px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '560px',
+        maxHeight: '90vh',
+        overflow: 'auto'
+      }}>
+        <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '20px' }}>
+          Edit Audit
+        </h2>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label style={labelStyle}>Customer</label>
+            <select value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value })} style={inputStyle}>
+              <option value="">Select Customer</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Address</label>
+            <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} style={inputStyle} />
+          </div>
+
+          <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={labelStyle}>City</label>
+              <input type="text" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>State</label>
+              <input type="text" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>ZIP</label>
+              <input type="text" value={form.zip} onChange={(e) => setForm({ ...form, zip: e.target.value })} style={inputStyle} />
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>
+              Utility Provider {form.state && <span style={{ color: theme.textMuted, fontWeight: '400' }}>({form.state})</span>}
+            </label>
+            <select value={form.utility_provider_id} onChange={(e) => setForm({ ...form, utility_provider_id: e.target.value })} style={inputStyle}>
+              <option value="">{form.state ? `Select Provider in ${form.state}` : 'Select Utility Provider'}</option>
+              {filteredProviders.map(p => <option key={p.id} value={p.id}>{p.provider_name}</option>)}
+            </select>
+          </div>
+
+          <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={labelStyle}>Electric Rate ($/kWh)</label>
+              <input type="number" step="0.01" min="0" value={form.electric_rate} onChange={(e) => setForm({ ...form, electric_rate: e.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Hours/Day</label>
+              <input type="number" min="1" max="24" value={form.operating_hours} onChange={(e) => setForm({ ...form, operating_hours: e.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Days/Year</label>
+              <input type="number" min="1" max="365" value={form.operating_days} onChange={(e) => setForm({ ...form, operating_days: e.target.value })} style={inputStyle} />
+            </div>
+          </div>
+        </div>
+
+        <div className="audit-modal-footer button-group" style={{ display: 'flex', gap: '12px', marginTop: '24px', justifyContent: 'flex-end' }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: theme.bg,
+              color: theme.text,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              fontSize: '14px',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: theme.accent,
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              opacity: saving ? 0.7 : 1
+            }}
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
