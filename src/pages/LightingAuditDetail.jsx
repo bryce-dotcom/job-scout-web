@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
-import { ArrowLeft, Plus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText } from 'lucide-react'
+import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
+import { ArrowLeft, Plus, Minus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText } from 'lucide-react'
 
 // Light theme fallback
 const defaultTheme = {
@@ -69,6 +69,21 @@ export default function LightingAuditDetail() {
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+
+  // Audible click for counter buttons (Web Audio API)
+  const playClick = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = 1200
+      gain.gain.value = 0.08
+      osc.start()
+      osc.stop(ctx.currentTime + 0.04)
+    } catch (e) { /* silent fallback */ }
+  }
 
   useEffect(() => {
     if (!companyId) {
@@ -1261,37 +1276,78 @@ export default function LightingAuditDetail() {
                 </div>
               </div>
 
-              <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: theme.textSecondary,
-                    marginBottom: '6px'
-                  }}>
-                    Fixture Count
-                    {aiResult?.fixture_count && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
-                  </label>
+              {/* Fixture counter — full width with big +/- buttons */}
+              <div>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: theme.textSecondary,
+                  marginBottom: '6px'
+                }}>
+                  Fixture Count
+                  {aiResult?.fixture_count && <Sparkles size={12} style={{ color: '#d4a843' }} title="AI suggested" />}
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0', maxWidth: '280px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { playClick(); setAreaForm(prev => ({ ...prev, fixture_count: Math.max(1, (parseInt(prev.fixture_count) || 1) - 1) })) }}
+                    style={{
+                      width: '64px', height: '56px',
+                      borderRadius: '12px 0 0 12px',
+                      border: `2px solid ${theme.accent}`,
+                      borderRight: 'none',
+                      backgroundColor: theme.accentBg,
+                      color: theme.accent,
+                      fontSize: '28px', fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      WebkitTapHighlightColor: 'transparent',
+                      userSelect: 'none'
+                    }}
+                  ><Minus size={26} /></button>
                   <input
                     type="number"
                     min="1"
                     value={areaForm.fixture_count || ''}
                     onChange={(e) => setAreaForm({ ...areaForm, fixture_count: e.target.value === '' ? '' : (parseInt(e.target.value) || 1) })}
                     style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: `1px solid ${theme.border}`,
+                      flex: 1, minWidth: 0,
+                      height: '56px',
+                      border: `2px solid ${theme.border}`,
+                      borderLeft: 'none', borderRight: 'none',
                       backgroundColor: theme.bg,
                       color: theme.text,
-                      fontSize: '14px'
+                      fontSize: '24px', fontWeight: '700',
+                      textAlign: 'center',
+                      MozAppearance: 'textfield',
+                      WebkitAppearance: 'none'
                     }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => { playClick(); setAreaForm(prev => ({ ...prev, fixture_count: (parseInt(prev.fixture_count) || 0) + 1 })) }}
+                    style={{
+                      width: '64px', height: '56px',
+                      borderRadius: '0 12px 12px 0',
+                      border: `2px solid ${theme.accent}`,
+                      borderLeft: 'none',
+                      backgroundColor: theme.accent,
+                      color: '#fff',
+                      fontSize: '28px', fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      WebkitTapHighlightColor: 'transparent',
+                      userSelect: 'none'
+                    }}
+                  ><Plus size={26} /></button>
                 </div>
+              </div>
 
+              {/* Existing Watts / New Watts — side by side */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1357,28 +1413,36 @@ export default function LightingAuditDetail() {
               {areaForm.lighting_type && COMMON_WATTAGES[areaForm.lighting_type]?.length > 0 && (
                 <div>
                   <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '6px', display: 'block' }}>
-                    Common {areaForm.lighting_type} wattages:
+                    Common {areaForm.lighting_type} system wattages (tap to fill existing + LED):
                   </label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {COMMON_WATTAGES[areaForm.lighting_type].map(w => (
-                      <button
-                        key={w}
-                        type="button"
-                        onClick={() => setAreaForm(prev => ({ ...prev, existing_wattage: w }))}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '6px',
-                          border: `1px solid ${parseInt(areaForm.existing_wattage) === w ? theme.accent : theme.border}`,
-                          backgroundColor: parseInt(areaForm.existing_wattage) === w ? theme.accentBg : theme.bg,
-                          color: parseInt(areaForm.existing_wattage) === w ? theme.accent : theme.textSecondary,
-                          fontSize: '13px',
-                          fontWeight: parseInt(areaForm.existing_wattage) === w ? '600' : '400',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {w}W
-                      </button>
-                    ))}
+                    {COMMON_WATTAGES[areaForm.lighting_type].map(w => {
+                      const ledW = LED_REPLACEMENT_MAP[areaForm.lighting_type]?.[w]
+                      const isSelected = parseInt(areaForm.existing_wattage) === w
+                      return (
+                        <button
+                          key={w}
+                          type="button"
+                          onClick={() => setAreaForm(prev => ({
+                            ...prev,
+                            existing_wattage: w,
+                            ...(ledW ? { led_wattage: ledW } : {})
+                          }))}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            border: `1px solid ${isSelected ? theme.accent : theme.border}`,
+                            backgroundColor: isSelected ? theme.accentBg : theme.bg,
+                            color: isSelected ? theme.accent : theme.textSecondary,
+                            fontSize: '13px',
+                            fontWeight: isSelected ? '600' : '400',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {w}W{ledW ? ` → ${ledW}W` : ''}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}

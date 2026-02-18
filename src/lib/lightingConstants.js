@@ -56,6 +56,23 @@ export const AI_LAMP_TYPE_MAP = {
   'Other': 'Other'
 }
 
+// LED replacement wattages keyed by lamp type → existing system wattage
+// Used to auto-fill "New Watts" when a common wattage button is clicked
+export const LED_REPLACEMENT_MAP = {
+  'T12':            { 46: 15, 72: 25, 86: 30, 128: 40, 158: 50, 172: 55 },
+  'T8':             { 32: 12, 59: 25, 85: 35, 112: 45, 118: 48 },
+  'T5':             { 28: 12, 58: 25, 84: 35 },
+  'T5HO':           { 118: 50, 234: 95, 348: 140, 464: 180 },
+  'Metal Halide':   { 85: 30, 120: 45, 185: 70, 210: 80, 290: 100, 455: 150, 1080: 400 },
+  'HPS':            { 85: 30, 120: 45, 185: 70, 240: 90, 295: 100, 465: 150, 1100: 400 },
+  'Mercury Vapor':  { 200: 70, 290: 100, 455: 150, 1075: 400 },
+  'Halogen':        { 50: 7, 75: 10, 90: 12, 150: 18, 300: 36, 500: 60 },
+  'Incandescent':   { 40: 6, 60: 9, 75: 11, 100: 15, 150: 20 },
+  'CFL':            { 13: 9, 18: 12, 26: 15, 32: 18, 42: 24 },
+  'LED':            {},
+  'Other':          {}
+}
+
 // Product filtering keywords by fixture category
 export const PRODUCT_CATEGORY_KEYWORDS = {
   'Linear':        ['linear', 'troffer', 'strip', 'tube', 't8', 't5', 't12', 'wrap'],
