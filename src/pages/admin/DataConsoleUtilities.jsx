@@ -415,33 +415,31 @@ export default function DataConsoleUtilities() {
     if (mappingFields.length === 0) return
     setSmartMapLoading(true)
     try {
-      let pdfBase64 = null
+      const fieldNames = mappingFields.map(f => f.name)
 
-      // Fetch PDF to send to Claude
-      if (mappingForm.form_file) {
-        const { data } = supabase.storage.from('utility-pdfs').getPublicUrl(mappingForm.form_file)
-        if (data?.publicUrl) {
-          const res = await fetch(data.publicUrl)
-          if (res.ok) {
-            const buf = await res.arrayBuffer()
-            const bytes = new Uint8Array(buf)
-            let binary = ''
-            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-            pdfBase64 = btoa(binary)
-          }
-        }
+      // Send form_url or pdf_url so edge function fetches server-side (avoids CORS)
+      const body = {
+        document_type: 'form_field_analysis',
+        field_names: fieldNames,
+        provider_name: selectedProvider?.provider_name
       }
 
-      const fieldNames = mappingFields.map(f => f.name)
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await supabase.functions.invoke('parse-utility-pdf', {
-        body: {
-          pdf_base64: pdfBase64,
-          document_type: 'form_field_analysis',
-          field_names: fieldNames,
-          provider_name: selectedProvider?.provider_name
-        }
-      })
+      // Prefer form_url for the edge function to fetch server-side
+      if (mappingForm.form_url) {
+        body.pdf_url = mappingForm.form_url
+      } else if (mappingForm.form_file) {
+        // If only storage path, build the full URL for the edge function
+        const { data } = supabase.storage.from('utility-pdfs').getPublicUrl(mappingForm.form_file)
+        if (data?.publicUrl) body.pdf_url = data.publicUrl
+      }
+
+      const res = await supabase.functions.invoke('parse-utility-pdf', { body })
+
+      if (res.error) {
+        alert('Smart mapping failed: ' + (res.error.message || res.error))
+        setSmartMapLoading(false)
+        return
+      }
 
       if (res.data?.success && res.data.results?.field_mappings) {
         const suggestions = res.data.results.field_mappings
