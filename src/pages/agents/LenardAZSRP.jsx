@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 // ===================================================================
 // Lenard AZ SRP — Public SRP Lighting Rebate Calculator
@@ -156,6 +156,26 @@ export default function LenardAZSRP() {
   const [electricRate, setElectricRate] = useState(SRP_DEFAULT_RATE)
   const [hoursPerDay, setHoursPerDay] = useState(10)
   const [daysPerYear, setDaysPerYear] = useState(260)
+
+  // Register service worker + manifest for offline PWA support
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw-lenard.js').catch(() => {});
+    }
+    // Inject Lenard-specific manifest (separate from main app PWA)
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = '/manifest-lenard.json';
+    document.head.appendChild(link);
+    // Set theme-color for mobile browser chrome
+    let meta = document.querySelector('meta[name="theme-color"]');
+    const original = meta?.getAttribute('content');
+    if (meta) meta.setAttribute('content', '#f97316');
+    return () => {
+      document.head.removeChild(link);
+      if (meta && original) meta.setAttribute('content', original);
+    };
+  }, []);
 
   const annualHours = hoursPerDay * daysPerYear
 

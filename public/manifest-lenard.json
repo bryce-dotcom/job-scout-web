@@ -1,0 +1,13 @@
+{
+  "name": "Lenard AZ SRP - Rebate Calculator",
+  "short_name": "Lenard SRP",
+  "description": "SRP Lighting Rebate Calculator",
+  "start_url": "/agent/lenard-az-srp",
+  "scope": "/agent/lenard-az-srp",
+  "display": "standalone",
+  "background_color": "#0a0a0b",
+  "theme_color": "#f97316",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" }
+  ]
+}
