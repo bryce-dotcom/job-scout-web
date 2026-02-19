@@ -32,28 +32,36 @@ const SBC_RATES = {
   categories: {
     exterior: {
       label: 'Exterior / Poles', icon: '\uD83C\uDFD7\uFE0F',
-      subtypes: [{ id: 'ext', label: 'Exterior/Pole', ratePerWatt: 0.75, hasControls: false }],
+      subtypes: [{ id: 'ext', label: 'Exterior/Pole', ratePerWatt: 0.75, hasControls: false,
+        desc: 'Shoeboxes, wall packs, floods, pole lights, canopy lights, bollards' }],
     },
     highbay: {
       label: 'High Bays', icon: '\uD83C\uDFED',
       subtypes: [
-        { id: 'hb_250',  label: '\u2264250W Reduced',    perFixture: 150, controlsRate: 0.40, hasControls: true },
-        { id: 'hb_400',  label: '251-400W Reduced',  perFixture: 250, controlsRate: 0.40, hasControls: true },
-        { id: 'hb_1000', label: '401-1000W Reduced', perFixture: 350, controlsRate: 0.40, hasControls: true },
+        { id: 'hb_250',  label: '\u2264250W Reduced',   perFixture: 150, controlsRate: 0.40, hasControls: true,
+          desc: '4-lamp T5HO, 250W MH, 4-lamp T8 high bays, small warehouse pendants' },
+        { id: 'hb_400',  label: '251\u2013400W Reduced', perFixture: 250, controlsRate: 0.40, hasControls: true,
+          desc: '6-lamp T5HO, 400W MH high bays \u2014 most common warehouse tier' },
+        { id: 'hb_1000', label: '401\u20131000W Reduced', perFixture: 350, controlsRate: 0.40, hasControls: true,
+          desc: '1000W MH high bays, gymnasium lights, large industrial pendants' },
       ],
     },
     panel: {
       label: 'Panels', icon: '\uD83D\uDCD0',
       subtypes: [
-        { id: 'panel_2x2', label: '2\u00D72 Panel', perFixture: 80,  hasControls: false },
-        { id: 'panel_2x4', label: '2\u00D74 Panel', perFixture: 110, hasControls: false },
+        { id: 'panel_2x2', label: '2\u00D72 Panel', perFixture: 80,  hasControls: false,
+          desc: '2\u00D72 recessed troffers, U-bend fixtures, square drop ceiling' },
+        { id: 'panel_2x4', label: '2\u00D74 Panel', perFixture: 110, hasControls: false,
+          desc: '2\u00D74 troffers (most common office/retail), prismatic lens, parabolic' },
       ],
     },
     strip: {
       label: 'Wraps & Strips', icon: '\uD83D\uDCCF',
       subtypes: [
-        { id: 'strip_4', label: "4' Wrap/Strip", perFixture: 80,  hasControls: false },
-        { id: 'strip_8', label: "8' Strip",      perFixture: 120, hasControls: false },
+        { id: 'strip_4', label: "4' Wrap/Strip", perFixture: 80,  hasControls: false,
+          desc: '4ft strips, wraps, utility lights \u2014 stockrooms, mechanical, stairwells' },
+        { id: 'strip_8', label: "8' Strip",      perFixture: 120, hasControls: false,
+          desc: '8ft tandem strips \u2014 warehouses, loading docks, manufacturing floors' },
       ],
     },
   },
@@ -86,7 +94,7 @@ const PRESETS = {
   highbays: {
     label: 'High Bays',
     items: [
-      { name: '6L T5HO High Bay',   existW: 351,  newW: 150, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture', height: 20 },
+      { name: '6L T5HO High Bay',   existW: 351,  newW: 150, cat: 'highbay', sub: 'hb_400',  sbsType: 'Interior LED Fixture', height: 20 },
       { name: '4L T5HO High Bay',   existW: 234,  newW: 110, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture', height: 20 },
       { name: '400W MH High Bay',   existW: 458,  newW: 150, cat: 'highbay', sub: 'hb_400',  sbsType: 'Interior LED Fixture', height: 20 },
       { name: '250W MH High Bay',   existW: 288,  newW: 100, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture', height: 20 },
@@ -108,6 +116,28 @@ const PRESETS = {
 
 // Default heights by category
 const DEFAULT_HEIGHTS = { panel: 9, strip: 10, highbay: 20, exterior: 25 };
+
+// Auto-pick best SBC subtype based on category + wattage
+function autoPickSBCSub(cat, existW, newW, name) {
+  if (cat === 'exterior') return 'ext';
+  if (cat === 'highbay') {
+    const reduced = Math.max(0, (existW || 0) - (newW || 0));
+    if (reduced <= 250) return 'hb_250';
+    if (reduced <= 400) return 'hb_400';
+    return 'hb_1000';
+  }
+  if (cat === 'panel') {
+    const n = (name || '').toLowerCase();
+    if (n.includes('2x2') || n.includes('2\'x2') || n.includes('u-bend') || n.includes('ubend')) return 'panel_2x2';
+    return 'panel_2x4'; // default — most common
+  }
+  if (cat === 'strip') {
+    const n = (name || '').toLowerCase();
+    if (n.includes('8ft') || n.includes('8\'') || n.includes('8 ft') || n.includes('tandem')) return 'strip_8';
+    return 'strip_4';
+  }
+  return SBC_RATES.categories[cat]?.subtypes[0]?.id || 'ext';
+}
 
 // Map SBC/SBS categories to lighting audit FIXTURE_CATEGORIES
 const CATEGORY_TO_FIXTURE_CAT = {
@@ -383,15 +413,27 @@ export default function LenardAZSRP() {
     if (program === 'sbs') {
       setLines(prev => [...prev, { ...base, fixtureType: preset?.sbsType || 'Interior LED Fixture', controlsType: 'none' }]);
     } else {
-      setLines(prev => [...prev, { ...base, category: cat, subtype: preset?.sub || SBC_RATES.categories[cat]?.subtypes[0]?.id || 'ext', controls: cat === 'highbay' }]);
+      setLines(prev => [...prev, { ...base, category: cat, subtype: preset?.sub || autoPickSBCSub(cat, preset?.existW, preset?.newW, preset?.name), controls: cat === 'highbay' }]);
     }
     setNewlyAdded(prev => new Set(prev).add(id));
     setTimeout(() => setNewlyAdded(prev => { const next = new Set(prev); next.delete(id); return next; }), 2000);
   }, [program, sbeProducts]);
 
   const updateLine = useCallback((id, field, value) => {
-    setLines(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
-  }, []);
+    setLines(prev => prev.map(l => {
+      if (l.id !== id) return l;
+      const updated = { ...l, [field]: value };
+      // Auto-adjust high bay tier when wattage changes
+      if (program === 'sbc' && updated.category === 'highbay' && (field === 'existW' || field === 'newW')) {
+        const reduced = Math.max(0, (updated.existW || 0) - (updated.newW || 0)) * (updated.qty || 1);
+        const perFixReduced = updated.qty > 0 ? reduced / updated.qty : reduced;
+        if (perFixReduced <= 250) updated.subtype = 'hb_250';
+        else if (perFixReduced <= 400) updated.subtype = 'hb_400';
+        else updated.subtype = 'hb_1000';
+      }
+      return updated;
+    }));
+  }, [program]);
 
   const removeLine = useCallback((id) => {
     setLines(prev => prev.filter(l => l.id !== id));
@@ -1235,6 +1277,27 @@ export default function LenardAZSRP() {
         )}
       </div>
 
+      {/* ===== SBC SUBTYPE PICKER — visual guide below financial settings ===== */}
+      {program === 'sbc' && (
+        <div style={{ padding: '0 16px', marginBottom: '8px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>SBC Fixture Types</div>
+          {Object.entries(SBC_RATES.categories).map(([catKey, cat]) => (
+            <div key={catKey} style={{ marginBottom: '6px' }}>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: T.text, marginBottom: '3px' }}>{cat.icon} {cat.label}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                {cat.subtypes.map(s => (
+                  <button key={s.id} onClick={() => addLine({ cat: catKey, sub: s.id, name: s.label })}
+                    style={{ padding: '6px 10px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', cursor: 'pointer', textAlign: 'left', flex: '1 1 auto', minWidth: '120px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: T.text }}>{s.label} <span style={{ color: T.accent, fontWeight: '700' }}>{s.ratePerWatt ? `$${s.ratePerWatt}/W` : `$${s.perFixture}`}</span></div>
+                    <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '1px' }}>{s.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ===== SBS RATE INFO ===== */}
       {program === 'sbs' && results.length === 0 && (
         <div style={{ margin: '8px 16px', padding: '12px', background: T.blueDim, border: `1px solid ${T.blue}`, borderRadius: '10px' }}>
@@ -1414,7 +1477,24 @@ export default function LenardAZSRP() {
 
                   {/* SRP Program-specific: rebate type / controls */}
                   {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>SRP Fixture Type</label><select value={r.fixtureType} onChange={e => updateLine(r.id, 'fixtureType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.fixture).map(([k, v]) => <option key={k} value={k}>{v.label} — ${v.rate}/W</option>)}</select></div>}
-                  {program === 'sbc' && <div style={{ marginBottom: '10px' }}><label style={S.label}>SRP Category / Subtype</label><select value={`${r.category}|${r.subtype}`} onChange={e => { const [cat, sub] = e.target.value.split('|'); updateLine(r.id, 'category', cat); updateLine(r.id, 'subtype', sub); }} style={S.select}>{Object.entries(SBC_RATES.categories).map(([catKey, cat]) => cat.subtypes.map(s => <option key={s.id} value={`${catKey}|${s.id}`}>{cat.icon} {s.label} — {s.ratePerWatt ? `$${s.ratePerWatt}/W` : `$${s.perFixture}/fixture`}</option>))}</select></div>}
+                  {program === 'sbc' && (
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={S.label}>SBC Fixture Type</label>
+                      <select value={`${r.category}|${r.subtype}`} onChange={e => { const [cat, sub] = e.target.value.split('|'); updateLine(r.id, 'category', cat); updateLine(r.id, 'subtype', sub); }} style={S.select}>
+                        {Object.entries(SBC_RATES.categories).map(([catKey, cat]) => (
+                          <optgroup key={catKey} label={`${cat.icon} ${cat.label}`}>
+                            {cat.subtypes.map(s => (
+                              <option key={s.id} value={`${catKey}|${s.id}`}>{s.label} \u2014 {s.ratePerWatt ? `$${s.ratePerWatt}/W` : `$${s.perFixture}/fix`} \u2014 {s.desc}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      {(() => {
+                        const curSub = SBC_RATES.categories[r.category]?.subtypes.find(s => s.id === r.subtype);
+                        return curSub?.desc ? <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '3px' }}>{curSub.desc}</div> : null;
+                      })()}
+                    </div>
+                  )}
 
                   {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Controls Upgrade</label><select value={r.controlsType} onChange={e => updateLine(r.id, 'controlsType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.controls).map(([k, v]) => <option key={k} value={k}>{v.label}{v.rate > 0 ? ` — $${v.rate}/W` : ''}</option>)}</select></div>}
 
