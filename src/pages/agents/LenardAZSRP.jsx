@@ -117,6 +117,13 @@ const PRESETS = {
 // Default heights by category
 const DEFAULT_HEIGHTS = { panel: 9, strip: 10, highbay: 20, exterior: 25 };
 
+// Effective unit price: override > product price, minus discount %
+function getEffectivePrice(line) {
+  const base = line.priceOverride != null ? line.priceOverride : (line.productPrice || 0);
+  const disc = line.discount || 0;
+  return disc > 0 ? base * (1 - disc / 100) : base;
+}
+
 // Auto-pick best SBC subtype based on category + wattage
 function autoPickSBCSub(cat, existW, newW, name) {
   if (cat === 'exterior') return 'ext';
@@ -144,7 +151,7 @@ const CATEGORY_TO_FIXTURE_CAT = {
   panel: 'Recessed', strip: 'Linear', highbay: 'High Bay', exterior: 'Outdoor',
 };
 
-// Map fixture categories / product types to matching keywords for SBE product matching
+// Map fixture categories / product types to matching keywords for SMBE product matching
 // Product `type` or `name` is matched against these keywords per fixture category
 const PRODUCT_CATEGORY_KEYWORDS = {
   'Recessed':    ['troffer', 'panel', 'recessed', '2x4', '2x2', '1x4', 'flat panel', 'lay-in'],
@@ -189,7 +196,7 @@ function getMatchedProducts(allProducts, fixtureCategory, targetWatts) {
     .sort((a, b) => b._score - a._score);
 }
 
-// Find the single best SBE product match for a fixture
+// Find the single best SMBE product match for a fixture
 function findBestProduct(allProducts, fixtureCategory, targetWatts) {
   const ranked = getMatchedProducts(allProducts, fixtureCategory, targetWatts);
   // Only auto-select if there's a decent category match (score >= 100)
@@ -304,8 +311,9 @@ export default function LenardAZSRP() {
   const lineIdRef = useRef(0);
   const toastTimer = useRef(null);
 
-  // SBE Products
+  // SMBE Products
   const [sbeProducts, setSbeProducts] = useState([]);
+  const [productSearch, setProductSearch] = useState('');
 
   // Financial settings
   const [showFinancials, setShowFinancials] = useState(false);
@@ -349,7 +357,7 @@ export default function LenardAZSRP() {
     }
   }, []);
 
-  // Fetch SBE products on mount
+  // Fetch SMBE products on mount
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -362,7 +370,7 @@ export default function LenardAZSRP() {
         });
         const data = await resp.json();
         if (data.products) setSbeProducts(data.products);
-      } catch (_) { /* SBE products optional */ }
+      } catch (_) { /* SMBE products optional */ }
     };
     fetchProducts();
   }, []);
@@ -375,7 +383,7 @@ export default function LenardAZSRP() {
     const fixtureCat = preset?.fixtureCategory || CATEGORY_TO_FIXTURE_CAT[cat] || 'Linear';
     const targetNewW = preset?.newW || 0;
 
-    // Auto-match best SBE product for this fixture category
+    // Auto-match best SMBE product for this fixture category
     let autoProductId = preset?.productId || null;
     let autoProductName = preset?.productName || '';
     let autoProductPrice = preset?.productPrice || 0;
@@ -404,6 +412,8 @@ export default function LenardAZSRP() {
       productId: autoProductId,
       productName: autoProductName,
       productPrice: autoProductPrice,
+      priceOverride: null, // manual price override (null = use product price)
+      discount: 0,         // discount percentage (0-100)
       // Audit-matching fields
       fixtureCategory: fixtureCat,
       lightingType: preset?.lightingType || inferLampType(preset?.name || ''),
@@ -441,7 +451,7 @@ export default function LenardAZSRP() {
     showToast('Line removed', '\uD83D\uDDD1');
   }, [expandedLine, showToast]);
 
-  // Select SBE product for a line
+  // Select SMBE product for a line
   const selectProduct = useCallback((lineId, product) => {
     setLines(prev => prev.map(l => {
       if (l.id !== lineId) return l;
@@ -526,7 +536,7 @@ export default function LenardAZSRP() {
     const annualEnergySavings = annualKwhSaved * energyRate;
     const existAnnualCost = existKwh * energyRate;
     const proposedAnnualCost = proposedKwh * energyRate;
-    const projectCost = lines.reduce((s, l) => s + ((l.productPrice || 0) * (l.qty || 0)), 0);
+    const projectCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * (l.qty || 0)), 0);
     const netProjectCost = Math.max(0, projectCost - totals.totalIncentive);
     const simplePayback = annualEnergySavings > 0 ? netProjectCost / annualEnergySavings : 0;
     const roi = netProjectCost > 0 ? (annualEnergySavings / netProjectCost) * 100 : 0;
@@ -1435,32 +1445,104 @@ export default function LenardAZSRP() {
                     </div>
                   )}
 
-                  {/* SBE Replacement Product — filtered by category match */}
+                  {/* SMBE Replacement Product — searchable picker */}
                   <div style={{ marginBottom: '12px' }}>
-                    <label style={S.label}>SBE Replacement Product</label>
-                    {(() => {
-                      const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW);
-                      const matched = ranked.filter(p => p._score >= 100);
-                      const other = ranked.filter(p => p._score < 100);
-                      return (
-                        <select
-                          value={r.productId || ''}
+                    <label style={S.label}>SMBE Replacement Product</label>
+                    {r.productId ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: T.bgInput, border: `1px solid ${T.accent}`, borderRadius: '8px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.productName}</div>
+                          <div style={{ fontSize: '11px', color: T.accent }}>Catalog: ${r.productPrice}/unit</div>
+                        </div>
+                        <button onClick={() => setLines(prev => prev.map(l => l.id === r.id ? { ...l, productId: null, productName: '', productPrice: 0, priceOverride: null } : l))}
+                          style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '16px', padding: '4px' }}>{'\u2715'}</button>
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          type="text"
+                          placeholder={sbeProducts.length > 0 ? 'Search SMBE products...' : 'No SMBE products loaded'}
+                          value={expandedLine === r.id ? productSearch : ''}
+                          onChange={e => setProductSearch(e.target.value)}
+                          onFocus={() => setProductSearch('')}
+                          style={S.input}
+                        />
+                        {expandedLine === r.id && (
+                          <div style={{ maxHeight: '160px', overflow: 'auto', border: `1px solid ${T.border}`, borderRadius: '0 0 8px 8px', marginTop: '-1px' }}>
+                            {(() => {
+                              const q = productSearch.toLowerCase();
+                              const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW);
+                              const filtered = q ? ranked.filter(p => (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)) : ranked;
+                              const matched = filtered.filter(p => p._score >= 100);
+                              const other = filtered.filter(p => p._score < 100);
+                              if (filtered.length === 0) return <div style={{ padding: '10px', fontSize: '12px', color: T.textMuted, textAlign: 'center' }}>No products found</div>;
+                              return (<>
+                                {matched.length > 0 && <div style={{ padding: '4px 10px', fontSize: '10px', fontWeight: '700', color: T.accent, background: T.accentDim, textTransform: 'uppercase' }}>Recommended for {r.fixtureCategory}</div>}
+                                {matched.map(p => (
+                                  <button key={p.id} onClick={() => { selectProduct(r.id, p); setProductSearch(''); }}
+                                    style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: T.bgCard, border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '12px', color: T.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, whiteSpace: 'nowrap', marginLeft: '8px' }}>{p.unit_price ? `$${p.unit_price}` : ''}</div>
+                                  </button>
+                                ))}
+                                {other.length > 0 && <div style={{ padding: '4px 10px', fontSize: '10px', fontWeight: '700', color: T.textMuted, background: T.bgInput, textTransform: 'uppercase' }}>Other SMBE Products</div>}
+                                {other.map(p => (
+                                  <button key={p.id} onClick={() => { selectProduct(r.id, p); setProductSearch(''); }}
+                                    style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: T.bgCard, border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '12px', color: T.textSec, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                                    <div style={{ fontSize: '12px', color: T.textMuted, whiteSpace: 'nowrap', marginLeft: '8px' }}>{p.unit_price ? `$${p.unit_price}` : ''}</div>
+                                  </button>
+                                ))}
+                              </>);
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pricing — override + discount */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={S.label}>Pricing</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '2px' }}>Unit Price {r.priceOverride != null ? '(override)' : ''}</div>
+                        <input
+                          type="number" inputMode="decimal" step="0.01"
+                          placeholder={r.productPrice ? `$${r.productPrice} catalog` : 'Unit price'}
+                          value={r.priceOverride != null ? r.priceOverride : ''}
                           onChange={e => {
-                            const prod = sbeProducts.find(p => String(p.id) === e.target.value);
-                            if (prod) selectProduct(r.id, prod);
-                            else setLines(prev => prev.map(l => l.id === r.id ? { ...l, productId: null, productName: '', productPrice: 0 } : l));
+                            const v = e.target.value;
+                            updateLine(r.id, 'priceOverride', v === '' ? null : parseFloat(v) || 0);
                           }}
-                          style={S.select}
-                        >
-                          <option value="">{sbeProducts.length > 0 ? 'Select SBE Product' : 'No SBE products loaded'}</option>
-                          {matched.length > 0 && <option disabled>--- Recommended for {r.fixtureCategory || 'this fixture'} ---</option>}
-                          {matched.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` \u2014 $${p.unit_price}` : ''}</option>)}
-                          {other.length > 0 && <option disabled>--- Other SBE Products ---</option>}
-                          {other.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` \u2014 $${p.unit_price}` : ''}</option>)}
-                        </select>
+                          style={{ ...S.input, borderColor: r.priceOverride != null ? T.accent : T.border }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '2px' }}>Discount %</div>
+                        <input
+                          type="number" inputMode="numeric" min="0" max="100" placeholder="0"
+                          value={r.discount || ''}
+                          onChange={e => updateLine(r.id, 'discount', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                          style={{ ...S.input, borderColor: r.discount > 0 ? T.green : T.border }}
+                        />
+                      </div>
+                    </div>
+                    {(() => {
+                      const eff = getEffectivePrice(r);
+                      const basePrice = r.priceOverride != null ? r.priceOverride : (r.productPrice || 0);
+                      const lineTotal = eff * (r.qty || 0);
+                      if (basePrice <= 0 && eff <= 0) return null;
+                      return (
+                        <div style={{ fontSize: '11px', marginTop: '4px', color: T.textSec }}>
+                          {r.discount > 0 && <span style={{ color: T.green }}>{r.discount}% off: </span>}
+                          <span style={{ color: T.accent, fontWeight: '600' }}>${eff.toFixed(2)}/unit</span>
+                          <span> {'\u00D7'} {r.qty} = </span>
+                          <span style={{ fontWeight: '700', color: T.accent }}>${lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          {r.priceOverride != null && r.productPrice > 0 && <span style={{ color: T.textMuted }}> (catalog: ${r.productPrice})</span>}
+                        </div>
                       );
                     })()}
-                    {r.productPrice > 0 && <div style={{ fontSize: '11px', color: T.accent, marginTop: '4px' }}>${r.productPrice}/unit \u00D7 {r.qty} = ${(r.productPrice * r.qty).toLocaleString()}</div>}
                   </div>
 
                   {/* Notes — textarea matching audit area modal */}

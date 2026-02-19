@@ -27,10 +27,10 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    // Fetch only SBE products (active, name contains SBE)
+    // Fetch only SMBE products (active, name contains SMBE)
     const products = await querySupabase(
       'products_services',
-      'active=eq.true&name=ilike.*SBE*&select=id,name,type,unit_price,cost,description&order=type,name'
+      'active=eq.true&name=ilike.*SMBE*&select=id,name,type,unit_price,cost,description&order=type,name'
     );
 
     return new Response(JSON.stringify({ success: true, products }),
