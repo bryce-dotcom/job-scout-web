@@ -326,8 +326,8 @@ export default function LenardAZSRP() {
 
   // Financial settings
   const [showFinancials, setShowFinancials] = useState(false);
-  const [operatingHours, setOperatingHours] = useState(12);
-  const [daysPerYear, setDaysPerYear] = useState(365);
+  const [operatingHours, setOperatingHours] = useState(10);
+  const [daysPerYear, setDaysPerYear] = useState(260);
   const [energyRate, setEnergyRate] = useState(0.10);
 
   // Save project — customer info matching step 1 basic info
@@ -1424,9 +1424,9 @@ export default function LenardAZSRP() {
         {showFinancials && (
           <div style={{ ...S.card, marginTop: '6px', marginBottom: 0 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-              <div><label style={S.label}>Hours/Day</label><input type="number" inputMode="decimal" value={operatingHours} onChange={e => { setOperatingHours(parseFloat(e.target.value) || 0); markDirty(); }} style={S.input} /></div>
-              <div><label style={S.label}>Days/Year</label><input type="number" inputMode="numeric" value={daysPerYear} onChange={e => { setDaysPerYear(parseInt(e.target.value) || 0); markDirty(); }} style={S.input} /></div>
-              <div><label style={S.label}>$/kWh</label><input type="number" inputMode="decimal" step="0.01" value={energyRate} onChange={e => { setEnergyRate(parseFloat(e.target.value) || 0); markDirty(); }} style={S.input} /></div>
+              <div><label style={S.label}>Hours/Day</label><input type="number" inputMode="decimal" value={operatingHours || ''} onChange={e => { setOperatingHours(e.target.value === '' ? 0 : parseFloat(e.target.value)); markDirty(); }} style={S.input} /></div>
+              <div><label style={S.label}>Days/Year</label><input type="number" inputMode="numeric" value={daysPerYear || ''} onChange={e => { setDaysPerYear(e.target.value === '' ? 0 : parseInt(e.target.value)); markDirty(); }} style={S.input} /></div>
+              <div><label style={S.label}>$/kWh</label><input type="number" inputMode="decimal" step="0.01" value={energyRate || ''} onChange={e => { setEnergyRate(e.target.value === '' ? 0 : parseFloat(e.target.value)); markDirty(); }} style={S.input} /></div>
             </div>
           </div>
         )}
