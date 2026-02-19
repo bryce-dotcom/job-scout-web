@@ -77,6 +77,23 @@ serve(async (req) => {
     }
 
     // 1. Create Lead linked to customer — with address fields
+    // Build human-readable notes for the lead detail view
+    const totalExistW = lines.reduce((s: number, l: any) => s + ((l.existW || 0) * (l.qty || 0)), 0);
+    const totalNewW = lines.reduce((s: number, l: any) => s + ((l.newW || 0) * (l.qty || 0)), 0);
+    const totalFixtures = lines.reduce((s: number, l: any) => s + (l.qty || 0), 0);
+    const wattsReduced = Math.max(0, totalExistW - totalNewW);
+    const noteLines = [
+      `SRP ${programType === 'sbs' ? 'Standard Business' : 'Small Business'} Lighting Retrofit`,
+      `${totalFixtures} fixtures | ${totalExistW}W existing → ${totalNewW}W LED | ${wattsReduced}W reduced`,
+      '',
+      ...lines.map((l: any, i: number) => `${i + 1}. ${l.name || 'Area'}: ${l.qty || 1}× ${l.existW || 0}W → ${l.newW || 0}W${l.fixtureCategory ? ` (${l.fixtureCategory})` : ''}${l.lightingType ? ` ${l.lightingType}` : ''}`),
+      '',
+      `Est. Incentive: $${(pd.totalIncentive || 0).toLocaleString()}`,
+      pd.projectCost ? `Project Cost: $${pd.projectCost.toLocaleString()} | Net: $${((pd.projectCost || 0) - (pd.totalIncentive || 0)).toLocaleString()}` : '',
+      '',
+      `[Full project data stored in lighting audit]`,
+    ].filter(Boolean).join('\n');
+
     const leadData = {
       company_id: cid,
       customer_name: customerName,
@@ -87,7 +104,7 @@ serve(async (req) => {
       status: 'New',
       lead_source: 'Lenard AZ SRP',
       service_type: 'Energy Efficiency',
-      notes: JSON.stringify(pd),
+      notes: noteLines,
     };
 
     const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, leadData);

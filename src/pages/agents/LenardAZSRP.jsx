@@ -485,7 +485,9 @@ export default function LenardAZSRP() {
 
   const loadProject = (project) => {
     try {
-      const pd = JSON.parse(project.notes);
+      // Full JSON is stored in audit.notes (lead notes are human-readable)
+      const rawNotes = project.audit?.notes || project.notes;
+      const pd = JSON.parse(rawNotes);
       setProjectName(project.customerName || '');
       setSavePhone(project.phone || '');
       setSaveEmail(project.email || '');
