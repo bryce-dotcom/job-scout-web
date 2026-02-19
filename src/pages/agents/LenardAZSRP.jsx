@@ -489,7 +489,10 @@ export default function LenardAZSRP() {
     }
     setNewlyAdded(prev => new Set(prev).add(id));
     setTimeout(() => setNewlyAdded(prev => { const next = new Set(prev); next.delete(id); return next; }), 2000);
-  }, [program, sbeProducts]);
+    if (savedLeadId) setSavedLeadId(null);
+  }, [program, sbeProducts, savedLeadId]);
+
+  const markDirty = useCallback(() => { if (savedLeadId) setSavedLeadId(null); }, [savedLeadId]);
 
   const updateLine = useCallback((id, field, value) => {
     setLines(prev => prev.map(l => {
@@ -505,13 +508,15 @@ export default function LenardAZSRP() {
       }
       return updated;
     }));
-  }, [program]);
+    markDirty();
+  }, [program, markDirty]);
 
   const removeLine = useCallback((id) => {
     setLines(prev => prev.filter(l => l.id !== id));
     if (expandedLine === id) setExpandedLine(null);
     showToast('Line removed', '\uD83D\uDDD1');
-  }, [expandedLine, showToast]);
+    markDirty();
+  }, [expandedLine, showToast, markDirty]);
 
   // Select SMBE product for a line
   const selectProduct = useCallback((lineId, product) => {
@@ -523,7 +528,8 @@ export default function LenardAZSRP() {
       if (wattMatch) updates.newW = parseInt(wattMatch[1]);
       return { ...l, ...updates };
     }));
-  }, []);
+    markDirty();
+  }, [markDirty]);
 
   // ---- LENARD AI CAMERA ----
   const analyzePhoto = async (file) => {
@@ -877,15 +883,22 @@ export default function LenardAZSRP() {
     doc.setFillColor(...orange);
     doc.rect(0, 0, W, 4, 'F');
 
-    // Company name
+    // Scout logo
+    const logoB64 = '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';
+    const logoW = 10;
+    const logoH = 14;
+    doc.addImage('data:image/png;base64,' + logoB64, 'PNG', M, y - 10, logoW, logoH);
+
+    // Company name (shifted right to make room for logo)
+    const logoOffset = logoW + 3;
     doc.setFontSize(24);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...orange);
-    doc.text('ENERGY SCOUT', M, y);
+    doc.text('ENERGY SCOUT', M + logoOffset, y);
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...gray);
-    doc.text('by HHH Building Services', M + 62, y);
+    doc.text('by HHH Building Services', M + logoOffset + 62, y);
 
     // Document title right-aligned
     doc.setFontSize(9);
@@ -1379,7 +1392,7 @@ export default function LenardAZSRP() {
 
       {/* ===== PROJECT NAME ===== */}
       <div style={{ padding: '12px 16px 4px' }}>
-        <input type="text" value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Project / Customer Name"
+        <input type="text" value={projectName} onChange={e => { setProjectName(e.target.value); markDirty(); }} placeholder="Project / Customer Name"
           style={{ ...S.input, background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, borderRadius: 0, padding: '8px 0', fontSize: '15px', fontWeight: '500' }} />
       </div>
 
@@ -1403,9 +1416,9 @@ export default function LenardAZSRP() {
         {showFinancials && (
           <div style={{ ...S.card, marginTop: '6px', marginBottom: 0 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-              <div><label style={S.label}>Hours/Day</label><input type="number" inputMode="decimal" value={operatingHours} onChange={e => setOperatingHours(parseFloat(e.target.value) || 0)} style={S.input} /></div>
-              <div><label style={S.label}>Days/Year</label><input type="number" inputMode="numeric" value={daysPerYear} onChange={e => setDaysPerYear(parseInt(e.target.value) || 0)} style={S.input} /></div>
-              <div><label style={S.label}>$/kWh</label><input type="number" inputMode="decimal" step="0.01" value={energyRate} onChange={e => setEnergyRate(parseFloat(e.target.value) || 0)} style={S.input} /></div>
+              <div><label style={S.label}>Hours/Day</label><input type="number" inputMode="decimal" value={operatingHours} onChange={e => { setOperatingHours(parseFloat(e.target.value) || 0); markDirty(); }} style={S.input} /></div>
+              <div><label style={S.label}>Days/Year</label><input type="number" inputMode="numeric" value={daysPerYear} onChange={e => { setDaysPerYear(parseInt(e.target.value) || 0); markDirty(); }} style={S.input} /></div>
+              <div><label style={S.label}>$/kWh</label><input type="number" inputMode="decimal" step="0.01" value={energyRate} onChange={e => { setEnergyRate(parseFloat(e.target.value) || 0); markDirty(); }} style={S.input} /></div>
             </div>
           </div>
         )}
@@ -1710,6 +1723,7 @@ export default function LenardAZSRP() {
                   </div>
                   <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                     <button onClick={() => setExpandedLine(null)} style={{ ...S.btn, flex: 1, fontSize: '13px' }}>Done</button>
+                    <button onClick={() => { setExpandedLine(null); setShowSaveModal(true); }} style={{ ...S.btn, flex: 1, fontSize: '13px', background: savedLeadId ? T.bgInput : T.blue, color: savedLeadId ? T.textMuted : '#fff' }}>{savedLeadId ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
                     <button onClick={() => removeLine(r.id)} style={{ ...S.btnGhost, color: T.red, borderColor: T.red, fontSize: '12px', padding: '10px 14px' }}>{'\uD83D\uDDD1'} Remove</button>
                   </div>
                 </div>
@@ -1751,7 +1765,10 @@ export default function LenardAZSRP() {
           {/* Incentive total + actions */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
             <div><div style={{ fontSize: '11px', color: T.textMuted }}>TOTAL ESTIMATED INCENTIVE</div><div style={{ ...S.money, fontSize: '22px' }}>${totals.totalIncentive.toLocaleString()}</div></div>
-            <button onClick={() => setShowSummary(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px' }}>{'\uD83D\uDCCB'} Summary</button>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button onClick={() => setShowSaveModal(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px', background: savedLeadId ? T.bgInput : T.blue, color: savedLeadId ? T.textMuted : '#fff' }}>{savedLeadId ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
+              <button onClick={() => setShowSummary(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px' }}>{'\uD83D\uDCCB'} Summary</button>
+            </div>
           </div>
         </div>
       )}
