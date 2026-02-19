@@ -114,6 +114,58 @@ const CATEGORY_TO_FIXTURE_CAT = {
   panel: 'Recessed', strip: 'Linear', highbay: 'High Bay', exterior: 'Outdoor',
 };
 
+// Map fixture categories / product types to matching keywords for SBE product matching
+// Product `type` or `name` is matched against these keywords per fixture category
+const PRODUCT_CATEGORY_KEYWORDS = {
+  'Recessed':    ['troffer', 'panel', 'recessed', '2x4', '2x2', '1x4', 'flat panel', 'lay-in'],
+  'Linear':      ['strip', 'linear', 'wrap', 'shop light', 'vapor', 'channel'],
+  'High Bay':    ['high bay', 'highbay', 'high-bay', 'ufo', 'warehouse'],
+  'Outdoor':     ['flood', 'wall pack', 'exterior', 'outdoor', 'area light', 'pole', 'parking', 'canopy', 'shoe box', 'shoebox'],
+  'Surface Mount': ['surface', 'flush', 'ceiling mount', 'drum', 'round'],
+};
+
+// Score how well a product matches a fixture category (higher = better match)
+function scoreProductMatch(product, fixtureCategory, targetWatts) {
+  const pName = (product.name || '').toLowerCase();
+  const pType = (product.type || '').toLowerCase();
+  const pDesc = (product.description || '').toLowerCase();
+  const searchText = `${pName} ${pType} ${pDesc}`;
+  let score = 0;
+
+  // Category keyword match
+  const keywords = PRODUCT_CATEGORY_KEYWORDS[fixtureCategory] || [];
+  for (const kw of keywords) {
+    if (searchText.includes(kw)) { score += 100; break; }
+  }
+
+  // Wattage proximity bonus (closer wattage = better match)
+  if (targetWatts > 0) {
+    const wattMatch = pName.match(/(\d+)\s*[wW]/);
+    if (wattMatch) {
+      const productWatts = parseInt(wattMatch[1]);
+      const diff = Math.abs(productWatts - targetWatts);
+      score += Math.max(0, 50 - diff); // up to 50 points for wattage closeness
+    }
+  }
+
+  return score;
+}
+
+// Get products sorted by relevance for a given fixture category and wattage
+function getMatchedProducts(allProducts, fixtureCategory, targetWatts) {
+  if (!allProducts.length) return [];
+  return [...allProducts]
+    .map(p => ({ ...p, _score: scoreProductMatch(p, fixtureCategory, targetWatts) }))
+    .sort((a, b) => b._score - a._score);
+}
+
+// Find the single best SBE product match for a fixture
+function findBestProduct(allProducts, fixtureCategory, targetWatts) {
+  const ranked = getMatchedProducts(allProducts, fixtureCategory, targetWatts);
+  // Only auto-select if there's a decent category match (score >= 100)
+  return ranked.length > 0 && ranked[0]._score >= 100 ? ranked[0] : null;
+}
+
 // Infer lamp type from fixture name for the lighting audit
 function inferLampType(name) {
   if (!name) return '';
@@ -290,18 +342,40 @@ export default function LenardAZSRP() {
     const id = ++lineIdRef.current;
     const cat = preset?.cat || 'panel';
     const defaultHeight = DEFAULT_HEIGHTS[cat] || 9;
+    const fixtureCat = preset?.fixtureCategory || CATEGORY_TO_FIXTURE_CAT[cat] || 'Linear';
+    const targetNewW = preset?.newW || 0;
+
+    // Auto-match best SBE product for this fixture category
+    let autoProductId = preset?.productId || null;
+    let autoProductName = preset?.productName || '';
+    let autoProductPrice = preset?.productPrice || 0;
+    let autoNewW = targetNewW;
+    if (!autoProductId && sbeProducts.length > 0) {
+      const best = findBestProduct(sbeProducts, fixtureCat, targetNewW);
+      if (best) {
+        autoProductId = best.id;
+        autoProductName = best.name;
+        autoProductPrice = best.unit_price || 0;
+        // Extract wattage from product if line doesn't have one
+        if (!autoNewW) {
+          const wm = (best.description || best.name || '').match(/(\d+)\s*[wW]/);
+          if (wm) autoNewW = parseInt(wm[1]);
+        }
+      }
+    }
+
     const base = {
       id,
       qty: preset?.qty || 1,
       existW: preset?.existW || 0,
-      newW: preset?.newW || 0,
+      newW: autoNewW,
       name: preset?.name || '',
       height: preset?.height || defaultHeight,
-      productId: preset?.productId || null,
-      productName: preset?.productName || '',
-      productPrice: preset?.productPrice || 0,
+      productId: autoProductId,
+      productName: autoProductName,
+      productPrice: autoProductPrice,
       // Audit-matching fields
-      fixtureCategory: preset?.fixtureCategory || CATEGORY_TO_FIXTURE_CAT[cat] || 'Linear',
+      fixtureCategory: fixtureCat,
       lightingType: preset?.lightingType || inferLampType(preset?.name || ''),
       confirmed: false,
       overrideNotes: '',
@@ -313,7 +387,7 @@ export default function LenardAZSRP() {
     }
     setNewlyAdded(prev => new Set(prev).add(id));
     setTimeout(() => setNewlyAdded(prev => { const next = new Set(prev); next.delete(id); return next; }), 2000);
-  }, [program]);
+  }, [program, sbeProducts]);
 
   const updateLine = useCallback((id, field, value) => {
     setLines(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
@@ -1191,21 +1265,31 @@ export default function LenardAZSRP() {
                     </div>
                   )}
 
-                  {/* Replacement Product — always shown, matches audit area modal */}
+                  {/* SBE Replacement Product — filtered by category match */}
                   <div style={{ marginBottom: '12px' }}>
-                    <label style={S.label}>Replacement Product</label>
-                    <select
-                      value={r.productId || ''}
-                      onChange={e => {
-                        const prod = sbeProducts.find(p => String(p.id) === e.target.value);
-                        if (prod) selectProduct(r.id, prod);
-                        else setLines(prev => prev.map(l => l.id === r.id ? { ...l, productId: null, productName: '', productPrice: 0 } : l));
-                      }}
-                      style={S.select}
-                    >
-                      <option value="">{sbeProducts.length > 0 ? 'Select Product (Optional)' : 'No products loaded'}</option>
-                      {sbeProducts.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` \u2014 $${p.unit_price}` : ''}</option>)}
-                    </select>
+                    <label style={S.label}>SBE Replacement Product</label>
+                    {(() => {
+                      const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW);
+                      const matched = ranked.filter(p => p._score >= 100);
+                      const other = ranked.filter(p => p._score < 100);
+                      return (
+                        <select
+                          value={r.productId || ''}
+                          onChange={e => {
+                            const prod = sbeProducts.find(p => String(p.id) === e.target.value);
+                            if (prod) selectProduct(r.id, prod);
+                            else setLines(prev => prev.map(l => l.id === r.id ? { ...l, productId: null, productName: '', productPrice: 0 } : l));
+                          }}
+                          style={S.select}
+                        >
+                          <option value="">{sbeProducts.length > 0 ? 'Select SBE Product' : 'No SBE products loaded'}</option>
+                          {matched.length > 0 && <option disabled>--- Recommended for {r.fixtureCategory || 'this fixture'} ---</option>}
+                          {matched.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` \u2014 $${p.unit_price}` : ''}</option>)}
+                          {other.length > 0 && <option disabled>--- Other SBE Products ---</option>}
+                          {other.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` \u2014 $${p.unit_price}` : ''}</option>)}
+                        </select>
+                      );
+                    })()}
                     {r.productPrice > 0 && <div style={{ fontSize: '11px', color: T.accent, marginTop: '4px' }}>${r.productPrice}/unit \u00D7 {r.qty} = ${(r.productPrice * r.qty).toLocaleString()}</div>}
                   </div>
 
