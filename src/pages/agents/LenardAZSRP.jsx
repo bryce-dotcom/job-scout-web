@@ -133,6 +133,28 @@ function inferLampType(name) {
 const FIXTURE_CATEGORIES = ['Linear', 'High Bay', 'Low Bay', 'Surface Mount', 'Outdoor', 'Recessed', 'Track', 'Wall Pack', 'Flood', 'Area Light', 'Canopy', 'Other'];
 const LAMP_TYPES = ['T12', 'T8', 'T5', 'T5HO', 'Metal Halide', 'HPS', 'Mercury Vapor', 'Halogen', 'Incandescent', 'CFL', 'LED', 'Other'];
 
+// Common wattages and LED replacements by lamp type (matching lightingConstants.js)
+const COMMON_WATTAGES = {
+  'T12': [46, 72, 86, 128, 158, 172], 'T8': [32, 59, 85, 112, 118], 'T5': [28, 58, 84],
+  'T5HO': [118, 234, 348, 464], 'Metal Halide': [85, 120, 185, 210, 290, 455, 1080],
+  'HPS': [85, 120, 185, 240, 295, 465, 1100], 'Mercury Vapor': [200, 290, 455, 1075],
+  'Halogen': [50, 75, 90, 150, 300, 500], 'Incandescent': [40, 60, 75, 100, 150],
+  'CFL': [13, 18, 26, 32, 42], 'LED': [10, 20, 30, 50, 100, 150, 200, 300, 400], 'Other': [],
+};
+const LED_REPLACEMENT_MAP = {
+  'T12': { 46: 15, 72: 25, 86: 30, 128: 40, 158: 50, 172: 55 },
+  'T8': { 32: 12, 59: 25, 85: 35, 112: 45, 118: 48 },
+  'T5': { 28: 12, 58: 25, 84: 35 },
+  'T5HO': { 118: 50, 234: 95, 348: 140, 464: 180 },
+  'Metal Halide': { 85: 30, 120: 45, 185: 70, 210: 80, 290: 100, 455: 150, 1080: 400 },
+  'HPS': { 85: 30, 120: 45, 185: 70, 240: 90, 295: 100, 465: 150, 1100: 400 },
+  'Mercury Vapor': { 200: 70, 290: 100, 455: 150, 1075: 400 },
+  'Halogen': { 50: 7, 75: 10, 90: 12, 150: 18, 300: 36, 500: 60 },
+  'Incandescent': { 40: 6, 60: 9, 75: 11, 100: 15, 150: 20 },
+  'CFL': { 13: 9, 18: 12, 26: 15, 32: 18, 42: 24 },
+  'LED': {}, 'Other': {},
+};
+
 // ==================== INCENTIVE CALCULATION ENGINES ====================
 
 function calcSBS(line) {
@@ -209,11 +231,14 @@ export default function LenardAZSRP() {
   const [daysPerYear, setDaysPerYear] = useState(365);
   const [energyRate, setEnergyRate] = useState(0.10);
 
-  // Save project
+  // Save project — customer info matching step 1 basic info
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [savePhone, setSavePhone] = useState('');
   const [saveEmail, setSaveEmail] = useState('');
   const [saveAddress, setSaveAddress] = useState('');
+  const [saveCity, setSaveCity] = useState('');
+  const [saveState, setSaveState] = useState('AZ');
+  const [saveZip, setSaveZip] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedLeadId, setSavedLeadId] = useState(null);
 
@@ -233,7 +258,7 @@ export default function LenardAZSRP() {
   }, []);
 
   // Reset lines when switching programs
-  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setCapturedPhotos([]); }, [program]);
+  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setCapturedPhotos([]); setSaveCity(''); setSaveState('AZ'); setSaveZip(''); }, [program]);
 
   // Register PWA service worker
   useEffect(() => {
@@ -408,6 +433,7 @@ export default function LenardAZSRP() {
         totalIncentive: totals.totalIncentive,
         projectCost: financials.projectCost,
         operatingHours, daysPerYear, energyRate,
+        city: saveCity, state: saveState, zip: saveZip,
         photos: capturedPhotos,
       };
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, {
@@ -418,6 +444,9 @@ export default function LenardAZSRP() {
           phone: savePhone,
           email: saveEmail,
           address: saveAddress,
+          city: saveCity,
+          state: saveState,
+          zip: saveZip,
           projectData,
           programType: program,
         }),
@@ -461,6 +490,9 @@ export default function LenardAZSRP() {
       setSavePhone(project.phone || '');
       setSaveEmail(project.email || '');
       setSaveAddress(project.address || '');
+      setSaveCity(pd.city || '');
+      setSaveState(pd.state || 'AZ');
+      setSaveZip(pd.zip || '');
       if (pd.operatingHours) setOperatingHours(pd.operatingHours);
       if (pd.daysPerYear) setDaysPerYear(pd.daysPerYear);
       if (pd.energyRate) setEnergyRate(pd.energyRate);
@@ -818,22 +850,82 @@ export default function LenardAZSRP() {
 
               {isExp && (
                 <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${T.border}` }}>
-                  <div style={{ marginBottom: '10px' }}><label style={S.label}>Description</label><input type="text" value={r.name} onChange={e => updateLine(r.id, 'name', e.target.value)} placeholder="Optional label" style={S.input} /></div>
-
-                  {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Fixture Type</label><select value={r.fixtureType} onChange={e => updateLine(r.id, 'fixtureType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.fixture).map(([k, v]) => <option key={k} value={k}>{v.label} — ${v.rate}/W</option>)}</select></div>}
-                  {program === 'sbc' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Category / Subtype</label><select value={`${r.category}|${r.subtype}`} onChange={e => { const [cat, sub] = e.target.value.split('|'); updateLine(r.id, 'category', cat); updateLine(r.id, 'subtype', sub); }} style={S.select}>{Object.entries(SBC_RATES.categories).map(([catKey, cat]) => cat.subtypes.map(s => <option key={s.id} value={`${catKey}|${s.id}`}>{cat.icon} {s.label} — {s.ratePerWatt ? `$${s.ratePerWatt}/W` : `$${s.perFixture}/fixture`}</option>))}</select></div>}
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                    <div><label style={S.label}>Qty</label><input type="number" inputMode="numeric" value={r.qty || ''} onChange={e => updateLine(r.id, 'qty', parseInt(e.target.value) || 0)} style={S.input} /></div>
-                    <div><label style={S.label}>Exist W</label><input type="number" inputMode="numeric" value={r.existW || ''} onChange={e => updateLine(r.id, 'existW', parseInt(e.target.value) || 0)} style={S.input} /></div>
-                    <div><label style={S.label}>New W</label><input type="number" inputMode="numeric" value={r.newW || ''} onChange={e => updateLine(r.id, 'newW', parseInt(e.target.value) || 0)} style={S.input} /></div>
-                    <div><label style={S.label}>Height (ft)</label><input type="number" inputMode="numeric" value={r.height || ''} onChange={e => updateLine(r.id, 'height', parseInt(e.target.value) || 0)} style={S.input} /></div>
+                  {/* Area Name — matches audit area modal */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={S.label}>Area Name *</label>
+                    <input type="text" value={r.name} onChange={e => updateLine(r.id, 'name', e.target.value)} placeholder="e.g., Warehouse Bay 1, Office, Parking Lot" style={S.input} />
                   </div>
 
-                  {/* SBE Replacement Product */}
+                  {/* 3-column: Fixture Category, Lighting Type, Ceiling Height — matches audit area modal */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={S.label}>Fixture Category</label>
+                      <select value={r.fixtureCategory || ''} onChange={e => updateLine(r.id, 'fixtureCategory', e.target.value)} style={S.select}>
+                        {FIXTURE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={S.label}>Lighting Type</label>
+                      <select value={r.lightingType || ''} onChange={e => updateLine(r.id, 'lightingType', e.target.value)} style={S.select}>
+                        <option value="">Select Type</option>
+                        {LAMP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={S.label}>Ceiling Height (ft)</label>
+                      <input type="number" inputMode="numeric" value={r.height || ''} onChange={e => updateLine(r.id, 'height', parseInt(e.target.value) || 0)} placeholder="Optional" style={S.input} />
+                    </div>
+                  </div>
+
+                  {/* Fixture Count — big +/- counter matching audit area modal */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={S.label}>Fixture Count *</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0', maxWidth: '240px' }}>
+                      <button type="button" onClick={() => updateLine(r.id, 'qty', Math.max(1, (r.qty || 1) - 1))} style={{ width: '52px', height: '48px', borderRadius: '10px 0 0 10px', border: `2px solid ${T.accent}`, borderRight: 'none', background: T.accentDim, color: T.accent, fontSize: '24px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0 }}>{'\u2212'}</button>
+                      <input type="number" min="1" inputMode="numeric" value={r.qty || ''} onChange={e => updateLine(r.id, 'qty', e.target.value === '' ? 1 : (parseInt(e.target.value) || 1))} style={{ flex: 1, minWidth: 0, height: '48px', border: `2px solid ${T.border}`, borderLeft: 'none', borderRight: 'none', background: T.bgInput, color: T.text, fontSize: '22px', fontWeight: '700', textAlign: 'center', MozAppearance: 'textfield', WebkitAppearance: 'none', outline: 'none', boxSizing: 'border-box' }} />
+                      <button type="button" onClick={() => updateLine(r.id, 'qty', (r.qty || 0) + 1)} style={{ width: '52px', height: '48px', borderRadius: '0 10px 10px 0', border: `2px solid ${T.accent}`, borderLeft: 'none', background: T.accent, color: '#fff', fontSize: '24px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0 }}>{'\uFF0B'}</button>
+                    </div>
+                  </div>
+
+                  {/* 2-column: Existing Watts / New Watts — matches audit area modal */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={S.label}>Existing Watts</label>
+                      <input type="number" min="0" inputMode="numeric" value={r.existW || ''} onChange={e => updateLine(r.id, 'existW', e.target.value === '' ? 0 : (parseInt(e.target.value) || 0))} style={S.input} />
+                    </div>
+                    <div>
+                      <label style={S.label}>New Watts</label>
+                      <input type="number" min="0" inputMode="numeric" value={r.newW || ''} onChange={e => updateLine(r.id, 'newW', e.target.value === '' ? 0 : (parseInt(e.target.value) || 0))} style={S.input} />
+                    </div>
+                  </div>
+
+                  {/* Quick-select wattage buttons — matches audit area modal */}
+                  {r.lightingType && COMMON_WATTAGES[r.lightingType]?.length > 0 && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ fontSize: '11px', color: T.textMuted, marginBottom: '6px', display: 'block' }}>
+                        Common {r.lightingType} wattages (tap to fill):
+                      </label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                        {COMMON_WATTAGES[r.lightingType].map(w => {
+                          const ledW = LED_REPLACEMENT_MAP[r.lightingType]?.[w];
+                          const isSelected = r.existW === w;
+                          return (
+                            <button key={w} type="button" onClick={() => {
+                              updateLine(r.id, 'existW', w);
+                              if (ledW) updateLine(r.id, 'newW', ledW);
+                            }} style={{ padding: '5px 10px', borderRadius: '6px', border: `1px solid ${isSelected ? T.accent : T.border}`, background: isSelected ? T.accentDim : T.bgInput, color: isSelected ? T.accent : T.textSec, fontSize: '12px', fontWeight: isSelected ? '600' : '400', cursor: 'pointer' }}>
+                              {w}W{ledW ? ` \u2192 ${ledW}W` : ''}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Replacement Product — matches audit area modal */}
                   {sbeProducts.length > 0 && (
-                    <div style={{ marginBottom: '10px' }}>
-                      <label style={S.label}>SBE Replacement Product</label>
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={S.label}>Replacement Product</label>
                       <select
                         value={r.productId || ''}
                         onChange={e => {
@@ -843,44 +935,28 @@ export default function LenardAZSRP() {
                         }}
                         style={S.select}
                       >
-                        <option value="">Select product...</option>
-                        {sbeProducts.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` — $${p.unit_price}` : ''}</option>)}
+                        <option value="">Select Product (Optional)</option>
+                        {sbeProducts.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` \u2014 $${p.unit_price}` : ''}</option>)}
                       </select>
                       {r.productPrice > 0 && <div style={{ fontSize: '11px', color: T.accent, marginTop: '4px' }}>${r.productPrice}/unit \u00D7 {r.qty} = ${(r.productPrice * r.qty).toLocaleString()}</div>}
                     </div>
                   )}
 
-                  {/* Audit-matching fields: Fixture Category & Lamp Type */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                    <div>
-                      <label style={S.label}>Fixture Category</label>
-                      <select value={r.fixtureCategory || ''} onChange={e => updateLine(r.id, 'fixtureCategory', e.target.value)} style={S.select}>
-                        <option value="">Select...</option>
-                        {FIXTURE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={S.label}>Existing Lamp Type</label>
-                      <select value={r.lightingType || ''} onChange={e => updateLine(r.id, 'lightingType', e.target.value)} style={S.select}>
-                        <option value="">Select...</option>
-                        {LAMP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
+                  {/* Notes — textarea matching audit area modal */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={S.label}>Notes</label>
+                    <textarea value={r.overrideNotes || ''} onChange={e => updateLine(r.id, 'overrideNotes', e.target.value)} rows={2} placeholder="Optional notes..." style={{ ...S.input, resize: 'vertical' }} />
                   </div>
 
-                  {/* Override Notes */}
-                  <div style={{ marginBottom: '10px' }}>
-                    <label style={S.label}>Notes / Override</label>
-                    <input type="text" value={r.overrideNotes || ''} onChange={e => updateLine(r.id, 'overrideNotes', e.target.value)} placeholder="Optional notes" style={S.input} />
-                  </div>
+                  {/* Confirmed — checkbox matching audit area modal */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '12px' }}>
+                    <input type="checkbox" checked={!!r.confirmed} onChange={e => updateLine(r.id, 'confirmed', e.target.checked)} style={{ width: '18px', height: '18px', accentColor: T.green }} />
+                    <span style={{ fontSize: '14px', color: T.text }}>Confirmed</span>
+                  </label>
 
-                  {/* Confirmed toggle */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                    <button onClick={() => updateLine(r.id, 'confirmed', !r.confirmed)} style={{ width: '44px', height: '24px', borderRadius: '12px', background: r.confirmed ? T.green : T.bgInput, border: `1px solid ${r.confirmed ? T.green : T.border}`, cursor: 'pointer', position: 'relative', transition: 'all 0.2s', flexShrink: 0, padding: 0 }}>
-                      <div style={{ width: '18px', height: '18px', borderRadius: '9px', background: '#fff', position: 'absolute', top: '2px', left: r.confirmed ? '22px' : '2px', transition: 'left 0.2s' }} />
-                    </button>
-                    <span style={{ fontSize: '13px', color: r.confirmed ? T.green : T.textSec }}>{r.confirmed ? 'Confirmed' : 'Unconfirmed'}</span>
-                  </div>
+                  {/* SRP Program-specific: rebate type / controls */}
+                  {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>SRP Fixture Type</label><select value={r.fixtureType} onChange={e => updateLine(r.id, 'fixtureType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.fixture).map(([k, v]) => <option key={k} value={k}>{v.label} — ${v.rate}/W</option>)}</select></div>}
+                  {program === 'sbc' && <div style={{ marginBottom: '10px' }}><label style={S.label}>SRP Category / Subtype</label><select value={`${r.category}|${r.subtype}`} onChange={e => { const [cat, sub] = e.target.value.split('|'); updateLine(r.id, 'category', cat); updateLine(r.id, 'subtype', sub); }} style={S.select}>{Object.entries(SBC_RATES.categories).map(([catKey, cat]) => cat.subtypes.map(s => <option key={s.id} value={`${catKey}|${s.id}`}>{cat.icon} {s.label} — {s.ratePerWatt ? `$${s.ratePerWatt}/W` : `$${s.perFixture}/fixture`}</option>))}</select></div>}
 
                   {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Controls Upgrade</label><select value={r.controlsType} onChange={e => updateLine(r.id, 'controlsType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.controls).map(([k, v]) => <option key={k} value={k}>{v.label}{v.rate > 0 ? ` — $${v.rate}/W` : ''}</option>)}</select></div>}
 
@@ -1025,11 +1101,20 @@ export default function LenardAZSRP() {
         <div onClick={() => setShowSaveModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '90%', maxWidth: '400px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', zIndex: 51, padding: '24px' }}>
           <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '4px' }}>{'\uD83D\uDCBE'} Save Project</div>
-          <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>Creates a lead + lighting audit in Job Scout</div>
-          <div style={{ marginBottom: '10px' }}><label style={S.label}>Customer Name</label><input type="text" value={projectName} onChange={e => setProjectName(e.target.value)} style={S.input} /></div>
-          <div style={{ marginBottom: '10px' }}><label style={S.label}>Phone</label><input type="tel" inputMode="tel" value={savePhone} onChange={e => setSavePhone(e.target.value)} placeholder="Optional" style={S.input} /></div>
+          <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>Creates a customer, lead + lighting audit in Job Scout</div>
+          {/* Customer & Contact — matching audit step 1 basic info */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+            <div><label style={S.label}>Customer Name *</label><input type="text" value={projectName} onChange={e => setProjectName(e.target.value)} style={S.input} /></div>
+            <div><label style={S.label}>Phone</label><input type="tel" inputMode="tel" value={savePhone} onChange={e => setSavePhone(e.target.value)} placeholder="Optional" style={S.input} /></div>
+          </div>
           <div style={{ marginBottom: '10px' }}><label style={S.label}>Email</label><input type="email" inputMode="email" value={saveEmail} onChange={e => setSaveEmail(e.target.value)} placeholder="Optional" style={S.input} /></div>
-          <div style={{ marginBottom: '16px' }}><label style={S.label}>Address</label><input type="text" value={saveAddress} onChange={e => setSaveAddress(e.target.value)} placeholder="Optional" style={S.input} /></div>
+          {/* Address — matching audit step 1 */}
+          <div style={{ marginBottom: '10px' }}><label style={S.label}>Address</label><input type="text" value={saveAddress} onChange={e => setSaveAddress(e.target.value)} placeholder="Street address" style={S.input} /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+            <div><label style={S.label}>City</label><input type="text" value={saveCity} onChange={e => setSaveCity(e.target.value)} style={S.input} /></div>
+            <div><label style={S.label}>State</label><input type="text" value={saveState} onChange={e => setSaveState(e.target.value)} style={S.input} /></div>
+            <div><label style={S.label}>ZIP</label><input type="text" inputMode="numeric" value={saveZip} onChange={e => setSaveZip(e.target.value)} style={S.input} /></div>
+          </div>
           {capturedPhotos.length > 0 && <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '12px' }}>{'\uD83D\uDCF7'} {capturedPhotos.length} photo{capturedPhotos.length > 1 ? 's' : ''} will be saved to the audit</div>}
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={saveProject} disabled={saving} style={{ ...S.btn, flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving...' : 'Save'}</button>

@@ -35,7 +35,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { customerName, phone, email, address, projectData, programType } = await req.json();
+    const { customerName, phone, email, address, city, state, zip, projectData, programType } = await req.json();
     if (!customerName) {
       return new Response(JSON.stringify({ error: 'Customer name is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -52,8 +52,9 @@ serve(async (req) => {
     const cid = parseInt(companyId);
     const pd = projectData || {};
     const lines = pd.lines || [];
+    const facilityState = state || 'AZ';
 
-    // 0. Find or create Customer
+    // 0. Find or create Customer — matching step 1 basic info fields
     let customerId: number | null = null;
     const existingCustomers = await querySupabase(
       SUPABASE_URL!, 'customers', key,
@@ -68,20 +69,25 @@ serve(async (req) => {
         phone: phone || null,
         email: email || null,
         address: address || null,
-        state: 'AZ',
+        city: city || null,
+        state: facilityState,
+        zip: zip || null,
         customer_type: programType === 'sbs' ? 'Commercial' : 'Small Business',
         status: 'Active',
       });
       customerId = newCustomer.id;
     }
 
-    // 1. Create Lead linked to customer
+    // 1. Create Lead linked to customer — with address fields
     const leadData = {
       company_id: cid,
       customer_name: customerName,
       phone: phone || null,
       email: email || null,
       address: address || null,
+      city: city || null,
+      state: facilityState,
+      zip: zip || null,
       status: 'New',
       lead_source: 'Lenard AZ SRP',
       service_type: 'Energy Efficiency',
@@ -93,7 +99,7 @@ serve(async (req) => {
 
     const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, leadData);
 
-    // 2. Create Lighting Audit linked to lead + customer
+    // 2. Create Lighting Audit linked to lead + customer — with full facility address
     const auditId = `AUD-${Date.now().toString(36).toUpperCase()}`;
     const totalExistW = lines.reduce((s: number, l: any) => s + ((l.existW || 0) * (l.qty || 0)), 0);
     const totalNewW = lines.reduce((s: number, l: any) => s + ((l.newW || 0) * (l.qty || 0)), 0);
@@ -117,7 +123,9 @@ serve(async (req) => {
       customer_id: customerId,
       facility_name: customerName,
       facility_address: address || null,
-      facility_state: 'AZ',
+      facility_city: city || null,
+      facility_state: facilityState,
+      facility_zip: zip || null,
       operating_hours_day: opHours,
       operating_days_year: opDays,
       utility_rate: rate,
