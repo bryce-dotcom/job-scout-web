@@ -260,27 +260,10 @@ export default function LenardAZSRP() {
   // Reset lines when switching programs
   useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setCapturedPhotos([]); setSaveCity(''); setSaveState('AZ'); setSaveZip(''); }, [program]);
 
-  // Register PWA service worker — network-first, clear old caches on load
+  // Register PWA service worker
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw-lenard.js').then(reg => {
-        // If there's a waiting worker, activate it immediately
-        if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
-        reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing;
-          if (newWorker) {
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                newWorker.postMessage('SKIP_WAITING');
-              }
-            });
-          }
-        });
-      }).catch(() => {});
-      // On controller change (new SW activated), reload for fresh content
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        window.location.reload();
-      });
+      navigator.serviceWorker.register('/sw-lenard.js').catch(() => {});
     }
   }, []);
 
