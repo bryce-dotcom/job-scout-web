@@ -938,25 +938,23 @@ export default function LenardAZSRP() {
                     </div>
                   )}
 
-                  {/* Replacement Product — matches audit area modal */}
-                  {sbeProducts.length > 0 && (
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={S.label}>Replacement Product</label>
-                      <select
-                        value={r.productId || ''}
-                        onChange={e => {
-                          const prod = sbeProducts.find(p => String(p.id) === e.target.value);
-                          if (prod) selectProduct(r.id, prod);
-                          else setLines(prev => prev.map(l => l.id === r.id ? { ...l, productId: null, productName: '', productPrice: 0 } : l));
-                        }}
-                        style={S.select}
-                      >
-                        <option value="">Select Product (Optional)</option>
-                        {sbeProducts.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` \u2014 $${p.unit_price}` : ''}</option>)}
-                      </select>
-                      {r.productPrice > 0 && <div style={{ fontSize: '11px', color: T.accent, marginTop: '4px' }}>${r.productPrice}/unit \u00D7 {r.qty} = ${(r.productPrice * r.qty).toLocaleString()}</div>}
-                    </div>
-                  )}
+                  {/* Replacement Product — always shown, matches audit area modal */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={S.label}>Replacement Product</label>
+                    <select
+                      value={r.productId || ''}
+                      onChange={e => {
+                        const prod = sbeProducts.find(p => String(p.id) === e.target.value);
+                        if (prod) selectProduct(r.id, prod);
+                        else setLines(prev => prev.map(l => l.id === r.id ? { ...l, productId: null, productName: '', productPrice: 0 } : l));
+                      }}
+                      style={S.select}
+                    >
+                      <option value="">{sbeProducts.length > 0 ? 'Select Product (Optional)' : 'No products loaded'}</option>
+                      {sbeProducts.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` \u2014 $${p.unit_price}` : ''}</option>)}
+                    </select>
+                    {r.productPrice > 0 && <div style={{ fontSize: '11px', color: T.accent, marginTop: '4px' }}>${r.productPrice}/unit \u00D7 {r.qty} = ${(r.productPrice * r.qty).toLocaleString()}</div>}
+                  </div>
 
                   {/* Notes — textarea matching audit area modal */}
                   <div style={{ marginBottom: '12px' }}>

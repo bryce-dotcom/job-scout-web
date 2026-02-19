@@ -147,6 +147,7 @@ serve(async (req) => {
       const totalExist = qty * existW;
       const totalLed = qty * newW;
 
+      // Column names matching the LIVE audit_areas table
       const areaData: any = {
         company_id: cid,
         audit_id: audit.id,
@@ -163,7 +164,6 @@ serve(async (req) => {
         area_watts_reduced: totalExist - totalLed,
         confirmed: l.confirmed || false,
         override_notes: l.overrideNotes || (l.productName ? `SBE Product: ${l.productName}` : null),
-        sort_order: i,
       };
 
       await supabasePost(`${SUPABASE_URL}/rest/v1/audit_areas`, key, areaData);

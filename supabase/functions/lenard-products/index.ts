@@ -27,9 +27,10 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
+    // Fetch ALL active products (live table uses 'type' not 'category')
     const products = await querySupabase(
       'products_services',
-      'name=ilike.*SBE*&active=eq.true&select=id,name,sku,unit_price,cost,category,description&order=category,name'
+      'active=eq.true&select=id,name,type,unit_price,cost,description&order=type,name'
     );
 
     return new Response(JSON.stringify({ success: true, products }),
