@@ -710,6 +710,13 @@ export default function ProductsServices() {
   // ============ DELETE ALL PRODUCTS (super admin only) ============
   const handleDeleteAllProducts = async () => {
     setDeletingAll(true)
+    // Delete linked inventory records first (foreign key constraint)
+    await supabase
+      .from('inventory')
+      .delete()
+      .eq('company_id', companyId)
+      .in('product_id', products.map(p => p.id))
+    // Now delete all products
     const { error } = await supabase
       .from('products_services')
       .delete()
@@ -718,6 +725,7 @@ export default function ProductsServices() {
       alert('Error deleting products: ' + error.message)
     } else {
       await fetchProducts()
+      await fetchInventory()
       setShowDeleteAll(false)
     }
     setDeletingAll(false)
