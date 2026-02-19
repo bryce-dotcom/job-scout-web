@@ -6,7 +6,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import {
   Plus, ArrowLeft, Settings, X, Save, Trash2, Package, Boxes,
-  Upload, Clock, DollarSign, Pencil, ChevronRight, Archive
+  Upload, Clock, DollarSign, Pencil, ChevronRight, Archive, Search
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 
@@ -274,6 +274,7 @@ export default function ProductsServices() {
 
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -317,19 +318,33 @@ export default function ProductsServices() {
     setLoading(false)
   }
 
-  // Filter products by service type (using type column on products_services)
-  const filteredProducts = products.filter(p =>
-    activeServiceType === 'all' || p.type === activeServiceType
-  )
+  // Filter products by service type + search query
+  const filteredProducts = products.filter(p => {
+    if (activeServiceType !== 'all' && p.type !== activeServiceType) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      const haystack = `${p.name || ''} ${p.description || ''} ${p.type || ''}`.toLowerCase()
+      return haystack.includes(q)
+    }
+    return true
+  })
 
   // Filter groups by service type
   const filteredGroups = productGroups.filter(g =>
     g.active && (activeServiceType === 'all' || g.service_type === activeServiceType)
   )
 
-  // Get products for selected group
+  // Get products for selected group (with search filter)
   const groupProducts = selectedGroup
-    ? products.filter(p => p.group_id === selectedGroup.id)
+    ? products.filter(p => {
+        if (p.group_id !== selectedGroup.id) return false
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase()
+          const haystack = `${p.name || ''} ${p.description || ''} ${p.type || ''}`.toLowerCase()
+          return haystack.includes(q)
+        }
+        return true
+      })
     : []
 
   // Get ungrouped products (products with no group_id or group_id not in current groups)
@@ -828,6 +843,73 @@ export default function ProductsServices() {
           ))}
         </div>
       )}
+
+      {/* Search Bar */}
+      <div style={{
+        position: 'relative',
+        marginBottom: '20px'
+      }}>
+        <Search size={18} style={{
+          position: 'absolute',
+          left: '14px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          color: searchQuery ? theme.accent : theme.textMuted,
+          pointerEvents: 'none'
+        }} />
+        <input
+          type="text"
+          placeholder="Search products by name, description, or type..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          style={{
+            width: '100%',
+            padding: isMobile ? '14px 42px 14px 42px' : '12px 42px 12px 42px',
+            fontSize: '15px',
+            border: `1px solid ${searchQuery ? theme.accent : theme.border}`,
+            borderRadius: '12px',
+            backgroundColor: theme.bgCard,
+            color: theme.text,
+            outline: 'none',
+            boxSizing: 'border-box',
+            transition: 'border-color 0.2s'
+          }}
+          onFocus={e => e.target.style.borderColor = theme.accent}
+          onBlur={e => { if (!searchQuery) e.target.style.borderColor = theme.border }}
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            style={{
+              position: 'absolute',
+              right: '10px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: theme.textMuted,
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+          >
+            <X size={16} />
+          </button>
+        )}
+        {searchQuery && (
+          <div style={{
+            position: 'absolute',
+            right: '36px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            fontSize: '12px',
+            color: theme.textMuted
+          }}>
+            {filteredProducts.length} result{filteredProducts.length !== 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
 
       {/* Main Content Area */}
       <div style={{ display: 'flex', gap: '24px' }}>
