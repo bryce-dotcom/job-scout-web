@@ -29,7 +29,7 @@ serve(async (req) => {
     const leadParams = new URLSearchParams({
       company_id: `eq.${companyId}`,
       lead_source: 'eq.Lenard AZ SRP',
-      select: 'id,customer_name,created_at,estimated_value,status,notes,phone,email,address',
+      select: 'id,customer_name,created_at,status,notes,phone,email,address',
       order: 'created_at.desc',
       limit: '50',
     });
@@ -42,7 +42,7 @@ serve(async (req) => {
       const auditParams = new URLSearchParams({
         company_id: `eq.${companyId}`,
         lead_id: `in.(${leadIds.join(',')})`,
-        select: 'id,lead_id,audit_id,status,total_watts_current,total_watts_proposed,watts_reduction,estimated_rebate,annual_kwh_savings,annual_cost_savings,project_cost,payback_years,roi_percent',
+        select: 'id,lead_id,audit_id,status,total_existing_watts,total_proposed_watts,watts_reduced,estimated_rebate,annual_savings_kwh,annual_savings_dollars,est_project_cost,payback_months',
       });
       const audits = await querySupabase(SUPABASE_URL!, 'lighting_audits', key, auditParams.toString());
       for (const a of audits) {
@@ -57,7 +57,7 @@ serve(async (req) => {
       email: l.email,
       address: l.address,
       createdAt: l.created_at,
-      estimatedValue: l.estimated_value,
+      estimatedValue: 0,
       status: l.status,
       notes: l.notes,
       audit: auditsMap[l.id] || null,

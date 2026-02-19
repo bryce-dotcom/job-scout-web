@@ -109,28 +109,29 @@ serve(async (req) => {
     const paybackYears = annualCostSavings > 0 ? netCost / annualCostSavings : 0;
     const roiPercent = netCost > 0 ? (annualCostSavings / netCost) * 100 : 0;
 
+    const paybackMonths = annualCostSavings > 0 ? (netCost / annualCostSavings) * 12 : 0;
+
+    // Column names matching the LIVE database (not the schema file)
     const auditData = {
       company_id: cid,
       audit_id: auditId,
       lead_id: lead.id,
       customer_id: customerId,
-      facility_name: customerName,
-      facility_address: fullAddress,
-      facility_state: facilityState,
-      operating_hours_day: opHours,
-      operating_days_year: opDays,
-      utility_rate: rate,
-      total_fixtures_current: totalFixtures,
-      total_fixtures_proposed: totalFixtures,
-      total_watts_current: totalExistW,
-      total_watts_proposed: totalNewW,
-      watts_reduction: wattsReduced,
-      annual_kwh_savings: Math.round(annualKwhSavings * 100) / 100,
-      annual_cost_savings: Math.round(annualCostSavings * 100) / 100,
+      address: fullAddress,
+      state: facilityState,
+      operating_hours: opHours,
+      operating_days: opDays,
+      electric_rate: rate,
+      total_fixtures: totalFixtures,
+      total_existing_watts: totalExistW,
+      total_proposed_watts: totalNewW,
+      watts_reduced: wattsReduced,
+      annual_savings_kwh: Math.round(annualKwhSavings * 100) / 100,
+      annual_savings_dollars: Math.round(annualCostSavings * 100) / 100,
       estimated_rebate: Math.round((pd.totalIncentive || 0) * 100) / 100,
-      project_cost: Math.round(projectCost * 100) / 100,
-      payback_years: Math.round(paybackYears * 100) / 100,
-      roi_percent: Math.round(roiPercent * 100) / 100,
+      est_project_cost: Math.round(projectCost * 100) / 100,
+      net_cost: Math.round(netCost * 100) / 100,
+      payback_months: Math.round(paybackMonths * 100) / 100,
       status: 'Draft',
       notes: JSON.stringify(pd),
     };
