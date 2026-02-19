@@ -1602,7 +1602,7 @@ export default function LenardAZSRP() {
                           style={S.input}
                         />
                         {expandedLine === r.id && (
-                          <div style={{ maxHeight: '160px', overflow: 'auto', border: `1px solid ${T.border}`, borderRadius: '0 0 8px 8px', marginTop: '-1px' }}>
+                          <div style={{ maxHeight: '280px', overflow: 'auto', border: `1px solid ${T.border}`, borderRadius: '0 0 8px 8px', marginTop: '-1px' }}>
                             {(() => {
                               const q = productSearch.toLowerCase();
                               const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW);
@@ -1610,23 +1610,23 @@ export default function LenardAZSRP() {
                               const matched = filtered.filter(p => p._score >= 100);
                               const other = filtered.filter(p => p._score < 100);
                               if (filtered.length === 0) return <div style={{ padding: '10px', fontSize: '12px', color: T.textMuted, textAlign: 'center' }}>No products found</div>;
+                              const ProductRow = ({ p, highlight }) => (
+                                <button key={p.id} onClick={() => { selectProduct(r.id, p); setProductSearch(''); }}
+                                  style={{ width: '100%', textAlign: 'left', padding: '10px 10px', background: T.bgCard, border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: '13px', fontWeight: '600', color: highlight ? T.text : T.textSec, lineHeight: '1.3' }}>{p.name}</div>
+                                      {p.description && <div style={{ fontSize: '11px', color: T.textMuted, marginTop: '2px', lineHeight: '1.3' }}>{p.description}</div>}
+                                    </div>
+                                    <div style={{ fontSize: '13px', fontWeight: '700', color: highlight ? T.accent : T.textMuted, whiteSpace: 'nowrap', flexShrink: 0 }}>{p.unit_price ? `$${p.unit_price}` : ''}</div>
+                                  </div>
+                                </button>
+                              );
                               return (<>
                                 {matched.length > 0 && <div style={{ padding: '4px 10px', fontSize: '10px', fontWeight: '700', color: T.accent, background: T.accentDim, textTransform: 'uppercase' }}>Recommended for {r.fixtureCategory}</div>}
-                                {matched.map(p => (
-                                  <button key={p.id} onClick={() => { selectProduct(r.id, p); setProductSearch(''); }}
-                                    style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: T.bgCard, border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div style={{ fontSize: '12px', color: T.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, whiteSpace: 'nowrap', marginLeft: '8px' }}>{p.unit_price ? `$${p.unit_price}` : ''}</div>
-                                  </button>
-                                ))}
+                                {matched.map(p => <ProductRow key={p.id} p={p} highlight={true} />)}
                                 {other.length > 0 && <div style={{ padding: '4px 10px', fontSize: '10px', fontWeight: '700', color: T.textMuted, background: T.bgInput, textTransform: 'uppercase' }}>Other SMBE Products</div>}
-                                {other.map(p => (
-                                  <button key={p.id} onClick={() => { selectProduct(r.id, p); setProductSearch(''); }}
-                                    style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: T.bgCard, border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div style={{ fontSize: '12px', color: T.textSec, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                                    <div style={{ fontSize: '12px', color: T.textMuted, whiteSpace: 'nowrap', marginLeft: '8px' }}>{p.unit_price ? `$${p.unit_price}` : ''}</div>
-                                  </button>
-                                ))}
+                                {other.map(p => <ProductRow key={p.id} p={p} highlight={false} />)}
                               </>);
                             })()}
                           </div>
