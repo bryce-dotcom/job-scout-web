@@ -1895,14 +1895,15 @@ export default function LenardAZSRP() {
                     <div style={{ fontWeight: '700', color: T.textMuted }}>Savings</div>
                     <div style={{ fontWeight: '700', color: T.textMuted }}>Cumulative</div>
                     <div style={{ fontWeight: '700', color: T.textMuted, textAlign: 'right' }}>Net</div>
-                    {financials.cashFlow.map(cf => (
-                      <React.Fragment key={cf.year}>
-                        <div style={{ color: T.textSec, fontWeight: cf.year === Math.ceil(financials.simplePayback) ? '700' : '400' }}>{cf.year}</div>
-                        <div style={{ color: cf.savings > 0 ? T.green : T.textSec }}>{cf.savings > 0 ? `$${Math.round(cf.savings).toLocaleString()}` : cf.investment < 0 ? `-$${Math.round(Math.abs(cf.investment)).toLocaleString()}` : '-'}</div>
-                        <div style={{ color: T.textSec }}>{cf.cumulative >= 0 ? `$${Math.round(cf.cumulative).toLocaleString()}` : `-$${Math.round(Math.abs(cf.cumulative)).toLocaleString()}`}</div>
-                        <div style={{ textAlign: 'right', fontWeight: '600', color: cf.cumulative >= 0 ? T.green : T.red }}>{cf.cumulative >= 0 ? `$${Math.round(cf.cumulative).toLocaleString()}` : `-$${Math.round(Math.abs(cf.cumulative)).toLocaleString()}`}</div>
-                      </React.Fragment>
-                    ))}
+                    {financials.cashFlow.map(cf => {
+                      const k = cf.year;
+                      return [
+                        <div key={`${k}y`} style={{ color: T.textSec, fontWeight: cf.year === Math.ceil(financials.simplePayback) ? '700' : '400' }}>{cf.year}</div>,
+                        <div key={`${k}s`} style={{ color: cf.savings > 0 ? T.green : T.textSec }}>{cf.savings > 0 ? `$${Math.round(cf.savings).toLocaleString()}` : cf.investment < 0 ? `-$${Math.round(Math.abs(cf.investment)).toLocaleString()}` : '-'}</div>,
+                        <div key={`${k}c`} style={{ color: T.textSec }}>{cf.cumulative >= 0 ? `$${Math.round(cf.cumulative).toLocaleString()}` : `-$${Math.round(Math.abs(cf.cumulative)).toLocaleString()}`}</div>,
+                        <div key={`${k}n`} style={{ textAlign: 'right', fontWeight: '600', color: cf.cumulative >= 0 ? T.green : T.red }}>{cf.cumulative >= 0 ? `$${Math.round(cf.cumulative).toLocaleString()}` : `-$${Math.round(Math.abs(cf.cumulative)).toLocaleString()}`}</div>,
+                      ];
+                    })}
                   </div>
                 </div>
               </>)}
