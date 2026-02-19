@@ -340,6 +340,8 @@ export default function LenardAZSRP() {
   const [saveZip, setSaveZip] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedLeadId, setSavedLeadId] = useState(null);
+  const [savedAuditId, setSavedAuditId] = useState(null);
+  const [isDirty, setIsDirty] = useState(false);
 
   // Projects list
   const [showProjects, setShowProjects] = useState(false);
@@ -360,7 +362,7 @@ export default function LenardAZSRP() {
   }, []);
 
   // Reset lines when switching programs
-  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setCapturedPhotos([]); setSaveCity(''); setSaveState('AZ'); setSaveZip(''); }, [program]);
+  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('AZ'); setSaveZip(''); }, [program]);
 
   // Register PWA service worker
   useEffect(() => {
@@ -489,10 +491,10 @@ export default function LenardAZSRP() {
     }
     setNewlyAdded(prev => new Set(prev).add(id));
     setTimeout(() => setNewlyAdded(prev => { const next = new Set(prev); next.delete(id); return next; }), 2000);
-    if (savedLeadId) setSavedLeadId(null);
-  }, [program, sbeProducts, savedLeadId]);
+    setIsDirty(true);
+  }, [program, sbeProducts]);
 
-  const markDirty = useCallback(() => { if (savedLeadId) setSavedLeadId(null); }, [savedLeadId]);
+  const markDirty = useCallback(() => setIsDirty(true), []);
 
   const updateLine = useCallback((id, field, value) => {
     setLines(prev => prev.map(l => {
@@ -691,13 +693,17 @@ export default function LenardAZSRP() {
           projectData,
           programType: program,
           leadOwnerId: leadOwnerId || null,
+          existingLeadId: savedLeadId || null,
+          existingAuditId: savedAuditId || null,
         }),
       });
       const data = await resp.json();
       if (data.success) {
         setSavedLeadId(data.leadId);
+        setSavedAuditId(data.auditId);
+        setIsDirty(false);
         setShowSaveModal(false);
-        showToast('Project saved as lead + audit', '\u2713');
+        showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
       } else {
         showToast(data.error || 'Save failed', '\u26A0\uFE0F');
       }
@@ -741,6 +747,8 @@ export default function LenardAZSRP() {
       if (pd.daysPerYear) setDaysPerYear(pd.daysPerYear);
       if (pd.energyRate) setEnergyRate(pd.energyRate);
       setSavedLeadId(project.id);
+      setSavedAuditId(project.audit?.id || null);
+      setIsDirty(false);
       if (pd.lines) {
         lineIdRef.current = 0;
         const loaded = pd.lines.map(l => {
@@ -1723,7 +1731,7 @@ export default function LenardAZSRP() {
                   </div>
                   <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                     <button onClick={() => setExpandedLine(null)} style={{ ...S.btn, flex: 1, fontSize: '13px' }}>Done</button>
-                    <button onClick={() => { setExpandedLine(null); setShowSaveModal(true); }} style={{ ...S.btn, flex: 1, fontSize: '13px', background: savedLeadId ? T.bgInput : T.blue, color: savedLeadId ? T.textMuted : '#fff' }}>{savedLeadId ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
+                    <button onClick={() => { setExpandedLine(null); setShowSaveModal(true); }} style={{ ...S.btn, flex: 1, fontSize: '13px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
                     <button onClick={() => removeLine(r.id)} style={{ ...S.btnGhost, color: T.red, borderColor: T.red, fontSize: '12px', padding: '10px 14px' }}>{'\uD83D\uDDD1'} Remove</button>
                   </div>
                 </div>
@@ -1766,7 +1774,7 @@ export default function LenardAZSRP() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
             <div><div style={{ fontSize: '11px', color: T.textMuted }}>TOTAL ESTIMATED INCENTIVE</div><div style={{ ...S.money, fontSize: '22px' }}>${totals.totalIncentive.toLocaleString()}</div></div>
             <div style={{ display: 'flex', gap: '6px' }}>
-              <button onClick={() => setShowSaveModal(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px', background: savedLeadId ? T.bgInput : T.blue, color: savedLeadId ? T.textMuted : '#fff' }}>{savedLeadId ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
+              <button onClick={() => setShowSaveModal(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
               <button onClick={() => setShowSummary(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px' }}>{'\uD83D\uDCCB'} Summary</button>
             </div>
           </div>
@@ -1931,7 +1939,7 @@ export default function LenardAZSRP() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '14px' }}>
                 <button onClick={generatePDF} style={{ ...S.btn, width: '100%', fontSize: '14px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>{'\uD83D\uDCC4'} Share Financial Audit PDF</button>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => { setShowSummary(false); setShowSaveModal(true); }} disabled={!!savedLeadId} style={{ ...S.btn, flex: 1, fontSize: '12px', background: savedLeadId ? T.bgInput : T.blue, color: savedLeadId ? T.textMuted : '#fff' }}>{savedLeadId ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
+                  <button onClick={() => { setShowSummary(false); setShowSaveModal(true); }} style={{ ...S.btn, flex: 1, fontSize: '12px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
                   <button onClick={copySummary} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>{'\uD83D\uDCCB'} Copy</button>
                   <button onClick={() => setShowSummary(false)} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>Close</button>
                 </div>

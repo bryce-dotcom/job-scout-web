@@ -23,6 +23,31 @@ async function supabasePost(url: string, key: string, body: any): Promise<any> {
   return res.json();
 }
 
+async function supabasePatch(baseUrl: string, table: string, key: string, id: number, body: any): Promise<any> {
+  const res = await fetch(`${baseUrl}/rest/v1/${table}?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'apikey': key,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Supabase PATCH failed: ${err}`);
+  }
+  return res.json();
+}
+
+async function supabaseDelete(baseUrl: string, table: string, key: string, params: string): Promise<void> {
+  await fetch(`${baseUrl}/rest/v1/${table}?${params}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${key}`, 'apikey': key },
+  });
+}
+
 async function querySupabase(baseUrl: string, table: string, key: string, params: string): Promise<any[]> {
   const res = await fetch(`${baseUrl}/rest/v1/${table}?${params}`, {
     headers: { 'Authorization': `Bearer ${key}`, 'apikey': key },
@@ -35,7 +60,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { customerName, phone, email, address, city, state, zip, projectData, programType, leadOwnerId } = await req.json();
+    const { customerName, phone, email, address, city, state, zip, projectData, programType, leadOwnerId, existingLeadId, existingAuditId } = await req.json();
     if (!customerName) {
       return new Response(JSON.stringify({ error: 'Customer name is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -92,7 +117,7 @@ serve(async (req) => {
     }
 
     // =====================================================
-    // 1. Create Lead — EXACT same columns as Leads.jsx handleSubmitLead()
+    // 1. Create or Update Lead
     // =====================================================
     const noteLines = [
       `SRP ${programType === 'sbs' ? 'Standard Business' : 'Small Business'} Lighting Retrofit`,
@@ -104,33 +129,42 @@ serve(async (req) => {
       projectCost ? `Project Cost: $${projectCost.toLocaleString()} | Net: $${netCost.toLocaleString()}` : '',
     ].filter(Boolean).join('\n');
 
-    // Matches Leads.jsx payload exactly
-    const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, {
-      company_id: cid,
-      customer_name: customerName,
-      business_name: null,
-      email: email || null,
-      phone: phone || null,
-      address: fullAddress,
-      service_type: 'Energy Efficiency',
-      lead_source: 'Lenard AZ SRP',
-      status: 'New',
-      notes: noteLines,
-      lead_owner_id: leadOwnerId ? parseInt(leadOwnerId) : null,
-      updated_at: new Date().toISOString(),
-    });
+    let leadId: number;
+    if (existingLeadId) {
+      // Update existing lead
+      const [updated] = await supabasePatch(SUPABASE_URL!, 'leads', key, existingLeadId, {
+        customer_name: customerName,
+        email: email || null,
+        phone: phone || null,
+        address: fullAddress,
+        notes: noteLines,
+        lead_owner_id: leadOwnerId ? parseInt(leadOwnerId) : null,
+        updated_at: new Date().toISOString(),
+      });
+      leadId = updated.id;
+    } else {
+      // Create new lead
+      const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, {
+        company_id: cid,
+        customer_name: customerName,
+        business_name: null,
+        email: email || null,
+        phone: phone || null,
+        address: fullAddress,
+        service_type: 'Energy Efficiency',
+        lead_source: 'Lenard AZ SRP',
+        status: 'New',
+        notes: noteLines,
+        lead_owner_id: leadOwnerId ? parseInt(leadOwnerId) : null,
+        updated_at: new Date().toISOString(),
+      });
+      leadId = lead.id;
+    }
 
     // =====================================================
-    // 2. Create Lighting Audit — EXACT same columns as NewLightingAudit.jsx handleSave()
+    // 2. Create or Update Lighting Audit
     // =====================================================
-    const auditId = `AUD-${Date.now().toString(36).toUpperCase()}`;
-
-    // Matches NewLightingAudit.jsx auditData payload exactly
-    const [audit] = await supabasePost(`${SUPABASE_URL}/rest/v1/lighting_audits`, key, {
-      company_id: cid,
-      audit_id: auditId,
-      lead_id: lead.id,
-      customer_id: customerId,
+    const auditPayload = {
       address: fullAddress,
       city: city || null,
       state: facilityState,
@@ -138,7 +172,6 @@ serve(async (req) => {
       electric_rate: rate,
       operating_hours: opHours,
       operating_days: opDays,
-      status: 'Draft',
       total_fixtures: Math.round(totalFixtures),
       total_existing_watts: Math.round(totalExistW),
       total_proposed_watts: Math.round(totalNewW),
@@ -150,10 +183,32 @@ serve(async (req) => {
       net_cost: Math.round(netCost * 100) / 100,
       payback_months: Math.round(paybackMonths * 10) / 10,
       notes: JSON.stringify(pd),
-    });
+    };
+
+    let auditDbId: number;
+    if (existingAuditId) {
+      // Update existing audit
+      const [updated] = await supabasePatch(SUPABASE_URL!, 'lighting_audits', key, existingAuditId, auditPayload);
+      auditDbId = updated.id;
+
+      // Delete old audit areas and re-create
+      await supabaseDelete(SUPABASE_URL!, 'audit_areas', key, `audit_id=eq.${existingAuditId}`);
+    } else {
+      // Create new audit
+      const newAuditId = `AUD-${Date.now().toString(36).toUpperCase()}`;
+      const [audit] = await supabasePost(`${SUPABASE_URL}/rest/v1/lighting_audits`, key, {
+        company_id: cid,
+        audit_id: newAuditId,
+        lead_id: leadId,
+        customer_id: customerId,
+        status: 'Draft',
+        ...auditPayload,
+      });
+      auditDbId = audit.id;
+    }
 
     // =====================================================
-    // 3. Create Audit Areas — EXACT same columns as NewLightingAudit.jsx area creation
+    // 3. Create Audit Areas
     // =====================================================
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
@@ -161,10 +216,9 @@ serve(async (req) => {
       const existW = l.existW || 0;
       const newW = l.newW || 0;
 
-      // Matches NewLightingAudit.jsx audit_areas payload exactly
       await supabasePost(`${SUPABASE_URL}/rest/v1/audit_areas`, key, {
         company_id: cid,
-        audit_id: audit.id,
+        audit_id: auditDbId,
         area_name: l.name || `Area ${i + 1}`,
         ceiling_height: l.height || null,
         fixture_category: l.fixtureCategory || null,
@@ -182,32 +236,34 @@ serve(async (req) => {
     }
 
     // =====================================================
-    // 4. Store photos in Supabase Storage (best-effort)
+    // 4. Store photos in Supabase Storage (best-effort, only for new audits)
     // =====================================================
-    const photos = pd.photos || [];
-    for (let i = 0; i < photos.length; i++) {
-      try {
-        const photoBase64 = photos[i];
-        if (!photoBase64) continue;
-        const binaryStr = atob(photoBase64);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let b = 0; b < binaryStr.length; b++) bytes[b] = binaryStr.charCodeAt(b);
-        const filePath = `audits/${audit.id}/photo_${i}.jpg`;
-        await fetch(`${SUPABASE_URL}/storage/v1/object/audit-photos/${filePath}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${key}`,
-            'apikey': key,
-            'Content-Type': 'image/jpeg',
-          },
-          body: bytes,
-        });
-      } catch (_) {
-        // Photo upload is best-effort
+    if (!existingAuditId) {
+      const photos = pd.photos || [];
+      for (let i = 0; i < photos.length; i++) {
+        try {
+          const photoBase64 = photos[i];
+          if (!photoBase64) continue;
+          const binaryStr = atob(photoBase64);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let b = 0; b < binaryStr.length; b++) bytes[b] = binaryStr.charCodeAt(b);
+          const filePath = `audits/${auditDbId}/photo_${i}.jpg`;
+          await fetch(`${SUPABASE_URL}/storage/v1/object/audit-photos/${filePath}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${key}`,
+              'apikey': key,
+              'Content-Type': 'image/jpeg',
+            },
+            body: bytes,
+          });
+        } catch (_) {
+          // Photo upload is best-effort
+        }
       }
     }
 
-    return new Response(JSON.stringify({ success: true, leadId: lead.id, auditId: audit.id, customerId }),
+    return new Response(JSON.stringify({ success: true, leadId, auditId: auditDbId, customerId }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
