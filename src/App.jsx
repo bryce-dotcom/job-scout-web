@@ -202,8 +202,11 @@ function App() {
       <OfflineBanner />
       <ToastContainer />
       <Routes>
+        {/* Public agent routes - NO auth required */}
+        <Route path="/agent/lenard-az-srp" element={<LenardAZSRP />} />
+
+        {/* Public routes */}
         <Route path="/login" element={<Login />} />
-        <Route path="/lenard-az-srp" element={<LenardAZSRP />} />
         <Route
           element={
             <ProtectedRoute>
