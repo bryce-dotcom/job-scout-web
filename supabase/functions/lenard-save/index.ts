@@ -53,11 +53,26 @@ serve(async (req) => {
     const pd = projectData || {};
     const lines = pd.lines || [];
     const facilityState = state || 'AZ';
-
-    // Build full address string from parts
     const fullAddress = [address, city, state, zip].filter(Boolean).join(', ') || null;
 
-    // 0. Find or create Customer — matching step 1 basic info fields
+    // --- Shared calculations (used by lead notes + audit) ---
+    const totalFixtures = lines.reduce((s: number, l: any) => s + (l.qty || 0), 0);
+    const totalExistW = lines.reduce((s: number, l: any) => s + ((l.existW || 0) * (l.qty || 0)), 0);
+    const totalNewW = lines.reduce((s: number, l: any) => s + ((l.newW || 0) * (l.qty || 0)), 0);
+    const wattsReduced = Math.max(0, totalExistW - totalNewW);
+    const opHours = pd.operatingHours || 12;
+    const opDays = pd.daysPerYear || 365;
+    const rate = pd.energyRate || 0.10;
+    const annualKwhSavings = (wattsReduced * opHours * opDays) / 1000;
+    const annualDollarSavings = annualKwhSavings * rate;
+    const projectCost = pd.projectCost || 0;
+    const incentive = pd.totalIncentive || 0;
+    const netCost = projectCost - incentive;
+    const paybackMonths = annualDollarSavings > 0 ? (netCost / annualDollarSavings) * 12 : 0;
+
+    // =====================================================
+    // 0. Find or create Customer — matches Leads.jsx
+    // =====================================================
     let customerId: number | null = null;
     const existingCustomers = await querySupabase(
       SUPABASE_URL!, 'customers', key,
@@ -76,96 +91,77 @@ serve(async (req) => {
       customerId = newCustomer.id;
     }
 
-    // 1. Create Lead linked to customer — with address fields
-    // Build human-readable notes for the lead detail view
-    const totalExistW = lines.reduce((s: number, l: any) => s + ((l.existW || 0) * (l.qty || 0)), 0);
-    const totalNewW = lines.reduce((s: number, l: any) => s + ((l.newW || 0) * (l.qty || 0)), 0);
-    const totalFixtures = lines.reduce((s: number, l: any) => s + (l.qty || 0), 0);
-    const wattsReduced = Math.max(0, totalExistW - totalNewW);
+    // =====================================================
+    // 1. Create Lead — EXACT same columns as Leads.jsx handleSubmitLead()
+    // =====================================================
     const noteLines = [
       `SRP ${programType === 'sbs' ? 'Standard Business' : 'Small Business'} Lighting Retrofit`,
       `${totalFixtures} fixtures | ${totalExistW}W existing → ${totalNewW}W LED | ${wattsReduced}W reduced`,
       '',
-      ...lines.map((l: any, i: number) => `${i + 1}. ${l.name || 'Area'}: ${l.qty || 1}× ${l.existW || 0}W → ${l.newW || 0}W${l.fixtureCategory ? ` (${l.fixtureCategory})` : ''}${l.lightingType ? ` ${l.lightingType}` : ''}`),
+      ...lines.map((l: any, i: number) => `${i + 1}. ${l.name || 'Area'}: ${l.qty || 1}x ${l.existW || 0}W → ${l.newW || 0}W${l.fixtureCategory ? ` (${l.fixtureCategory})` : ''}${l.lightingType ? ` ${l.lightingType}` : ''}`),
       '',
-      `Est. Incentive: $${(pd.totalIncentive || 0).toLocaleString()}`,
-      pd.projectCost ? `Project Cost: $${pd.projectCost.toLocaleString()} | Net: $${((pd.projectCost || 0) - (pd.totalIncentive || 0)).toLocaleString()}` : '',
-      '',
-      `[Full project data stored in lighting audit]`,
+      `Est. Incentive: $${incentive.toLocaleString()}`,
+      projectCost ? `Project Cost: $${projectCost.toLocaleString()} | Net: $${netCost.toLocaleString()}` : '',
     ].filter(Boolean).join('\n');
 
-    const leadData = {
+    // Matches Leads.jsx payload exactly
+    const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, {
       company_id: cid,
       customer_name: customerName,
-      customer_id: customerId,
-      phone: phone || null,
+      business_name: null,
       email: email || null,
+      phone: phone || null,
       address: fullAddress,
-      status: 'New',
-      lead_source: 'Lenard AZ SRP',
       service_type: 'Energy Efficiency',
+      lead_source: 'Lenard AZ SRP',
+      status: 'New',
       notes: noteLines,
-    };
+      updated_at: new Date().toISOString(),
+    });
 
-    const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, leadData);
-
-    // 2. Create Lighting Audit linked to lead + customer — with full facility address
+    // =====================================================
+    // 2. Create Lighting Audit — EXACT same columns as NewLightingAudit.jsx handleSave()
+    // =====================================================
     const auditId = `AUD-${Date.now().toString(36).toUpperCase()}`;
-    const totalExistW = lines.reduce((s: number, l: any) => s + ((l.existW || 0) * (l.qty || 0)), 0);
-    const totalNewW = lines.reduce((s: number, l: any) => s + ((l.newW || 0) * (l.qty || 0)), 0);
-    const totalFixtures = lines.reduce((s: number, l: any) => s + (l.qty || 0), 0);
-    const wattsReduced = Math.max(0, totalExistW - totalNewW);
-    const opHours = pd.operatingHours || 12;
-    const opDays = pd.daysPerYear || 365;
-    const rate = pd.energyRate || 0.10;
-    const annualHours = opHours * opDays;
-    const annualKwhSavings = (wattsReduced * annualHours) / 1000;
-    const annualCostSavings = annualKwhSavings * rate;
-    const projectCost = pd.projectCost || 0;
-    const netCost = projectCost - (pd.totalIncentive || 0);
-    const paybackYears = annualCostSavings > 0 ? netCost / annualCostSavings : 0;
-    const roiPercent = netCost > 0 ? (annualCostSavings / netCost) * 100 : 0;
 
-    const paybackMonths = annualCostSavings > 0 ? (netCost / annualCostSavings) * 12 : 0;
-
-    // Column names matching the LIVE database (not the schema file)
-    const auditData = {
+    // Matches NewLightingAudit.jsx auditData payload exactly
+    const [audit] = await supabasePost(`${SUPABASE_URL}/rest/v1/lighting_audits`, key, {
       company_id: cid,
       audit_id: auditId,
       lead_id: lead.id,
       customer_id: customerId,
       address: fullAddress,
+      city: city || null,
       state: facilityState,
+      zip: zip || null,
+      electric_rate: rate,
       operating_hours: opHours,
       operating_days: opDays,
-      electric_rate: rate,
-      total_fixtures: totalFixtures,
-      total_existing_watts: totalExistW,
-      total_proposed_watts: totalNewW,
-      watts_reduced: wattsReduced,
-      annual_savings_kwh: Math.round(annualKwhSavings * 100) / 100,
-      annual_savings_dollars: Math.round(annualCostSavings * 100) / 100,
-      estimated_rebate: Math.round((pd.totalIncentive || 0) * 100) / 100,
+      status: 'Draft',
+      total_fixtures: Math.round(totalFixtures),
+      total_existing_watts: Math.round(totalExistW),
+      total_proposed_watts: Math.round(totalNewW),
+      watts_reduced: Math.round(wattsReduced),
+      annual_savings_kwh: Math.round(annualKwhSavings),
+      annual_savings_dollars: Math.round(annualDollarSavings * 100) / 100,
+      estimated_rebate: Math.round(incentive * 100) / 100,
       est_project_cost: Math.round(projectCost * 100) / 100,
       net_cost: Math.round(netCost * 100) / 100,
-      payback_months: Math.round(paybackMonths * 100) / 100,
-      status: 'Draft',
+      payback_months: Math.round(paybackMonths * 10) / 10,
       notes: JSON.stringify(pd),
-    };
+    });
 
-    const [audit] = await supabasePost(`${SUPABASE_URL}/rest/v1/lighting_audits`, key, auditData);
-
-    // 3. Create Audit Areas from line items — all fields matching audit area modal
+    // =====================================================
+    // 3. Create Audit Areas — EXACT same columns as NewLightingAudit.jsx area creation
+    // =====================================================
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
       const qty = l.qty || 1;
       const existW = l.existW || 0;
       const newW = l.newW || 0;
-      const totalExist = qty * existW;
-      const totalLed = qty * newW;
 
-      // Column names matching the LIVE audit_areas table
-      const areaData: any = {
+      // Matches NewLightingAudit.jsx audit_areas payload exactly
+      await supabasePost(`${SUPABASE_URL}/rest/v1/audit_areas`, key, {
         company_id: cid,
         audit_id: audit.id,
         area_name: l.name || `Area ${i + 1}`,
@@ -175,18 +171,18 @@ serve(async (req) => {
         fixture_count: qty,
         existing_wattage: existW,
         led_wattage: newW,
-        led_replacement_id: l.productId || null,
-        total_existing_watts: totalExist,
-        total_led_watts: totalLed,
-        area_watts_reduced: totalExist - totalLed,
+        led_replacement_id: l.productId ? parseInt(l.productId) : null,
+        total_existing_watts: qty * existW,
+        total_led_watts: qty * newW,
+        area_watts_reduced: (qty * existW) - (qty * newW),
         confirmed: l.confirmed || false,
         override_notes: l.overrideNotes || (l.productName ? `SBE Product: ${l.productName}` : null),
-      };
-
-      await supabasePost(`${SUPABASE_URL}/rest/v1/audit_areas`, key, areaData);
+      });
     }
 
-    // 4. Store photos in Supabase Storage (if any)
+    // =====================================================
+    // 4. Store photos in Supabase Storage (best-effort)
+    // =====================================================
     const photos = pd.photos || [];
     for (let i = 0; i < photos.length; i++) {
       try {
