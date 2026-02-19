@@ -23,6 +23,14 @@ async function supabasePost(url: string, key: string, body: any): Promise<any> {
   return res.json();
 }
 
+async function querySupabase(baseUrl: string, table: string, key: string, params: string): Promise<any[]> {
+  const res = await fetch(`${baseUrl}/rest/v1/${table}?${params}`, {
+    headers: { 'Authorization': `Bearer ${key}`, 'apikey': key },
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -45,7 +53,29 @@ serve(async (req) => {
     const pd = projectData || {};
     const lines = pd.lines || [];
 
-    // 1. Create Lead
+    // 0. Find or create Customer
+    let customerId: number | null = null;
+    const existingCustomers = await querySupabase(
+      SUPABASE_URL!, 'customers', key,
+      `company_id=eq.${cid}&name=ilike.${encodeURIComponent(customerName.trim())}&limit=1`
+    );
+    if (existingCustomers.length > 0) {
+      customerId = existingCustomers[0].id;
+    } else {
+      const [newCustomer] = await supabasePost(`${SUPABASE_URL}/rest/v1/customers`, key, {
+        company_id: cid,
+        name: customerName.trim(),
+        phone: phone || null,
+        email: email || null,
+        address: address || null,
+        state: 'AZ',
+        customer_type: programType === 'sbs' ? 'Commercial' : 'Small Business',
+        status: 'Active',
+      });
+      customerId = newCustomer.id;
+    }
+
+    // 1. Create Lead linked to customer
     const leadData = {
       company_id: cid,
       customer_name: customerName,
@@ -63,7 +93,7 @@ serve(async (req) => {
 
     const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, leadData);
 
-    // 2. Create Lighting Audit linked to the lead
+    // 2. Create Lighting Audit linked to lead + customer
     const auditId = `AUD-${Date.now().toString(36).toUpperCase()}`;
     const totalExistW = lines.reduce((s: number, l: any) => s + ((l.existW || 0) * (l.qty || 0)), 0);
     const totalNewW = lines.reduce((s: number, l: any) => s + ((l.newW || 0) * (l.qty || 0)), 0);
@@ -84,6 +114,7 @@ serve(async (req) => {
       company_id: cid,
       audit_id: auditId,
       lead_id: lead.id,
+      customer_id: customerId,
       facility_name: customerName,
       facility_address: address || null,
       facility_state: 'AZ',
@@ -107,20 +138,34 @@ serve(async (req) => {
 
     const [audit] = await supabasePost(`${SUPABASE_URL}/rest/v1/lighting_audits`, key, auditData);
 
-    // 3. Create Audit Areas from line items
+    // 3. Create Audit Areas from line items — all fields matching audit area modal
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
       const qty = l.qty || 1;
       const existW = l.existW || 0;
       const newW = l.newW || 0;
-      const areaData = {
+      const totalExist = qty * existW;
+      const totalLed = qty * newW;
+
+      const areaData: any = {
         company_id: cid,
         audit_id: audit.id,
         area_name: l.name || `Area ${i + 1}`,
         ceiling_height: l.height || null,
-        notes: l.productName ? `SBE Product: ${l.productName}` : null,
+        fixture_category: l.fixtureCategory || null,
+        lighting_type: l.lightingType || null,
+        fixture_count: qty,
+        existing_wattage: existW,
+        led_wattage: newW,
+        led_replacement_id: l.productId || null,
+        total_existing_watts: totalExist,
+        total_led_watts: totalLed,
+        area_watts_reduced: totalExist - totalLed,
+        confirmed: l.confirmed || false,
+        override_notes: l.overrideNotes || (l.productName ? `SBE Product: ${l.productName}` : null),
         sort_order: i,
       };
+
       await supabasePost(`${SUPABASE_URL}/rest/v1/audit_areas`, key, areaData);
     }
 
@@ -144,11 +189,11 @@ serve(async (req) => {
           body: bytes,
         });
       } catch (_) {
-        // Photo upload is best-effort; don't fail the save
+        // Photo upload is best-effort
       }
     }
 
-    return new Response(JSON.stringify({ success: true, leadId: lead.id, auditId: audit.id }),
+    return new Response(JSON.stringify({ success: true, leadId: lead.id, auditId: audit.id, customerId }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {

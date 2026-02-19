@@ -109,6 +109,30 @@ const PRESETS = {
 // Default heights by category
 const DEFAULT_HEIGHTS = { panel: 9, strip: 10, highbay: 20, exterior: 25 };
 
+// Map SBC/SBS categories to lighting audit FIXTURE_CATEGORIES
+const CATEGORY_TO_FIXTURE_CAT = {
+  panel: 'Recessed', strip: 'Linear', highbay: 'High Bay', exterior: 'Outdoor',
+};
+
+// Infer lamp type from fixture name for the lighting audit
+function inferLampType(name) {
+  if (!name) return '';
+  const n = name.toLowerCase();
+  if (n.includes('t12')) return 'T12';
+  if (n.includes('t5ho') || n.includes('t5 ho')) return 'T5HO';
+  if (n.includes('t5')) return 'T5';
+  if (n.includes('t8')) return 'T8';
+  if (n.includes('metal halide') || n.includes(' mh ') || n.includes('mh ')) return 'Metal Halide';
+  if (n.includes('hps') || n.includes('sodium')) return 'HPS';
+  if (n.includes('led')) return 'LED';
+  if (n.includes('cfl')) return 'CFL';
+  return '';
+}
+
+// Fixture categories and lamp types (matching lightingConstants.js)
+const FIXTURE_CATEGORIES = ['Linear', 'High Bay', 'Low Bay', 'Surface Mount', 'Outdoor', 'Recessed', 'Track', 'Wall Pack', 'Flood', 'Area Light', 'Canopy', 'Other'];
+const LAMP_TYPES = ['T12', 'T8', 'T5', 'T5HO', 'Metal Halide', 'HPS', 'Mercury Vapor', 'Halogen', 'Incandescent', 'CFL', 'LED', 'Other'];
+
 // ==================== INCENTIVE CALCULATION ENGINES ====================
 
 function calcSBS(line) {
@@ -239,7 +263,8 @@ export default function LenardAZSRP() {
   // ---- LINE MANAGEMENT ----
   const addLine = useCallback((preset = null) => {
     const id = ++lineIdRef.current;
-    const defaultHeight = DEFAULT_HEIGHTS[preset?.cat || 'panel'] || 9;
+    const cat = preset?.cat || 'panel';
+    const defaultHeight = DEFAULT_HEIGHTS[cat] || 9;
     const base = {
       id,
       qty: preset?.qty || 1,
@@ -247,14 +272,18 @@ export default function LenardAZSRP() {
       newW: preset?.newW || 0,
       name: preset?.name || '',
       height: preset?.height || defaultHeight,
-      productId: null,
-      productName: '',
-      productPrice: 0,
+      productId: preset?.productId || null,
+      productName: preset?.productName || '',
+      productPrice: preset?.productPrice || 0,
+      // Audit-matching fields
+      fixtureCategory: preset?.fixtureCategory || CATEGORY_TO_FIXTURE_CAT[cat] || 'Linear',
+      lightingType: preset?.lightingType || inferLampType(preset?.name || ''),
+      confirmed: false,
+      overrideNotes: '',
     };
     if (program === 'sbs') {
       setLines(prev => [...prev, { ...base, fixtureType: preset?.sbsType || 'Interior LED Fixture', controlsType: 'none' }]);
     } else {
-      const cat = preset?.cat || 'panel';
       setLines(prev => [...prev, { ...base, category: cat, subtype: preset?.sub || SBC_RATES.categories[cat]?.subtypes[0]?.id || 'ext', controls: cat === 'highbay' }]);
     }
     setNewlyAdded(prev => new Set(prev).add(id));
@@ -315,6 +344,8 @@ export default function LenardAZSRP() {
               name: f.name, existW: f.existW, newW: f.newW, qty: f.count || 1,
               cat: f.category, sub: f.subtype, sbsType: f.sbsType,
               height: f.height || DEFAULT_HEIGHTS[f.category] || 9,
+              fixtureCategory: CATEGORY_TO_FIXTURE_CAT[f.category] || 'Linear',
+              lightingType: inferLampType(f.name),
             });
           });
           showToast(`Lenard found ${data.fixtures.length} fixture${data.fixtures.length > 1 ? 's' : ''}`, '\uD83D\uDCF7');
@@ -370,6 +401,8 @@ export default function LenardAZSRP() {
           name: l.name, qty: l.qty, existW: l.existW, newW: l.newW,
           height: l.height, productId: l.productId, productName: l.productName, productPrice: l.productPrice,
           category: l.category, subtype: l.subtype, fixtureType: l.fixtureType,
+          fixtureCategory: l.fixtureCategory, lightingType: l.lightingType,
+          confirmed: l.confirmed, overrideNotes: l.overrideNotes,
         })),
         totals, financials,
         totalIncentive: totals.totalIncentive,
@@ -771,7 +804,7 @@ export default function LenardAZSRP() {
                   <div style={{ fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.name || (program === 'sbs' ? r.fixtureType : SBC_RATES.categories[r.category]?.subtypes.find(s => s.id === r.subtype)?.label || r.subtype)}
                   </div>
-                  <div style={{ fontSize: '11px', color: T.textSec, marginTop: '2px' }}>{subtypeInfo} \u2022 {r.height || 0}ft</div>
+                  <div style={{ fontSize: '11px', color: T.textSec, marginTop: '2px' }}>{subtypeInfo} {'\u2022'} {r.height || 0}ft{r.fixtureCategory ? ` \u2022 ${r.fixtureCategory}` : ''}{r.confirmed ? ' \u2713' : ''}</div>
                   <div style={{ fontSize: '12px', color: T.textMuted, marginTop: '2px' }}>{r.qty}\u00D7 | {r.existW}W \u2192 {r.newW}W | \u2212{r.calc.wattsReduced}W</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
@@ -816,6 +849,38 @@ export default function LenardAZSRP() {
                       {r.productPrice > 0 && <div style={{ fontSize: '11px', color: T.accent, marginTop: '4px' }}>${r.productPrice}/unit \u00D7 {r.qty} = ${(r.productPrice * r.qty).toLocaleString()}</div>}
                     </div>
                   )}
+
+                  {/* Audit-matching fields: Fixture Category & Lamp Type */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                    <div>
+                      <label style={S.label}>Fixture Category</label>
+                      <select value={r.fixtureCategory || ''} onChange={e => updateLine(r.id, 'fixtureCategory', e.target.value)} style={S.select}>
+                        <option value="">Select...</option>
+                        {FIXTURE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={S.label}>Existing Lamp Type</label>
+                      <select value={r.lightingType || ''} onChange={e => updateLine(r.id, 'lightingType', e.target.value)} style={S.select}>
+                        <option value="">Select...</option>
+                        {LAMP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Override Notes */}
+                  <div style={{ marginBottom: '10px' }}>
+                    <label style={S.label}>Notes / Override</label>
+                    <input type="text" value={r.overrideNotes || ''} onChange={e => updateLine(r.id, 'overrideNotes', e.target.value)} placeholder="Optional notes" style={S.input} />
+                  </div>
+
+                  {/* Confirmed toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <button onClick={() => updateLine(r.id, 'confirmed', !r.confirmed)} style={{ width: '44px', height: '24px', borderRadius: '12px', background: r.confirmed ? T.green : T.bgInput, border: `1px solid ${r.confirmed ? T.green : T.border}`, cursor: 'pointer', position: 'relative', transition: 'all 0.2s', flexShrink: 0, padding: 0 }}>
+                      <div style={{ width: '18px', height: '18px', borderRadius: '9px', background: '#fff', position: 'absolute', top: '2px', left: r.confirmed ? '22px' : '2px', transition: 'left 0.2s' }} />
+                    </button>
+                    <span style={{ fontSize: '13px', color: r.confirmed ? T.green : T.textSec }}>{r.confirmed ? 'Confirmed' : 'Unconfirmed'}</span>
+                  </div>
 
                   {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Controls Upgrade</label><select value={r.controlsType} onChange={e => updateLine(r.id, 'controlsType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.controls).map(([k, v]) => <option key={k} value={k}>{v.label}{v.rate > 0 ? ` — $${v.rate}/W` : ''}</option>)}</select></div>}
 
