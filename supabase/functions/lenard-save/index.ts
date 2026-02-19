@@ -54,6 +54,9 @@ serve(async (req) => {
     const lines = pd.lines || [];
     const facilityState = state || 'AZ';
 
+    // Build full address string from parts
+    const fullAddress = [address, city, state, zip].filter(Boolean).join(', ') || null;
+
     // 0. Find or create Customer — matching step 1 basic info fields
     let customerId: number | null = null;
     const existingCustomers = await querySupabase(
@@ -68,10 +71,7 @@ serve(async (req) => {
         name: customerName.trim(),
         phone: phone || null,
         email: email || null,
-        address: address || null,
-        city: city || null,
-        state: facilityState,
-        zip: zip || null,
+        address: fullAddress,
         customer_type: programType === 'sbs' ? 'Commercial' : 'Small Business',
         status: 'Active',
       });
@@ -84,10 +84,7 @@ serve(async (req) => {
       customer_name: customerName,
       phone: phone || null,
       email: email || null,
-      address: address || null,
-      city: city || null,
-      state: facilityState,
-      zip: zip || null,
+      address: fullAddress,
       status: 'New',
       lead_source: 'Lenard AZ SRP',
       service_type: 'Energy Efficiency',
@@ -122,10 +119,8 @@ serve(async (req) => {
       lead_id: lead.id,
       customer_id: customerId,
       facility_name: customerName,
-      facility_address: address || null,
-      facility_city: city || null,
+      facility_address: fullAddress,
       facility_state: facilityState,
-      facility_zip: zip || null,
       operating_hours_day: opHours,
       operating_days_year: opDays,
       utility_rate: rate,
