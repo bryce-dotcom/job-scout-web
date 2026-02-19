@@ -72,8 +72,6 @@ serve(async (req) => {
         phone: phone || null,
         email: email || null,
         address: fullAddress,
-        customer_type: programType === 'sbs' ? 'Commercial' : 'Small Business',
-        status: 'Active',
       });
       customerId = newCustomer.id;
     }
