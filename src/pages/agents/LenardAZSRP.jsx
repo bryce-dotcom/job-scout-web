@@ -1104,11 +1104,15 @@ export default function LenardAZSRP() {
           style={{ ...S.input, background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, borderRadius: 0, padding: '8px 0', fontSize: '15px', fontWeight: '500' }} />
       </div>
 
-      {/* ===== ACTION BUTTONS (moved from bottom bar) ===== */}
-      <div style={{ display: 'flex', gap: '8px', padding: '10px 16px' }}>
-        <button onClick={() => addLine()} style={{ ...S.btn, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px' }}>{'\uFF0B'} Add Line</button>
-        <button onClick={() => setShowQuickAdd(true)} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>{'\u26A1'} Quick Add</button>
-        <button onClick={openCamera} disabled={cameraLoading} style={{ ...S.btnGhost, padding: '10px 14px', opacity: cameraLoading ? 0.5 : 1, fontSize: '13px' }}>{cameraLoading ? '\u23F3' : '\uD83D\uDCF7'}</button>
+      {/* ===== ACTION BUTTONS ===== */}
+      <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <button onClick={openCamera} disabled={cameraLoading} style={{ width: '100%', padding: '14px 16px', background: cameraLoading ? T.bgInput : T.blue, color: cameraLoading ? T.textMuted : '#fff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: cameraLoading ? 'none' : '0 2px 8px rgba(59,130,246,0.35)' }}>
+          {cameraLoading ? '\u23F3 Analyzing...' : '\uD83D\uDCF7 Scan Fixtures with Camera'}
+        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setShowQuickAdd(true)} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>{'\u26A1'} Quick Add</button>
+          <button onClick={() => addLine()} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>{'\uFF0B'} Add Line</button>
+        </div>
       </div>
 
       {/* ===== FINANCIAL SETTINGS (collapsible) ===== */}
