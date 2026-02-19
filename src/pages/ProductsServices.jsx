@@ -6,9 +6,11 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import {
   Plus, ArrowLeft, Settings, X, Save, Trash2, Package, Boxes,
-  Upload, Clock, DollarSign, Pencil, ChevronRight, Archive, Search
+  Upload, Clock, DollarSign, Pencil, ChevronRight, Archive, Search,
+  FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, Loader
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
+import * as XLSX from 'xlsx'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -275,6 +277,18 @@ export default function ProductsServices() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Import state
+  const [showImport, setShowImport] = useState(false)
+  const [importStep, setImportStep] = useState('upload') // upload | mapping | preview | importing | done
+  const [importFile, setImportFile] = useState(null)
+  const [importHeaders, setImportHeaders] = useState([])
+  const [importRows, setImportRows] = useState([])
+  const [importMapping, setImportMapping] = useState({})
+  const [importDefaults, setImportDefaults] = useState({})
+  const [importNotes, setImportNotes] = useState('')
+  const [importMappingLoading, setImportMappingLoading] = useState(false)
+  const [importProgress, setImportProgress] = useState({ done: 0, total: 0, errors: [] })
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -690,6 +704,171 @@ export default function ProductsServices() {
     setSaving(false)
   }
 
+  // ============ IMPORT FUNCTIONS ============
+  const TARGET_FIELDS = [
+    { field: 'name', label: 'Product Name', required: true },
+    { field: 'description', label: 'Description' },
+    { field: 'type', label: 'Service Type' },
+    { field: 'unit_price', label: 'Unit Price' },
+    { field: 'cost', label: 'Cost' },
+    { field: 'markup_percent', label: 'Markup %' },
+    { field: 'taxable', label: 'Taxable' },
+    { field: 'active', label: 'Active' },
+    { field: 'allotted_time_hours', label: 'Labor Hours' },
+  ]
+
+  const resetImport = () => {
+    setShowImport(false)
+    setImportStep('upload')
+    setImportFile(null)
+    setImportHeaders([])
+    setImportRows([])
+    setImportMapping({})
+    setImportDefaults({})
+    setImportNotes('')
+    setImportProgress({ done: 0, total: 0, errors: [] })
+  }
+
+  const handleImportFile = async (file) => {
+    setImportFile(file)
+    try {
+      const data = await file.arrayBuffer()
+      const workbook = XLSX.read(data, { type: 'array' })
+      const sheetName = workbook.SheetNames[0]
+      const sheet = workbook.Sheets[sheetName]
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+
+      if (json.length < 2) {
+        alert('File must have at least a header row and one data row')
+        return
+      }
+
+      const headers = json[0].map(h => String(h).trim())
+      const rows = json.slice(1).filter(row => row.some(cell => cell !== ''))
+
+      setImportHeaders(headers)
+      setImportRows(rows)
+      setImportStep('mapping')
+      setImportMappingLoading(true)
+
+      // Call AI to map columns
+      try {
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+        const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-map-columns`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+          body: JSON.stringify({
+            headers,
+            sampleRows: rows.slice(0, 5),
+            serviceTypes,
+          }),
+        })
+        const result = await resp.json()
+        if (result.mapping) {
+          setImportMapping(result.mapping)
+          setImportDefaults(result.defaults || {})
+          setImportNotes(result.notes || '')
+        }
+      } catch (_) {
+        // AI mapping failed — user can map manually
+        setImportNotes('AI mapping unavailable — please map columns manually')
+      }
+      setImportMappingLoading(false)
+    } catch (err) {
+      alert('Could not read file: ' + err.message)
+    }
+  }
+
+  const updateMapping = (targetField, sourceIdx) => {
+    setImportMapping(prev => {
+      const next = { ...prev }
+      if (sourceIdx === '' || sourceIdx === null) {
+        delete next[targetField]
+      } else {
+        next[targetField] = parseInt(sourceIdx)
+      }
+      return next
+    })
+  }
+
+  const getMappedValue = (row, field) => {
+    const idx = importMapping[field]
+    if (idx === undefined || idx === null) return importDefaults[field] ?? ''
+    const raw = row[idx]
+    if (raw === undefined || raw === null || raw === '') return importDefaults[field] ?? ''
+    return raw
+  }
+
+  const getPreviewRows = () => {
+    return importRows.slice(0, 10).map(row => {
+      const mapped = {}
+      TARGET_FIELDS.forEach(f => {
+        mapped[f.field] = getMappedValue(row, f.field)
+      })
+      return mapped
+    })
+  }
+
+  const executeImport = async () => {
+    if (!importMapping.name && importMapping.name !== 0) {
+      alert('Product Name mapping is required')
+      return
+    }
+
+    setImportStep('importing')
+    const total = importRows.length
+    setImportProgress({ done: 0, total, errors: [] })
+    const errors = []
+    const BATCH_SIZE = 25
+
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+      const batch = importRows.slice(i, i + BATCH_SIZE)
+      const records = batch.map((row, ri) => {
+        const name = String(getMappedValue(row, 'name')).trim()
+        if (!name) return null
+
+        const price = parseFloat(getMappedValue(row, 'unit_price')) || 0
+        const cost = parseFloat(getMappedValue(row, 'cost')) || 0
+        const markup = parseFloat(getMappedValue(row, 'markup_percent')) || 0
+        const hours = parseFloat(getMappedValue(row, 'allotted_time_hours')) || 0
+
+        let taxable = getMappedValue(row, 'taxable')
+        if (typeof taxable === 'string') taxable = !['false', 'no', '0', 'n'].includes(taxable.toLowerCase())
+        else taxable = taxable !== false
+
+        let active = getMappedValue(row, 'active')
+        if (typeof active === 'string') active = !['false', 'no', '0', 'n', 'inactive'].includes(active.toLowerCase())
+        else active = active !== false
+
+        return {
+          company_id: companyId,
+          name,
+          description: String(getMappedValue(row, 'description') || '').trim() || null,
+          type: String(getMappedValue(row, 'type') || '').trim() || null,
+          unit_price: price || null,
+          cost: cost || null,
+          markup_percent: markup || null,
+          taxable,
+          active,
+          allotted_time_hours: hours || null,
+        }
+      }).filter(Boolean)
+
+      if (records.length > 0) {
+        const { error } = await supabase.from('products_services').insert(records)
+        if (error) {
+          errors.push(`Rows ${i + 1}-${i + batch.length}: ${error.message}`)
+        }
+      }
+      setImportProgress({ done: Math.min(i + BATCH_SIZE, total), total, errors: [...errors] })
+    }
+
+    await fetchProducts()
+    setImportStep('done')
+    setImportProgress(prev => ({ ...prev, done: total, errors }))
+  }
+
   // Styles
   const inputStyle = {
     width: '100%',
@@ -771,6 +950,15 @@ export default function ProductsServices() {
             <Plus size={18} />
             Add Product
           </button>
+          <Tooltip text="Import from CSV or Excel">
+            <button
+              onClick={() => { resetImport(); setShowImport(true) }}
+              style={{ ...buttonStyle, backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}
+            >
+              <FileSpreadsheet size={18} />
+              {!isMobile && 'Import'}
+            </button>
+          </Tooltip>
           {!selectedGroup && (
             <>
               <Tooltip text="Manage labor rates">
@@ -1630,6 +1818,284 @@ export default function ProductsServices() {
                 <Save size={16} />
                 {saving ? 'Saving...' : (editingProduct ? 'Update' : 'Add Product')}
               </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ============ IMPORT MODAL ============ */}
+      {showImport && (
+        <>
+          <div onClick={resetImport} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50 }} />
+          <div style={{
+            position: 'fixed',
+            top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            border: `1px solid ${theme.border}`,
+            width: '100%',
+            maxWidth: importStep === 'preview' ? '800px' : '560px',
+            maxHeight: '90vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 51
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '16px 20px', borderBottom: `1px solid ${theme.border}`
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <FileSpreadsheet size={20} style={{ color: '#3b82f6' }} />
+                <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: theme.text }}>
+                  {importStep === 'upload' && 'Import Products'}
+                  {importStep === 'mapping' && 'Map Columns'}
+                  {importStep === 'preview' && 'Preview Import'}
+                  {importStep === 'importing' && 'Importing...'}
+                  {importStep === 'done' && 'Import Complete'}
+                </h2>
+              </div>
+              <button onClick={resetImport} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px', overflow: 'auto', flex: 1 }}>
+
+              {/* STEP 1: UPLOAD */}
+              {importStep === 'upload' && (
+                <div>
+                  <div
+                    onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#3b82f6' }}
+                    onDragLeave={e => { e.currentTarget.style.borderColor = theme.border }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      e.currentTarget.style.borderColor = theme.border
+                      const file = e.dataTransfer.files[0]
+                      if (file) handleImportFile(file)
+                    }}
+                    style={{
+                      border: `2px dashed ${theme.border}`,
+                      borderRadius: '12px',
+                      padding: '40px 20px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.2s'
+                    }}
+                    onClick={() => {
+                      const input = document.createElement('input')
+                      input.type = 'file'
+                      input.accept = '.csv,.xlsx,.xls,.tsv'
+                      input.onchange = e => { const f = e.target.files?.[0]; if (f) handleImportFile(f) }
+                      input.click()
+                    }}
+                  >
+                    <Upload size={36} style={{ color: '#3b82f6', marginBottom: '12px' }} />
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '6px' }}>
+                      Drop a file here or click to browse
+                    </div>
+                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                      CSV, Excel (.xlsx, .xls), or TSV — any column format
+                    </div>
+                    <div style={{
+                      marginTop: '16px', padding: '10px 16px',
+                      backgroundColor: 'rgba(59,130,246,0.08)', borderRadius: '8px',
+                      fontSize: '12px', color: '#3b82f6', display: 'inline-flex', alignItems: 'center', gap: '6px'
+                    }}>
+                      <AlertCircle size={14} />
+                      AI will automatically map your columns to the right fields
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: MAPPING */}
+              {importStep === 'mapping' && (
+                <div>
+                  {importMappingLoading ? (
+                    <div style={{ textAlign: 'center', padding: '32px' }}>
+                      <Loader size={28} style={{ color: '#3b82f6', animation: 'spin 1s linear infinite' }} />
+                      <div style={{ fontSize: '14px', color: theme.textSecondary, marginTop: '12px' }}>AI is analyzing your columns...</div>
+                      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>
+                        {importFile?.name} — {importRows.length} rows found
+                      </div>
+                      {importNotes && (
+                        <div style={{
+                          padding: '8px 12px', marginBottom: '16px', borderRadius: '8px',
+                          backgroundColor: 'rgba(59,130,246,0.08)', fontSize: '12px', color: '#3b82f6'
+                        }}>
+                          {importNotes}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {TARGET_FIELDS.map(f => (
+                          <div key={f.field} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                              width: '130px', flexShrink: 0, fontSize: '13px', fontWeight: '500',
+                              color: f.required ? theme.text : theme.textSecondary
+                            }}>
+                              {f.label} {f.required && <span style={{ color: '#ef4444' }}>*</span>}
+                            </div>
+                            <ArrowRight size={14} style={{ color: theme.textMuted, flexShrink: 0 }} />
+                            <select
+                              value={importMapping[f.field] ?? ''}
+                              onChange={e => updateMapping(f.field, e.target.value)}
+                              style={{
+                                flex: 1, padding: '8px 10px', borderRadius: '8px',
+                                border: `1px solid ${importMapping[f.field] !== undefined ? '#3b82f6' : theme.border}`,
+                                backgroundColor: importMapping[f.field] !== undefined ? 'rgba(59,130,246,0.04)' : theme.bgCard,
+                                fontSize: '13px', color: theme.text
+                              }}
+                            >
+                              <option value="">— skip —</option>
+                              {importHeaders.map((h, i) => (
+                                <option key={i} value={i}>{h} {importRows[0]?.[i] !== undefined ? `(e.g. "${String(importRows[0][i]).substring(0, 30)}")` : ''}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Defaults section */}
+                      {Object.keys(importDefaults).length > 0 && (
+                        <div style={{ marginTop: '16px', padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                          <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px' }}>Default Values</div>
+                          {Object.entries(importDefaults).map(([field, val]) => (
+                            <div key={field} style={{ fontSize: '12px', color: theme.textSecondary }}>
+                              {TARGET_FIELDS.find(f => f.field === field)?.label || field}: <strong>{String(val)}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
+                        <button onClick={() => setImportStep('upload')} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+                          Back
+                        </button>
+                        <button
+                          onClick={() => setImportStep('preview')}
+                          disabled={importMapping.name === undefined && importMapping.name !== 0}
+                          style={{
+                            ...buttonStyle, flex: 2, backgroundColor: '#3b82f6', color: '#fff',
+                            opacity: (importMapping.name === undefined && importMapping.name !== 0) ? 0.5 : 1
+                          }}
+                        >
+                          Preview Import
+                          <ArrowRight size={16} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* STEP 3: PREVIEW */}
+              {importStep === 'preview' && (
+                <div>
+                  <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
+                    Showing first {Math.min(10, importRows.length)} of {importRows.length} products to import
+                  </div>
+                  <div style={{ overflow: 'auto', maxHeight: '400px', borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: theme.bg, position: 'sticky', top: 0 }}>
+                          {TARGET_FIELDS.filter(f => importMapping[f.field] !== undefined || importDefaults[f.field] !== undefined).map(f => (
+                            <th key={f.field} style={{
+                              padding: '8px 10px', textAlign: 'left', fontWeight: '600',
+                              color: theme.textSecondary, borderBottom: `1px solid ${theme.border}`,
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {f.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getPreviewRows().map((row, i) => (
+                          <tr key={i} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                            {TARGET_FIELDS.filter(f => importMapping[f.field] !== undefined || importDefaults[f.field] !== undefined).map(f => (
+                              <td key={f.field} style={{
+                                padding: '6px 10px', color: theme.text,
+                                maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                              }}>
+                                {String(row[f.field] || '—')}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
+                    <button onClick={() => setImportStep('mapping')} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+                      Back
+                    </button>
+                    <button onClick={executeImport} style={{ ...buttonStyle, flex: 2, backgroundColor: '#22c55e', color: '#fff' }}>
+                      <CheckCircle size={16} />
+                      Import {importRows.length} Products
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4: IMPORTING */}
+              {importStep === 'importing' && (
+                <div style={{ textAlign: 'center', padding: '20px' }}>
+                  <Loader size={28} style={{ color: '#3b82f6', animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
+                  <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                  <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>
+                    Importing products...
+                  </div>
+                  <div style={{
+                    width: '100%', height: '8px', backgroundColor: theme.bg,
+                    borderRadius: '4px', overflow: 'hidden', marginBottom: '8px'
+                  }}>
+                    <div style={{
+                      width: `${importProgress.total > 0 ? (importProgress.done / importProgress.total) * 100 : 0}%`,
+                      height: '100%', backgroundColor: '#3b82f6', borderRadius: '4px', transition: 'width 0.3s'
+                    }} />
+                  </div>
+                  <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                    {importProgress.done} of {importProgress.total} rows processed
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 5: DONE */}
+              {importStep === 'done' && (
+                <div style={{ textAlign: 'center', padding: '20px' }}>
+                  <CheckCircle size={40} style={{ color: '#22c55e', marginBottom: '12px' }} />
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '6px' }}>
+                    Import Complete
+                  </div>
+                  <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px' }}>
+                    {importProgress.total - importProgress.errors.length} products imported successfully
+                  </div>
+                  {importProgress.errors.length > 0 && (
+                    <div style={{
+                      textAlign: 'left', padding: '10px 14px', backgroundColor: '#fef2f2',
+                      borderRadius: '8px', marginBottom: '16px'
+                    }}>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#dc2626', marginBottom: '4px' }}>
+                        {importProgress.errors.length} error{importProgress.errors.length > 1 ? 's' : ''}:
+                      </div>
+                      {importProgress.errors.map((err, i) => (
+                        <div key={i} style={{ fontSize: '12px', color: '#991b1b' }}>{err}</div>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={resetImport} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff', width: '100%' }}>
+                    Done
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </>
