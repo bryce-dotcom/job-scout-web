@@ -1330,7 +1330,7 @@ export default function LenardAZSRP() {
                   style={{ width: '100%', textAlign: 'left', padding: '10px 12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: T.text }}>{emp.name}</div>
-                    {emp.role && <div style={{ fontSize: '11px', color: T.textMuted }}>{emp.role}{emp.department ? ` \u2022 ${emp.department}` : ''}</div>}
+                    {emp.role && <div style={{ fontSize: '11px', color: T.textMuted }}>{emp.role}{emp.business_unit ? ` \u2022 ${emp.business_unit}` : ''}</div>}
                   </div>
                   <div style={{ fontSize: '14px', color: T.accent }}>{'\u25B8'}</div>
                 </button>
