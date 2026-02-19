@@ -172,10 +172,20 @@ export default function LenardAZSRP() {
   const [activeTab, setActiveTab] = useState('exterior');
   const [expandedLine, setExpandedLine] = useState(null);
   const [cameraLoading, setCameraLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [newlyAdded, setNewlyAdded] = useState(new Set());
   const lineIdRef = useRef(0);
+  const toastTimer = useRef(null);
+
+  // Toast helper
+  const showToast = useCallback((message, icon = '✓') => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, icon });
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
+  }, []);
 
   // Reset lines when switching programs
-  useEffect(() => { setLines([]); setExpandedLine(null); }, [program]);
+  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); }, [program]);
 
   // Register PWA service worker
   useEffect(() => {
@@ -194,8 +204,9 @@ export default function LenardAZSRP() {
       const cat = preset?.cat || activeTab;
       setLines(prev => [...prev, { ...base, category: cat, subtype: preset?.sub || SBC_RATES.categories[cat]?.subtypes[0]?.id || 'ext', controls: cat === 'highbay' }]);
     }
-    setExpandedLine(id);
-    setShowQuickAdd(false);
+    // Highlight newly added line briefly
+    setNewlyAdded(prev => new Set(prev).add(id));
+    setTimeout(() => setNewlyAdded(prev => { const next = new Set(prev); next.delete(id); return next; }), 2000);
   }, [program, activeTab]);
 
   const updateLine = useCallback((id, field, value) => {
@@ -205,7 +216,8 @@ export default function LenardAZSRP() {
   const removeLine = useCallback((id) => {
     setLines(prev => prev.filter(l => l.id !== id));
     if (expandedLine === id) setExpandedLine(null);
-  }, [expandedLine]);
+    showToast('Line removed', '🗑');
+  }, [expandedLine, showToast]);
 
   // ---- LENARD AI CAMERA ----
   const analyzePhoto = async (file) => {
@@ -227,15 +239,20 @@ export default function LenardAZSRP() {
       });
       const data = await resp.json();
       if (data.fixtures && Array.isArray(data.fixtures)) {
-        data.fixtures.forEach(f => {
-          addLine({ name: f.name, existW: f.existW, newW: f.newW, qty: f.count || 1, cat: f.category, sub: f.subtype, sbsType: f.sbsType });
-        });
+        if (data.fixtures.length === 0) {
+          showToast("Couldn't identify fixtures — try a clearer photo", '📷');
+        } else {
+          data.fixtures.forEach(f => {
+            addLine({ name: f.name, existW: f.existW, newW: f.newW, qty: f.count || 1, cat: f.category, sub: f.subtype, sbsType: f.sbsType });
+          });
+          showToast(`Lenard found ${data.fixtures.length} fixture${data.fixtures.length > 1 ? 's' : ''}`, '📷');
+        }
       } else {
-        alert('Lenard couldn\'t identify fixtures. Try a clearer photo.');
+        showToast("Couldn't identify fixtures — try a clearer photo", '📷');
       }
     } catch (err) {
       console.error('Lenard error:', err);
-      alert('Lenard couldn\'t analyze that photo.');
+      showToast("Couldn't analyze that photo", '📷');
     }
     setCameraLoading(false);
   };
@@ -267,7 +284,7 @@ export default function LenardAZSRP() {
     t += `\n${'\u2014'.repeat(50)}\nExisting: ${totals.existWatts.toLocaleString()}W \u2192 New: ${totals.newWatts.toLocaleString()}W (${reductionPct}% reduction)\n`;
     t += `Fixture Rebate: ${totals.fixtureRebate.toLocaleString()}\nControls Rebate: ${totals.controlsRebate.toLocaleString()}\n`;
     t += `TOTAL ESTIMATED INCENTIVE: ${totals.totalIncentive.toLocaleString()}\n\n\u26A0\uFE0F Estimate only \u2014 subject to SRP review`;
-    navigator.clipboard?.writeText(t); setShowSummary(false);
+    navigator.clipboard?.writeText(t); setShowSummary(false); showToast('Copied to clipboard', '📋');
   };
 
   // ---- STYLES ----
@@ -284,6 +301,21 @@ export default function LenardAZSRP() {
   // ==================== RENDER ====================
   return (
     <div style={{ maxWidth: '480px', margin: '0 auto', background: T.bg, minHeight: '100vh', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: T.text, paddingBottom: '80px' }}>
+
+      {/* ===== TOAST ===== */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: '12px', left: '50%', transform: 'translateX(-50%)',
+          background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '12px',
+          padding: '10px 18px', zIndex: 100, display: 'flex', alignItems: 'center', gap: '8px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.4)', animation: 'toastSlide 0.25s ease-out',
+          fontSize: '14px', fontWeight: '500', color: T.text, maxWidth: '90%',
+        }}>
+          <span>{toast.icon}</span>
+          <span>{toast.message}</span>
+        </div>
+      )}
+      <style>{`@keyframes toastSlide { from { opacity: 0; transform: translateX(-50%) translateY(-16px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }`}</style>
 
       {/* ===== STICKY HEADER ===== */}
       <div style={{ position: 'sticky', top: 0, zIndex: 40, background: T.bg, borderBottom: `1px solid ${T.border}`, padding: '12px 16px' }}>
@@ -363,18 +395,32 @@ export default function LenardAZSRP() {
 
         {filteredResults.map(r => {
           const isExp = expandedLine === r.id;
+          const isNew = newlyAdded.has(r.id);
+          const hasRebate = r.calc.totalIncentive > 0;
+          const subtypeInfo = program === 'sbs'
+            ? `${r.fixtureType} \u2022 $${SBS_RATES.fixture[r.fixtureType]?.rate || '0.35'}/W`
+            : (() => { let sub = null; for (const cat of Object.values(SBC_RATES.categories)) { const f = cat.subtypes.find(s => s.id === r.subtype); if (f) { sub = f; break; } } return sub ? `${sub.label} \u2022 ${sub.ratePerWatt ? `$${sub.ratePerWatt}/W` : `$${sub.perFixture}/fixture`}` : r.subtype; })();
           return (
-            <div key={r.id} style={{ ...S.card, borderColor: isExp ? T.accent : T.border }}>
+            <div key={r.id} style={{
+              ...S.card,
+              borderColor: isExp ? T.accent : isNew ? T.green : T.border,
+              borderLeft: `3px solid ${isExp ? T.accent : hasRebate ? T.green : T.border}`,
+              transition: 'border-color 0.3s ease',
+            }}>
               <div onClick={() => setExpandedLine(isExp ? null : r.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.name || (program === 'sbs' ? r.fixtureType : SBC_RATES.categories[r.category]?.subtypes.find(s => s.id === r.subtype)?.label || r.subtype)}
                   </div>
+                  <div style={{ fontSize: '11px', color: T.textSec, marginTop: '2px' }}>{subtypeInfo}</div>
                   <div style={{ fontSize: '12px', color: T.textMuted, marginTop: '2px' }}>{r.qty}\u00D7 | {r.existW}W \u2192 {r.newW}W | \u2212{r.calc.wattsReduced}W</div>
                 </div>
-                <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '12px' }}>
-                  <div style={{ ...S.money, fontSize: '16px' }}>${r.calc.totalIncentive.toLocaleString()}</div>
-                  {r.calc.controlsRebate > 0 && <div style={{ fontSize: '10px', color: T.blue }}>+${r.calc.controlsRebate} ctrl</div>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ ...S.money, fontSize: '16px' }}>${r.calc.totalIncentive.toLocaleString()}</div>
+                    {r.calc.controlsRebate > 0 && <div style={{ fontSize: '10px', color: T.blue }}>+${r.calc.controlsRebate} ctrl</div>}
+                  </div>
+                  <div style={{ fontSize: '14px', color: T.textMuted, transition: 'transform 0.2s', transform: isExp ? 'rotate(90deg)' : 'none' }}>{'\u25B8'}</div>
                 </div>
               </div>
 
@@ -407,7 +453,10 @@ export default function LenardAZSRP() {
                     {r.calc.controlsRebate > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}><span>Controls Rebate</span><span style={{ color: T.blue, fontWeight: '600' }}>${r.calc.controlsRebate}</span></div>}
                     <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: `1px solid ${T.border}` }}><span style={{ fontWeight: '600', color: T.text }}>Line Total</span><span style={{ ...S.money, fontSize: '14px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
                   </div>
-                  <button onClick={() => removeLine(r.id)} style={{ ...S.btnGhost, color: T.red, borderColor: T.red, width: '100%', marginTop: '10px', fontSize: '12px' }}>{'\uD83D\uDDD1'} Remove Line</button>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                    <button onClick={() => setExpandedLine(null)} style={{ ...S.btn, flex: 1, fontSize: '13px' }}>Done</button>
+                    <button onClick={() => removeLine(r.id)} style={{ ...S.btnGhost, color: T.red, borderColor: T.red, fontSize: '12px', padding: '10px 14px' }}>{'\uD83D\uDDD1'} Remove</button>
+                  </div>
                 </div>
               )}
             </div>
@@ -449,7 +498,7 @@ export default function LenardAZSRP() {
             <div key={gk} style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '12px', fontWeight: '600', color: T.textMuted, textTransform: 'uppercase', marginBottom: '8px' }}>{group.label}</div>
               {group.items.map((item, i) => (
-                <button key={i} onClick={() => addLine(item)} style={{ width: '100%', textAlign: 'left', padding: '10px 12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.text, cursor: 'pointer', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button key={i} onClick={() => { addLine(item); showToast(`Added ${item.name}`, '\u2713'); setShowQuickAdd(false); }} style={{ width: '100%', textAlign: 'left', padding: '10px 12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.text, cursor: 'pointer', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div><div style={{ fontSize: '13px', fontWeight: '500' }}>{item.name}</div><div style={{ fontSize: '11px', color: T.textMuted }}>{item.existW}W {'\u2192'} {item.newW}W</div></div>
                   <div style={{ fontSize: '12px', color: T.accent }}>{'\uFF0B'}</div>
                 </button>
