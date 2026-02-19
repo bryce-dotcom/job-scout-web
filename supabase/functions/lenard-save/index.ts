@@ -80,16 +80,14 @@ serve(async (req) => {
     const leadData = {
       company_id: cid,
       customer_name: customerName,
+      customer_id: customerId,
       phone: phone || null,
       email: email || null,
       address: fullAddress,
       status: 'New',
       lead_source: 'Lenard AZ SRP',
       service_type: 'Energy Efficiency',
-      estimated_value: pd.totalIncentive || 0,
       notes: JSON.stringify(pd),
-      utility_provider: 'SRP',
-      property_type: programType === 'sbs' ? 'Commercial' : 'Small Business',
     };
 
     const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, leadData);
