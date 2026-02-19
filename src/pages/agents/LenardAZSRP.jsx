@@ -475,17 +475,64 @@ export default function LenardAZSRP() {
   }), { existWatts: 0, newWatts: 0, wattsReduced: 0, fixtureRebate: 0, controlsRebate: 0, totalIncentive: 0 });
   const reductionPct = totals.existWatts > 0 ? ((totals.wattsReduced / totals.existWatts) * 100).toFixed(0) : 0;
 
-  // ---- FINANCIAL ANALYSIS ----
+  // ---- FINANCIAL ANALYSIS (comprehensive) ----
   const financials = useMemo(() => {
     const annualHours = operatingHours * daysPerYear;
-    const annualKwhSaved = (totals.wattsReduced * annualHours) / 1000;
+    const existKwh = (totals.existWatts * annualHours) / 1000;
+    const proposedKwh = (totals.newWatts * annualHours) / 1000;
+    const annualKwhSaved = existKwh - proposedKwh;
     const annualEnergySavings = annualKwhSaved * energyRate;
+    const existAnnualCost = existKwh * energyRate;
+    const proposedAnnualCost = proposedKwh * energyRate;
     const projectCost = lines.reduce((s, l) => s + ((l.productPrice || 0) * (l.qty || 0)), 0);
-    const netProjectCost = projectCost - totals.totalIncentive;
+    const netProjectCost = Math.max(0, projectCost - totals.totalIncentive);
     const simplePayback = annualEnergySavings > 0 ? netProjectCost / annualEnergySavings : 0;
     const roi = netProjectCost > 0 ? (annualEnergySavings / netProjectCost) * 100 : 0;
+
+    // Cash flow by year (Year 0 = investment, Years 1-10 = savings)
+    const cashFlow = [];
+    for (let yr = 0; yr <= 10; yr++) {
+      const savings = yr === 0 ? 0 : annualEnergySavings;
+      const rebate = yr === 0 ? totals.totalIncentive : 0;
+      const investment = yr === 0 ? -projectCost : 0;
+      const netCF = investment + rebate + savings;
+      const cumulative = yr === 0 ? netCF : (cashFlow[yr - 1]?.cumulative || 0) + netCF;
+      cashFlow.push({ year: yr, savings, rebate, investment, netCashFlow: netCF, cumulative });
+    }
+
+    // NPV at 5% discount rate
+    const discountRate = 0.05;
+    let npv = -netProjectCost;
+    for (let yr = 1; yr <= 10; yr++) {
+      npv += annualEnergySavings / Math.pow(1 + discountRate, yr);
+    }
+
+    // IRR via bisection (find rate where NPV = 0)
+    let irr = 0;
+    if (netProjectCost > 0 && annualEnergySavings > 0) {
+      let lo = -0.5, hi = 5.0;
+      for (let iter = 0; iter < 50; iter++) {
+        const mid = (lo + hi) / 2;
+        let testNpv = -netProjectCost;
+        for (let yr = 1; yr <= 10; yr++) testNpv += annualEnergySavings / Math.pow(1 + mid, yr);
+        if (testNpv > 0) lo = mid; else hi = mid;
+      }
+      irr = (lo + hi) / 2;
+    }
+
     const tenYearSavings = (annualEnergySavings * 10) - netProjectCost;
-    return { annualHours, annualKwhSaved, annualEnergySavings, projectCost, netProjectCost, simplePayback, roi, tenYearSavings };
+    const fiveYearSavings = (annualEnergySavings * 5) - netProjectCost;
+    const lifetimeSavings = (annualEnergySavings * 15) - netProjectCost; // 15yr LED
+    const co2Saved = annualKwhSaved * 0.000417; // metric tons CO2 per kWh (US avg)
+    const monthlyEnergySavings = annualEnergySavings / 12;
+
+    return {
+      annualHours, existKwh, proposedKwh, annualKwhSaved, annualEnergySavings,
+      existAnnualCost, proposedAnnualCost, monthlyEnergySavings,
+      projectCost, netProjectCost, simplePayback, roi,
+      cashFlow, npv, irr,
+      tenYearSavings, fiveYearSavings, lifetimeSavings, co2Saved,
+    };
   }, [operatingHours, daysPerYear, energyRate, totals, lines]);
 
   // ---- SAVE PROJECT ----
@@ -609,42 +656,51 @@ export default function LenardAZSRP() {
   // ---- PDF GENERATION ----
   const generatePDF = () => {
     const doc = new jsPDF({ unit: 'mm', format: 'letter' });
-    const W = doc.internal.pageSize.getWidth();   // 215.9
-    const H = doc.internal.pageSize.getHeight();   // 279.4
-    const M = 16; // margin
-    const LW = W - M * 2; // line width
-    const COL2 = W - M; // right-align anchor
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
+    const M = 16;
+    const LW = W - M * 2;
+    const R = W - M; // right edge
     const orange = [249, 115, 22];
     const dark = [30, 30, 34];
     const green = [22, 163, 74];
     const red = [220, 38, 38];
     const gray = [120, 120, 120];
     const ltGray = [230, 230, 230];
+    const white = [255, 255, 255];
+    const blue = [59, 130, 246];
     let y = 0;
     let pg = 1;
 
     const $ = (v) => `$${Math.round(v).toLocaleString()}`;
-    const $c = (v) => `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const pct = (v) => `${Math.round(v)}%`;
-    const checkPage = (need = 20) => { if (y > H - need) { addFooter(); doc.addPage(); pg++; y = 18; } };
+    const $c = (v) => `$${(+v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const $k = (v) => Math.abs(v) >= 1000 ? `$${(v / 1000).toFixed(1)}k` : $(v);
+    const checkPage = (need = 20) => { if (y > H - need) { addFooter(); doc.addPage(); pg++; y = 20; } };
 
     const addFooter = () => {
+      doc.setDrawColor(...ltGray);
+      doc.setLineWidth(0.3);
+      doc.line(M, H - 14, R, H - 14);
       doc.setFontSize(7);
       doc.setTextColor(...gray);
-      doc.text('HHH Building Services  |  Powered by Job Scout', M, H - 8);
-      doc.text(`Page ${pg}`, COL2, H - 8, { align: 'right' });
+      doc.text('Energy Scout by HHH Building Services', M, H - 10);
+      doc.setTextColor(...orange);
+      doc.text('ENERGY SCOUT', M, H - 6.5);
+      doc.setTextColor(...gray);
+      doc.text('  |  Commercial Energy Solutions  |  Powered by Job Scout', M + 28, H - 6.5);
+      doc.text(`Page ${pg}`, R, H - 6.5, { align: 'right' });
     };
 
-    // Helpers
+    // --- Helpers ---
     const sectionTitle = (title) => {
       checkPage(30);
-      y += 3;
+      y += 4;
       doc.setFillColor(...orange);
-      doc.rect(M, y - 4, 3, 7, 'F');
-      doc.setFontSize(13);
+      doc.rect(M, y - 4.5, LW, 8, 'F');
+      doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(...dark);
-      doc.text(title, M + 6, y);
+      doc.setTextColor(...white);
+      doc.text(title.toUpperCase(), M + 3, y);
       y += 8;
     };
 
@@ -652,11 +708,11 @@ export default function LenardAZSRP() {
       checkPage(14);
       doc.setFillColor(...dark);
       doc.rect(M, y - 4, LW, 7, 'F');
-      doc.setFontSize(8);
+      doc.setFontSize(7.5);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(...white);
       cols.forEach(c => doc.text(c.label, c.x, y, c.align ? { align: c.align } : {}));
-      y += 5;
+      y += 5.5;
       doc.setTextColor(...dark);
       doc.setFont(undefined, 'normal');
     };
@@ -664,7 +720,7 @@ export default function LenardAZSRP() {
     const dataRow = (cols, stripe = false) => {
       checkPage(8);
       if (stripe) { doc.setFillColor(248, 248, 250); doc.rect(M, y - 3.5, LW, 5, 'F'); }
-      doc.setFontSize(8);
+      doc.setFontSize(7.5);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(...dark);
       cols.forEach(c => {
@@ -677,155 +733,157 @@ export default function LenardAZSRP() {
       y += 4.5;
     };
 
-    const summaryRow = (label, value, opts = {}) => {
-      checkPage(8);
-      if (opts.topBorder) { doc.setDrawColor(...ltGray); doc.line(M, y - 2, COL2, y - 2); y += 1; }
-      doc.setFontSize(opts.big ? 11 : 9);
+    const row = (label, value, opts = {}) => {
+      checkPage(7);
+      if (opts.topLine) { doc.setDrawColor(...(opts.lineColor || ltGray)); doc.setLineWidth(0.3); doc.line(M, y - 2, R, y - 2); y += 1; }
+      const fs = opts.big ? 11 : opts.med ? 10 : 9;
+      doc.setFontSize(fs);
       doc.setFont(undefined, opts.bold ? 'bold' : 'normal');
-      doc.setTextColor(...dark);
+      doc.setTextColor(...(opts.labelColor || dark));
       doc.text(label, M + (opts.indent || 0), y);
-      if (opts.color) doc.setTextColor(...opts.color);
-      doc.text(value, COL2, y, { align: 'right' });
+      doc.setTextColor(...(opts.color || dark));
+      doc.text(value, R, y, { align: 'right' });
       doc.setTextColor(...dark);
-      y += opts.big ? 7 : 5;
+      y += opts.big ? 7 : opts.med ? 6 : 5;
     };
 
+    // Shorthand
+    const f = financials;
+    const projCost = f.projectCost;
+    const netCost = f.netProjectCost;
+    const annSav = f.annualEnergySavings;
+    const payback = f.simplePayback;
+
     // ===================================================================
-    // PAGE 1 — COVER / HEADER
+    // HEADER — Energy Scout Branding
     // ===================================================================
-    y = 20;
-    doc.setFontSize(22);
+    y = 16;
+    // Orange brand bar
+    doc.setFillColor(...orange);
+    doc.rect(0, 0, W, 4, 'F');
+
+    // Company name
+    doc.setFontSize(24);
     doc.setFont(undefined, 'bold');
-    doc.setTextColor(...dark);
-    doc.text('HHH Building Services', M, y);
-    y += 8;
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'normal');
     doc.setTextColor(...orange);
-    doc.text('Commercial Lighting Retrofit  |  Financial Audit', M, y);
+    doc.text('ENERGY SCOUT', M, y);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...gray);
+    doc.text('by HHH Building Services', M + 62, y);
+
+    // Document title right-aligned
+    doc.setFontSize(9);
+    doc.setTextColor(...dark);
+    doc.text('COMMERCIAL LIGHTING RETROFIT', R, y - 4, { align: 'right' });
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text('Financial Audit Report', R, y + 1, { align: 'right' });
     y += 5;
     doc.setDrawColor(...orange);
-    doc.setLineWidth(0.8);
-    doc.line(M, y, COL2, y);
-    y += 8;
-
-    // Date + Program
-    doc.setFontSize(9);
-    doc.setTextColor(...gray);
-    doc.text(`Date: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, M, y);
-    const programLabel = program === 'sbs' ? 'SRP Standard Business Solutions' : 'SRP Small Business Commercial (SBC)';
-    doc.text(`Program: ${programLabel}`, COL2, y, { align: 'right' });
-    y += 8;
-
-    // Customer Info Box
-    doc.setFillColor(248, 248, 250);
-    doc.setDrawColor(...ltGray);
-    const custBoxH = 26 + (saveAddress || saveCity ? 4.5 : 0);
-    doc.roundedRect(M, y - 4, LW, custBoxH, 2, 2, 'FD');
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'bold');
-    doc.setTextColor(...dark);
-    doc.text('Customer', M + 4, y);
-    y += 5;
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    doc.text(projectName || 'N/A', M + 4, y);
-    y += 5;
-    const fullAddr = [saveAddress, saveCity, saveState, saveZip].filter(Boolean).join(', ');
-    if (fullAddr) { doc.setFontSize(9); doc.setTextColor(...gray); doc.text(fullAddr, M + 4, y); y += 4.5; }
-    doc.setFontSize(9);
-    doc.setTextColor(...gray);
-    const contactParts = [savePhone, saveEmail].filter(Boolean).join('  |  ');
-    if (contactParts) { doc.text(contactParts, M + 4, y); y += 4.5; }
+    doc.setLineWidth(1);
+    doc.line(M, y, R, y);
     y += 6;
 
-    // Operating Assumptions
+    // Date / Program / Report ID
     doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
     doc.setTextColor(...gray);
-    doc.text(`Operating Hours: ${operatingHours}hrs/day  x  ${daysPerYear} days/yr  =  ${(operatingHours * daysPerYear).toLocaleString()} hrs/yr   |   Electric Rate: ${$c(energyRate)}/kWh`, M, y);
-    y += 8;
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const reportId = `ES-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+    doc.text(`Date: ${dateStr}   |   Report: ${reportId}`, M, y);
+    const programLabel = program === 'sbs' ? 'SRP Standard Business Solutions' : 'SRP Small Business Commercial (SBC)';
+    doc.text(`Program: ${programLabel}`, R, y, { align: 'right' });
+    y += 6;
+
+    // Customer + Operating Parameters side by side
+    const boxW = (LW - 4) / 2;
+    // Customer box
+    doc.setFillColor(248, 248, 250);
+    doc.setDrawColor(...ltGray);
+    doc.roundedRect(M, y - 3, boxW, 24, 2, 2, 'FD');
+    doc.setFontSize(7);
+    doc.setTextColor(...orange);
+    doc.setFont(undefined, 'bold');
+    doc.text('CUSTOMER', M + 3, y);
+    doc.setFontSize(10);
+    doc.setTextColor(...dark);
+    doc.text(projectName || 'N/A', M + 3, y + 5);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...gray);
+    const fullAddr = [saveAddress, saveCity, saveState, saveZip].filter(Boolean).join(', ');
+    if (fullAddr) doc.text(fullAddr, M + 3, y + 10, { maxWidth: boxW - 6 });
+    const contact = [savePhone, saveEmail].filter(Boolean).join('  |  ');
+    if (contact) doc.text(contact, M + 3, y + 15, { maxWidth: boxW - 6 });
+
+    // Parameters box
+    const pBoxX = M + boxW + 4;
+    doc.setFillColor(248, 248, 250);
+    doc.roundedRect(pBoxX, y - 3, boxW, 24, 2, 2, 'FD');
+    doc.setFontSize(7);
+    doc.setTextColor(...orange);
+    doc.setFont(undefined, 'bold');
+    doc.text('OPERATING PARAMETERS', pBoxX + 3, y);
+    doc.setFontSize(9);
+    doc.setTextColor(...dark);
+    doc.setFont(undefined, 'normal');
+    doc.text(`${operatingHours} hrs/day  x  ${daysPerYear} days/yr`, pBoxX + 3, y + 5);
+    doc.text(`${f.annualHours.toLocaleString()} annual operating hours`, pBoxX + 3, y + 10);
+    doc.text(`Electric rate: ${$c(energyRate)}/kWh`, pBoxX + 3, y + 15);
+    y += 26;
 
     // ===================================================================
     // FIXTURE SCHEDULE
     // ===================================================================
     sectionTitle('Fixture Schedule');
-
-    const c0 = M + 1;
-    const c1 = M + 10;
-    const c2 = M + 56;
-    const c3 = M + 72;
-    const c4 = M + 86;
-    const c5 = M + 130;
-    const c6 = M + 148;
-    const c7 = COL2;
-
+    const c0 = M + 1, c1 = M + 10, c2 = M + 58, c3 = M + 72, c4 = M + 86, c5 = M + 132, c6 = M + 149, c7 = R;
     tableHeader([
-      { label: 'Qty', x: c0 },
-      { label: 'Area / Existing Fixture', x: c1 },
-      { label: 'Ht (ft)', x: c2 },
-      { label: 'Exist W', x: c3 },
-      { label: 'LED Replacement', x: c4 },
-      { label: 'New W', x: c5 },
-      { label: 'Reduced', x: c6 },
-      { label: 'Rebate', x: c7, align: 'right' },
+      { label: 'Qty', x: c0 }, { label: 'Area / Existing Fixture', x: c1 }, { label: 'Ht', x: c2 },
+      { label: 'Exist W', x: c3 }, { label: 'LED Replacement', x: c4 }, { label: 'New W', x: c5 },
+      { label: 'Saved', x: c6 }, { label: 'Rebate', x: c7, align: 'right' },
     ]);
-
     results.forEach((r, i) => {
       dataRow([
-        { val: r.qty, x: c0 },
-        { val: (r.name || r.fixtureType || r.subtype || 'Fixture').substring(0, 26), x: c1 },
-        { val: r.height ? `${r.height}'` : '-', x: c2 },
-        { val: `${r.existW}W`, x: c3 },
-        { val: (r.productName || '-').substring(0, 24), x: c4 },
-        { val: `${r.newW}W`, x: c5 },
-        { val: `${r.calc.wattsReduced}W`, x: c6 },
-        { val: $(r.calc.totalIncentive), x: c7, align: 'right' },
+        { val: r.qty, x: c0 }, { val: (r.name || r.fixtureType || r.subtype || 'Fixture').substring(0, 26), x: c1 },
+        { val: r.height ? `${r.height}'` : '-', x: c2 }, { val: `${r.existW}W`, x: c3 },
+        { val: (r.productName || '-').substring(0, 24), x: c4 }, { val: `${r.newW}W`, x: c5 },
+        { val: `${r.calc.wattsReduced}W`, x: c6 }, { val: $(r.calc.totalIncentive), x: c7, align: 'right' },
       ], i % 2 === 0);
     });
-
-    // Fixture totals row
     y += 1;
-    doc.setDrawColor(...orange);
-    doc.setLineWidth(0.4);
-    doc.line(M, y - 2, COL2, y - 2);
+    doc.setDrawColor(...orange); doc.setLineWidth(0.5); doc.line(M, y - 2, R, y - 2);
     dataRow([
-      { val: `${results.reduce((s, r) => s + r.qty, 0)} total`, x: c0, bold: true },
-      { val: '', x: c1 },
-      { val: '', x: c2 },
-      { val: `${totals.existWatts.toLocaleString()}W`, x: c3, bold: true },
-      { val: '', x: c4 },
+      { val: `${results.reduce((s, r) => s + r.qty, 0)} fixtures`, x: c0, bold: true }, { val: '', x: c1 }, { val: '', x: c2 },
+      { val: `${totals.existWatts.toLocaleString()}W`, x: c3, bold: true }, { val: '', x: c4 },
       { val: `${totals.newWatts.toLocaleString()}W`, x: c5, bold: true },
       { val: `${totals.wattsReduced.toLocaleString()}W`, x: c6, bold: true },
       { val: $(totals.totalIncentive), x: c7, align: 'right', bold: true, color: orange },
     ]);
-    y += 4;
+    y += 3;
 
     // ===================================================================
     // ENERGY ANALYSIS
     // ===================================================================
     sectionTitle('Energy Analysis');
-
-    const annualExistKwh = (totals.existWatts * financials.annualHours) / 1000;
-    const annualNewKwh = (totals.newWatts * financials.annualHours) / 1000;
-
-    summaryRow('Current Annual Consumption', `${Math.round(annualExistKwh).toLocaleString()} kWh`);
-    summaryRow('Proposed Annual Consumption', `${Math.round(annualNewKwh).toLocaleString()} kWh`);
-    summaryRow('Annual kWh Reduction', `${Math.round(financials.annualKwhSaved).toLocaleString()} kWh`, { bold: true, color: green });
-    summaryRow('Wattage Reduction', `${totals.wattsReduced.toLocaleString()}W  (${reductionPct}% reduction)`);
+    row('Current Annual Consumption', `${Math.round(f.existKwh).toLocaleString()} kWh`);
+    row('Proposed Annual Consumption', `${Math.round(f.proposedKwh).toLocaleString()} kWh`);
+    row('Annual Energy Reduction', `${Math.round(f.annualKwhSaved).toLocaleString()} kWh  (${reductionPct}%)`, { bold: true, color: green, topLine: true });
     y += 2;
-    summaryRow('Annual Energy Cost (Current)', $(annualExistKwh * energyRate));
-    summaryRow('Annual Energy Cost (Proposed)', $(annualNewKwh * energyRate));
-    summaryRow('Annual Energy Cost Savings', $(financials.annualEnergySavings), { bold: true, color: green, topBorder: true });
+    row('Current Annual Energy Cost', $c(f.existAnnualCost));
+    row('Proposed Annual Energy Cost', $c(f.proposedAnnualCost));
+    row('Annual Cost Savings', $c(annSav), { bold: true, med: true, color: green, topLine: true });
+    row('Monthly Cost Savings', $c(f.monthlyEnergySavings), { indent: 4, color: green });
+    if (f.co2Saved > 0) row('Annual CO2 Reduction', `${f.co2Saved.toFixed(1)} metric tons`, { color: green });
     y += 2;
 
     // ===================================================================
-    // INCENTIVE BREAKDOWN
+    // SRP INCENTIVE BREAKDOWN
     // ===================================================================
     sectionTitle('SRP Incentive Breakdown');
-
-    summaryRow('Fixture Rebate', $(totals.fixtureRebate));
-    summaryRow('Controls Rebate', $(totals.controlsRebate));
-    summaryRow('Total Estimated SRP Incentive', $(totals.totalIncentive), { bold: true, big: true, color: orange, topBorder: true });
+    row('Fixture Rebate', $(totals.fixtureRebate));
+    row('Controls Rebate', $(totals.controlsRebate));
+    row('Total Estimated SRP Incentive', $(totals.totalIncentive), { bold: true, big: true, color: orange, topLine: true, lineColor: orange });
     y += 2;
 
     // ===================================================================
@@ -833,187 +891,232 @@ export default function LenardAZSRP() {
     // ===================================================================
     sectionTitle('Investment Analysis');
 
-    const projCost = financials.projectCost;
-    const netCost = financials.netProjectCost;
-    const annSav = financials.annualEnergySavings;
-    const payback = financials.simplePayback;
-    const roiVal = financials.roi;
-    const tenYr = financials.tenYearSavings;
-    const fiveYr = (annSav * 5) - netCost;
-    const lifetimeSavings = annSav * 15; // 15-year LED life
-    const lifetimeNet = lifetimeSavings - netCost;
-    const monthlyPayback = payback * 12;
-
     if (projCost > 0) {
-      summaryRow('Total Project Cost', $(projCost));
-      summaryRow('Less: SRP Incentive', `(${$(totals.totalIncentive)})`, { color: green });
-      summaryRow('Net Investment', $(netCost), { bold: true, topBorder: true });
-      y += 3;
-      summaryRow('Annual Energy Savings', $(annSav), { color: green });
-      summaryRow('Monthly Equivalent Savings', $c(annSav / 12), { color: green, indent: 4 });
+      row('Gross Project Cost', $c(projCost));
+      row('Less: SRP Incentive', `(${$c(totals.totalIncentive)})`, { color: green });
+      row('Net Capital Investment', $c(netCost), { bold: true, med: true, topLine: true });
+      y += 2;
+      row('Annual Energy Savings', $c(annSav), { color: green });
+      row('Monthly Energy Savings', $c(f.monthlyEnergySavings), { indent: 4, color: green });
       y += 3;
 
-      // Key Metrics Box
-      checkPage(40);
-      doc.setFillColor(248, 248, 250);
+      // Key Metrics — 2 rows of 3 in orange-bordered box
+      checkPage(44);
       doc.setDrawColor(...orange);
-      doc.setLineWidth(0.4);
-      doc.roundedRect(M, y - 4, LW, 36, 2, 2, 'FD');
-      const metricY = y;
-      const col1x = M + 4;
-      const col2x = M + LW / 3 + 4;
-      const col3x = M + (LW * 2 / 3) + 4;
+      doc.setLineWidth(0.6);
+      doc.setFillColor(255, 251, 245);
+      doc.roundedRect(M, y - 3, LW, 40, 2, 2, 'FD');
 
-      const drawMetric = (x, yy, label, value, clr) => {
-        doc.setFontSize(8);
-        doc.setTextColor(...gray);
-        doc.text(label, x, yy);
-        doc.setFontSize(16);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(...(clr || dark));
-        doc.text(value, x, yy + 7);
+      const drawMetric = (x, yy, label, value, unit, clr) => {
+        doc.setFontSize(7); doc.setTextColor(...gray); doc.setFont(undefined, 'normal'); doc.text(label, x, yy);
+        doc.setFontSize(18); doc.setFont(undefined, 'bold'); doc.setTextColor(...(clr || dark)); doc.text(value, x, yy + 7.5);
+        if (unit) { doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.text(unit, x, yy + 12); }
         doc.setFont(undefined, 'normal');
       };
+      const mx1 = M + 5, mx2 = M + LW / 3 + 3, mx3 = M + (LW * 2) / 3 + 3;
+      const my1 = y, my2 = y + 20;
+      const paybackMo = Math.round(payback * 12);
+      const paybackLabel = payback < 1 ? `${paybackMo}` : payback.toFixed(1);
+      const paybackUnit = payback < 1 ? 'months' : 'years';
 
-      drawMetric(col1x, metricY, 'Simple Payback', payback < 1 ? `${Math.round(monthlyPayback)} months` : `${payback.toFixed(1)} years`, orange);
-      drawMetric(col2x, metricY, 'Annual ROI', `${Math.round(roiVal)}%`, green);
-      drawMetric(col3x, metricY, '10-Year Net Savings', $(tenYr), tenYr >= 0 ? green : red);
+      drawMetric(mx1, my1, 'SIMPLE PAYBACK', paybackLabel, paybackUnit, orange);
+      drawMetric(mx2, my1, 'ANNUAL ROI', `${Math.round(f.roi)}%`, 'return on investment', green);
+      drawMetric(mx3, my1, 'NPV (5% DISCOUNT)', $(f.npv), 'net present value', f.npv >= 0 ? green : red);
+      drawMetric(mx1, my2, 'IRR', `${(f.irr * 100).toFixed(1)}%`, 'internal rate of return', green);
+      drawMetric(mx2, my2, '5-YEAR NET SAVINGS', $(f.fiveYearSavings), null, f.fiveYearSavings >= 0 ? green : red);
+      drawMetric(mx3, my2, '10-YEAR NET SAVINGS', $(f.tenYearSavings), null, f.tenYearSavings >= 0 ? green : red);
 
-      const metricY2 = metricY + 18;
-      drawMetric(col1x, metricY2, 'Net Investment', $(netCost), dark);
-      drawMetric(col2x, metricY2, '5-Year Net Savings', $(fiveYr), fiveYr >= 0 ? green : red);
-      drawMetric(col3x, metricY2, '15-Year LED Lifetime', $(lifetimeNet), green);
-
-      y = metricY + 36;
+      y += 44;
     } else {
-      // No project cost — still show savings
-      summaryRow('Project Cost', 'Not specified — enter product prices for full analysis', { color: gray });
-      summaryRow('Annual Energy Savings', $(annSav), { bold: true, color: green });
-      y += 2;
+      row('Project Cost', 'Not specified', { color: gray, labelColor: gray });
+      row('Annual Energy Savings', $c(annSav), { bold: true, color: green });
+      doc.setFontSize(8); doc.setTextColor(...gray);
+      doc.text('Enter product prices for full investment analysis with payback, ROI, NPV, and IRR.', M, y); y += 6;
     }
 
     // ===================================================================
-    // 10-YEAR CASH FLOW PROJECTION (new page)
+    // 10-YEAR CASH FLOW TABLE
     // ===================================================================
     if (projCost > 0 && annSav > 0) {
-      checkPage(90);
+      checkPage(85);
       sectionTitle('10-Year Cash Flow Projection');
 
-      const t0 = M + 1;
-      const t1 = M + 18;
-      const t2 = M + 48;
-      const t3 = M + 80;
-      const t4 = M + 112;
-      const t5 = COL2;
-
+      const t0 = M + 1, t1 = M + 16, t2 = M + 42, t3 = M + 68, t4 = M + 96, t5 = M + 128, t6 = R;
       tableHeader([
-        { label: 'Year', x: t0 },
-        { label: 'Energy Savings', x: t1 },
-        { label: 'Rebate', x: t2 },
-        { label: 'Net Cash Flow', x: t3 },
-        { label: 'Cumulative', x: t4 },
-        { label: 'Net Position', x: t5, align: 'right' },
+        { label: 'Year', x: t0 }, { label: 'Savings', x: t1 }, { label: 'Rebate', x: t2 },
+        { label: 'Investment', x: t3 }, { label: 'Net Cash Flow', x: t4 },
+        { label: 'Cumulative', x: t5 }, { label: 'Net Position', x: t6, align: 'right' },
       ]);
 
-      // Year 0 — initial investment
-      dataRow([
-        { val: '0', x: t0 },
-        { val: '-', x: t1 },
-        { val: $(totals.totalIncentive), x: t2, color: green },
-        { val: `(${$(projCost - totals.totalIncentive)})`, x: t3, color: red },
-        { val: `(${$(netCost)})`, x: t4, color: red },
-        { val: `(${$(netCost)})`, x: t5, align: 'right', color: red, bold: true },
-      ], false);
-
-      for (let yr = 1; yr <= 10; yr++) {
-        const cumSavings = annSav * yr;
-        const netPos = cumSavings - netCost;
-        const isPositive = netPos >= 0;
-        const isBreakeven = yr > 0 && yr === Math.ceil(payback);
+      f.cashFlow.forEach((cf, i) => {
+        const isPayback = cf.year > 0 && cf.year === Math.ceil(payback);
         dataRow([
-          { val: String(yr), x: t0, bold: isBreakeven },
-          { val: $(annSav), x: t1 },
-          { val: '-', x: t2 },
-          { val: $(annSav), x: t3, color: green },
-          { val: $(cumSavings), x: t4 },
-          { val: isPositive ? $(netPos) : `(${$(Math.abs(netPos))})`, x: t5, align: 'right', bold: true, color: isPositive ? green : red },
-        ], yr % 2 === 0);
-
-        // Mark payback year
-        if (isBreakeven) {
-          doc.setFontSize(7);
-          doc.setTextColor(...orange);
-          doc.text('< PAYBACK', t5 - 42, y - 4.5);
+          { val: cf.year === 0 ? 'Yr 0' : `Yr ${cf.year}`, x: t0, bold: isPayback },
+          { val: cf.savings > 0 ? $(cf.savings) : '-', x: t1 },
+          { val: cf.rebate > 0 ? $(cf.rebate) : '-', x: t2, color: cf.rebate > 0 ? green : dark },
+          { val: cf.investment < 0 ? `(${$(Math.abs(cf.investment))})` : '-', x: t3, color: cf.investment < 0 ? red : dark },
+          { val: cf.netCashFlow >= 0 ? $(cf.netCashFlow) : `(${$(Math.abs(cf.netCashFlow))})`, x: t4, color: cf.netCashFlow >= 0 ? green : red },
+          { val: cf.cumulative >= 0 ? $(cf.cumulative) : `(${$(Math.abs(cf.cumulative))})`, x: t5, color: cf.cumulative >= 0 ? green : red },
+          { val: cf.cumulative >= 0 ? $(cf.cumulative) : `(${$(Math.abs(cf.cumulative))})`, x: t6, align: 'right', bold: true, color: cf.cumulative >= 0 ? green : red },
+        ], i % 2 === 0);
+        if (isPayback) {
+          doc.setFontSize(6.5); doc.setTextColor(...orange);
+          doc.text('PAYBACK', t6 - 34, y - 4.5);
           doc.setTextColor(...dark);
         }
+      });
+      y += 3;
+
+      // ===================================================================
+      // CASH FLOW BAR GRAPH
+      // ===================================================================
+      checkPage(75);
+      sectionTitle('Cumulative Cash Flow Analysis');
+
+      const graphX = M + 8;
+      const graphW = LW - 16;
+      const graphH = 55;
+      const graphY = y; // top of graph area
+      const baselineY = graphY + graphH; // bottom
+      const barW = graphW / 11 - 2;
+
+      // Find min/max for scale
+      const allCum = f.cashFlow.map(c => c.cumulative);
+      const maxVal = Math.max(...allCum, 0);
+      const minVal = Math.min(...allCum, 0);
+      const range = (maxVal - minVal) || 1;
+      const zeroY = graphY + (maxVal / range) * graphH; // Y position of $0 line
+
+      // Y-axis labels
+      doc.setFontSize(7);
+      doc.setTextColor(...gray);
+      doc.setFont(undefined, 'normal');
+      doc.text($k(maxVal), M, graphY + 2);
+      doc.text('$0', M, zeroY + 1);
+      if (minVal < 0) doc.text($k(minVal), M, baselineY);
+
+      // Zero line
+      doc.setDrawColor(...ltGray);
+      doc.setLineWidth(0.3);
+      doc.line(graphX, zeroY, graphX + graphW, zeroY);
+
+      // Grid lines
+      doc.setDrawColor(245, 245, 245);
+      for (let g = 0.25; g <= 0.75; g += 0.25) {
+        const gy = graphY + g * graphH;
+        doc.line(graphX, gy, graphX + graphW, gy);
       }
 
-      // 10-year total row
-      y += 1;
-      doc.setDrawColor(...orange);
-      doc.setLineWidth(0.4);
-      doc.line(M, y - 2, COL2, y - 2);
-      const totalCash = annSav * 10;
-      dataRow([
-        { val: 'TOTAL', x: t0, bold: true },
-        { val: $(totalCash), x: t1, bold: true },
-        { val: $(totals.totalIncentive), x: t2, bold: true },
-        { val: '', x: t3 },
-        { val: '', x: t4 },
-        { val: $(tenYr), x: t5, align: 'right', bold: true, color: tenYr >= 0 ? green : red },
-      ]);
-      y += 4;
+      // Bars
+      f.cashFlow.forEach((cf, i) => {
+        const bx = graphX + i * (graphW / 11) + 1;
+        const val = cf.cumulative;
+        const barHeight = Math.abs(val / range) * graphH;
+        const isPos = val >= 0;
 
-      // Break-even summary
-      checkPage(20);
+        if (isPos) {
+          doc.setFillColor(...green);
+          doc.rect(bx, zeroY - barHeight, barW, barHeight, 'F');
+        } else {
+          doc.setFillColor(...red);
+          doc.rect(bx, zeroY, barW, barHeight, 'F');
+        }
+
+        // Value label on bar
+        doc.setFontSize(6);
+        doc.setTextColor(...(isPos ? green : red));
+        doc.setFont(undefined, 'bold');
+        const labelY = isPos ? zeroY - barHeight - 2 : zeroY + barHeight + 3;
+        doc.text($k(val), bx + barW / 2, labelY, { align: 'center' });
+
+        // Year label below
+        doc.setFontSize(6.5);
+        doc.setTextColor(...dark);
+        doc.setFont(undefined, 'normal');
+        doc.text(cf.year === 0 ? 'Yr 0' : `Yr ${cf.year}`, bx + barW / 2, baselineY + 5, { align: 'center' });
+
+        // Payback marker
+        if (cf.year > 0 && cf.year === Math.ceil(payback)) {
+          doc.setDrawColor(...orange);
+          doc.setLineWidth(0.8);
+          doc.line(bx + barW / 2, graphY, bx + barW / 2, baselineY);
+          doc.setFontSize(7);
+          doc.setTextColor(...orange);
+          doc.setFont(undefined, 'bold');
+          doc.text('PAYBACK', bx + barW / 2, graphY - 2, { align: 'center' });
+        }
+      });
+
+      y = baselineY + 10;
+
+      // Summary narrative
+      checkPage(18);
       doc.setFontSize(9);
-      doc.setTextColor(...dark);
       doc.setFont(undefined, 'normal');
-      const paybackMo = Math.round(payback * 12);
-      const paybackYr = Math.floor(paybackMo / 12);
-      const paybackRemMo = paybackMo % 12;
-      const paybackStr = paybackYr > 0 ? `${paybackYr} year${paybackYr > 1 ? 's' : ''}${paybackRemMo > 0 ? `, ${paybackRemMo} month${paybackRemMo > 1 ? 's' : ''}` : ''}` : `${paybackMo} months`;
-      doc.text(`Break-even point: ${paybackStr}. After payback, the project generates ${$c(annSav)}/year in pure savings.`, M, y);
+      doc.setTextColor(...dark);
+      const paybackMonths = Math.round(payback * 12);
+      const paybackYears = Math.floor(paybackMonths / 12);
+      const paybackRem = paybackMonths % 12;
+      const paybackStr = paybackYears > 0
+        ? `${paybackYears} year${paybackYears > 1 ? 's' : ''}${paybackRem > 0 ? ` ${paybackRem} month${paybackRem > 1 ? 's' : ''}` : ''}`
+        : `${paybackMonths} months`;
+      doc.text(`This investment reaches break-even in ${paybackStr}. After payback, the project generates`, M, y);
       y += 4;
-      doc.text(`Over 10 years, every $1 invested returns $${((totalCash / netCost) || 0).toFixed(2)} in energy savings.`, M, y);
-      y += 6;
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...green);
+      doc.text(`${$c(annSav)} per year in pure energy savings.`, M, y);
+      y += 5;
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...dark);
+      const returnMultiple = netCost > 0 ? ((annSav * 10) / netCost).toFixed(1) : '0';
+      doc.text(`Over 10 years, every $1.00 invested returns $${returnMultiple} in energy savings (${$k(f.tenYearSavings)} net).`, M, y);
+      y += 5;
+      doc.text(`Net Present Value at 5% discount rate: ${$(f.npv)}  |  Internal Rate of Return: ${(f.irr * 100).toFixed(1)}%`, M, y);
+      y += 8;
     }
 
     // ===================================================================
-    // ASSUMPTIONS & DISCLAIMER
+    // ASSUMPTIONS & DISCLAIMERS
     // ===================================================================
-    checkPage(25);
-    y += 2;
-    doc.setDrawColor(...ltGray);
-    doc.line(M, y, COL2, y);
-    y += 5;
+    checkPage(30);
+    sectionTitle('Assumptions & Disclaimers');
     doc.setFontSize(7);
     doc.setTextColor(...gray);
+    doc.setFont(undefined, 'normal');
     const disclaimers = [
-      'ASSUMPTIONS: Energy savings based on stated operating hours and current electric rate. Actual savings may vary with usage patterns and rate changes.',
-      'INCENTIVES: Estimated SRP rebate amounts are subject to SRP program review, approval, and available funding. Pre-approval is recommended.',
-      'LED LIFETIME: LED products typically rated for 50,000-100,000 hours (10-20+ years at stated operating hours). No lamp replacement costs included.',
-      'This document is an estimate for planning purposes only and does not constitute a binding offer or guarantee of savings.',
+      `OPERATING ASSUMPTIONS: ${operatingHours} hours/day, ${daysPerYear} days/year (${f.annualHours.toLocaleString()} hrs/yr). Electric rate: ${$c(energyRate)}/kWh. Actual savings vary with usage and rate changes.`,
+      'SRP INCENTIVES: Estimated rebate amounts subject to SRP program review, approval, and available funding. Pre-approval recommended before project start.',
+      'LED LIFETIME: Products typically rated 50,000-100,000 hours (10-20+ years at stated hours). Analysis excludes lamp replacement cost savings from LED longevity.',
+      `NPV/IRR: Net Present Value calculated at 5% discount rate over 10 years. IRR calculated over 10-year project horizon. Both assume constant annual savings of ${$c(annSav)}.`,
+      'This document is a preliminary estimate for planning purposes only and does not constitute a binding offer, contract, or guarantee of savings or rebate amounts.',
     ];
-    disclaimers.forEach(d => {
-      doc.text(d, M, y, { maxWidth: LW });
-      y += 6;
-    });
+    disclaimers.forEach(d => { doc.text(d, M, y, { maxWidth: LW }); y += 7; });
 
-    // Final footer
+    // Prepared by
+    y += 2;
+    doc.setDrawColor(...orange);
+    doc.setLineWidth(0.4);
+    doc.line(M, y, R, y);
+    y += 5;
+    doc.setFontSize(9);
+    doc.setTextColor(...dark);
+    doc.setFont(undefined, 'bold');
+    doc.text('Prepared by Energy Scout', M, y);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...gray);
+    doc.text('A division of HHH Building Services  |  Commercial Energy Solutions', M, y + 4);
+    doc.text(`Report generated ${dateStr}  |  Ref: ${reportId}`, M, y + 8);
+
     addFooter();
 
     // ===================================================================
-    // OUTPUT — Share or Download
+    // OUTPUT
     // ===================================================================
     const blob = doc.output('blob');
-    const fileName = `Lighting_Audit_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    const fileName = `Energy_Scout_Audit_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
     const file = new File([blob], fileName, { type: 'application/pdf' });
-
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      navigator.share({ files: [file], title: `Lighting Audit - ${projectName}` }).catch(() => {
-        downloadBlob(blob, fileName);
-      });
+      navigator.share({ files: [file], title: `Energy Scout Audit - ${projectName}` }).catch(() => downloadBlob(blob, fileName));
     } else {
       downloadBlob(blob, fileName);
     }
@@ -1411,41 +1514,112 @@ export default function LenardAZSRP() {
         </div>
       </>)}
 
-      {/* ===== SUMMARY MODAL ===== */}
+      {/* ===== FINANCIAL AUDIT SUMMARY ===== */}
       {showSummary && (<>
-        <div onClick={() => setShowSummary(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
-        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '90%', maxWidth: '440px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', maxHeight: '85vh', overflow: 'auto', zIndex: 51, padding: '24px' }}>
-          <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '4px' }}>{program === 'sbs' ? '\uD83C\uDFE2' : '\u26A1'} Project Summary</div>
-          <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>{program === 'sbs' ? 'SRP Standard Business Solutions' : 'SRP Small Business Commercial'}{projectName ? ` \u2014 ${projectName}` : ''}</div>
-          {results.map(r => (
-            <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${T.border}`, fontSize: '13px' }}>
-              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.qty}\u00D7 {r.name || (program === 'sbs' ? r.fixtureType : r.subtype)} \u2022 {r.height}ft</div>
-              <div style={S.money}>${r.calc.totalIncentive.toLocaleString()}</div>
+        <div onClick={() => setShowSummary(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 50 }} />
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, overflow: 'auto', zIndex: 51, padding: '12px' }}>
+          <div style={{ maxWidth: '480px', margin: '0 auto', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ background: T.accent, padding: '16px 20px', color: '#fff' }}>
+              <div style={{ fontSize: '18px', fontWeight: '800', letterSpacing: '0.5px' }}>ENERGY SCOUT</div>
+              <div style={{ fontSize: '11px', opacity: 0.85 }}>by HHH Building Services</div>
+              <div style={{ fontSize: '13px', fontWeight: '600', marginTop: '8px' }}>Financial Audit Report</div>
+              <div style={{ fontSize: '11px', opacity: 0.8 }}>{program === 'sbs' ? 'SRP Standard Business Solutions' : 'SRP Small Business Commercial'}{projectName ? ` \u2014 ${projectName}` : ''}</div>
             </div>
-          ))}
-          <div style={{ marginTop: '16px', padding: '12px', background: T.bgInput, borderRadius: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Fixture Rebate</span><span>${totals.fixtureRebate.toLocaleString()}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Controls Rebate</span><span>${totals.controlsRebate.toLocaleString()}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Watts Reduced</span><span>{totals.wattsReduced.toLocaleString()}W ({reductionPct}%)</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Annual kWh Saved</span><span>{Math.round(financials.annualKwhSaved).toLocaleString()}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '8px', color: T.textSec }}><span>Annual $ Saved</span><span style={{ color: T.green }}>${Math.round(financials.annualEnergySavings).toLocaleString()}</span></div>
-            {financials.projectCost > 0 && (<>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec, paddingTop: '6px', borderTop: `1px solid ${T.border}` }}><span>Project Cost</span><span>${financials.projectCost.toLocaleString()}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Net Cost</span><span>${Math.round(financials.netProjectCost).toLocaleString()}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Simple Payback</span><span>{financials.simplePayback.toFixed(1)} yrs</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '8px', color: T.textSec }}><span>10-Year Net Savings</span><span style={{ color: T.green }}>${Math.round(financials.tenYearSavings).toLocaleString()}</span></div>
-            </>)}
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: '700', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}><span>Total Incentive</span><span style={S.money}>${totals.totalIncentive.toLocaleString()}</span></div>
-          </div>
-          <div style={{ fontSize: '11px', color: T.textMuted, marginTop: '12px', textAlign: 'center' }}>{'\u26A0\uFE0F'} Estimate only \u2014 subject to SRP review and approval</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={generatePDF} style={{ ...S.btn, flex: 1, fontSize: '13px' }}>{'\uD83D\uDCC4'} Share PDF</button>
-              <button onClick={copySummary} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>{'\uD83D\uDCCB'} Copy</button>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => { setShowSummary(false); setShowSaveModal(true); }} disabled={!!savedLeadId} style={{ ...S.btn, flex: 1, fontSize: '13px', background: savedLeadId ? T.bgInput : T.blue, color: savedLeadId ? T.textMuted : '#fff' }}>{savedLeadId ? '\u2713 Saved' : '\uD83D\uDCBE Save Project'}</button>
-              <button onClick={() => setShowSummary(false)} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>Close</button>
+
+            <div style={{ padding: '16px 20px' }}>
+              {/* Fixture Schedule */}
+              <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Fixture Schedule</div>
+              {results.map((r, i) => (
+                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${T.border}`, fontSize: '12px' }}>
+                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.textSec }}>{r.qty}x {r.name || r.fixtureType || r.subtype} {r.height ? `\u2022 ${r.height}ft` : ''}</div>
+                  <div style={{ fontWeight: '600', whiteSpace: 'nowrap', marginLeft: '8px' }}>{r.existW}W \u2192 {r.newW}W <span style={{ color: T.accent, marginLeft: '4px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
+                </div>
+              ))}
+
+              {/* Energy Analysis */}
+              <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Energy Analysis</div>
+              <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px' }}>
+                {[
+                  ['Current Consumption', `${Math.round(financials.existKwh).toLocaleString()} kWh/yr`],
+                  ['Proposed Consumption', `${Math.round(financials.proposedKwh).toLocaleString()} kWh/yr`],
+                ].map(([l, v]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px' }}><span>{l}</span><span>{v}</span></div>)}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', paddingTop: '6px', borderTop: `1px solid ${T.border}` }}>
+                  <span>Annual kWh Saved</span><span style={{ color: T.green }}>{Math.round(financials.annualKwhSaved).toLocaleString()} kWh ({reductionPct}%)</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', marginTop: '4px' }}>
+                  <span>Annual Cost Savings</span><span style={{ color: T.green }}>${Math.round(financials.annualEnergySavings).toLocaleString()}/yr</span>
+                </div>
+              </div>
+
+              {/* SRP Incentive */}
+              <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>SRP Incentive</div>
+              <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px' }}>
+                {[['Fixture Rebate', totals.fixtureRebate], ['Controls Rebate', totals.controlsRebate]].map(([l, v]) => (
+                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px' }}><span>{l}</span><span>${v.toLocaleString()}</span></div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '800', paddingTop: '8px', borderTop: `1px solid ${T.border}`, color: T.accent }}><span>Total Incentive</span><span>${totals.totalIncentive.toLocaleString()}</span></div>
+              </div>
+
+              {/* Investment Analysis */}
+              {financials.projectCost > 0 && (<>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Investment Analysis</div>
+                <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px' }}>
+                  {[
+                    ['Gross Project Cost', `$${financials.projectCost.toLocaleString()}`],
+                    ['Less: SRP Incentive', `-$${totals.totalIncentive.toLocaleString()}`, T.green],
+                  ].map(([l, v, c]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: c || T.textSec, marginBottom: '4px' }}><span>{l}</span><span>{v}</span></div>)}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: '700', paddingTop: '6px', borderTop: `1px solid ${T.border}`, marginBottom: '10px' }}><span>Net Investment</span><span>${Math.round(financials.netProjectCost).toLocaleString()}</span></div>
+
+                  {/* Key Metrics Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                    {[
+                      ['Payback', financials.simplePayback < 1 ? `${Math.round(financials.simplePayback * 12)}mo` : `${financials.simplePayback.toFixed(1)}yr`, T.accent],
+                      ['Annual ROI', `${Math.round(financials.roi)}%`, T.green],
+                      ['NPV', `$${Math.round(financials.npv).toLocaleString()}`, financials.npv >= 0 ? T.green : T.red],
+                      ['IRR', `${(financials.irr * 100).toFixed(1)}%`, T.green],
+                      ['5yr Net', `$${Math.round(financials.fiveYearSavings).toLocaleString()}`, financials.fiveYearSavings >= 0 ? T.green : T.red],
+                      ['10yr Net', `$${Math.round(financials.tenYearSavings).toLocaleString()}`, financials.tenYearSavings >= 0 ? T.green : T.red],
+                    ].map(([label, val, clr]) => (
+                      <div key={label} style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '2px' }}>{label}</div>
+                        <div style={{ fontSize: '16px', fontWeight: '800', color: clr }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Mini Cash Flow */}
+                <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>10-Year Cash Flow</div>
+                <div style={{ background: T.bgInput, borderRadius: '10px', padding: '10px 12px', maxHeight: '180px', overflow: 'auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '32px 1fr 1fr 1fr', gap: '2px 8px', fontSize: '11px' }}>
+                    <div style={{ fontWeight: '700', color: T.textMuted }}>Yr</div>
+                    <div style={{ fontWeight: '700', color: T.textMuted }}>Savings</div>
+                    <div style={{ fontWeight: '700', color: T.textMuted }}>Cumulative</div>
+                    <div style={{ fontWeight: '700', color: T.textMuted, textAlign: 'right' }}>Net</div>
+                    {financials.cashFlow.map(cf => (
+                      <React.Fragment key={cf.year}>
+                        <div style={{ color: T.textSec, fontWeight: cf.year === Math.ceil(financials.simplePayback) ? '700' : '400' }}>{cf.year}</div>
+                        <div style={{ color: cf.savings > 0 ? T.green : T.textSec }}>{cf.savings > 0 ? `$${Math.round(cf.savings).toLocaleString()}` : cf.investment < 0 ? `-$${Math.round(Math.abs(cf.investment)).toLocaleString()}` : '-'}</div>
+                        <div style={{ color: T.textSec }}>{cf.cumulative >= 0 ? `$${Math.round(cf.cumulative).toLocaleString()}` : `-$${Math.round(Math.abs(cf.cumulative)).toLocaleString()}`}</div>
+                        <div style={{ textAlign: 'right', fontWeight: '600', color: cf.cumulative >= 0 ? T.green : T.red }}>{cf.cumulative >= 0 ? `$${Math.round(cf.cumulative).toLocaleString()}` : `-$${Math.round(Math.abs(cf.cumulative)).toLocaleString()}`}</div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              </>)}
+
+              <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '12px', textAlign: 'center' }}>Estimate only \u2014 subject to SRP review and approval</div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '14px' }}>
+                <button onClick={generatePDF} style={{ ...S.btn, width: '100%', fontSize: '14px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>{'\uD83D\uDCC4'} Share Financial Audit PDF</button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => { setShowSummary(false); setShowSaveModal(true); }} disabled={!!savedLeadId} style={{ ...S.btn, flex: 1, fontSize: '12px', background: savedLeadId ? T.bgInput : T.blue, color: savedLeadId ? T.textMuted : '#fff' }}>{savedLeadId ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
+                  <button onClick={copySummary} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>{'\uD83D\uDCCB'} Copy</button>
+                  <button onClick={() => setShowSummary(false)} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>Close</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
