@@ -17,6 +17,9 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const { leadOwnerId } = body;
+
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const companyId = Deno.env.get('LENARD_COMPANY_ID');
@@ -25,14 +28,17 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Fetch leads
+    // Fetch leads — optionally filtered by lead_owner_id
     const leadParams = new URLSearchParams({
       company_id: `eq.${companyId}`,
       lead_source: 'eq.Lenard AZ SRP',
-      select: 'id,customer_name,created_at,status,notes,phone,email,address',
+      select: 'id,customer_name,created_at,status,notes,phone,email,address,lead_owner_id',
       order: 'created_at.desc',
       limit: '50',
     });
+    if (leadOwnerId) {
+      leadParams.set('lead_owner_id', `eq.${leadOwnerId}`);
+    }
     const leads = await querySupabase(SUPABASE_URL!, 'leads', key, leadParams.toString());
 
     // Fetch matching audits (linked by lead_id)
@@ -60,6 +66,7 @@ serve(async (req) => {
       estimatedValue: 0,
       status: l.status,
       notes: l.notes,
+      leadOwnerId: l.lead_owner_id,
       audit: auditsMap[l.id] || null,
     }));
 

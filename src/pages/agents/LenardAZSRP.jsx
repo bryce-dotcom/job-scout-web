@@ -311,6 +311,15 @@ export default function LenardAZSRP() {
   const lineIdRef = useRef(0);
   const toastTimer = useRef(null);
 
+  // Lead Owner — who is using the app
+  const [employees, setEmployees] = useState([]);
+  const [leadOwnerId, setLeadOwnerId] = useState(() => {
+    try { return localStorage.getItem('lenard_lead_owner_id') || null; } catch { return null; }
+  });
+  const [leadOwnerName, setLeadOwnerName] = useState(() => {
+    try { return localStorage.getItem('lenard_lead_owner_name') || ''; } catch { return ''; }
+  });
+
   // SMBE Products
   const [sbeProducts, setSbeProducts] = useState([]);
   const [productSearch, setProductSearch] = useState('');
@@ -374,6 +383,56 @@ export default function LenardAZSRP() {
     };
     fetchProducts();
   }, []);
+
+  // Fetch employees on mount (for lead owner picker)
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-employees`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+          body: '{}',
+        });
+        const data = await resp.json();
+        if (data.employees) setEmployees(data.employees);
+      } catch (_) { /* employees optional */ }
+    };
+    fetchEmployees();
+  }, []);
+
+  // Select lead owner handler
+  const selectLeadOwner = useCallback((empId, empName) => {
+    setLeadOwnerId(empId);
+    setLeadOwnerName(empName);
+    try {
+      localStorage.setItem('lenard_lead_owner_id', empId);
+      localStorage.setItem('lenard_lead_owner_name', empName);
+    } catch (_) {}
+  }, []);
+
+  // Auto-load projects for the saved lead owner on mount
+  const ownerLoadedRef = useRef(false);
+  useEffect(() => {
+    if (leadOwnerId && !ownerLoadedRef.current) {
+      ownerLoadedRef.current = true;
+      // loadProjects isn't defined yet at this point in the code, so we inline it
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      (async () => {
+        try {
+          const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+            body: JSON.stringify({ leadOwnerId }),
+          });
+          const data = await resp.json();
+          if (data.projects) setProjects(data.projects);
+        } catch (_) {}
+      })();
+    }
+  }, [leadOwnerId]);
 
   // ---- LINE MANAGEMENT ----
   const addLine = useCallback((preset = null) => {
@@ -622,6 +681,7 @@ export default function LenardAZSRP() {
           zip: saveZip,
           projectData,
           programType: program,
+          leadOwnerId: leadOwnerId || null,
         }),
       });
       const data = await resp.json();
@@ -640,7 +700,7 @@ export default function LenardAZSRP() {
   };
 
   // ---- LOAD PROJECTS ----
-  const loadProjects = async () => {
+  const loadProjects = async (ownerId = leadOwnerId) => {
     setLoadingProjects(true);
     try {
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -648,7 +708,7 @@ export default function LenardAZSRP() {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
-        body: '{}',
+        body: JSON.stringify({ leadOwnerId: ownerId || null }),
       });
       const data = await resp.json();
       if (data.projects) setProjects(data.projects);
@@ -1157,7 +1217,8 @@ export default function LenardAZSRP() {
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...gray);
     doc.text('A division of HHH Building Services  |  Commercial Energy Solutions', M, y + 4);
-    doc.text(`Report generated ${dateStr}  |  Ref: ${reportId}`, M, y + 8);
+    const preparedLine = leadOwnerName ? `Auditor: ${leadOwnerName}  |  ` : '';
+    doc.text(`${preparedLine}Report generated ${dateStr}  |  Ref: ${reportId}`, M, y + 8);
 
     addFooter();
 
@@ -1239,7 +1300,7 @@ export default function LenardAZSRP() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {totals.totalIncentive > 0 && <div style={{ ...S.money, fontSize: '20px' }}>${totals.totalIncentive.toLocaleString()}</div>}
-            <button onClick={() => { setShowProjects(true); loadProjects(); }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: '8px', padding: '6px 10px', color: T.textSec, cursor: 'pointer', fontSize: '13px' }}>{'\uD83D\uDCC1'}</button>
+            <button onClick={() => { setShowProjects(true); loadProjects(leadOwnerId); }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: '8px', padding: '6px 10px', color: T.textSec, cursor: 'pointer', fontSize: '13px' }}>{'\uD83D\uDCC1'}</button>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '4px', background: T.bgInput, borderRadius: '10px', padding: '3px' }}>
@@ -1252,6 +1313,66 @@ export default function LenardAZSRP() {
           ))}
         </div>
       </div>
+
+      {/* ===== LEAD OWNER SELECTOR ===== */}
+      <div style={{ padding: '12px 16px 0' }}>
+        {!leadOwnerId ? (
+          <div style={{ background: T.accentDim, border: `1px solid ${T.accent}`, borderRadius: '12px', padding: '14px' }}>
+            <div style={{ fontSize: '14px', fontWeight: '700', color: T.accent, marginBottom: '8px' }}>Who are you?</div>
+            <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '10px' }}>Select your name to see your audits and save new ones under your account</div>
+            {employees.length === 0 && <div style={{ fontSize: '12px', color: T.textMuted, textAlign: 'center', padding: '8px' }}>Loading team members...</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {employees.map(emp => (
+                <button key={emp.id} onClick={() => { selectLeadOwner(String(emp.id), emp.name); loadProjects(String(emp.id)); }}
+                  style={{ width: '100%', textAlign: 'left', padding: '10px 12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: T.text }}>{emp.name}</div>
+                    {emp.role && <div style={{ fontSize: '11px', color: T.textMuted }}>{emp.role}{emp.department ? ` \u2022 ${emp.department}` : ''}</div>}
+                  </div>
+                  <div style={{ fontSize: '14px', color: T.accent }}>{'\u25B8'}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', color: '#fff' }}>
+                {leadOwnerName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+              </div>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>{leadOwnerName}</div>
+                <div style={{ fontSize: '10px', color: T.textMuted }}>Lead Owner</div>
+              </div>
+            </div>
+            <button onClick={() => { setLeadOwnerId(null); setLeadOwnerName(''); try { localStorage.removeItem('lenard_lead_owner_id'); localStorage.removeItem('lenard_lead_owner_name'); } catch (_) {} }}
+              style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: '6px', padding: '4px 10px', color: T.textMuted, cursor: 'pointer', fontSize: '11px' }}>Switch</button>
+          </div>
+        )}
+      </div>
+
+      {/* ===== MY AUDITS (when owner is set but no lines are active) ===== */}
+      {leadOwnerId && lines.length === 0 && projects.length > 0 && !cameraLoading && (
+        <div style={{ padding: '8px 16px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>My Recent Audits</div>
+          {projects.slice(0, 5).map(p => (
+            <button key={p.id} onClick={() => loadProject(p)} style={{ width: '100%', textAlign: 'left', padding: '10px 12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '10px', color: T.text, cursor: 'pointer', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '600' }}>{p.customerName}</div>
+                  <div style={{ fontSize: '10px', color: T.textMuted }}>{new Date(p.createdAt).toLocaleDateString()} {'\u2022'} {p.status}{p.audit ? ` \u2022 ${p.audit.status}` : ''}</div>
+                </div>
+                {p.audit?.estimated_rebate > 0 && <div style={{ ...S.money, fontSize: '14px' }}>${Math.round(p.audit.estimated_rebate).toLocaleString()}</div>}
+              </div>
+            </button>
+          ))}
+          {projects.length > 5 && (
+            <button onClick={() => setShowProjects(true)} style={{ width: '100%', textAlign: 'center', padding: '8px', background: 'none', border: `1px dashed ${T.border}`, borderRadius: '8px', color: T.textMuted, cursor: 'pointer', fontSize: '12px' }}>
+              View all {projects.length} projects
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ===== PROJECT NAME ===== */}
       <div style={{ padding: '12px 16px 4px' }}>
@@ -1793,6 +1914,14 @@ export default function LenardAZSRP() {
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '90%', maxWidth: '400px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', zIndex: 51, padding: '24px' }}>
           <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '4px' }}>{'\uD83D\uDCBE'} Save Project</div>
           <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>Creates a customer, lead + lighting audit in Job Scout</div>
+          {leadOwnerName && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: T.accentDim, border: `1px solid ${T.accent}`, borderRadius: '8px', marginBottom: '12px' }}>
+              <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '700', color: '#fff' }}>
+                {leadOwnerName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+              </div>
+              <div style={{ fontSize: '12px', color: T.text }}>Lead Owner: <span style={{ fontWeight: '600' }}>{leadOwnerName}</span></div>
+            </div>
+          )}
           {/* Customer & Contact — matching audit step 1 basic info */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
             <div><label style={S.label}>Customer Name *</label><input type="text" value={projectName} onChange={e => setProjectName(e.target.value)} style={S.input} /></div>
@@ -1819,9 +1948,15 @@ export default function LenardAZSRP() {
         <div onClick={() => setShowProjects(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
         <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '70vh', overflow: 'auto', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <div style={{ fontSize: '16px', fontWeight: '700' }}>{'\uD83D\uDCC1'} Saved Projects</div>
+            <div style={{ fontSize: '16px', fontWeight: '700' }}>{'\uD83D\uDCC1'} {leadOwnerName ? `${leadOwnerName}'s Projects` : 'Saved Projects'}</div>
             <button onClick={() => setShowProjects(false)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: '20px', cursor: 'pointer' }}>{'\u2715'}</button>
           </div>
+          {leadOwnerId && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <button onClick={() => loadProjects(leadOwnerId)} style={{ ...S.btnGhost, flex: 1, fontSize: '12px', background: T.accentDim, color: T.accent, borderColor: T.accent }}>My Projects</button>
+              <button onClick={() => loadProjects(null)} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>All Projects</button>
+            </div>
+          )}
           {loadingProjects && <div style={{ textAlign: 'center', padding: '20px', color: T.textMuted }}>Loading...</div>}
           {!loadingProjects && projects.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: T.textMuted }}>No saved projects yet</div>}
           {projects.map(p => (
@@ -1832,8 +1967,8 @@ export default function LenardAZSRP() {
                   <div style={{ fontSize: '11px', color: T.textMuted }}>{new Date(p.createdAt).toLocaleDateString()} \u2022 {p.status}{p.audit ? ` \u2022 Audit ${p.audit.status}` : ''}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ ...S.money, fontSize: '15px' }}>${parseFloat(p.estimatedValue || 0).toLocaleString()}</div>
-                  {p.audit && <div style={{ fontSize: '10px', color: T.textSec }}>{p.audit.watts_reduction}W saved</div>}
+                  {p.audit?.estimated_rebate > 0 && <div style={{ ...S.money, fontSize: '15px' }}>${Math.round(p.audit.estimated_rebate).toLocaleString()}</div>}
+                  {p.audit?.watts_reduced > 0 && <div style={{ fontSize: '10px', color: T.textSec }}>{p.audit.watts_reduced.toLocaleString()}W saved</div>}
                 </div>
               </div>
             </button>
