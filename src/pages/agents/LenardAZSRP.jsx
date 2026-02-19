@@ -349,6 +349,9 @@ export default function LenardAZSRP() {
   // Camera photos (stored for audit)
   const [capturedPhotos, setCapturedPhotos] = useState([]);
 
+  // SBC fixture type info popup
+  const [showSbcInfo, setShowSbcInfo] = useState(false);
+
   // Toast helper
   const showToast = useCallback((message, icon = '\u2713') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -1408,24 +1411,12 @@ export default function LenardAZSRP() {
         )}
       </div>
 
-      {/* ===== SBC SUBTYPE PICKER — visual guide below financial settings ===== */}
+      {/* ===== SBC FIXTURE TYPE INFO — tiny line with popup ===== */}
       {program === 'sbc' && (
-        <div style={{ padding: '0 16px', marginBottom: '8px' }}>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>SBC Fixture Types</div>
-          {Object.entries(SBC_RATES.categories).map(([catKey, cat]) => (
-            <div key={catKey} style={{ marginBottom: '6px' }}>
-              <div style={{ fontSize: '12px', fontWeight: '700', color: T.text, marginBottom: '3px' }}>{cat.icon} {cat.label}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                {cat.subtypes.map(s => (
-                  <button key={s.id} onClick={() => addLine({ cat: catKey, sub: s.id, name: s.label })}
-                    style={{ padding: '6px 10px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', cursor: 'pointer', textAlign: 'left', flex: '1 1 auto', minWidth: '120px' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: T.text }}>{s.label} <span style={{ color: T.accent, fontWeight: '700' }}>{s.ratePerWatt ? `$${s.ratePerWatt}/W` : `$${s.perFixture}`}</span></div>
-                    <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '1px' }}>{s.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+        <div style={{ padding: '0 16px', marginBottom: '4px' }}>
+          <button onClick={() => setShowSbcInfo(true)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '6px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: T.textMuted }}>
+            <span style={{ color: T.accent }}>SBC</span> Exterior $0.75/W {'\u2022'} High Bay $150-350/fix {'\u2022'} Panel $80-110 {'\u2022'} Strip $80-120 <span style={{ color: T.accent, marginLeft: '2px' }}>{'\u24D8'}</span>
+          </button>
         </div>
       )}
 
@@ -1494,6 +1485,28 @@ export default function LenardAZSRP() {
 
               {isExp && (
                 <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${T.border}` }}>
+                  {/* SBC Fixture Type — first field so crew picks the right rebate tier */}
+                  {program === 'sbc' && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={S.label}>SBC Fixture Type</label>
+                      <select value={`${r.category}|${r.subtype}`} onChange={e => { const [cat, sub] = e.target.value.split('|'); updateLine(r.id, 'category', cat); updateLine(r.id, 'subtype', sub); }} style={S.select}>
+                        {Object.entries(SBC_RATES.categories).map(([catKey, cat]) => (
+                          <optgroup key={catKey} label={`${cat.icon} ${cat.label}`}>
+                            {cat.subtypes.map(s => (
+                              <option key={s.id} value={`${catKey}|${s.id}`}>{s.label} {'\u2014'} {s.ratePerWatt ? `$${s.ratePerWatt}/W` : `$${s.perFixture}/fix`} {'\u2014'} {s.desc}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      {(() => {
+                        const curSub = SBC_RATES.categories[r.category]?.subtypes.find(s => s.id === r.subtype);
+                        return curSub?.desc ? <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '3px' }}>{curSub.desc}</div> : null;
+                      })()}
+                    </div>
+                  )}
+                  {/* SBS Fixture Type — first field for standard business */}
+                  {program === 'sbs' && <div style={{ marginBottom: '12px' }}><label style={S.label}>SRP Fixture Type</label><select value={r.fixtureType} onChange={e => updateLine(r.id, 'fixtureType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.fixture).map(([k, v]) => <option key={k} value={k}>{v.label} — ${v.rate}/W</option>)}</select></div>}
+
                   {/* Area Name — matches audit area modal */}
                   <div style={{ marginBottom: '12px' }}>
                     <label style={S.label}>Area Name *</label>
@@ -1678,27 +1691,7 @@ export default function LenardAZSRP() {
                     <span style={{ fontSize: '14px', color: T.text }}>Confirmed</span>
                   </label>
 
-                  {/* SRP Program-specific: rebate type / controls */}
-                  {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>SRP Fixture Type</label><select value={r.fixtureType} onChange={e => updateLine(r.id, 'fixtureType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.fixture).map(([k, v]) => <option key={k} value={k}>{v.label} — ${v.rate}/W</option>)}</select></div>}
-                  {program === 'sbc' && (
-                    <div style={{ marginBottom: '10px' }}>
-                      <label style={S.label}>SBC Fixture Type</label>
-                      <select value={`${r.category}|${r.subtype}`} onChange={e => { const [cat, sub] = e.target.value.split('|'); updateLine(r.id, 'category', cat); updateLine(r.id, 'subtype', sub); }} style={S.select}>
-                        {Object.entries(SBC_RATES.categories).map(([catKey, cat]) => (
-                          <optgroup key={catKey} label={`${cat.icon} ${cat.label}`}>
-                            {cat.subtypes.map(s => (
-                              <option key={s.id} value={`${catKey}|${s.id}`}>{s.label} \u2014 {s.ratePerWatt ? `$${s.ratePerWatt}/W` : `$${s.perFixture}/fix`} \u2014 {s.desc}</option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
-                      {(() => {
-                        const curSub = SBC_RATES.categories[r.category]?.subtypes.find(s => s.id === r.subtype);
-                        return curSub?.desc ? <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '3px' }}>{curSub.desc}</div> : null;
-                      })()}
-                    </div>
-                  )}
-
+                  {/* Controls — SBS only (SBC controls toggle is below) */}
                   {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Controls Upgrade</label><select value={r.controlsType} onChange={e => updateLine(r.id, 'controlsType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.controls).map(([k, v]) => <option key={k} value={k}>{v.label}{v.rate > 0 ? ` — $${v.rate}/W` : ''}</option>)}</select></div>}
 
                   {program === 'sbc' && SBC_RATES.categories[r.category]?.subtypes.find(s => s.id === r.subtype)?.hasControls && (
@@ -1762,6 +1755,28 @@ export default function LenardAZSRP() {
           </div>
         </div>
       )}
+
+      {/* ===== SBC INFO POPUP ===== */}
+      {showSbcInfo && (<>
+        <div onClick={() => setShowSbcInfo(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
+        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '70vh', overflow: 'auto', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ fontSize: '15px', fontWeight: '700' }}>SBC Fixture Types & Rates</div>
+            <button onClick={() => setShowSbcInfo(false)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: '20px', cursor: 'pointer' }}>{'\u2715'}</button>
+          </div>
+          {Object.entries(SBC_RATES.categories).map(([catKey, cat]) => (
+            <div key={catKey} style={{ marginBottom: '10px' }}>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: T.text, marginBottom: '4px' }}>{cat.icon} {cat.label}</div>
+              {cat.subtypes.map(s => (
+                <div key={s.id} style={{ padding: '6px 10px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', marginBottom: '3px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: T.text }}>{s.label} <span style={{ color: T.accent, fontWeight: '700' }}>{s.ratePerWatt ? `$${s.ratePerWatt}/W reduced` : `$${s.perFixture}/fixture`}</span>{s.hasControls ? <span style={{ color: T.blue, fontSize: '10px' }}> +$0.40/W controls</span> : ''}</div>
+                  <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '1px' }}>{s.desc}</div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </>)}
 
       {/* ===== QUICK ADD MODAL (with category tabs inside) ===== */}
       {showQuickAdd && (<>
