@@ -151,6 +151,7 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
 export default function ProductsServices() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const isDeveloper = useStore((state) => state.isDeveloper)
   const serviceTypes = useStore((state) => state.serviceTypes)
   const products = useStore((state) => state.products)
   const inventory = useStore((state) => state.inventory)
@@ -277,6 +278,8 @@ export default function ProductsServices() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showDeleteAll, setShowDeleteAll] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
 
   // Import state
   const [showImport, setShowImport] = useState(false)
@@ -704,6 +707,22 @@ export default function ProductsServices() {
     setSaving(false)
   }
 
+  // ============ DELETE ALL PRODUCTS (super admin only) ============
+  const handleDeleteAllProducts = async () => {
+    setDeletingAll(true)
+    const { error } = await supabase
+      .from('products_services')
+      .delete()
+      .eq('company_id', companyId)
+    if (error) {
+      alert('Error deleting products: ' + error.message)
+    } else {
+      await fetchProducts()
+      setShowDeleteAll(false)
+    }
+    setDeletingAll(false)
+  }
+
   // ============ IMPORT FUNCTIONS ============
   const TARGET_FIELDS = [
     { field: 'name', label: 'Product Name', required: true },
@@ -959,6 +978,17 @@ export default function ProductsServices() {
               {!isMobile && 'Import'}
             </button>
           </Tooltip>
+          {isDeveloper && (
+            <Tooltip text="Delete all products">
+              <button
+                onClick={() => setShowDeleteAll(true)}
+                style={{ ...buttonStyle, backgroundColor: '#fef2f2', color: '#dc2626' }}
+              >
+                <Trash2 size={18} />
+                {!isMobile && 'Delete All'}
+              </button>
+            </Tooltip>
+          )}
           {!selectedGroup && (
             <>
               <Tooltip text="Manage labor rates">
@@ -1817,6 +1847,40 @@ export default function ProductsServices() {
               >
                 <Save size={16} />
                 {saving ? 'Saving...' : (editingProduct ? 'Update' : 'Add Product')}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ============ DELETE ALL CONFIRMATION ============ */}
+      {showDeleteAll && (
+        <>
+          <div onClick={() => setShowDeleteAll(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50 }} />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`,
+            width: '100%', maxWidth: '400px', padding: '24px', zIndex: 51, textAlign: 'center'
+          }}>
+            <Trash2 size={36} style={{ color: '#dc2626', marginBottom: '12px' }} />
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: '700', color: theme.text }}>Delete All Products?</h3>
+            <p style={{ margin: '0 0 6px', fontSize: '14px', color: theme.textSecondary }}>
+              This will permanently delete <strong>{products.length}</strong> product{products.length !== 1 ? 's' : ''} from your company.
+            </p>
+            <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#dc2626', fontWeight: '500' }}>
+              This action cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => setShowDeleteAll(false)} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAllProducts}
+                disabled={deletingAll}
+                style={{ ...buttonStyle, flex: 1, backgroundColor: '#dc2626', color: '#fff', opacity: deletingAll ? 0.7 : 1 }}
+              >
+                <Trash2 size={16} />
+                {deletingAll ? 'Deleting...' : `Delete All ${products.length}`}
               </button>
             </div>
           </div>
