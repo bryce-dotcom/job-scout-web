@@ -48,6 +48,13 @@ For EACH distinct fixture type, return:
   For high bay subtype: calculate watts reduced (existW - newW):
     ≤250W → "hb_250", 251-400W → "hb_400", 401-1000W → "hb_1000"
 - "sbsType": one of "Interior LED Fixture", "LED Re-Lamp", "Exterior LED"
+- "height": estimated mounting height in feet (integer). Use visual cues:
+    Drop ceiling / office: 9ft
+    Open ceiling / retail / strip lights: 10-12ft
+    Warehouse / industrial / high bays: 18-30ft (estimate from room scale, columns, racking)
+    Exterior wall packs: 12-15ft
+    Exterior poles / parking: 20-35ft
+    If uncertain, use these defaults: troffers/panels → 9, strips → 10, high bays → 20, exterior → 25
 - "confidence": "high", "medium", or "low"
 - "notes": brief note about what you see
 

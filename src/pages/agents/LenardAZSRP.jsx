@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { jsPDF } from "jspdf";
 
 // ============================================================
 // LENARD AZ SRP — SRP Lighting Rebate Calculator
@@ -9,8 +10,6 @@ import { useState, useCallback, useRef, useEffect } from "react";
 
 // ==================== RATE TABLES ====================
 
-// SBS: Standard Business Solutions FY26
-// Calc method: $/watt reduced (fixture) + $/proposed watt (controls)
 const SBS_RATES = {
   fixture: {
     'Interior LED Fixture': { rate: 0.35, label: 'Interior LED Fixture', desc: 'New fixture or retrofit kit' },
@@ -29,8 +28,6 @@ const SBS_RATES = {
   desc: 'FY26 \u2022 $300K cap \u2022 Pre-approval required',
 };
 
-// SBC: Small Business Commercial
-// Calc method: mixed — $/watt (exterior), $/fixture tiered (high bays), flat $/fixture (panels, strips)
 const SBC_RATES = {
   categories: {
     exterior: {
@@ -63,52 +60,54 @@ const SBC_RATES = {
   desc: 'Simplified \u2022 Per-fixture rates',
 };
 
-// ==================== FIXTURE PRESETS ====================
-// These let the crew tap once instead of typing wattages
+// ==================== FIXTURE PRESETS (with default heights) ====================
 
 const PRESETS = {
   troffers: {
     label: 'Troffers / Panels',
     items: [
-      { name: '4L T8 4ft Troffer',  existW: 112, newW: 32, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture' },
-      { name: '3L T8 4ft Troffer',  existW: 84,  newW: 28, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture' },
-      { name: '2L T8 4ft Troffer',  existW: 56,  newW: 24, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture' },
-      { name: '4L T12 4ft Troffer', existW: 172, newW: 32, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture' },
-      { name: '2L T12 4ft Troffer', existW: 86,  newW: 24, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture' },
-      { name: '2L T8 2x2 Troffer',  existW: 56,  newW: 20, cat: 'panel', sub: 'panel_2x2', sbsType: 'Interior LED Fixture' },
+      { name: '4L T8 4ft Troffer',  existW: 112, newW: 32, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture', height: 9 },
+      { name: '3L T8 4ft Troffer',  existW: 84,  newW: 28, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture', height: 9 },
+      { name: '2L T8 4ft Troffer',  existW: 56,  newW: 24, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture', height: 9 },
+      { name: '4L T12 4ft Troffer', existW: 172, newW: 32, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture', height: 9 },
+      { name: '2L T12 4ft Troffer', existW: 86,  newW: 24, cat: 'panel', sub: 'panel_2x4', sbsType: 'Interior LED Fixture', height: 9 },
+      { name: '2L T8 2x2 Troffer',  existW: 56,  newW: 20, cat: 'panel', sub: 'panel_2x2', sbsType: 'Interior LED Fixture', height: 9 },
     ],
   },
   strips: {
     label: 'Strips / Wraps',
     items: [
-      { name: '2L T8 4ft Strip',  existW: 56,  newW: 22, cat: 'strip', sub: 'strip_4', sbsType: 'Interior LED Fixture' },
-      { name: '1L T8 4ft Strip',  existW: 28,  newW: 15, cat: 'strip', sub: 'strip_4', sbsType: 'Interior LED Fixture' },
-      { name: '2L T8 8ft Strip',  existW: 112, newW: 44, cat: 'strip', sub: 'strip_8', sbsType: 'Interior LED Fixture' },
-      { name: '2L T12 8ft Strip', existW: 150, newW: 44, cat: 'strip', sub: 'strip_8', sbsType: 'Interior LED Fixture' },
+      { name: '2L T8 4ft Strip',  existW: 56,  newW: 22, cat: 'strip', sub: 'strip_4', sbsType: 'Interior LED Fixture', height: 10 },
+      { name: '1L T8 4ft Strip',  existW: 28,  newW: 15, cat: 'strip', sub: 'strip_4', sbsType: 'Interior LED Fixture', height: 10 },
+      { name: '2L T8 8ft Strip',  existW: 112, newW: 44, cat: 'strip', sub: 'strip_8', sbsType: 'Interior LED Fixture', height: 10 },
+      { name: '2L T12 8ft Strip', existW: 150, newW: 44, cat: 'strip', sub: 'strip_8', sbsType: 'Interior LED Fixture', height: 10 },
     ],
   },
   highbays: {
     label: 'High Bays',
     items: [
-      { name: '6L T5HO High Bay',   existW: 351,  newW: 150, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture' },
-      { name: '4L T5HO High Bay',   existW: 234,  newW: 110, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture' },
-      { name: '400W MH High Bay',   existW: 458,  newW: 150, cat: 'highbay', sub: 'hb_400',  sbsType: 'Interior LED Fixture' },
-      { name: '250W MH High Bay',   existW: 288,  newW: 100, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture' },
-      { name: '1000W MH High Bay',  existW: 1080, newW: 300, cat: 'highbay', sub: 'hb_1000', sbsType: 'Interior LED Fixture' },
+      { name: '6L T5HO High Bay',   existW: 351,  newW: 150, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture', height: 20 },
+      { name: '4L T5HO High Bay',   existW: 234,  newW: 110, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture', height: 20 },
+      { name: '400W MH High Bay',   existW: 458,  newW: 150, cat: 'highbay', sub: 'hb_400',  sbsType: 'Interior LED Fixture', height: 20 },
+      { name: '250W MH High Bay',   existW: 288,  newW: 100, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture', height: 20 },
+      { name: '1000W MH High Bay',  existW: 1080, newW: 300, cat: 'highbay', sub: 'hb_1000', sbsType: 'Interior LED Fixture', height: 20 },
     ],
   },
   exterior: {
     label: 'Exterior',
     items: [
-      { name: '400W HPS Shoebox',  existW: 465, newW: 150, cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED' },
-      { name: '250W HPS Shoebox',  existW: 295, newW: 100, cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED' },
-      { name: '175W MH Wall Pack', existW: 210, newW: 40,  cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED' },
-      { name: '100W MH Wall Pack', existW: 120, newW: 25,  cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED' },
-      { name: '150W HPS Pole',     existW: 188, newW: 60,  cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED' },
-      { name: '400W MH Pole',      existW: 458, newW: 150, cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED' },
+      { name: '400W HPS Shoebox',  existW: 465, newW: 150, cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED', height: 25 },
+      { name: '250W HPS Shoebox',  existW: 295, newW: 100, cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED', height: 25 },
+      { name: '175W MH Wall Pack', existW: 210, newW: 40,  cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED', height: 25 },
+      { name: '100W MH Wall Pack', existW: 120, newW: 25,  cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED', height: 25 },
+      { name: '150W HPS Pole',     existW: 188, newW: 60,  cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED', height: 25 },
+      { name: '400W MH Pole',      existW: 458, newW: 150, cat: 'exterior', sub: 'ext', sbsType: 'Exterior LED', height: 25 },
     ],
   },
 };
+
+// Default heights by category
+const DEFAULT_HEIGHTS = { panel: 9, strip: 10, highbay: 20, exterior: 25 };
 
 // ==================== INCENTIVE CALCULATION ENGINES ====================
 
@@ -152,7 +151,7 @@ function calcSBC(line) {
   };
 }
 
-// ==================== THEME (OG DiX dark) ====================
+// ==================== THEME ====================
 
 const T = {
   bg: '#0a0a0b', bgCard: '#141416', bgInput: '#1a1a1e', border: '#2a2a30',
@@ -168,8 +167,8 @@ export default function LenardAZSRP() {
   const [projectName, setProjectName] = useState('');
   const [lines, setLines] = useState([]);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickAddTab, setQuickAddTab] = useState('troffers');
   const [showSummary, setShowSummary] = useState(false);
-  const [activeTab, setActiveTab] = useState('exterior');
   const [expandedLine, setExpandedLine] = useState(null);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -177,15 +176,40 @@ export default function LenardAZSRP() {
   const lineIdRef = useRef(0);
   const toastTimer = useRef(null);
 
+  // SBE Products
+  const [sbeProducts, setSbeProducts] = useState([]);
+
+  // Financial settings
+  const [showFinancials, setShowFinancials] = useState(false);
+  const [operatingHours, setOperatingHours] = useState(12);
+  const [daysPerYear, setDaysPerYear] = useState(365);
+  const [energyRate, setEnergyRate] = useState(0.10);
+
+  // Save project
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [savePhone, setSavePhone] = useState('');
+  const [saveEmail, setSaveEmail] = useState('');
+  const [saveAddress, setSaveAddress] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedLeadId, setSavedLeadId] = useState(null);
+
+  // Projects list
+  const [showProjects, setShowProjects] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
+  // Camera photos (stored for audit)
+  const [capturedPhotos, setCapturedPhotos] = useState([]);
+
   // Toast helper
-  const showToast = useCallback((message, icon = '✓') => {
+  const showToast = useCallback((message, icon = '\u2713') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ message, icon });
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   }, []);
 
   // Reset lines when switching programs
-  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); }, [program]);
+  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setCapturedPhotos([]); }, [program]);
 
   // Register PWA service worker
   useEffect(() => {
@@ -194,20 +218,48 @@ export default function LenardAZSRP() {
     }
   }, []);
 
+  // Fetch SBE products on mount
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-products`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+          body: '{}',
+        });
+        const data = await resp.json();
+        if (data.products) setSbeProducts(data.products);
+      } catch (_) { /* SBE products optional */ }
+    };
+    fetchProducts();
+  }, []);
+
   // ---- LINE MANAGEMENT ----
   const addLine = useCallback((preset = null) => {
     const id = ++lineIdRef.current;
-    const base = { id, qty: preset?.qty || 1, existW: preset?.existW || 0, newW: preset?.newW || 0, name: preset?.name || '' };
+    const defaultHeight = DEFAULT_HEIGHTS[preset?.cat || 'panel'] || 9;
+    const base = {
+      id,
+      qty: preset?.qty || 1,
+      existW: preset?.existW || 0,
+      newW: preset?.newW || 0,
+      name: preset?.name || '',
+      height: preset?.height || defaultHeight,
+      productId: null,
+      productName: '',
+      productPrice: 0,
+    };
     if (program === 'sbs') {
       setLines(prev => [...prev, { ...base, fixtureType: preset?.sbsType || 'Interior LED Fixture', controlsType: 'none' }]);
     } else {
-      const cat = preset?.cat || activeTab;
+      const cat = preset?.cat || 'panel';
       setLines(prev => [...prev, { ...base, category: cat, subtype: preset?.sub || SBC_RATES.categories[cat]?.subtypes[0]?.id || 'ext', controls: cat === 'highbay' }]);
     }
-    // Highlight newly added line briefly
     setNewlyAdded(prev => new Set(prev).add(id));
     setTimeout(() => setNewlyAdded(prev => { const next = new Set(prev); next.delete(id); return next; }), 2000);
-  }, [program, activeTab]);
+  }, [program]);
 
   const updateLine = useCallback((id, field, value) => {
     setLines(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
@@ -216,8 +268,20 @@ export default function LenardAZSRP() {
   const removeLine = useCallback((id) => {
     setLines(prev => prev.filter(l => l.id !== id));
     if (expandedLine === id) setExpandedLine(null);
-    showToast('Line removed', '🗑');
+    showToast('Line removed', '\uD83D\uDDD1');
   }, [expandedLine, showToast]);
+
+  // Select SBE product for a line
+  const selectProduct = useCallback((lineId, product) => {
+    setLines(prev => prev.map(l => {
+      if (l.id !== lineId) return l;
+      const updates = { productId: product.id, productName: product.name, productPrice: product.unit_price || 0 };
+      // Try to extract wattage from product name/description
+      const wattMatch = (product.description || product.name || '').match(/(\d+)\s*[wW]/);
+      if (wattMatch) updates.newW = parseInt(wattMatch[1]);
+      return { ...l, ...updates };
+    }));
+  }, []);
 
   // ---- LENARD AI CAMERA ----
   const analyzePhoto = async (file) => {
@@ -230,6 +294,10 @@ export default function LenardAZSRP() {
         r.onerror = () => rej(new Error('Read failed'));
         r.readAsDataURL(file);
       });
+
+      // Store photo for audit
+      setCapturedPhotos(prev => [...prev, base64]);
+
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-analyze`, {
@@ -240,19 +308,23 @@ export default function LenardAZSRP() {
       const data = await resp.json();
       if (data.fixtures && Array.isArray(data.fixtures)) {
         if (data.fixtures.length === 0) {
-          showToast("Couldn't identify fixtures — try a clearer photo", '📷');
+          showToast("Couldn't identify fixtures \u2014 try a clearer photo", '\uD83D\uDCF7');
         } else {
           data.fixtures.forEach(f => {
-            addLine({ name: f.name, existW: f.existW, newW: f.newW, qty: f.count || 1, cat: f.category, sub: f.subtype, sbsType: f.sbsType });
+            addLine({
+              name: f.name, existW: f.existW, newW: f.newW, qty: f.count || 1,
+              cat: f.category, sub: f.subtype, sbsType: f.sbsType,
+              height: f.height || DEFAULT_HEIGHTS[f.category] || 9,
+            });
           });
-          showToast(`Lenard found ${data.fixtures.length} fixture${data.fixtures.length > 1 ? 's' : ''}`, '📷');
+          showToast(`Lenard found ${data.fixtures.length} fixture${data.fixtures.length > 1 ? 's' : ''}`, '\uD83D\uDCF7');
         }
       } else {
-        showToast("Couldn't identify fixtures — try a clearer photo", '📷');
+        showToast("Couldn't identify fixtures \u2014 try a clearer photo", '\uD83D\uDCF7');
       }
     } catch (err) {
       console.error('Lenard error:', err);
-      showToast("Couldn't analyze that photo", '📷');
+      showToast("Couldn't analyze that photo", '\uD83D\uDCF7');
     }
     setCameraLoading(false);
   };
@@ -272,19 +344,295 @@ export default function LenardAZSRP() {
     controlsRebate: a.controlsRebate + r.calc.controlsRebate, totalIncentive: a.totalIncentive + r.calc.totalIncentive,
   }), { existWatts: 0, newWatts: 0, wattsReduced: 0, fixtureRebate: 0, controlsRebate: 0, totalIncentive: 0 });
   const reductionPct = totals.existWatts > 0 ? ((totals.wattsReduced / totals.existWatts) * 100).toFixed(0) : 0;
-  const filteredResults = program === 'sbc' ? results.filter(r => r.category === activeTab) : results;
+
+  // ---- FINANCIAL ANALYSIS ----
+  const financials = useMemo(() => {
+    const annualHours = operatingHours * daysPerYear;
+    const annualKwhSaved = (totals.wattsReduced * annualHours) / 1000;
+    const annualEnergySavings = annualKwhSaved * energyRate;
+    const projectCost = lines.reduce((s, l) => s + ((l.productPrice || 0) * (l.qty || 0)), 0);
+    const netProjectCost = projectCost - totals.totalIncentive;
+    const simplePayback = annualEnergySavings > 0 ? netProjectCost / annualEnergySavings : 0;
+    const roi = netProjectCost > 0 ? (annualEnergySavings / netProjectCost) * 100 : 0;
+    const tenYearSavings = (annualEnergySavings * 10) - netProjectCost;
+    return { annualHours, annualKwhSaved, annualEnergySavings, projectCost, netProjectCost, simplePayback, roi, tenYearSavings };
+  }, [operatingHours, daysPerYear, energyRate, totals, lines]);
+
+  // ---- SAVE PROJECT ----
+  const saveProject = async () => {
+    if (!projectName.trim()) { showToast('Enter a customer name first', '\u26A0\uFE0F'); return; }
+    setSaving(true);
+    try {
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const projectData = {
+        lines: lines.map(l => ({
+          name: l.name, qty: l.qty, existW: l.existW, newW: l.newW,
+          height: l.height, productId: l.productId, productName: l.productName, productPrice: l.productPrice,
+          category: l.category, subtype: l.subtype, fixtureType: l.fixtureType,
+        })),
+        totals, financials,
+        totalIncentive: totals.totalIncentive,
+        projectCost: financials.projectCost,
+        operatingHours, daysPerYear, energyRate,
+        photos: capturedPhotos,
+      };
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+        body: JSON.stringify({
+          customerName: projectName,
+          phone: savePhone,
+          email: saveEmail,
+          address: saveAddress,
+          projectData,
+          programType: program,
+        }),
+      });
+      const data = await resp.json();
+      if (data.success) {
+        setSavedLeadId(data.leadId);
+        setShowSaveModal(false);
+        showToast('Project saved as lead + audit', '\u2713');
+      } else {
+        showToast(data.error || 'Save failed', '\u26A0\uFE0F');
+      }
+    } catch (err) {
+      console.error('Save error:', err);
+      showToast('Could not save project', '\u26A0\uFE0F');
+    }
+    setSaving(false);
+  };
+
+  // ---- LOAD PROJECTS ----
+  const loadProjects = async () => {
+    setLoadingProjects(true);
+    try {
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+        body: '{}',
+      });
+      const data = await resp.json();
+      if (data.projects) setProjects(data.projects);
+    } catch (_) { showToast('Could not load projects', '\u26A0\uFE0F'); }
+    setLoadingProjects(false);
+  };
+
+  const loadProject = (project) => {
+    try {
+      const pd = JSON.parse(project.notes);
+      setProjectName(project.customerName || '');
+      setSavePhone(project.phone || '');
+      setSaveEmail(project.email || '');
+      setSaveAddress(project.address || '');
+      if (pd.operatingHours) setOperatingHours(pd.operatingHours);
+      if (pd.daysPerYear) setDaysPerYear(pd.daysPerYear);
+      if (pd.energyRate) setEnergyRate(pd.energyRate);
+      setSavedLeadId(project.id);
+      if (pd.lines) {
+        lineIdRef.current = 0;
+        const loaded = pd.lines.map(l => {
+          const id = ++lineIdRef.current;
+          return { ...l, id };
+        });
+        setLines(loaded);
+      }
+      setShowProjects(false);
+      showToast('Project loaded', '\uD83D\uDCC2');
+    } catch (_) {
+      showToast('Could not parse project data', '\u26A0\uFE0F');
+    }
+  };
 
   // ---- COPY SUMMARY TO CLIPBOARD ----
   const copySummary = () => {
     const p = program === 'sbs' ? 'SRP Standard Business' : 'SRP Small Business (SBC)';
     let t = `${p} Quick Quote${projectName ? ` \u2014 ${projectName}` : ''}\n${'='.repeat(50)}\n\n`;
     results.forEach(r => {
-      t += `${r.name || (program === 'sbs' ? r.fixtureType : r.subtype)}: ${r.qty}\u00D7 | ${r.existW}W \u2192 ${r.newW}W | ${r.calc.totalIncentive.toLocaleString()}\n`;
+      t += `${r.name || (program === 'sbs' ? r.fixtureType : r.subtype)}: ${r.qty}\u00D7 | ${r.existW}W \u2192 ${r.newW}W | ${r.height}ft | $${r.calc.totalIncentive.toLocaleString()}\n`;
     });
     t += `\n${'\u2014'.repeat(50)}\nExisting: ${totals.existWatts.toLocaleString()}W \u2192 New: ${totals.newWatts.toLocaleString()}W (${reductionPct}% reduction)\n`;
-    t += `Fixture Rebate: ${totals.fixtureRebate.toLocaleString()}\nControls Rebate: ${totals.controlsRebate.toLocaleString()}\n`;
-    t += `TOTAL ESTIMATED INCENTIVE: ${totals.totalIncentive.toLocaleString()}\n\n\u26A0\uFE0F Estimate only \u2014 subject to SRP review`;
-    navigator.clipboard?.writeText(t); setShowSummary(false); showToast('Copied to clipboard', '📋');
+    t += `Fixture Rebate: $${totals.fixtureRebate.toLocaleString()}\nControls Rebate: $${totals.controlsRebate.toLocaleString()}\n`;
+    t += `TOTAL ESTIMATED INCENTIVE: $${totals.totalIncentive.toLocaleString()}\n\n`;
+    if (financials.projectCost > 0) {
+      t += `Project Cost: $${financials.projectCost.toLocaleString()} | Net: $${financials.netProjectCost.toLocaleString()}\n`;
+      t += `Payback: ${financials.simplePayback.toFixed(1)} yrs | 10-Year Savings: $${Math.round(financials.tenYearSavings).toLocaleString()}\n\n`;
+    }
+    t += `\u26A0\uFE0F Estimate only \u2014 subject to SRP review`;
+    navigator.clipboard?.writeText(t); setShowSummary(false); showToast('Copied to clipboard', '\uD83D\uDCCB');
+  };
+
+  // ---- PDF GENERATION ----
+  const generatePDF = () => {
+    const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+    const w = doc.internal.pageSize.getWidth();
+    const margin = 15;
+    let y = 15;
+    const lw = w - margin * 2;
+
+    // Header
+    doc.setFontSize(18);
+    doc.setFont(undefined, 'bold');
+    doc.text('HHH Building Services', margin, y);
+    y += 7;
+    doc.setFontSize(13);
+    doc.setFont(undefined, 'normal');
+    doc.text('Lighting Retrofit Estimate', margin, y);
+    doc.setFontSize(10);
+    doc.text(new Date().toLocaleDateString(), w - margin, y, { align: 'right' });
+    y += 4;
+    doc.setDrawColor(249, 115, 22);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, w - margin, y);
+    y += 8;
+
+    // Customer
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.text('Customer:', margin, y);
+    doc.setFont(undefined, 'normal');
+    doc.text(projectName || 'N/A', margin + 28, y);
+    if (saveAddress) { y += 5; doc.text(`Address: ${saveAddress}`, margin, y); }
+    if (savePhone) { y += 5; doc.text(`Phone: ${savePhone}`, margin, y); }
+    if (saveEmail) { y += 5; doc.text(`Email: ${saveEmail}`, margin, y); }
+    y += 5;
+    doc.text(`Program: ${program === 'sbs' ? 'SRP Standard Business' : 'SRP Small Business (SBC)'}`, margin, y);
+    y += 10;
+
+    // Line Items Table Header
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setFillColor(20, 20, 22);
+    doc.setTextColor(240, 240, 242);
+    doc.rect(margin, y - 4, lw, 7, 'F');
+    const cols = [margin, margin + 10, margin + 60, margin + 78, margin + 95, margin + 130, margin + 155];
+    doc.text('Qty', cols[0], y);
+    doc.text('Existing Fixture', cols[1], y);
+    doc.text('Height', cols[2], y);
+    doc.text('Watts', cols[3], y);
+    doc.text('SBE Replacement', cols[4], y);
+    doc.text('New W', cols[5], y);
+    doc.text('Rebate', cols[6], y);
+    y += 6;
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'normal');
+
+    // Line Items
+    results.forEach(r => {
+      if (y > 250) { doc.addPage(); y = 20; }
+      doc.text(String(r.qty), cols[0], y);
+      doc.text((r.name || r.fixtureType || r.subtype || '').substring(0, 28), cols[1], y);
+      doc.text(`${r.height || 0}ft`, cols[2], y);
+      doc.text(`${r.existW}W`, cols[3], y);
+      doc.text((r.productName || '-').substring(0, 20), cols[4], y);
+      doc.text(`${r.newW}W`, cols[5], y);
+      doc.text(`$${r.calc.totalIncentive.toLocaleString()}`, cols[6], y);
+      y += 5;
+    });
+    y += 5;
+
+    // Financial Summary
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, y, w - margin, y);
+    y += 7;
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text('Financial Summary', margin, y);
+    y += 7;
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+
+    const addRow = (label, value) => {
+      doc.text(label, margin, y);
+      doc.text(value, w - margin, y, { align: 'right' });
+      y += 5;
+    };
+
+    addRow('Existing Wattage', `${totals.existWatts.toLocaleString()}W`);
+    addRow('Proposed Wattage', `${totals.newWatts.toLocaleString()}W`);
+    addRow('Watts Reduced', `${totals.wattsReduced.toLocaleString()}W (${reductionPct}%)`);
+    addRow('Fixture Rebate', `$${totals.fixtureRebate.toLocaleString()}`);
+    addRow('Controls Rebate', `$${totals.controlsRebate.toLocaleString()}`);
+    y += 2;
+    doc.setFont(undefined, 'bold');
+    addRow('Total Estimated Incentive', `$${totals.totalIncentive.toLocaleString()}`);
+    doc.setFont(undefined, 'normal');
+    y += 3;
+    addRow('Annual kWh Savings', `${Math.round(financials.annualKwhSaved).toLocaleString()} kWh`);
+    addRow('Annual Energy Savings', `$${Math.round(financials.annualEnergySavings).toLocaleString()}`);
+    if (financials.projectCost > 0) {
+      addRow('Project Cost', `$${financials.projectCost.toLocaleString()}`);
+      addRow('Net Cost (after rebate)', `$${Math.round(financials.netProjectCost).toLocaleString()}`);
+      addRow('Simple Payback', `${financials.simplePayback.toFixed(1)} years`);
+      addRow('10-Year ROI', `${Math.round(financials.roi)}%`);
+      addRow('10-Year Net Savings', `$${Math.round(financials.tenYearSavings).toLocaleString()}`);
+    }
+
+    // Cash Flow Table
+    if (financials.projectCost > 0 && financials.annualEnergySavings > 0) {
+      y += 5;
+      if (y > 230) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('10-Year Cash Flow', margin, y);
+      y += 6;
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'bold');
+      doc.setFillColor(20, 20, 22);
+      doc.setTextColor(240, 240, 242);
+      doc.rect(margin, y - 4, lw, 6, 'F');
+      doc.text('Year', margin + 2, y);
+      doc.text('Annual Savings', margin + 30, y);
+      doc.text('Cumulative', margin + 70, y);
+      doc.text('Net Position', margin + 110, y);
+      y += 5;
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'normal');
+      for (let yr = 1; yr <= 10; yr++) {
+        const cumSavings = financials.annualEnergySavings * yr;
+        const netPos = cumSavings - financials.netProjectCost;
+        doc.text(String(yr), margin + 2, y);
+        doc.text(`$${Math.round(financials.annualEnergySavings).toLocaleString()}`, margin + 30, y);
+        doc.text(`$${Math.round(cumSavings).toLocaleString()}`, margin + 70, y);
+        doc.setTextColor(netPos >= 0 ? 0 : 200, netPos >= 0 ? 150 : 0, 0);
+        doc.text(`$${Math.round(netPos).toLocaleString()}`, margin + 110, y);
+        doc.setTextColor(0, 0, 0);
+        y += 4.5;
+      }
+    }
+
+    // Footer
+    y += 8;
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text('\u26A0 Estimate only \u2014 subject to SRP review and approval. Actual rebate amounts may vary.', margin, y);
+    y += 4;
+    doc.text('Powered by Job Scout \u2022 HHH Building Services', margin, y);
+
+    // Share or download
+    const blob = doc.output('blob');
+    const fileName = `Lighting_Estimate_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      navigator.share({ files: [file], title: `Lighting Estimate - ${projectName}` }).catch(() => {
+        downloadBlob(blob, fileName);
+      });
+    } else {
+      downloadBlob(blob, fileName);
+    }
+    showToast('PDF generated', '\uD83D\uDCC4');
+  };
+
+  const downloadBlob = (blob, fileName) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName; a.click();
+    URL.revokeObjectURL(url);
   };
 
   // ---- STYLES ----
@@ -300,7 +648,7 @@ export default function LenardAZSRP() {
 
   // ==================== RENDER ====================
   return (
-    <div style={{ maxWidth: '480px', margin: '0 auto', background: T.bg, minHeight: '100vh', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: T.text, paddingBottom: '80px' }}>
+    <div style={{ maxWidth: '480px', margin: '0 auto', background: T.bg, minHeight: '100vh', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: T.text, paddingBottom: '20px' }}>
 
       {/* ===== TOAST ===== */}
       {toast && (
@@ -326,7 +674,10 @@ export default function LenardAZSRP() {
             </div>
             <div style={{ fontSize: '11px', color: T.textMuted }}>{program === 'sbs' ? SBS_RATES.desc : SBC_RATES.desc}</div>
           </div>
-          {totals.totalIncentive > 0 && <div style={{ ...S.money, fontSize: '20px' }}>${totals.totalIncentive.toLocaleString()}</div>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {totals.totalIncentive > 0 && <div style={{ ...S.money, fontSize: '20px' }}>${totals.totalIncentive.toLocaleString()}</div>}
+            <button onClick={() => { setShowProjects(true); loadProjects(); }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: '8px', padding: '6px 10px', color: T.textSec, cursor: 'pointer', fontSize: '13px' }}>{'\uD83D\uDCC1'}</button>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: '4px', background: T.bgInput, borderRadius: '10px', padding: '3px' }}>
           {['sbc', 'sbs'].map(p => (
@@ -345,21 +696,29 @@ export default function LenardAZSRP() {
           style={{ ...S.input, background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, borderRadius: 0, padding: '8px 0', fontSize: '15px', fontWeight: '500' }} />
       </div>
 
-      {/* ===== SBC CATEGORY TABS ===== */}
-      {program === 'sbc' && (
-        <div style={{ display: 'flex', gap: '6px', padding: '8px 16px', overflowX: 'auto' }}>
-          {Object.entries(SBC_RATES.categories).map(([key, cat]) => {
-            const catTotal = results.filter(r => r.category === key).reduce((s, r) => s + r.calc.totalIncentive, 0);
-            return (
-              <button key={key} onClick={() => setActiveTab(key)} style={{
-                flexShrink: 0, padding: '8px 12px', background: activeTab === key ? T.accentDim : T.bgCard,
-                color: activeTab === key ? T.accent : T.textSec, border: `1px solid ${activeTab === key ? T.accent : T.border}`,
-                borderRadius: '10px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap',
-              }}>{cat.icon} {cat.label}{catTotal > 0 && <span style={{ marginLeft: '4px', color: T.green }}>${catTotal.toLocaleString()}</span>}</button>
-            );
-          })}
-        </div>
-      )}
+      {/* ===== ACTION BUTTONS (moved from bottom bar) ===== */}
+      <div style={{ display: 'flex', gap: '8px', padding: '10px 16px' }}>
+        <button onClick={() => addLine()} style={{ ...S.btn, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px' }}>{'\uFF0B'} Add Line</button>
+        <button onClick={() => setShowQuickAdd(true)} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>{'\u26A1'} Quick Add</button>
+        <button onClick={openCamera} disabled={cameraLoading} style={{ ...S.btnGhost, padding: '10px 14px', opacity: cameraLoading ? 0.5 : 1, fontSize: '13px' }}>{cameraLoading ? '\u23F3' : '\uD83D\uDCF7'}</button>
+      </div>
+
+      {/* ===== FINANCIAL SETTINGS (collapsible) ===== */}
+      <div style={{ padding: '0 16px', marginBottom: '4px' }}>
+        <button onClick={() => setShowFinancials(!showFinancials)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '10px', color: T.textSec, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>
+          <span>{'\u2699\uFE0F'} Financial Settings</span>
+          <span style={{ fontSize: '11px', color: T.textMuted }}>{operatingHours}h/day \u2022 {daysPerYear}d/yr \u2022 ${energyRate}/kWh {showFinancials ? '\u25B4' : '\u25BE'}</span>
+        </button>
+        {showFinancials && (
+          <div style={{ ...S.card, marginTop: '6px', marginBottom: 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+              <div><label style={S.label}>Hours/Day</label><input type="number" inputMode="decimal" value={operatingHours} onChange={e => setOperatingHours(parseFloat(e.target.value) || 0)} style={S.input} /></div>
+              <div><label style={S.label}>Days/Year</label><input type="number" inputMode="numeric" value={daysPerYear} onChange={e => setDaysPerYear(parseInt(e.target.value) || 0)} style={S.input} /></div>
+              <div><label style={S.label}>$/kWh</label><input type="number" inputMode="decimal" step="0.01" value={energyRate} onChange={e => setEnergyRate(parseFloat(e.target.value) || 0)} style={S.input} /></div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ===== SBS RATE INFO ===== */}
       {program === 'sbs' && results.length === 0 && (
@@ -379,21 +738,21 @@ export default function LenardAZSRP() {
         <div style={{ margin: '8px 16px', padding: '16px', background: T.accentDim, border: `1px solid ${T.accent}`, borderRadius: '10px', textAlign: 'center' }}>
           <div style={{ fontSize: '24px', marginBottom: '8px' }}>{'\uD83D\uDD0D'}</div>
           <div style={{ fontSize: '14px', fontWeight: '600', color: T.accent }}>Lenard is analyzing...</div>
-          <div style={{ fontSize: '12px', color: T.textMuted }}>Identifying fixtures and wattages</div>
+          <div style={{ fontSize: '12px', color: T.textMuted }}>Identifying fixtures, wattages & heights</div>
         </div>
       )}
 
-      {/* ===== LINE ITEMS ===== */}
+      {/* ===== LINE ITEMS (show ALL, no filtering) ===== */}
       <div style={{ padding: '8px 16px' }}>
-        {filteredResults.length === 0 && !cameraLoading && (
+        {results.length === 0 && !cameraLoading && (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: T.textMuted }}>
-            <div style={{ fontSize: '36px', marginBottom: '12px', opacity: 0.5 }}>{program === 'sbc' ? SBC_RATES.categories[activeTab]?.icon : '\uD83C\uDFE2'}</div>
+            <div style={{ fontSize: '36px', marginBottom: '12px', opacity: 0.5 }}>{'\uD83D\uDCA1'}</div>
             <div style={{ fontSize: '14px', marginBottom: '4px' }}>No fixtures yet</div>
             <div style={{ fontSize: '12px' }}>Tap + to add, {'\u26A1'} for presets, or {'\uD83D\uDCF7'} snap a photo</div>
           </div>
         )}
 
-        {filteredResults.map(r => {
+        {results.map(r => {
           const isExp = expandedLine === r.id;
           const isNew = newlyAdded.has(r.id);
           const hasRebate = r.calc.totalIncentive > 0;
@@ -412,7 +771,7 @@ export default function LenardAZSRP() {
                   <div style={{ fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.name || (program === 'sbs' ? r.fixtureType : SBC_RATES.categories[r.category]?.subtypes.find(s => s.id === r.subtype)?.label || r.subtype)}
                   </div>
-                  <div style={{ fontSize: '11px', color: T.textSec, marginTop: '2px' }}>{subtypeInfo}</div>
+                  <div style={{ fontSize: '11px', color: T.textSec, marginTop: '2px' }}>{subtypeInfo} \u2022 {r.height || 0}ft</div>
                   <div style={{ fontSize: '12px', color: T.textMuted, marginTop: '2px' }}>{r.qty}\u00D7 | {r.existW}W \u2192 {r.newW}W | \u2212{r.calc.wattsReduced}W</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
@@ -429,15 +788,36 @@ export default function LenardAZSRP() {
                   <div style={{ marginBottom: '10px' }}><label style={S.label}>Description</label><input type="text" value={r.name} onChange={e => updateLine(r.id, 'name', e.target.value)} placeholder="Optional label" style={S.input} /></div>
 
                   {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Fixture Type</label><select value={r.fixtureType} onChange={e => updateLine(r.id, 'fixtureType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.fixture).map(([k, v]) => <option key={k} value={k}>{v.label} — ${v.rate}/W</option>)}</select></div>}
-                  {program === 'sbc' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Fixture Subtype</label><select value={r.subtype} onChange={e => updateLine(r.id, 'subtype', e.target.value)} style={S.select}>{SBC_RATES.categories[r.category]?.subtypes.map(s => <option key={s.id} value={s.id}>{s.label} — {s.ratePerWatt ? `${s.ratePerWatt}/W` : `${s.perFixture}/fixture`}</option>)}</select></div>}
+                  {program === 'sbc' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Category / Subtype</label><select value={`${r.category}|${r.subtype}`} onChange={e => { const [cat, sub] = e.target.value.split('|'); updateLine(r.id, 'category', cat); updateLine(r.id, 'subtype', sub); }} style={S.select}>{Object.entries(SBC_RATES.categories).map(([catKey, cat]) => cat.subtypes.map(s => <option key={s.id} value={`${catKey}|${s.id}`}>{cat.icon} {s.label} — {s.ratePerWatt ? `$${s.ratePerWatt}/W` : `$${s.perFixture}/fixture`}</option>))}</select></div>}
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
                     <div><label style={S.label}>Qty</label><input type="number" inputMode="numeric" value={r.qty || ''} onChange={e => updateLine(r.id, 'qty', parseInt(e.target.value) || 0)} style={S.input} /></div>
                     <div><label style={S.label}>Exist W</label><input type="number" inputMode="numeric" value={r.existW || ''} onChange={e => updateLine(r.id, 'existW', parseInt(e.target.value) || 0)} style={S.input} /></div>
                     <div><label style={S.label}>New W</label><input type="number" inputMode="numeric" value={r.newW || ''} onChange={e => updateLine(r.id, 'newW', parseInt(e.target.value) || 0)} style={S.input} /></div>
+                    <div><label style={S.label}>Height (ft)</label><input type="number" inputMode="numeric" value={r.height || ''} onChange={e => updateLine(r.id, 'height', parseInt(e.target.value) || 0)} style={S.input} /></div>
                   </div>
 
-                  {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Controls Upgrade</label><select value={r.controlsType} onChange={e => updateLine(r.id, 'controlsType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.controls).map(([k, v]) => <option key={k} value={k}>{v.label}{v.rate > 0 ? ` — ${v.rate}/W` : ''}</option>)}</select></div>}
+                  {/* SBE Replacement Product */}
+                  {sbeProducts.length > 0 && (
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={S.label}>SBE Replacement Product</label>
+                      <select
+                        value={r.productId || ''}
+                        onChange={e => {
+                          const prod = sbeProducts.find(p => String(p.id) === e.target.value);
+                          if (prod) selectProduct(r.id, prod);
+                          else setLines(prev => prev.map(l => l.id === r.id ? { ...l, productId: null, productName: '', productPrice: 0 } : l));
+                        }}
+                        style={S.select}
+                      >
+                        <option value="">Select product...</option>
+                        {sbeProducts.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit_price ? ` — $${p.unit_price}` : ''}</option>)}
+                      </select>
+                      {r.productPrice > 0 && <div style={{ fontSize: '11px', color: T.accent, marginTop: '4px' }}>${r.productPrice}/unit \u00D7 {r.qty} = ${(r.productPrice * r.qty).toLocaleString()}</div>}
+                    </div>
+                  )}
+
+                  {program === 'sbs' && <div style={{ marginBottom: '10px' }}><label style={S.label}>Controls Upgrade</label><select value={r.controlsType} onChange={e => updateLine(r.id, 'controlsType', e.target.value)} style={S.select}>{Object.entries(SBS_RATES.controls).map(([k, v]) => <option key={k} value={k}>{v.label}{v.rate > 0 ? ` — $${v.rate}/W` : ''}</option>)}</select></div>}
 
                   {program === 'sbc' && SBC_RATES.categories[r.category]?.subtypes.find(s => s.id === r.subtype)?.hasControls && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
@@ -467,11 +847,33 @@ export default function LenardAZSRP() {
       {/* ===== PROJECT TOTALS ===== */}
       {results.length > 0 && (
         <div style={{ ...S.card, margin: '8px 16px', background: T.accentDim, borderColor: T.accent }}>
+          {/* Watts row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', textAlign: 'center', marginBottom: '8px' }}>
             <div><div style={{ fontSize: '11px', color: T.textMuted }}>EXISTING</div><div style={{ fontSize: '14px', fontWeight: '600' }}>{totals.existWatts.toLocaleString()}W</div></div>
             <div><div style={{ fontSize: '11px', color: T.textMuted }}>NEW LED</div><div style={{ fontSize: '14px', fontWeight: '600' }}>{totals.newWatts.toLocaleString()}W</div></div>
             <div><div style={{ fontSize: '11px', color: T.textMuted }}>REDUCED</div><div style={{ fontSize: '14px', fontWeight: '600', color: T.green }}>{reductionPct}%</div></div>
           </div>
+          {/* Energy savings row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', textAlign: 'center', marginBottom: '8px', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
+            <div><div style={{ fontSize: '11px', color: T.textMuted }}>ANNUAL kWh SAVED</div><div style={{ fontSize: '14px', fontWeight: '600' }}>{Math.round(financials.annualKwhSaved).toLocaleString()}</div></div>
+            <div><div style={{ fontSize: '11px', color: T.textMuted }}>ANNUAL $ SAVED</div><div style={{ fontSize: '14px', fontWeight: '600', color: T.green }}>${Math.round(financials.annualEnergySavings).toLocaleString()}</div></div>
+          </div>
+          {/* Cost row */}
+          {financials.projectCost > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', textAlign: 'center', marginBottom: '8px', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
+              <div><div style={{ fontSize: '11px', color: T.textMuted }}>PROJECT COST</div><div style={{ fontSize: '13px', fontWeight: '600' }}>${financials.projectCost.toLocaleString()}</div></div>
+              <div><div style={{ fontSize: '11px', color: T.textMuted }}>INCENTIVE</div><div style={{ fontSize: '13px', fontWeight: '600', color: T.green }}>${totals.totalIncentive.toLocaleString()}</div></div>
+              <div><div style={{ fontSize: '11px', color: T.textMuted }}>NET COST</div><div style={{ fontSize: '13px', fontWeight: '600' }}>${Math.round(financials.netProjectCost).toLocaleString()}</div></div>
+            </div>
+          )}
+          {/* Payback row */}
+          {financials.projectCost > 0 && financials.annualEnergySavings > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', textAlign: 'center', marginBottom: '8px', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
+              <div><div style={{ fontSize: '11px', color: T.textMuted }}>SIMPLE PAYBACK</div><div style={{ fontSize: '14px', fontWeight: '600' }}>{financials.simplePayback.toFixed(1)} yrs</div></div>
+              <div><div style={{ fontSize: '11px', color: T.textMuted }}>10-YEAR ROI</div><div style={{ fontSize: '14px', fontWeight: '600', color: T.green }}>{Math.round(financials.roi)}%</div></div>
+            </div>
+          )}
+          {/* Incentive total + actions */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
             <div><div style={{ fontSize: '11px', color: T.textMuted }}>TOTAL ESTIMATED INCENTIVE</div><div style={{ ...S.money, fontSize: '22px' }}>${totals.totalIncentive.toLocaleString()}</div></div>
             <button onClick={() => setShowSummary(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px' }}>{'\uD83D\uDCCB'} Summary</button>
@@ -479,58 +881,122 @@ export default function LenardAZSRP() {
         </div>
       )}
 
-      {/* ===== BOTTOM ACTION BAR ===== */}
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTop: `1px solid ${T.border}`, padding: '10px 16px', display: 'flex', gap: '8px', zIndex: 40, boxSizing: 'border-box' }}>
-        <button onClick={() => addLine()} style={{ ...S.btn, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>{'\uFF0B'} Add Line</button>
-        <button onClick={() => setShowQuickAdd(true)} style={{ ...S.btnGhost, flex: 1 }}>{'\u26A1'} Quick Add</button>
-        <button onClick={openCamera} disabled={cameraLoading} style={{ ...S.btnGhost, padding: '10px 14px', opacity: cameraLoading ? 0.5 : 1 }}>{cameraLoading ? '\u23F3' : '\uD83D\uDCF7'}</button>
-      </div>
-
-      {/* ===== QUICK ADD MODAL ===== */}
+      {/* ===== QUICK ADD MODAL (with category tabs inside) ===== */}
       {showQuickAdd && (<>
         <div onClick={() => setShowQuickAdd(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
-        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '70vh', overflow: 'auto', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '75vh', overflow: 'auto', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ fontSize: '16px', fontWeight: '700' }}>{'\u26A1'} Quick Add Preset</div>
             <button onClick={() => setShowQuickAdd(false)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: '20px', cursor: 'pointer' }}>{'\u2715'}</button>
           </div>
-          {Object.entries(PRESETS).map(([gk, group]) => (
-            <div key={gk} style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '12px', fontWeight: '600', color: T.textMuted, textTransform: 'uppercase', marginBottom: '8px' }}>{group.label}</div>
-              {group.items.map((item, i) => (
+          {/* Category tabs inside the modal */}
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflowX: 'auto' }}>
+            {Object.entries(PRESETS).map(([key, group]) => (
+              <button key={key} onClick={() => setQuickAddTab(key)} style={{
+                flexShrink: 0, padding: '8px 12px',
+                background: quickAddTab === key ? T.accentDim : T.bgInput,
+                color: quickAddTab === key ? T.accent : T.textSec,
+                border: `1px solid ${quickAddTab === key ? T.accent : T.border}`,
+                borderRadius: '10px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap',
+              }}>{group.label}</button>
+            ))}
+          </div>
+          {/* Show items for selected tab */}
+          {PRESETS[quickAddTab] && (
+            <div>
+              {PRESETS[quickAddTab].items.map((item, i) => (
                 <button key={i} onClick={() => { addLine(item); showToast(`Added ${item.name}`, '\u2713'); setShowQuickAdd(false); }} style={{ width: '100%', textAlign: 'left', padding: '10px 12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.text, cursor: 'pointer', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div><div style={{ fontSize: '13px', fontWeight: '500' }}>{item.name}</div><div style={{ fontSize: '11px', color: T.textMuted }}>{item.existW}W {'\u2192'} {item.newW}W</div></div>
+                  <div><div style={{ fontSize: '13px', fontWeight: '500' }}>{item.name}</div><div style={{ fontSize: '11px', color: T.textMuted }}>{item.existW}W {'\u2192'} {item.newW}W \u2022 {item.height}ft</div></div>
                   <div style={{ fontSize: '12px', color: T.accent }}>{'\uFF0B'}</div>
                 </button>
               ))}
             </div>
-          ))}
+          )}
         </div>
       </>)}
 
       {/* ===== SUMMARY MODAL ===== */}
       {showSummary && (<>
         <div onClick={() => setShowSummary(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
-        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '90%', maxWidth: '440px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', maxHeight: '80vh', overflow: 'auto', zIndex: 51, padding: '24px' }}>
+        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '90%', maxWidth: '440px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', maxHeight: '85vh', overflow: 'auto', zIndex: 51, padding: '24px' }}>
           <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '4px' }}>{program === 'sbs' ? '\uD83C\uDFE2' : '\u26A1'} Project Summary</div>
           <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>{program === 'sbs' ? 'SRP Standard Business Solutions' : 'SRP Small Business Commercial'}{projectName ? ` \u2014 ${projectName}` : ''}</div>
           {results.map(r => (
             <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${T.border}`, fontSize: '13px' }}>
-              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.qty}\u00D7 {r.name || (program === 'sbs' ? r.fixtureType : r.subtype)}</div>
+              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.qty}\u00D7 {r.name || (program === 'sbs' ? r.fixtureType : r.subtype)} \u2022 {r.height}ft</div>
               <div style={S.money}>${r.calc.totalIncentive.toLocaleString()}</div>
             </div>
           ))}
           <div style={{ marginTop: '16px', padding: '12px', background: T.bgInput, borderRadius: '10px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Fixture Rebate</span><span>${totals.fixtureRebate.toLocaleString()}</span></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Controls Rebate</span><span>${totals.controlsRebate.toLocaleString()}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '8px', color: T.textSec }}><span>Watts Reduced</span><span>{totals.wattsReduced.toLocaleString()}W ({reductionPct}%)</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Watts Reduced</span><span>{totals.wattsReduced.toLocaleString()}W ({reductionPct}%)</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Annual kWh Saved</span><span>{Math.round(financials.annualKwhSaved).toLocaleString()}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '8px', color: T.textSec }}><span>Annual $ Saved</span><span style={{ color: T.green }}>${Math.round(financials.annualEnergySavings).toLocaleString()}</span></div>
+            {financials.projectCost > 0 && (<>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec, paddingTop: '6px', borderTop: `1px solid ${T.border}` }}><span>Project Cost</span><span>${financials.projectCost.toLocaleString()}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Net Cost</span><span>${Math.round(financials.netProjectCost).toLocaleString()}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px', color: T.textSec }}><span>Simple Payback</span><span>{financials.simplePayback.toFixed(1)} yrs</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '8px', color: T.textSec }}><span>10-Year Net Savings</span><span style={{ color: T.green }}>${Math.round(financials.tenYearSavings).toLocaleString()}</span></div>
+            </>)}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: '700', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}><span>Total Incentive</span><span style={S.money}>${totals.totalIncentive.toLocaleString()}</span></div>
           </div>
           <div style={{ fontSize: '11px', color: T.textMuted, marginTop: '12px', textAlign: 'center' }}>{'\u26A0\uFE0F'} Estimate only \u2014 subject to SRP review and approval</div>
-          <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-            <button onClick={copySummary} style={{ ...S.btn, flex: 1 }}>{'\uD83D\uDCCB'} Copy to Clipboard</button>
-            <button onClick={() => setShowSummary(false)} style={{ ...S.btnGhost, flex: 1 }}>Close</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={generatePDF} style={{ ...S.btn, flex: 1, fontSize: '13px' }}>{'\uD83D\uDCC4'} Share PDF</button>
+              <button onClick={copySummary} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>{'\uD83D\uDCCB'} Copy</button>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => { setShowSummary(false); setShowSaveModal(true); }} disabled={!!savedLeadId} style={{ ...S.btn, flex: 1, fontSize: '13px', background: savedLeadId ? T.bgInput : T.blue, color: savedLeadId ? T.textMuted : '#fff' }}>{savedLeadId ? '\u2713 Saved' : '\uD83D\uDCBE Save Project'}</button>
+              <button onClick={() => setShowSummary(false)} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>Close</button>
+            </div>
           </div>
+        </div>
+      </>)}
+
+      {/* ===== SAVE MODAL ===== */}
+      {showSaveModal && (<>
+        <div onClick={() => setShowSaveModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
+        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '90%', maxWidth: '400px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', zIndex: 51, padding: '24px' }}>
+          <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '4px' }}>{'\uD83D\uDCBE'} Save Project</div>
+          <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>Creates a lead + lighting audit in Job Scout</div>
+          <div style={{ marginBottom: '10px' }}><label style={S.label}>Customer Name</label><input type="text" value={projectName} onChange={e => setProjectName(e.target.value)} style={S.input} /></div>
+          <div style={{ marginBottom: '10px' }}><label style={S.label}>Phone</label><input type="tel" inputMode="tel" value={savePhone} onChange={e => setSavePhone(e.target.value)} placeholder="Optional" style={S.input} /></div>
+          <div style={{ marginBottom: '10px' }}><label style={S.label}>Email</label><input type="email" inputMode="email" value={saveEmail} onChange={e => setSaveEmail(e.target.value)} placeholder="Optional" style={S.input} /></div>
+          <div style={{ marginBottom: '16px' }}><label style={S.label}>Address</label><input type="text" value={saveAddress} onChange={e => setSaveAddress(e.target.value)} placeholder="Optional" style={S.input} /></div>
+          {capturedPhotos.length > 0 && <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '12px' }}>{'\uD83D\uDCF7'} {capturedPhotos.length} photo{capturedPhotos.length > 1 ? 's' : ''} will be saved to the audit</div>}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={saveProject} disabled={saving} style={{ ...S.btn, flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving...' : 'Save'}</button>
+            <button onClick={() => setShowSaveModal(false)} style={{ ...S.btnGhost, flex: 1 }}>Cancel</button>
+          </div>
+        </div>
+      </>)}
+
+      {/* ===== PROJECTS LIST MODAL ===== */}
+      {showProjects && (<>
+        <div onClick={() => setShowProjects(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
+        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '70vh', overflow: 'auto', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ fontSize: '16px', fontWeight: '700' }}>{'\uD83D\uDCC1'} Saved Projects</div>
+            <button onClick={() => setShowProjects(false)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: '20px', cursor: 'pointer' }}>{'\u2715'}</button>
+          </div>
+          {loadingProjects && <div style={{ textAlign: 'center', padding: '20px', color: T.textMuted }}>Loading...</div>}
+          {!loadingProjects && projects.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: T.textMuted }}>No saved projects yet</div>}
+          {projects.map(p => (
+            <button key={p.id} onClick={() => loadProject(p)} style={{ width: '100%', textAlign: 'left', padding: '12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '10px', color: T.text, cursor: 'pointer', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: '600' }}>{p.customerName}</div>
+                  <div style={{ fontSize: '11px', color: T.textMuted }}>{new Date(p.createdAt).toLocaleDateString()} \u2022 {p.status}{p.audit ? ` \u2022 Audit ${p.audit.status}` : ''}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ ...S.money, fontSize: '15px' }}>${parseFloat(p.estimatedValue || 0).toLocaleString()}</div>
+                  {p.audit && <div style={{ fontSize: '10px', color: T.textSec }}>{p.audit.watts_reduction}W saved</div>}
+                </div>
+              </div>
+            </button>
+          ))}
         </div>
       </>)}
 
