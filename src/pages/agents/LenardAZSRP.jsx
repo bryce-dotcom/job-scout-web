@@ -700,12 +700,28 @@ export default function LenardAZSRP() {
     URL.revokeObjectURL(url);
   };
 
+  // Audible click + haptic vibration for counter buttons (matching NewLightingAudit)
+  const playClick = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 1200;
+      gain.gain.value = 0.08;
+      osc.start();
+      osc.stop(ctx.currentTime + 0.04);
+    } catch (_) { /* silent fallback */ }
+    try { navigator.vibrate?.(15); } catch (_) { /* no vibration support */ }
+  }, []);
+
   // ---- STYLES ----
   const S = {
     card: { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '14px', padding: '14px', marginBottom: '10px' },
-    input: { width: '100%', padding: '10px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' },
-    select: { width: '100%', padding: '10px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box', appearance: 'auto' },
-    label: { display: 'block', fontSize: '11px', color: T.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' },
+    input: { width: '100%', padding: '10px 12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' },
+    select: { width: '100%', padding: '10px 12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a0a8' d='M2 4l4 4 4-4'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: '30px' },
+    label: { display: 'block', fontSize: '13px', fontWeight: '500', color: T.textSec, marginBottom: '6px' },
     btn: { padding: '10px 16px', background: T.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' },
     btnGhost: { padding: '8px 14px', background: 'transparent', color: T.textSec, border: `1px solid ${T.border}`, borderRadius: '8px', fontSize: '13px', cursor: 'pointer' },
     money: { color: T.green, fontWeight: '700', fontFamily: "'SF Mono', 'Fira Code', monospace" },
@@ -881,9 +897,9 @@ export default function LenardAZSRP() {
                   <div style={{ marginBottom: '12px' }}>
                     <label style={S.label}>Fixture Count *</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0', maxWidth: '240px' }}>
-                      <button type="button" onClick={() => updateLine(r.id, 'qty', Math.max(1, (r.qty || 1) - 1))} style={{ width: '52px', height: '48px', borderRadius: '10px 0 0 10px', border: `2px solid ${T.accent}`, borderRight: 'none', background: T.accentDim, color: T.accent, fontSize: '24px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0 }}>{'\u2212'}</button>
+                      <button type="button" onClick={() => { playClick(); updateLine(r.id, 'qty', Math.max(1, (r.qty || 1) - 1)); }} style={{ width: '52px', height: '48px', borderRadius: '10px 0 0 10px', border: `2px solid ${T.accent}`, borderRight: 'none', background: T.accentDim, color: T.accent, fontSize: '24px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0, WebkitTapHighlightColor: 'transparent' }}>{'\u2212'}</button>
                       <input type="number" min="1" inputMode="numeric" value={r.qty || ''} onChange={e => updateLine(r.id, 'qty', e.target.value === '' ? 1 : (parseInt(e.target.value) || 1))} style={{ flex: 1, minWidth: 0, height: '48px', border: `2px solid ${T.border}`, borderLeft: 'none', borderRight: 'none', background: T.bgInput, color: T.text, fontSize: '22px', fontWeight: '700', textAlign: 'center', MozAppearance: 'textfield', WebkitAppearance: 'none', outline: 'none', boxSizing: 'border-box' }} />
-                      <button type="button" onClick={() => updateLine(r.id, 'qty', (r.qty || 0) + 1)} style={{ width: '52px', height: '48px', borderRadius: '0 10px 10px 0', border: `2px solid ${T.accent}`, borderLeft: 'none', background: T.accent, color: '#fff', fontSize: '24px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0 }}>{'\uFF0B'}</button>
+                      <button type="button" onClick={() => { playClick(); updateLine(r.id, 'qty', (r.qty || 0) + 1); }} style={{ width: '52px', height: '48px', borderRadius: '0 10px 10px 0', border: `2px solid ${T.accent}`, borderLeft: 'none', background: T.accent, color: '#fff', fontSize: '24px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0, WebkitTapHighlightColor: 'transparent' }}>{'\uFF0B'}</button>
                     </div>
                   </div>
 
