@@ -90,7 +90,7 @@ const PRESETS = {
   highbays: {
     label: 'High Bays',
     items: [
-      { name: '6L T5HO High Bay',   existW: 351,  newW: 150, cat: 'highbay', sub: 'hb_400',  sbsType: 'Interior LED Fixture' },
+      { name: '6L T5HO High Bay',   existW: 351,  newW: 150, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture' },
       { name: '4L T5HO High Bay',   existW: 234,  newW: 110, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture' },
       { name: '400W MH High Bay',   existW: 458,  newW: 150, cat: 'highbay', sub: 'hb_400',  sbsType: 'Interior LED Fixture' },
       { name: '250W MH High Bay',   existW: 288,  newW: 100, cat: 'highbay', sub: 'hb_250',  sbsType: 'Interior LED Fixture' },
