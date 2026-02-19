@@ -97,6 +97,13 @@ export const useStore = create(
       // AI Modules (Dynamic menu agents)
       aiModules: [],
 
+      // Conrad Connect (Email Marketing)
+      ccIntegration: null,
+      emailTemplates: [],
+      emailCampaigns: [],
+      ccContactMap: [],
+      emailAutomations: [],
+
       // Setters
       setCompany: (company) => set({ company, companyId: company?.id }),
       setUser: (user) => set({ user }),
@@ -175,7 +182,12 @@ export const useStore = create(
           incentives: [],
           agents: [],
           companyAgents: [],
-          aiModules: []
+          aiModules: [],
+          ccIntegration: null,
+          emailTemplates: [],
+          emailCampaigns: [],
+          ccContactMap: [],
+          emailAutomations: []
         });
       },
 
@@ -1190,6 +1202,301 @@ export const useStore = create(
       },
 
       // ========================================
+      // FETCH FUNCTIONS - Conrad Connect (Email Marketing)
+      // ========================================
+
+      fetchCcIntegration: async () => {
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('conrad-connect')) return;
+
+        const cached = await offlineDb.getAll('ccIntegration');
+        if (cached.length > 0 && !get().ccIntegration) set({ ccIntegration: cached[0] });
+
+        try {
+          const { data, error } = await supabase
+            .from('cc_integrations')
+            .select('*')
+            .eq('company_id', companyId)
+            .maybeSingle();
+
+          if (!error) {
+            set({ ccIntegration: data || null });
+            if (data) {
+              await offlineDb.putAll('ccIntegration', [data]);
+            }
+          }
+        } catch (e) {
+          console.log('[fetchCcIntegration] Offline, using cache');
+        }
+      },
+
+      fetchEmailTemplates: async () => {
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('conrad-connect')) return;
+
+        const cached = await offlineDb.getAll('emailTemplates');
+        if (cached.length > 0 && get().emailTemplates.length === 0) set({ emailTemplates: cached });
+
+        try {
+          const { data, error } = await supabase
+            .from('email_templates')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('created_at', { ascending: false });
+
+          if (!error) {
+            set({ emailTemplates: data || [] });
+            await offlineDb.putAll('emailTemplates', data || []);
+          }
+        } catch (e) {
+          console.log('[fetchEmailTemplates] Offline, using cache');
+        }
+      },
+
+      fetchEmailCampaigns: async () => {
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('conrad-connect')) return;
+
+        const cached = await offlineDb.getAll('emailCampaigns');
+        if (cached.length > 0 && get().emailCampaigns.length === 0) set({ emailCampaigns: cached });
+
+        try {
+          const { data, error } = await supabase
+            .from('email_campaigns')
+            .select('*, template:email_templates(id, name)')
+            .eq('company_id', companyId)
+            .order('created_at', { ascending: false });
+
+          if (!error) {
+            set({ emailCampaigns: data || [] });
+            await offlineDb.putAll('emailCampaigns', data || []);
+          }
+        } catch (e) {
+          console.log('[fetchEmailCampaigns] Offline, using cache');
+        }
+      },
+
+      fetchCcContactMap: async () => {
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('conrad-connect')) return;
+
+        const cached = await offlineDb.getAll('ccContactMap');
+        if (cached.length > 0 && get().ccContactMap.length === 0) set({ ccContactMap: cached });
+
+        try {
+          const { data, error } = await supabase
+            .from('cc_contact_map')
+            .select('*, customer:customers(id, name), lead:leads(id, customer_name)')
+            .eq('company_id', companyId);
+
+          if (!error) {
+            set({ ccContactMap: data || [] });
+            await offlineDb.putAll('ccContactMap', data || []);
+          }
+        } catch (e) {
+          console.log('[fetchCcContactMap] Offline, using cache');
+        }
+      },
+
+      fetchEmailAutomations: async () => {
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('conrad-connect')) return;
+
+        const cached = await offlineDb.getAll('emailAutomations');
+        if (cached.length > 0 && get().emailAutomations.length === 0) set({ emailAutomations: cached });
+
+        try {
+          const { data, error } = await supabase
+            .from('email_automations')
+            .select('*, template:email_templates(id, name)')
+            .eq('company_id', companyId)
+            .order('created_at', { ascending: false });
+
+          if (!error) {
+            set({ emailAutomations: data || [] });
+            await offlineDb.putAll('emailAutomations', data || []);
+          }
+        } catch (e) {
+          console.log('[fetchEmailAutomations] Offline, using cache');
+        }
+      },
+
+      // Conrad CRUD mutations
+      createEmailTemplate: async (templateData) => {
+        const { companyId, user } = get();
+        const record = { ...templateData, company_id: companyId, created_by: user?.id };
+
+        try {
+          const { data, error } = await supabase
+            .from('email_templates')
+            .insert(record)
+            .select()
+            .single();
+
+          if (error) throw error;
+          set(state => ({ emailTemplates: [data, ...state.emailTemplates] }));
+          await offlineDb.put('emailTemplates', data);
+          return { data, error: null };
+        } catch (e) {
+          return { data: null, error: e };
+        }
+      },
+
+      updateEmailTemplate: async (id, changes) => {
+        try {
+          const { data, error } = await supabase
+            .from('email_templates')
+            .update({ ...changes, updated_at: new Date().toISOString() })
+            .eq('id', id)
+            .select()
+            .single();
+
+          if (error) throw error;
+          set(state => ({
+            emailTemplates: state.emailTemplates.map(t => t.id === id ? data : t)
+          }));
+          await offlineDb.put('emailTemplates', data);
+          return { data, error: null };
+        } catch (e) {
+          return { data: null, error: e };
+        }
+      },
+
+      deleteEmailTemplate: async (id) => {
+        try {
+          const { error } = await supabase
+            .from('email_templates')
+            .delete()
+            .eq('id', id);
+
+          if (error) throw error;
+          set(state => ({
+            emailTemplates: state.emailTemplates.filter(t => t.id !== id)
+          }));
+          await offlineDb.remove('emailTemplates', id);
+          return { error: null };
+        } catch (e) {
+          return { error: e };
+        }
+      },
+
+      createEmailCampaign: async (campaignData) => {
+        const { companyId, user } = get();
+        const record = { ...campaignData, company_id: companyId, created_by: user?.id };
+
+        try {
+          const { data, error } = await supabase
+            .from('email_campaigns')
+            .insert(record)
+            .select('*, template:email_templates(id, name)')
+            .single();
+
+          if (error) throw error;
+          set(state => ({ emailCampaigns: [data, ...state.emailCampaigns] }));
+          await offlineDb.put('emailCampaigns', data);
+          return { data, error: null };
+        } catch (e) {
+          return { data: null, error: e };
+        }
+      },
+
+      updateEmailCampaign: async (id, changes) => {
+        try {
+          const { data, error } = await supabase
+            .from('email_campaigns')
+            .update({ ...changes, updated_at: new Date().toISOString() })
+            .eq('id', id)
+            .select('*, template:email_templates(id, name)')
+            .single();
+
+          if (error) throw error;
+          set(state => ({
+            emailCampaigns: state.emailCampaigns.map(c => c.id === id ? data : c)
+          }));
+          await offlineDb.put('emailCampaigns', data);
+          return { data, error: null };
+        } catch (e) {
+          return { data: null, error: e };
+        }
+      },
+
+      deleteEmailCampaign: async (id) => {
+        try {
+          const { error } = await supabase
+            .from('email_campaigns')
+            .delete()
+            .eq('id', id);
+
+          if (error) throw error;
+          set(state => ({
+            emailCampaigns: state.emailCampaigns.filter(c => c.id !== id)
+          }));
+          await offlineDb.remove('emailCampaigns', id);
+          return { error: null };
+        } catch (e) {
+          return { error: e };
+        }
+      },
+
+      createEmailAutomation: async (automationData) => {
+        const { companyId } = get();
+        const record = { ...automationData, company_id: companyId };
+
+        try {
+          const { data, error } = await supabase
+            .from('email_automations')
+            .insert(record)
+            .select('*, template:email_templates(id, name)')
+            .single();
+
+          if (error) throw error;
+          set(state => ({ emailAutomations: [data, ...state.emailAutomations] }));
+          await offlineDb.put('emailAutomations', data);
+          return { data, error: null };
+        } catch (e) {
+          return { data: null, error: e };
+        }
+      },
+
+      updateEmailAutomation: async (id, changes) => {
+        try {
+          const { data, error } = await supabase
+            .from('email_automations')
+            .update({ ...changes, updated_at: new Date().toISOString() })
+            .eq('id', id)
+            .select('*, template:email_templates(id, name)')
+            .single();
+
+          if (error) throw error;
+          set(state => ({
+            emailAutomations: state.emailAutomations.map(a => a.id === id ? data : a)
+          }));
+          await offlineDb.put('emailAutomations', data);
+          return { data, error: null };
+        } catch (e) {
+          return { data: null, error: e };
+        }
+      },
+
+      deleteEmailAutomation: async (id) => {
+        try {
+          const { error } = await supabase
+            .from('email_automations')
+            .delete()
+            .eq('id', id);
+
+          if (error) throw error;
+          set(state => ({
+            emailAutomations: state.emailAutomations.filter(a => a.id !== id)
+          }));
+          await offlineDb.remove('emailAutomations', id);
+          return { error: null };
+        } catch (e) {
+          return { error: e };
+        }
+      },
+
+      // ========================================
       // FETCH FUNCTIONS - AI Modules
       // ========================================
 
@@ -1511,7 +1818,12 @@ export const useStore = create(
           fetchAgents,
           fetchCompanyAgents,
           fetchLaborRates,
-          fetchAiModules
+          fetchAiModules,
+          fetchCcIntegration,
+          fetchEmailTemplates,
+          fetchEmailCampaigns,
+          fetchCcContactMap,
+          fetchEmailAutomations
         } = get();
 
         // Fetch core data in parallel
@@ -1549,7 +1861,12 @@ export const useStore = create(
           fetchAgents(),
           fetchCompanyAgents(),
           fetchLaborRates(),
-          fetchAiModules()
+          fetchAiModules(),
+          fetchCcIntegration(),
+          fetchEmailTemplates(),
+          fetchEmailCampaigns(),
+          fetchCcContactMap(),
+          fetchEmailAutomations()
         ]);
 
         set({ isLoading: false });

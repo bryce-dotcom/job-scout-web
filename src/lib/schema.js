@@ -88,7 +88,14 @@ export const TABLES = {
 
   // Agents (Base Camp)
   agents: 'agents',
-  company_agents: 'company_agents'
+  company_agents: 'company_agents',
+
+  // Conrad Connect (Email Marketing)
+  cc_integrations: 'cc_integrations',
+  email_templates: 'email_templates',
+  email_campaigns: 'email_campaigns',
+  cc_contact_map: 'cc_contact_map',
+  email_automations: 'email_automations'
 };
 
 // Status enums for consistent UI
@@ -102,7 +109,9 @@ export const STATUS = {
   customer: ['Active', 'Inactive', 'Prospect'],
   employee: ['Active', 'Inactive'],
   fleet: ['Active', 'In Service', 'Out of Service', 'Retired'],
-  audit: ['Draft', 'In Progress', 'Completed', 'Submitted', 'Approved']
+  audit: ['Draft', 'In Progress', 'Completed', 'Submitted', 'Approved'],
+  emailCampaign: ['Draft', 'Scheduled', 'Sending', 'Sent', 'Cancelled'],
+  emailTemplate: ['follow_up', 'quote_reminder', 'seasonal', 'newsletter', 'win_back', 'custom']
 };
 
 // Payment methods
@@ -175,7 +184,14 @@ export const QUERIES = {
   leadPayments: '*',
   utilityInvoices: '*',
   utilityPrograms: '*',
-  incentives: '*'
+  incentives: '*',
+
+  // Conrad Connect
+  ccIntegration: '*',
+  emailTemplates: '*',
+  emailCampaigns: '*, template:email_templates(id, name)',
+  ccContactMap: '*, customer:customers(id, name), lead:leads(id, customer_name)',
+  emailAutomations: '*, template:email_templates(id, name)'
 };
 
 export default TABLES;

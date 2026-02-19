@@ -1,7 +1,7 @@
 import { openDB } from 'idb'
 
 const DB_NAME = 'jobscout-offline'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 // All entity stores (matching Zustand state keys)
 const ENTITY_STORES = [
@@ -17,7 +17,8 @@ const ENTITY_STORES = [
   'communications', 'settings',
   'routes', 'bookings', 'leadPayments', 'utilityInvoices', 'incentives',
   'agents', 'companyAgents', 'laborRates', 'aiModules',
-  'pipelineStages'
+  'pipelineStages',
+  'ccIntegration', 'emailTemplates', 'emailCampaigns', 'ccContactMap', 'emailAutomations'
 ]
 
 // System stores

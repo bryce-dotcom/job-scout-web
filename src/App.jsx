@@ -52,6 +52,13 @@ import RobotMarketplace from './pages/RobotMarketplace'
 import MyCrew from './pages/MyCrew'
 import LenardWorkspace from './pages/agents/lenard/LenardWorkspace'
 import FreddyWorkspace from './pages/agents/freddy/FreddyWorkspace'
+import ConradWorkspace from './pages/agents/conrad/ConradWorkspace'
+import ConradDashboard from './pages/agents/conrad/ConradDashboard'
+import ConradCampaigns from './pages/agents/conrad/ConradCampaigns'
+import ConradTemplates from './pages/agents/conrad/ConradTemplates'
+import ConradContacts from './pages/agents/conrad/ConradContacts'
+import ConradAutomations from './pages/agents/conrad/ConradAutomations'
+import ConradSettings from './pages/agents/conrad/ConradSettings'
 import DataConsole from './pages/admin/DataConsole'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
@@ -270,6 +277,16 @@ function App() {
             <Route path="calendar" element={<FleetCalendar />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path=":id" element={<FleetDetail />} />
+          </Route>
+
+          {/* Conrad Workspace (Email Marketing) */}
+          <Route path="/agents/conrad-connect" element={<ConradWorkspace />}>
+            <Route index element={<ConradDashboard />} />
+            <Route path="campaigns" element={<ConradCampaigns />} />
+            <Route path="templates" element={<ConradTemplates />} />
+            <Route path="contacts" element={<ConradContacts />} />
+            <Route path="automations" element={<ConradAutomations />} />
+            <Route path="settings" element={<ConradSettings />} />
           </Route>
 
           {/* Admin Data Console (Developer Only) */}
