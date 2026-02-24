@@ -24,11 +24,8 @@ const defaultTheme = {
 
 // Setter stages (what setter works with)
 const setterStages = [
-  { id: 'Assigned', label: 'Assigned to Me', color: '#7c3aed' },
   { id: 'New', label: 'New Leads', color: '#3b82f6' },
-  { id: 'Contacted', label: 'Contacted', color: '#8b5cf6' },
-  { id: 'Callback', label: 'Callback', color: '#f59e0b' },
-  { id: 'Not Qualified', label: 'Not Qualified', color: '#6b7280' }
+  { id: 'Contacted', label: 'Contacted', color: '#8b5cf6' }
 ]
 
 // Win stages (read-only, shows setter's wins)
@@ -102,7 +99,7 @@ export default function LeadSetter() {
       .from('leads')
       .select('*, lead_owner:employees!leads_lead_owner_id_fkey(id, name), setter_owner:employees!leads_setter_owner_id_fkey(id, name)')
       .eq('company_id', companyId)
-      .in('status', ['New', 'Assigned', 'Contacted', 'Callback', 'Not Qualified'])
+      .in('status', ['New', 'Assigned', 'Contacted', 'Callback'])
       .order('created_at', { ascending: false })
 
     // Non-admins only see leads assigned to them as setter
@@ -174,9 +171,12 @@ export default function LeadSetter() {
     fetchData()
   }, [companyId, currentDate])
 
+  // Legacy status mapping for display
+  const setterStatusMap = { 'Assigned': 'New', 'Callback': 'Contacted' }
+
   // Get leads by stage
   const getLeadsByStage = (stageId) => {
-    let filtered = leads.filter(l => l.status === stageId)
+    let filtered = leads.filter(l => (setterStatusMap[l.status] || l.status) === stageId)
     if (searchTerm) {
       filtered = filtered.filter(l =>
         l.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -566,9 +566,10 @@ export default function LeadSetter() {
     if (outcome === 'contacted') {
       updates.status = 'Contacted'
     } else if (outcome === 'callback') {
-      updates.status = 'Callback'
+      updates.status = 'Contacted'
+      updates.callback_date = new Date().toISOString()
     } else if (outcome === 'not_qualified') {
-      updates.status = 'Not Qualified'
+      updates.status = 'Lost'
     }
 
     await supabase
@@ -880,7 +881,7 @@ export default function LeadSetter() {
                             {lead.phone}
                           </div>
                         )}
-                        {lead.callback_date && stage.id === 'Callback' && (
+                        {lead.callback_date && (
                           <div style={{
                             marginTop: '4px',
                             fontSize: '10px',
@@ -1531,7 +1532,7 @@ export default function LeadSetter() {
                       }}
                     >
                       <XCircle size={14} />
-                      Not Qualified
+                      Lost
                     </button>
                   </div>
 

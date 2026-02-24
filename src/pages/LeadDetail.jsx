@@ -320,11 +320,12 @@ export default function LeadDetail() {
     const colors = {
       'New': '#3b82f6',
       'Contacted': '#8b5cf6',
-      'Callback': '#f59e0b',
       'Appointment Set': '#10b981',
       'Qualified': '#059669',
       'Quote Sent': '#6366f1',
-      'Not Qualified': '#6b7280'
+      'Negotiation': '#f59e0b',
+      'Won': '#10b981',
+      'Lost': '#64748b'
     }
     return colors[status] || theme.accent
   }

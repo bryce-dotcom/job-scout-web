@@ -100,8 +100,8 @@ export const TABLES = {
 
 // Status enums for consistent UI
 export const STATUS = {
-  lead: ['New', 'Qualified', 'Appointment Scheduled', 'Waiting', 'Not Qualified', 'Converted'],
-  pipeline: ['New Lead', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost'],
+  lead: ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost'],
+  pipeline: ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost'],
   quote: ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired'],
   job: ['Scheduled', 'In Progress', 'Completed', 'On Hold', 'Cancelled'],
   invoice: ['Draft', 'Sent', 'Paid', 'Partial', 'Overdue', 'Void'],

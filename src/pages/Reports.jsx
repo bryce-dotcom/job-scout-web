@@ -87,7 +87,7 @@ export default function Reports() {
   const salesReportData = useMemo(() => {
     const filteredLeads = filterByDate(leads, 'created_at')
     const totalLeads = filteredLeads.length
-    const converted = filteredLeads.filter(l => l.status === 'Converted').length
+    const converted = filteredLeads.filter(l => l.status === 'Won' || l.status === 'Converted').length
     const conversionRate = totalLeads > 0 ? converted / totalLeads : 0
 
     const byStatus = {}

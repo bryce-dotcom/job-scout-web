@@ -4,7 +4,6 @@ import { Check, ChevronRight } from 'lucide-react'
 const stages = [
   { id: 'New', label: 'New', color: '#3b82f6' },
   { id: 'Contacted', label: 'Contacted', color: '#8b5cf6' },
-  { id: 'Callback', label: 'Callback', color: '#f59e0b' },
   { id: 'Appointment Set', label: 'Appt Set', color: '#22c55e' },
   { id: 'Qualified', label: 'Qualified', color: '#3b82f6' },
   { id: 'Quote Sent', label: 'Quote Sent', color: '#8b5cf6' },

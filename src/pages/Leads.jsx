@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 
-const LEAD_STATUSES = ['New', 'Assigned', 'Contacted', 'Callback', 'Appointment Set', 'Qualified', 'Not Qualified', 'Converted']
+const LEAD_STATUSES = ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost']
 
 const emptyLead = {
   customer_name: '',
@@ -108,17 +108,18 @@ export default function Leads() {
   // Status colors for badges
   const statusColors = {
     'New': { bg: '#e0e7ff', text: '#4338ca' },
-    'Assigned': { bg: '#f3e8ff', text: '#7c3aed' },
     'Contacted': { bg: '#fef3c7', text: '#d97706' },
-    'Callback': { bg: '#fce7f3', text: '#db2777' },
     'Appointment Set': { bg: '#d1fae5', text: '#059669' },
     'Qualified': { bg: '#dbeafe', text: '#2563eb' },
     'Quote Sent': { bg: '#e0e7ff', text: '#4f46e5' },
     'Negotiation': { bg: '#ffedd5', text: '#ea580c' },
     'Won': { bg: '#d1fae5', text: '#059669' },
     'Lost': { bg: '#f3f4f6', text: '#6b7280' },
-    'Not Qualified': { bg: '#fee2e2', text: '#dc2626' },
-    'Converted': { bg: '#f3e8ff', text: '#9333ea' }
+    // Legacy statuses (still in DB, rendered as their mapped status)
+    'Assigned': { bg: '#e0e7ff', text: '#4338ca' },
+    'Callback': { bg: '#fef3c7', text: '#d97706' },
+    'Not Qualified': { bg: '#f3f4f6', text: '#6b7280' },
+    'Converted': { bg: '#d1fae5', text: '#059669' }
   }
 
   const getStatusStyle = (status) => {
@@ -227,7 +228,6 @@ export default function Leads() {
 
     await updateLead(selectedLead.id, {
       setter_owner_id: parseInt(assignSetterId),
-      status: 'Assigned',
       updated_at: new Date().toISOString()
     })
 
@@ -303,7 +303,8 @@ export default function Leads() {
     })
 
     await updateLead(lead.id, {
-      status: 'Converted',
+      status: 'Won',
+      converted_at: new Date().toISOString(),
       customer_id: custTempId,
       updated_at: new Date().toISOString()
     })
@@ -463,10 +464,6 @@ export default function Leads() {
       setter_owner_id: newSetterId ? parseInt(newSetterId) : null,
       updated_at: new Date().toISOString()
     }
-    // If assigning a setter and status is New, change to Assigned
-    if (newSetterId && lead.status === 'New') {
-      updates.status = 'Assigned'
-    }
     await updateLead(lead.id, updates)
   }
 
@@ -495,6 +492,9 @@ export default function Leads() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Leads</h1>
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => navigate('/pipeline')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }} title="Switch to board view">
+            {!isMobile ? 'Board View' : '▦'}
+          </button>
           <button onClick={() => setShowImportModal(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} />
             {!isMobile && 'Import CSV'}

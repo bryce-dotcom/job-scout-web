@@ -119,7 +119,7 @@ export default function Dashboard() {
   const todayStr = today.toISOString().split('T')[0]
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
 
-  const activeLeads = leads.filter(l => !['Converted', 'Not Qualified'].includes(l.status)).length
+  const activeLeads = leads.filter(l => !['Won', 'Lost', 'Converted', 'Not Qualified'].includes(l.status)).length
   const openJobs = jobs.filter(j => ['Scheduled', 'In Progress'].includes(j.status)).length
   const pendingInvoices = invoices.filter(i => i.payment_status === 'Pending').length
 

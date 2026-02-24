@@ -460,7 +460,7 @@ export default function Quotes() {
                     style={inputStyle}
                   >
                     <option value="">-- Select Lead --</option>
-                    {leads.filter(l => l.status !== 'Not Qualified').map(lead => (
+                    {leads.filter(l => l.status !== 'Lost' && l.status !== 'Not Qualified').map(lead => (
                       <option key={lead.id} value={lead.id}>{lead.customer_name}</option>
                     ))}
                   </select>

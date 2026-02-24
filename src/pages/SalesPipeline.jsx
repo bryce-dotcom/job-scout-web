@@ -22,8 +22,21 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
+// Legacy status mapping (old DB values → new unified stages)
+const STATUS_MAP = {
+  'Assigned': 'New',
+  'Callback': 'Contacted',
+  'Converted': 'Won',
+  'Not Qualified': 'Lost'
+}
+
+// All legacy statuses we need to fetch from DB
+const LEGACY_STATUSES = ['Assigned', 'Callback', 'Converted', 'Not Qualified']
+
 // Default pipeline stages based on lead status
 const defaultStages = [
+  { id: 'New', name: 'New', color: '#3b82f6' },
+  { id: 'Contacted', name: 'Contacted', color: '#8b5cf6' },
   { id: 'Appointment Set', name: 'Scheduled', color: '#22c55e' },
   { id: 'Qualified', name: 'Qualified', color: '#3b82f6' },
   { id: 'Quote Sent', name: 'Quote Sent', color: '#8b5cf6' },
@@ -112,7 +125,12 @@ export default function SalesPipeline() {
       try {
         const parsed = JSON.parse(savedStages)
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setStages(parsed)
+          // Migration: if saved stages start with old default "Appointment Set", clear them
+          if (parsed[0]?.id === 'Appointment Set') {
+            localStorage.removeItem(`pipeline_stages_${companyId}`)
+          } else {
+            setStages(parsed)
+          }
         }
       } catch (e) {
         console.error('Error loading saved stages:', e)
@@ -138,6 +156,8 @@ export default function SalesPipeline() {
     setLoading(true)
 
     const stageIds = stages.map(s => s.id)
+    // Include legacy statuses in the query so old data still shows up
+    const allStatuses = [...new Set([...stageIds, ...LEGACY_STATUSES])]
 
     const { data, error } = await supabase
       .from('leads')
@@ -147,7 +167,7 @@ export default function SalesPipeline() {
         setter_owner:employees!leads_setter_owner_id_fkey(id, name)
       `)
       .eq('company_id', companyId)
-      .in('status', stageIds)
+      .in('status', allStatuses)
       .order('updated_at', { ascending: false })
 
     if (error) {
@@ -156,7 +176,13 @@ export default function SalesPipeline() {
       console.log('[Pipeline] Leads fetched:', data?.length || 0)
     }
 
-    setPipelineLeads(data || [])
+    // Normalize legacy statuses for display (DB values unchanged)
+    const normalized = (data || []).map(lead => ({
+      ...lead,
+      status: STATUS_MAP[lead.status] || lead.status
+    }))
+
+    setPipelineLeads(normalized)
     setLoading(false)
   }
 
@@ -543,6 +569,26 @@ export default function SalesPipeline() {
               <Settings size={18} />
             </button>
           )}
+
+          <button
+            onClick={() => navigate('/leads')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: isMobile ? '10px' : '10px 16px',
+              backgroundColor: 'transparent',
+              color: theme.textSecondary,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              fontSize: '13px'
+            }}
+            title="Switch to list view"
+          >
+            {!isMobile ? 'List View' : '☰'}
+          </button>
 
           <button
             onClick={() => navigate('/leads')}
