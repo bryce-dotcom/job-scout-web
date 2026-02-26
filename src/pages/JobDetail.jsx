@@ -139,7 +139,7 @@ export default function JobDetail() {
 
     const { data: jobData } = await supabase
       .from('jobs')
-      .select('*, customer:customers(id, name, email, phone, address, business_name), salesperson:employees(id, name), quote:quotes(id, quote_id), pm:employees!jobs_pm_id_fkey(id, name)')
+      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id), pm:employees!jobs_pm_id_fkey(id, name)')
       .eq('id', id)
       .single()
 
