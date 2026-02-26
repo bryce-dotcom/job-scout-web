@@ -376,12 +376,9 @@ export default function LeadDetail() {
         }
       }
 
-      // 4. Update lead status
-      await updateLead(lead.id, { status: 'Won', updated_at: new Date().toISOString() })
-
+      // 4. Navigate to the new job
       setConvertingToJob(false)
-      alert(`Job ${jobNumber} created successfully!`)
-      await fetchLeadData()
+      navigate(`/jobs/${newJob.id}`)
     } catch (err) {
       console.error('Convert to job error:', err)
       alert('Failed to convert: ' + (err.message || 'Unknown error'))
