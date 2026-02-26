@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { offlineDb } from '../lib/offlineDb'
 import {
   Plus, X, DollarSign, User, Calendar, Phone, Mail, Building2,
   Trophy, XCircle, ChevronRight, RefreshCw, MapPin, Settings, Trash2,
@@ -86,6 +87,7 @@ export default function SalesPipeline() {
   const [stages, setStages] = useState(defaultStages)
   const [visibleStats, setVisibleStats] = useState(defaultVisibleStats)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   // Modals
   const [showDetailPanel, setShowDetailPanel] = useState(false)
@@ -116,8 +118,8 @@ export default function SalesPipeline() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [selectedMobileStage, setSelectedMobileStage] = useState(null)
 
-  // Owner filter
-  const [ownerFilter, setOwnerFilter] = useState('all')
+  // Owner filter — default to logged-in user
+  const [ownerFilter, setOwnerFilter] = useState(() => user?.id ? String(user.id) : 'all')
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -176,69 +178,88 @@ export default function SalesPipeline() {
     }
   }, [companyId])
 
-  // Fetch pipeline leads
-  const fetchPipelineLeads = async () => {
+  // Slim select — only the columns pipeline cards actually use
+  const LEAD_COLUMNS = `id, customer_name, business_name, phone, email, address, status, quote_amount, appointment_time, lead_source, lead_owner_id, salesperson_id, converted_customer_id, quote_id, updated_at, lead_owner:employees!leads_lead_owner_id_fkey(id, name)`
+
+  // Normalize legacy statuses
+  const normalizeLead = (lead) => ({
+    ...lead,
+    status: STATUS_MAP[lead.status] || lead.status
+  })
+
+  // Attach jobs data to leads
+  const attachJobs = (normalized, jobsData) => {
+    if (!jobsData?.length) return
+    const jobsByLeadId = {}
+    jobsData.forEach(j => {
+      if (!jobsByLeadId[j.lead_id]) jobsByLeadId[j.lead_id] = []
+      jobsByLeadId[j.lead_id].push(j)
+    })
+    normalized.forEach(lead => {
+      lead.jobs = jobsByLeadId[lead.id] || []
+    })
+  }
+
+  // Fetch pipeline leads — cache-first, then refresh from network
+  const fetchPipelineLeads = async (background = false) => {
     if (!companyId) return
-    setLoading(true)
+
+    if (!background) {
+      // Show cached data instantly on first load
+      if (pipelineLeads.length === 0) {
+        try {
+          const cached = await offlineDb.getAll('salesPipeline')
+          if (cached.length > 0) {
+            setPipelineLeads(cached)
+            setLoading(false)
+          }
+        } catch (e) { /* cache miss is fine */ }
+      }
+      setRefreshing(true)
+    }
 
     const stageIds = stages.map(s => s.id)
-    // Include legacy statuses in the query so old data still shows up
     const allStatuses = [...new Set([...stageIds, ...LEGACY_STATUSES])]
 
-    // Fetch leads first (core query that must succeed)
+    // Fetch leads
     const { data, error } = await supabase
       .from('leads')
-      .select(`
-        *,
-        lead_owner:employees!leads_lead_owner_id_fkey(id, name),
-        setter_owner:employees!leads_setter_owner_id_fkey(id, name)
-      `)
+      .select(LEAD_COLUMNS)
       .eq('company_id', companyId)
       .in('status', allStatuses)
       .order('updated_at', { ascending: false })
 
     if (error) {
       console.error('[Pipeline] Error fetching leads:', error)
-    } else {
-      console.log('[Pipeline] Leads fetched:', data?.length || 0)
+      setLoading(false)
+      setRefreshing(false)
+      return
     }
 
-    // Normalize legacy statuses for display (DB values unchanged)
-    const normalized = (data || []).map(lead => ({
-      ...lead,
-      status: STATUS_MAP[lead.status] || lead.status
-    }))
+    const normalized = (data || []).map(normalizeLead)
 
-    // Fetch job data separately for delivery-stage leads (won't break pipeline if this fails)
-    try {
-      const deliveryLeadIds = normalized.filter(l => {
-        const s = stages.find(st => st.id === l.status)
-        return s?.isDelivery || s?.isClosed || s?.isWon
-      }).map(l => l.id)
+    // Fetch job data in parallel for delivery/won leads
+    const deliveryLeadIds = normalized.filter(l => {
+      const s = stages.find(st => st.id === l.status)
+      return s?.isDelivery || s?.isClosed || s?.isWon
+    }).map(l => l.id)
 
-      if (deliveryLeadIds.length > 0) {
+    if (deliveryLeadIds.length > 0) {
+      try {
         const { data: jobsData } = await supabase
           .from('jobs')
           .select('id, lead_id, job_id, status, contract_amount, assigned_team, invoice_status')
           .in('lead_id', deliveryLeadIds)
-
-        if (jobsData) {
-          const jobsByLeadId = {}
-          jobsData.forEach(j => {
-            if (!jobsByLeadId[j.lead_id]) jobsByLeadId[j.lead_id] = []
-            jobsByLeadId[j.lead_id].push(j)
-          })
-          normalized.forEach(lead => {
-            lead.jobs = jobsByLeadId[lead.id] || []
-          })
-        }
-      }
-    } catch (e) {
-      console.log('[Pipeline] Job data fetch failed (non-critical):', e)
+        attachJobs(normalized, jobsData)
+      } catch (e) { /* non-critical */ }
     }
 
     setPipelineLeads(normalized)
     setLoading(false)
+    setRefreshing(false)
+
+    // Cache for instant load next time
+    try { await offlineDb.putAll('salesPipeline', normalized) } catch (e) { /* ok */ }
   }
 
   useEffect(() => {
@@ -496,7 +517,7 @@ export default function SalesPipeline() {
     backgroundColor: theme.bgCard
   }
 
-  if (loading) {
+  if (loading && pipelineLeads.length === 0) {
     return (
       <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
         Loading pipeline...
@@ -504,35 +525,34 @@ export default function SalesPipeline() {
     )
   }
 
-  // Calculate all stats
-  const activeLeads = pipelineLeads.filter(l => !stages.find(s => s.id === l.status)?.isWon && !stages.find(s => s.id === l.status)?.isLost && !stages.find(s => s.id === l.status)?.isDelivery && !stages.find(s => s.id === l.status)?.isClosed)
-  const wonLeadsList = getLeadsForStage('Won')
-  const lostLeadsList = getLeadsForStage('Lost')
-  const quoteSentLeads = getLeadsForStage('Quote Sent')
-  const jobScheduledLeads = getLeadsForStage('Job Scheduled')
-  const inProgressLeads = getLeadsForStage('In Progress')
-  const completedLeads = getLeadsForStage('Job Complete')
-  const invoicedLeads = getLeadsForStage('Invoiced')
-  const deliveryLeads = pipelineLeads.filter(l => stages.find(s => s.id === l.status)?.isDelivery)
-  const today = new Date().toDateString()
-  const leadsWithAppointments = pipelineLeads.filter(l => l.appointment_time)
-  const todayAppointments = leadsWithAppointments.filter(l => new Date(l.appointment_time).toDateString() === today)
+  // Calculate all stats (memoized to avoid recalculating on every render)
+  const statsData = useMemo(() => {
+    const stageMap = new Map(stages.map(s => [s.id, s]))
+    const activeLeads = pipelineLeads.filter(l => { const s = stageMap.get(l.status); return s && !s.isWon && !s.isLost && !s.isDelivery && !s.isClosed })
+    const wonLeadsList = pipelineLeads.filter(l => l.status === 'Won')
+    const lostLeadsList = pipelineLeads.filter(l => l.status === 'Lost')
+    const deliveryLeads = pipelineLeads.filter(l => stageMap.get(l.status)?.isDelivery)
+    const today = new Date().toDateString()
+    const leadsWithAppointments = pipelineLeads.filter(l => l.appointment_time)
+    const todayAppointments = leadsWithAppointments.filter(l => new Date(l.appointment_time).toDateString() === today)
+    const sumAmount = (arr) => arr.reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)
 
-  const statsData = {
-    active: { value: activeLeads.length, label: 'Active', color: null },
-    won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
-    lost: { value: lostLeadsList.length, label: 'Lost', color: '#64748b' },
-    totalValue: { value: formatCurrency(pipelineLeads.reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)), label: 'Value', color: null, isFormatted: true },
-    wonValue: { value: formatCurrency(wonLeadsList.reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)), label: 'Won Value', color: '#22c55e', isFormatted: true },
-    appointments: { value: leadsWithAppointments.length, label: 'Appts', color: '#3b82f6' },
-    todayAppointments: { value: todayAppointments.length, label: 'Today', color: '#16a34a' },
-    quoteSent: { value: quoteSentLeads.length, label: 'Quotes', color: '#8b5cf6' },
-    jobScheduled: { value: jobScheduledLeads.length, label: 'Scheduled', color: '#0ea5e9' },
-    inProgress: { value: inProgressLeads.length, label: 'In Progress', color: '#f97316' },
-    completed: { value: completedLeads.length, label: 'Complete', color: '#22c55e' },
-    invoiced: { value: invoicedLeads.length, label: 'Invoiced', color: '#8b5cf6' },
-    deliveryValue: { value: formatCurrency(deliveryLeads.reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)), label: 'Delivery $', color: '#0ea5e9', isFormatted: true }
-  }
+    return {
+      active: { value: activeLeads.length, label: 'Active', color: null },
+      won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
+      lost: { value: lostLeadsList.length, label: 'Lost', color: '#64748b' },
+      totalValue: { value: formatCurrency(sumAmount(pipelineLeads)), label: 'Value', color: null, isFormatted: true },
+      wonValue: { value: formatCurrency(sumAmount(wonLeadsList)), label: 'Won Value', color: '#22c55e', isFormatted: true },
+      appointments: { value: leadsWithAppointments.length, label: 'Appts', color: '#3b82f6' },
+      todayAppointments: { value: todayAppointments.length, label: 'Today', color: '#16a34a' },
+      quoteSent: { value: pipelineLeads.filter(l => l.status === 'Quote Sent').length, label: 'Quotes', color: '#8b5cf6' },
+      jobScheduled: { value: pipelineLeads.filter(l => l.status === 'Job Scheduled').length, label: 'Scheduled', color: '#0ea5e9' },
+      inProgress: { value: pipelineLeads.filter(l => l.status === 'In Progress').length, label: 'In Progress', color: '#f97316' },
+      completed: { value: pipelineLeads.filter(l => l.status === 'Job Complete').length, label: 'Complete', color: '#22c55e' },
+      invoiced: { value: pipelineLeads.filter(l => l.status === 'Invoiced').length, label: 'Invoiced', color: '#8b5cf6' },
+      deliveryValue: { value: formatCurrency(sumAmount(deliveryLeads)), label: 'Delivery $', color: '#0ea5e9', isFormatted: true }
+    }
+  }, [pipelineLeads, stages])
 
   // Identify delivery-phase boundaries for visual separator
   const firstDeliveryIndex = stages.findIndex(s => s.isDelivery)
@@ -606,23 +626,24 @@ export default function SalesPipeline() {
             <option value="all">All Owners</option>
             <option value="unassigned">Unassigned</option>
             {activeEmployees.map(emp => (
-              <option key={emp.id} value={emp.id}>{emp.name}</option>
+              <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
             ))}
           </select>
 
           <button
             onClick={fetchPipelineLeads}
+            disabled={refreshing}
             style={{
               padding: '10px',
               backgroundColor: 'transparent',
               border: `1px solid ${theme.border}`,
               borderRadius: '8px',
-              cursor: 'pointer',
+              cursor: refreshing ? 'wait' : 'pointer',
               color: theme.textSecondary
             }}
             title="Refresh"
           >
-            <RefreshCw size={18} />
+            <RefreshCw size={18} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
           </button>
 
           {isSuperAdmin && (
@@ -1921,6 +1942,7 @@ export default function SalesPipeline() {
           </div>
         </div>
       )}
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

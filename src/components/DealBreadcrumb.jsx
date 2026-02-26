@@ -22,15 +22,6 @@ const steps = [
   { key: 'invoice', label: 'Invoice', path: (id) => `/invoices/${id}` }
 ]
 
-/**
- * Shows the deal lifecycle breadcrumb: Lead → Quote → Customer → Job → Invoice
- * Each resolved entity is clickable. Current page is highlighted.
- *
- * Props:
- *   current: 'lead' | 'job' — which page we're on
- *   leadId, quoteId, customerId, jobId — known IDs from the parent page
- *   Remaining IDs are resolved automatically via a single lookup
- */
 export default function DealBreadcrumb({ current, leadId, quoteId, customerId, jobId }) {
   const navigate = useNavigate()
   const themeContext = useTheme()
@@ -45,10 +36,7 @@ export default function DealBreadcrumb({ current, leadId, quoteId, customerId, j
   })
 
   useEffect(() => {
-    resolveChain()
-  }, [leadId, quoteId, customerId, jobId])
-
-  const resolveChain = async () => {
+    // Build all needed lookups and run in parallel
     const r = {
       lead: leadId || null,
       quote: quoteId || null,
@@ -57,48 +45,62 @@ export default function DealBreadcrumb({ current, leadId, quoteId, customerId, j
       invoice: null
     }
 
-    // If we're on a lead page, find the linked job
+    const promises = []
+
+    // If on lead page, find linked job + lead details in one batch
     if (leadId && !jobId) {
-      const { data: jobData } = await supabase
-        .from('jobs')
-        .select('id')
-        .eq('lead_id', leadId)
-        .limit(1)
-        .single()
-      if (jobData) r.job = jobData.id
+      promises.push(
+        supabase.from('jobs').select('id').eq('lead_id', leadId).limit(1).single()
+          .then(({ data }) => { if (data) r.job = data.id })
+          .catch(() => {})
+      )
     }
 
-    // If we have a lead, get its customer and quote links
     if (leadId && (!customerId || !quoteId)) {
-      const { data: leadData } = await supabase
-        .from('leads')
-        .select('converted_customer_id, quote_id')
-        .eq('id', leadId)
-        .single()
-      if (leadData) {
-        if (!r.customer && leadData.converted_customer_id) r.customer = leadData.converted_customer_id
-        if (!r.quote && leadData.quote_id) r.quote = leadData.quote_id
+      promises.push(
+        supabase.from('leads').select('converted_customer_id, quote_id').eq('id', leadId).single()
+          .then(({ data }) => {
+            if (data) {
+              if (!r.customer && data.converted_customer_id) r.customer = data.converted_customer_id
+              if (!r.quote && data.quote_id) r.quote = data.quote_id
+            }
+          })
+          .catch(() => {})
+      )
+    }
+
+    // Find invoice for job
+    const jid = jobId || null
+    if (jid) {
+      promises.push(
+        supabase.from('invoices').select('id').eq('job_id', jid).limit(1).single()
+          .then(({ data }) => { if (data) r.invoice = data.id })
+          .catch(() => {})
+      )
+    }
+
+    if (promises.length === 0) {
+      setResolved(r)
+      return
+    }
+
+    Promise.all(promises).then(() => {
+      // If we discovered a job from the lead lookup, also check for invoice
+      if (r.job && !jid) {
+        supabase.from('invoices').select('id').eq('job_id', r.job).limit(1).single()
+          .then(({ data }) => { if (data) r.invoice = data.id })
+          .catch(() => {})
+          .finally(() => setResolved({ ...r }))
+      } else {
+        setResolved({ ...r })
       }
-    }
+    })
+  }, [leadId, quoteId, customerId, jobId])
 
-    // If we have a job, find invoice
-    const jobIdToCheck = r.job
-    if (jobIdToCheck) {
-      const { data: invData } = await supabase
-        .from('invoices')
-        .select('id')
-        .eq('job_id', jobIdToCheck)
-        .limit(1)
-        .single()
-      if (invData) r.invoice = invData.id
-    }
-
-    setResolved(r)
-  }
-
-  // Don't render if there's only the current entity and nothing else
   const hasLinks = Object.entries(resolved).some(([key, val]) => val && key !== current)
   if (!hasLinks) return null
+
+  const currentIdx = steps.findIndex(s => s.key === current)
 
   return (
     <div style={{
@@ -120,10 +122,6 @@ export default function DealBreadcrumb({ current, leadId, quoteId, customerId, j
         const entityId = resolved[step.key]
         const isCurrent = step.key === current
         const isResolved = !!entityId
-        const isPast = isResolved && !isCurrent
-
-        // Find the index of current step to determine if this step is "before" current
-        const currentIdx = steps.findIndex(s => s.key === current)
         const isBeforeCurrent = idx < currentIdx && isResolved
 
         return (
