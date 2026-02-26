@@ -1285,32 +1285,30 @@ export default function LenardUTRMP() {
                     </div>
                   </div>
 
-                  {/* Wattage fields */}
-                  <div style={{ display: 'grid', gridTemplateColumns: program === 'large' ? '1fr 1fr' : '1fr', gap: '8px', marginBottom: '12px' }}>
-                    {program === 'large' && (
-                      <div>
-                        <label style={S.label}>Existing Watts</label>
-                        <input type="number" min="0" inputMode="numeric" value={r.existW || ''} onChange={e => updateLine(r.id, 'existW', e.target.value === '' ? 0 : (parseInt(e.target.value) || 0))} style={S.input} />
-                      </div>
-                    )}
+                  {/* 2-column: Existing Watts / New Watts — matches AZ audit UI */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={S.label}>Existing Watts</label>
+                      <input type="number" min="0" inputMode="numeric" value={r.existW || ''} onChange={e => updateLine(r.id, 'existW', e.target.value === '' ? 0 : (parseInt(e.target.value) || 0))} style={S.input} />
+                    </div>
                     <div>
                       <label style={S.label}>New LED Watts</label>
                       <input type="number" min="0" inputMode="numeric" value={r.newW || ''} onChange={e => updateLine(r.id, 'newW', e.target.value === '' ? 0 : (parseInt(e.target.value) || 0))} style={S.input} />
                     </div>
                   </div>
 
-                  {/* Quick-select wattage buttons */}
+                  {/* Quick-select wattage buttons (tap to fill) — matches AZ audit UI */}
                   {r.lightingType && COMMON_WATTAGES[r.lightingType]?.length > 0 && (
                     <div style={{ marginBottom: '12px' }}>
-                      <label style={{ fontSize: '11px', color: T.textMuted, marginBottom: '6px', display: 'block' }}>Common {r.lightingType} wattages:</label>
+                      <label style={{ fontSize: '11px', color: T.textMuted, marginBottom: '6px', display: 'block' }}>Common {r.lightingType} wattages (tap to fill):</label>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
                         {COMMON_WATTAGES[r.lightingType].map(w => {
                           const ledW = LED_REPLACEMENT_MAP[r.lightingType]?.[w];
-                          const isSelected = (program === 'large' ? r.existW : r.newW) === (program === 'large' ? w : (ledW || w));
+                          const isSelected = r.existW === w;
                           return (
                             <button key={w} type="button" onClick={() => {
-                              if (program === 'large') { updateLine(r.id, 'existW', w); if (ledW) updateLine(r.id, 'newW', ledW); }
-                              else { if (ledW) updateLine(r.id, 'newW', ledW); else updateLine(r.id, 'newW', w); updateLine(r.id, 'existW', w); }
+                              updateLine(r.id, 'existW', w);
+                              if (ledW) updateLine(r.id, 'newW', ledW);
                             }} style={{ padding: '5px 10px', borderRadius: '6px', border: `1px solid ${isSelected ? T.accent : T.border}`, background: isSelected ? T.accentDim : T.bgInput, color: isSelected ? T.accent : T.textSec, fontSize: '12px', fontWeight: isSelected ? '600' : '400', cursor: 'pointer' }}>
                               {w}W{ledW ? ` \u2192 ${ledW}W` : ''}
                             </button>
