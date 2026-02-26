@@ -517,15 +517,7 @@ export default function SalesPipeline() {
     backgroundColor: theme.bgCard
   }
 
-  if (loading && pipelineLeads.length === 0) {
-    return (
-      <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
-        Loading pipeline...
-      </div>
-    )
-  }
-
-  // Calculate all stats (memoized to avoid recalculating on every render)
+  // Calculate all stats (memoized — must be before any early returns)
   const statsData = useMemo(() => {
     const stageMap = new Map(stages.map(s => [s.id, s]))
     const activeLeads = pipelineLeads.filter(l => { const s = stageMap.get(l.status); return s && !s.isWon && !s.isLost && !s.isDelivery && !s.isClosed })
@@ -553,6 +545,14 @@ export default function SalesPipeline() {
       deliveryValue: { value: formatCurrency(sumAmount(deliveryLeads)), label: 'Delivery $', color: '#0ea5e9', isFormatted: true }
     }
   }, [pipelineLeads, stages])
+
+  if (loading && pipelineLeads.length === 0) {
+    return (
+      <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
+        Loading pipeline...
+      </div>
+    )
+  }
 
   // Identify delivery-phase boundaries for visual separator
   const firstDeliveryIndex = stages.findIndex(s => s.isDelivery)
