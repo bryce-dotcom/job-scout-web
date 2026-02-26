@@ -519,6 +519,460 @@ export default function LenardUTRMP() {
     navigator.clipboard?.writeText(t); setShowSummary(false); showToast('Copied to clipboard', '\uD83D\uDCCB');
   };
 
+  // ---- PDF GENERATION ----
+  const downloadBlob = (blob, fileName) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const generatePDF = () => {
+    const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
+    const M = 16;
+    const LW = W - M * 2;
+    const R = W - M;
+    const orange = [249, 115, 22];
+    const dark = [30, 30, 34];
+    const green = [22, 163, 74];
+    const red = [220, 38, 38];
+    const gray = [120, 120, 120];
+    const ltGray = [230, 230, 230];
+    const white = [255, 255, 255];
+    const blue = [59, 130, 246];
+    let y = 0;
+    let pg = 1;
+
+    const $ = (v) => `$${Math.round(v).toLocaleString()}`;
+    const $c = (v) => `$${(+v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const $k = (v) => Math.abs(v) >= 1000 ? `$${(v / 1000).toFixed(1)}k` : $(v);
+    const checkPage = (need = 20) => { if (y > H - need) { addFooter(); doc.addPage(); pg++; y = 20; } };
+
+    const addFooter = () => {
+      doc.setDrawColor(...ltGray);
+      doc.setLineWidth(0.3);
+      doc.line(M, H - 14, R, H - 14);
+      doc.setFontSize(7);
+      doc.setTextColor(...gray);
+      doc.text('Energy Scout by HHH Building Services', M, H - 10);
+      doc.setTextColor(...orange);
+      doc.text('ENERGY SCOUT', M, H - 6.5);
+      doc.setTextColor(...gray);
+      doc.text('  |  Commercial Energy Solutions  |  Powered by Job Scout', M + 28, H - 6.5);
+      doc.text(`Page ${pg}`, R, H - 6.5, { align: 'right' });
+    };
+
+    const sectionTitle = (title) => {
+      checkPage(30);
+      y += 4;
+      doc.setFillColor(...orange);
+      doc.rect(M, y - 4.5, LW, 8, 'F');
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...white);
+      doc.text(title.toUpperCase(), M + 3, y);
+      y += 8;
+    };
+
+    const tableHeader = (cols) => {
+      checkPage(14);
+      doc.setFillColor(...dark);
+      doc.rect(M, y - 4, LW, 7, 'F');
+      doc.setFontSize(7.5);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...white);
+      cols.forEach(c => doc.text(c.label, c.x, y, c.align ? { align: c.align } : {}));
+      y += 5.5;
+      doc.setTextColor(...dark);
+      doc.setFont(undefined, 'normal');
+    };
+
+    const dataRow = (cols, stripe = false) => {
+      checkPage(8);
+      if (stripe) { doc.setFillColor(248, 248, 250); doc.rect(M, y - 3.5, LW, 5, 'F'); }
+      doc.setFontSize(7.5);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...dark);
+      cols.forEach(c => {
+        if (c.bold) doc.setFont(undefined, 'bold');
+        if (c.color) doc.setTextColor(...c.color);
+        doc.text(String(c.val), c.x, y, c.align ? { align: c.align } : {});
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(...dark);
+      });
+      y += 4.5;
+    };
+
+    const row = (label, value, opts = {}) => {
+      checkPage(7);
+      if (opts.topLine) { doc.setDrawColor(...(opts.lineColor || ltGray)); doc.setLineWidth(0.3); doc.line(M, y - 2, R, y - 2); y += 1; }
+      const fs = opts.big ? 11 : opts.med ? 10 : 9;
+      doc.setFontSize(fs);
+      doc.setFont(undefined, opts.bold ? 'bold' : 'normal');
+      doc.setTextColor(...(opts.labelColor || dark));
+      doc.text(label, M + (opts.indent || 0), y);
+      doc.setTextColor(...(opts.color || dark));
+      doc.text(value, R, y, { align: 'right' });
+      doc.setTextColor(...dark);
+      y += opts.big ? 7 : opts.med ? 6 : 5;
+    };
+
+    const f = financials;
+    const projCost = f.projectCost;
+    const netCost = f.netProjectCost;
+    const annSav = f.annualEnergySavings;
+    const payback = f.simplePayback;
+
+    // ===== HEADER =====
+    y = 16;
+    doc.setFillColor(...orange);
+    doc.rect(0, 0, W, 4, 'F');
+
+    const logoB64 = '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';
+    const logoW = 10;
+    const logoH = 14;
+    try { doc.addImage(logoB64, 'PNG', M, y - 10, logoW, logoH); } catch (_) { /* skip logo */ }
+
+    const logoOffset = logoW + 3;
+    doc.setFontSize(24);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...orange);
+    doc.text('ENERGY SCOUT', M + logoOffset, y);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...gray);
+    doc.text('by HHH Building Services', M + logoOffset + 62, y);
+
+    doc.setFontSize(9);
+    doc.setTextColor(...dark);
+    doc.text('COMMERCIAL LIGHTING RETROFIT', R, y - 4, { align: 'right' });
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text('Financial Audit Report', R, y + 1, { align: 'right' });
+    y += 5;
+    doc.setDrawColor(...orange);
+    doc.setLineWidth(1);
+    doc.line(M, y, R, y);
+    y += 6;
+
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...gray);
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const reportId = `ES-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+    doc.text(`Date: ${dateStr}   |   Report: ${reportId}`, M, y);
+    doc.text(`Program: ${programLabel}`, R, y, { align: 'right' });
+    y += 6;
+
+    // Customer + Operating Parameters
+    const boxW = (LW - 4) / 2;
+    doc.setFillColor(248, 248, 250);
+    doc.setDrawColor(...ltGray);
+    doc.roundedRect(M, y - 3, boxW, 24, 2, 2, 'FD');
+    doc.setFontSize(7);
+    doc.setTextColor(...orange);
+    doc.setFont(undefined, 'bold');
+    doc.text('CUSTOMER', M + 3, y);
+    doc.setFontSize(10);
+    doc.setTextColor(...dark);
+    doc.text(projectName || 'N/A', M + 3, y + 5);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...gray);
+    const fullAddr = [saveAddress, saveCity, saveState, saveZip].filter(Boolean).join(', ');
+    if (fullAddr) doc.text(fullAddr, M + 3, y + 10, { maxWidth: boxW - 6 });
+    const contact = [savePhone, saveEmail].filter(Boolean).join('  |  ');
+    if (contact) doc.text(contact, M + 3, y + 15, { maxWidth: boxW - 6 });
+
+    const pBoxX = M + boxW + 4;
+    doc.setFillColor(248, 248, 250);
+    doc.roundedRect(pBoxX, y - 3, boxW, 24, 2, 2, 'FD');
+    doc.setFontSize(7);
+    doc.setTextColor(...orange);
+    doc.setFont(undefined, 'bold');
+    doc.text('OPERATING PARAMETERS', pBoxX + 3, y);
+    doc.setFontSize(9);
+    doc.setTextColor(...dark);
+    doc.setFont(undefined, 'normal');
+    doc.text(`${operatingHours} hrs/day  x  ${daysPerYear} days/yr`, pBoxX + 3, y + 5);
+    doc.text(`${f.annualHours.toLocaleString()} annual operating hours`, pBoxX + 3, y + 10);
+    doc.text(`Electric rate: ${$c(energyRate)}/kWh`, pBoxX + 3, y + 15);
+    y += 26;
+
+    // ===== FIXTURE SCHEDULE =====
+    sectionTitle('Fixture Schedule');
+    const c0 = M + 1, c1 = M + 10, c2 = M + 58, c3 = M + 72, c4 = M + 86, c5 = M + 132, c6 = M + 149, c7 = R;
+    tableHeader([
+      { label: 'Qty', x: c0 }, { label: 'Area / Existing Fixture', x: c1 }, { label: 'Ht', x: c2 },
+      { label: 'Exist W', x: c3 }, { label: 'LED Replacement', x: c4 }, { label: 'New W', x: c5 },
+      { label: 'Saved', x: c6 }, { label: 'Rebate', x: c7, align: 'right' },
+    ]);
+    results.forEach((r, i) => {
+      dataRow([
+        { val: r.qty, x: c0 }, { val: (r.name || r.fixtureCategory || 'Fixture').substring(0, 26), x: c1 },
+        { val: r.height ? `${r.height}'` : '-', x: c2 }, { val: `${r.existW}W`, x: c3 },
+        { val: (r.productName || '-').substring(0, 24), x: c4 }, { val: `${r.newW}W`, x: c5 },
+        { val: `${r.calc.wattsReduced}W`, x: c6 }, { val: $(r.calc.totalIncentive), x: c7, align: 'right' },
+      ], i % 2 === 0);
+    });
+    y += 1;
+    doc.setDrawColor(...orange); doc.setLineWidth(0.5); doc.line(M, y - 2, R, y - 2);
+    dataRow([
+      { val: `${results.reduce((s, r) => s + r.qty, 0)} fixtures`, x: c0, bold: true }, { val: '', x: c1 }, { val: '', x: c2 },
+      { val: `${totals.existWatts.toLocaleString()}W`, x: c3, bold: true }, { val: '', x: c4 },
+      { val: `${totals.newWatts.toLocaleString()}W`, x: c5, bold: true },
+      { val: `${totals.wattsReduced.toLocaleString()}W`, x: c6, bold: true },
+      { val: $(totals.totalIncentive), x: c7, align: 'right', bold: true, color: orange },
+    ]);
+    y += 3;
+
+    // ===== ENERGY ANALYSIS =====
+    sectionTitle('Energy Analysis');
+    row('Current Annual Consumption', `${Math.round(f.existKwh).toLocaleString()} kWh`);
+    row('Proposed Annual Consumption', `${Math.round(f.proposedKwh).toLocaleString()} kWh`);
+    row('Annual Energy Reduction', `${Math.round(f.annualKwhSaved).toLocaleString()} kWh  (${reductionPct}%)`, { bold: true, color: green, topLine: true });
+    y += 2;
+    row('Current Annual Energy Cost', $c(f.existAnnualCost));
+    row('Proposed Annual Energy Cost', $c(f.proposedAnnualCost));
+    row('Annual Cost Savings', $c(annSav), { bold: true, med: true, color: green, topLine: true });
+    row('Monthly Cost Savings', $c(f.monthlyEnergySavings), { indent: 4, color: green });
+    if (f.co2Saved > 0) row('Annual CO2 Reduction', `${f.co2Saved.toFixed(1)} metric tons`, { color: green });
+    y += 2;
+
+    // ===== RMP INCENTIVE BREAKDOWN =====
+    sectionTitle('Rocky Mountain Power Incentive');
+    row('Fixture Incentive', $(totals.fixtureIncentive));
+    if (totals.controlsIncentive > 0) row('Controls Incentive', $(totals.controlsIncentive));
+    row('Raw Incentive Total', $(rawIncentive), { bold: true, topLine: true });
+    if (capApplied) {
+      row(`Project Cost Cap (${Math.round(capPct * 100)}%)`, $(capAmount), { color: orange });
+      row('CAP APPLIED', '', { color: orange, indent: 4 });
+    }
+    row('Total Estimated RMP Incentive', $(estimatedRebate), { bold: true, big: true, color: orange, topLine: true, lineColor: orange });
+    y += 2;
+
+    // ===== INVESTMENT ANALYSIS =====
+    sectionTitle('Investment Analysis');
+
+    if (projCost > 0) {
+      row('Gross Project Cost', $c(projCost));
+      row('Less: RMP Incentive', `(${$c(estimatedRebate)})`, { color: green });
+      row('Net Capital Investment', $c(netCost), { bold: true, med: true, topLine: true });
+      y += 2;
+      row('Annual Energy Savings', $c(annSav), { color: green });
+      row('Monthly Energy Savings', $c(f.monthlyEnergySavings), { indent: 4, color: green });
+      y += 3;
+
+      // Key Metrics box
+      checkPage(44);
+      doc.setDrawColor(...orange);
+      doc.setLineWidth(0.6);
+      doc.setFillColor(255, 251, 245);
+      doc.roundedRect(M, y - 3, LW, 40, 2, 2, 'FD');
+
+      const drawMetric = (x, yy, label, value, unit, clr) => {
+        doc.setFontSize(7); doc.setTextColor(...gray); doc.setFont(undefined, 'normal'); doc.text(label, x, yy);
+        doc.setFontSize(18); doc.setFont(undefined, 'bold'); doc.setTextColor(...(clr || dark)); doc.text(value, x, yy + 7.5);
+        if (unit) { doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.text(unit, x, yy + 12); }
+        doc.setFont(undefined, 'normal');
+      };
+      const mx1 = M + 5, mx2 = M + LW / 3 + 3, mx3 = M + (LW * 2) / 3 + 3;
+      const my1 = y, my2 = y + 20;
+      const paybackMo = Math.round(payback * 12);
+      const paybackLabel = payback < 1 ? `${paybackMo}` : payback.toFixed(1);
+      const paybackUnit = payback < 1 ? 'months' : 'years';
+
+      drawMetric(mx1, my1, 'SIMPLE PAYBACK', paybackLabel, paybackUnit, orange);
+      drawMetric(mx2, my1, 'ANNUAL ROI', `${Math.round(f.roi)}%`, 'return on investment', green);
+      drawMetric(mx3, my1, 'NPV (5% DISCOUNT)', $(f.npv), 'net present value', f.npv >= 0 ? green : red);
+      drawMetric(mx1, my2, 'IRR', `${(f.irr * 100).toFixed(1)}%`, 'internal rate of return', green);
+      drawMetric(mx2, my2, '5-YEAR NET SAVINGS', $(f.fiveYearSavings), null, f.fiveYearSavings >= 0 ? green : red);
+      drawMetric(mx3, my2, '10-YEAR NET SAVINGS', $(f.tenYearSavings), null, f.tenYearSavings >= 0 ? green : red);
+
+      y += 44;
+    } else {
+      row('Project Cost', 'Not specified', { color: gray, labelColor: gray });
+      row('Annual Energy Savings', $c(annSav), { bold: true, color: green });
+      doc.setFontSize(8); doc.setTextColor(...gray);
+      doc.text('Enter product prices for full investment analysis with payback, ROI, NPV, and IRR.', M, y); y += 6;
+    }
+
+    // ===== 10-YEAR CASH FLOW =====
+    if (projCost > 0 && annSav > 0) {
+      checkPage(85);
+      sectionTitle('10-Year Cash Flow Projection');
+
+      const t0 = M + 1, t1 = M + 16, t2 = M + 42, t3 = M + 68, t4 = M + 96, t5 = M + 128, t6 = R;
+      tableHeader([
+        { label: 'Year', x: t0 }, { label: 'Savings', x: t1 }, { label: 'Rebate', x: t2 },
+        { label: 'Investment', x: t3 }, { label: 'Net Cash Flow', x: t4 },
+        { label: 'Cumulative', x: t5 }, { label: 'Net Position', x: t6, align: 'right' },
+      ]);
+
+      f.cashFlow.forEach((cf, i) => {
+        const isPayback = cf.year > 0 && cf.year === Math.ceil(payback);
+        dataRow([
+          { val: cf.year === 0 ? 'Yr 0' : `Yr ${cf.year}`, x: t0, bold: isPayback },
+          { val: cf.savings > 0 ? $(cf.savings) : '-', x: t1 },
+          { val: cf.rebate > 0 ? $(cf.rebate) : '-', x: t2, color: cf.rebate > 0 ? green : dark },
+          { val: cf.investment < 0 ? `(${$(Math.abs(cf.investment))})` : '-', x: t3, color: cf.investment < 0 ? red : dark },
+          { val: cf.netCashFlow >= 0 ? $(cf.netCashFlow) : `(${$(Math.abs(cf.netCashFlow))})`, x: t4, color: cf.netCashFlow >= 0 ? green : red },
+          { val: cf.cumulative >= 0 ? $(cf.cumulative) : `(${$(Math.abs(cf.cumulative))})`, x: t5, color: cf.cumulative >= 0 ? green : red },
+          { val: cf.cumulative >= 0 ? $(cf.cumulative) : `(${$(Math.abs(cf.cumulative))})`, x: t6, align: 'right', bold: true, color: cf.cumulative >= 0 ? green : red },
+        ], i % 2 === 0);
+        if (isPayback) {
+          doc.setFontSize(6.5); doc.setTextColor(...orange);
+          doc.text('PAYBACK', t6 - 34, y - 4.5);
+          doc.setTextColor(...dark);
+        }
+      });
+      y += 3;
+
+      // ===== CASH FLOW BAR GRAPH =====
+      checkPage(75);
+      sectionTitle('Cumulative Cash Flow Analysis');
+
+      const graphX = M + 8;
+      const graphW = LW - 16;
+      const graphH = 55;
+      const graphY = y;
+      const baselineY = graphY + graphH;
+      const barW = graphW / 11 - 2;
+
+      const allCum = f.cashFlow.map(c => c.cumulative);
+      const maxVal = Math.max(...allCum, 0);
+      const minVal = Math.min(...allCum, 0);
+      const range = (maxVal - minVal) || 1;
+      const zeroY = graphY + (maxVal / range) * graphH;
+
+      doc.setFontSize(7);
+      doc.setTextColor(...gray);
+      doc.setFont(undefined, 'normal');
+      doc.text($k(maxVal), M, graphY + 2);
+      doc.text('$0', M, zeroY + 1);
+      if (minVal < 0) doc.text($k(minVal), M, baselineY);
+
+      doc.setDrawColor(...ltGray);
+      doc.setLineWidth(0.3);
+      doc.line(graphX, zeroY, graphX + graphW, zeroY);
+
+      doc.setDrawColor(245, 245, 245);
+      for (let g = 0.25; g <= 0.75; g += 0.25) {
+        const gy = graphY + g * graphH;
+        doc.line(graphX, gy, graphX + graphW, gy);
+      }
+
+      f.cashFlow.forEach((cf, i) => {
+        const bx = graphX + i * (graphW / 11) + 1;
+        const val = cf.cumulative;
+        const barHeight = Math.abs(val / range) * graphH;
+        const isPos = val >= 0;
+
+        if (isPos) {
+          doc.setFillColor(...green);
+          doc.rect(bx, zeroY - barHeight, barW, barHeight, 'F');
+        } else {
+          doc.setFillColor(...red);
+          doc.rect(bx, zeroY, barW, barHeight, 'F');
+        }
+
+        doc.setFontSize(6);
+        doc.setTextColor(...(isPos ? green : red));
+        doc.setFont(undefined, 'bold');
+        const labelY = isPos ? zeroY - barHeight - 2 : zeroY + barHeight + 3;
+        doc.text($k(val), bx + barW / 2, labelY, { align: 'center' });
+
+        doc.setFontSize(6.5);
+        doc.setTextColor(...dark);
+        doc.setFont(undefined, 'normal');
+        doc.text(cf.year === 0 ? 'Yr 0' : `Yr ${cf.year}`, bx + barW / 2, baselineY + 5, { align: 'center' });
+
+        if (cf.year > 0 && cf.year === Math.ceil(payback)) {
+          doc.setDrawColor(...orange);
+          doc.setLineWidth(0.8);
+          doc.line(bx + barW / 2, graphY, bx + barW / 2, baselineY);
+          doc.setFontSize(7);
+          doc.setTextColor(...orange);
+          doc.setFont(undefined, 'bold');
+          doc.text('PAYBACK', bx + barW / 2, graphY - 2, { align: 'center' });
+        }
+      });
+
+      y = baselineY + 10;
+
+      // Summary narrative
+      checkPage(18);
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...dark);
+      const paybackMonths = Math.round(payback * 12);
+      const paybackYears = Math.floor(paybackMonths / 12);
+      const paybackRem = paybackMonths % 12;
+      const paybackStr = paybackYears > 0
+        ? `${paybackYears} year${paybackYears > 1 ? 's' : ''}${paybackRem > 0 ? ` ${paybackRem} month${paybackRem > 1 ? 's' : ''}` : ''}`
+        : `${paybackMonths} months`;
+      doc.text(`This investment reaches break-even in ${paybackStr}. After payback, the project generates`, M, y);
+      y += 4;
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...green);
+      doc.text(`${$c(annSav)} per year in pure energy savings.`, M, y);
+      y += 5;
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...dark);
+      const returnMultiple = netCost > 0 ? ((annSav * 10) / netCost).toFixed(1) : '0';
+      doc.text(`Over 10 years, every $1.00 invested returns $${returnMultiple} in energy savings (${$k(f.tenYearSavings)} net).`, M, y);
+      y += 5;
+      doc.text(`Net Present Value at 5% discount rate: ${$(f.npv)}  |  Internal Rate of Return: ${(f.irr * 100).toFixed(1)}%`, M, y);
+      y += 8;
+    }
+
+    // ===== ASSUMPTIONS & DISCLAIMERS =====
+    checkPage(30);
+    sectionTitle('Assumptions & Disclaimers');
+    doc.setFontSize(7);
+    doc.setTextColor(...gray);
+    doc.setFont(undefined, 'normal');
+    const disclaimers = [
+      `OPERATING ASSUMPTIONS: ${operatingHours} hours/day, ${daysPerYear} days/year (${f.annualHours.toLocaleString()} hrs/yr). Electric rate: ${$c(energyRate)}/kWh. Actual savings vary with usage and rate changes.`,
+      `RMP INCENTIVES: Estimated rebate amounts subject to Rocky Mountain Power program review, approval, and available funding. Project cost cap: ${Math.round(capPct * 100)}% of total project cost. Pre-approval recommended before project start.`,
+      'LED LIFETIME: Products typically rated 50,000-100,000 hours (10-20+ years at stated hours). Analysis excludes lamp replacement cost savings from LED longevity.',
+      `NPV/IRR: Net Present Value calculated at 5% discount rate over 10 years. IRR calculated over 10-year project horizon. Both assume constant annual savings of ${$c(annSav)}.`,
+      'This document is a preliminary estimate for planning purposes only and does not constitute a binding offer, contract, or guarantee of savings or rebate amounts.',
+    ];
+    disclaimers.forEach(d => { doc.text(d, M, y, { maxWidth: LW }); y += 7; });
+
+    // Prepared by
+    y += 2;
+    doc.setDrawColor(...orange);
+    doc.setLineWidth(0.4);
+    doc.line(M, y, R, y);
+    y += 5;
+    doc.setFontSize(9);
+    doc.setTextColor(...dark);
+    doc.setFont(undefined, 'bold');
+    doc.text('Prepared by Energy Scout', M, y);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...gray);
+    doc.text('A division of HHH Building Services  |  Commercial Energy Solutions', M, y + 4);
+    const preparedLine = leadOwnerName ? `Auditor: ${leadOwnerName}  |  ` : '';
+    doc.text(`${preparedLine}Report generated ${dateStr}  |  Ref: ${reportId}`, M, y + 8);
+
+    addFooter();
+
+    // ===== OUTPUT =====
+    const blob = doc.output('blob');
+    const fileName = `Energy_Scout_Audit_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      navigator.share({ files: [file], title: `Energy Scout Audit - ${projectName}` }).catch(() => downloadBlob(blob, fileName));
+    } else {
+      downloadBlob(blob, fileName);
+    }
+    showToast('PDF generated', '\uD83D\uDCC4');
+  };
+
   // Audible click + haptic
   const playClick = useCallback(() => {
     try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.connect(gain); gain.connect(ctx.destination); osc.frequency.value = 1200; gain.gain.value = 0.08; osc.start(); osc.stop(ctx.currentTime + 0.04); } catch (_) {}
@@ -1084,6 +1538,7 @@ export default function LenardUTRMP() {
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '14px' }}>
+                <button onClick={generatePDF} style={{ ...S.btn, width: '100%', fontSize: '14px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>{'\uD83D\uDCC4'} Share Financial Audit PDF</button>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button onClick={() => { setShowSummary(false); setShowSaveModal(true); }} style={{ ...S.btn, flex: 1, fontSize: '12px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
                   <button onClick={copySummary} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>{'\uD83D\uDCCB'} Copy</button>
