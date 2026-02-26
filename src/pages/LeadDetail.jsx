@@ -6,7 +6,8 @@ import { useTheme } from '../components/Layout'
 import {
   ArrowLeft, Calendar, FileText, Clipboard, Plus, Send, Phone, Mail,
   MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
-  CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package, Grid3X3
+  CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package, Grid3X3,
+  Paperclip, Download, Briefcase
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import FlowIndicator from '../components/FlowIndicator'
@@ -51,6 +52,8 @@ export default function LeadDetail() {
   const [quoteNotes, setQuoteNotes] = useState('')
   const [savingQuote, setSavingQuote] = useState(false)
   const [showProductPicker, setShowProductPicker] = useState(false)
+  const [attachments, setAttachments] = useState([])
+  const [convertingToJob, setConvertingToJob] = useState(false)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -126,6 +129,14 @@ export default function LeadDetail() {
       .eq('lead_id', id)
       .order('created_at', { ascending: false })
     setQuotes(quoteData || [])
+
+    // Fetch file attachments linked to this lead
+    const { data: attachData } = await supabase
+      .from('file_attachments')
+      .select('*')
+      .eq('lead_id', id)
+      .order('created_at', { ascending: false })
+    setAttachments(attachData || [])
 
     setLoading(false)
   }
@@ -282,6 +293,102 @@ export default function LeadDetail() {
     navigate(`/audits/new?lead_id=${lead.id}`)
   }
 
+  // Download attached file via signed URL
+  const handleDownloadFile = async (att) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from(att.storage_bucket)
+        .createSignedUrl(att.file_path, 3600)
+      if (error || !data?.signedUrl) {
+        alert('Could not generate download link')
+        return
+      }
+      window.open(data.signedUrl, '_blank')
+    } catch (err) {
+      alert('Download failed: ' + (err.message || 'Unknown error'))
+    }
+  }
+
+  // Convert Won lead to Job & Customer
+  const handleConvertToJob = async () => {
+    if (!confirm('Convert this lead to a Job & Customer?')) return
+    setConvertingToJob(true)
+    try {
+      // 1. Find or create customer
+      let customerId = null
+      const { data: existingCustomers } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('company_id', companyId)
+        .ilike('name', lead.customer_name.trim())
+        .limit(1)
+
+      if (existingCustomers?.length > 0) {
+        customerId = existingCustomers[0].id
+      } else {
+        const { data: newCustomer, error: custError } = await supabase
+          .from('customers')
+          .insert({
+            company_id: companyId,
+            name: lead.customer_name.trim(),
+            phone: lead.phone || null,
+            email: lead.email || null,
+            address: lead.address || null,
+          })
+          .select()
+          .single()
+        if (custError) throw custError
+        customerId = newCustomer.id
+      }
+
+      // 2. Create job from lead data
+      const audit = audits[0]
+      const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`
+
+      const { data: newJob, error: jobError } = await supabase
+        .from('jobs')
+        .insert({
+          company_id: companyId,
+          job_id: jobNumber,
+          job_title: `${lead.customer_name} - ${lead.service_type || 'Lighting Retrofit'}`,
+          customer_id: customerId,
+          salesperson_id: lead.lead_owner?.id || null,
+          job_address: lead.address || null,
+          status: 'Scheduled',
+          details: lead.notes || null,
+          contract_amount: audit?.est_project_cost || 0,
+          utility_incentive: audit?.estimated_rebate || 0,
+          start_date: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (jobError) throw jobError
+
+      // 3. Link file attachments to the new job
+      if (attachments.length > 0) {
+        for (const att of attachments) {
+          await supabase
+            .from('file_attachments')
+            .update({ job_id: newJob.id })
+            .eq('id', att.id)
+        }
+      }
+
+      // 4. Update lead status
+      await updateLead(lead.id, { status: 'Won', updated_at: new Date().toISOString() })
+
+      setConvertingToJob(false)
+      alert(`Job ${jobNumber} created successfully!`)
+      await fetchLeadData()
+    } catch (err) {
+      console.error('Convert to job error:', err)
+      alert('Failed to convert: ' + (err.message || 'Unknown error'))
+      setConvertingToJob(false)
+    }
+  }
+
   // Styles
   const inputStyle = {
     width: '100%',
@@ -313,7 +420,8 @@ export default function LeadDetail() {
     { id: 'info', label: 'Info', icon: FileText, hint: 'Basic contact information' },
     { id: 'appointment', label: 'Appointment', icon: Calendar, hint: 'Scheduled meetings with this lead' },
     { id: 'audits', label: `Audits (${audits.length})`, icon: Clipboard, hint: 'Site surveys - Lenard can help with lighting' },
-    { id: 'quotes', label: `Quotes (${quotes.length})`, icon: FileText, hint: 'Price proposals from audits' }
+    { id: 'quotes', label: `Quotes (${quotes.length})`, icon: FileText, hint: 'Price proposals from audits' },
+    { id: 'documents', label: `Docs (${attachments.length})`, icon: Paperclip, hint: 'Attached files and documents' }
   ]
 
   const getStatusColor = (status) => {
@@ -432,6 +540,31 @@ export default function LeadDetail() {
               <Mail size={16} />
               Email
             </a>
+          )}
+          {lead.status === 'Won' && (
+            <button
+              onClick={handleConvertToJob}
+              disabled={convertingToJob}
+              style={{
+                padding: isMobile ? '12px 16px' : '10px 14px',
+                minHeight: isMobile ? '44px' : 'auto',
+                backgroundColor: convertingToJob ? '#9ca3af' : '#7c3aed',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: convertingToJob ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                fontSize: '14px',
+                fontWeight: '600',
+                flex: isMobile ? '1 1 100%' : 'none'
+              }}
+            >
+              <Briefcase size={16} />
+              {convertingToJob ? 'Converting...' : 'Convert to Job & Customer'}
+            </button>
           )}
         </div>
       </div>
@@ -954,6 +1087,105 @@ export default function LeadDetail() {
                           </Tooltip>
                         )}
                       </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* DOCUMENTS TAB */}
+        {activeTab === 'documents' && (
+          <div>
+            <div style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
+              justifyContent: 'space-between',
+              alignItems: isMobile ? 'stretch' : 'center',
+              gap: isMobile ? '12px' : '16px',
+              marginBottom: '20px'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Documents & Attachments</h3>
+                <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
+                  Files attached from Lenard audits and contract signing
+                </p>
+              </div>
+            </div>
+
+            {attachments.length === 0 ? (
+              <EmptyState
+                icon={Paperclip}
+                iconColor="#6366f1"
+                title="No documents yet"
+                message="Documents will appear here when files are attached from Lenard's audit and contract flow."
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {attachments.map(att => {
+                  const ext = (att.file_name || '').split('.').pop()?.toLowerCase()
+                  const iconColor = ext === 'pdf' ? '#dc2626' : ext === 'xlsx' ? '#16a34a' : '#6366f1'
+                  const sizeKB = att.file_size ? Math.round(att.file_size / 1024) : null
+
+                  return (
+                    <div key={att.id} style={{
+                      padding: isMobile ? '14px 16px' : '14px 20px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '10px',
+                      border: `1px solid ${theme.border}`,
+                      display: 'flex',
+                      alignItems: isMobile ? 'flex-start' : 'center',
+                      gap: '14px',
+                      flexDirection: isMobile ? 'column' : 'row',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          width: '40px', height: '40px',
+                          backgroundColor: iconColor + '18',
+                          borderRadius: '8px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0
+                        }}>
+                          <FileText size={20} color={iconColor} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{
+                            fontWeight: '600', color: theme.text, fontSize: '14px',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                          }}>
+                            {att.file_name}
+                          </div>
+                          <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                            {ext?.toUpperCase()}{sizeKB ? ` \u2022 ${sizeKB}KB` : ''}
+                            {' \u2022 '}{new Date(att.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDownloadFile(att)}
+                        style={{
+                          padding: isMobile ? '10px 16px' : '8px 14px',
+                          minHeight: isMobile ? '44px' : 'auto',
+                          backgroundColor: theme.accentBg,
+                          color: theme.accent,
+                          border: `1px solid ${theme.accent}`,
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          whiteSpace: 'nowrap',
+                          width: isMobile ? '100%' : 'auto',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <Download size={14} />
+                        Download
+                      </button>
                     </div>
                   )
                 })}

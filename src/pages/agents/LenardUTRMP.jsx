@@ -1388,20 +1388,23 @@ export default function LenardUTRMP() {
       }
 
       // Upload each file
-      for (const f of files) {
+      for (let fi = 0; fi < files.length; fi++) {
+        const f = files[fi];
         const formData = new FormData();
         formData.append('file', f.blob, f.name);
         formData.append('leadId', savedLeadId);
         formData.append('fileName', f.name);
         formData.append('fileType', f.type);
         formData.append('bucket', 'project-documents');
+        // On last file, also update lead status to Won
+        if (fi === files.length - 1) formData.append('updateStatus', 'Won');
         await fetch(`${SUPABASE_URL}/functions/v1/lenard-attach-file`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${SUPABASE_ANON}` },
           body: formData,
         });
       }
-      showToast(`${files.length} files attached to lead`, '\u2713');
+      showToast(`${files.length} files attached \u2022 Lead marked Won`, '\u2713');
     } catch (err) {
       console.error('Attach error:', err);
       showToast('Could not attach files', '\u26A0\uFE0F');

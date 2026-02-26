@@ -75,6 +75,20 @@ serve(async (req) => {
 
     const [record] = await insertRes.json();
 
+    // Optionally update lead status (e.g., to "Won" after contract signing)
+    const updateStatus = formData.get('updateStatus') as string;
+    if (updateStatus && leadId) {
+      await fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${leadId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'apikey': key,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: updateStatus, updated_at: new Date().toISOString() }),
+      });
+    }
+
     return new Response(JSON.stringify({ success: true, attachment: record }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
