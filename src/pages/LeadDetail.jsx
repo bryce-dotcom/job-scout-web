@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import FlowIndicator from '../components/FlowIndicator'
+import DealBreadcrumb from '../components/DealBreadcrumb'
 import EmptyState from '../components/EmptyState'
 import ProductPickerModal from '../components/ProductPickerModal'
 
@@ -582,6 +583,14 @@ export default function LeadDetail() {
 
       {/* Lead Journey Flow Indicator */}
       <FlowIndicator currentStatus={lead.status} showCompact={isMobile} />
+
+      {/* Deal Breadcrumb */}
+      <DealBreadcrumb
+        current="lead"
+        leadId={lead.id}
+        quoteId={lead.quote_id}
+        customerId={lead.converted_customer_id}
+      />
 
       {/* Tabs */}
       <div style={{

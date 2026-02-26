@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
+import DealBreadcrumb from '../components/DealBreadcrumb'
 import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
@@ -610,6 +611,15 @@ export default function JobDetail() {
           {job.status}
         </span>
       </div>
+
+      {/* Deal Breadcrumb */}
+      <DealBreadcrumb
+        current="job"
+        leadId={job.lead_id}
+        quoteId={job.quote_id}
+        customerId={job.customer_id}
+        jobId={job.id}
+      />
 
       {/* Section Progress Bar */}
       {sections.length > 0 && (
