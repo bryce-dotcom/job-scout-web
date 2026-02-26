@@ -107,7 +107,7 @@ export default function EntityCard({
 
   const cardStyle = {
     position: 'relative',
-    overflow: 'hidden',
+    overflow: 'visible',
     background: isBusiness
       ? bg
       : `linear-gradient(to bottom, ${bg}, ${tint ? bg.replace('0.12)', '0.07)') : '#fafafa'})`,
