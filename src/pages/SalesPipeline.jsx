@@ -558,7 +558,7 @@ export default function SalesPipeline() {
   const firstDeliveryIndex = stages.findIndex(s => s.isDelivery)
 
   return (
-    <div style={{ padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ padding: '16px', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -706,7 +706,7 @@ export default function SalesPipeline() {
 
       {/* Mobile View - Tabbed stages with list */}
       {isMobile ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           {/* Stage Tabs */}
           <div style={{
             display: 'flex',
