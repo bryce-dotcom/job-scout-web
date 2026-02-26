@@ -197,12 +197,47 @@ export default function Jobs() {
       result = await supabase
         .from('jobs')
         .insert([payload])
+        .select()
     }
 
     if (result.error) {
       setError(result.error.message)
       setLoading(false)
       return
+    }
+
+    // Auto-create tracking lead for new jobs without a lead_id
+    if (!editingJob && result.data?.[0]) {
+      const newJob = result.data[0]
+      const customer = formData.customer_id ? customers.find(c => c.id === parseInt(formData.customer_id)) : null
+      const jobStatus = newJob.status || 'Scheduled'
+      const leadStatusMap = { 'Scheduled': 'Job Scheduled', 'In Progress': 'In Progress', 'Completed': 'Job Complete' }
+      const leadStatus = leadStatusMap[jobStatus] || 'Job Scheduled'
+
+      const { data: trackingLead } = await supabase
+        .from('leads')
+        .insert({
+          company_id: companyId,
+          customer_name: customer?.name || formData.job_title || 'Direct Job',
+          phone: customer?.phone || null,
+          email: customer?.email || null,
+          address: formData.job_address || customer?.address || null,
+          business_name: customer?.business_name || null,
+          status: leadStatus,
+          lead_source: customer ? 'Existing Customer' : 'Direct Job',
+          service_type: formData.job_title || null,
+          converted_customer_id: customer?.id || null,
+          quote_id: formData.quote_id ? parseInt(formData.quote_id) : null,
+          quote_amount: newJob.contract_amount || null,
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (trackingLead) {
+        // Link job back to tracking lead
+        await supabase.from('jobs').update({ lead_id: trackingLead.id }).eq('id', newJob.id)
+      }
     }
 
     await fetchJobs()
