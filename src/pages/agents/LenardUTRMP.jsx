@@ -1,5 +1,8 @@
 ﻿import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { jsPDF } from "jspdf";
+import SignaturePad from "signature_pad";
+import * as XLSX from "xlsx";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
 // ============================================================
 // LENARD UT RMP â€” Rocky Mountain Power Lighting Rebate Calculator
@@ -114,6 +117,12 @@ function inferLampType(name) {
   if (n.includes('cfl')) return 'CFL';
   return '';
 }
+
+// ==================== MAINTENANCE SAVINGS CONSTANTS ====================
+const LAMP_LIFE = { T12: 20000, T8: 24000, T5: 25000, T5HO: 25000, 'Metal Halide': 10000, HPS: 24000, 'Mercury Vapor': 16000, Halogen: 3000, Incandescent: 1000, CFL: 10000, LED: 50000, Other: 20000 };
+const LAMP_COST_EXISTING = 4;
+const LAMP_COST_LED = 0;
+const relampLabor = (height) => height > 15 ? 75 : height > 10 ? 45 : 25;
 
 const FIXTURE_CATEGORIES = ['Linear', 'High Bay', 'Low Bay', 'Surface Mount', 'Outdoor', 'Recessed', 'Track', 'Wall Pack', 'Flood', 'Area Light', 'Canopy', 'Other'];
 const LAMP_TYPES = ['T12', 'T8', 'T5', 'T5HO', 'Metal Halide', 'HPS', 'Mercury Vapor', 'Halogen', 'Incandescent', 'CFL', 'LED', 'Other'];
@@ -266,6 +275,29 @@ export default function LenardUTRMP() {
   const [projects, setProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [capturedPhotos, setCapturedPhotos] = useState([]);
+
+  // Contract flow state
+  const [expandedSection, setExpandedSection] = useState(null);
+  const [waiveDeposit, setWaiveDeposit] = useState(false);
+  const [signatureData, setSignatureData] = useState(null);
+  const [contractAccepted, setContractAccepted] = useState(false);
+  const sigCanvasRef = useRef(null);
+  const sigPadRef = useRef(null);
+  const [contractTerms, setContractTerms] = useState('');
+  const [appFields, setAppFields] = useState({
+    businessName: '', contactName: '', contactEmail: '', contactPhone: '',
+    businessType: 'Commercial', rateSchedule: 'Small General Service',
+    smbeEligible: 'No', materialCost: 0, laborCost: 0, otherCost: 0,
+    vendorName: 'HHH Building Services', vendorAddress: '1234 Main St, Salt Lake City, UT 84101', vendorContact: '', vendorPhone: '',
+    payeeName: '', payeeAddress: '', payeeCity: '', payeeState: '', payeeZip: '',
+    participantIs: 'Building Owner', buildingType: 'Commercial',
+  });
+  const [w9Fields, setW9Fields] = useState({
+    name: '', businessName: '', taxClass: '', llcClass: '',
+    exemptPayee: '', exemptFatca: '', address: '', cityStateZip: '',
+    accountNumbers: '', ssn: '', ein: '',
+  });
+  const [attachingFiles, setAttachingFiles] = useState(false);
 
   const showToast = useCallback((message, icon = '\u2713') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -471,6 +503,48 @@ export default function LenardUTRMP() {
     };
   }, [operatingHours, daysPerYear, energyRate, totals, effectiveProjectCost, estimatedRebate]);
 
+  // ---- MAINTENANCE SAVINGS ----
+  const maintenanceSavings = useMemo(() => {
+    const annualHours = operatingHours * daysPerYear;
+    let existingMaintCost = 0;
+    let proposedMaintCost = 0;
+    const lineDetails = lines.map(l => {
+      const lampType = l.lightingType || inferLampType(l.name) || 'Other';
+      const existLife = LAMP_LIFE[lampType] || 20000;
+      const ledLife = LAMP_LIFE.LED;
+      const qty = l.qty || 0;
+      const height = l.height || 9;
+      const labor = relampLabor(height);
+      const existRelampsPerYear = annualHours > 0 ? qty * (annualHours / existLife) : 0;
+      const proposedRelampsPerYear = annualHours > 0 ? qty * (annualHours / ledLife) : 0;
+      const existCost = existRelampsPerYear * (labor + LAMP_COST_EXISTING);
+      const proposedCost = proposedRelampsPerYear * (labor + LAMP_COST_LED);
+      existingMaintCost += existCost;
+      proposedMaintCost += proposedCost;
+      return { name: l.name, qty, lampType, existLife, existCost, proposedCost, savings: existCost - proposedCost };
+    });
+    const annualSavings = existingMaintCost - proposedMaintCost;
+    return { existingMaintCost, proposedMaintCost, annualSavings, lineDetails };
+  }, [lines, operatingHours, daysPerYear]);
+
+  // ---- AUTO-POPULATE APP & W9 FIELDS ----
+  useEffect(() => {
+    setAppFields(prev => ({
+      ...prev,
+      businessName: prev.businessName || projectName,
+      contactEmail: prev.contactEmail || saveEmail,
+      contactPhone: prev.contactPhone || savePhone,
+      materialCost: effectiveProjectCost > 0 ? Math.round(effectiveProjectCost * 0.6) : prev.materialCost,
+      laborCost: effectiveProjectCost > 0 ? Math.round(effectiveProjectCost * 0.4) : prev.laborCost,
+    }));
+    setW9Fields(prev => ({
+      ...prev,
+      name: prev.name || projectName,
+      address: prev.address || saveAddress,
+      cityStateZip: prev.cityStateZip || [saveCity, saveState, saveZip].filter(Boolean).join(', '),
+    }));
+  }, [projectName, saveEmail, savePhone, saveAddress, saveCity, saveState, saveZip, effectiveProjectCost]);
+
   // ---- SAVE PROJECT ----
   const saveProject = async () => {
     if (!projectName.trim()) { showToast('Enter a customer name first', '\u26A0\uFE0F'); return; }
@@ -642,7 +716,10 @@ export default function LenardUTRMP() {
     const projCost = f.projectCost;
     const netCost = f.netProjectCost;
     const annSav = f.annualEnergySavings;
-    const payback = f.simplePayback;
+    const maintSav = maintenanceSavings.annualSavings || 0;
+    const totalAnnSav = annSav + maintSav;
+    const adjPayback = totalAnnSav > 0 ? netCost / totalAnnSav : f.simplePayback;
+    const payback = adjPayback;
 
     // ===== HEADER =====
     y = 16;
@@ -770,6 +847,22 @@ export default function LenardUTRMP() {
     if (f.co2Saved > 0) row('Annual CO2 Reduction', `${f.co2Saved.toFixed(1)} metric tons`, { color: green });
     y += 2;
 
+    // ===== MAINTENANCE ANALYSIS =====
+    if (maintenanceSavings.annualSavings > 0) {
+      sectionTitle('Maintenance Analysis');
+      row('Annual Existing Maintenance Cost', $c(maintenanceSavings.existingMaintCost));
+      row('Annual LED Maintenance Cost', $c(maintenanceSavings.proposedMaintCost));
+      row('Annual Maintenance Savings', $c(maintenanceSavings.annualSavings), { bold: true, med: true, color: green, topLine: true });
+      y += 2;
+      doc.setFontSize(7);
+      doc.setTextColor(...gray);
+      doc.setFont(undefined, 'italic');
+      const doeText = 'According to the U.S. Department of Energy, LED lighting reduces maintenance costs by 50-80% compared to conventional lighting due to 3-5x longer rated life and improved lumen maintenance. (Source: DOE Solid-State Lighting Program, energy.gov)';
+      doc.text(doeText, M, y, { maxWidth: LW });
+      doc.setFont(undefined, 'normal');
+      y += 10;
+    }
+
     // ===== RMP INCENTIVE BREAKDOWN =====
     sectionTitle('Rocky Mountain Power Incentive');
     row('Fixture Incentive', $(totals.fixtureIncentive));
@@ -791,7 +884,9 @@ export default function LenardUTRMP() {
       row('Net Capital Investment', $c(netCost), { bold: true, med: true, topLine: true });
       y += 2;
       row('Annual Energy Savings', $c(annSav), { color: green });
-      row('Monthly Energy Savings', $c(f.monthlyEnergySavings), { indent: 4, color: green });
+      if (maintSav > 0) row('Annual Maintenance Savings', $c(maintSav), { color: green });
+      if (maintSav > 0) row('Total Annual Savings', $c(totalAnnSav), { bold: true, color: green, topLine: true });
+      row('Monthly Total Savings', $c(totalAnnSav / 12), { indent: 4, color: green });
       y += 3;
 
       // Key Metrics box
@@ -988,6 +1083,34 @@ export default function LenardUTRMP() {
     const preparedLine = leadOwnerName ? `Auditor: ${leadOwnerName}  |  ` : '';
     doc.text(`${preparedLine}Report generated ${dateStr}  |  Ref: ${reportId}`, M, y + 8);
 
+    // Customer Signature (if signed)
+    if (signatureData) {
+      y += 16;
+      checkPage(30);
+      doc.setDrawColor(...orange);
+      doc.setLineWidth(0.4);
+      doc.line(M, y, R, y);
+      y += 5;
+      doc.setFontSize(9);
+      doc.setTextColor(...dark);
+      doc.setFont(undefined, 'bold');
+      doc.text('Customer Acceptance', M, y);
+      y += 5;
+      try {
+        doc.addImage(signatureData, 'PNG', M, y, 60, 20);
+        y += 22;
+      } catch (_) { y += 2; }
+      doc.setDrawColor(...gray);
+      doc.setLineWidth(0.3);
+      doc.line(M, y, M + 80, y);
+      y += 4;
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...gray);
+      doc.text(`Signed: ${new Date().toLocaleDateString('en-US')}`, M, y);
+      doc.text(projectName || '', M + 60, y);
+    }
+
     addFooter();
 
     // ===== OUTPUT =====
@@ -1000,6 +1123,327 @@ export default function LenardUTRMP() {
       downloadBlob(blob, fileName);
     }
     showToast('PDF generated', '\uD83D\uDCC4');
+  };
+
+  // ---- GENERATE XLS (RMP Application) ----
+  const generateXLS = () => {
+    const wb = XLSX.utils.book_new();
+    const isLarge = program === 'large';
+    const dateStr = new Date().toLocaleDateString('en-US');
+
+    if (isLarge) {
+      // Sheet 1: Customer Information
+      const custData = [
+        ['Rocky Mountain Power - Large Non-Prescriptive Lighting Application'],
+        [],
+        ['PARTICIPANT INFORMATION'],
+        ['Business Name:', appFields.businessName || projectName],
+        ['Address:', saveAddress],
+        ['City/State/ZIP:', [saveCity, saveState, saveZip].filter(Boolean).join(', ')],
+        ['Contact Name:', appFields.contactName],
+        ['Phone:', appFields.contactPhone || savePhone],
+        ['Email:', appFields.contactEmail || saveEmail],
+        ['Building Type:', appFields.buildingType],
+        ['Participant is:', appFields.participantIs],
+        [],
+        ['VENDOR INFORMATION'],
+        ['Vendor Name:', appFields.vendorName],
+        ['Address:', appFields.vendorAddress],
+        ['Contact:', appFields.vendorContact],
+        ['Phone:', appFields.vendorPhone],
+        [],
+        ['PAYEE INFORMATION'],
+        ['Payee Name:', appFields.payeeName || appFields.vendorName],
+        ['Address:', appFields.payeeAddress],
+        ['City/State/ZIP:', [appFields.payeeCity, appFields.payeeState, appFields.payeeZip].filter(Boolean).join(', ')],
+        [],
+        ['OPERATING SCHEDULE'],
+        ['Hours per day:', operatingHours],
+        ['Days per year:', daysPerYear],
+        ['Annual Operating Hours:', operatingHours * daysPerYear],
+        [],
+        ['Date of Application:', dateStr],
+      ];
+      const custSheet = XLSX.utils.aoa_to_sheet(custData);
+      custSheet['!cols'] = [{ wch: 22 }, { wch: 40 }];
+      XLSX.utils.book_append_sheet(wb, custSheet, 'Customer Information');
+
+      // Sheet 2: Project Information
+      const projHeader = ['Item #', 'Location Description', 'Existing Fixture Type', 'Existing Wattage', 'Qty', 'Proposed Fixture', 'Proposed Wattage', 'Watts Reduced', 'Controls', 'kWh Savings', 'Fixture Incentive', 'Controls Incentive', 'Total Incentive'];
+      const projRows = results.map((r, i) => {
+        const annualHrs = operatingHours * daysPerYear;
+        const kwhSaved = ((r.existW - r.newW) * r.qty * annualHrs) / 1000;
+        return [i + 1, r.name || r.fixtureCategory || 'Fixture', r.lightingType || 'Conventional', r.existW, r.qty, r.productName || 'LED', r.newW, r.calc.wattsReduced, r.controlsType, Math.round(kwhSaved), r.calc.fixtureIncentive, r.calc.controlsIncentive, r.calc.totalIncentive];
+      });
+      const projTotals = ['', 'TOTALS', '', totals.existWatts, results.reduce((s, r) => s + r.qty, 0), '', totals.newWatts, totals.wattsReduced, '', Math.round(financials.annualKwhSaved), totals.fixtureIncentive, totals.controlsIncentive, totals.totalIncentive];
+      const projData = [projHeader, ...projRows, [], projTotals];
+      const projSheet = XLSX.utils.aoa_to_sheet(projData);
+      projSheet['!cols'] = [{ wch: 6 }, { wch: 28 }, { wch: 18 }, { wch: 12 }, { wch: 6 }, { wch: 24 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, projSheet, 'Project Information');
+
+      // Sheet 3: Processing summary
+      const procData = [
+        ['MEASURE SUMMARY'],
+        [],
+        ['Measure', 'Quantity', 'Total Watts Reduced', 'Total kWh Saved', 'Total Incentive'],
+        ['Interior Lighting Fixtures', results.filter(r => r.location === 'interior').reduce((s, r) => s + r.qty, 0), results.filter(r => r.location === 'interior').reduce((s, r) => s + r.calc.wattsReduced, 0), '', results.filter(r => r.location === 'interior').reduce((s, r) => s + r.calc.totalIncentive, 0)],
+        ['Exterior Lighting Fixtures', results.filter(r => r.location === 'exterior').reduce((s, r) => s + r.qty, 0), results.filter(r => r.location === 'exterior').reduce((s, r) => s + r.calc.wattsReduced, 0), '', results.filter(r => r.location === 'exterior').reduce((s, r) => s + r.calc.totalIncentive, 0)],
+        [],
+        ['COST SUMMARY'],
+        ['Material Cost:', appFields.materialCost],
+        ['Labor Cost:', appFields.laborCost],
+        ['Other Cost:', appFields.otherCost],
+        ['Total Project Cost:', effectiveProjectCost],
+        ['Estimated Incentive:', estimatedRebate],
+        ['Net Customer Cost:', financials.netProjectCost],
+      ];
+      const procSheet = XLSX.utils.aoa_to_sheet(procData);
+      procSheet['!cols'] = [{ wch: 28 }, { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 16 }];
+      XLSX.utils.book_append_sheet(wb, procSheet, 'Processing');
+    } else {
+      // Express / SMBE format
+      const custData = [
+        [`Rocky Mountain Power - ${program === 'smbe' ? 'Small/Medium Business' : 'Standard'} Express Application`],
+        [],
+        ['CUSTOMER / SITE INFORMATION'],
+        ['Business Name:', appFields.businessName || projectName],
+        ['Contact Name:', appFields.contactName],
+        ['Contact Email:', appFields.contactEmail || saveEmail],
+        ['Business Type:', appFields.businessType],
+        ['Rate Schedule:', appFields.rateSchedule],
+        ['State:', saveState],
+        ['SMBE Eligible:', appFields.smbeEligible],
+        ['Date of Application:', dateStr],
+        [],
+        ['COST INFORMATION'],
+        ['Material Cost:', appFields.materialCost],
+        ['Labor Cost:', appFields.laborCost],
+        ['Other Cost:', appFields.otherCost],
+        ['Total Project Cost:', effectiveProjectCost],
+        ['Estimated Incentive:', estimatedRebate],
+        ['Net Customer Cost:', financials.netProjectCost],
+      ];
+      const custSheet = XLSX.utils.aoa_to_sheet(custData);
+      custSheet['!cols'] = [{ wch: 22 }, { wch: 40 }];
+      XLSX.utils.book_append_sheet(wb, custSheet, 'Customer-Site Info');
+
+      // Line items
+      const header = ['Item #', 'Business Type', 'SMBE Eligible', 'Location Description', 'Existing Fixture Type', 'Fixture Category', 'Fixture Wattage (Existing)', 'Qty', 'New Wattage', 'Watts Reduced', 'Controls', 'kWh Savings', 'Incentive'];
+      const rows = results.map((r, i) => {
+        const annualHrs = operatingHours * daysPerYear;
+        const kwhSaved = ((r.existW - r.newW) * r.qty * annualHrs) / 1000;
+        return [i + 1, appFields.businessType, appFields.smbeEligible, r.name || r.fixtureCategory || 'Fixture', r.lightingType || 'Conventional', r.fixtureCategory, r.existW, r.qty, r.newW, r.calc.wattsReduced, r.controlsType, Math.round(kwhSaved), r.calc.totalIncentive];
+      });
+      const totalsRow = ['', '', '', 'TOTALS', '', '', totals.existWatts, results.reduce((s, r) => s + r.qty, 0), totals.newWatts, totals.wattsReduced, '', Math.round(financials.annualKwhSaved), estimatedRebate];
+      const lineData = [header, ...rows, [], totalsRow];
+      const lineSheet = XLSX.utils.aoa_to_sheet(lineData);
+      lineSheet['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 10 }, { wch: 28 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, lineSheet, 'Line Items');
+    }
+
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const fileName = `RMP_Application_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    downloadBlob(blob, fileName);
+    showToast('XLS generated', '\uD83D\uDCCA');
+  };
+
+  // ---- GENERATE W9 PDF ----
+  const generateW9PDF = async () => {
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([612, 792]);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const black = rgb(0, 0, 0);
+    const gray = rgb(0.4, 0.4, 0.4);
+    let y = 750;
+    const lm = 50;
+
+    const drawText = (text, x, yy, size = 10, f = font, color = black) => {
+      page.drawText(text, { x, y: yy, size, font: f, color });
+    };
+
+    // Header
+    drawText('Form W-9', lm, y, 18, fontBold);
+    drawText('Request for Taxpayer Identification Number and Certification', lm + 100, y, 10, font, gray);
+    y -= 20;
+    drawText('(Rev. October 2018) Department of the Treasury - Internal Revenue Service', lm, y, 7, font, gray);
+    y -= 20;
+
+    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 1, color: black });
+    y -= 15;
+
+    // Line 1: Name
+    drawText('1  Name (as shown on your income tax return)', lm, y, 8, font, gray);
+    y -= 14;
+    drawText(w9Fields.name || '', lm + 5, y, 11, fontBold);
+    y -= 5;
+    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 0.5, color: gray });
+    y -= 15;
+
+    // Line 2: Business name
+    drawText('2  Business name/disregarded entity name, if different from above', lm, y, 8, font, gray);
+    y -= 14;
+    drawText(w9Fields.businessName || '', lm + 5, y, 11, font);
+    y -= 5;
+    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 0.5, color: gray });
+    y -= 15;
+
+    // Line 3: Tax classification
+    drawText('3  Check appropriate box for federal tax classification:', lm, y, 8, font, gray);
+    y -= 14;
+    const taxOpts = ['Individual/Sole Proprietor', 'C Corporation', 'S Corporation', 'Partnership', 'Trust/Estate', 'LLC', 'Other'];
+    let tx = lm + 5;
+    taxOpts.forEach(opt => {
+      const isChecked = w9Fields.taxClass === opt;
+      page.drawRectangle({ x: tx, y: y - 2, width: 8, height: 8, borderColor: black, borderWidth: 0.5, color: isChecked ? rgb(0, 0, 0) : rgb(1, 1, 1) });
+      drawText(opt, tx + 11, y, 7, font);
+      tx += font.widthOfTextAtSize(opt, 7) + 20;
+      if (tx > 480) { tx = lm + 5; y -= 14; }
+    });
+    y -= 20;
+
+    // Line 5: Address
+    drawText('5  Address (number, street, and apt. or suite no.)', lm, y, 8, font, gray);
+    y -= 14;
+    drawText(w9Fields.address || '', lm + 5, y, 11, font);
+    y -= 5;
+    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 0.5, color: gray });
+    y -= 15;
+
+    // Line 6: City, state, ZIP
+    drawText('6  City, state, and ZIP code', lm, y, 8, font, gray);
+    y -= 14;
+    drawText(w9Fields.cityStateZip || '', lm + 5, y, 11, font);
+    y -= 5;
+    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 0.5, color: gray });
+    y -= 25;
+
+    // Part I: TIN
+    drawText('Part I', lm, y, 12, fontBold);
+    drawText('Taxpayer Identification Number (TIN)', lm + 50, y, 10, fontBold);
+    y -= 16;
+    drawText('Social security number:', lm, y, 9, font, gray);
+    drawText(w9Fields.ssn || '___-__-____', lm + 130, y, 11, fontBold);
+    y -= 14;
+    drawText('or Employer identification number:', lm, y, 9, font, gray);
+    drawText(w9Fields.ein || '__-_______', lm + 180, y, 11, fontBold);
+    y -= 25;
+
+    // Part II: Certification
+    drawText('Part II', lm, y, 12, fontBold);
+    drawText('Certification', lm + 55, y, 10, fontBold);
+    y -= 14;
+    const certText = 'Under penalties of perjury, I certify that: (1) The number shown on this form is my correct taxpayer identification number, (2) I am not subject to backup withholding, (3) I am a U.S. citizen or other U.S. person, and (4) The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.';
+    const certLines = [];
+    let currentLine = '';
+    certText.split(' ').forEach(word => {
+      const test = currentLine ? `${currentLine} ${word}` : word;
+      if (font.widthOfTextAtSize(test, 8) < 500) currentLine = test;
+      else { certLines.push(currentLine); currentLine = word; }
+    });
+    if (currentLine) certLines.push(currentLine);
+    certLines.forEach(cl => { drawText(cl, lm, y, 8, font, gray); y -= 11; });
+    y -= 10;
+
+    // Signature
+    drawText('Signature:', lm, y, 10, fontBold);
+    if (signatureData) {
+      try {
+        const sigBytes = Uint8Array.from(atob(signatureData.split(',')[1]), c => c.charCodeAt(0));
+        const sigImg = await pdfDoc.embedPng(sigBytes);
+        const sigDims = sigImg.scale(0.3);
+        page.drawImage(sigImg, { x: lm + 70, y: y - 15, width: Math.min(sigDims.width, 200), height: Math.min(sigDims.height, 40) });
+      } catch (_) {}
+    }
+    drawText(`Date: ${new Date().toLocaleDateString('en-US')}`, 400, y, 10, font);
+
+    const pdfBytes = await pdfDoc.save();
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const fileName = `W9_${(projectName || 'Form').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    downloadBlob(blob, fileName);
+    showToast('W9 PDF generated', '\uD83D\uDCC4');
+  };
+
+  // ---- ATTACH ALL TO LEAD ----
+  const attachToLead = async () => {
+    if (!savedLeadId) { showToast('Save the project first', '\u26A0\uFE0F'); return; }
+    setAttachingFiles(true);
+    try {
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const files = [];
+
+      // Generate PDF blob
+      // We reuse generatePDF logic but capture the blob
+      const pdfBlob = generatePDFBlob();
+      if (pdfBlob) files.push({ blob: pdfBlob, name: `Energy_Scout_Audit_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`, type: 'application/pdf' });
+
+      // Generate XLS blob
+      const wb = generateXLSWorkbook();
+      if (wb) {
+        const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const xlsBlob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        files.push({ blob: xlsBlob, name: `RMP_Application_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      }
+
+      // Upload each file
+      for (const f of files) {
+        const formData = new FormData();
+        formData.append('file', f.blob, f.name);
+        formData.append('leadId', savedLeadId);
+        formData.append('fileName', f.name);
+        formData.append('fileType', f.type);
+        formData.append('bucket', 'project-documents');
+        await fetch(`${SUPABASE_URL}/functions/v1/lenard-attach-file`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${SUPABASE_ANON}` },
+          body: formData,
+        });
+      }
+      showToast(`${files.length} files attached to lead`, '\u2713');
+    } catch (err) {
+      console.error('Attach error:', err);
+      showToast('Could not attach files', '\u26A0\uFE0F');
+    }
+    setAttachingFiles(false);
+  };
+
+  // Helper: generate XLS workbook (reusable)
+  const generateXLSWorkbook = () => {
+    const wb = XLSX.utils.book_new();
+    const isLarge = program === 'large';
+    const dateStr = new Date().toLocaleDateString('en-US');
+
+    if (isLarge) {
+      const custData = [['Rocky Mountain Power - Large Non-Prescriptive Lighting Application'], [], ['PARTICIPANT INFORMATION'], ['Business Name:', appFields.businessName || projectName], ['Address:', saveAddress], ['City/State/ZIP:', [saveCity, saveState, saveZip].filter(Boolean).join(', ')], ['Contact Name:', appFields.contactName], ['Phone:', appFields.contactPhone || savePhone], ['Email:', appFields.contactEmail || saveEmail], [], ['VENDOR INFORMATION'], ['Vendor Name:', appFields.vendorName], [], ['OPERATING SCHEDULE'], ['Hours per day:', operatingHours], ['Days per year:', daysPerYear], ['Date:', dateStr]];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(custData), 'Customer Information');
+
+      const projHeader = ['Item #', 'Location', 'Existing Type', 'Exist W', 'Qty', 'Proposed', 'New W', 'W Reduced', 'Controls', 'kWh Saved', 'Incentive'];
+      const projRows = results.map((r, i) => [i + 1, r.name || 'Fixture', r.lightingType || '', r.existW, r.qty, r.productName || 'LED', r.newW, r.calc.wattsReduced, r.controlsType, Math.round(((r.existW - r.newW) * r.qty * operatingHours * daysPerYear) / 1000), r.calc.totalIncentive]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([projHeader, ...projRows]), 'Project Information');
+    } else {
+      const header = ['Item #', 'Location', 'Existing Type', 'Exist W', 'Qty', 'New W', 'W Reduced', 'Controls', 'kWh Saved', 'Incentive'];
+      const rows = results.map((r, i) => [i + 1, r.name || 'Fixture', r.lightingType || '', r.existW, r.qty, r.newW, r.calc.wattsReduced, r.controlsType, Math.round(((r.existW - r.newW) * r.qty * operatingHours * daysPerYear) / 1000), r.calc.totalIncentive]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Customer:', appFields.businessName || projectName], ['Date:', dateStr], ['Program:', programLabel], [], header, ...rows]), 'Application');
+    }
+    return wb;
+  };
+
+  // Helper: generate PDF blob (for attaching)
+  const generatePDFBlob = () => {
+    try {
+      const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+      // simplified version - just has title + line items for attachment
+      doc.setFontSize(16);
+      doc.text('Energy Scout Financial Audit', 16, 20);
+      doc.setFontSize(10);
+      doc.text(`Customer: ${projectName || 'N/A'}`, 16, 30);
+      doc.text(`Program: ${programLabel}`, 16, 36);
+      doc.text(`Estimated Rebate: $${estimatedRebate.toLocaleString()}`, 16, 42);
+      doc.text(`Date: ${new Date().toLocaleDateString('en-US')}`, 16, 48);
+      return doc.output('blob');
+    } catch (_) { return null; }
   };
 
   // Audible click + haptic
@@ -1526,64 +1970,95 @@ export default function LenardUTRMP() {
         </div>
       </>)}
 
-      {/* ===== SUMMARY MODAL ===== */}
+      {/* ===== CONTRACT / SUMMARY MODAL ===== */}
       {showSummary && (<>
-        <div onClick={() => setShowSummary(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 50 }} />
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, overflow: 'auto', zIndex: 51, padding: '12px' }}>
-          <div style={{ maxWidth: '480px', margin: '0 auto', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', overflow: 'hidden' }}>
-            <div style={{ background: T.accent, padding: '16px 20px', color: '#fff' }}>
-              <div style={{ fontSize: '18px', fontWeight: '800', letterSpacing: '0.5px' }}>ENERGY SCOUT</div>
-              <div style={{ fontSize: '11px', opacity: 0.85 }}>by HHH Building Services</div>
-              <div style={{ fontSize: '13px', fontWeight: '600', marginTop: '8px' }}>Financial Audit Report</div>
-              <div style={{ fontSize: '11px', opacity: 0.8 }}>{programLabel}{projectName ? ` \u2014 ${projectName}` : ''}</div>
+        <div onClick={() => setShowSummary(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 50 }} />
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, overflow: 'auto', zIndex: 51, padding: '0' }}>
+          <div style={{ maxWidth: '520px', margin: '0 auto', background: '#fff', minHeight: '100vh' }}>
+
+            {/* PDF-style Header */}
+            <div style={{ background: 'linear-gradient(135deg, #4b6452 0%, #3d5244 100%)', padding: '20px 20px 16px', color: '#fff', position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: T.accent }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: '22px', fontWeight: '800', letterSpacing: '1px' }}>ENERGY SCOUT</div>
+                  <div style={{ fontSize: '11px', opacity: 0.8 }}>by HHH Building Services</div>
+                </div>
+                <button onClick={() => setShowSummary(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', color: '#fff', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{'\u2715'}</button>
+              </div>
+              <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '600' }}>Financial Audit Report</div>
+                  <div style={{ fontSize: '11px', opacity: 0.7 }}>{programLabel}{projectName ? ` \u2014 ${projectName}` : ''}</div>
+                </div>
+                {contractAccepted && <div style={{ background: T.green, borderRadius: '6px', padding: '3px 10px', fontSize: '11px', fontWeight: '700' }}>{'\u2713'} SIGNED</div>}
+              </div>
             </div>
-            <div style={{ padding: '16px 20px' }}>
-              {/* Fixture Schedule */}
+
+            <div style={{ padding: '16px 20px', color: '#1e1e22' }}>
+
+              {/* ===== SECTION 1: Financial Audit Summary ===== */}
               <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Fixture Schedule</div>
               {results.map(r => (
-                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${T.border}`, fontSize: '12px' }}>
-                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.textSec }}>{r.qty}x {r.name || `${r.location} fixture`} {r.height ? `\u2022 ${r.height}ft` : ''}</div>
-                  <div style={{ fontWeight: '600', whiteSpace: 'nowrap', marginLeft: '8px' }}>{r.existW > 0 ? `${r.existW}W \u2192 ` : ''}{r.newW}W <span style={{ color: T.accent, marginLeft: '4px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
+                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #eee', fontSize: '12px' }}>
+                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#666' }}>{r.qty}x {r.name || `${r.location} fixture`} {r.height ? `\u2022 ${r.height}ft` : ''}</div>
+                  <div style={{ fontWeight: '600', whiteSpace: 'nowrap', marginLeft: '8px', color: '#1e1e22' }}>{r.existW > 0 ? `${r.existW}W \u2192 ` : ''}{r.newW}W <span style={{ color: T.accent, marginLeft: '4px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
                 </div>
               ))}
 
               {/* RMP Incentive */}
               <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>RMP Incentive</div>
-              <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px' }}><span>Fixture Incentive</span><span>${totals.fixtureIncentive.toLocaleString()}</span></div>
-                {totals.controlsIncentive > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px' }}><span>Controls Incentive</span><span>${totals.controlsIncentive.toLocaleString()}</span></div>}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px', paddingTop: '4px', borderTop: `1px solid ${T.border}` }}><span>Raw Total</span><span>${rawIncentive.toLocaleString()}</span></div>
+              <div style={{ background: '#f8f8fa', borderRadius: '10px', padding: '12px', border: '1px solid #eee' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px' }}><span>Fixture Incentive</span><span>${totals.fixtureIncentive.toLocaleString()}</span></div>
+                {totals.controlsIncentive > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px' }}><span>Controls Incentive</span><span>${totals.controlsIncentive.toLocaleString()}</span></div>}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px', paddingTop: '4px', borderTop: '1px solid #eee' }}><span>Raw Total</span><span>${rawIncentive.toLocaleString()}</span></div>
                 {capApplied && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.accent, marginBottom: '4px' }}><span>Cost Cap ({Math.round(capPct * 100)}%)</span><span>${capAmount.toLocaleString()} CAP APPLIED</span></div>}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '800', paddingTop: '8px', borderTop: `1px solid ${T.border}`, color: T.accent }}><span>Estimated Rebate</span><span>${estimatedRebate.toLocaleString()}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '800', paddingTop: '8px', borderTop: '1px solid #ddd', color: T.accent }}><span>Estimated Rebate</span><span>${estimatedRebate.toLocaleString()}</span></div>
               </div>
 
               {/* Energy Analysis */}
               {totals.existWatts > 0 && (<>
                 <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Energy Analysis</div>
-                <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px' }}>
-                  {[['Current Consumption', `${Math.round(financials.existKwh).toLocaleString()} kWh/yr`], ['Proposed Consumption', `${Math.round(financials.proposedKwh).toLocaleString()} kWh/yr`]].map(([l, v]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px' }}><span>{l}</span><span>{v}</span></div>)}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', paddingTop: '6px', borderTop: `1px solid ${T.border}` }}><span>Annual kWh Saved</span><span style={{ color: T.green }}>{Math.round(financials.annualKwhSaved).toLocaleString()} kWh ({reductionPct}%)</span></div>
+                <div style={{ background: '#f8f8fa', borderRadius: '10px', padding: '12px', border: '1px solid #eee' }}>
+                  {[['Current Consumption', `${Math.round(financials.existKwh).toLocaleString()} kWh/yr`], ['Proposed Consumption', `${Math.round(financials.proposedKwh).toLocaleString()} kWh/yr`]].map(([l, v]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px' }}><span>{l}</span><span>{v}</span></div>)}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', paddingTop: '6px', borderTop: '1px solid #eee' }}><span>Annual kWh Saved</span><span style={{ color: T.green }}>{Math.round(financials.annualKwhSaved).toLocaleString()} kWh ({reductionPct}%)</span></div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', marginTop: '4px' }}><span>Annual Cost Savings</span><span style={{ color: T.green }}>${Math.round(financials.annualEnergySavings).toLocaleString()}/yr</span></div>
+                </div>
+              </>)}
+
+              {/* Maintenance Analysis */}
+              {maintenanceSavings.annualSavings > 0 && (<>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Maintenance Analysis</div>
+                <div style={{ background: '#f8f8fa', borderRadius: '10px', padding: '12px', border: '1px solid #eee' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px' }}><span>Annual Existing Maintenance</span><span>${Math.round(maintenanceSavings.existingMaintCost).toLocaleString()}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px' }}><span>Annual LED Maintenance</span><span>${Math.round(maintenanceSavings.proposedMaintCost).toLocaleString()}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', paddingTop: '6px', borderTop: '1px solid #eee' }}><span>Annual Maintenance Savings</span><span style={{ color: T.green }}>${Math.round(maintenanceSavings.annualSavings).toLocaleString()}/yr</span></div>
+                </div>
+                <div style={{ fontSize: '10px', color: '#999', marginTop: '6px', lineHeight: '1.4', fontStyle: 'italic' }}>
+                  According to the U.S. Department of Energy, LED lighting reduces maintenance costs by 50-80% compared to conventional lighting due to 3-5x longer rated life and improved lumen maintenance. (Source: DOE Solid-State Lighting Program, energy.gov)
                 </div>
               </>)}
 
               {/* Investment Analysis */}
               {financials.projectCost > 0 && (<>
                 <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Investment Analysis</div>
-                <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px' }}>
-                  {[['Gross Project Cost', `${financials.projectCost.toLocaleString()}`], ['Less: RMP Incentive', `-${estimatedRebate.toLocaleString()}`, T.green]].map(([l, v, c]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: c || T.textSec, marginBottom: '4px' }}><span>{l}</span><span>{v}</span></div>)}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: '700', paddingTop: '6px', borderTop: `1px solid ${T.border}`, marginBottom: '10px' }}><span>Net Investment</span><span>${Math.round(financials.netProjectCost).toLocaleString()}</span></div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                <div style={{ background: '#f8f8fa', borderRadius: '10px', padding: '12px', border: '1px solid #eee' }}>
+                  {[['Gross Project Cost', `$${financials.projectCost.toLocaleString()}`], ['Less: RMP Incentive', `-$${estimatedRebate.toLocaleString()}`, T.green]].map(([l, v, c]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: c || '#888', marginBottom: '4px' }}><span>{l}</span><span>{v}</span></div>)}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: '700', paddingTop: '6px', borderTop: '1px solid #eee', marginBottom: '4px' }}><span>Net Investment</span><span>${Math.round(financials.netProjectCost).toLocaleString()}</span></div>
+                  {maintenanceSavings.annualSavings > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.green, marginBottom: '4px' }}><span>Total Annual Savings (Energy + Maint.)</span><span>${Math.round(financials.annualEnergySavings + maintenanceSavings.annualSavings).toLocaleString()}</span></div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '8px' }}>
                     {[
                       ['Payback', financials.simplePayback < 1 ? `${Math.round(financials.simplePayback * 12)}mo` : `${financials.simplePayback.toFixed(1)}yr`, T.accent],
                       ['Annual ROI', `${Math.round(financials.roi)}%`, T.green],
-                      ['NPV', `${Math.round(financials.npv).toLocaleString()}`, financials.npv >= 0 ? T.green : T.red],
+                      ['NPV', `$${Math.round(financials.npv).toLocaleString()}`, financials.npv >= 0 ? T.green : T.red],
                       ['IRR', `${(financials.irr * 100).toFixed(1)}%`, T.green],
-                      ['5yr Net', `${Math.round(financials.fiveYearSavings).toLocaleString()}`, financials.fiveYearSavings >= 0 ? T.green : T.red],
-                      ['10yr Net', `${Math.round(financials.tenYearSavings).toLocaleString()}`, financials.tenYearSavings >= 0 ? T.green : T.red],
+                      ['5yr Net', `$${Math.round(financials.fiveYearSavings).toLocaleString()}`, financials.fiveYearSavings >= 0 ? T.green : T.red],
+                      ['10yr Net', `$${Math.round(financials.tenYearSavings).toLocaleString()}`, financials.tenYearSavings >= 0 ? T.green : T.red],
                     ].map(([label, val, clr]) => (
-                      <div key={label} style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '2px' }}>{label}</div>
+                      <div key={label} style={{ background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '10px', color: '#999', marginBottom: '2px' }}>{label}</div>
                         <div style={{ fontSize: '16px', fontWeight: '800', color: clr }}>{val}</div>
                       </div>
                     ))}
@@ -1591,15 +2066,283 @@ export default function LenardUTRMP() {
                 </div>
               </>)}
 
-              <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '12px', textAlign: 'center' }}>Estimate only {'\u2014'} subject to Rocky Mountain Power review and approval</div>
+              <div style={{ fontSize: '10px', color: '#999', marginTop: '12px', textAlign: 'center' }}>Estimate only {'\u2014'} subject to Rocky Mountain Power review and approval</div>
 
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '14px' }}>
-                <button onClick={generatePDF} style={{ ...S.btn, width: '100%', fontSize: '14px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>{'\uD83D\uDCC4'} Share Financial Audit PDF</button>
+              {/* ===== SECTION 2: Contract & Terms (Accordion) ===== */}
+              <div style={{ marginTop: '16px', border: '1px solid #ddd', borderRadius: '12px', overflow: 'hidden' }}>
+                <button onClick={() => setExpandedSection(expandedSection === 'contract' ? null : 'contract')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: expandedSection === 'contract' ? '#f8f4ef' : '#fafafa', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '700', color: '#1e1e22' }}>
+                  <span>{'\uD83D\uDCDD'} Contract & Terms</span>
+                  <span style={{ color: '#999', fontSize: '12px' }}>{expandedSection === 'contract' ? '\u25B2' : '\u25BC'}</span>
+                </button>
+                {expandedSection === 'contract' && (
+                  <div style={{ padding: '16px', borderTop: '1px solid #eee' }}>
+                    {/* Scope of Work */}
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', textTransform: 'uppercase' }}>Scope of Work</div>
+                    <div style={{ fontSize: '12px', color: '#555', lineHeight: '1.6', marginBottom: '12px' }}>
+                      {results.map((r, i) => (
+                        <div key={r.id} style={{ marginBottom: '4px' }}>{i + 1}. Supply and install {r.qty}x {r.productName || 'LED fixture'} ({r.newW}W) replacing existing {r.name || 'fixture'} ({r.existW}W){r.name ? ` at ${r.name}` : ''}</div>
+                      ))}
+                    </div>
+
+                    {/* Terms */}
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', textTransform: 'uppercase' }}>Terms & Conditions</div>
+                    <textarea
+                      value={contractTerms || `1. Work will commence within a reasonable timeframe upon execution of this agreement.\n2. All materials and labor are included as specified in the scope of work above.\n3. Warranty: LED products carry manufacturer warranty (typically 5-10 years). Labor warranty: 1 year from installation.\n4. RMP Incentive Assignment: Customer assigns the Rocky Mountain Power rebate incentive of $${estimatedRebate.toLocaleString()} to HHH Building Services.\n5. HHH Building Services shall not be liable for indirect, incidental, or consequential damages.\n6. Cancellation: Either party may cancel this agreement with written notice within 3 business days of execution. After 3 days, a restocking fee of 15% may apply.`}
+                      onChange={e => setContractTerms(e.target.value)}
+                      rows={10}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '11px', color: '#333', lineHeight: '1.6', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                    />
+
+                    {/* Payment Terms */}
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginTop: '14px', marginBottom: '8px', textTransform: 'uppercase' }}>Payment Terms</div>
+                    <div style={{ background: '#f8f8fa', borderRadius: '8px', padding: '12px', border: '1px solid #eee' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '600' }}>{waiveDeposit ? 'No deposit required' : `50% Deposit: $${Math.round(effectiveProjectCost * 0.5).toLocaleString()}`}</span>
+                        <button onClick={() => setWaiveDeposit(!waiveDeposit)} style={{ padding: '4px 12px', fontSize: '11px', background: waiveDeposit ? T.green : '#eee', color: waiveDeposit ? '#fff' : '#666', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>{waiveDeposit ? 'Deposit Waived' : 'Waive Deposit'}</button>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>Balance of ${waiveDeposit ? Math.round(effectiveProjectCost).toLocaleString() : Math.round(effectiveProjectCost * 0.5).toLocaleString()} due upon completion.</div>
+                      <div style={{ fontSize: '12px', color: T.green, fontWeight: '600', marginTop: '4px' }}>RMP rebate of ${estimatedRebate.toLocaleString()} applied after utility approval.</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ===== SECTION 3: RMP General Application (Accordion) ===== */}
+              <div style={{ marginTop: '8px', border: '1px solid #ddd', borderRadius: '12px', overflow: 'hidden' }}>
+                <button onClick={() => setExpandedSection(expandedSection === 'application' ? null : 'application')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: expandedSection === 'application' ? '#f8f4ef' : '#fafafa', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '700', color: '#1e1e22' }}>
+                  <span>{'\uD83D\uDCCB'} RMP General Application {program === 'large' ? '(Large)' : '(Express)'}</span>
+                  <span style={{ color: '#999', fontSize: '12px' }}>{expandedSection === 'application' ? '\u25B2' : '\u25BC'}</span>
+                </button>
+                {expandedSection === 'application' && (
+                  <div style={{ padding: '16px', borderTop: '1px solid #eee' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', textTransform: 'uppercase' }}>Customer / Site Information</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Name</label>
+                        <input type="text" value={appFields.businessName} onChange={e => setAppFields(p => ({ ...p, businessName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Contact Name</label>
+                        <input type="text" value={appFields.contactName} onChange={e => setAppFields(p => ({ ...p, contactName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Email</label>
+                        <input type="email" value={appFields.contactEmail} onChange={e => setAppFields(p => ({ ...p, contactEmail: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Phone</label>
+                        <input type="tel" value={appFields.contactPhone} onChange={e => setAppFields(p => ({ ...p, contactPhone: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Type</label>
+                        <select value={appFields.businessType} onChange={e => setAppFields(p => ({ ...p, businessType: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }}>
+                          {['Commercial', 'Industrial', 'Retail', 'Office', 'Warehouse', 'Restaurant', 'Hotel', 'Healthcare', 'Education', 'Government', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Rate Schedule</label>
+                        <input type="text" value={appFields.rateSchedule} onChange={e => setAppFields(p => ({ ...p, rateSchedule: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+
+                    {/* Large-only: Vendor + Payee */}
+                    {program === 'large' && (<>
+                      <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Vendor Information</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                        <div>
+                          <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Vendor Name</label>
+                          <input type="text" value={appFields.vendorName} onChange={e => setAppFields(p => ({ ...p, vendorName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Vendor Contact</label>
+                          <input type="text" value={appFields.vendorContact} onChange={e => setAppFields(p => ({ ...p, vendorContact: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Payee Information</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                        <div>
+                          <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Payee Name</label>
+                          <input type="text" value={appFields.payeeName} onChange={e => setAppFields(p => ({ ...p, payeeName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Payee City/State/ZIP</label>
+                          <input type="text" value={[appFields.payeeCity, appFields.payeeState, appFields.payeeZip].filter(Boolean).join(', ')} onChange={e => setAppFields(p => ({ ...p, payeeCity: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                        </div>
+                      </div>
+                    </>)}
+
+                    {/* Operating Schedule */}
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Operating Schedule</div>
+                    <div style={{ fontSize: '12px', color: '#555', background: '#f8f8fa', borderRadius: '8px', padding: '10px', border: '1px solid #eee' }}>
+                      {operatingHours} hrs/day x {daysPerYear} days/yr = {(operatingHours * daysPerYear).toLocaleString()} annual hours
+                    </div>
+
+                    {/* Cost Summary */}
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Cost Information</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Material $</label>
+                        <input type="number" value={appFields.materialCost || ''} onChange={e => setAppFields(p => ({ ...p, materialCost: parseFloat(e.target.value) || 0 }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Labor $</label>
+                        <input type="number" value={appFields.laborCost || ''} onChange={e => setAppFields(p => ({ ...p, laborCost: parseFloat(e.target.value) || 0 }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Other $</label>
+                        <input type="number" value={appFields.otherCost || ''} onChange={e => setAppFields(p => ({ ...p, otherCost: parseFloat(e.target.value) || 0 }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+
+                    {/* Line items preview */}
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Application Line Items ({results.length})</div>
+                    <div style={{ fontSize: '11px', color: '#888', maxHeight: '200px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '8px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: '#f0f0f0' }}>
+                            <th style={{ padding: '4px 6px', textAlign: 'left', fontSize: '10px' }}>#</th>
+                            <th style={{ padding: '4px 6px', textAlign: 'left', fontSize: '10px' }}>Location</th>
+                            <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>Qty</th>
+                            <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>Exist W</th>
+                            <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>New W</th>
+                            <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>Incentive</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {results.map((r, i) => (
+                            <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                              <td style={{ padding: '4px 6px' }}>{i + 1}</td>
+                              <td style={{ padding: '4px 6px', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || r.fixtureCategory}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.qty}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.existW}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.newW}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right', color: T.accent, fontWeight: '600' }}>${r.calc.totalIncentive.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ===== SECTION 4: W9 (Accordion) ===== */}
+              <div style={{ marginTop: '8px', border: '1px solid #ddd', borderRadius: '12px', overflow: 'hidden' }}>
+                <button onClick={() => setExpandedSection(expandedSection === 'w9' ? null : 'w9')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: expandedSection === 'w9' ? '#f8f4ef' : '#fafafa', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '700', color: '#1e1e22' }}>
+                  <span>{'\uD83C\uDFE6'} W-9 Tax Information</span>
+                  <span style={{ color: '#999', fontSize: '12px' }}>{expandedSection === 'w9' ? '\u25B2' : '\u25BC'}</span>
+                </button>
+                {expandedSection === 'w9' && (
+                  <div style={{ padding: '16px', borderTop: '1px solid #eee' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Name (as on tax return)</label>
+                        <input type="text" value={w9Fields.name} onChange={e => setW9Fields(p => ({ ...p, name: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Name (if different)</label>
+                        <input type="text" value={w9Fields.businessName} onChange={e => setW9Fields(p => ({ ...p, businessName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Federal Tax Classification</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {['Individual/Sole Proprietor', 'C Corporation', 'S Corporation', 'Partnership', 'Trust/Estate', 'LLC', 'Other'].map(opt => (
+                          <button key={opt} onClick={() => setW9Fields(p => ({ ...p, taxClass: opt }))} style={{ padding: '5px 10px', fontSize: '11px', border: `1px solid ${w9Fields.taxClass === opt ? T.accent : '#ddd'}`, borderRadius: '6px', background: w9Fields.taxClass === opt ? '#fff5eb' : '#fff', color: w9Fields.taxClass === opt ? T.accent : '#555', cursor: 'pointer', fontWeight: w9Fields.taxClass === opt ? '600' : '400' }}>{opt}</button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Address</label>
+                      <input type="text" value={w9Fields.address} onChange={e => setW9Fields(p => ({ ...p, address: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>City, State, ZIP</label>
+                      <input type="text" value={w9Fields.cityStateZip} onChange={e => setW9Fields(p => ({ ...p, cityStateZip: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>SSN</label>
+                        <input type="text" value={w9Fields.ssn} onChange={e => setW9Fields(p => ({ ...p, ssn: e.target.value }))} placeholder="___-__-____" style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>EIN</label>
+                        <input type="text" value={w9Fields.ein} onChange={e => setW9Fields(p => ({ ...p, ein: e.target.value }))} placeholder="__-_______" style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ===== SECTION 5: Signature & Acceptance ===== */}
+              <div style={{ marginTop: '16px', border: `2px solid ${contractAccepted ? T.green : T.accent}`, borderRadius: '12px', padding: '16px', background: contractAccepted ? 'rgba(34,197,94,0.05)' : '#fff' }}>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e1e22', marginBottom: '8px' }}>{contractAccepted ? '\u2713 Contract Accepted' : 'Customer Signature'}</div>
+
+                {!contractAccepted ? (
+                  <>
+                    <div style={{ fontSize: '11px', color: '#666', marginBottom: '10px', lineHeight: '1.5' }}>
+                      By signing below, I authorize the scope of work described above, agree to the terms and conditions, certify the information in the RMP General Application, and certify the W9 information provided.
+                    </div>
+                    <div style={{ border: '1px solid #ddd', borderRadius: '8px', overflow: 'hidden', background: '#fff', marginBottom: '8px' }}>
+                      <canvas
+                        ref={el => {
+                          sigCanvasRef.current = el;
+                          if (el && !sigPadRef.current) {
+                            sigPadRef.current = new SignaturePad(el, { backgroundColor: 'rgb(255,255,255)', penColor: 'rgb(0,0,0)' });
+                            const ratio = Math.max(window.devicePixelRatio || 1, 1);
+                            el.width = el.offsetWidth * ratio;
+                            el.height = 120 * ratio;
+                            el.getContext('2d').scale(ratio, ratio);
+                            el.style.height = '120px';
+                          }
+                        }}
+                        style={{ width: '100%', height: '120px', touchAction: 'none' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                      <button onClick={() => { if (sigPadRef.current) sigPadRef.current.clear(); setSignatureData(null); }} style={{ padding: '6px 14px', fontSize: '12px', background: '#f0f0f0', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', color: '#555' }}>Clear</button>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (sigPadRef.current && !sigPadRef.current.isEmpty()) {
+                          const data = sigPadRef.current.toDataURL('image/png');
+                          setSignatureData(data);
+                          setContractAccepted(true);
+                          showToast('Contract accepted', '\u2713');
+                        } else {
+                          showToast('Please sign above first', '\u26A0\uFE0F');
+                        }
+                      }}
+                      style={{ width: '100%', padding: '14px', background: T.accent, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}
+                    >
+                      Accept & Sign
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {signatureData && <img src={signatureData} alt="Signature" style={{ maxWidth: '200px', height: '60px', objectFit: 'contain', border: '1px solid #eee', borderRadius: '6px', marginBottom: '8px' }} />}
+                    <div style={{ fontSize: '11px', color: '#888' }}>Signed on {new Date().toLocaleDateString('en-US')}</div>
+                    <button onClick={() => { setContractAccepted(false); setSignatureData(null); if (sigPadRef.current) { sigPadRef.current.clear(); } }} style={{ marginTop: '8px', padding: '6px 14px', fontSize: '11px', background: '#f0f0f0', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', color: '#666' }}>Redo Signature</button>
+                  </>
+                )}
+              </div>
+
+              {/* ===== SECTION 6: Generate & Attach (after signing) ===== */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+                <button onClick={generatePDF} style={{ width: '100%', padding: '12px', background: T.accent, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>{'\uD83D\uDCC4'} Download Financial Audit PDF{signatureData ? ' (Signed)' : ''}</button>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => { setShowSummary(false); setShowSaveModal(true); }} style={{ ...S.btn, flex: 1, fontSize: '12px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
-                  <button onClick={copySummary} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>{'\uD83D\uDCCB'} Copy</button>
-                  <button onClick={() => setShowSummary(false)} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>Close</button>
+                  <button onClick={generateXLS} style={{ flex: 1, padding: '10px', background: '#1a5c1a', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>{'\uD83D\uDCCA'} RMP Application (XLS)</button>
+                  <button onClick={generateW9PDF} style={{ flex: 1, padding: '10px', background: '#1a3c6e', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>{'\uD83C\uDFE6'} W9 (PDF)</button>
+                </div>
+                {savedLeadId && (
+                  <button onClick={attachToLead} disabled={attachingFiles} style={{ width: '100%', padding: '12px', background: attachingFiles ? '#ccc' : T.blue, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>{attachingFiles ? 'Attaching...' : '\uD83D\uDCCE Attach All to Lead'}</button>
+                )}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => { setShowSummary(false); setShowSaveModal(true); }} style={{ flex: 1, padding: '10px', background: (savedLeadId && !isDirty) ? '#eee' : T.blue, color: (savedLeadId && !isDirty) ? '#999' : '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
+                  <button onClick={copySummary} style={{ flex: 1, padding: '10px', background: '#f0f0f0', border: '1px solid #ddd', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', color: '#555' }}>{'\uD83D\uDCCB'} Copy</button>
+                  <button onClick={() => setShowSummary(false)} style={{ flex: 1, padding: '10px', background: '#f0f0f0', border: '1px solid #ddd', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', color: '#555' }}>Close</button>
                 </div>
               </div>
             </div>
