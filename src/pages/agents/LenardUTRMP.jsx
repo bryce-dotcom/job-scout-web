@@ -557,6 +557,7 @@ export default function LenardUTRMP() {
     const ltGray = [230, 230, 230];
     const white = [255, 255, 255];
     const blue = [59, 130, 246];
+    const brandGreen = [75, 100, 82];
     let y = 0;
     let pg = 1;
 
@@ -572,10 +573,13 @@ export default function LenardUTRMP() {
       doc.setFontSize(7);
       doc.setTextColor(...gray);
       doc.text('Energy Scout by HHH Building Services', M, H - 10);
-      doc.setTextColor(...orange);
+      doc.setTextColor(...brandGreen);
+      doc.setFont(undefined, 'bold');
       doc.text('ENERGY SCOUT', M, H - 6.5);
+      const esFooterW = doc.getTextWidth('ENERGY SCOUT');
+      doc.setFont(undefined, 'normal');
       doc.setTextColor(...gray);
-      doc.text('  |  Commercial Energy Solutions  |  Powered by Job Scout', M + 28, H - 6.5);
+      doc.text('  |  Commercial Energy Solutions  |  Powered by Job Scout', M + esFooterW + 2, H - 6.5);
       doc.text(`Page ${pg}`, R, H - 6.5, { align: 'right' });
     };
 
@@ -650,23 +654,33 @@ export default function LenardUTRMP() {
     const logoH = 14;
     try { doc.addImage(logoB64, 'PNG', M, y - 10, logoW, logoH); } catch (_) { /* skip logo */ }
 
+    // Row 1: Logo + ENERGY SCOUT (green-grey 20pt bold)
     const logoOffset = logoW + 3;
-    doc.setFontSize(24);
+    doc.setFontSize(20);
     doc.setFont(undefined, 'bold');
-    doc.setTextColor(...orange);
+    doc.setTextColor(...brandGreen);
     doc.text('ENERGY SCOUT', M + logoOffset, y);
-    doc.setFontSize(10);
+
+    // Row 2: "by HHH Building Services" left, "Financial Audit Report" right
+    y += 6;
+    doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...gray);
-    doc.text('by HHH Building Services', M + logoOffset + 62, y);
-
-    doc.setFontSize(9);
-    doc.setTextColor(...dark);
-    doc.text('COMMERCIAL LIGHTING RETROFIT', R, y - 4, { align: 'right' });
-    doc.setFontSize(12);
+    doc.text('by HHH Building Services', M + logoOffset, y);
+    doc.setFontSize(11);
     doc.setFont(undefined, 'bold');
-    doc.text('Financial Audit Report', R, y + 1, { align: 'right' });
+    doc.setTextColor(...dark);
+    doc.text('Financial Audit Report', R, y, { align: 'right' });
+
+    // Row 3: "COMMERCIAL LIGHTING RETROFIT" right
     y += 5;
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...gray);
+    doc.text('COMMERCIAL LIGHTING RETROFIT', R, y, { align: 'right' });
+
+    // Orange divider
+    y += 3;
     doc.setDrawColor(...orange);
     doc.setLineWidth(1);
     doc.line(M, y, R, y);
@@ -965,7 +979,7 @@ export default function LenardUTRMP() {
     doc.line(M, y, R, y);
     y += 5;
     doc.setFontSize(9);
-    doc.setTextColor(...dark);
+    doc.setTextColor(...brandGreen);
     doc.setFont(undefined, 'bold');
     doc.text('Prepared by Energy Scout', M, y);
     doc.setFont(undefined, 'normal');
