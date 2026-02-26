@@ -1449,7 +1449,7 @@ export default function LenardUTRMP() {
   // Audible click + haptic
   const playClick = useCallback(() => {
     try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.connect(gain); gain.connect(ctx.destination); osc.frequency.value = 1200; gain.gain.value = 0.08; osc.start(); osc.stop(ctx.currentTime + 0.04); } catch (_) {}
-    try { navigator.vibrate?.(15); } catch (_) {}
+    try { navigator.vibrate?.(50); } catch (_) {}
   }, []);
 
   // ---- STYLES ----
