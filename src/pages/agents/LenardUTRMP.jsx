@@ -525,7 +525,7 @@ export default function LenardUTRMP() {
   const copySummary = () => {
     const pName = program === 'smbe' ? 'RMP Small/Medium Business Express' : program === 'express' ? 'RMP Standard Express' : 'RMP Large Non-Prescriptive';
     let t = `${pName} Quick Quote${projectName ? ` \u2014 ${projectName}` : ''}\n${'='.repeat(50)}\n\n`;
-    results.forEach(r => { t += `${r.name || r.location}: ${r.qty}\u00D7 | ${r.location === 'interior' ? 'Int' : 'Ext'} | ${program === 'large' ? `${r.existW}W \u2192 ` : ''}${r.newW}W | $${r.calc.totalIncentive.toLocaleString()}\n`; });
+    results.forEach(r => { t += `${r.name || r.location}: ${r.qty}\u00D7 | ${r.location === 'interior' ? 'Int' : 'Ext'} | ${r.existW > 0 ? `${r.existW}W \u2192 ` : ''}${r.newW}W | $${r.calc.totalIncentive.toLocaleString()}\n`; });
     t += `\n${'\u2014'.repeat(50)}\nRaw Incentive Total: $${rawIncentive.toLocaleString()}\n`;
     if (capApplied) t += `Project Cost Cap (${Math.round(capPct * 100)}%): $${capAmount.toLocaleString()} \u2014 CAP APPLIED\n`;
     t += `ESTIMATED REBATE: $${estimatedRebate.toLocaleString()}\n\n`;
@@ -1198,7 +1198,7 @@ export default function LenardUTRMP() {
                     {r.name || `${r.location === 'interior' ? 'Interior' : 'Exterior'} Fixture`}
                   </div>
                   <div style={{ fontSize: '11px', color: T.textSec, marginTop: '2px' }}>{r.location === 'interior' ? 'Int' : 'Ext'} {'\u2022'} {ctrlLabel} {'\u2022'} ${rate}/W {r.height ? `\u2022 ${r.height}ft` : ''}{r.confirmed ? ' \u2713' : ''}</div>
-                  <div style={{ fontSize: '12px', color: T.textMuted, marginTop: '2px' }}>{r.qty}{'\u00D7'} | {program === 'large' ? `${r.existW}W \u2192 ` : ''}{r.newW}W{program === 'large' ? ` | \u2212${r.calc.wattsReduced}W` : ''}</div>
+                  <div style={{ fontSize: '12px', color: T.textMuted, marginTop: '2px' }}>{r.qty}{'\u00D7'} | {r.existW > 0 ? `${r.existW}W \u2192 ` : ''}{r.newW}W{r.existW > 0 ? ` | \u2212${r.calc.wattsReduced}W` : ''}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
                   <div style={{ textAlign: 'right' }}>
@@ -1531,7 +1531,7 @@ export default function LenardUTRMP() {
               {results.map(r => (
                 <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${T.border}`, fontSize: '12px' }}>
                   <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: T.textSec }}>{r.qty}x {r.name || `${r.location} fixture`} {r.height ? `\u2022 ${r.height}ft` : ''}</div>
-                  <div style={{ fontWeight: '600', whiteSpace: 'nowrap', marginLeft: '8px' }}>{program === 'large' ? `${r.existW}W \u2192 ` : ''}{r.newW}W <span style={{ color: T.accent, marginLeft: '4px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
+                  <div style={{ fontWeight: '600', whiteSpace: 'nowrap', marginLeft: '8px' }}>{r.existW > 0 ? `${r.existW}W \u2192 ` : ''}{r.newW}W <span style={{ color: T.accent, marginLeft: '4px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
                 </div>
               ))}
 
