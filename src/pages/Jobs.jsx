@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { toast } from '../lib/toast'
 import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin,
   Play, CheckCircle, FileText, ChevronRight, User
@@ -237,6 +238,7 @@ export default function Jobs() {
       if (trackingLead) {
         // Link job back to tracking lead
         await supabase.from('jobs').update({ lead_id: trackingLead.id }).eq('id', newJob.id)
+        toast.info('Added to delivery pipeline')
       }
     }
 

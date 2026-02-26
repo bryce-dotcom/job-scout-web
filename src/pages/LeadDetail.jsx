@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { toast } from '../lib/toast'
 import {
   ArrowLeft, Calendar, FileText, Clipboard, Plus, Send, Phone, Mail,
   MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
@@ -381,6 +382,7 @@ export default function LeadDetail() {
       }
 
       // 4. Navigate to the new job
+      toast.success('Moved to delivery pipeline')
       setConvertingToJob(false)
       navigate(`/jobs/${newJob.id}`)
     } catch (err) {

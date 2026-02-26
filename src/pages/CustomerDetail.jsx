@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { toast } from '../lib/toast'
 import {
   ArrowLeft, FileText, Briefcase, Plus, Send, Phone, Mail,
   MapPin, Building2, User, X, Save, Trash2, Package, UserPlus, Grid3X3
@@ -229,6 +230,7 @@ export default function CustomerDetail() {
     if (newLead) {
       // Link quote back to the tracking lead
       await supabase.from('quotes').update({ lead_id: newLead.id }).eq('id', quote.id)
+      toast.info('Tracking in sales pipeline')
     }
 
     setSavingQuote(false)
