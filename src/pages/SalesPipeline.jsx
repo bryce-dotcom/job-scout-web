@@ -96,6 +96,10 @@ export default function SalesPipeline() {
   // Selected lead
   const [selectedLead, setSelectedLead] = useState(null)
 
+  // Section expand/collapse (default collapsed so both sections visible)
+  const [salesExpanded, setSalesExpanded] = useState(false)
+  const [deliveryExpanded, setDeliveryExpanded] = useState(false)
+
   // Won/Lost handling
   const [wonNotes, setWonNotes] = useState('')
   const [lostReason, setLostReason] = useState('')
@@ -918,226 +922,281 @@ export default function SalesPipeline() {
           </div>
         </div>
       ) : (
-        /* Desktop Pipeline Board - Two rows: Sales on top, Delivery below */
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', minHeight: 0 }}>
+        /* Desktop Pipeline Board - Two collapsible sections */
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', minHeight: 0 }}>
 
           {/* SALES FUNNEL */}
-          <div style={{ minHeight: '320px', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ fontSize: '11px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
+          <div style={{ display: 'flex', flexDirection: 'column', borderRadius: '8px', border: `1px solid ${theme.border}`, overflow: 'hidden', flex: salesExpanded ? 1 : 'none' }}>
+            {/* Section Header - always visible, clickable */}
+            <div
+              onClick={() => setSalesExpanded(!salesExpanded)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: theme.bgCard, cursor: 'pointer', borderBottom: `1px solid ${theme.border}`, userSelect: 'none' }}
+            >
+              <div style={{ transition: 'transform 0.2s', transform: salesExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                <ChevronRight size={16} color={theme.textMuted} />
+              </div>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
               <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>{pipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed }).length} leads</span>
             </div>
-            <div style={{ flex: 1, display: 'flex', gap: '8px', minHeight: 0 }}>
+
+            {/* Stage Headers Strip - always visible */}
+            <div style={{ display: 'flex', gap: '0px', backgroundColor: theme.bg }}>
               {stages.filter(s => !s.isDelivery && !s.isClosed).map(stage => {
                 const stageLeads = getLeadsForStage(stage.id)
                 const stageValue = getStageValue(stage.id)
                 const isDragOver = dragOverStage === stage.id
-
                 return (
                   <div
                     key={stage.id}
                     style={{
                       flex: '1 1 0',
-                      minWidth: '120px',
-                      maxWidth: stage.isLost ? '160px' : 'none',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      backgroundColor: isDragOver ? theme.accentBg : 'rgba(0,0,0,0.02)',
-                      borderRadius: '8px',
-                      border: isDragOver ? `2px dashed ${theme.accent}` : '2px solid transparent',
-                      transition: 'all 0.15s'
+                      minWidth: 0,
+                      padding: '6px 8px',
+                      borderBottom: `3px solid ${stage.color}`,
+                      backgroundColor: isDragOver ? theme.accentBg : theme.bgCard,
+                      transition: 'background-color 0.15s'
                     }}
                     onDragOver={(e) => handleDragOver(e, stage.id)}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, stage.id)}
                   >
-                    {/* Stage Header */}
-                    <div style={{ padding: '8px 10px', borderBottom: `3px solid ${stage.color}`, backgroundColor: theme.bgCard }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-                        <span style={{ fontWeight: '600', color: theme.text, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {stage.name}
-                        </span>
-                        <span style={{ backgroundColor: stage.color + '20', color: stage.color, padding: '2px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>
-                          {stageLeads.length}
-                        </span>
-                      </div>
-                      {stageValue > 0 && (
-                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>{formatCurrency(stageValue)}</div>
-                      )}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                      <span style={{ fontWeight: '600', color: theme.text, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {stage.name}
+                      </span>
+                      <span style={{ backgroundColor: stage.color + '20', color: stage.color, padding: '1px 5px', borderRadius: '10px', fontSize: '10px', fontWeight: '600', flexShrink: 0 }}>
+                        {stageLeads.length}
+                      </span>
                     </div>
-
-                    {/* Stage Cards */}
-                    <div style={{ flex: 1, padding: '6px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {stageLeads.map(lead => (
-                        <div
-                          key={lead.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, lead)}
-                          onDragEnd={handleDragEnd}
-                          style={{
-                            opacity: draggedLead?.id === lead.id ? 0.8 : 1,
-                            boxShadow: draggedLead?.id === lead.id ? '0 4px 12px rgba(0,0,0,0.15)' : 'none'
-                          }}
-                        >
-                          <EntityCard
-                            name={lead.customer_name}
-                            businessName={lead.business_name}
-                            onClick={() => navigate(`/leads/${lead.id}`)}
-                            style={{ cursor: 'grab', padding: '10px' }}
-                          >
-                            <div style={{ fontWeight: '600', color: theme.text, fontSize: '13px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {lead.customer_name}
-                            </div>
-                            {lead.business_name && (
-                              <div style={{ color: theme.textMuted, fontSize: '11px', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {lead.business_name}
-                              </div>
-                            )}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                              {lead.phone && <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}><Phone size={10} /><span>{lead.phone}</span></div>}
-                              {lead.email && <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted, overflow: 'hidden' }}><Mail size={10} /></div>}
-                            </div>
-                            {parseFloat(lead.quote_amount) > 0 && (
-                              <div style={{ color: '#16a34a', fontSize: '13px', fontWeight: '600' }}>{formatCurrency(lead.quote_amount)}</div>
-                            )}
-                            {lead.appointment_time && (
-                              <div style={{ marginTop: '4px', padding: '3px 6px', backgroundColor: isToday(lead.appointment_time) ? '#dcfce7' : '#f0fdf4', borderRadius: '4px', fontSize: '10px', color: isToday(lead.appointment_time) ? '#166534' : '#15803d', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <Calendar size={10} />
-                                <span style={{ fontWeight: isToday(lead.appointment_time) ? '600' : '400' }}>
-                                  {isToday(lead.appointment_time) ? `TODAY ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                </span>
-                              </div>
-                            )}
-                            {lead.lead_owner && (
-                              <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <div style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '600', color: theme.accent }}>
-                                  {lead.lead_owner.name?.charAt(0)}
-                                </div>
-                                <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
-                              </div>
-                            )}
-                          </EntityCard>
-                        </div>
-                      ))}
-                      {stageLeads.length === 0 && (
-                        <div style={{ padding: '20px 12px', textAlign: 'center', color: theme.textMuted, fontSize: '12px' }}>
-                          Drop leads here
-                        </div>
-                      )}
-                    </div>
+                    {stageValue > 0 && (
+                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '1px' }}>{formatCurrency(stageValue)}</div>
+                    )}
                   </div>
                 )
               })}
             </div>
+
+            {/* Cards Area - only when expanded */}
+            {salesExpanded && (
+              <div style={{ flex: 1, display: 'flex', gap: '0px', minHeight: '200px', overflow: 'hidden' }}>
+                {stages.filter(s => !s.isDelivery && !s.isClosed).map(stage => {
+                  const stageLeads = getLeadsForStage(stage.id)
+                  const isDragOver = dragOverStage === stage.id
+
+                  return (
+                    <div
+                      key={stage.id}
+                      style={{
+                        flex: '1 1 0',
+                        minWidth: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        backgroundColor: isDragOver ? theme.accentBg : 'transparent',
+                        borderRight: `1px solid ${theme.border}`,
+                        transition: 'background-color 0.15s'
+                      }}
+                      onDragOver={(e) => handleDragOver(e, stage.id)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, stage.id)}
+                    >
+                      <div style={{ flex: 1, padding: '4px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {stageLeads.map(lead => (
+                          <div
+                            key={lead.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, lead)}
+                            onDragEnd={handleDragEnd}
+                            style={{
+                              opacity: draggedLead?.id === lead.id ? 0.8 : 1,
+                              boxShadow: draggedLead?.id === lead.id ? '0 4px 12px rgba(0,0,0,0.15)' : 'none'
+                            }}
+                          >
+                            <EntityCard
+                              name={lead.customer_name}
+                              businessName={lead.business_name}
+                              onClick={() => navigate(`/leads/${lead.id}`)}
+                              style={{ cursor: 'grab', padding: '8px' }}
+                            >
+                              <div style={{ fontWeight: '600', color: theme.text, fontSize: '12px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {lead.customer_name}
+                              </div>
+                              {lead.business_name && (
+                                <div style={{ color: theme.textMuted, fontSize: '10px', marginBottom: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {lead.business_name}
+                                </div>
+                              )}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+                                {lead.phone && <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}><Phone size={10} /><span>{lead.phone}</span></div>}
+                                {lead.email && <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted, overflow: 'hidden' }}><Mail size={10} /></div>}
+                              </div>
+                              {parseFloat(lead.quote_amount) > 0 && (
+                                <div style={{ color: '#16a34a', fontSize: '12px', fontWeight: '600' }}>{formatCurrency(lead.quote_amount)}</div>
+                              )}
+                              {lead.appointment_time && (
+                                <div style={{ marginTop: '3px', padding: '2px 5px', backgroundColor: isToday(lead.appointment_time) ? '#dcfce7' : '#f0fdf4', borderRadius: '4px', fontSize: '10px', color: isToday(lead.appointment_time) ? '#166534' : '#15803d', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <Calendar size={9} />
+                                  <span style={{ fontWeight: isToday(lead.appointment_time) ? '600' : '400' }}>
+                                    {isToday(lead.appointment_time) ? `TODAY ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  </span>
+                                </div>
+                              )}
+                              {lead.lead_owner && (
+                                <div style={{ marginTop: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: '600', color: theme.accent }}>
+                                    {lead.lead_owner.name?.charAt(0)}
+                                  </div>
+                                  <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
+                                </div>
+                              )}
+                            </EntityCard>
+                          </div>
+                        ))}
+                        {stageLeads.length === 0 && (
+                          <div style={{ padding: '16px 8px', textAlign: 'center', color: theme.textMuted, fontSize: '11px' }}>
+                            Drop leads here
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* DELIVERY FUNNEL */}
-          <div style={{ minHeight: '280px', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ fontSize: '11px', fontWeight: '700', color: '#0ea5e9', textTransform: 'uppercase', letterSpacing: '1px' }}>Delivery Pipeline</span>
+          <div style={{ display: 'flex', flexDirection: 'column', borderRadius: '8px', border: `1px solid ${theme.border}`, overflow: 'hidden', flex: deliveryExpanded ? 1 : 'none' }}>
+            {/* Section Header - always visible, clickable */}
+            <div
+              onClick={() => setDeliveryExpanded(!deliveryExpanded)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: theme.bgCard, cursor: 'pointer', borderBottom: `1px solid ${theme.border}`, userSelect: 'none' }}
+            >
+              <div style={{ transition: 'transform 0.2s', transform: deliveryExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                <ChevronRight size={16} color="#0ea5e9" />
+              </div>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: '#0ea5e9', textTransform: 'uppercase', letterSpacing: '1px' }}>Delivery Pipeline</span>
               <span style={{ fontSize: '10px', color: theme.textMuted }}>Auto-synced from jobs</span>
               <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>{pipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) }).length} deals</span>
             </div>
-            <div style={{ flex: 1, display: 'flex', gap: '8px', minHeight: 0 }}>
+
+            {/* Stage Headers Strip - always visible */}
+            <div style={{ display: 'flex', gap: '0px', backgroundColor: theme.bg }}>
               {stages.filter(s => s.isDelivery || s.isClosed).map(stage => {
                 const stageLeads = getLeadsForStage(stage.id)
                 const stageValue = getStageValue(stage.id)
-                const leadJob = (lead) => lead.jobs?.[0] || null
-
                 return (
                   <div
                     key={stage.id}
                     style={{
                       flex: '1 1 0',
-                      minWidth: '120px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      backgroundColor: 'rgba(0,0,0,0.02)',
-                      borderRadius: '8px',
-                      border: '2px solid transparent'
+                      minWidth: 0,
+                      padding: '6px 8px',
+                      borderBottom: `3px solid ${stage.color}`,
+                      backgroundColor: theme.bgCard
                     }}
                   >
-                    {/* Stage Header */}
-                    <div style={{ padding: '8px 10px', borderBottom: `3px solid ${stage.color}`, backgroundColor: theme.bgCard }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-                        <span style={{ fontWeight: '600', color: theme.text, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {stage.name}
-                        </span>
-                        <span style={{ backgroundColor: stage.color + '20', color: stage.color, padding: '2px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>
-                          {stageLeads.length}
-                        </span>
-                      </div>
-                      {stageValue > 0 && (
-                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>{formatCurrency(stageValue)}</div>
-                      )}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                      <span style={{ fontWeight: '600', color: theme.text, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {stage.name}
+                      </span>
+                      <span style={{ backgroundColor: stage.color + '20', color: stage.color, padding: '1px 5px', borderRadius: '10px', fontSize: '10px', fontWeight: '600', flexShrink: 0 }}>
+                        {stageLeads.length}
+                      </span>
                     </div>
-
-                    {/* Delivery Cards */}
-                    <div style={{ flex: 1, padding: '6px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {stageLeads.map(lead => {
-                        const job = leadJob(lead)
-                        return (
-                          <EntityCard
-                            key={lead.id}
-                            name={lead.customer_name}
-                            businessName={lead.business_name}
-                            onClick={() => navigate(`/leads/${lead.id}`)}
-                            style={{ cursor: 'pointer', padding: '10px' }}
-                          >
-                            <div style={{ fontWeight: '600', color: theme.text, fontSize: '13px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {lead.customer_name}
-                            </div>
-                            {job ? (
-                              <div style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' }}>
-                                {parseFloat(job.contract_amount) > 0 && (
-                                  <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '13px' }}>{formatCurrency(job.contract_amount)}</div>
-                                )}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <Briefcase size={10} /><span>{job.job_id}</span>
-                                </div>
-                                {job.assigned_team && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <User size={10} /><span>{job.assigned_team}</span>
-                                  </div>
-                                )}
-                                {job.invoice_status && (
-                                  <div style={{
-                                    padding: '2px 6px',
-                                    backgroundColor: job.invoice_status === 'Paid' ? '#dcfce7' : job.invoice_status === 'Invoiced' ? '#dbeafe' : '#f3f4f6',
-                                    borderRadius: '4px', fontSize: '10px', fontWeight: '500',
-                                    color: job.invoice_status === 'Paid' ? '#166534' : job.invoice_status === 'Invoiced' ? '#1d4ed8' : theme.textMuted,
-                                    display: 'inline-block', marginTop: '2px'
-                                  }}>
-                                    {job.invoice_status}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              parseFloat(lead.quote_amount) > 0 && (
-                                <div style={{ color: '#16a34a', fontSize: '13px', fontWeight: '600', marginTop: '4px' }}>{formatCurrency(lead.quote_amount)}</div>
-                              )
-                            )}
-                            {lead.lead_owner && (
-                              <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <div style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '600', color: theme.accent }}>
-                                  {lead.lead_owner.name?.charAt(0)}
-                                </div>
-                                <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
-                              </div>
-                            )}
-                          </EntityCard>
-                        )
-                      })}
-                      {stageLeads.length === 0 && (
-                        <div style={{ padding: '20px 12px', textAlign: 'center', color: theme.textMuted, fontSize: '12px' }}>
-                          Auto-synced from jobs
-                        </div>
-                      )}
-                    </div>
+                    {stageValue > 0 && (
+                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '1px' }}>{formatCurrency(stageValue)}</div>
+                    )}
                   </div>
                 )
               })}
             </div>
+
+            {/* Cards Area - only when expanded */}
+            {deliveryExpanded && (
+              <div style={{ flex: 1, display: 'flex', gap: '0px', minHeight: '200px', overflow: 'hidden' }}>
+                {stages.filter(s => s.isDelivery || s.isClosed).map(stage => {
+                  const stageLeads = getLeadsForStage(stage.id)
+                  const leadJob = (lead) => lead.jobs?.[0] || null
+
+                  return (
+                    <div
+                      key={stage.id}
+                      style={{
+                        flex: '1 1 0',
+                        minWidth: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        borderRight: `1px solid ${theme.border}`
+                      }}
+                    >
+                      <div style={{ flex: 1, padding: '4px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {stageLeads.map(lead => {
+                          const job = leadJob(lead)
+                          return (
+                            <EntityCard
+                              key={lead.id}
+                              name={lead.customer_name}
+                              businessName={lead.business_name}
+                              onClick={() => navigate(`/leads/${lead.id}`)}
+                              style={{ cursor: 'pointer', padding: '8px' }}
+                            >
+                              <div style={{ fontWeight: '600', color: theme.text, fontSize: '12px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {lead.customer_name}
+                              </div>
+                              {job ? (
+                                <div style={{ fontSize: '10px', color: theme.textSecondary, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '3px' }}>
+                                  {parseFloat(job.contract_amount) > 0 && (
+                                    <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '12px' }}>{formatCurrency(job.contract_amount)}</div>
+                                  )}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                    <Briefcase size={9} /><span>{job.job_id}</span>
+                                  </div>
+                                  {job.assigned_team && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                      <User size={9} /><span>{job.assigned_team}</span>
+                                    </div>
+                                  )}
+                                  {job.invoice_status && (
+                                    <div style={{
+                                      padding: '1px 5px',
+                                      backgroundColor: job.invoice_status === 'Paid' ? '#dcfce7' : job.invoice_status === 'Invoiced' ? '#dbeafe' : '#f3f4f6',
+                                      borderRadius: '4px', fontSize: '9px', fontWeight: '500',
+                                      color: job.invoice_status === 'Paid' ? '#166534' : job.invoice_status === 'Invoiced' ? '#1d4ed8' : theme.textMuted,
+                                      display: 'inline-block', marginTop: '1px'
+                                    }}>
+                                      {job.invoice_status}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                parseFloat(lead.quote_amount) > 0 && (
+                                  <div style={{ color: '#16a34a', fontSize: '12px', fontWeight: '600', marginTop: '3px' }}>{formatCurrency(lead.quote_amount)}</div>
+                                )
+                              )}
+                              {lead.lead_owner && (
+                                <div style={{ marginTop: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: '600', color: theme.accent }}>
+                                    {lead.lead_owner.name?.charAt(0)}
+                                  </div>
+                                  <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
+                                </div>
+                              )}
+                            </EntityCard>
+                          )
+                        })}
+                        {stageLeads.length === 0 && (
+                          <div style={{ padding: '16px 8px', textAlign: 'center', color: theme.textMuted, fontSize: '11px' }}>
+                            Auto-synced from jobs
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
