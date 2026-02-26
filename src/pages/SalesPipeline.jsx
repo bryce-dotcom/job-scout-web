@@ -890,139 +890,63 @@ export default function SalesPipeline() {
           </div>
         </div>
       ) : (
-        /* Desktop Pipeline Board - Flex to fill space */
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          gap: '8px',
-          overflow: 'hidden',
-          minHeight: 0
-        }}>
-          {stages.map((stage, idx) => {
-            const stageLeads = getLeadsForStage(stage.id)
-            const stageValue = getStageValue(stage.id)
-            const isDragOver = dragOverStage === stage.id
-            const isDeliveryStage = stage.isDelivery || stage.isClosed
-            const leadJob = (lead) => lead.jobs?.[0] || null
+        /* Desktop Pipeline Board - Two rows: Sales on top, Delivery below */
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden', minHeight: 0 }}>
 
-            return (
-              <div key={stage.id} style={{ display: 'flex' }}>
-                {/* Phase separator between sales and delivery */}
-                {idx === firstDeliveryIndex && firstDeliveryIndex > 0 && (
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'flex-start',
-                    padding: '8px 2px',
-                    marginRight: '8px'
-                  }}>
-                    <div style={{
-                      writingMode: 'vertical-rl',
-                      textOrientation: 'mixed',
-                      fontSize: '9px',
-                      fontWeight: '700',
-                      letterSpacing: '1px',
-                      color: theme.textMuted,
-                      textTransform: 'uppercase',
-                      whiteSpace: 'nowrap',
-                      padding: '8px 0'
-                    }}>
-                      DELIVERY
-                    </div>
-                    <div style={{ flex: 1, width: '1px', backgroundColor: theme.border }} />
-                  </div>
-                )}
-                <div
-                  style={{
-                    flex: '1 1 0',
-                    minWidth: '140px',
-                    maxWidth: stage.isLost ? '180px' : 'none',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    backgroundColor: isDragOver ? theme.accentBg : 'rgba(0,0,0,0.02)',
-                    borderRadius: '8px',
-                    border: isDragOver ? `2px dashed ${theme.accent}` : '2px solid transparent',
-                    transition: 'all 0.15s',
-                    overflow: 'hidden'
-                  }}
-                  onDragOver={(e) => handleDragOver(e, stage.id)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, stage.id)}
-                >
-                  {/* Stage Header */}
-                  <div style={{
-                    padding: '10px 12px',
-                    borderBottom: `3px solid ${stage.color}`,
-                    backgroundColor: theme.bgCard
-                  }}>
-                    <div style={{
+          {/* SALES FUNNEL */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span style={{ fontSize: '11px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
+              <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
+            </div>
+            <div style={{ flex: 1, display: 'flex', gap: '8px', overflow: 'hidden', minHeight: 0 }}>
+              {stages.filter(s => !s.isDelivery && !s.isClosed).map(stage => {
+                const stageLeads = getLeadsForStage(stage.id)
+                const stageValue = getStageValue(stage.id)
+                const isDragOver = dragOverStage === stage.id
+
+                return (
+                  <div
+                    key={stage.id}
+                    style={{
+                      flex: '1 1 0',
+                      minWidth: '120px',
+                      maxWidth: stage.isLost ? '160px' : 'none',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px'
-                    }}>
-                      <span style={{
-                        fontWeight: '600',
-                        color: theme.text,
-                        fontSize: '13px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {stage.name}
-                      </span>
-                      <span style={{
-                        backgroundColor: stage.color + '20',
-                        color: stage.color,
-                        padding: '2px 6px',
-                        borderRadius: '10px',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        flexShrink: 0
-                      }}>
-                        {stageLeads.length}
-                      </span>
+                      flexDirection: 'column',
+                      backgroundColor: isDragOver ? theme.accentBg : 'rgba(0,0,0,0.02)',
+                      borderRadius: '8px',
+                      border: isDragOver ? `2px dashed ${theme.accent}` : '2px solid transparent',
+                      transition: 'all 0.15s',
+                      overflow: 'hidden'
+                    }}
+                    onDragOver={(e) => handleDragOver(e, stage.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, stage.id)}
+                  >
+                    {/* Stage Header */}
+                    <div style={{ padding: '8px 10px', borderBottom: `3px solid ${stage.color}`, backgroundColor: theme.bgCard }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                        <span style={{ fontWeight: '600', color: theme.text, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {stage.name}
+                        </span>
+                        <span style={{ backgroundColor: stage.color + '20', color: stage.color, padding: '2px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>
+                          {stageLeads.length}
+                        </span>
+                      </div>
+                      {stageValue > 0 && (
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>{formatCurrency(stageValue)}</div>
+                      )}
                     </div>
-                    {stageValue > 0 && (
-                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                        {formatCurrency(stageValue)}
-                      </div>
-                    )}
-                    {stage.isWon && (
-                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px', fontStyle: 'italic' }}>
-                        (Convert to Job)
-                      </div>
-                    )}
-                    {stage.isLost && (
-                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px', fontStyle: 'italic' }}>
-                        (Archives Lead)
-                      </div>
-                    )}
-                    {isDeliveryStage && (
-                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px', fontStyle: 'italic' }}>
-                        Auto-synced
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Stage Cards */}
-                  <div style={{
-                    flex: 1,
-                    padding: '6px',
-                    overflowY: 'auto',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px'
-                  }}>
-                    {stageLeads.map(lead => {
-                      const job = leadJob(lead)
-                      return (
+                    {/* Stage Cards */}
+                    <div style={{ flex: 1, padding: '6px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {stageLeads.map(lead => (
                         <div
                           key={lead.id}
-                          draggable={!isDeliveryStage}
-                          onDragStart={!isDeliveryStage ? (e) => handleDragStart(e, lead) : undefined}
-                          onDragEnd={!isDeliveryStage ? handleDragEnd : undefined}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, lead)}
+                          onDragEnd={handleDragEnd}
                           style={{
                             opacity: draggedLead?.id === lead.id ? 0.8 : 1,
                             boxShadow: draggedLead?.id === lead.id ? '0 4px 12px rgba(0,0,0,0.15)' : 'none'
@@ -1032,161 +956,163 @@ export default function SalesPipeline() {
                             name={lead.customer_name}
                             businessName={lead.business_name}
                             onClick={() => navigate(`/leads/${lead.id}`)}
-                            style={{ cursor: isDeliveryStage ? 'pointer' : 'grab', padding: '10px' }}
+                            style={{ cursor: 'grab', padding: '10px' }}
                           >
-                            {/* Lead Name */}
-                            <div style={{
-                              fontWeight: '600',
-                              color: theme.text,
-                              fontSize: '13px',
-                              marginBottom: '2px',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}>
+                            <div style={{ fontWeight: '600', color: theme.text, fontSize: '13px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {lead.customer_name}
                             </div>
-
-                            {/* Business */}
                             {lead.business_name && (
-                              <div style={{
-                                color: theme.textMuted,
-                                fontSize: '11px',
-                                marginBottom: '4px',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
-                              }}>
+                              <div style={{ color: theme.textMuted, fontSize: '11px', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {lead.business_name}
                               </div>
                             )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                              {lead.phone && <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}><Phone size={10} /><span>{lead.phone}</span></div>}
+                              {lead.email && <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted, overflow: 'hidden' }}><Mail size={10} /></div>}
+                            </div>
+                            {parseFloat(lead.quote_amount) > 0 && (
+                              <div style={{ color: '#16a34a', fontSize: '13px', fontWeight: '600' }}>{formatCurrency(lead.quote_amount)}</div>
+                            )}
+                            {lead.appointment_time && (
+                              <div style={{ marginTop: '4px', padding: '3px 6px', backgroundColor: isToday(lead.appointment_time) ? '#dcfce7' : '#f0fdf4', borderRadius: '4px', fontSize: '10px', color: isToday(lead.appointment_time) ? '#166534' : '#15803d', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Calendar size={10} />
+                                <span style={{ fontWeight: isToday(lead.appointment_time) ? '600' : '400' }}>
+                                  {isToday(lead.appointment_time) ? `TODAY ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                </span>
+                              </div>
+                            )}
+                            {lead.lead_owner && (
+                              <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <div style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '600', color: theme.accent }}>
+                                  {lead.lead_owner.name?.charAt(0)}
+                                </div>
+                                <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
+                              </div>
+                            )}
+                          </EntityCard>
+                        </div>
+                      ))}
+                      {stageLeads.length === 0 && (
+                        <div style={{ padding: '20px 12px', textAlign: 'center', color: theme.textMuted, fontSize: '12px' }}>
+                          Drop leads here
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
 
-                            {/* Delivery card: show job context */}
-                            {isDeliveryStage && job ? (
+          {/* DELIVERY FUNNEL */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span style={{ fontSize: '11px', fontWeight: '700', color: '#0ea5e9', textTransform: 'uppercase', letterSpacing: '1px' }}>Delivery Pipeline</span>
+              <span style={{ fontSize: '10px', color: theme.textMuted }}>Auto-synced from jobs</span>
+              <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
+            </div>
+            <div style={{ flex: 1, display: 'flex', gap: '8px', overflow: 'hidden', minHeight: 0 }}>
+              {stages.filter(s => s.isDelivery || s.isClosed).map(stage => {
+                const stageLeads = getLeadsForStage(stage.id)
+                const stageValue = getStageValue(stage.id)
+                const leadJob = (lead) => lead.jobs?.[0] || null
+
+                return (
+                  <div
+                    key={stage.id}
+                    style={{
+                      flex: '1 1 0',
+                      minWidth: '120px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      backgroundColor: 'rgba(0,0,0,0.02)',
+                      borderRadius: '8px',
+                      border: '2px solid transparent',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    {/* Stage Header */}
+                    <div style={{ padding: '8px 10px', borderBottom: `3px solid ${stage.color}`, backgroundColor: theme.bgCard }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                        <span style={{ fontWeight: '600', color: theme.text, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {stage.name}
+                        </span>
+                        <span style={{ backgroundColor: stage.color + '20', color: stage.color, padding: '2px 6px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>
+                          {stageLeads.length}
+                        </span>
+                      </div>
+                      {stageValue > 0 && (
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>{formatCurrency(stageValue)}</div>
+                      )}
+                    </div>
+
+                    {/* Delivery Cards */}
+                    <div style={{ flex: 1, padding: '6px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {stageLeads.map(lead => {
+                        const job = leadJob(lead)
+                        return (
+                          <EntityCard
+                            key={lead.id}
+                            name={lead.customer_name}
+                            businessName={lead.business_name}
+                            onClick={() => navigate(`/leads/${lead.id}`)}
+                            style={{ cursor: 'pointer', padding: '10px' }}
+                          >
+                            <div style={{ fontWeight: '600', color: theme.text, fontSize: '13px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {lead.customer_name}
+                            </div>
+                            {job ? (
                               <div style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' }}>
-                                {(parseFloat(job.contract_amount) > 0) && (
-                                  <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '13px' }}>
-                                    {formatCurrency(job.contract_amount)}
-                                  </div>
+                                {parseFloat(job.contract_amount) > 0 && (
+                                  <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '13px' }}>{formatCurrency(job.contract_amount)}</div>
                                 )}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <Briefcase size={10} />
-                                  <span>{job.job_id}</span>
+                                  <Briefcase size={10} /><span>{job.job_id}</span>
                                 </div>
                                 {job.assigned_team && (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <User size={10} />
-                                    <span>{job.assigned_team}</span>
+                                    <User size={10} /><span>{job.assigned_team}</span>
                                   </div>
                                 )}
                                 {job.invoice_status && (
                                   <div style={{
                                     padding: '2px 6px',
                                     backgroundColor: job.invoice_status === 'Paid' ? '#dcfce7' : job.invoice_status === 'Invoiced' ? '#dbeafe' : '#f3f4f6',
-                                    borderRadius: '4px',
-                                    fontSize: '10px',
-                                    fontWeight: '500',
+                                    borderRadius: '4px', fontSize: '10px', fontWeight: '500',
                                     color: job.invoice_status === 'Paid' ? '#166534' : job.invoice_status === 'Invoiced' ? '#1d4ed8' : theme.textMuted,
-                                    display: 'inline-block',
-                                    marginTop: '2px'
+                                    display: 'inline-block', marginTop: '2px'
                                   }}>
                                     {job.invoice_status}
                                   </div>
                                 )}
                               </div>
                             ) : (
-                              <>
-                                {/* Sales card: standard info */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                                  {lead.phone && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}>
-                                      <Phone size={10} />
-                                    </div>
-                                  )}
-                                  {lead.email && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}>
-                                      <Mail size={10} />
-                                    </div>
-                                  )}
-                                </div>
-
-                                {parseFloat(lead.quote_amount) > 0 && (
-                                  <div style={{ color: '#16a34a', fontSize: '13px', fontWeight: '600' }}>
-                                    {formatCurrency(lead.quote_amount)}
-                                  </div>
-                                )}
-
-                                {lead.appointment_time && (
-                                  <div style={{
-                                    marginTop: '6px',
-                                    padding: '3px 6px',
-                                    backgroundColor: isToday(lead.appointment_time) ? '#dcfce7' : '#f0fdf4',
-                                    borderRadius: '4px',
-                                    fontSize: '10px',
-                                    color: isToday(lead.appointment_time) ? '#166534' : '#15803d',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px'
-                                  }}>
-                                    <Calendar size={10} />
-                                    <span style={{ fontWeight: isToday(lead.appointment_time) ? '600' : '400' }}>
-                                      {isToday(lead.appointment_time)
-                                        ? `TODAY ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                                        : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                                      }
-                                    </span>
-                                  </div>
-                                )}
-                              </>
+                              parseFloat(lead.quote_amount) > 0 && (
+                                <div style={{ color: '#16a34a', fontSize: '13px', fontWeight: '600', marginTop: '4px' }}>{formatCurrency(lead.quote_amount)}</div>
+                              )
                             )}
-
-                            {/* Owner (shown on all cards) */}
                             {lead.lead_owner && (
-                              <div style={{
-                                marginTop: '6px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}>
-                                <div style={{
-                                  width: '18px',
-                                  height: '18px',
-                                  borderRadius: '50%',
-                                  backgroundColor: theme.accentBg,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontSize: '9px',
-                                  fontWeight: '600',
-                                  color: theme.accent
-                                }}>
+                              <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <div style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '600', color: theme.accent }}>
                                   {lead.lead_owner.name?.charAt(0)}
                                 </div>
-                                <span style={{ fontSize: '10px', color: theme.textMuted }}>
-                                  {lead.lead_owner.name}
-                                </span>
+                                <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
                               </div>
                             )}
                           </EntityCard>
+                        )
+                      })}
+                      {stageLeads.length === 0 && (
+                        <div style={{ padding: '20px 12px', textAlign: 'center', color: theme.textMuted, fontSize: '12px' }}>
+                          Auto-synced from jobs
                         </div>
-                      )
-                    })}
-
-                    {stageLeads.length === 0 && (
-                      <div style={{
-                        padding: '20px 12px',
-                        textAlign: 'center',
-                        color: theme.textMuted,
-                        fontSize: '12px'
-                      }}>
-                        {isDeliveryStage ? 'Auto-synced from jobs' : 'Drop leads here'}
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              </div>
-            )
-          })}
+                )
+              })}
+            </div>
+          </div>
         </div>
       )}
 
