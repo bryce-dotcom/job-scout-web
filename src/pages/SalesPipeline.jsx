@@ -181,13 +181,13 @@ export default function SalesPipeline() {
     // Include legacy statuses in the query so old data still shows up
     const allStatuses = [...new Set([...stageIds, ...LEGACY_STATUSES])]
 
+    // Fetch leads first (core query that must succeed)
     const { data, error } = await supabase
       .from('leads')
       .select(`
         *,
         lead_owner:employees!leads_lead_owner_id_fkey(id, name),
-        setter_owner:employees!leads_setter_owner_id_fkey(id, name),
-        jobs!jobs_lead_id_fkey(id, job_id, status, contract_amount, assigned_team, invoice_status)
+        setter_owner:employees!leads_setter_owner_id_fkey(id, name)
       `)
       .eq('company_id', companyId)
       .in('status', allStatuses)
@@ -204,6 +204,34 @@ export default function SalesPipeline() {
       ...lead,
       status: STATUS_MAP[lead.status] || lead.status
     }))
+
+    // Fetch job data separately for delivery-stage leads (won't break pipeline if this fails)
+    try {
+      const deliveryLeadIds = normalized.filter(l => {
+        const s = stages.find(st => st.id === l.status)
+        return s?.isDelivery || s?.isClosed || s?.isWon
+      }).map(l => l.id)
+
+      if (deliveryLeadIds.length > 0) {
+        const { data: jobsData } = await supabase
+          .from('jobs')
+          .select('id, lead_id, job_id, status, contract_amount, assigned_team, invoice_status')
+          .in('lead_id', deliveryLeadIds)
+
+        if (jobsData) {
+          const jobsByLeadId = {}
+          jobsData.forEach(j => {
+            if (!jobsByLeadId[j.lead_id]) jobsByLeadId[j.lead_id] = []
+            jobsByLeadId[j.lead_id].push(j)
+          })
+          normalized.forEach(lead => {
+            lead.jobs = jobsByLeadId[lead.id] || []
+          })
+        }
+      }
+    } catch (e) {
+      console.log('[Pipeline] Job data fetch failed (non-critical):', e)
+    }
 
     setPipelineLeads(normalized)
     setLoading(false)
