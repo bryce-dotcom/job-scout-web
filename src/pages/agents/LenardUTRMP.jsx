@@ -2064,6 +2064,94 @@ export default function LenardUTRMP() {
                     ))}
                   </div>
                 </div>
+
+                {/* 10-Year Cash Flow Projection */}
+                {financials.annualEnergySavings > 0 && (<>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>10-Year Cash Flow Projection</div>
+                  <div style={{ overflowX: 'auto', border: '1px solid #eee', borderRadius: '8px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', minWidth: '420px' }}>
+                      <thead>
+                        <tr style={{ background: '#1e1e22', color: '#fff' }}>
+                          <th style={{ padding: '5px 6px', textAlign: 'left', fontWeight: '600' }}>Year</th>
+                          <th style={{ padding: '5px 6px', textAlign: 'right', fontWeight: '600' }}>Savings</th>
+                          <th style={{ padding: '5px 6px', textAlign: 'right', fontWeight: '600' }}>Rebate</th>
+                          <th style={{ padding: '5px 6px', textAlign: 'right', fontWeight: '600' }}>Investment</th>
+                          <th style={{ padding: '5px 6px', textAlign: 'right', fontWeight: '600' }}>Net CF</th>
+                          <th style={{ padding: '5px 6px', textAlign: 'right', fontWeight: '600' }}>Cumulative</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {financials.cashFlow.map((cf, i) => {
+                          const isPaybackYr = cf.year > 0 && cf.year === Math.ceil(financials.simplePayback);
+                          return (
+                            <tr key={cf.year} style={{ background: isPaybackYr ? '#fff5eb' : i % 2 === 0 ? '#f8f8fa' : '#fff', borderBottom: '1px solid #f0f0f0' }}>
+                              <td style={{ padding: '4px 6px', fontWeight: isPaybackYr ? '700' : '400' }}>Yr {cf.year}{isPaybackYr ? ' *' : ''}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right' }}>{cf.savings > 0 ? `$${Math.round(cf.savings).toLocaleString()}` : '-'}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right', color: cf.rebate > 0 ? T.green : '#888' }}>{cf.rebate > 0 ? `$${Math.round(cf.rebate).toLocaleString()}` : '-'}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right', color: cf.investment < 0 ? T.red : '#888' }}>{cf.investment < 0 ? `($${Math.round(Math.abs(cf.investment)).toLocaleString()})` : '-'}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right', color: cf.netCashFlow >= 0 ? T.green : T.red, fontWeight: '600' }}>{cf.netCashFlow >= 0 ? `$${Math.round(cf.netCashFlow).toLocaleString()}` : `($${Math.round(Math.abs(cf.netCashFlow)).toLocaleString()})`}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right', color: cf.cumulative >= 0 ? T.green : T.red, fontWeight: '700' }}>{cf.cumulative >= 0 ? `$${Math.round(cf.cumulative).toLocaleString()}` : `($${Math.round(Math.abs(cf.cumulative)).toLocaleString()})`}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {financials.simplePayback > 0 && (
+                    <div style={{ fontSize: '10px', color: T.accent, marginTop: '4px' }}>* Payback year</div>
+                  )}
+
+                  {/* Cumulative Cash Flow Bar Chart */}
+                  <div style={{ marginTop: '12px', background: '#f8f8fa', borderRadius: '8px', padding: '12px', border: '1px solid #eee' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '700', color: '#666', marginBottom: '8px', textTransform: 'uppercase' }}>Cumulative Cash Flow</div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '80px' }}>
+                      {financials.cashFlow.map(cf => {
+                        const allCum = financials.cashFlow.map(c => c.cumulative);
+                        const maxAbs = Math.max(Math.abs(Math.max(...allCum)), Math.abs(Math.min(...allCum))) || 1;
+                        const pct = (cf.cumulative / maxAbs) * 100;
+                        const isPos = cf.cumulative >= 0;
+                        return (
+                          <div key={cf.year} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                            {isPos && <div style={{ width: '100%', background: T.green, borderRadius: '2px 2px 0 0', height: `${Math.abs(pct) * 0.7}%`, minHeight: cf.cumulative !== 0 ? '2px' : 0 }} />}
+                            {!isPos && <div style={{ width: '100%', background: T.red, borderRadius: '0 0 2px 2px', height: `${Math.abs(pct) * 0.7}%`, minHeight: '2px', marginTop: 'auto' }} />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', gap: '2px', marginTop: '2px' }}>
+                      {financials.cashFlow.map(cf => (
+                        <div key={cf.year} style={{ flex: 1, textAlign: 'center', fontSize: '7px', color: '#999' }}>{cf.year}</div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Summary Narrative */}
+                  <div style={{ marginTop: '12px', padding: '12px', background: '#f0faf0', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.2)', fontSize: '11px', color: '#333', lineHeight: '1.6' }}>
+                    {(() => {
+                      const paybackMonths = Math.round(financials.simplePayback * 12);
+                      const paybackYears = Math.floor(paybackMonths / 12);
+                      const paybackRem = paybackMonths % 12;
+                      const paybackStr = paybackYears > 0
+                        ? `${paybackYears} year${paybackYears > 1 ? 's' : ''}${paybackRem > 0 ? ` ${paybackRem} month${paybackRem > 1 ? 's' : ''}` : ''}`
+                        : `${paybackMonths} months`;
+                      const returnMultiple = financials.netProjectCost > 0 ? ((financials.annualEnergySavings * 10) / financials.netProjectCost).toFixed(1) : '0';
+                      return (<>
+                        <div>This investment reaches <strong>break-even in {paybackStr}</strong>. After payback, the project generates <strong style={{ color: T.green }}>${Math.round(financials.annualEnergySavings).toLocaleString()}/yr</strong> in pure energy savings.</div>
+                        <div style={{ marginTop: '6px' }}>Over 10 years, every <strong>$1.00 invested returns ${returnMultiple}</strong> in energy savings (${Math.round(financials.tenYearSavings).toLocaleString()} net).</div>
+                        <div style={{ marginTop: '6px' }}>NPV at 5% discount: <strong>${Math.round(financials.npv).toLocaleString()}</strong> | IRR: <strong>{(financials.irr * 100).toFixed(1)}%</strong></div>
+                      </>);
+                    })()}
+                  </div>
+                </>)}
+
+                {/* Assumptions */}
+                <div style={{ marginTop: '12px', padding: '10px', background: '#fafafa', borderRadius: '8px', border: '1px solid #eee', fontSize: '9px', color: '#999', lineHeight: '1.5' }}>
+                  <div style={{ fontWeight: '700', color: '#666', marginBottom: '4px', textTransform: 'uppercase', fontSize: '8px' }}>Assumptions & Disclaimers</div>
+                  <div>Operating: {operatingHours} hrs/day, {daysPerYear} days/yr ({(operatingHours * daysPerYear).toLocaleString()} hrs/yr). Rate: ${energyRate}/kWh.</div>
+                  <div>RMP incentives subject to program review, approval, and available funding. Cap: {Math.round(capPct * 100)}% of project cost.</div>
+                  <div>NPV at 5% discount over 10 years. IRR over 10-year horizon. LED rated 50,000-100,000 hrs.</div>
+                  <div style={{ marginTop: '4px', fontStyle: 'italic' }}>This document is a preliminary estimate for planning purposes and does not constitute a binding offer or guarantee.</div>
+                </div>
               </>)}
 
               <div style={{ fontSize: '10px', color: '#999', marginTop: '12px', textAlign: 'center' }}>Estimate only {'\u2014'} subject to Rocky Mountain Power review and approval</div>
