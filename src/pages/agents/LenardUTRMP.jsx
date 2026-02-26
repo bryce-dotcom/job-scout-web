@@ -1131,14 +1131,9 @@ export default function LenardUTRMP() {
           <div style={{ fontSize: '13px', fontWeight: '600', color: T.blue, marginBottom: '6px' }}>{programLabel} Rates</div>
           {program === 'large' ? (
             <div style={{ fontSize: '12px', color: T.textSec, lineHeight: '1.6' }}>
-              Interior Fixture: <span style={{ color: T.text }}>  return "PLACEHOLDER_RENDER";
-}.60-$1.20/W reduced</span><br/>
-              Interior Controls: <span style={{ color: T.text }}>  return "PLACEHOLDER_RENDER";
-}.15-  return "PLACEHOLDER_RENDER";
-}.75/W reduced</span><br/>
-              Exterior Fixture: <span style={{ color: T.text }}>  return "PLACEHOLDER_RENDER";
-}.35-  return "PLACEHOLDER_RENDER";
-}.70/W reduced</span><br/>
+              Interior Fixture: <span style={{ color: T.text }}>$0.60-$1.20/W reduced</span><br/>
+              Interior Controls: <span style={{ color: T.text }}>$0.15-$0.75/W reduced</span><br/>
+              Exterior Fixture: <span style={{ color: T.text }}>$0.35-$0.70/W reduced</span><br/>
               Cap: <span style={{ color: T.accent }}>70% of project cost</span>
             </div>
           ) : (
