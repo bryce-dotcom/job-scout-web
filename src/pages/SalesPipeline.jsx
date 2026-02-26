@@ -891,15 +891,15 @@ export default function SalesPipeline() {
         </div>
       ) : (
         /* Desktop Pipeline Board - Two rows: Sales on top, Delivery below */
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', minHeight: 0 }}>
 
           {/* SALES FUNNEL */}
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ minHeight: '320px', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <span style={{ fontSize: '11px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
               <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
             </div>
-            <div style={{ flex: 1, display: 'flex', gap: '8px', overflow: 'hidden', minHeight: 0 }}>
+            <div style={{ flex: 1, display: 'flex', gap: '8px', minHeight: 0 }}>
               {stages.filter(s => !s.isDelivery && !s.isClosed).map(stage => {
                 const stageLeads = getLeadsForStage(stage.id)
                 const stageValue = getStageValue(stage.id)
@@ -917,8 +917,7 @@ export default function SalesPipeline() {
                       backgroundColor: isDragOver ? theme.accentBg : 'rgba(0,0,0,0.02)',
                       borderRadius: '8px',
                       border: isDragOver ? `2px dashed ${theme.accent}` : '2px solid transparent',
-                      transition: 'all 0.15s',
-                      overflow: 'hidden'
+                      transition: 'all 0.15s'
                     }}
                     onDragOver={(e) => handleDragOver(e, stage.id)}
                     onDragLeave={handleDragLeave}
@@ -1005,13 +1004,13 @@ export default function SalesPipeline() {
           </div>
 
           {/* DELIVERY FUNNEL */}
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ minHeight: '280px', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <span style={{ fontSize: '11px', fontWeight: '700', color: '#0ea5e9', textTransform: 'uppercase', letterSpacing: '1px' }}>Delivery Pipeline</span>
               <span style={{ fontSize: '10px', color: theme.textMuted }}>Auto-synced from jobs</span>
               <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
             </div>
-            <div style={{ flex: 1, display: 'flex', gap: '8px', overflow: 'hidden', minHeight: 0 }}>
+            <div style={{ flex: 1, display: 'flex', gap: '8px', minHeight: 0 }}>
               {stages.filter(s => s.isDelivery || s.isClosed).map(stage => {
                 const stageLeads = getLeadsForStage(stage.id)
                 const stageValue = getStageValue(stage.id)
@@ -1027,8 +1026,7 @@ export default function SalesPipeline() {
                       flexDirection: 'column',
                       backgroundColor: 'rgba(0,0,0,0.02)',
                       borderRadius: '8px',
-                      border: '2px solid transparent',
-                      overflow: 'hidden'
+                      border: '2px solid transparent'
                     }}
                   >
                     {/* Stage Header */}
