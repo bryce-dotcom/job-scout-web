@@ -414,6 +414,20 @@ export default function LenardUTRMP() {
   const capApplied = effectiveProjectCost > 0 && rawIncentive > capAmount;
   const reductionPct = totals.existWatts > 0 ? ((totals.wattsReduced / totals.existWatts) * 100).toFixed(0) : 0;
 
+  // Cross-program comparison (SMBE vs Express only)
+  const altComparison = useMemo(() => {
+    if (program === 'large' || lines.length === 0) return null;
+    const altCalcFn = program === 'smbe' ? calcExpress : calcSMBE;
+    const altResults = lines.map(l => altCalcFn(l));
+    const altRawTotal = altResults.reduce((s, r) => s + r.totalIncentive, 0);
+    const altCapPct = program === 'smbe' ? EXPRESS.cap : SMBE.cap;
+    const altCapAmount = effectiveProjectCost > 0 ? +(effectiveProjectCost * altCapPct).toFixed(2) : Infinity;
+    const altEstimated = +Math.min(altRawTotal, altCapAmount).toFixed(2);
+    const altName = program === 'smbe' ? 'Express' : 'SMBE';
+    const diff = estimatedRebate - altEstimated;
+    return { altName, altEstimated, altRawTotal, diff, currentIsBetter: diff >= 0 };
+  }, [program, lines, effectiveProjectCost, estimatedRebate]);
+
   // ---- FINANCIAL ANALYSIS ----
   const financials = useMemo(() => {
     const annualHours = operatingHours * daysPerYear;
@@ -1410,6 +1424,14 @@ export default function LenardUTRMP() {
         })}
       </div>
 
+      {/* ===== 30% MINIMUM SAVINGS WARNING ===== */}
+      {results.length > 0 && totals.existWatts > 0 && reductionPct < 30 && (
+        <div style={{ margin: '8px 16px 0', padding: '10px 14px', background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '16px' }}>{'\u26A0\uFE0F'}</span>
+          <span style={{ fontSize: '12px', color: '#ef4444', fontWeight: '600' }}>Energy savings is only {reductionPct}% {'\u2014'} RMP requires {'\u2265'}30% reduction to qualify</span>
+        </div>
+      )}
+
       {/* ===== PROJECT TOTALS ===== */}
       {results.length > 0 && (
         <div style={{ ...S.card, margin: '8px 16px', background: T.accentDim, borderColor: T.accent }}>
@@ -1440,6 +1462,33 @@ export default function LenardUTRMP() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ===== PROGRAM COMPARISON (SMBE vs Express) ===== */}
+      {altComparison && altComparison.diff !== 0 && (
+        altComparison.currentIsBetter ? (
+          <div style={{ margin: '0 16px 8px', padding: '10px 14px', background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px' }}>{'\u2705'}</span>
+            <span style={{ fontSize: '12px', color: T.green, fontWeight: '600' }}>
+              You're on the best program {'\u2014'} {program === 'smbe' ? 'SMBE' : 'Express'} saves you ${Math.abs(altComparison.diff).toLocaleString()} more than {altComparison.altName}
+            </span>
+          </div>
+        ) : (
+          <div style={{ margin: '0 16px 8px', padding: '12px 14px', background: T.blueDim, border: `1px solid ${T.blue}`, borderRadius: '10px', animation: 'pulse 2s infinite' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span style={{ fontSize: '14px' }}>{'\uD83D\uDCA1'}</span>
+              <span style={{ fontSize: '12px', color: T.blue, fontWeight: '600' }}>
+                Switch to {altComparison.altName} for ${Math.abs(altComparison.diff).toLocaleString()} more incentive (${altComparison.altEstimated.toLocaleString()} vs ${estimatedRebate.toLocaleString()})
+              </span>
+            </div>
+            <button
+              onClick={() => setProgram(altComparison.altName === 'Express' ? 'express' : 'smbe')}
+              style={{ ...S.btn, width: '100%', fontSize: '12px', padding: '8px', background: T.blue, color: '#fff' }}
+            >
+              Switch to {altComparison.altName}
+            </button>
+          </div>
+        )
       )}
 
       {/* ===== QUICK ADD MODAL ===== */}
