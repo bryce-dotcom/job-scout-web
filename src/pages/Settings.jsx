@@ -148,7 +148,7 @@ export default function Settings() {
   const fetchAllData = useStore((state) => state.fetchAllData)
   const getSettingList = useStore((state) => state.getSettingList)
 
-  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner'
+  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin'
   const tabs = isAdmin
     ? [...baseTabs, { id: 'developer_tools', label: 'Developer Tools', icon: Code }]
     : baseTabs

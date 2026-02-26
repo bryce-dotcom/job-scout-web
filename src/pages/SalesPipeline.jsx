@@ -125,8 +125,8 @@ export default function SalesPipeline() {
   // Get active employees for filter
   const activeEmployees = employees.filter(e => e.active !== false)
 
-  // Check if user is superadmin (only superadmins can edit pipeline settings)
-  const isSuperAdmin = user?.user_role === 'Super Admin' || user?.role === 'Super Admin'
+  // Check if user can edit pipeline settings (Super Admin or Owner)
+  const isSuperAdmin = user?.user_role === 'Super Admin' || user?.user_role === 'Owner' || user?.role === 'Super Admin' || user?.role === 'Owner'
 
   // Handle window resize for mobile detection
   useEffect(() => {

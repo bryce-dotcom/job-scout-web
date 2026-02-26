@@ -56,7 +56,7 @@ export default function Appointments() {
   const theme = themeContext?.theme || defaultTheme
 
   // Check if user is admin
-  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.role === 'Admin' || user?.role === 'Owner'
+  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin' || user?.role === 'Admin' || user?.role === 'Owner' || user?.role === 'Super Admin'
 
   useEffect(() => {
     if (!companyId) {

@@ -37,7 +37,8 @@ const DEFAULT_ACCESS_LEVELS = [
   { name: 'Team Lead', description: 'Can view team members and schedules' },
   { name: 'Manager', description: 'Can edit team members, view reports' },
   { name: 'Admin', description: 'Full access except system settings' },
-  { name: 'Owner', description: 'Full access to everything' }
+  { name: 'Owner', description: 'Full access to everything' },
+  { name: 'Super Admin', description: 'Owner + pipeline settings and system config' }
 ]
 
 const emptyEmployee = {
@@ -113,11 +114,14 @@ export default function Employees() {
   const [savingSettings, setSavingSettings] = useState(false)
 
   // Check if current user is admin
-  const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' ||
-    currentUser?.role === 'Admin' || currentUser?.role === 'Owner'
+  const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' || currentUser?.user_role === 'Super Admin' ||
+    currentUser?.role === 'Admin' || currentUser?.role === 'Owner' || currentUser?.role === 'Super Admin'
 
   // Check if current user is owner (can grant developer access)
-  const isOwner = currentUser?.user_role === 'Owner' || currentUser?.role === 'Owner'
+  const isOwner = currentUser?.user_role === 'Owner' || currentUser?.role === 'Owner' || currentUser?.user_role === 'Super Admin' || currentUser?.role === 'Super Admin'
+
+  // Only developers can see/grant developer access
+  const isDeveloper = currentUser?.is_developer === true
 
   useEffect(() => {
     if (!companyId) {
@@ -1183,8 +1187,8 @@ export default function Employees() {
                   )}
                 </div>
 
-                {/* Developer Access - Only Owners can grant this */}
-                {isOwner && (
+                {/* Developer Access - Only visible to developers */}
+                {isDeveloper && (
                   <div style={{
                     marginBottom: '16px',
                     padding: '12px',
