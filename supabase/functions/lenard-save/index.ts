@@ -120,7 +120,9 @@ serve(async (req) => {
     // 1. Create or Update Lead
     // =====================================================
     const noteLines = [
-      `SRP ${programType === 'sbs' ? 'Standard Business' : 'Small Business'} Lighting Retrofit`,
+      programType === 'ut-rmp'
+        ? 'Rocky Mountain Power Lighting Retrofit'
+        : `SRP ${programType === 'sbs' ? 'Standard Business' : 'Small Business'} Lighting Retrofit`,
       `${totalFixtures} fixtures | ${totalExistW}W existing → ${totalNewW}W LED | ${wattsReduced}W reduced`,
       '',
       ...lines.map((l: any, i: number) => `${i + 1}. ${l.name || 'Area'}: ${l.qty || 1}x ${l.existW || 0}W → ${l.newW || 0}W${l.fixtureCategory ? ` (${l.fixtureCategory})` : ''}${l.lightingType ? ` ${l.lightingType}` : ''}`),
@@ -152,7 +154,7 @@ serve(async (req) => {
         phone: phone || null,
         address: fullAddress,
         service_type: 'Energy Efficiency',
-        lead_source: 'Lenard AZ SRP',
+        lead_source: programType === 'ut-rmp' ? 'Lenard UT RMP' : 'Lenard AZ SRP',
         status: 'New',
         notes: noteLines,
         lead_owner_id: leadOwnerId ? parseInt(leadOwnerId) : null,

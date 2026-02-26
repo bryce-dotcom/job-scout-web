@@ -344,7 +344,7 @@ export default function LenardUTRMP() {
       ownerLoadedRef.current = true;
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      (async () => { try { const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId }) }); const data = await resp.json(); if (data.projects) setProjects(data.projects); } catch (_) {} })();
+      (async () => { try { const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId, leadSource: 'Lenard UT RMP' }) }); const data = await resp.json(); if (data.projects) setProjects(data.projects); } catch (_) {} })();
     }
   }, [leadOwnerId]);
 
@@ -557,7 +557,7 @@ export default function LenardUTRMP() {
         totals, financials, totalIncentive: estimatedRebate, projectCost: effectiveProjectCost,
         operatingHours, daysPerYear, energyRate, city: saveCity, state: saveState, zip: saveZip, photos: capturedPhotos,
       };
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, projectData, programType: program, leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
       const data = await resp.json();
       if (data.success) { setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false); showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713'); }
       else { showToast(data.error || 'Save failed', '\u26A0\uFE0F'); }
@@ -570,7 +570,7 @@ export default function LenardUTRMP() {
     try {
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId: ownerId || null }) });
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId: ownerId || null, leadSource: 'Lenard UT RMP' }) });
       const data = await resp.json();
       if (data.projects) setProjects(data.projects);
     } catch (_) { showToast('Could not load projects', '\u26A0\uFE0F'); }

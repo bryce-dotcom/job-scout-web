@@ -18,7 +18,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { leadOwnerId } = body;
+    const { leadOwnerId, leadSource } = body;
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -31,7 +31,7 @@ serve(async (req) => {
     // Fetch leads — optionally filtered by lead_owner_id
     const leadParams = new URLSearchParams({
       company_id: `eq.${companyId}`,
-      lead_source: 'eq.Lenard AZ SRP',
+      lead_source: `eq.${leadSource || 'Lenard AZ SRP'}`,
       select: 'id,customer_name,created_at,status,notes,phone,email,address,lead_owner_id',
       order: 'created_at.desc',
       limit: '50',
