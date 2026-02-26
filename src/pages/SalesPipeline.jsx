@@ -54,7 +54,7 @@ const defaultStages = [
   { id: 'Lost', name: 'Lost', color: '#64748b', isLost: true }
 ]
 
-const PIPELINE_VERSION = 2
+const PIPELINE_VERSION = 3
 
 // Available stats to show in header
 const availableStats = [
@@ -178,8 +178,8 @@ export default function SalesPipeline() {
     }
   }, [companyId])
 
-  // Slim select — only the columns pipeline cards actually use
-  const LEAD_COLUMNS = `id, customer_name, business_name, phone, email, address, status, quote_amount, appointment_time, lead_source, lead_owner_id, salesperson_id, converted_customer_id, quote_id, updated_at, lead_owner:employees!leads_lead_owner_id_fkey(id, name)`
+  // Lead query with owner join
+  const LEAD_COLUMNS = '*, lead_owner:employees!leads_lead_owner_id_fkey(id, name)'
 
   // Normalize legacy statuses
   const normalizeLead = (lead) => ({
