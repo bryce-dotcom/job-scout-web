@@ -60,6 +60,7 @@ import ConradContacts from './pages/agents/conrad/ConradContacts'
 import ConradAutomations from './pages/agents/conrad/ConradAutomations'
 import ConradSettings from './pages/agents/conrad/ConradSettings'
 import LenardAZSRP from './pages/agents/LenardAZSRP'
+import LenardUTRMP from './pages/agents/LenardUTRMP'
 import DataConsole from './pages/admin/DataConsole'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
@@ -204,6 +205,7 @@ function App() {
       <Routes>
         {/* Public agent routes - NO auth required */}
         <Route path="/agent/lenard-az-srp" element={<LenardAZSRP />} />
+        <Route path="/agent/lenard-ut-rmp" element={<LenardUTRMP />} />
 
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
