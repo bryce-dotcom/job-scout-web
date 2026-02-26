@@ -844,6 +844,11 @@ export default function SalesPipeline() {
                         {lead.lead_owner.name}
                       </div>
                     )}
+                    {lead.lead_source && (
+                      <div style={{ fontSize: '11px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
+                        via {lead.lead_source}
+                      </div>
+                    )}
                   </div>
 
                   {/* Quick Actions for Mobile */}
@@ -1049,6 +1054,11 @@ export default function SalesPipeline() {
                                   <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
                                 </div>
                               )}
+                              {lead.lead_source && (
+                                <div style={{ marginTop: '3px', fontSize: '9px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
+                                  via {lead.lead_source}
+                                </div>
+                              )}
                             </EntityCard>
                           </div>
                         ))}
@@ -1189,6 +1199,11 @@ export default function SalesPipeline() {
                                     {lead.lead_owner.name?.charAt(0)}
                                   </div>
                                   <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
+                                </div>
+                              )}
+                              {lead.lead_source && (
+                                <div style={{ marginTop: '3px', fontSize: '9px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
+                                  via {lead.lead_source}
                                 </div>
                               )}
                             </EntityCard>
