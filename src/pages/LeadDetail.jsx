@@ -550,29 +550,32 @@ export default function LeadDetail() {
             </a>
           )}
           {lead.status === 'Won' && (
-            <button
-              onClick={handleConvertToJob}
-              disabled={convertingToJob}
-              style={{
-                padding: isMobile ? '12px 16px' : '10px 14px',
-                minHeight: isMobile ? '44px' : 'auto',
-                backgroundColor: convertingToJob ? '#9ca3af' : '#7c3aed',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: convertingToJob ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                fontSize: '14px',
-                fontWeight: '600',
-                flex: isMobile ? '1 1 100%' : 'none'
-              }}
-            >
-              <Briefcase size={16} />
-              {convertingToJob ? 'Converting...' : 'Convert to Job & Customer'}
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'stretch' : 'flex-start', flex: isMobile ? '1 1 100%' : 'none' }}>
+              <button
+                onClick={handleConvertToJob}
+                disabled={convertingToJob}
+                style={{
+                  padding: isMobile ? '12px 16px' : '10px 14px',
+                  minHeight: isMobile ? '44px' : 'auto',
+                  backgroundColor: convertingToJob ? '#9ca3af' : '#7c3aed',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: convertingToJob ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  width: '100%'
+                }}
+              >
+                <Briefcase size={16} />
+                {convertingToJob ? 'Converting...' : 'Convert to Job & Customer'}
+              </button>
+              <span style={{ fontSize: '10px', color: '#7c3aed', marginTop: '4px', textAlign: 'center' }}>Moves to delivery pipeline</span>
+            </div>
           )}
         </div>
       </div>

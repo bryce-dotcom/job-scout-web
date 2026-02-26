@@ -760,7 +760,7 @@ export default function SalesPipeline() {
                   }}>
                     <div style={{ fontSize: '14px' }}>No leads in {stage?.name}</div>
                     <div style={{ fontSize: '12px', marginTop: '4px' }}>
-                      Leads will appear here when moved to this stage
+                      {stage?.isDelivery ? 'Deals appear here automatically as jobs progress' : stage?.isClosed ? 'Deals move here when invoice is paid' : 'Leads will appear here when moved to this stage'}
                     </div>
                   </div>
                 )
@@ -1054,7 +1054,15 @@ export default function SalesPipeline() {
                         ))}
                         {stageLeads.length === 0 && (
                           <div style={{ padding: '16px 8px', textAlign: 'center', color: theme.textMuted, fontSize: '11px' }}>
-                            Drop leads here
+                            {stage.id === 'New' && 'Add a lead or import from a source'}
+                            {stage.id === 'Contacted' && 'Drag leads here after first contact'}
+                            {stage.id === 'Appointment Set' && 'Leads with scheduled appointments'}
+                            {stage.id === 'Qualified' && 'Leads confirmed as good fit'}
+                            {stage.id === 'Quote Sent' && 'Leads with quotes sent to them'}
+                            {stage.id === 'Negotiation' && 'Leads in active negotiation'}
+                            {stage.isWon && 'Drag a lead here when you close a deal'}
+                            {stage.isLost && 'Drag here if a deal falls through'}
+                            {!['New','Contacted','Appointment Set','Qualified','Quote Sent','Negotiation'].includes(stage.id) && !stage.isWon && !stage.isLost && 'Drop leads here'}
                           </div>
                         )}
                       </div>
@@ -1188,7 +1196,12 @@ export default function SalesPipeline() {
                         })}
                         {stageLeads.length === 0 && (
                           <div style={{ padding: '16px 8px', textAlign: 'center', color: theme.textMuted, fontSize: '11px' }}>
-                            Auto-synced from jobs
+                            {stage.id === 'Job Scheduled' && 'Convert a Won lead or create a job'}
+                            {stage.id === 'In Progress' && 'Jobs move here when started'}
+                            {stage.id === 'Job Complete' && 'Jobs move here when completed'}
+                            {stage.id === 'Invoiced' && 'Jobs move here when invoiced'}
+                            {stage.isClosed && 'Deals move here when invoice is paid'}
+                            {!['Job Scheduled','In Progress','Job Complete','Invoiced'].includes(stage.id) && !stage.isClosed && 'Auto-synced from jobs'}
                           </div>
                         )}
                       </div>

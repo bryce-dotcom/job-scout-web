@@ -1380,6 +1380,9 @@ export default function CustomerDetail() {
                 {savingQuote ? 'Saving...' : 'Create Quote'}
               </button>
             </div>
+            <p style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'center', margin: '8px 0 0' }}>
+              Quote will be tracked in your sales pipeline
+            </p>
           </div>
         </>
       )}

@@ -819,6 +819,11 @@ export default function Jobs() {
                   {loading ? 'Saving...' : (editingJob ? 'Update' : 'Add Job')}
                 </button>
               </div>
+              {!editingJob && (
+                <p style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'center', margin: '8px 0 0' }}>
+                  This job will appear in your delivery pipeline
+                </p>
+              )}
             </form>
           </div>
         </div>
