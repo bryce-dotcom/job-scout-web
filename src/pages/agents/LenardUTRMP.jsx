@@ -236,6 +236,7 @@ export default function LenardUTRMP() {
   const [newlyAdded, setNewlyAdded] = useState(new Set());
   const lineIdRef = useRef(0);
   const toastTimer = useRef(null);
+  const keepLinesOnSwitch = useRef(false);
 
   const [employees, setEmployees] = useState([]);
   const [leadOwnerId, setLeadOwnerId] = useState(() => { try { return localStorage.getItem('lenard_lead_owner_id') || null; } catch { return null; } });
@@ -272,7 +273,7 @@ export default function LenardUTRMP() {
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   }, []);
 
-  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('UT'); setSaveZip(''); }, [program]);
+  useEffect(() => { if (keepLinesOnSwitch.current) { keepLinesOnSwitch.current = false; return; } setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('UT'); setSaveZip(''); }, [program]);
 
   useEffect(() => { if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw-lenard.js').catch(() => {}); } }, []);
 
@@ -1482,7 +1483,7 @@ export default function LenardUTRMP() {
               </span>
             </div>
             <button
-              onClick={() => setProgram(altComparison.altName === 'Express' ? 'express' : 'smbe')}
+              onClick={() => { keepLinesOnSwitch.current = true; setProgram(altComparison.altName === 'Express' ? 'express' : 'smbe'); }}
               style={{ ...S.btn, width: '100%', fontSize: '12px', padding: '8px', background: T.blue, color: '#fff' }}
             >
               Switch to {altComparison.altName}
