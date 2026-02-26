@@ -206,6 +206,31 @@ export default function CustomerDetail() {
       console.error('Error creating quote lines:', linesError)
     }
 
+    // Auto-create tracking lead so this quote appears in the pipeline
+    const { data: newLead } = await supabase
+      .from('leads')
+      .insert({
+        company_id: companyId,
+        customer_name: customer.name,
+        phone: customer.phone || null,
+        email: customer.email || null,
+        address: customer.address || null,
+        status: 'Quote Sent',
+        lead_source: 'Existing Customer',
+        service_type: quoteLines[0]?.description || null,
+        converted_customer_id: customer.id,
+        quote_id: quote.id,
+        quote_amount: quoteTotal,
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+
+    if (newLead) {
+      // Link quote back to the tracking lead
+      await supabase.from('quotes').update({ lead_id: newLead.id }).eq('id', quote.id)
+    }
+
     setSavingQuote(false)
     setShowQuoteModal(false)
     await fetchCustomerData()

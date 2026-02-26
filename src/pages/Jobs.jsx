@@ -219,6 +219,12 @@ export default function Jobs() {
         updated_at: new Date().toISOString()
       })
       .eq('id', job.id)
+
+    // Sync to lead pipeline
+    if (job.lead_id) {
+      await supabase.from('leads').update({ status: 'In Progress', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
+    }
+
     await fetchJobs()
   }
 
@@ -231,6 +237,12 @@ export default function Jobs() {
         updated_at: new Date().toISOString()
       })
       .eq('id', job.id)
+
+    // Sync to lead pipeline
+    if (job.lead_id) {
+      await supabase.from('leads').update({ status: 'Job Complete', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
+    }
+
     await fetchJobs()
   }
 

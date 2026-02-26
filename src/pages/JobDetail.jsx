@@ -265,6 +265,22 @@ export default function JobDetail() {
     }
 
     await supabase.from('jobs').update(updateData).eq('id', id)
+
+    // Sync job status → lead status through delivery pipeline
+    if (job.lead_id) {
+      const statusMap = {
+        'Scheduled': 'Job Scheduled',
+        'In Progress': 'In Progress',
+        'Completed': 'Job Complete',
+        'On Hold': 'Job Scheduled',
+        'Cancelled': 'Lost'
+      }
+      const newLeadStatus = statusMap[newStatus]
+      if (newLeadStatus) {
+        await supabase.from('leads').update({ status: newLeadStatus, updated_at: new Date().toISOString() }).eq('id', job.lead_id)
+      }
+    }
+
     await fetchJobData()
     await fetchJobs()
     setSaving(false)
@@ -319,6 +335,11 @@ export default function JobDetail() {
         invoice_status: 'Invoiced',
         updated_at: new Date().toISOString()
       }).eq('id', id)
+
+      // Sync to lead pipeline
+      if (job.lead_id) {
+        await supabase.from('leads').update({ status: 'Invoiced', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
+      }
 
       await fetchJobData()
       navigate(`/invoices/${invoice.id}`)

@@ -352,6 +352,7 @@ export default function LeadDetail() {
           job_id: jobNumber,
           job_title: `${lead.customer_name} - ${lead.service_type || 'Lighting Retrofit'}`,
           customer_id: customerId,
+          lead_id: parseInt(id),
           salesperson_id: lead.lead_owner?.id || null,
           job_address: lead.address || null,
           status: 'Scheduled',
@@ -365,6 +366,9 @@ export default function LeadDetail() {
         .single()
 
       if (jobError) throw jobError
+
+      // Advance lead to Job Scheduled in the delivery pipeline
+      await updateLead(lead.id, { status: 'Job Scheduled', updated_at: new Date().toISOString() })
 
       // 3. Link file attachments to the new job
       if (attachments.length > 0) {
@@ -430,6 +434,11 @@ export default function LeadDetail() {
       'Quote Sent': '#6366f1',
       'Negotiation': '#f59e0b',
       'Won': '#10b981',
+      'Job Scheduled': '#0ea5e9',
+      'In Progress': '#f97316',
+      'Job Complete': '#22c55e',
+      'Invoiced': '#8b5cf6',
+      'Closed': '#6b7280',
       'Lost': '#64748b'
     }
     return colors[status] || theme.accent

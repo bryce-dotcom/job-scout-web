@@ -132,6 +132,15 @@ export default function Invoices() {
       .from('invoices')
       .update({ payment_status: 'Paid', updated_at: new Date().toISOString() })
       .eq('id', invoice.id)
+
+    // Sync to lead pipeline: invoice paid → lead Closed
+    if (invoice.job_id) {
+      const { data: jobData } = await supabase.from('jobs').select('lead_id').eq('id', invoice.job_id).single()
+      if (jobData?.lead_id) {
+        await supabase.from('leads').update({ status: 'Closed', updated_at: new Date().toISOString() }).eq('id', jobData.lead_id)
+      }
+    }
+
     await fetchInvoices()
   }
 

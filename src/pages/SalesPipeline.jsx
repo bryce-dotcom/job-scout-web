@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import {
   Plus, X, DollarSign, User, Calendar, Phone, Mail, Building2,
   Trophy, XCircle, ChevronRight, RefreshCw, MapPin, Settings, Trash2,
-  ChevronUp, ChevronDown
+  ChevronUp, ChevronDown, Briefcase
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 
@@ -35,6 +35,7 @@ const LEGACY_STATUSES = ['Assigned', 'Callback', 'Converted', 'Not Qualified']
 
 // Default pipeline stages based on lead status
 const defaultStages = [
+  // Sales funnel
   { id: 'New', name: 'New', color: '#3b82f6' },
   { id: 'Contacted', name: 'Contacted', color: '#8b5cf6' },
   { id: 'Appointment Set', name: 'Scheduled', color: '#22c55e' },
@@ -42,8 +43,17 @@ const defaultStages = [
   { id: 'Quote Sent', name: 'Quote Sent', color: '#8b5cf6' },
   { id: 'Negotiation', name: 'Negotiation', color: '#f59e0b' },
   { id: 'Won', name: 'Won', color: '#10b981', isWon: true },
+  // Delivery funnel
+  { id: 'Job Scheduled', name: 'Job Scheduled', color: '#0ea5e9', isDelivery: true },
+  { id: 'In Progress', name: 'In Progress', color: '#f97316', isDelivery: true },
+  { id: 'Job Complete', name: 'Job Complete', color: '#22c55e', isDelivery: true },
+  { id: 'Invoiced', name: 'Invoiced', color: '#8b5cf6', isDelivery: true },
+  { id: 'Closed', name: 'Closed', color: '#6b7280', isClosed: true },
+  // Lost (always last)
   { id: 'Lost', name: 'Lost', color: '#64748b', isLost: true }
 ]
+
+const PIPELINE_VERSION = 2
 
 // Available stats to show in header
 const availableStats = [
@@ -54,7 +64,12 @@ const availableStats = [
   { id: 'wonValue', label: 'Won Value', color: '#22c55e' },
   { id: 'appointments', label: 'Appointments', color: '#3b82f6' },
   { id: 'todayAppointments', label: 'Today\'s Appts', color: '#16a34a' },
-  { id: 'quoteSent', label: 'Quotes Sent', color: '#8b5cf6' }
+  { id: 'quoteSent', label: 'Quotes Sent', color: '#8b5cf6' },
+  { id: 'jobScheduled', label: 'Job Scheduled', color: '#0ea5e9' },
+  { id: 'inProgress', label: 'In Progress', color: '#f97316' },
+  { id: 'completed', label: 'Completed', color: '#22c55e' },
+  { id: 'invoiced', label: 'Invoiced', color: '#8b5cf6' },
+  { id: 'deliveryValue', label: 'Delivery Value', color: '#0ea5e9' }
 ]
 
 const defaultVisibleStats = ['active', 'won', 'totalValue']
@@ -120,6 +135,13 @@ export default function SalesPipeline() {
 
   // Load saved stages and stats from localStorage or use defaults
   useEffect(() => {
+    // Pipeline version check — clear cached stages when defaults change
+    const savedVersion = localStorage.getItem(`pipeline_version_${companyId}`)
+    if (savedVersion !== String(PIPELINE_VERSION)) {
+      localStorage.removeItem(`pipeline_stages_${companyId}`)
+      localStorage.setItem(`pipeline_version_${companyId}`, String(PIPELINE_VERSION))
+    }
+
     const savedStages = localStorage.getItem(`pipeline_stages_${companyId}`)
     if (savedStages) {
       try {
@@ -164,7 +186,8 @@ export default function SalesPipeline() {
       .select(`
         *,
         lead_owner:employees!leads_lead_owner_id_fkey(id, name),
-        setter_owner:employees!leads_setter_owner_id_fkey(id, name)
+        setter_owner:employees!leads_setter_owner_id_fkey(id, name),
+        jobs!jobs_lead_id_fkey(id, job_id, status, contract_amount, assigned_team, invoice_status)
       `)
       .eq('company_id', companyId)
       .in('status', allStatuses)
@@ -230,6 +253,11 @@ export default function SalesPipeline() {
   }
 
   const handleDragOver = (e, stageId) => {
+    const stage = stages.find(s => s.id === stageId)
+    if (stage?.isDelivery || stage?.isClosed) {
+      e.preventDefault()
+      return
+    }
     e.preventDefault()
     setDragOverStage(stageId)
   }
@@ -245,6 +273,9 @@ export default function SalesPipeline() {
     if (!draggedLead || draggedLead.status === targetStageId) return
 
     const stage = stages.find(s => s.id === targetStageId)
+
+    // Block drag-drop into delivery stages (they auto-advance via job sync)
+    if (stage?.isDelivery || stage?.isClosed) return
 
     // Handle Won/Lost stages
     if (stage?.isWon) {
@@ -374,8 +405,8 @@ export default function SalesPipeline() {
   // Delete stage
   const deleteStage = (index) => {
     const stage = stageForm[index]
-    if (stage.isWon || stage.isLost) {
-      alert('Cannot delete Won or Lost stages')
+    if (stage.isWon || stage.isLost || stage.isDelivery || stage.isClosed) {
+      alert('Cannot delete system stages')
       return
     }
     const updated = stageForm.filter((_, i) => i !== index)
@@ -442,10 +473,15 @@ export default function SalesPipeline() {
   }
 
   // Calculate all stats
-  const activeLeads = pipelineLeads.filter(l => !stages.find(s => s.id === l.status)?.isWon && !stages.find(s => s.id === l.status)?.isLost)
+  const activeLeads = pipelineLeads.filter(l => !stages.find(s => s.id === l.status)?.isWon && !stages.find(s => s.id === l.status)?.isLost && !stages.find(s => s.id === l.status)?.isDelivery && !stages.find(s => s.id === l.status)?.isClosed)
   const wonLeadsList = getLeadsForStage('Won')
   const lostLeadsList = getLeadsForStage('Lost')
   const quoteSentLeads = getLeadsForStage('Quote Sent')
+  const jobScheduledLeads = getLeadsForStage('Job Scheduled')
+  const inProgressLeads = getLeadsForStage('In Progress')
+  const completedLeads = getLeadsForStage('Job Complete')
+  const invoicedLeads = getLeadsForStage('Invoiced')
+  const deliveryLeads = pipelineLeads.filter(l => stages.find(s => s.id === l.status)?.isDelivery)
   const today = new Date().toDateString()
   const leadsWithAppointments = pipelineLeads.filter(l => l.appointment_time)
   const todayAppointments = leadsWithAppointments.filter(l => new Date(l.appointment_time).toDateString() === today)
@@ -458,12 +494,16 @@ export default function SalesPipeline() {
     wonValue: { value: formatCurrency(wonLeadsList.reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)), label: 'Won Value', color: '#22c55e', isFormatted: true },
     appointments: { value: leadsWithAppointments.length, label: 'Appts', color: '#3b82f6' },
     todayAppointments: { value: todayAppointments.length, label: 'Today', color: '#16a34a' },
-    quoteSent: { value: quoteSentLeads.length, label: 'Quotes', color: '#8b5cf6' }
+    quoteSent: { value: quoteSentLeads.length, label: 'Quotes', color: '#8b5cf6' },
+    jobScheduled: { value: jobScheduledLeads.length, label: 'Scheduled', color: '#0ea5e9' },
+    inProgress: { value: inProgressLeads.length, label: 'In Progress', color: '#f97316' },
+    completed: { value: completedLeads.length, label: 'Complete', color: '#22c55e' },
+    invoiced: { value: invoicedLeads.length, label: 'Invoiced', color: '#8b5cf6' },
+    deliveryValue: { value: formatCurrency(deliveryLeads.reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)), label: 'Delivery $', color: '#0ea5e9', isFormatted: true }
   }
 
-  // Calculate column width based on number of stages
-  const activeStages = stages.filter(s => !s.isWon && !s.isLost)
-  const closedStages = stages.filter(s => s.isWon || s.isLost)
+  // Identify delivery-phase boundaries for visual separator
+  const firstDeliveryIndex = stages.findIndex(s => s.isDelivery)
 
   return (
     <div style={{ padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -775,7 +815,7 @@ export default function SalesPipeline() {
                   </div>
 
                   {/* Quick Actions for Mobile */}
-                  {!stage?.isWon && !stage?.isLost && (
+                  {!stage?.isWon && !stage?.isLost && !stage?.isDelivery && !stage?.isClosed && (
                     <div style={{
                       display: 'flex',
                       gap: '8px',
@@ -838,7 +878,7 @@ export default function SalesPipeline() {
                         }}
                       >
                         <option value="">Move to...</option>
-                        {stages.filter(s => s.id !== currentStage).map(s => (
+                        {stages.filter(s => s.id !== currentStage && !s.isDelivery && !s.isClosed).map(s => (
                           <option key={s.id} value={s.id}>{s.name}</option>
                         ))}
                       </select>
@@ -862,224 +902,291 @@ export default function SalesPipeline() {
             const stageLeads = getLeadsForStage(stage.id)
             const stageValue = getStageValue(stage.id)
             const isDragOver = dragOverStage === stage.id
+            const isDeliveryStage = stage.isDelivery || stage.isClosed
+            const leadJob = (lead) => lead.jobs?.[0] || null
 
             return (
-              <div
-                key={stage.id}
-                style={{
-                  flex: '1 1 0',
-                  minWidth: '160px',
-                  maxWidth: stage.isWon || stage.isLost ? '200px' : 'none',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  backgroundColor: isDragOver ? theme.accentBg : 'rgba(0,0,0,0.02)',
-                  borderRadius: '8px',
-                  border: isDragOver ? `2px dashed ${theme.accent}` : '2px solid transparent',
-                  transition: 'all 0.15s',
-                  overflow: 'hidden'
-                }}
-                onDragOver={(e) => handleDragOver(e, stage.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, stage.id)}
-              >
-                {/* Stage Header */}
-                <div style={{
-                  padding: '10px 12px',
-                  borderBottom: `3px solid ${stage.color}`,
-                  backgroundColor: theme.bgCard
-                }}>
+              <div key={stage.id} style={{ display: 'flex' }}>
+                {/* Phase separator between sales and delivery */}
+                {idx === firstDeliveryIndex && firstDeliveryIndex > 0 && (
                   <div style={{
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '6px'
+                    justifyContent: 'flex-start',
+                    padding: '8px 2px',
+                    marginRight: '8px'
                   }}>
-                    <span style={{
-                      fontWeight: '600',
-                      color: theme.text,
-                      fontSize: '13px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {stage.name}
-                  </span>
-                  <span style={{
-                    backgroundColor: stage.color + '20',
-                    color: stage.color,
-                    padding: '2px 6px',
-                    borderRadius: '10px',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    flexShrink: 0
-                  }}>
-                    {stageLeads.length}
-                  </span>
-                </div>
-                {stageValue > 0 && (
-                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                    {formatCurrency(stageValue)}
-                  </div>
-                )}
-                {/* Won/Lost hint labels */}
-                {stage.isWon && (
-                  <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px', fontStyle: 'italic' }}>
-                    (Creates Customer & Job)
-                  </div>
-                )}
-                {stage.isLost && (
-                  <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px', fontStyle: 'italic' }}>
-                    (Archives Lead)
-                  </div>
-                )}
-              </div>
-
-              {/* Stage Cards */}
-              <div style={{
-                flex: 1,
-                padding: '6px',
-                overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px'
-              }}>
-                {stageLeads.map(lead => (
-                  <div
-                    key={lead.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, lead)}
-                    onDragEnd={handleDragEnd}
-                    style={{
-                      opacity: draggedLead?.id === lead.id ? 0.8 : 1,
-                      boxShadow: draggedLead?.id === lead.id ? '0 4px 12px rgba(0,0,0,0.15)' : 'none'
-                    }}
-                  >
-                    <EntityCard
-                      name={lead.customer_name}
-                      businessName={lead.business_name}
-                      onClick={() => navigate(`/leads/${lead.id}`)}
-                      style={{ cursor: 'grab', padding: '10px' }}
-                    >
-                    {/* Lead Name */}
                     <div style={{
-                      fontWeight: '600',
-                      color: theme.text,
-                      fontSize: '13px',
-                      marginBottom: '2px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
+                      writingMode: 'vertical-rl',
+                      textOrientation: 'mixed',
+                      fontSize: '9px',
+                      fontWeight: '700',
+                      letterSpacing: '1px',
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                      whiteSpace: 'nowrap',
+                      padding: '8px 0'
                     }}>
-                      {lead.customer_name}
+                      DELIVERY
                     </div>
-
-                    {/* Business */}
-                    {lead.business_name && (
-                      <div style={{
-                        color: theme.textMuted,
-                        fontSize: '11px',
-                        marginBottom: '4px',
+                    <div style={{ flex: 1, width: '1px', backgroundColor: theme.border }} />
+                  </div>
+                )}
+                <div
+                  style={{
+                    flex: '1 1 0',
+                    minWidth: '140px',
+                    maxWidth: stage.isLost ? '180px' : 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    backgroundColor: isDragOver ? theme.accentBg : 'rgba(0,0,0,0.02)',
+                    borderRadius: '8px',
+                    border: isDragOver ? `2px dashed ${theme.accent}` : '2px solid transparent',
+                    transition: 'all 0.15s',
+                    overflow: 'hidden'
+                  }}
+                  onDragOver={(e) => handleDragOver(e, stage.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, stage.id)}
+                >
+                  {/* Stage Header */}
+                  <div style={{
+                    padding: '10px 12px',
+                    borderBottom: `3px solid ${stage.color}`,
+                    backgroundColor: theme.bgCard
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '6px'
+                    }}>
+                      <span style={{
+                        fontWeight: '600',
+                        color: theme.text,
+                        fontSize: '13px',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
                       }}>
-                        {lead.business_name}
-                      </div>
-                    )}
-
-                    {/* Contact Info Row */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                      {lead.phone && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}>
-                          <Phone size={10} />
-                        </div>
-                      )}
-                      {lead.email && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}>
-                          <Mail size={10} />
-                        </div>
-                      )}
+                        {stage.name}
+                      </span>
+                      <span style={{
+                        backgroundColor: stage.color + '20',
+                        color: stage.color,
+                        padding: '2px 6px',
+                        borderRadius: '10px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        flexShrink: 0
+                      }}>
+                        {stageLeads.length}
+                      </span>
                     </div>
-
-                    {/* Value */}
-                    {parseFloat(lead.quote_amount) > 0 && (
-                      <div style={{
-                        color: '#16a34a',
-                        fontSize: '13px',
-                        fontWeight: '600'
-                      }}>
-                        {formatCurrency(lead.quote_amount)}
+                    {stageValue > 0 && (
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                        {formatCurrency(stageValue)}
                       </div>
                     )}
-
-                    {/* Appointment */}
-                    {lead.appointment_time && (
-                      <div style={{
-                        marginTop: '6px',
-                        padding: '3px 6px',
-                        backgroundColor: isToday(lead.appointment_time) ? '#dcfce7' : '#f0fdf4',
-                        borderRadius: '4px',
-                        fontSize: '10px',
-                        color: isToday(lead.appointment_time) ? '#166534' : '#15803d',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}>
-                        <Calendar size={10} />
-                        <span style={{ fontWeight: isToday(lead.appointment_time) ? '600' : '400' }}>
-                          {isToday(lead.appointment_time)
-                            ? `TODAY ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                            : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                          }
-                        </span>
+                    {stage.isWon && (
+                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px', fontStyle: 'italic' }}>
+                        (Convert to Job)
                       </div>
                     )}
-
-                    {/* Owner */}
-                    {lead.lead_owner && (
-                      <div style={{
-                        marginTop: '6px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}>
-                        <div style={{
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '50%',
-                          backgroundColor: theme.accentBg,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '9px',
-                          fontWeight: '600',
-                          color: theme.accent
-                        }}>
-                          {lead.lead_owner.name?.charAt(0)}
-                        </div>
-                        <span style={{ fontSize: '10px', color: theme.textMuted }}>
-                          {lead.lead_owner.name}
-                        </span>
+                    {stage.isLost && (
+                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px', fontStyle: 'italic' }}>
+                        (Archives Lead)
                       </div>
                     )}
-                    </EntityCard>
+                    {isDeliveryStage && (
+                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px', fontStyle: 'italic' }}>
+                        Auto-synced
+                      </div>
+                    )}
                   </div>
-                ))}
 
-                {stageLeads.length === 0 && (
+                  {/* Stage Cards */}
                   <div style={{
-                    padding: '20px 12px',
-                    textAlign: 'center',
-                    color: theme.textMuted,
-                    fontSize: '12px'
+                    flex: 1,
+                    padding: '6px',
+                    overflowY: 'auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
                   }}>
-                    Drop leads here
+                    {stageLeads.map(lead => {
+                      const job = leadJob(lead)
+                      return (
+                        <div
+                          key={lead.id}
+                          draggable={!isDeliveryStage}
+                          onDragStart={!isDeliveryStage ? (e) => handleDragStart(e, lead) : undefined}
+                          onDragEnd={!isDeliveryStage ? handleDragEnd : undefined}
+                          style={{
+                            opacity: draggedLead?.id === lead.id ? 0.8 : 1,
+                            boxShadow: draggedLead?.id === lead.id ? '0 4px 12px rgba(0,0,0,0.15)' : 'none'
+                          }}
+                        >
+                          <EntityCard
+                            name={lead.customer_name}
+                            businessName={lead.business_name}
+                            onClick={() => navigate(`/leads/${lead.id}`)}
+                            style={{ cursor: isDeliveryStage ? 'pointer' : 'grab', padding: '10px' }}
+                          >
+                            {/* Lead Name */}
+                            <div style={{
+                              fontWeight: '600',
+                              color: theme.text,
+                              fontSize: '13px',
+                              marginBottom: '2px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {lead.customer_name}
+                            </div>
+
+                            {/* Business */}
+                            {lead.business_name && (
+                              <div style={{
+                                color: theme.textMuted,
+                                fontSize: '11px',
+                                marginBottom: '4px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {lead.business_name}
+                              </div>
+                            )}
+
+                            {/* Delivery card: show job context */}
+                            {isDeliveryStage && job ? (
+                              <div style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' }}>
+                                {(parseFloat(job.contract_amount) > 0) && (
+                                  <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '13px' }}>
+                                    {formatCurrency(job.contract_amount)}
+                                  </div>
+                                )}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Briefcase size={10} />
+                                  <span>{job.job_id}</span>
+                                </div>
+                                {job.assigned_team && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <User size={10} />
+                                    <span>{job.assigned_team}</span>
+                                  </div>
+                                )}
+                                {job.invoice_status && (
+                                  <div style={{
+                                    padding: '2px 6px',
+                                    backgroundColor: job.invoice_status === 'Paid' ? '#dcfce7' : job.invoice_status === 'Invoiced' ? '#dbeafe' : '#f3f4f6',
+                                    borderRadius: '4px',
+                                    fontSize: '10px',
+                                    fontWeight: '500',
+                                    color: job.invoice_status === 'Paid' ? '#166534' : job.invoice_status === 'Invoiced' ? '#1d4ed8' : theme.textMuted,
+                                    display: 'inline-block',
+                                    marginTop: '2px'
+                                  }}>
+                                    {job.invoice_status}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <>
+                                {/* Sales card: standard info */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                  {lead.phone && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}>
+                                      <Phone size={10} />
+                                    </div>
+                                  )}
+                                  {lead.email && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}>
+                                      <Mail size={10} />
+                                    </div>
+                                  )}
+                                </div>
+
+                                {parseFloat(lead.quote_amount) > 0 && (
+                                  <div style={{ color: '#16a34a', fontSize: '13px', fontWeight: '600' }}>
+                                    {formatCurrency(lead.quote_amount)}
+                                  </div>
+                                )}
+
+                                {lead.appointment_time && (
+                                  <div style={{
+                                    marginTop: '6px',
+                                    padding: '3px 6px',
+                                    backgroundColor: isToday(lead.appointment_time) ? '#dcfce7' : '#f0fdf4',
+                                    borderRadius: '4px',
+                                    fontSize: '10px',
+                                    color: isToday(lead.appointment_time) ? '#166534' : '#15803d',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}>
+                                    <Calendar size={10} />
+                                    <span style={{ fontWeight: isToday(lead.appointment_time) ? '600' : '400' }}>
+                                      {isToday(lead.appointment_time)
+                                        ? `TODAY ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                                        : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                                      }
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            {/* Owner (shown on all cards) */}
+                            {lead.lead_owner && (
+                              <div style={{
+                                marginTop: '6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}>
+                                <div style={{
+                                  width: '18px',
+                                  height: '18px',
+                                  borderRadius: '50%',
+                                  backgroundColor: theme.accentBg,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '9px',
+                                  fontWeight: '600',
+                                  color: theme.accent
+                                }}>
+                                  {lead.lead_owner.name?.charAt(0)}
+                                </div>
+                                <span style={{ fontSize: '10px', color: theme.textMuted }}>
+                                  {lead.lead_owner.name}
+                                </span>
+                              </div>
+                            )}
+                          </EntityCard>
+                        </div>
+                      )
+                    })}
+
+                    {stageLeads.length === 0 && (
+                      <div style={{
+                        padding: '20px 12px',
+                        textAlign: 'center',
+                        color: theme.textMuted,
+                        fontSize: '12px'
+                      }}>
+                        {isDeliveryStage ? 'Auto-synced from jobs' : 'Drop leads here'}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
         </div>
       )}
 
@@ -1423,14 +1530,14 @@ export default function SalesPipeline() {
                       type="text"
                       value={stage.name}
                       onChange={(e) => updateStage(index, 'name', e.target.value)}
-                      disabled={stage.isWon || stage.isLost}
+                      disabled={stage.isWon || stage.isLost || stage.isDelivery || stage.isClosed}
                       style={{
                         ...inputStyle,
                         flex: 1,
-                        opacity: (stage.isWon || stage.isLost) ? 0.6 : 1
+                        opacity: (stage.isWon || stage.isLost || stage.isDelivery || stage.isClosed) ? 0.6 : 1
                       }}
                     />
-                    {!stage.isWon && !stage.isLost && (
+                    {!stage.isWon && !stage.isLost && !stage.isDelivery && !stage.isClosed && (
                       <button
                         onClick={() => deleteStage(index)}
                         style={{
@@ -1445,7 +1552,7 @@ export default function SalesPipeline() {
                         <Trash2 size={16} />
                       </button>
                     )}
-                    {(stage.isWon || stage.isLost) && (
+                    {(stage.isWon || stage.isLost || stage.isDelivery || stage.isClosed) && (
                       <div style={{ width: '32px' }} />
                     )}
                   </div>
