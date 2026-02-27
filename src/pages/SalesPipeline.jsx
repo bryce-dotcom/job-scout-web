@@ -558,42 +558,63 @@ export default function SalesPipeline() {
   const firstDeliveryIndex = stages.findIndex(s => s.isDelivery)
 
   return (
-    <div style={{ padding: isMobile ? '8px' : '16px', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ padding: isMobile ? '12px' : '16px', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       {isMobile ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-          <h1 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0, flex: 1 }}>Pipeline</h1>
-          <select
-            value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-            style={{
-              padding: '4px 6px',
-              backgroundColor: theme.bgCard,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '6px',
-              color: theme.text,
-              fontSize: '12px',
-              maxWidth: '120px'
-            }}
-          >
-            <option value="all">All</option>
-            <option value="unassigned">Unassigned</option>
-            {activeEmployees.map(emp => (
-              <option key={emp.id} value={emp.id}>{emp.id === user?.id ? 'Me' : emp.name}</option>
-            ))}
-          </select>
-          <button onClick={() => fetchPipelineLeads()} disabled={refreshing} style={{ padding: '6px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, lineHeight: 0 }}>
-            <RefreshCw size={14} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
-          </button>
-          {isSuperAdmin && (
-            <button onClick={openSettings} style={{ padding: '6px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, lineHeight: 0 }}>
-              <Settings size={14} />
+        <>
+          {/* Row 1: Title + actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+            <h1 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0, flex: 1 }}>Pipeline</h1>
+            <select
+              value={ownerFilter}
+              onChange={(e) => setOwnerFilter(e.target.value)}
+              style={{
+                padding: '6px 8px',
+                backgroundColor: theme.bgCard,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '6px',
+                color: theme.text,
+                fontSize: '12px',
+                maxWidth: '110px'
+              }}
+            >
+              <option value="all">All</option>
+              <option value="unassigned">Unassigned</option>
+              {activeEmployees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.id === user?.id ? 'Me' : emp.name}</option>
+              ))}
+            </select>
+            <button onClick={() => fetchPipelineLeads()} disabled={refreshing} style={{ padding: '6px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, lineHeight: 0 }}>
+              <RefreshCw size={14} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
             </button>
+            {isSuperAdmin && (
+              <button onClick={openSettings} style={{ padding: '6px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, lineHeight: 0 }}>
+                <Settings size={14} />
+              </button>
+            )}
+            <button onClick={() => navigate('/leads')} style={{ padding: '5px 8px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '11px', fontWeight: '500' }}>
+              List
+            </button>
+            <button onClick={() => navigate('/leads')} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '5px 8px', backgroundColor: theme.accent, border: 'none', borderRadius: '6px', color: '#fff', fontSize: '11px', fontWeight: '500' }}>
+              <Plus size={12} /> Add
+            </button>
+          </div>
+          {/* Row 2: Compact stats */}
+          {visibleStats.length > 0 && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', overflowX: 'auto', flexShrink: 0 }}>
+              {visibleStats.map(statId => {
+                const stat = statsData[statId]
+                if (!stat) return null
+                return (
+                  <div key={statId} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', backgroundColor: theme.bgCard, borderRadius: '6px', border: `1px solid ${theme.border}`, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <span style={{ fontSize: '13px', fontWeight: '700', color: stat.color || theme.text }}>{stat.isFormatted ? stat.value : stat.value}</span>
+                    <span style={{ fontSize: '10px', color: theme.textMuted }}>{stat.label}</span>
+                  </div>
+                )
+              })}
+            </div>
           )}
-          <button onClick={() => navigate('/leads')} style={{ padding: '6px', backgroundColor: theme.accent, border: 'none', borderRadius: '6px', color: '#fff', lineHeight: 0 }}>
-            <Plus size={14} />
-          </button>
-        </div>
+        </>
       ) : (
         <div style={{
           display: 'flex',
@@ -785,7 +806,7 @@ export default function SalesPipeline() {
           </div>
 
           {/* Mobile Lead List - compact cards */}
-          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '2px' }}>
             {(() => {
               const currentStage = selectedMobileStage || stages[0].id
               const stageLeads = getLeadsForStage(currentStage)
@@ -813,7 +834,7 @@ export default function SalesPipeline() {
                     padding: '8px 10px',
                     marginBottom: '4px',
                     backgroundColor: theme.bgCard,
-                    borderRadius: '8px',
+                    borderRadius: '6px',
                     border: `1px solid ${theme.border}`,
                     borderLeft: `4px solid ${(() => {
                       const first = (lead.customer_name || '').trim().split(/\s+/)[0]?.toLowerCase()
