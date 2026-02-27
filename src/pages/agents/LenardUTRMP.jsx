@@ -429,6 +429,7 @@ export default function LenardUTRMP() {
 
   const removeLine = useCallback((id) => {
     setLines(prev => prev.filter(l => l.id !== id));
+    setGiveMeQuoteItems(prev => prev.filter(q => q.type !== 'tier_' + id));
     if (expandedLine === id) setExpandedLine(null);
     showToast('Line removed', '\uD83D\uDDD1');
     markDirty();
@@ -487,7 +488,7 @@ export default function LenardUTRMP() {
   const capPct = program === 'smbe' ? SMBE.cap : program === 'express' ? EXPRESS.cap : LARGE.cap;
   const linesCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * (l.qty || 0)), 0);
   const giveMeQuoteTotal = giveMeQuoteItems.reduce((s, item) => s + (item.amount || 0), 0);
-  const baselineProjectCost = projectCost > 0 ? projectCost : linesCost;
+  const baselineProjectCost = Math.max(projectCost, linesCost);
   const effectiveProjectCost = baselineProjectCost + giveMeQuoteTotal;
   const capAmount = effectiveProjectCost > 0 ? +(effectiveProjectCost * capPct).toFixed(2) : Infinity;
   const estimatedRebate = +Math.min(rawIncentive, capAmount).toFixed(2);
@@ -809,7 +810,7 @@ export default function LenardUTRMP() {
       if (pd.lines) { lineIdRef.current = 0; setLines(pd.lines.map(l => ({ ...l, id: ++lineIdRef.current }))); }
       // Restore give-me state
       if (pd.giveMe) {
-        setGiveMeQuoteItems(pd.giveMe.quoteItems || []);
+        setGiveMeQuoteItems((pd.giveMe.quoteItems || []).filter(q => !q.type.startsWith('tier_')));
         setGiveMeFrozenBaseline(pd.giveMe.frozenBaseline || 0);
         setGiveMeFrozenIncentive(pd.giveMe.frozenIncentive || 0);
         setRepAdditionalOOP(pd.giveMe.additionalOOP || 0);
@@ -2506,7 +2507,7 @@ export default function LenardUTRMP() {
                           <div style={{ fontSize: '10px', color: T.textSec }}>{s.desc}</div>
                         </div>
                         <span style={{ fontSize: '10px', color: T.green, fontWeight: '700', flexShrink: 0 }}>+${Math.round(s.impact).toLocaleString()}</span>
-                        <button onClick={() => { selectProduct(s.lineId, s.targetProduct); setGiveMeQuoteItems(prev => [...prev, { id: Date.now(), type: 'tier_' + s.lineId, label: s.title, amount: s.totalDiff }]); markDirty(); showToast('Tier upgraded', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
+                        <button onClick={() => { selectProduct(s.lineId, s.targetProduct); markDirty(); showToast('Tier upgraded', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
                       </div>
                     );
 
