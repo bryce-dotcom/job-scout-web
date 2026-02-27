@@ -36,6 +36,8 @@ export default function LeadDetail() {
   const createQuoteLine = useStore((state) => state.createQuoteLine)
   const updateLead = useStore((state) => state.updateLead)
   const updateQuote = useStore((state) => state.updateQuote)
+  const serviceTypes = useStore((state) => state.serviceTypes)
+  const leadSources = useStore((state) => state.leadSources)
 
   const [lead, setLead] = useState(null)
   const [audits, setAudits] = useState([])
@@ -393,6 +395,47 @@ export default function LeadDetail() {
     }
   }
 
+  // Inline edit handlers for Info tab
+  const handleStartEdit = () => {
+    setEditForm({
+      customer_name: lead.customer_name || '',
+      business_name: lead.business_name || '',
+      phone: lead.phone || '',
+      email: lead.email || '',
+      address: lead.address || '',
+      lead_source: lead.lead_source || '',
+      service_type: lead.service_type || '',
+      lead_owner_id: lead.lead_owner_id || '',
+      setter_owner_id: lead.setter_owner_id || '',
+      notes: lead.notes || ''
+    })
+    setIsEditing(true)
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditForm({})
+  }
+
+  const handleSaveEdit = async () => {
+    await updateLead(lead.id, {
+      customer_name: editForm.customer_name,
+      business_name: editForm.business_name || null,
+      phone: editForm.phone || null,
+      email: editForm.email || null,
+      address: editForm.address || null,
+      lead_source: editForm.lead_source || null,
+      service_type: editForm.service_type || null,
+      lead_owner_id: editForm.lead_owner_id || null,
+      setter_owner_id: editForm.setter_owner_id || null,
+      notes: editForm.notes || null,
+      updated_at: new Date().toISOString()
+    })
+    setIsEditing(false)
+    setEditForm({})
+    await fetchLeadData()
+  }
+
   // Styles
   const inputStyle = {
     width: '100%',
@@ -649,6 +692,33 @@ export default function LeadDetail() {
         {/* INFO TAB */}
         {activeTab === 'info' && (
           <div>
+            {/* Edit / Save / Cancel bar */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '16px' }}>
+              {isEditing ? (
+                <>
+                  <button
+                    onClick={handleCancelEdit}
+                    style={{ padding: '8px 16px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <X size={14} /> Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveEdit}
+                    style={{ padding: '8px 16px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Save size={14} /> Save
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleStartEdit}
+                  style={{ padding: '8px 16px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Edit3 size={14} /> Edit
+                </button>
+              )}
+            </div>
+
             <div style={{
               display: 'grid',
               gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))',
@@ -665,33 +735,45 @@ export default function LeadDetail() {
                 </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <User size={16} color={theme.textMuted} />
-                    <span style={{ color: theme.text }}>{lead.customer_name}</span>
+                    <User size={16} color={theme.textMuted} style={{ flexShrink: 0 }} />
+                    {isEditing ? (
+                      <input type="text" value={editForm.customer_name} onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })} style={inputStyle} placeholder="Customer Name" />
+                    ) : (
+                      <span style={{ color: theme.text }}>{lead.customer_name}</span>
+                    )}
                   </div>
-                  {lead.business_name && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Building2 size={16} color={theme.textMuted} />
-                      <span style={{ color: theme.text }}>{lead.business_name}</span>
-                    </div>
-                  )}
-                  {lead.phone && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Phone size={16} color={theme.textMuted} />
-                      <a href={`tel:${lead.phone}`} style={{ color: theme.accent }}>{lead.phone}</a>
-                    </div>
-                  )}
-                  {lead.email && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Mail size={16} color={theme.textMuted} />
-                      <a href={`mailto:${lead.email}`} style={{ color: theme.accent }}>{lead.email}</a>
-                    </div>
-                  )}
-                  {lead.address && (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                      <MapPin size={16} color={theme.textMuted} style={{ marginTop: '2px' }} />
-                      <span style={{ color: theme.text }}>{lead.address}</span>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Building2 size={16} color={theme.textMuted} style={{ flexShrink: 0 }} />
+                    {isEditing ? (
+                      <input type="text" value={editForm.business_name} onChange={(e) => setEditForm({ ...editForm, business_name: e.target.value })} style={inputStyle} placeholder="Business Name" />
+                    ) : (
+                      <span style={{ color: theme.text }}>{lead.business_name || '-'}</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Phone size={16} color={theme.textMuted} style={{ flexShrink: 0 }} />
+                    {isEditing ? (
+                      <input type="tel" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} style={inputStyle} placeholder="Phone" />
+                    ) : (
+                      lead.phone ? <a href={`tel:${lead.phone}`} style={{ color: theme.accent }}>{lead.phone}</a> : <span style={{ color: theme.textMuted }}>-</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Mail size={16} color={theme.textMuted} style={{ flexShrink: 0 }} />
+                    {isEditing ? (
+                      <input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} style={inputStyle} placeholder="Email" />
+                    ) : (
+                      lead.email ? <a href={`mailto:${lead.email}`} style={{ color: theme.accent }}>{lead.email}</a> : <span style={{ color: theme.textMuted }}>-</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <MapPin size={16} color={theme.textMuted} style={{ marginTop: '2px', flexShrink: 0 }} />
+                    {isEditing ? (
+                      <textarea value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} rows={2} style={{ ...inputStyle, resize: 'vertical' }} placeholder="Address" />
+                    ) : (
+                      <span style={{ color: theme.text }}>{lead.address || '-'}</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -707,19 +789,47 @@ export default function LeadDetail() {
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Source</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{lead.lead_source || '-'}</div>
+                    {isEditing ? (
+                      <select value={editForm.lead_source} onChange={(e) => setEditForm({ ...editForm, lead_source: e.target.value })} style={inputStyle}>
+                        <option value="">-- Select --</option>
+                        {(leadSources || []).map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{ fontSize: '14px', color: theme.text }}>{lead.lead_source || '-'}</div>
+                    )}
                   </div>
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Service Type</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{lead.service_type || '-'}</div>
+                    {isEditing ? (
+                      <select value={editForm.service_type} onChange={(e) => setEditForm({ ...editForm, service_type: e.target.value })} style={inputStyle}>
+                        <option value="">-- Select --</option>
+                        {(serviceTypes || []).map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{ fontSize: '14px', color: theme.text }}>{lead.service_type || '-'}</div>
+                    )}
                   </div>
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Lead Owner</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{lead.lead_owner?.name || '-'}</div>
+                    {isEditing ? (
+                      <select value={editForm.lead_owner_id} onChange={(e) => setEditForm({ ...editForm, lead_owner_id: e.target.value })} style={inputStyle}>
+                        <option value="">-- Select --</option>
+                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{ fontSize: '14px', color: theme.text }}>{lead.lead_owner?.name || '-'}</div>
+                    )}
                   </div>
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Setter</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{lead.setter_owner?.name || '-'}</div>
+                    {isEditing ? (
+                      <select value={editForm.setter_owner_id} onChange={(e) => setEditForm({ ...editForm, setter_owner_id: e.target.value })} style={inputStyle}>
+                        <option value="">-- Select --</option>
+                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{ fontSize: '14px', color: theme.text }}>{lead.setter_owner?.name || '-'}</div>
+                    )}
                   </div>
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Contact Attempts</div>
@@ -735,21 +845,23 @@ export default function LeadDetail() {
               </div>
 
               {/* Notes */}
-              {lead.notes && (
-                <div style={{
-                  padding: isMobile ? '16px' : '20px',
-                  backgroundColor: theme.bg,
-                  borderRadius: '10px',
-                  gridColumn: isMobile ? 'span 1' : 'span 2'
-                }}>
-                  <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: '12px' }}>
-                    Notes
-                  </h3>
+              <div style={{
+                padding: isMobile ? '16px' : '20px',
+                backgroundColor: theme.bg,
+                borderRadius: '10px',
+                gridColumn: isMobile ? 'span 1' : 'span 2'
+              }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: '12px' }}>
+                  Notes
+                </h3>
+                {isEditing ? (
+                  <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} rows={4} style={{ ...inputStyle, resize: 'vertical' }} placeholder="Notes about this lead..." />
+                ) : (
                   <p style={{ fontSize: '14px', color: theme.text, whiteSpace: 'pre-wrap', margin: 0 }}>
-                    {lead.notes}
+                    {lead.notes || '-'}
                   </p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         )}
