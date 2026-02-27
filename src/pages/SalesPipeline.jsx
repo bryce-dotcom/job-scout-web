@@ -9,7 +9,7 @@ import {
   Trophy, XCircle, ChevronRight, RefreshCw, MapPin, Settings, Trash2,
   ChevronUp, ChevronDown, Briefcase
 } from 'lucide-react'
-import EntityCard from '../components/EntityCard'
+import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -558,164 +558,197 @@ export default function SalesPipeline() {
   const firstDeliveryIndex = stages.findIndex(s => s.isDelivery)
 
   return (
-    <div style={{ padding: '16px', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ padding: isMobile ? '8px' : '16px', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: isMobile ? '12px' : '16px',
-        flexWrap: 'wrap',
-        gap: '12px'
-      }}>
-        <div>
-          <h1 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: '700', color: theme.text, margin: 0 }}>
-            Sales Pipeline
-          </h1>
-          {!isMobile && (
-            <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
-              Track leads through the sales process. Drag to move between stages.
-            </p>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {/* Stats - Hidden on mobile */}
-          {!isMobile && visibleStats.length > 0 && (
-            <div style={{
-              display: 'flex',
-              gap: '16px',
-              padding: '8px 16px',
-              backgroundColor: theme.bgCard,
-              borderRadius: '8px',
-              border: `1px solid ${theme.border}`
-            }}>
-              {visibleStats.map((statId, idx) => {
-                const stat = statsData[statId]
-                if (!stat) return null
-                return (
-                  <div key={statId} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    {idx > 0 && <div style={{ width: '1px', height: '32px', backgroundColor: theme.border }} />}
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '18px', fontWeight: '700', color: stat.color || theme.text }}>
-                        {stat.isFormatted ? stat.value : stat.value}
-                      </div>
-                      <div style={{ fontSize: '11px', color: theme.textMuted }}>{stat.label}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Owner Filter */}
+      {isMobile ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+          <h1 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0, flex: 1 }}>Pipeline</h1>
           <select
             value={ownerFilter}
             onChange={(e) => setOwnerFilter(e.target.value)}
             style={{
-              padding: isMobile ? '10px 8px' : '8px 12px',
-              minHeight: isMobile ? '44px' : 'auto',
+              padding: '4px 6px',
               backgroundColor: theme.bgCard,
               border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
+              borderRadius: '6px',
               color: theme.text,
-              fontSize: '13px',
-              cursor: 'pointer'
+              fontSize: '12px',
+              maxWidth: '120px'
             }}
           >
-            <option value="all">All Owners</option>
+            <option value="all">All</option>
             <option value="unassigned">Unassigned</option>
             {activeEmployees.map(emp => (
-              <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
+              <option key={emp.id} value={emp.id}>{emp.id === user?.id ? 'Me' : emp.name}</option>
             ))}
           </select>
-
-          <button
-            onClick={fetchPipelineLeads}
-            disabled={refreshing}
-            style={{
-              padding: '10px',
-              backgroundColor: 'transparent',
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              cursor: refreshing ? 'wait' : 'pointer',
-              color: theme.textSecondary
-            }}
-            title="Refresh"
-          >
-            <RefreshCw size={18} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
+          <button onClick={() => fetchPipelineLeads()} disabled={refreshing} style={{ padding: '6px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, lineHeight: 0 }}>
+            <RefreshCw size={14} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
           </button>
-
           {isSuperAdmin && (
+            <button onClick={openSettings} style={{ padding: '6px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, lineHeight: 0 }}>
+              <Settings size={14} />
+            </button>
+          )}
+          <button onClick={() => navigate('/leads')} style={{ padding: '6px', backgroundColor: theme.accent, border: 'none', borderRadius: '6px', color: '#fff', lineHeight: 0 }}>
+            <Plus size={14} />
+          </button>
+        </div>
+      ) : (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '16px',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div>
+            <h1 style={{ fontSize: '22px', fontWeight: '700', color: theme.text, margin: 0 }}>
+              Sales Pipeline
+            </h1>
+            <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
+              Track leads through the sales process. Drag to move between stages.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {visibleStats.length > 0 && (
+              <div style={{
+                display: 'flex',
+                gap: '16px',
+                padding: '8px 16px',
+                backgroundColor: theme.bgCard,
+                borderRadius: '8px',
+                border: `1px solid ${theme.border}`
+              }}>
+                {visibleStats.map((statId, idx) => {
+                  const stat = statsData[statId]
+                  if (!stat) return null
+                  return (
+                    <div key={statId} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      {idx > 0 && <div style={{ width: '1px', height: '32px', backgroundColor: theme.border }} />}
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '18px', fontWeight: '700', color: stat.color || theme.text }}>
+                          {stat.value}
+                        </div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{stat.label}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <select
+              value={ownerFilter}
+              onChange={(e) => setOwnerFilter(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                backgroundColor: theme.bgCard,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                color: theme.text,
+                fontSize: '13px',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="all">All Owners</option>
+              <option value="unassigned">Unassigned</option>
+              {activeEmployees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
+              ))}
+            </select>
+
             <button
-              onClick={openSettings}
+              onClick={fetchPipelineLeads}
+              disabled={refreshing}
               style={{
                 padding: '10px',
                 backgroundColor: 'transparent',
                 border: `1px solid ${theme.border}`,
                 borderRadius: '8px',
-                cursor: 'pointer',
+                cursor: refreshing ? 'wait' : 'pointer',
                 color: theme.textSecondary
               }}
-              title="Pipeline Settings"
+              title="Refresh"
             >
-              <Settings size={18} />
+              <RefreshCw size={18} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
             </button>
-          )}
 
-          <button
-            onClick={() => navigate('/leads')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: isMobile ? '10px' : '10px 16px',
-              backgroundColor: 'transparent',
-              color: theme.textSecondary,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontWeight: '500',
-              fontSize: '13px'
-            }}
-            title="Switch to list view"
-          >
-            {!isMobile ? 'List View' : '☰'}
-          </button>
+            {isSuperAdmin && (
+              <button
+                onClick={openSettings}
+                style={{
+                  padding: '10px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  color: theme.textSecondary
+                }}
+                title="Pipeline Settings"
+              >
+                <Settings size={18} />
+              </button>
+            )}
 
-          <button
-            onClick={() => navigate('/leads')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: isMobile ? '10px' : '10px 16px',
-              backgroundColor: theme.accent,
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontWeight: '500'
-            }}
-          >
-            <Plus size={18} />
-            {!isMobile && 'Add Lead'}
-          </button>
+            <button
+              onClick={() => navigate('/leads')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '10px 16px',
+                backgroundColor: 'transparent',
+                color: theme.textSecondary,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: '500',
+                fontSize: '13px'
+              }}
+              title="Switch to list view"
+            >
+              List View
+            </button>
+
+            <button
+              onClick={() => navigate('/leads')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '10px 16px',
+                backgroundColor: theme.accent,
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: '500'
+              }}
+            >
+              <Plus size={18} />
+              Add Lead
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Mobile View - Tabbed stages with list */}
+      {/* Mobile View - Compact tabbed stages with list */}
       {isMobile ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {/* Stage Tabs */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {/* Stage Tabs - compact scrollable */}
           <div style={{
             display: 'flex',
             overflowX: 'auto',
-            gap: '4px',
-            padding: '4px',
+            gap: '2px',
+            padding: '3px',
             backgroundColor: theme.bg,
-            borderRadius: '8px',
-            marginBottom: '12px'
+            borderRadius: '6px',
+            marginBottom: '6px',
+            flexShrink: 0,
+            WebkitOverflowScrolling: 'touch'
           }}>
             {stages.map(stage => {
               const count = getLeadsForStage(stage.id).length
@@ -725,48 +758,34 @@ export default function SalesPipeline() {
                   key={stage.id}
                   onClick={() => setSelectedMobileStage(stage.id)}
                   style={{
-                    padding: '10px 12px',
+                    padding: '5px 8px',
                     backgroundColor: isActive ? theme.bgCard : 'transparent',
                     border: 'none',
-                    borderRadius: '6px',
+                    borderRadius: '4px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '3px',
                     whiteSpace: 'nowrap',
-                    boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
                   }}
                 >
-                  <span style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: stage.color
-                  }} />
-                  <span style={{
-                    fontSize: '13px',
-                    fontWeight: isActive ? '600' : '400',
-                    color: isActive ? theme.text : theme.textSecondary
-                  }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: stage.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: '11px', fontWeight: isActive ? '600' : '400', color: isActive ? theme.text : theme.textSecondary }}>
                     {stage.name}
                   </span>
-                  <span style={{
-                    fontSize: '11px',
-                    padding: '2px 6px',
-                    backgroundColor: stage.color + '20',
-                    color: stage.color,
-                    borderRadius: '10px',
-                    fontWeight: '600'
-                  }}>
-                    {count}
-                  </span>
+                  {count > 0 && (
+                    <span style={{ fontSize: '10px', padding: '0 4px', backgroundColor: stage.color + '20', color: stage.color, borderRadius: '8px', fontWeight: '600', lineHeight: '16px' }}>
+                      {count}
+                    </span>
+                  )}
                 </button>
               )
             })}
           </div>
 
-          {/* Mobile Lead List */}
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          {/* Mobile Lead List - compact cards */}
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
             {(() => {
               const currentStage = selectedMobileStage || stages[0].id
               const stageLeads = getLeadsForStage(currentStage)
@@ -774,175 +793,116 @@ export default function SalesPipeline() {
 
               if (stageLeads.length === 0) {
                 return (
-                  <div style={{
-                    padding: '40px 20px',
-                    textAlign: 'center',
-                    color: theme.textMuted
-                  }}>
-                    <div style={{ fontSize: '14px' }}>No leads in {stage?.name}</div>
-                    <div style={{ fontSize: '12px', marginTop: '4px' }}>
-                      {stage?.isDelivery ? 'Deals appear here automatically as jobs progress' : stage?.isClosed ? 'Deals move here when invoice is paid' : 'Leads will appear here when moved to this stage'}
+                  <div style={{ padding: '24px 16px', textAlign: 'center', color: theme.textMuted }}>
+                    <div style={{ fontSize: '13px' }}>No leads in {stage?.name}</div>
+                    <div style={{ fontSize: '11px', marginTop: '4px' }}>
+                      {stage?.isDelivery ? 'Auto-synced from jobs' : stage?.isClosed ? 'Moves here when paid' : 'Move leads to this stage'}
                     </div>
                   </div>
                 )
               }
 
               return stageLeads.map(lead => (
-                <EntityCard
+                <div
                   key={lead.id}
-                  name={lead.customer_name}
-                  businessName={lead.business_name}
                   onClick={() => navigate(`/leads/${lead.id}`)}
-                  style={{ marginBottom: '8px' }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 10px',
+                    marginBottom: '4px',
+                    backgroundColor: theme.bgCard,
+                    borderRadius: '8px',
+                    border: `1px solid ${theme.border}`,
+                    borderLeft: `4px solid ${(() => {
+                      const first = (lead.customer_name || '').trim().split(/\s+/)[0]?.toLowerCase()
+                      if (MALE_NAMES.has(first)) return '#3B82F6'
+                      if (FEMALE_NAMES.has(first)) return '#EC4899'
+                      return '#6B7280'
+                    })()}`,
+                    cursor: 'pointer'
+                  }}
                 >
-                  {/* TOP ROW: Name + Value */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: '600', color: theme.text, fontSize: '15px' }}>
+                  {/* Left: Name + details */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontWeight: '600', color: theme.text, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {lead.customer_name}
-                      </div>
+                      </span>
                       {lead.business_name && (
-                        <div style={{ color: theme.textMuted, fontSize: '13px', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: theme.textMuted, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>
                           {lead.business_name}
-                        </div>
+                        </span>
                       )}
                     </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                      {lead.appointment_time && (
+                        <span style={{ fontSize: '10px', color: isToday(lead.appointment_time) ? '#166534' : '#15803d', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                          <Calendar size={9} />
+                          {isToday(lead.appointment_time)
+                            ? `Today ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                            : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                          }
+                        </span>
+                      )}
+                      {lead.lead_owner && (
+                        <span style={{ fontSize: '10px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '2px' }}>
+                          <User size={9} />{lead.lead_owner.name?.split(' ')[0]}
+                        </span>
+                      )}
+                      {lead.lead_source && (
+                        <span style={{ fontSize: '9px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
+                          {lead.lead_source}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right: Value + quick action */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                     {parseFloat(lead.quote_amount) > 0 && (
-                      <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '15px', flexShrink: 0 }}>
+                      <span style={{ color: '#16a34a', fontWeight: '600', fontSize: '12px' }}>
                         {formatCurrency(lead.quote_amount)}
-                      </div>
+                      </span>
                     )}
-                  </div>
-
-                  {/* Contact Info */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: '13px', color: theme.textMuted }}>
-                    {lead.phone && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Phone size={12} />
-                        <span>{lead.phone}</span>
-                      </div>
-                    )}
-                    {lead.phone && lead.email && <span style={{ color: theme.border }}>|</span>}
-                    {lead.email && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
-                        <Mail size={12} style={{ flexShrink: 0 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Indicators Row */}
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                    {lead.appointment_time && (
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '4px 8px',
-                        backgroundColor: isToday(lead.appointment_time) ? '#dcfce7' : '#f0fdf4',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        color: isToday(lead.appointment_time) ? '#166534' : '#15803d',
-                        fontWeight: '500'
-                      }}>
-                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: isToday(lead.appointment_time) ? '#166534' : '#15803d' }} />
-                        <Calendar size={12} />
-                        {isToday(lead.appointment_time)
-                          ? `Today ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                          : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                        }
-                      </div>
-                    )}
-                    {lead.lead_owner && (
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontSize: '12px',
-                        color: theme.textMuted
-                      }}>
-                        <User size={12} />
-                        {lead.lead_owner.name}
-                      </div>
-                    )}
-                    {lead.lead_source && (
-                      <div style={{ fontSize: '11px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
-                        via {lead.lead_source}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Quick Actions for Mobile */}
-                  {!stage?.isWon && !stage?.isLost && !stage?.isDelivery && !stage?.isClosed && (
-                    <div style={{
-                      display: 'flex',
-                      gap: '8px',
-                      marginTop: '12px',
-                      paddingTop: '12px',
-                      borderTop: `1px solid ${theme.border}`
-                    }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <a
-                        href={lead.phone ? `tel:${lead.phone}` : undefined}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          padding: '10px 14px',
-                          minHeight: '44px',
-                          backgroundColor: '#dcfce7',
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          color: '#166534',
-                          textDecoration: 'none',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          fontWeight: '500',
-                          opacity: lead.phone ? 1 : 0.5,
-                          pointerEvents: lead.phone ? 'auto' : 'none'
-                        }}
-                      >
-                        <Phone size={14} />
-                        Call
-                      </a>
+                    {!stage?.isWon && !stage?.isLost && !stage?.isDelivery && !stage?.isClosed && (
                       <select
                         value=""
                         onChange={async (e) => {
+                          e.stopPropagation()
                           const newStatus = e.target.value
                           if (!newStatus) return
                           const targetStage = stages.find(s => s.id === newStatus)
-                          if (targetStage?.isWon) {
-                            setSelectedLead(lead)
-                            setShowWonModal(true)
-                          } else if (targetStage?.isLost) {
-                            setSelectedLead(lead)
-                            setShowLostModal(true)
-                          } else {
-                            await updateLead(lead.id, { status: newStatus, updated_at: new Date().toISOString() })
-                            await fetchPipelineLeads()
-                          }
+                          if (targetStage?.isWon) { setSelectedLead(lead); setShowWonModal(true) }
+                          else if (targetStage?.isLost) { setSelectedLead(lead); setShowLostModal(true) }
+                          else { await updateLead(lead.id, { status: newStatus, updated_at: new Date().toISOString() }); await fetchPipelineLeads() }
                         }}
                         onClick={(e) => e.stopPropagation()}
                         style={{
-                          flex: 1,
-                          padding: '10px 12px',
-                          minHeight: '44px',
+                          padding: '4px 2px',
+                          width: '28px',
                           border: `1px solid ${theme.border}`,
-                          borderRadius: '6px',
-                          fontSize: '13px',
+                          borderRadius: '4px',
+                          fontSize: '10px',
                           backgroundColor: theme.bgCard,
-                          color: theme.text,
-                          cursor: 'pointer'
+                          color: theme.textMuted,
+                          cursor: 'pointer',
+                          appearance: 'none',
+                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237d8a7f' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'center'
                         }}
                       >
-                        <option value="">Move to...</option>
+                        <option value=""></option>
                         {stages.filter(s => s.id !== currentStage && !s.isDelivery && !s.isClosed).map(s => (
                           <option key={s.id} value={s.id}>{s.name}</option>
                         ))}
                       </select>
-                    </div>
-                  )}
-                </EntityCard>
+                    )}
+                    <ChevronRight size={14} color={theme.border} />
+                  </div>
+                </div>
               ))
             })()}
           </div>
