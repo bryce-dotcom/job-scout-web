@@ -2259,7 +2259,7 @@ export default function LenardUTRMP() {
       )}
 
       {/* ===== GIVE-ME ENGINE (Rep Only) ===== */}
-      {isRep && results.length > 0 && effectiveProjectCost > 0 && (
+      {isRep && results.length > 0 && (
         <div style={{ margin: '0 16px 8px' }}>
           {/* Collapsed bar */}
           {!showGiveMe && (
