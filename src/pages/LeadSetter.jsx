@@ -683,7 +683,7 @@ export default function LeadSetter() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <DollarSign size={14} />
               <span style={{ fontWeight: '600' }}>
-                ${user?.commission_setter_rate || company?.setter_pay_per_appointment || 25}
+                ${company?.setter_pay_per_appointment || 25}
               </span>
               <span style={{ color: '#15803d' }}>/appt</span>
             </div>
