@@ -2296,56 +2296,79 @@ export default function LenardUTRMP() {
         </div>
       )}
 
-      {/* ===== PROJECT TOTALS ===== */}
+      {/* ===== PROJECT QUOTE ===== */}
       {results.length > 0 && (
         <div style={{ ...S.card, margin: '8px 16px', background: T.accentDim, borderColor: T.accent }}>
-          {/* Watts row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', textAlign: 'center', marginBottom: '8px' }}>
-            {totals.existWatts > 0 && <div><div style={{ fontSize: '11px', color: T.textMuted }}>EXISTING</div><div style={{ fontSize: '14px', fontWeight: '600' }}>{totals.existWatts.toLocaleString()}W</div></div>}
-            <div><div style={{ fontSize: '11px', color: T.textMuted }}>NEW LED</div><div style={{ fontSize: '14px', fontWeight: '600' }}>{totals.newWatts.toLocaleString()}W</div></div>
-            {totals.wattsReduced > 0 && <div><div style={{ fontSize: '11px', color: T.textMuted }}>REDUCED</div><div style={{ fontSize: '14px', fontWeight: '600', color: T.green }}>{reductionPct}%</div></div>}
-          </div>
-          {/* Energy savings */}
-          {totals.existWatts > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', textAlign: 'center', marginBottom: '8px', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
-              <div><div style={{ fontSize: '11px', color: T.textMuted }}>ANNUAL kWh SAVED</div><div style={{ fontSize: '14px', fontWeight: '600' }}>{Math.round(financials.annualKwhSaved).toLocaleString()}</div></div>
-              <div><div style={{ fontSize: '11px', color: T.textMuted }}>ANNUAL $ SAVED</div><div style={{ fontSize: '14px', fontWeight: '600', color: T.green }}>${Math.round(financials.annualEnergySavings).toLocaleString()}</div></div>
-            </div>
-          )}
-          {/* Cap info */}
-          <div style={{ paddingTop: '8px', borderTop: `1px solid ${T.border}`, marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px' }}><span>Raw Incentive Total</span><span>${rawIncentive.toLocaleString()}</span></div>
-            {effectiveProjectCost > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: capApplied ? T.accent : T.textSec, marginBottom: '4px' }}><span>Cost Cap ({Math.round(capPct * 100)}%)</span><span>${capAmount.toLocaleString()}{capApplied ? ' \u2022 CAP APPLIED' : ''}</span></div>}
-          </div>
-          {/* YOUR QUOTE — editable line items added from Give-Me suggestions */}
-          {isRep && giveMeQuoteItems.length > 0 && (
-            <div style={{ paddingTop: '8px', borderTop: `1px solid ${T.border}`, marginBottom: '8px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '700', color: T.accent, letterSpacing: '0.5px', marginBottom: '4px' }}>YOUR QUOTE</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: T.textSec, marginBottom: '2px' }}><span>Base Project Cost</span><span style={{ fontWeight: '600', color: T.text }}>${Math.round(baselineProjectCost).toLocaleString()}</span></div>
-              {giveMeQuoteItems.map((q, qi) => (
-                <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 0' }}>
-                  <span style={{ fontSize: '11px', color: T.textSec, flex: 1 }}>+ {q.label}</span>
-                  <span style={{ fontSize: '11px', color: T.textSec }}>$</span>
-                  <input type="number" inputMode="numeric" value={q.amount || ''} placeholder="0"
-                    onChange={e => { const val = Math.max(0, parseFloat(e.target.value) || 0); setGiveMeQuoteItems(prev => prev.map(item => item.id === q.id ? { ...item, amount: val } : item)); markDirty(); }}
-                    style={{ width: '60px', padding: '2px 4px', borderRadius: '4px', border: `1px solid ${T.border}`, background: T.bg, color: T.text, fontSize: '11px', fontWeight: '700', textAlign: 'right' }} />
-                  <button onClick={() => { setGiveMeQuoteItems(prev => prev.filter(item => item.id !== q.id)); markDirty(); }}
-                    style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: 1 }}>{'\u00D7'}</button>
+          <div style={{ fontSize: '10px', fontWeight: '700', color: T.accent, letterSpacing: '0.5px', marginBottom: '8px' }}>PROJECT QUOTE</div>
+          {/* Line items */}
+          {results.map((r, i) => {
+            const unitPrice = getEffectivePrice(r);
+            const lineTotal = unitPrice * (r.qty || 0);
+            const lineRaw = r.calc.totalIncentive;
+            const lineRebate = rawIncentive > 0 ? +(lineRaw / rawIncentive * estimatedRebate).toFixed(2) : lineRaw;
+            const lineCapped = lineRebate < lineRaw - 0.01;
+            const lineReductionPct = r.calc.existTotal > 0 ? ((r.calc.wattsReduced / r.calc.existTotal) * 100).toFixed(0) : 0;
+            const lineBelowMin = r.calc.existTotal > 0 && lineReductionPct < 30;
+            return (
+              <div key={r.id} style={{ padding: '3px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12px', color: T.text }}>
+                  <span style={{ flex: 1, color: T.textSec }}>{r.location || `Line ${i + 1}`} <span style={{ color: T.textMuted, fontSize: '10px' }}>({r.qty || 0} {'\u00D7'} ${unitPrice.toFixed(2)})</span></span>
+                  <span style={{ fontWeight: '600', fontVariantNumeric: 'tabular-nums' }}>${Math.round(lineTotal).toLocaleString()}</span>
                 </div>
-              ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', paddingTop: '4px', borderTop: `1px dashed ${T.border}`, marginTop: '4px' }}>
-                <span style={{ color: T.text }}>Total Project Cost</span>
-                <span style={{ color: T.accent }}>${Math.round(effectiveProjectCost).toLocaleString()}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '10px', color: T.textMuted, paddingLeft: '4px' }}>
+                  <span>Rebate: <span style={{ color: lineCapped ? T.accent : T.green, fontWeight: '600' }}>${Math.round(lineRebate).toLocaleString()}</span>
+                    {lineCapped && <span style={{ color: T.accent }}> (of ${Math.round(lineRaw).toLocaleString()} {'\u2014'} {Math.round(capPct * 100)}% project cost cap)</span>}
+                  </span>
+                </div>
+                {lineBelowMin && (
+                  <div style={{ fontSize: '9px', color: T.red, paddingLeft: '4px' }}>{'\u26A0'} Only {lineReductionPct}% reduction {'\u2014'} needs {'\u2265'}30% to qualify</div>
+                )}
               </div>
+            );
+          })}
+          {/* Subtotal */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '600', paddingTop: '6px', marginTop: '6px', borderTop: `1px solid ${T.border}`, color: T.text }}>
+            <span>Subtotal</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>${Math.round(baselineProjectCost).toLocaleString()}</span>
+          </div>
+          {/* Quote add-ons from Give-Me suggestions */}
+          {isRep && giveMeQuoteItems.length > 0 && giveMeQuoteItems.map((q) => (
+            <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 0' }}>
+              <span style={{ fontSize: '12px', color: T.textSec, flex: 1 }}>+ {q.label}</span>
+              <span style={{ fontSize: '12px', color: T.textSec }}>$</span>
+              <input type="number" inputMode="numeric" value={q.amount || ''} placeholder="0"
+                onChange={e => { const val = Math.max(0, parseFloat(e.target.value) || 0); setGiveMeQuoteItems(prev => prev.map(item => item.id === q.id ? { ...item, amount: val } : item)); markDirty(); }}
+                style={{ width: '60px', padding: '2px 4px', borderRadius: '4px', border: `1px solid ${T.border}`, background: T.bg, color: T.text, fontSize: '12px', fontWeight: '700', textAlign: 'right' }} />
+              <button onClick={() => { setGiveMeQuoteItems(prev => prev.filter(item => item.id !== q.id)); markDirty(); }}
+                style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: 1 }}>{'\u00D7'}</button>
+            </div>
+          ))}
+          {/* Total Project Cost (only show if different from subtotal) */}
+          {giveMeQuoteItems.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', paddingTop: '6px', marginTop: '4px', borderTop: `1px dashed ${T.border}`, color: T.text }}>
+              <span>Total Project Cost</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>${Math.round(effectiveProjectCost).toLocaleString()}</span>
             </div>
           )}
-          {/* Incentive total + actions */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
-            <div><div style={{ fontSize: '11px', color: T.textMuted }}>ESTIMATED REBATE</div><div style={{ ...S.money, fontSize: '22px' }}>${estimatedRebate.toLocaleString()}</div></div>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button onClick={() => setShowSaveModal(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
-              <button onClick={() => setShowSummary(true)} style={{ ...S.btn, fontSize: '11px', padding: '8px 12px' }}>{'\uD83D\uDCCB'} Audit & Contract</button>
-            </div>
+          {/* Incentive / Rebate */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', paddingTop: '6px', marginTop: '6px', borderTop: `1px solid ${T.border}`, color: T.green }}>
+            <span>Less: Estimated Rebate{capApplied ? ` (${Math.round(capPct * 100)}% cap)` : ''}</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{'\u2212'}${estimatedRebate.toLocaleString()}</span>
+          </div>
+          {/* Customer Out-of-Pocket */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '16px', fontWeight: '800', paddingTop: '8px', marginTop: '6px', borderTop: `2px solid ${T.accent}`, color: T.accent }}>
+            <span style={{ fontSize: '13px' }}>Customer Out-of-Pocket</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>${Math.max(0, Math.round(effectiveProjectCost - estimatedRebate)).toLocaleString()}</span>
+          </div>
+          {/* Compact watts & energy row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: T.textMuted, paddingTop: '8px', marginTop: '8px', borderTop: `1px solid ${T.border}`, flexWrap: 'wrap', gap: '4px' }}>
+            {totals.existWatts > 0 && <span>{totals.existWatts.toLocaleString()}W {'\u2192'} {totals.newWatts.toLocaleString()}W ({reductionPct}% reduction)</span>}
+            {totals.existWatts > 0 && financials.annualEnergySavings > 0 && <span>${Math.round(financials.annualEnergySavings).toLocaleString()}/yr saved</span>}
+          </div>
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: '6px', paddingTop: '8px', marginTop: '4px' }}>
+            <button onClick={() => setShowSaveModal(true)} style={{ ...S.btn, flex: 1, fontSize: '12px', padding: '8px 14px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
+            <button onClick={() => setShowSummary(true)} style={{ ...S.btn, flex: 1, fontSize: '11px', padding: '8px 12px' }}>{'\uD83D\uDCCB'} Audit & Contract</button>
           </div>
         </div>
       )}
