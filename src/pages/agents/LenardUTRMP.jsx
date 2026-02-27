@@ -339,14 +339,17 @@ export default function LenardUTRMP() {
   useEffect(() => { if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw-lenard.js').catch(() => {}); } }, []);
 
   // Check if user is authenticated (rep-only Give-Me Engine)
+  // Falls back to leadOwnerId as rep indicator when auth unavailable
   useEffect(() => {
     (async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        setIsRep(!!user);
-      } catch (_) { setIsRep(false); }
+        setIsRep(!!user || !!leadOwnerId);
+      } catch (_) {
+        setIsRep(!!leadOwnerId);
+      }
     })();
-  }, []);
+  }, [leadOwnerId]);
 
   useEffect(() => {
     (async () => {
@@ -1960,8 +1963,8 @@ export default function LenardUTRMP() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ ...S.money, fontSize: '16px' }}>${(getEffectivePrice(r) * (r.qty || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                    <div style={{ fontSize: '10px', color: T.green }}>Rebate: ${r.calc.totalIncentive.toLocaleString()}</div>
+                    <div style={{ ...S.money, fontSize: '16px' }}>${r.calc.totalIncentive.toLocaleString()}</div>
+                    {r.calc.controlsIncentive > 0 && <div style={{ fontSize: '10px', color: T.blue }}>+${r.calc.controlsIncentive} ctrl</div>}
                   </div>
                   <div style={{ fontSize: '14px', color: T.textMuted, transition: 'transform 0.2s', transform: isExp ? 'rotate(90deg)' : 'none' }}>{'\u25B8'}</div>
                 </div>
@@ -2202,12 +2205,12 @@ export default function LenardUTRMP() {
 
                   {/* Line breakdown */}
                   <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', fontSize: '12px', color: T.textSec }}>
-                    {(() => { const ep = getEffectivePrice(r); const lt = ep * (r.qty || 0); return lt > 0 ? (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', paddingBottom: '4px', borderBottom: `1px solid ${T.border}` }}><span style={{ fontWeight: '600', color: T.text }}>Line Total</span><span style={{ ...S.money, fontSize: '14px' }}>${lt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                    ) : null; })()}
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}><span>Fixture Incentive</span><span style={S.money}>${r.calc.fixtureIncentive.toLocaleString()}</span></div>
                     {r.calc.controlsIncentive > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}><span>Controls Incentive</span><span style={{ color: T.blue, fontWeight: '600' }}>${r.calc.controlsIncentive}</span></div>}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: `1px solid ${T.border}` }}><span style={{ fontWeight: '600', color: T.green }}>Line Rebate</span><span style={{ color: T.green, fontWeight: '700', fontSize: '14px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: `1px solid ${T.border}`, marginBottom: '4px' }}><span style={{ fontWeight: '600', color: T.green }}>Line Rebate</span><span style={{ color: T.green, fontWeight: '700', fontSize: '14px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
+                    {(() => { const ep = getEffectivePrice(r); const lt = ep * (r.qty || 0); return lt > 0 ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: `1px solid ${T.border}` }}><span style={{ fontWeight: '600', color: T.text }}>Line Total</span><span style={{ ...S.money, fontSize: '14px' }}>${lt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                    ) : null; })()}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                     <button onClick={() => setExpandedLine(null)} style={{ ...S.btn, flex: 1, fontSize: '13px' }}>Done</button>
