@@ -491,16 +491,15 @@ export default function LeadDetail() {
   }
 
   return (
-    <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh' }}>
+    <div style={{ padding: isMobile ? '12px' : '24px', minHeight: '100vh', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        flexDirection: isMobile ? 'column' : 'row',
-        alignItems: isMobile ? 'stretch' : 'flex-start',
-        gap: isMobile ? '12px' : '16px',
-        marginBottom: '24px'
+        flexDirection: 'column',
+        gap: '12px',
+        marginBottom: isMobile ? '16px' : '24px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', minWidth: 0 }}>
           <button
             onClick={() => navigate(-1)}
             style={{
@@ -514,29 +513,31 @@ export default function LeadDetail() {
               color: theme.textSecondary,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
+              flexShrink: 0
             }}
           >
             <ArrowLeft size={20} />
           </button>
 
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px', flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: isMobile ? '18px' : '24px', fontWeight: '700', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? 'calc(100vw - 140px)' : 'none' }}>
                 {lead.customer_name}
               </h1>
               <span style={{
-                padding: '4px 10px',
+                padding: '3px 8px',
                 backgroundColor: getStatusColor(lead.status) + '20',
                 color: getStatusColor(lead.status),
                 borderRadius: '6px',
-                fontSize: '13px',
-                fontWeight: '600'
+                fontSize: '12px',
+                fontWeight: '600',
+                flexShrink: 0
               }}>
                 {lead.status}
               </span>
             </div>
-            <div style={{ fontSize: isMobile ? '13px' : '14px', color: theme.textMuted, display: 'flex', gap: isMobile ? '12px' : '16px', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: '13px', color: theme.textMuted, display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
               {lead.service_type && <span>{lead.service_type}</span>}
               {lead.lead_source && <span>Source: {lead.lead_source}</span>}
             </div>
@@ -625,7 +626,9 @@ export default function LeadDetail() {
       </div>
 
       {/* Lead Journey Flow Indicator */}
-      <FlowIndicator currentStatus={lead.status} showCompact={isMobile} />
+      <div style={{ maxWidth: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <FlowIndicator currentStatus={lead.status} showCompact={isMobile} />
+      </div>
 
       {/* Deal Breadcrumb */}
       <DealBreadcrumb
@@ -640,13 +643,17 @@ export default function LeadDetail() {
         overflowX: 'auto',
         overflowY: 'visible',
         WebkitOverflowScrolling: 'touch',
-        marginBottom: '24px',
+        marginBottom: isMobile ? '16px' : '24px',
         borderBottom: `1px solid ${theme.border}`,
-        paddingBottom: '12px'
+        paddingBottom: '12px',
+        marginLeft: isMobile ? '-12px' : 0,
+        marginRight: isMobile ? '-12px' : 0,
+        paddingLeft: isMobile ? '12px' : 0,
+        paddingRight: isMobile ? '12px' : 0
       }}>
         <div style={{
           display: 'flex',
-          gap: '8px',
+          gap: '6px',
           minWidth: 'max-content',
           padding: '4px'
         }}>
@@ -686,7 +693,9 @@ export default function LeadDetail() {
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
         border: `1px solid ${theme.border}`,
-        padding: isMobile ? '16px' : '24px'
+        padding: isMobile ? '12px' : '24px',
+        maxWidth: '100%',
+        overflowX: 'hidden'
       }}>
 
         {/* INFO TAB */}

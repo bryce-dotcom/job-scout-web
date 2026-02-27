@@ -1270,7 +1270,9 @@ export default function Layout() {
           {/* Semi-transparent overlay for readability */}
           <div style={{
             backgroundColor: 'rgba(247,245,239,0.85)',
-            minHeight: '100vh'
+            minHeight: '100vh',
+            maxWidth: '100%',
+            overflowX: 'hidden'
           }}>
             <Outlet />
           </div>
