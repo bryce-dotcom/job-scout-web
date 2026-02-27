@@ -328,6 +328,7 @@ export default function LenardUTRMP() {
   const [repCurrentDown, setRepCurrentDown] = useState(0);
   const [repTargetDown, setRepTargetDown] = useState(0);
   const [repAdditionalOOP, setRepAdditionalOOP] = useState(0);
+  const [giveMeQuoteItems, setGiveMeQuoteItems] = useState([]);
 
   const showToast = useCallback((message, icon = '\u2713') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -484,7 +485,9 @@ export default function LenardUTRMP() {
   const rawIncentive = totals.totalIncentive;
   const capPct = program === 'smbe' ? SMBE.cap : program === 'express' ? EXPRESS.cap : LARGE.cap;
   const linesCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * (l.qty || 0)), 0);
-  const effectiveProjectCost = projectCost > 0 ? projectCost : linesCost;
+  const giveMeQuoteTotal = giveMeQuoteItems.reduce((s, item) => s + (item.amount || 0), 0);
+  const baselineProjectCost = projectCost > 0 ? projectCost : linesCost;
+  const effectiveProjectCost = baselineProjectCost + giveMeQuoteTotal;
   const capAmount = effectiveProjectCost > 0 ? +(effectiveProjectCost * capPct).toFixed(2) : Infinity;
   const estimatedRebate = +Math.min(rawIncentive, capAmount).toFixed(2);
   const capApplied = effectiveProjectCost > 0 && rawIncentive > capAmount;
@@ -575,15 +578,21 @@ export default function LenardUTRMP() {
   // Give-Me = 50% of (uncaptured incentive + additional OOP rep adds).
   const COMMISSION_RATE = 0.085;
   const giveMe = useMemo(() => {
-    const baseline = effectiveProjectCost;
+    const baseline = baselineProjectCost;
     const commission = baseline * COMMISSION_RATE;
+    // Rebate at baseline (before give-me quote add-ons)
+    const baselineCapAmt = baseline > 0 ? +(baseline * capPct).toFixed(2) : Infinity;
+    const baselineRebate = +Math.min(rawIncentive, baselineCapAmt).toFixed(2);
+    // Additional incentive captured by raising project price through quote items
+    const additionalIncentive = Math.max(0, estimatedRebate - baselineRebate);
     const leftOnTable = Math.max(0, rawIncentive - estimatedRebate);
     const costForFullCapture = capPct > 0 ? Math.ceil(rawIncentive / capPct) : 0;
     const costGap = Math.max(0, costForFullCapture - effectiveProjectCost);
     const customerOOP = Math.max(0, effectiveProjectCost - estimatedRebate);
-    const potentialGiveMe = (leftOnTable + repAdditionalOOP) * 0.5;
-    return { baseline, commission, leftOnTable, costForFullCapture, costGap, customerOOP, potentialGiveMe, additionalOOP: repAdditionalOOP };
-  }, [effectiveProjectCost, rawIncentive, estimatedRebate, capPct, repAdditionalOOP]);
+    // Real give-me = 50% of (extra incentive from raising price + additional OOP)
+    const realGiveMe = (additionalIncentive + repAdditionalOOP) * 0.5;
+    return { baseline, commission, additionalIncentive, leftOnTable, costForFullCapture, costGap, customerOOP, realGiveMe, additionalOOP: repAdditionalOOP, baselineRebate };
+  }, [baselineProjectCost, effectiveProjectCost, rawIncentive, estimatedRebate, capPct, repAdditionalOOP]);
 
   // ---- MAX UTILITY-ALLOWED COST (highest tier per line) ----
   const maxUtilityCost = useMemo(() => {
@@ -638,18 +647,19 @@ export default function LenardUTRMP() {
       });
     }
 
-    // 2. Cost-raising items (disposal, lift, wiring) — collected for cap_gap consolidation
+    // 2. Cost-raising items (disposal, lift, wiring) — only show if not already in quote
+    const appliedTypes = new Set(giveMeQuoteItems.map(q => q.type));
     const costRaisers = [];
-    if (totalFixtures > 0) {
+    if (totalFixtures > 0 && !appliedTypes.has('disposal')) {
       const cost = totalFixtures * 20;
       costRaisers.push({ type: 'disposal', addCost: cost, title: 'Disposal/recycling fee', desc: `${totalFixtures} fixtures \u00D7 $20`, impact: cost * capPct });
     }
     const highLines = lines.filter(l => (l.height || 0) > 12);
-    if (highLines.length > 0) {
+    if (highLines.length > 0 && !appliedTypes.has('lift')) {
       const cost = 350;
       costRaisers.push({ type: 'lift', addCost: cost, title: 'Lift/scaffold rental', desc: `${highLines.length} area(s) above 12ft`, impact: cost * capPct });
     }
-    if (totalFixtures > 0) {
+    if (totalFixtures > 0 && !appliedTypes.has('wiring')) {
       const cost = totalFixtures * 35;
       costRaisers.push({ type: 'wiring', addCost: cost, title: 'Wiring/conduit scope', desc: `${totalFixtures} fixtures \u00D7 $35`, impact: cost * capPct });
     }
@@ -701,7 +711,7 @@ export default function LenardUTRMP() {
     }
 
     return suggestions.sort((a, b) => b.impact - a.impact);
-  }, [isRep, lines, program, effectiveProjectCost, estimatedRebate, rawIncentive, capPct, capAmount, giveMe, sbeProducts]);
+  }, [isRep, lines, program, effectiveProjectCost, estimatedRebate, rawIncentive, capPct, capAmount, giveMe, sbeProducts, giveMeQuoteItems]);
 
   // ---- AUTO-POPULATE APP & W9 FIELDS ----
   useEffect(() => {
@@ -732,7 +742,7 @@ export default function LenardUTRMP() {
         lines: lines.map(l => ({ name: l.name, qty: l.qty, existW: l.existW, newW: l.newW, height: l.height, location: l.location, controlsType: l.controlsType, controlsOnly: l.controlsOnly, controlsOnlyType: l.controlsOnlyType, productId: l.productId, productName: l.productName, productPrice: l.productPrice, fixtureCategory: l.fixtureCategory, lightingType: l.lightingType, confirmed: l.confirmed, overrideNotes: l.overrideNotes })),
         totals, financials, totalIncentive: estimatedRebate, projectCost: effectiveProjectCost,
         operatingHours, daysPerYear, energyRate, city: saveCity, state: saveState, zip: saveZip, photos: capturedPhotos,
-        ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, potentialGiveMe: giveMe.potentialGiveMe, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, currentDown: repCurrentDown, targetDown: repTargetDown } } : {}),
+        ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, realGiveMe: giveMe.realGiveMe, additionalIncentive: giveMe.additionalIncentive, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, quoteItems: giveMeQuoteItems, currentDown: repCurrentDown, targetDown: repTargetDown } } : {}),
       };
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
       const data = await resp.json();
@@ -757,7 +767,7 @@ export default function LenardUTRMP() {
         // );
         if (isRep && effectiveProjectCost > 0) {
           try {
-            await supabase.from('give_me_log').insert({ lead_id: data.leadId, audit_id: data.auditId, rep_name: leadOwnerName, baseline_cost: giveMe.baseline, project_cost: effectiveProjectCost, give_me_pool: giveMe.potentialGiveMe, rep_split: giveMe.potentialGiveMe, raw_incentive: rawIncentive, captured_incentive: estimatedRebate, left_on_table: giveMe.leftOnTable, suggestions: giveMeSuggestions.slice(0, 5) });
+            await supabase.from('give_me_log').insert({ lead_id: data.leadId, audit_id: data.auditId, rep_name: leadOwnerName, baseline_cost: giveMe.baseline, project_cost: effectiveProjectCost, give_me_pool: giveMe.realGiveMe, rep_split: giveMe.realGiveMe, raw_incentive: rawIncentive, captured_incentive: estimatedRebate, left_on_table: giveMe.leftOnTable, suggestions: giveMeSuggestions.slice(0, 5) });
           } catch (_) { /* table may not exist yet */ }
         }
       }
@@ -1348,10 +1358,15 @@ export default function LenardUTRMP() {
       // Give-Me Breakdown
       sectionTitle('Give-Me Breakdown');
       row('Baseline (Project Cost)', `$${Math.round(giveMe.baseline).toLocaleString()}`, { bold: true });
+      if (giveMeQuoteItems.length > 0) {
+        giveMeQuoteItems.forEach(q => row(`  + ${q.label}`, `$${Math.round(q.amount).toLocaleString()}`, { color: orange }));
+        row('Elevated Project Cost', `$${Math.round(effectiveProjectCost).toLocaleString()}`, { bold: true });
+      }
       row('Commission (8.5%)', `$${Math.round(giveMe.commission).toLocaleString()}`, { color: green });
-      row('Customer OOP', `$${Math.round(giveMe.customerOOP).toLocaleString()}`);
-      if (repAdditionalOOP > 0) row('Additional OOP', `$${Math.round(repAdditionalOOP).toLocaleString()}`, { color: orange });
-      row('Potential Give-Me', `$${Math.round(giveMe.potentialGiveMe).toLocaleString()}`, { bold: true, big: true, color: green, topLine: true, lineColor: orange });
+      row('Customer Out-of-Pocket', `$${Math.round(giveMe.customerOOP).toLocaleString()}`);
+      if (repAdditionalOOP > 0) row('Additional Out-of-Pocket', `$${Math.round(repAdditionalOOP).toLocaleString()}`, { color: orange });
+      if (giveMe.additionalIncentive > 0) row('Extra Incentive Captured', `$${Math.round(giveMe.additionalIncentive).toLocaleString()}`, { color: green });
+      row('Your Give-Me', `$${Math.round(giveMe.realGiveMe).toLocaleString()}`, { bold: true, big: true, color: green, topLine: true, lineColor: orange });
       y += 4;
 
       // Incentive Capture
@@ -1369,7 +1384,7 @@ export default function LenardUTRMP() {
 
       // Customer Position
       sectionTitle('Customer Position');
-      row('Customer OOP (after rebate)', `$${Math.round(giveMe.customerOOP).toLocaleString()}`, { bold: true });
+      row('Customer Out-of-Pocket (after rebate)', `$${Math.round(giveMe.customerOOP).toLocaleString()}`, { bold: true });
       if (repCurrentDown > 0) row('Current Down Payment', `$${Math.round(repCurrentDown).toLocaleString()}`);
       if (repTargetDown > 0) row('Target Down Payment', `$${Math.round(repTargetDown).toLocaleString()}`, { color: orange });
       y += 4;
@@ -2279,7 +2294,7 @@ export default function LenardUTRMP() {
                 <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>Give-Me Engine</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '12px', color: T.textSec }}>Potential: <span style={{ fontWeight: '700', color: T.green }}>${Math.round(giveMe.potentialGiveMe).toLocaleString()}</span></span>
+                <span style={{ fontSize: '12px', color: T.textSec }}>Give-Me: <span style={{ fontWeight: '700', color: T.green }}>${Math.round(giveMe.realGiveMe).toLocaleString()}</span></span>
                 <span style={{ fontSize: '14px', color: T.textMuted }}>{'\u25B8'}</span>
               </div>
             </button>
@@ -2308,16 +2323,47 @@ export default function LenardUTRMP() {
                   <div style={{ fontSize: '8px', color: T.textMuted }}>8.5%</div>
                 </div>
                 <div style={{ background: T.bgInput, borderRadius: '8px', padding: '6px 4px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '8px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>GIVE-ME</div>
-                  <div style={{ fontSize: '16px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.potentialGiveMe).toLocaleString()}</div>
+                  <div style={{ fontSize: '8px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>YOUR GIVE-ME</div>
+                  <div style={{ fontSize: '16px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.realGiveMe).toLocaleString()}</div>
                   <div style={{ fontSize: '8px', color: T.textMuted }}>50% split</div>
                 </div>
               </div>
 
-              {/* Additional OOP input */}
+              {/* ---- YOUR QUOTE (applied items) ---- */}
+              <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', borderLeft: `2px solid ${T.accent}` }}>
+                <div style={{ fontSize: '10px', fontWeight: '700', color: T.accent, letterSpacing: '0.5px', marginBottom: '4px' }}>YOUR QUOTE</div>
+                {giveMeQuoteItems.length === 0 && (
+                  <div style={{ fontSize: '10px', color: T.textMuted, fontStyle: 'italic' }}>No items yet. Add cost items from suggestions below.</div>
+                )}
+                {giveMeQuoteItems.map((q, qi) => (
+                  <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', borderBottom: qi < giveMeQuoteItems.length - 1 ? `1px dashed ${T.border}` : 'none' }}>
+                    <div style={{ flex: 1, fontSize: '11px', color: T.text }}>{q.label}</div>
+                    <span style={{ fontSize: '11px', color: T.textSec }}>$</span>
+                    <input type="number" inputMode="numeric" value={q.amount || ''} placeholder="0"
+                      onChange={e => { const val = Math.max(0, parseFloat(e.target.value) || 0); setGiveMeQuoteItems(prev => prev.map(item => item.id === q.id ? { ...item, amount: val } : item)); markDirty(); }}
+                      style={{ width: '65px', padding: '2px 4px', borderRadius: '4px', border: `1px solid ${T.border}`, background: T.bg, color: T.text, fontSize: '11px', fontWeight: '700', textAlign: 'right' }} />
+                    <button onClick={() => { setGiveMeQuoteItems(prev => prev.filter(item => item.id !== q.id)); markDirty(); }}
+                      style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: 1 }}>{'\u00D7'}</button>
+                  </div>
+                ))}
+                {giveMeQuoteItems.length > 0 && (
+                  <div style={{ borderTop: `1px solid ${T.border}`, marginTop: '4px', paddingTop: '4px', display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                    <span style={{ fontWeight: '600', color: T.text }}>Added to project</span>
+                    <span style={{ fontWeight: '700', color: T.accent }}>${Math.round(giveMeQuoteTotal).toLocaleString()}</span>
+                  </div>
+                )}
+                {giveMe.additionalIncentive > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: T.green, fontWeight: '600', marginTop: '2px' }}>
+                    <span>Extra incentive captured</span>
+                    <span>${Math.round(giveMe.additionalIncentive).toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Additional Out-of-Pocket input */}
               <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px 10px', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: '600', color: T.text }}>Additional OOP</span>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: T.text }}>Additional Out-of-Pocket (OOP)</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span style={{ fontSize: '13px', color: T.textSec }}>$</span>
                     <input type="number" inputMode="numeric" value={repAdditionalOOP || ''} placeholder="0"
@@ -2326,28 +2372,33 @@ export default function LenardUTRMP() {
                   </div>
                 </div>
                 <div style={{ fontSize: '10px', color: T.textMuted, lineHeight: '1.3' }}>
-                  Enter extra amount above current OOP you plan to charge the customer. You earn 50% of this.
+                  Extra amount above customer's current Out-of-Pocket you plan to charge. You earn 50% of this.
                 </div>
               </div>
 
-              {/* Give-Me explanation */}
+              {/* How Give-Me works */}
               <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', fontSize: '10px', color: T.textSec, lineHeight: '1.4' }}>
                 <div style={{ fontWeight: '600', color: T.text, marginBottom: '2px', fontSize: '11px' }}>How Give-Me works</div>
-                {giveMe.leftOnTable > 0 && (
-                  <div style={{ marginBottom: '2px' }}>{'\u2022'} <span style={{ color: T.green, fontWeight: '600' }}>${Math.round(giveMe.leftOnTable).toLocaleString()}</span> incentive left on table (rebate is capped). You get 50% = <span style={{ fontWeight: '600' }}>${Math.round(giveMe.leftOnTable * 0.5).toLocaleString()}</span></div>
+                <div style={{ marginBottom: '2px' }}>{'\u2022'} Your Give-Me = 50% of any additional incentive you capture by raising the project price + 50% of any additional Out-of-Pocket (OOP) you charge the customer above the current amount.</div>
+                {giveMe.additionalIncentive > 0 && (
+                  <div style={{ marginBottom: '2px' }}>{'\u2022'} You raised the project price by <span style={{ color: T.green, fontWeight: '600' }}>${Math.round(giveMeQuoteTotal).toLocaleString()}</span>, capturing <span style={{ color: T.green, fontWeight: '600' }}>${Math.round(giveMe.additionalIncentive).toLocaleString()}</span> extra incentive. Your 50% = <span style={{ fontWeight: '700', color: T.green }}>${Math.round(giveMe.additionalIncentive * 0.5).toLocaleString()}</span></div>
                 )}
                 {repAdditionalOOP > 0 && (
-                  <div style={{ marginBottom: '2px' }}>{'\u2022'} <span style={{ color: T.green, fontWeight: '600' }}>${Math.round(repAdditionalOOP).toLocaleString()}</span> additional OOP you add. You get 50% = <span style={{ fontWeight: '600' }}>${Math.round(repAdditionalOOP * 0.5).toLocaleString()}</span></div>
+                  <div style={{ marginBottom: '2px' }}>{'\u2022'} Additional OOP: <span style={{ color: T.green, fontWeight: '600' }}>${Math.round(repAdditionalOOP).toLocaleString()}</span>. Your 50% = <span style={{ fontWeight: '700', color: T.green }}>${Math.round(repAdditionalOOP * 0.5).toLocaleString()}</span></div>
                 )}
-                {giveMe.potentialGiveMe === 0 && (
-                  <div>{'\u2022'} No give-me available yet. Increase project cost above the cap threshold or add additional OOP to create give-me potential.</div>
+                {giveMe.leftOnTable > 0 && (
+                  <div style={{ marginBottom: '2px', color: T.accent }}>{'\u2022'} Still <span style={{ fontWeight: '600' }}>${Math.round(giveMe.leftOnTable).toLocaleString()}</span> incentive left on table. Add more to project cost to capture it.</div>
                 )}
-                <div style={{ marginTop: '3px', color: T.textMuted }}>Customer OOP: <span style={{ fontWeight: '600', color: T.text }}>${Math.round(giveMe.customerOOP).toLocaleString()}</span>{repAdditionalOOP > 0 ? ` + $${Math.round(repAdditionalOOP).toLocaleString()} added = $${Math.round(giveMe.customerOOP + repAdditionalOOP).toLocaleString()} total` : ''}</div>
+                {giveMe.realGiveMe === 0 && giveMe.leftOnTable === 0 && repAdditionalOOP === 0 && (
+                  <div>{'\u2022'} No give-me available yet. Add cost items or enter additional OOP to create give-me.</div>
+                )}
+                <div style={{ marginTop: '3px', color: T.textMuted }}>Customer Out-of-Pocket: <span style={{ fontWeight: '600', color: T.text }}>${Math.round(giveMe.customerOOP).toLocaleString()}</span>{repAdditionalOOP > 0 ? ` + $${Math.round(repAdditionalOOP).toLocaleString()} = $${Math.round(giveMe.customerOOP + repAdditionalOOP).toLocaleString()} total` : ''}</div>
               </div>
 
-              {/* Compact suggestion rows */}
+              {/* Suggestions */}
               {giveMeSuggestions.length > 0 && (
                 <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: '8px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: '700', color: T.textMuted, letterSpacing: '0.5px', marginBottom: '4px' }}>SUGGESTIONS</div>
                   {giveMeSuggestions.map((s, i) => {
                     if (s.type === 'close') return (
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: i < giveMeSuggestions.length - 1 ? `1px solid ${T.border}` : 'none' }}>
@@ -2367,8 +2418,9 @@ export default function LenardUTRMP() {
                         <div style={{ fontSize: '10px', color: T.textSec, marginLeft: '20px', marginBottom: '4px' }}>{s.desc}</div>
                         {s.costRaisers && s.costRaisers.map((cr, ci) => (
                           <div key={ci} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginLeft: '20px', padding: '4px 8px', background: T.bgInput, borderRadius: '6px', marginBottom: '2px' }}>
-                            <span style={{ fontSize: '10px', color: T.textSec }}>{cr.title} {'\u2022'} {cr.desc}</span>
-                            <button onClick={() => { setProjectCost(prev => (prev || effectiveProjectCost) + cr.addCost); markDirty(); showToast(`+$${cr.addCost.toLocaleString()}`, '\u2713'); }} style={{ padding: '2px 8px', background: T.accent, color: '#fff', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>+${cr.addCost.toLocaleString()}</button>
+                            <span style={{ fontSize: '10px', color: T.textSec }}>{cr.title}</span>
+                            <button onClick={() => { setGiveMeQuoteItems(prev => [...prev, { id: Date.now() + ci, type: cr.type, label: cr.title, amount: cr.addCost }]); markDirty(); showToast(`Added ${cr.title}`, '\u2713'); }}
+                              style={{ padding: '2px 8px', background: T.accent, color: '#fff', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Add ${cr.addCost.toLocaleString()}</button>
                           </div>
                         ))}
                       </div>
