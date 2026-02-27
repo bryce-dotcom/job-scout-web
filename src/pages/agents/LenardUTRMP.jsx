@@ -2305,22 +2305,30 @@ export default function LenardUTRMP() {
                 </div>
               </div>
 
-              {/* OOP summary line */}
+              {/* OOP summary */}
               {(() => {
                 const currentOOP = Math.max(0, effectiveProjectCost - estimatedRebate);
-                const roomToGrow = maxUtilityCost > 0 ? Math.max(0, maxUtilityCost - effectiveProjectCost) : 0;
+                const doubledOOP = currentOOP * 2;
+                const doubledProjectCost = doubledOOP + estimatedRebate;
+                const extraFromDouble = Math.max(0, doubledOOP - currentOOP);
+                const repCutFromDouble = extraFromDouble * 0.5;
+                const maxCeilingOOP = maxUtilityCost > 0 ? Math.max(0, maxUtilityCost - Math.min(rawIncentive, +(maxUtilityCost * capPct).toFixed(2))) : 0;
                 const atCeiling = maxUtilityCost > 0 && effectiveProjectCost >= maxUtilityCost;
+                const canGrow = currentOOP > 0 && !atCeiling;
                 return (
                   <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', fontSize: '11px', color: T.textSec }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
                       <span>Customer OOP: <span style={{ fontWeight: '700', color: T.text }}>${Math.round(currentOOP).toLocaleString()}</span></span>
-                      {maxUtilityCost > 0 && <span>Max: <span style={{ fontWeight: '700', color: T.text }}>${Math.round(maxUtilityCost).toLocaleString()}</span></span>}
+                      {maxUtilityCost > 0 && <span>Ceiling OOP: <span style={{ fontWeight: '700', color: T.text }}>${Math.round(maxCeilingOOP).toLocaleString()}</span></span>}
                     </div>
-                    {maxUtilityCost > 0 && !atCeiling && (
-                      <div style={{ color: T.green, fontWeight: '600' }}>Room to grow: ${Math.round(roomToGrow).toLocaleString()} {'\u2022'} $1 more OOP = $0.50 for you</div>
+                    {canGrow && currentOOP > 0 && (
+                      <div style={{ color: T.green, fontWeight: '600' }}>Double OOP to ${Math.round(doubledOOP).toLocaleString()} = ${Math.round(repCutFromDouble).toLocaleString()} more for you</div>
+                    )}
+                    {capApplied && canGrow && (
+                      <div style={{ color: T.textMuted, marginTop: '1px' }}>Rebate is capped {'\u2014'} every $1 added to cost = $1 more OOP</div>
                     )}
                     {atCeiling && (
-                      <div style={{ color: T.accent, fontWeight: '600' }}>{'\u26A0\uFE0F'} At utility price ceiling {'\u2014'} no room to grow</div>
+                      <div style={{ color: T.accent, fontWeight: '600' }}>{'\u26A0\uFE0F'} At utility price ceiling</div>
                     )}
                   </div>
                 );
