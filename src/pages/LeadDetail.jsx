@@ -491,21 +491,22 @@ export default function LeadDetail() {
   }
 
   return (
-    <div style={{ padding: isMobile ? '12px' : '24px', minHeight: '100vh', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '8px' : '24px', minHeight: '100vh', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px',
-        marginBottom: isMobile ? '16px' : '24px'
+        gap: isMobile ? '8px' : '12px',
+        marginBottom: isMobile ? '8px' : '24px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', minWidth: 0 }}>
+        {/* Row 1: Back + Name + Status + Quick Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
           <button
             onClick={() => navigate(-1)}
             style={{
-              padding: isMobile ? '12px' : '8px',
-              minWidth: isMobile ? '44px' : 'auto',
-              minHeight: isMobile ? '44px' : 'auto',
+              padding: '8px',
+              minWidth: '36px',
+              minHeight: '36px',
               background: 'none',
               border: `1px solid ${theme.border}`,
               borderRadius: '8px',
@@ -517,145 +518,124 @@ export default function LeadDetail() {
               flexShrink: 0
             }}
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={18} />
           </button>
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: isMobile ? '18px' : '24px', fontWeight: '700', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? 'calc(100vw - 140px)' : 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <h1 style={{ fontSize: isMobile ? '16px' : '24px', fontWeight: '700', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {lead.customer_name}
               </h1>
               <span style={{
-                padding: '3px 8px',
+                padding: '2px 6px',
                 backgroundColor: getStatusColor(lead.status) + '20',
                 color: getStatusColor(lead.status),
-                borderRadius: '6px',
-                fontSize: '12px',
+                borderRadius: '4px',
+                fontSize: '11px',
                 fontWeight: '600',
                 flexShrink: 0
               }}>
                 {lead.status}
               </span>
             </div>
-            <div style={{ fontSize: '13px', color: theme.textMuted, display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              {lead.service_type && <span>{lead.service_type}</span>}
-              {lead.lead_source && <span>Source: {lead.lead_source}</span>}
-            </div>
+            {!isMobile && (
+              <div style={{ fontSize: '13px', color: theme.textMuted, display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                {lead.service_type && <span>{lead.service_type}</span>}
+                {lead.lead_source && <span>Source: {lead.lead_source}</span>}
+              </div>
+            )}
           </div>
+
+          {/* Inline quick actions on mobile - icon buttons */}
+          {isMobile && (
+            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+              {lead.phone && (
+                <a href={`tel:${lead.phone}`} style={{ width: '36px', height: '36px', backgroundColor: '#dcfce7', color: '#166534', border: 'none', borderRadius: '8px', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Phone size={16} />
+                </a>
+              )}
+              {lead.email && (
+                <a href={`mailto:${lead.email}`} style={{ width: '36px', height: '36px', backgroundColor: theme.accentBg, color: theme.accent, border: 'none', borderRadius: '8px', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Mail size={16} />
+                </a>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Quick Actions */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {lead.phone && (
-            <a
-              href={`tel:${lead.phone}`}
-              style={{
-                padding: isMobile ? '12px 16px' : '10px 14px',
-                minHeight: isMobile ? '44px' : 'auto',
-                backgroundColor: '#dcfce7',
-                color: '#166534',
-                border: 'none',
-                borderRadius: '8px',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                fontSize: '14px',
-                fontWeight: '500',
-                flex: isMobile ? 1 : 'none'
-              }}
-            >
-              <Phone size={16} />
-              Call
-            </a>
-          )}
-          {lead.email && (
-            <a
-              href={`mailto:${lead.email}`}
-              style={{
-                padding: isMobile ? '12px 16px' : '10px 14px',
-                minHeight: isMobile ? '44px' : 'auto',
-                backgroundColor: theme.accentBg,
-                color: theme.accent,
-                border: 'none',
-                borderRadius: '8px',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                fontSize: '14px',
-                fontWeight: '500',
-                flex: isMobile ? 1 : 'none'
-              }}
-            >
-              <Mail size={16} />
-              Email
-            </a>
-          )}
-          {lead.status === 'Won' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'stretch' : 'flex-start', flex: isMobile ? '1 1 100%' : 'none' }}>
-              <button
-                onClick={handleConvertToJob}
-                disabled={convertingToJob}
-                style={{
-                  padding: isMobile ? '12px 16px' : '10px 14px',
-                  minHeight: isMobile ? '44px' : 'auto',
-                  backgroundColor: convertingToJob ? '#9ca3af' : '#7c3aed',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: convertingToJob ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  width: '100%'
-                }}
-              >
-                <Briefcase size={16} />
-                {convertingToJob ? 'Converting...' : 'Convert to Job & Customer'}
-              </button>
-              <span style={{ fontSize: '10px', color: '#7c3aed', marginTop: '4px', textAlign: 'center' }}>Moves to delivery pipeline</span>
-            </div>
-          )}
-        </div>
+        {/* Desktop Quick Actions */}
+        {!isMobile && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {lead.phone && (
+              <a href={`tel:${lead.phone}`} style={{ padding: '10px 14px', backgroundColor: '#dcfce7', color: '#166534', border: 'none', borderRadius: '8px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '500' }}>
+                <Phone size={16} /> Call
+              </a>
+            )}
+            {lead.email && (
+              <a href={`mailto:${lead.email}`} style={{ padding: '10px 14px', backgroundColor: theme.accentBg, color: theme.accent, border: 'none', borderRadius: '8px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '500' }}>
+                <Mail size={16} /> Email
+              </a>
+            )}
+            {lead.status === 'Won' && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <button onClick={handleConvertToJob} disabled={convertingToJob} style={{ padding: '10px 14px', backgroundColor: convertingToJob ? '#9ca3af' : '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', cursor: convertingToJob ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '600' }}>
+                  <Briefcase size={16} /> {convertingToJob ? 'Converting...' : 'Convert to Job & Customer'}
+                </button>
+                <span style={{ fontSize: '10px', color: '#7c3aed', marginTop: '4px' }}>Moves to delivery pipeline</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Mobile: Convert to Job button (full width, only when Won) */}
+        {isMobile && lead.status === 'Won' && (
+          <button onClick={handleConvertToJob} disabled={convertingToJob} style={{ padding: '10px', backgroundColor: convertingToJob ? '#9ca3af' : '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', cursor: convertingToJob ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', width: '100%' }}>
+            <Briefcase size={14} /> {convertingToJob ? 'Converting...' : 'Convert to Job & Customer'}
+          </button>
+        )}
+
+        {/* Mobile: sub-info row */}
+        {isMobile && (lead.service_type || lead.lead_source) && (
+          <div style={{ fontSize: '12px', color: theme.textMuted, display: 'flex', gap: '8px' }}>
+            {lead.service_type && <span>{lead.service_type}</span>}
+            {lead.lead_source && <span>• {lead.lead_source}</span>}
+          </div>
+        )}
       </div>
 
-      {/* Lead Journey Flow Indicator */}
+      {/* Lead Journey Flow Indicator - compact on mobile */}
       <div style={{ maxWidth: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <FlowIndicator currentStatus={lead.status} showCompact={isMobile} />
       </div>
 
-      {/* Deal Breadcrumb */}
-      <DealBreadcrumb
-        current="lead"
-        leadId={lead.id}
-        quoteId={lead.quote_id}
-        customerId={lead.converted_customer_id}
-      />
+      {/* Deal Breadcrumb - hidden on mobile to save space */}
+      {!isMobile && (
+        <DealBreadcrumb
+          current="lead"
+          leadId={lead.id}
+          quoteId={lead.quote_id}
+          customerId={lead.converted_customer_id}
+        />
+      )}
 
       {/* Tabs */}
       <div style={{
         overflowX: 'auto',
         overflowY: 'visible',
         WebkitOverflowScrolling: 'touch',
-        marginBottom: isMobile ? '16px' : '24px',
+        marginBottom: isMobile ? '8px' : '24px',
         borderBottom: `1px solid ${theme.border}`,
-        paddingBottom: '12px',
-        marginLeft: isMobile ? '-12px' : 0,
-        marginRight: isMobile ? '-12px' : 0,
-        paddingLeft: isMobile ? '12px' : 0,
-        paddingRight: isMobile ? '12px' : 0
+        paddingBottom: isMobile ? '6px' : '12px',
+        marginLeft: isMobile ? '-8px' : 0,
+        marginRight: isMobile ? '-8px' : 0,
+        paddingLeft: isMobile ? '8px' : 0,
+        paddingRight: isMobile ? '8px' : 0
       }}>
         <div style={{
           display: 'flex',
-          gap: '6px',
+          gap: isMobile ? '4px' : '6px',
           minWidth: 'max-content',
-          padding: '4px'
+          padding: isMobile ? '2px' : '4px'
         }}>
           {tabs.map(tab => {
             const Icon = tab.icon
@@ -664,22 +644,22 @@ export default function LeadDetail() {
                 <button
                   onClick={() => setActiveTab(tab.id)}
                   style={{
-                    padding: isMobile ? '12px 16px' : '10px 16px',
-                    minHeight: isMobile ? '44px' : 'auto',
+                    padding: isMobile ? '8px 10px' : '10px 16px',
+                    minHeight: isMobile ? '36px' : 'auto',
                     backgroundColor: activeTab === tab.id ? theme.accent : 'transparent',
                     color: activeTab === tab.id ? '#fff' : theme.textSecondary,
                     border: activeTab === tab.id ? 'none' : `1px solid ${theme.border}`,
-                    borderRadius: '8px',
+                    borderRadius: isMobile ? '6px' : '8px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    fontSize: isMobile ? '13px' : '14px',
+                    gap: isMobile ? '4px' : '6px',
+                    fontSize: isMobile ? '12px' : '14px',
                     fontWeight: '500',
                     whiteSpace: 'nowrap'
                   }}
                 >
-                  <Icon size={16} />
+                  <Icon size={isMobile ? 14 : 16} />
                   {tab.label}
                 </button>
               </Tooltip>
@@ -691,9 +671,9 @@ export default function LeadDetail() {
       {/* Tab Content */}
       <div style={{
         backgroundColor: theme.bgCard,
-        borderRadius: '12px',
+        borderRadius: isMobile ? '8px' : '12px',
         border: `1px solid ${theme.border}`,
-        padding: isMobile ? '12px' : '24px',
+        padding: isMobile ? '10px' : '24px',
         maxWidth: '100%',
         overflowX: 'hidden'
       }}>
@@ -735,11 +715,11 @@ export default function LeadDetail() {
             }}>
               {/* Contact Info */}
               <div style={{
-                padding: isMobile ? '16px' : '20px',
+                padding: isMobile ? '12px' : '20px',
                 backgroundColor: theme.bg,
-                borderRadius: '10px'
+                borderRadius: isMobile ? '8px' : '10px'
               }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '12px' : '16px' }}>
+                <h3 style={{ fontSize: isMobile ? '13px' : '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '10px' : '16px' }}>
                   Contact Information
                 </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -788,11 +768,11 @@ export default function LeadDetail() {
 
               {/* Lead Details */}
               <div style={{
-                padding: isMobile ? '16px' : '20px',
+                padding: isMobile ? '12px' : '20px',
                 backgroundColor: theme.bg,
-                borderRadius: '10px'
+                borderRadius: isMobile ? '8px' : '10px'
               }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '12px' : '16px' }}>
+                <h3 style={{ fontSize: isMobile ? '13px' : '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '10px' : '16px' }}>
                   Lead Details
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr', gap: '12px' }}>
@@ -855,12 +835,12 @@ export default function LeadDetail() {
 
               {/* Notes */}
               <div style={{
-                padding: isMobile ? '16px' : '20px',
+                padding: isMobile ? '12px' : '20px',
                 backgroundColor: theme.bg,
-                borderRadius: '10px',
+                borderRadius: isMobile ? '8px' : '10px',
                 gridColumn: isMobile ? 'span 1' : 'span 2'
               }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: '12px' }}>
+                <h3 style={{ fontSize: isMobile ? '13px' : '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '8px' : '12px' }}>
                   Notes
                 </h3>
                 {isEditing ? (
