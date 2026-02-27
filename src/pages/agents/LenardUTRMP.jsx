@@ -2371,11 +2371,11 @@ export default function LenardUTRMP() {
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: '6px', paddingTop: '8px', marginTop: '4px' }}>
             {isRep && !projectLocked && (
-              <button onClick={() => { setGiveMeFrozenBaseline(effectiveProjectCost); setGiveMeFrozenIncentive(rawIncentive); setProjectLocked(true); setShowGiveMe(true); markDirty(); showToast('Baseline locked', '\uD83D\uDD12'); }}
-                style={{ ...S.btn, flex: 1, fontSize: '12px', padding: '8px 14px', background: T.accent, color: '#fff' }}>{'\uD83D\uDD12'} Lock Project</button>
+              <button onClick={() => { setGiveMeFrozenBaseline(effectiveProjectCost); setGiveMeFrozenIncentive(rawIncentive); setProjectLocked(true); setShowGiveMe(true); markDirty(); showToast('Baseline locked — Give-Me Engine open', '\uD83D\uDD12'); }}
+                style={{ ...S.btn, flex: 1, fontSize: '11px', padding: '8px 14px', background: T.accent, color: '#fff' }}>{'\uD83D\uDD12'} Lock & Open Give-Me</button>
             )}
             {isRep && projectLocked && (
-              <button onClick={() => { setProjectLocked(false); setShowGiveMe(false); setGiveMeFrozenBaseline(0); setGiveMeFrozenIncentive(0); setGiveMeQuoteItems([]); setRepAdditionalOOP(0); markDirty(); showToast('Project unlocked', '\uD83D\uDD13'); }}
+              <button onClick={() => { setProjectLocked(false); setShowGiveMe(false); setGiveMeFrozenBaseline(0); setGiveMeFrozenIncentive(0); setGiveMeQuoteItems([]); setRepAdditionalOOP(0); markDirty(); showToast('Project unlocked — Give-Me Engine closed', '\uD83D\uDD13'); }}
                 style={{ ...S.btn, fontSize: '11px', padding: '8px 10px', background: T.bgInput, color: T.textMuted }}>{'\uD83D\uDD13'}</button>
             )}
             <button onClick={() => setShowSaveModal(true)} style={{ ...S.btn, flex: 1, fontSize: '12px', padding: '8px 14px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
