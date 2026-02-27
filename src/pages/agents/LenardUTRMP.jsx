@@ -2271,12 +2271,34 @@ export default function LenardUTRMP() {
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px' }}><span>Raw Incentive Total</span><span>${rawIncentive.toLocaleString()}</span></div>
             {effectiveProjectCost > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: capApplied ? T.accent : T.textSec, marginBottom: '4px' }}><span>Cost Cap ({Math.round(capPct * 100)}%)</span><span>${capAmount.toLocaleString()}{capApplied ? ' \u2022 CAP APPLIED' : ''}</span></div>}
           </div>
+          {/* YOUR QUOTE — editable line items added from Give-Me suggestions */}
+          {isRep && giveMeQuoteItems.length > 0 && (
+            <div style={{ paddingTop: '8px', borderTop: `1px solid ${T.border}`, marginBottom: '8px' }}>
+              <div style={{ fontSize: '10px', fontWeight: '700', color: T.accent, letterSpacing: '0.5px', marginBottom: '4px' }}>YOUR QUOTE</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: T.textSec, marginBottom: '2px' }}><span>Base Project Cost</span><span style={{ fontWeight: '600', color: T.text }}>${Math.round(baselineProjectCost).toLocaleString()}</span></div>
+              {giveMeQuoteItems.map((q, qi) => (
+                <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 0' }}>
+                  <span style={{ fontSize: '11px', color: T.textSec, flex: 1 }}>+ {q.label}</span>
+                  <span style={{ fontSize: '11px', color: T.textSec }}>$</span>
+                  <input type="number" inputMode="numeric" value={q.amount || ''} placeholder="0"
+                    onChange={e => { const val = Math.max(0, parseFloat(e.target.value) || 0); setGiveMeQuoteItems(prev => prev.map(item => item.id === q.id ? { ...item, amount: val } : item)); markDirty(); }}
+                    style={{ width: '60px', padding: '2px 4px', borderRadius: '4px', border: `1px solid ${T.border}`, background: T.bg, color: T.text, fontSize: '11px', fontWeight: '700', textAlign: 'right' }} />
+                  <button onClick={() => { setGiveMeQuoteItems(prev => prev.filter(item => item.id !== q.id)); markDirty(); }}
+                    style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: 1 }}>{'\u00D7'}</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', paddingTop: '4px', borderTop: `1px dashed ${T.border}`, marginTop: '4px' }}>
+                <span style={{ color: T.text }}>Total Project Cost</span>
+                <span style={{ color: T.accent }}>${Math.round(effectiveProjectCost).toLocaleString()}</span>
+              </div>
+            </div>
+          )}
           {/* Incentive total + actions */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
             <div><div style={{ fontSize: '11px', color: T.textMuted }}>ESTIMATED REBATE</div><div style={{ ...S.money, fontSize: '22px' }}>${estimatedRebate.toLocaleString()}</div></div>
             <div style={{ display: 'flex', gap: '6px' }}>
               <button onClick={() => setShowSaveModal(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
-              <button onClick={() => setShowSummary(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px' }}>{'\uD83D\uDCCB'} Summary</button>
+              <button onClick={() => setShowSummary(true)} style={{ ...S.btn, fontSize: '11px', padding: '8px 12px' }}>{'\uD83D\uDCCB'} Audit & Contract</button>
             </div>
           </div>
         </div>
@@ -2327,37 +2349,6 @@ export default function LenardUTRMP() {
                   <div style={{ fontSize: '16px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.realGiveMe).toLocaleString()}</div>
                   <div style={{ fontSize: '8px', color: T.textMuted }}>50% split</div>
                 </div>
-              </div>
-
-              {/* ---- YOUR QUOTE (applied items) ---- */}
-              <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', borderLeft: `2px solid ${T.accent}` }}>
-                <div style={{ fontSize: '10px', fontWeight: '700', color: T.accent, letterSpacing: '0.5px', marginBottom: '4px' }}>YOUR QUOTE</div>
-                {giveMeQuoteItems.length === 0 && (
-                  <div style={{ fontSize: '10px', color: T.textMuted, fontStyle: 'italic' }}>No items yet. Add cost items from suggestions below.</div>
-                )}
-                {giveMeQuoteItems.map((q, qi) => (
-                  <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', borderBottom: qi < giveMeQuoteItems.length - 1 ? `1px dashed ${T.border}` : 'none' }}>
-                    <div style={{ flex: 1, fontSize: '11px', color: T.text }}>{q.label}</div>
-                    <span style={{ fontSize: '11px', color: T.textSec }}>$</span>
-                    <input type="number" inputMode="numeric" value={q.amount || ''} placeholder="0"
-                      onChange={e => { const val = Math.max(0, parseFloat(e.target.value) || 0); setGiveMeQuoteItems(prev => prev.map(item => item.id === q.id ? { ...item, amount: val } : item)); markDirty(); }}
-                      style={{ width: '65px', padding: '2px 4px', borderRadius: '4px', border: `1px solid ${T.border}`, background: T.bg, color: T.text, fontSize: '11px', fontWeight: '700', textAlign: 'right' }} />
-                    <button onClick={() => { setGiveMeQuoteItems(prev => prev.filter(item => item.id !== q.id)); markDirty(); }}
-                      style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: 1 }}>{'\u00D7'}</button>
-                  </div>
-                ))}
-                {giveMeQuoteItems.length > 0 && (
-                  <div style={{ borderTop: `1px solid ${T.border}`, marginTop: '4px', paddingTop: '4px', display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                    <span style={{ fontWeight: '600', color: T.text }}>Added to project</span>
-                    <span style={{ fontWeight: '700', color: T.accent }}>${Math.round(giveMeQuoteTotal).toLocaleString()}</span>
-                  </div>
-                )}
-                {giveMe.additionalIncentive > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: T.green, fontWeight: '600', marginTop: '2px' }}>
-                    <span>Extra incentive captured</span>
-                    <span>${Math.round(giveMe.additionalIncentive).toLocaleString()}</span>
-                  </div>
-                )}
               </div>
 
               {/* Additional Out-of-Pocket input */}
@@ -2550,9 +2541,21 @@ export default function LenardUTRMP() {
               </div>
               <div style={{ borderTop: '1px solid #ddd', paddingTop: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
-                  <span style={{ color: '#666' }}>Project Total</span>
-                  <span style={{ fontWeight: '700', color: '#1e1e22' }}>${Math.round(effectiveProjectCost).toLocaleString()}</span>
+                  <span style={{ color: '#666' }}>{giveMeQuoteItems.length > 0 ? 'Base Project Cost' : 'Project Total'}</span>
+                  <span style={{ fontWeight: '700', color: '#1e1e22' }}>${Math.round(giveMeQuoteItems.length > 0 ? baselineProjectCost : effectiveProjectCost).toLocaleString()}</span>
                 </div>
+                {giveMeQuoteItems.map(q => (
+                  <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '3px', color: '#888' }}>
+                    <span>+ {q.label}</span>
+                    <span>${Math.round(q.amount).toLocaleString()}</span>
+                  </div>
+                ))}
+                {giveMeQuoteItems.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px', fontWeight: '700', color: '#1e1e22' }}>
+                    <span>Total Project Cost</span>
+                    <span>${Math.round(effectiveProjectCost).toLocaleString()}</span>
+                  </div>
+                )}
                 {estimatedRebate > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
                     <span style={{ color: T.green }}>RMP Incentive</span>
@@ -2560,7 +2563,7 @@ export default function LenardUTRMP() {
                   </div>
                 )}
                 <div style={{ borderTop: '2px solid #1e1e22', paddingTop: '6px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
-                  <span style={{ fontWeight: '800', color: '#1e1e22' }}>Customer Net</span>
+                  <span style={{ fontWeight: '800', color: '#1e1e22' }}>Customer Out-of-Pocket</span>
                   <span style={{ fontWeight: '800', color: '#1e1e22' }}>${Math.round(Math.max(0, effectiveProjectCost - estimatedRebate)).toLocaleString()}</span>
                 </div>
               </div>
@@ -2622,7 +2625,11 @@ export default function LenardUTRMP() {
               {financials.projectCost > 0 && (<>
                 <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Investment Analysis</div>
                 <div style={{ background: '#f8f8fa', borderRadius: '10px', padding: '12px', border: '1px solid #eee' }}>
-                  {[['Gross Project Cost', `$${financials.projectCost.toLocaleString()}`], ['Less: RMP Incentive', `-$${estimatedRebate.toLocaleString()}`, T.green]].map(([l, v, c]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: c || '#888', marginBottom: '4px' }}><span>{l}</span><span>{v}</span></div>)}
+                  {[
+                  ['Gross Project Cost', `$${financials.projectCost.toLocaleString()}`],
+                  ...(giveMeQuoteItems.length > 0 ? giveMeQuoteItems.map(q => [`+ ${q.label}`, `$${Math.round(q.amount).toLocaleString()}`]) : []),
+                  ['Less: RMP Incentive', `-$${estimatedRebate.toLocaleString()}`, T.green],
+                ].map(([l, v, c]) => <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: c || '#888', marginBottom: '4px' }}><span>{l}</span><span>{v}</span></div>)}
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: '700', paddingTop: '6px', borderTop: '1px solid #eee', marginBottom: '4px' }}><span>Net Investment</span><span>${Math.round(financials.netProjectCost).toLocaleString()}</span></div>
                   {maintenanceSavings.annualSavings > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.green, marginBottom: '4px' }}><span>Total Annual Savings (Energy + Maint.)</span><span>${Math.round(financials.annualEnergySavings + maintenanceSavings.annualSavings).toLocaleString()}</span></div>
