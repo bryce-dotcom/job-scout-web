@@ -158,6 +158,27 @@ const PRODUCT_CATEGORY_KEYWORDS = {
   'Surface Mount': ['surface', 'flush', 'ceiling mount', 'drum', 'round'],
 };
 
+// ==================== PRODUCT TIER HELPERS ====================
+
+function getProductTierInfo(productName) {
+  if (!productName) return { baseName: '', tier: 'installed' };
+  const name = productName.trim();
+  const lc = name.toLowerCase();
+  if (lc.includes('move') || lc.includes('relocat'))
+    return { baseName: name.replace(/\s*(move|relocat\w*)\s*/i, '').trim(), tier: 'move' };
+  if (lc.includes('lift') || lc.includes('w/lift') || lc.includes('w/ lift'))
+    return { baseName: name.replace(/\s*(w?\/?\/?\s*lift\w*)\s*/i, '').trim(), tier: 'lift' };
+  return { baseName: name, tier: 'installed' };
+}
+
+function getProductFamily(product, allProducts) {
+  const { baseName } = getProductTierInfo(product.name);
+  const tierOrder = { installed: 0, lift: 1, move: 2 };
+  return allProducts
+    .filter(p => getProductTierInfo(p.name).baseName === baseName)
+    .sort((a, b) => tierOrder[getProductTierInfo(a.name).tier] - tierOrder[getProductTierInfo(b.name).tier]);
+}
+
 function scoreProductMatch(product, fixtureCategory, targetWatts) {
   const searchText = `${(product.name || '')} ${(product.type || '')} ${(product.description || '')}`.toLowerCase();
   let score = 0;
@@ -302,6 +323,7 @@ export default function LenardUTRMP() {
 
   // Rep-only state (Give-Me Engine) — only visible when authenticated
   const [isRep, setIsRep] = useState(false);
+  const [showGiveMe, setShowGiveMe] = useState(false);
   const [repBaseline, setRepBaseline] = useState(() => { try { return parseFloat(localStorage.getItem('lenard_rep_baseline')) || 0; } catch { return 0; } });
   const [repCurrentDown, setRepCurrentDown] = useState(0);
   const [repTargetDown, setRepTargetDown] = useState(0);
@@ -556,6 +578,27 @@ export default function LenardUTRMP() {
     return { baseline, pool, repSplit, leftOnTable, costForFullCapture, costGap, customerNet };
   }, [repBaseline, effectiveProjectCost, rawIncentive, estimatedRebate, capPct]);
 
+  // ---- MAX UTILITY-ALLOWED COST (highest tier per line) ----
+  const maxUtilityCost = useMemo(() => {
+    if (!isRep || lines.length === 0 || sbeProducts.length === 0) return 0;
+    let maxTotal = 0;
+    lines.forEach(l => {
+      if (l.productId) {
+        const selected = sbeProducts.find(p => p.id === l.productId);
+        if (selected) {
+          const family = getProductFamily(selected, sbeProducts);
+          const highestPrice = Math.max(...family.map(p => p.unit_price || 0));
+          maxTotal += highestPrice * (l.qty || 0);
+        } else {
+          maxTotal += getEffectivePrice(l) * (l.qty || 0);
+        }
+      } else {
+        maxTotal += getEffectivePrice(l) * (l.qty || 0);
+      }
+    });
+    return maxTotal;
+  }, [isRep, lines, sbeProducts]);
+
   // ---- GIVE-ME SUGGESTION ENGINE ----
   const giveMeSuggestions = useMemo(() => {
     if (!isRep || lines.length === 0) return [];
@@ -571,7 +614,7 @@ export default function LenardUTRMP() {
         const lllcRate = rateTable.lllc;
         const delta = (l.qty || 0) * (l.newW || 0) * (lllcRate - currentRate);
         if (delta > 50) {
-          suggestions.push({ type: 'lllc', title: `Upgrade "${l.name || 'Interior fixture'}" to LLLC`, desc: `Rate: $${currentRate}/W \u2192 $${lllcRate}/W. Adds $${Math.round(delta).toLocaleString()} incentive. LLLC controller hardware also raises project cost.`, impact: delta });
+          suggestions.push({ type: 'lllc', lineId: l.id, title: `Upgrade "${l.name || 'Interior fixture'}" to LLLC`, desc: `Rate: $${currentRate}/W \u2192 $${lllcRate}/W`, currentRate, lllcRate, currentRebate: estimatedRebate, newRebate: Math.min(rawIncentive + delta, capAmount === Infinity ? Infinity : capAmount), impact: delta });
         }
       });
     }
@@ -583,43 +626,75 @@ export default function LenardUTRMP() {
         const lllcRate = LARGE.interior_fixtures.lllc;
         const delta = (l.qty || 0) * Math.max(0, (l.existW || 0) - (l.newW || 0)) * (lllcRate - currentRate);
         if (delta > 50) {
-          suggestions.push({ type: 'lllc', title: `Upgrade "${l.name || 'Interior fixture'}" to LLLC`, desc: `Rate: $${currentRate}/W \u2192 $${lllcRate}/W reduced. Adds $${Math.round(delta).toLocaleString()} incentive.`, impact: delta });
+          suggestions.push({ type: 'lllc', lineId: l.id, title: `Upgrade "${l.name || 'Interior fixture'}" to LLLC`, desc: `Rate: $${currentRate}/W \u2192 $${lllcRate}/W reduced`, currentRate, lllcRate, currentRebate: estimatedRebate, newRebate: Math.min(rawIncentive + delta, capAmount === Infinity ? Infinity : capAmount), impact: delta });
         }
       });
     }
 
-    // 2. Disposal fee
+    // 2. Cost-raising items (disposal, lift, wiring) — collected for cap_gap consolidation
+    const costRaisers = [];
     if (totalFixtures > 0) {
       const cost = totalFixtures * 20;
-      suggestions.push({ type: 'disposal', title: 'Add disposal/recycling fee', desc: `${totalFixtures} fixtures \u00D7 $20 = $${cost.toLocaleString()} added to project cost. Raises cap by $${Math.round(cost * capPct).toLocaleString()}.`, impact: cost * capPct });
+      costRaisers.push({ type: 'disposal', addCost: cost, title: 'Disposal/recycling fee', desc: `${totalFixtures} fixtures \u00D7 $20`, impact: cost * capPct });
     }
-
-    // 3. Lift rental
     const highLines = lines.filter(l => (l.height || 0) > 12);
     if (highLines.length > 0) {
       const cost = 350;
-      suggestions.push({ type: 'lift', title: 'Add lift/scaffold rental', desc: `${highLines.length} area(s) above 12ft. ~$${cost} lift rental raises cap by $${Math.round(cost * capPct).toLocaleString()}.`, impact: cost * capPct });
+      costRaisers.push({ type: 'lift', addCost: cost, title: 'Lift/scaffold rental', desc: `${highLines.length} area(s) above 12ft`, impact: cost * capPct });
     }
-
-    // 4. Wiring/conduit
     if (totalFixtures > 0) {
       const cost = totalFixtures * 35;
-      suggestions.push({ type: 'wiring', title: 'Add wiring/conduit scope', desc: `${totalFixtures} fixtures \u00D7 $35 = $${cost.toLocaleString()} for wiring adds to project cost. Raises cap by $${Math.round(cost * capPct).toLocaleString()}.`, impact: cost * capPct });
+      costRaisers.push({ type: 'wiring', addCost: cost, title: 'Wiring/conduit scope', desc: `${totalFixtures} fixtures \u00D7 $35`, impact: cost * capPct });
     }
 
-    // 5. Cap gap — most important if leaving money on table
+    // 3. Cap gap — consolidate cost-raisers into it when money left on table
     if (giveMe.leftOnTable > 100 && giveMe.costGap > 0) {
-      suggestions.unshift({ type: 'cap_gap', title: `Raise project cost by $${Math.round(giveMe.costGap).toLocaleString()} to capture full rebate`, desc: `Leaving $${Math.round(giveMe.leftOnTable).toLocaleString()} on the table. Project cost of $${Math.round(giveMe.costForFullCapture).toLocaleString()} captures the full $${Math.round(rawIncentive).toLocaleString()}.`, impact: giveMe.leftOnTable });
+      suggestions.push({
+        type: 'cap_gap',
+        title: `$${Math.round(giveMe.leftOnTable).toLocaleString()} left on the table`,
+        desc: `Add $${Math.round(giveMe.costGap).toLocaleString()} to project cost to unlock full $${Math.round(rawIncentive).toLocaleString()} rebate`,
+        currentCost: effectiveProjectCost,
+        fullCaptureCost: giveMe.costForFullCapture,
+        currentRebate: estimatedRebate,
+        fullRebate: rawIncentive,
+        costRaisers,
+        impact: giveMe.leftOnTable,
+      });
+    }
+    // If no cap gap, don't show cost-raisers at all (they serve no purpose)
+
+    // 4. Tier upsell suggestions — for each line not at highest tier
+    if (sbeProducts.length > 0) {
+      lines.forEach(l => {
+        if (!l.productId) return;
+        const selected = sbeProducts.find(p => p.id === l.productId);
+        if (!selected) return;
+        const family = getProductFamily(selected, sbeProducts);
+        if (family.length <= 1) return;
+        const highestTierProduct = family[family.length - 1];
+        if (highestTierProduct.id === l.productId) return;
+        const priceDiff = (highestTierProduct.unit_price || 0) - (selected.unit_price || 0);
+        const totalDiff = priceDiff * (l.qty || 0);
+        if (totalDiff <= 0) return;
+        const tierLabel = { installed: 'Installed', lift: 'w/ Lift', move: 'Move' };
+        const currentTier = getProductTierInfo(selected.name).tier;
+        const highestTier = getProductTierInfo(highestTierProduct.name).tier;
+        suggestions.push({
+          type: 'tier_upsell', lineId: l.id, title: `Upgrade "${l.name || 'Fixture'}" to ${tierLabel[highestTier] || highestTier}`,
+          desc: `${tierLabel[currentTier]} $${selected.unit_price} → ${tierLabel[highestTier]} $${highestTierProduct.unit_price} (+$${priceDiff}/ea, +$${totalDiff} total)`,
+          impact: totalDiff * capPct, targetProduct: highestTierProduct,
+        });
+      });
     }
 
-    // 6. Down payment closing script
+    // 5. Down payment closing script
     if (effectiveProjectCost > 0 && estimatedRebate > 0) {
       const net = Math.round(effectiveProjectCost - estimatedRebate);
-      suggestions.push({ type: 'close', title: 'Down payment closing script', desc: `"Your total is $${effectiveProjectCost.toLocaleString()}, but RMP covers $${estimatedRebate.toLocaleString()}. Your net is only $${net.toLocaleString()}\u2014and with a deposit today you lock in the rebate before funding runs out."`, impact: 0 });
+      suggestions.push({ type: 'close', title: 'Closing Script', desc: `"Your total is $${effectiveProjectCost.toLocaleString()}, but RMP covers $${estimatedRebate.toLocaleString()}. Your net is only $${net.toLocaleString()}\u2014and with a deposit today you lock in the rebate before funding runs out."`, impact: 0 });
     }
 
     return suggestions.sort((a, b) => b.impact - a.impact);
-  }, [isRep, lines, program, effectiveProjectCost, estimatedRebate, rawIncentive, capPct, giveMe]);
+  }, [isRep, lines, program, effectiveProjectCost, estimatedRebate, rawIncentive, capPct, capAmount, giveMe, sbeProducts]);
 
   // ---- AUTO-POPULATE APP & W9 FIELDS ----
   useEffect(() => {
@@ -2013,7 +2088,44 @@ export default function LenardUTRMP() {
                         <button onClick={() => setLines(prev => prev.map(l => l.id === r.id ? { ...l, productId: null, productName: '', productPrice: 0, priceOverride: null } : l))}
                           style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '16px', padding: '4px' }}>{'\u2715'}</button>
                       </div>
-                    ) : (
+                    ) : null}
+                    {/* Per-line tier switcher */}
+                    {r.productId && (() => {
+                      const selected = sbeProducts.find(p => p.id === r.productId);
+                      if (!selected) return null;
+                      const family = getProductFamily(selected, sbeProducts);
+                      if (family.length <= 1) return null;
+                      const tierLabels = { installed: 'Installed', lift: 'w/ Lift', move: 'Move' };
+                      const highestInFamily = family[family.length - 1];
+                      const isHighest = highestInFamily.id === r.productId;
+                      return (
+                        <>
+                          <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                            {family.map(p => {
+                              const tier = getProductTierInfo(p.name);
+                              const isCurrent = p.id === r.productId;
+                              return (
+                                <button key={p.id} onClick={() => selectProduct(r.id, p)}
+                                  style={{ flex: 1, padding: '6px', borderRadius: '6px',
+                                    background: isCurrent ? T.accentDim : T.bgInput,
+                                    border: `1px solid ${isCurrent ? T.accent : T.border}`,
+                                    color: isCurrent ? T.accent : T.textSec,
+                                    fontSize: '11px', fontWeight: isCurrent ? '700' : '400', cursor: 'pointer' }}>
+                                  <div>{tierLabels[tier.tier]}</div>
+                                  <div style={{ fontWeight: '700' }}>${p.unit_price}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {isHighest && (
+                            <div style={{ marginTop: '4px', padding: '4px 8px', background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '6px', fontSize: '11px', color: T.accent }}>
+                              {'\u26A0\uFE0F'} Highest utility-allowed price selected {'\u2014'} may draw scrutiny on approval
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                    {!r.productId ? (
                       <div>
                         <input type="text" placeholder={sbeProducts.length > 0 ? 'Search SMBE products...' : 'No SMBE products loaded'} value={expandedLine === r.id ? productSearch : ''} onChange={e => setProductSearch(e.target.value)} onFocus={() => setProductSearch('')} style={S.input} />
                         {expandedLine === r.id && (
@@ -2047,7 +2159,7 @@ export default function LenardUTRMP() {
                           </div>
                         )}
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Pricing */}
@@ -2148,63 +2260,191 @@ export default function LenardUTRMP() {
 
       {/* ===== GIVE-ME ENGINE (Rep Only) ===== */}
       {isRep && results.length > 0 && effectiveProjectCost > 0 && (
-        <div style={{ margin: '0 16px 8px', borderLeft: `3px solid ${T.accent}`, borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, padding: '14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-            <span style={{ fontSize: '14px' }}>{'\uD83D\uDD12'}</span>
-            <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>Give-Me Engine</span>
-            <span style={{ fontSize: '10px', color: T.textMuted, marginLeft: 'auto' }}>Rep Only</span>
-          </div>
-
-          {/* Key metrics */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-            <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-              <div style={{ fontSize: '10px', color: T.textMuted }}>GIVE-ME POOL</div>
-              <div style={{ fontSize: '20px', fontWeight: '800', color: T.accent }}>${Math.round(giveMe.pool).toLocaleString()}</div>
-              <div style={{ fontSize: '10px', color: T.textMuted }}>Margin above baseline</div>
-            </div>
-            <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-              <div style={{ fontSize: '10px', color: T.textMuted }}>YOUR 50% SPLIT</div>
-              <div style={{ fontSize: '20px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.repSplit).toLocaleString()}</div>
-              <div style={{ fontSize: '10px', color: T.textMuted }}>Rep commission</div>
-            </div>
-          </div>
-
-          {/* Incentive capture */}
-          <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', marginBottom: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px' }}><span>Raw Incentive Available</span><span>${Math.round(rawIncentive).toLocaleString()}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: capApplied ? T.accent : T.green, marginBottom: '4px' }}><span>Captured (after {Math.round(capPct * 100)}% cap)</span><span>${Math.round(estimatedRebate).toLocaleString()}</span></div>
-            {giveMe.leftOnTable > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.red, fontWeight: '600' }}><span>LEFT ON TABLE</span><span>${Math.round(giveMe.leftOnTable).toLocaleString()}</span></div>
-            )}
-            {giveMe.leftOnTable > 0 && (
-              <div style={{ marginTop: '6px', fontSize: '11px', color: T.accent }}>Need project cost of <span style={{ fontWeight: '700' }}>${Math.round(giveMe.costForFullCapture).toLocaleString()}</span> to capture full rebate (gap: ${Math.round(giveMe.costGap).toLocaleString()})</div>
-            )}
-          </div>
-
-          {/* Detail breakdown */}
-          <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', marginBottom: '10px', fontSize: '12px', color: T.textSec }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}><span>Project Cost (quoted)</span><span>${Math.round(effectiveProjectCost).toLocaleString()}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}><span>Baseline Cost (actual)</span><span>{repBaseline > 0 ? `$${Math.round(repBaseline).toLocaleString()}` : 'Not set'}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px', borderTop: `1px solid ${T.border}`, paddingTop: '3px' }}><span>Customer Net (after rebate)</span><span style={{ fontWeight: '600', color: T.text }}>${Math.round(giveMe.customerNet).toLocaleString()}</span></div>
-            {repCurrentDown > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}><span>Current Down Payment</span><span>${Math.round(repCurrentDown).toLocaleString()}</span></div>}
-            {repTargetDown > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Target Down Payment</span><span style={{ color: T.accent }}>${Math.round(repTargetDown).toLocaleString()}</span></div>}
-          </div>
-
-          {/* Suggestions */}
-          {giveMeSuggestions.length > 0 && (
-            <div>
-              <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Suggestions</div>
-              {giveMeSuggestions.slice(0, 5).map((s, i) => (
-                <div key={i} style={{ padding: '8px 10px', background: s.type === 'cap_gap' ? T.accentDim : T.bgInput, border: `1px solid ${s.type === 'cap_gap' ? T.accent : T.border}`, borderRadius: '8px', marginBottom: '4px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: T.text }}>{s.title}</div>
-                    {s.impact > 0 && <div style={{ fontSize: '11px', fontWeight: '700', color: T.green, whiteSpace: 'nowrap' }}>+${Math.round(s.impact).toLocaleString()}</div>}
-                  </div>
-                  <div style={{ fontSize: '11px', color: T.textMuted, marginTop: '2px' }}>{s.desc}</div>
-                </div>
-              ))}
-            </div>
+        <div style={{ margin: '0 16px 8px' }}>
+          {/* Collapsed bar */}
+          {!showGiveMe && (
+            <button onClick={() => setShowGiveMe(true)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, cursor: 'pointer', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '14px' }}>{'\uD83D\uDD12'}</span>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>Give-Me Engine</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '12px', color: T.textSec }}>Your 50%: <span style={{ fontWeight: '700', color: T.green }}>${Math.round(giveMe.repSplit).toLocaleString()}</span></span>
+                <span style={{ fontSize: '14px', color: T.textMuted }}>{'\u25B8'}</span>
+              </div>
+            </button>
           )}
+
+          {/* Expanded Give-Me Engine */}
+          {showGiveMe && (<>
+            {/* Main Give-Me Card — two big numbers */}
+            <div style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, padding: '14px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '14px' }}>{'\uD83D\uDD12'}</span>
+                  <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>Give-Me Engine</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '10px', color: T.textMuted, background: T.bgInput, padding: '2px 8px', borderRadius: '4px' }}>Rep Only</span>
+                  <button onClick={() => setShowGiveMe(false)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '16px', padding: '2px' }}>{'\u25BE'}</button>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '10px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>YOUR MARGIN</div>
+                  <div style={{ fontSize: '22px', fontWeight: '800', color: T.accent }}>${Math.round(giveMe.pool).toLocaleString()}</div>
+                  <div style={{ fontSize: '10px', color: T.textMuted }}>above baseline</div>
+                </div>
+                <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '10px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>YOUR 50%</div>
+                  <div style={{ fontSize: '22px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.repSplit).toLocaleString()}</div>
+                  <div style={{ fontSize: '10px', color: T.textMuted }}>rep split</div>
+                </div>
+              </div>
+
+              <div style={{ fontSize: '12px', color: T.textSec, display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                <span>Project: <span style={{ color: T.text, fontWeight: '600' }}>${Math.round(effectiveProjectCost).toLocaleString()}</span></span>
+                <span>Baseline: <span style={{ color: T.text, fontWeight: '600' }}>{repBaseline > 0 ? `$${Math.round(repBaseline).toLocaleString()}` : 'Not set'}</span></span>
+                <span>Customer pays: <span style={{ color: T.text, fontWeight: '600' }}>${Math.round(giveMe.customerNet).toLocaleString()}</span> after rebate</span>
+              </div>
+            </div>
+
+            {/* Out-of-Pocket Block */}
+            {(() => {
+              const currentOOP = Math.max(0, effectiveProjectCost - estimatedRebate);
+              const maxOOP = maxUtilityCost > 0 ? Math.max(0, maxUtilityCost - Math.min(rawIncentive, +(maxUtilityCost * capPct).toFixed(2))) : 0;
+              const roomToGrow = Math.max(0, maxUtilityCost - effectiveProjectCost);
+              const atCeiling = maxUtilityCost > 0 && effectiveProjectCost >= maxUtilityCost;
+              return (
+                <div style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, padding: '14px', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: T.text, marginBottom: '10px' }}>Out-of-Pocket</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ background: T.bgInput, borderRadius: '10px', padding: '10px', border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.textMuted, letterSpacing: '0.5px', marginBottom: '4px' }}>CURRENT</div>
+                      <div style={{ fontSize: '11px', color: T.textSec }}>Project Cost</div>
+                      <div style={{ fontSize: '16px', fontWeight: '700', color: T.text }}>${Math.round(effectiveProjectCost).toLocaleString()}</div>
+                      <div style={{ fontSize: '11px', color: T.accent, marginTop: '4px' }}>OOP: <span style={{ fontWeight: '700' }}>${Math.round(currentOOP).toLocaleString()}</span></div>
+                    </div>
+                    {maxUtilityCost > 0 && (
+                      <div style={{ background: T.bgInput, borderRadius: '10px', padding: '10px', border: `1px solid ${T.green}` }}>
+                        <div style={{ fontSize: '9px', fontWeight: '700', color: T.green, letterSpacing: '0.5px', marginBottom: '4px' }}>MAX UTILITY</div>
+                        <div style={{ fontSize: '11px', color: T.textSec }}>Max Allowed</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: T.text }}>${Math.round(maxUtilityCost).toLocaleString()}</div>
+                        <div style={{ fontSize: '11px', color: T.green, marginTop: '4px' }}>OOP: <span style={{ fontWeight: '700' }}>${Math.round(maxOOP).toLocaleString()}</span></div>
+                      </div>
+                    )}
+                  </div>
+                  {maxUtilityCost > 0 && !atCeiling && (
+                    <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '4px' }}>
+                      Room to grow: <span style={{ fontWeight: '700', color: T.green }}>${Math.round(roomToGrow).toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div style={{ fontSize: '11px', color: T.textMuted }}>Every $1 more OOP = $0.50 more for you</div>
+                  {atCeiling && (
+                    <div style={{ marginTop: '8px', padding: '6px 10px', background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '6px', fontSize: '11px', color: T.accent }}>
+                      {'\u26A0\uFE0F'} You're at the utility price ceiling {'\u2014'} no room to grow
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Actionable Suggestion Cards */}
+            {giveMeSuggestions.map((s, i) => {
+              // Cap Gap card — orange background, before/after, sub-items
+              if (s.type === 'cap_gap') return (
+                <div key={i} style={{ borderRadius: '14px', background: 'rgba(249,115,22,0.08)', border: `1px solid ${T.accent}`, padding: '14px', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '16px' }}>{'\uD83D\uDD36'}</span>
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>{s.title}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ background: T.bgCard, borderRadius: '10px', padding: '10px', border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.textMuted, letterSpacing: '0.5px', marginBottom: '4px' }}>CURRENT</div>
+                      <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '2px' }}>Project Cost</div>
+                      <div style={{ fontSize: '16px', fontWeight: '700', color: T.text }}>${Math.round(s.currentCost).toLocaleString()}</div>
+                      <div style={{ fontSize: '11px', color: T.textSec, marginTop: '4px' }}>Rebate: <span style={{ fontWeight: '600' }}>${Math.round(s.currentRebate).toLocaleString()}</span></div>
+                    </div>
+                    <div style={{ background: T.bgCard, borderRadius: '10px', padding: '10px', border: `1px solid ${T.green}` }}>
+                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.green, letterSpacing: '0.5px', marginBottom: '4px' }}>FULL CAPTURE</div>
+                      <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '2px' }}>Project Cost</div>
+                      <div style={{ fontSize: '16px', fontWeight: '700', color: T.text }}>${Math.round(s.fullCaptureCost).toLocaleString()}</div>
+                      <div style={{ fontSize: '11px', color: T.green, marginTop: '4px' }}>Rebate: <span style={{ fontWeight: '600' }}>${Math.round(s.fullRebate).toLocaleString()}</span></div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '10px' }}>{s.desc}</div>
+                  {s.costRaisers && s.costRaisers.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px' }}>Ways to raise cost:</div>
+                      {s.costRaisers.map((cr, ci) => (
+                        <div key={ci} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', marginBottom: '4px' }}>
+                          <div>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: T.text }}>{cr.title}</div>
+                            <div style={{ fontSize: '11px', color: T.textMuted }}>{cr.desc}</div>
+                          </div>
+                          <button onClick={() => { setProjectCost(prev => (prev || effectiveProjectCost) + cr.addCost); markDirty(); showToast(`Added $${cr.addCost.toLocaleString()} to project cost`, '\u2713'); }} style={{ padding: '6px 12px', background: T.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ ${cr.addCost.toLocaleString()}</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+
+              // LLLC suggestion — before/after with Accept Suggestion button
+              if (s.type === 'lllc') return (
+                <div key={i} style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, padding: '14px', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '14px' }}>{'\uD83D\uDCA1'}</span>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>{s.title}</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '8px' }}>{s.desc}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.textMuted, letterSpacing: '0.5px', marginBottom: '2px' }}>BEFORE</div>
+                      <div style={{ fontSize: '11px', color: T.textSec }}>Rebate</div>
+                      <div style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>${Math.round(s.currentRebate).toLocaleString()}</div>
+                    </div>
+                    <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px', textAlign: 'center', border: `1px solid ${T.green}` }}>
+                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.green, letterSpacing: '0.5px', marginBottom: '2px' }}>AFTER</div>
+                      <div style={{ fontSize: '11px', color: T.textSec }}>Rebate</div>
+                      <div style={{ fontSize: '15px', fontWeight: '700', color: T.green }}>${Math.round(s.newRebate).toLocaleString()}</div>
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(34,197,94,0.1)', borderRadius: '6px', padding: '6px 10px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: T.green, marginBottom: '8px' }}>+${Math.round(s.impact).toLocaleString()} more incentive</div>
+                  <button onClick={() => { updateLine(s.lineId, 'controlsType', 'lllc'); showToast('Applied LLLC controls', '\u2713'); }} style={{ width: '100%', padding: '10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>Accept Suggestion</button>
+                </div>
+              );
+
+              // Tier upsell suggestion — Accept Suggestion button
+              if (s.type === 'tier_upsell') return (
+                <div key={i} style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, padding: '14px', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '14px' }}>{'\u2B06\uFE0F'}</span>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>{s.title}</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '8px' }}>{s.desc}</div>
+                  <div style={{ background: 'rgba(34,197,94,0.1)', borderRadius: '6px', padding: '6px 10px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: T.green, marginBottom: '8px' }}>+${Math.round(s.impact).toLocaleString()} more toward cap</div>
+                  <button onClick={() => { selectProduct(s.lineId, s.targetProduct); showToast('Upgraded product tier', '\u2713'); }} style={{ width: '100%', padding: '10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>Accept Suggestion</button>
+                </div>
+              );
+
+              // Close script — copy button
+              if (s.type === 'close') return (
+                <div key={i} style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, padding: '14px', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '14px' }}>{'\uD83D\uDCAC'}</span>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>{s.title}</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: T.textSec, lineHeight: '1.5', fontStyle: 'italic', background: T.bgInput, borderRadius: '8px', padding: '10px', marginBottom: '8px' }}>{s.desc}</div>
+                  <button onClick={() => { navigator.clipboard?.writeText(s.desc.replace(/^"|"$/g, '')); showToast('Script copied', '\uD83D\uDCCB'); }} style={{ width: '100%', padding: '10px', background: T.bgInput, color: T.text, border: `1px solid ${T.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Copy Script</button>
+                </div>
+              );
+
+              return null;
+            })}
+          </>)}
         </div>
       )}
 
@@ -2276,31 +2516,72 @@ export default function LenardUTRMP() {
               <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: '600' }}>Financial Audit Report</div>
-                  <div style={{ fontSize: '11px', opacity: 0.7 }}>{programLabel}{projectName ? ` \u2014 ${projectName}` : ''}</div>
                 </div>
                 {contractAccepted && <div style={{ background: T.green, borderRadius: '6px', padding: '3px 10px', fontSize: '11px', fontWeight: '700' }}>{'\u2713'} SIGNED</div>}
               </div>
             </div>
 
+            {/* Invoice-style info block */}
+            <div style={{ padding: '16px 20px', background: '#f8f8fa', borderBottom: '1px solid #eee' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '9px', fontWeight: '700', color: '#999', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '3px' }}>Prepared For</div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e1e22' }}>{projectName || 'Customer'}</div>
+                  {saveAddress && <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>{saveAddress}</div>}
+                  {(saveCity || saveState) && <div style={{ fontSize: '11px', color: '#666' }}>{[saveCity, saveState, saveZip].filter(Boolean).join(', ')}</div>}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '9px', fontWeight: '700', color: '#999', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '3px' }}>Date</div>
+                  <div style={{ fontSize: '12px', color: '#1e1e22', fontWeight: '600' }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                  <div style={{ fontSize: '9px', fontWeight: '700', color: '#999', letterSpacing: '0.5px', textTransform: 'uppercase', marginTop: '6px', marginBottom: '3px' }}>Program</div>
+                  <div style={{ fontSize: '11px', color: '#1e1e22' }}>{programLabel}</div>
+                </div>
+              </div>
+              <div style={{ borderTop: '1px solid #ddd', paddingTop: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                  <span style={{ color: '#666' }}>Project Total</span>
+                  <span style={{ fontWeight: '700', color: '#1e1e22' }}>${Math.round(effectiveProjectCost).toLocaleString()}</span>
+                </div>
+                {estimatedRebate > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                    <span style={{ color: T.green }}>RMP Incentive</span>
+                    <span style={{ fontWeight: '700', color: T.green }}>-${Math.round(estimatedRebate).toLocaleString()}</span>
+                  </div>
+                )}
+                <div style={{ borderTop: '2px solid #1e1e22', paddingTop: '6px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+                  <span style={{ fontWeight: '800', color: '#1e1e22' }}>Customer Net</span>
+                  <span style={{ fontWeight: '800', color: '#1e1e22' }}>${Math.round(Math.max(0, effectiveProjectCost - estimatedRebate)).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+
             <div style={{ padding: '16px 20px', color: '#1e1e22' }}>
 
-              {/* ===== SECTION 1: Financial Audit Summary ===== */}
+              {/* ===== SECTION 1: Fixture Schedule (scope of work style) ===== */}
               <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Fixture Schedule</div>
-              {results.map(r => (
-                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #eee', fontSize: '12px' }}>
-                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#666' }}>{r.qty}x {r.name || `${r.location} fixture`} {r.height ? `\u2022 ${r.height}ft` : ''}</div>
-                  <div style={{ fontWeight: '600', whiteSpace: 'nowrap', marginLeft: '8px', color: '#1e1e22' }}>{r.existW > 0 ? `${r.existW}W \u2192 ` : ''}{r.newW}W <span style={{ color: T.accent, marginLeft: '4px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
+              <div style={{ border: '1px solid #eee', borderRadius: '8px', overflow: 'hidden', marginBottom: '4px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 90px', gap: '0', background: '#f0f0f2', padding: '5px 10px', fontSize: '10px', fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                  <span>Qty</span><span>Description</span><span style={{ textAlign: 'right' }}>Watts</span>
                 </div>
-              ))}
+                {results.map(r => (
+                  <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 90px', gap: '0', padding: '6px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '12px' }}>
+                    <span style={{ fontWeight: '600', color: '#1e1e22' }}>{r.qty}x</span>
+                    <span style={{ color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || `${r.location === 'interior' ? 'Interior' : 'Exterior'} fixture`}</span>
+                    <span style={{ textAlign: 'right', fontWeight: '600', color: '#1e1e22' }}>{r.existW > 0 ? `${r.existW}W \u2192 ` : ''}{r.newW}W</span>
+                  </div>
+                ))}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', padding: '6px 10px', background: '#f8f8fa', fontSize: '11px', fontWeight: '600', color: '#666' }}>
+                  <span>{results.reduce((s, r) => s + (r.qty || 0), 0)} fixtures</span>
+                  <span style={{ textAlign: 'right' }}>{totals.existWatts > 0 ? `${reductionPct}% watt reduction` : ''}</span>
+                </div>
+              </div>
 
               {/* RMP Incentive */}
               <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginTop: '16px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>RMP Incentive</div>
               <div style={{ background: '#f8f8fa', borderRadius: '10px', padding: '12px', border: '1px solid #eee' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px' }}><span>Fixture Incentive</span><span>${totals.fixtureIncentive.toLocaleString()}</span></div>
-                {totals.controlsIncentive > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px' }}><span>Controls Incentive</span><span>${totals.controlsIncentive.toLocaleString()}</span></div>}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px', paddingTop: '4px', borderTop: '1px solid #eee' }}><span>Raw Total</span><span>${rawIncentive.toLocaleString()}</span></div>
-                {capApplied && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.accent, marginBottom: '4px' }}><span>Cost Cap ({Math.round(capPct * 100)}%)</span><span>${capAmount.toLocaleString()} CAP APPLIED</span></div>}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '800', paddingTop: '8px', borderTop: '1px solid #ddd', color: T.accent }}><span>Estimated Rebate</span><span>${estimatedRebate.toLocaleString()}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '4px' }}><span>Incentive Earned</span><span>${rawIncentive.toLocaleString()}</span></div>
+                {capApplied && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.accent, marginBottom: '4px' }}><span>Program Cap ({Math.round(capPct * 100)}%)</span><span>${capAmount.toLocaleString()}</span></div>}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '800', paddingTop: '8px', borderTop: '2px solid #ddd', color: T.accent }}><span>Your Rebate</span><span>${estimatedRebate.toLocaleString()}</span></div>
               </div>
 
               {/* Energy Analysis */}
