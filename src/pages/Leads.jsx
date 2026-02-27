@@ -16,6 +16,7 @@ const emptyLead = {
   address: '',
   service_type: '',
   lead_source: '',
+  lead_source_employee_id: '',
   lead_owner_id: '',
   setter_owner_id: '',
   status: 'New',
@@ -151,6 +152,7 @@ export default function Leads() {
       address: lead.address || '',
       service_type: lead.service_type || '',
       lead_source: lead.lead_source || '',
+      lead_source_employee_id: lead.lead_source_employee_id || '',
       lead_owner_id: lead.lead_owner_id || '',
       setter_owner_id: lead.setter_owner_id || '',
       status: lead.status || 'New',
@@ -190,6 +192,7 @@ export default function Leads() {
       address: formData.address || null,
       service_type: formData.service_type || null,
       lead_source: formData.lead_source || null,
+      lead_source_employee_id: formData.lead_source_employee_id || null,
       lead_owner_id: formData.lead_owner_id || null,
       setter_owner_id: formData.setter_owner_id || null,
       status: formData.status || 'New',
@@ -745,6 +748,13 @@ export default function Leads() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
+                  <label style={labelStyle}>Source Person</label>
+                  <select name="lead_source_employee_id" value={formData.lead_source_employee_id} onChange={handleChange} style={inputStyle}>
+                    <option value="">-- None --</option>
+                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                </div>
+                <div>
                   <label style={labelStyle}>Lead Owner</label>
                   <select
                     name="lead_owner_id"
@@ -756,6 +766,9 @@ export default function Leads() {
                     {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
                 </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Status</label>
                   <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>

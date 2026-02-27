@@ -1347,7 +1347,7 @@ export default function Employees() {
                         </p>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                           <RateInput
-                            label="Per Lead Generated"
+                            label="Per Lead Sourced"
                             rateName="commission_leads_rate"
                             typeName="commission_leads_type"
                             disabled={!isEditing}

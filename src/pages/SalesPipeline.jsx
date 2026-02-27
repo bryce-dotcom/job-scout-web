@@ -186,7 +186,7 @@ export default function SalesPipeline() {
   }, [companyId])
 
   // Lead query with owner join
-  const LEAD_COLUMNS = '*, lead_owner:employees!leads_lead_owner_id_fkey(id, name)'
+  const LEAD_COLUMNS = '*, lead_owner:employees!leads_lead_owner_id_fkey(id, name), source_employee:employees!leads_lead_source_employee_id_fkey(id, name)'
 
   // Normalize legacy statuses
   const normalizeLead = (lead) => ({
@@ -898,11 +898,16 @@ export default function SalesPipeline() {
                                 </span>
                               )}
                             </div>
-                            {/* Row 2: Owner + Status */}
+                            {/* Row 2: Owner + Source Person + Status */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                               {lead.lead_owner && (
                                 <span style={{ flex: 1, fontSize: '13px', color: m.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                   <User size={12} /> {lead.lead_owner.name}
+                                </span>
+                              )}
+                              {lead.source_employee?.name && (
+                                <span style={{ fontSize: '11px', color: m.textMuted }}>
+                                  via {lead.source_employee.name}
                                 </span>
                               )}
                               {!lead.lead_owner && <span style={{ flex: 1 }} />}
@@ -1129,9 +1134,9 @@ export default function SalesPipeline() {
                                   <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
                                 </div>
                               )}
-                              {lead.lead_source && (
+                              {(lead.lead_source || lead.source_employee) && (
                                 <div style={{ marginTop: '3px', fontSize: '9px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
-                                  via {lead.lead_source}
+                                  {lead.lead_source ? `via ${lead.lead_source}` : ''}{lead.source_employee?.name ? `${lead.lead_source ? ' · ' : 'via '}${lead.source_employee.name}` : ''}
                                 </div>
                               )}
                             </EntityCard>
@@ -1276,9 +1281,9 @@ export default function SalesPipeline() {
                                   <span style={{ fontSize: '10px', color: theme.textMuted }}>{lead.lead_owner.name}</span>
                                 </div>
                               )}
-                              {lead.lead_source && (
+                              {(lead.lead_source || lead.source_employee) && (
                                 <div style={{ marginTop: '3px', fontSize: '9px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
-                                  via {lead.lead_source}
+                                  {lead.lead_source ? `via ${lead.lead_source}` : ''}{lead.source_employee?.name ? `${lead.lead_source ? ' · ' : 'via '}${lead.source_employee.name}` : ''}
                                 </div>
                               )}
                             </EntityCard>
@@ -1437,6 +1442,12 @@ export default function SalesPipeline() {
                 <div>
                   <div style={{ fontSize: '11px', color: theme.textMuted }}>Source</div>
                   <div style={{ fontSize: '13px', color: theme.text }}>{selectedLead.lead_source}</div>
+                </div>
+              )}
+              {selectedLead.source_employee?.name && (
+                <div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted }}>Source Person</div>
+                  <div style={{ fontSize: '13px', color: theme.text }}>{selectedLead.source_employee.name}</div>
                 </div>
               )}
               {parseFloat(selectedLead.quote_amount) > 0 && (

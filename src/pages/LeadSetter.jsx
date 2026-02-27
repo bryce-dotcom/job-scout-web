@@ -480,33 +480,33 @@ export default function LeadSetter() {
       console.log('Setter commission not created:', err)
     }
 
-    // Create LEAD OWNER commission (only if source = 'user')
+    // Create LEAD SOURCE commission (when a source employee is set)
     try {
-      if (selectedLead.lead_source === 'user' && selectedLead.lead_owner_id) {
-        const { data: ownerEmployee } = await supabase
+      if (selectedLead.lead_source_employee_id) {
+        const { data: sourceEmployee } = await supabase
           .from('employees')
           .select('commission_leads_rate, commission_leads_type')
-          .eq('id', selectedLead.lead_owner_id)
+          .eq('id', selectedLead.lead_source_employee_id)
           .single()
 
-        if (ownerEmployee?.commission_leads_rate > 0) {
+        if (sourceEmployee?.commission_leads_rate > 0) {
           await supabase
             .from('lead_commissions')
             .insert({
               company_id: companyId,
               lead_id: selectedLead.id,
               appointment_id: apt.id,
-              commission_type: 'lead_generation',
-              employee_id: selectedLead.lead_owner_id,
-              amount: ownerEmployee.commission_leads_rate,
-              rate_type: ownerEmployee.commission_leads_type || 'flat',
+              commission_type: 'lead_source',
+              employee_id: selectedLead.lead_source_employee_id,
+              amount: sourceEmployee.commission_leads_rate,
+              rate_type: sourceEmployee.commission_leads_type || 'flat',
               payment_status: 'pending'
             })
-          console.log('Lead owner commission created:', ownerEmployee.commission_leads_rate)
+          console.log('Lead source commission created:', sourceEmployee.commission_leads_rate)
         }
       }
     } catch (err) {
-      console.log('Lead owner commission not created:', err)
+      console.log('Lead source commission not created:', err)
     }
 
     // Also try legacy setter_commissions table for backwards compatibility

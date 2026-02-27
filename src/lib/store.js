@@ -261,7 +261,7 @@ export const useStore = create(
         try {
           const { data, error } = await supabase
             .from('leads')
-            .select('*')
+            .select('*, source_employee:employees!leads_lead_source_employee_id_fkey(id, name)')
             .eq('company_id', companyId)
             .order('created_at', { ascending: false });
 

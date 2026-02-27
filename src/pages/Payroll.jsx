@@ -21,6 +21,7 @@ export default function Payroll() {
   const refreshCompany = useStore((state) => state.fetchCompany)
 
   const [timeEntries, setTimeEntries] = useState([])
+  const [commissions, setCommissions] = useState([])
   const [timeOffRequests, setTimeOffRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
@@ -69,6 +70,16 @@ export default function Payroll() {
         .not('clock_out', 'is', null)
 
       setTimeEntries(entries || [])
+
+      // Fetch lead commissions for current period
+      const { data: commData } = await supabase
+        .from('lead_commissions')
+        .select('*')
+        .eq('company_id', companyId)
+        .gte('created_at', periodStart.toISOString())
+        .lte('created_at', periodEnd.toISOString())
+
+      setCommissions(commData || [])
 
       // Fetch pending time off requests
       const { data: requests } = await supabase
@@ -225,6 +236,11 @@ export default function Payroll() {
           paySettings.pay_frequency === 'semi-monthly' ? 24 : 12
       gross += salary / periodsPerYear
     }
+
+    // Add commissions
+    const empCommissions = commissions.filter(c => c.employee_id === employee.id)
+    const commissionTotal = empCommissions.reduce((sum, c) => sum + (c.amount || 0), 0)
+    gross += commissionTotal
 
     return Math.round(gross * 100) / 100
   }
@@ -522,6 +538,8 @@ export default function Payroll() {
           const grossPay = calculateGrossPay(emp)
           const payType = emp.pay_type || ['hourly']
           const ptoBalance = (emp.pto_accrued || 0) - (emp.pto_used || 0)
+          const empCommissions = commissions.filter(c => c.employee_id === emp.id)
+          const commissionTotal = empCommissions.reduce((sum, c) => sum + (c.amount || 0), 0)
 
           return (
             <div
@@ -594,6 +612,27 @@ export default function Payroll() {
                 }}>
                   {ptoBalance.toFixed(1)} days
                 </div>
+              </div>
+
+              {/* Commissions */}
+              <div style={{ textAlign: 'center', minWidth: '90px' }}>
+                <div style={{ fontSize: '13px', color: theme.textMuted }}>Commissions</div>
+                <div style={{
+                  fontWeight: '600',
+                  color: commissionTotal > 0 ? '#f59e0b' : theme.textMuted
+                }}>
+                  {commissionTotal > 0 ? formatCurrency(commissionTotal) : '-'}
+                </div>
+                {empCommissions.length > 0 && (
+                  <div style={{ fontSize: '10px', color: theme.textMuted }}>
+                    {empCommissions.filter(c => c.commission_type === 'appointment_set').length > 0 && (
+                      <span>{empCommissions.filter(c => c.commission_type === 'appointment_set').length} appt</span>
+                    )}
+                    {empCommissions.filter(c => c.commission_type === 'lead_source').length > 0 && (
+                      <span>{empCommissions.filter(c => c.commission_type === 'appointment_set').length > 0 ? ' + ' : ''}{empCommissions.filter(c => c.commission_type === 'lead_source').length} sourced</span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Gross Pay */}

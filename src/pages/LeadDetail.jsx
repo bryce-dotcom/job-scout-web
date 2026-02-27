@@ -85,7 +85,8 @@ export default function LeadDetail() {
       .select(`
         *,
         lead_owner:employees!leads_lead_owner_id_fkey(id, name),
-        setter_owner:employees!leads_setter_owner_id_fkey(id, name)
+        setter_owner:employees!leads_setter_owner_id_fkey(id, name),
+        source_employee:employees!leads_lead_source_employee_id_fkey(id, name)
       `)
       .eq('id', id)
       .single()
@@ -407,6 +408,7 @@ export default function LeadDetail() {
       service_type: lead.service_type || '',
       lead_owner_id: lead.lead_owner_id || '',
       setter_owner_id: lead.setter_owner_id || '',
+      lead_source_employee_id: lead.lead_source_employee_id || '',
       notes: lead.notes || ''
     })
     setIsEditing(true)
@@ -428,6 +430,7 @@ export default function LeadDetail() {
       service_type: editForm.service_type || null,
       lead_owner_id: editForm.lead_owner_id || null,
       setter_owner_id: editForm.setter_owner_id || null,
+      lead_source_employee_id: editForm.lead_source_employee_id || null,
       notes: editForm.notes || null,
       updated_at: new Date().toISOString()
     })
@@ -785,6 +788,17 @@ export default function LeadDetail() {
                       </select>
                     ) : (
                       <div style={{ fontSize: '14px', color: theme.text }}>{lead.lead_source || '-'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Source Person</div>
+                    {isEditing ? (
+                      <select value={editForm.lead_source_employee_id} onChange={(e) => setEditForm({ ...editForm, lead_source_employee_id: e.target.value })} style={inputStyle}>
+                        <option value="">-- None --</option>
+                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{ fontSize: '14px', color: theme.text }}>{lead.source_employee?.name || '-'}</div>
                     )}
                   </div>
                   <div>
