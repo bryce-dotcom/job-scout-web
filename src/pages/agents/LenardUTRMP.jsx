@@ -702,7 +702,7 @@ export default function LenardUTRMP() {
         suggestions.push({
           type: 'tier_upsell', lineId: l.id, title: `Upgrade "${l.name || 'Fixture'}" to ${tierLabel[highestTier] || highestTier}`,
           desc: `${tierLabel[currentTier]} $${selected.unit_price} → ${tierLabel[highestTier]} $${highestTierProduct.unit_price} (+$${priceDiff}/ea, +$${totalDiff} total)`,
-          impact: totalDiff * capPct, targetProduct: highestTierProduct,
+          impact: totalDiff * capPct, targetProduct: highestTierProduct, totalDiff,
         });
       });
     }
@@ -750,7 +750,10 @@ export default function LenardUTRMP() {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
       const data = await resp.json();
       if (data.success) {
-        setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false); showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
+        setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false);
+        // Freeze baseline on first save so Give-Me can track changes from this point
+        if (!giveMeFrozenBaseline) { setGiveMeFrozenBaseline(effectiveProjectCost); setGiveMeFrozenIncentive(rawIncentive); if (!projectCost) setProjectCost(effectiveProjectCost); }
+        showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
         // Attempt give_me_log insert (silent fail if table doesn't exist)
         // CREATE TABLE IF NOT EXISTS give_me_log (
         //   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -2157,7 +2160,7 @@ export default function LenardUTRMP() {
                               const tier = getProductTierInfo(p.name);
                               const isCurrent = p.id === r.productId;
                               return (
-                                <button key={p.id} onClick={() => { if (isRep && !giveMeFrozenBaseline) { setGiveMeFrozenBaseline(baselineProjectCost); setGiveMeFrozenIncentive(rawIncentive); } selectProduct(r.id, p); }}
+                                <button key={p.id} onClick={() => selectProduct(r.id, p)}
                                   style={{ flex: 1, padding: '6px', borderRadius: '6px',
                                     background: isCurrent ? T.accentDim : T.bgInput,
                                     border: `1px solid ${isCurrent ? T.accent : T.border}`,
@@ -2337,8 +2340,8 @@ export default function LenardUTRMP() {
         </div>
       )}
 
-      {/* ===== GIVE-ME ENGINE (Rep Only) ===== */}
-      {isRep && results.length > 0 && (
+      {/* ===== GIVE-ME ENGINE (Rep Only — requires saved project) ===== */}
+      {isRep && results.length > 0 && savedLeadId && (
         <div style={{ margin: '0 16px 8px' }}>
           {/* Collapsed bar */}
           {!showGiveMe ? (
@@ -2443,7 +2446,7 @@ export default function LenardUTRMP() {
                         {s.costRaisers && s.costRaisers.map((cr, ci) => (
                           <div key={ci} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginLeft: '20px', padding: '4px 8px', background: T.bgInput, borderRadius: '6px', marginBottom: '2px' }}>
                             <span style={{ fontSize: '10px', color: T.textSec }}>{cr.title}</span>
-                            <button onClick={() => { if (!giveMeFrozenBaseline) { setGiveMeFrozenBaseline(baselineProjectCost); setGiveMeFrozenIncentive(rawIncentive); } setGiveMeQuoteItems(prev => [...prev, { id: Date.now() + ci, type: cr.type, label: cr.title, amount: cr.addCost }]); markDirty(); showToast(`Added ${cr.title}`, '\u2713'); }}
+                            <button onClick={() => { setGiveMeQuoteItems(prev => [...prev, { id: Date.now() + ci, type: cr.type, label: cr.title, amount: cr.addCost }]); markDirty(); showToast(`Added ${cr.title}`, '\u2713'); }}
                               style={{ padding: '2px 8px', background: T.accent, color: '#fff', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Add ${cr.addCost.toLocaleString()}</button>
                           </div>
                         ))}
@@ -2458,7 +2461,7 @@ export default function LenardUTRMP() {
                           <div style={{ fontSize: '10px', color: T.textSec }}>{s.desc}</div>
                         </div>
                         <span style={{ fontSize: '10px', color: T.green, fontWeight: '700', flexShrink: 0 }}>+${Math.round(s.impact).toLocaleString()}</span>
-                        <button onClick={() => { if (!giveMeFrozenBaseline) { setGiveMeFrozenBaseline(baselineProjectCost); setGiveMeFrozenIncentive(rawIncentive); } updateLine(s.lineId, 'controlsType', 'lllc'); showToast('Applied LLLC', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
+                        <button onClick={() => { updateLine(s.lineId, 'controlsType', 'lllc'); showToast('Applied LLLC', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
                       </div>
                     );
 
@@ -2470,7 +2473,7 @@ export default function LenardUTRMP() {
                           <div style={{ fontSize: '10px', color: T.textSec }}>{s.desc}</div>
                         </div>
                         <span style={{ fontSize: '10px', color: T.green, fontWeight: '700', flexShrink: 0 }}>+${Math.round(s.impact).toLocaleString()}</span>
-                        <button onClick={() => { if (!giveMeFrozenBaseline) { setGiveMeFrozenBaseline(baselineProjectCost); setGiveMeFrozenIncentive(rawIncentive); } selectProduct(s.lineId, s.targetProduct); showToast('Tier upgraded', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
+                        <button onClick={() => { selectProduct(s.lineId, s.targetProduct); setGiveMeQuoteItems(prev => [...prev, { id: Date.now(), type: 'tier_' + s.lineId, label: s.title, amount: s.totalDiff }]); markDirty(); showToast('Tier upgraded', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
                       </div>
                     );
 
