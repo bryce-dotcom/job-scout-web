@@ -7,7 +7,7 @@ import { offlineDb } from '../lib/offlineDb'
 import {
   Plus, X, DollarSign, User, Calendar, Phone, Mail, Building2,
   Trophy, XCircle, ChevronRight, RefreshCw, MapPin, Settings, Trash2,
-  ChevronUp, ChevronDown, Briefcase
+  ChevronUp, ChevronDown, Briefcase, List, Search
 } from 'lucide-react'
 import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
 
@@ -117,6 +117,13 @@ export default function SalesPipeline() {
   // Mobile detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [selectedMobileStage, setSelectedMobileStage] = useState(null)
+  const [mobileFilter, setMobileFilter] = useState('All')
+  const [mobileSalesExpanded, setMobileSalesExpanded] = useState(true)
+  const [mobileDeliveryExpanded, setMobileDeliveryExpanded] = useState(false)
+  const [pullDistance, setPullDistance] = useState(0)
+  const [pullStartY, setPullStartY] = useState(0)
+  const [isPulling, setIsPulling] = useState(false)
+  const [touchedCardId, setTouchedCardId] = useState(null)
 
   // Owner filter — default to logged-in user
   const [ownerFilter, setOwnerFilter] = useState(() => user?.id ? String(user.id) : 'all')
@@ -561,60 +568,7 @@ export default function SalesPipeline() {
     <div style={{ padding: isMobile ? '12px' : '16px', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       {isMobile ? (
-        <>
-          {/* Row 1: Title + actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-            <h1 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0, flex: 1 }}>Pipeline</h1>
-            <select
-              value={ownerFilter}
-              onChange={(e) => setOwnerFilter(e.target.value)}
-              style={{
-                padding: '6px 8px',
-                backgroundColor: theme.bgCard,
-                border: `1px solid ${theme.border}`,
-                borderRadius: '6px',
-                color: theme.text,
-                fontSize: '12px',
-                maxWidth: '110px'
-              }}
-            >
-              <option value="all">All</option>
-              <option value="unassigned">Unassigned</option>
-              {activeEmployees.map(emp => (
-                <option key={emp.id} value={emp.id}>{emp.id === user?.id ? 'Me' : emp.name}</option>
-              ))}
-            </select>
-            <button onClick={() => fetchPipelineLeads()} disabled={refreshing} style={{ padding: '6px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, lineHeight: 0 }}>
-              <RefreshCw size={14} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
-            </button>
-            {isSuperAdmin && (
-              <button onClick={openSettings} style={{ padding: '6px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, lineHeight: 0 }}>
-                <Settings size={14} />
-              </button>
-            )}
-            <button onClick={() => navigate('/leads')} style={{ padding: '5px 8px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '11px', fontWeight: '500' }}>
-              List
-            </button>
-            <button onClick={() => navigate('/leads')} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '5px 8px', backgroundColor: theme.accent, border: 'none', borderRadius: '6px', color: '#fff', fontSize: '11px', fontWeight: '500' }}>
-              <Plus size={12} /> Add
-            </button>
-          </div>
-          {/* Row 2: Compact stats */}
-          {visibleStats.length > 0 && (
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', overflowX: 'auto', flexShrink: 0 }}>
-              {visibleStats.map(statId => {
-                const stat = statsData[statId]
-                if (!stat) return null
-                return (
-                  <div key={statId} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', backgroundColor: theme.bgCard, borderRadius: '6px', border: `1px solid ${theme.border}`, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <span style={{ fontSize: '13px', fontWeight: '700', color: stat.color || theme.text }}>{stat.isFormatted ? stat.value : stat.value}</span>
-                    <span style={{ fontSize: '10px', color: theme.textMuted }}>{stat.label}</span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </>
+        null /* mobile header is rendered below in the mobile view block */
       ) : (
         <div style={{
           display: 'flex',
@@ -756,179 +710,317 @@ export default function SalesPipeline() {
         </div>
       )}
 
-      {/* Mobile View - Compact tabbed stages with list */}
-      {isMobile ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          {/* Stage Tabs - compact scrollable */}
-          <div style={{
-            display: 'flex',
-            overflowX: 'auto',
-            gap: '2px',
-            padding: '3px',
-            backgroundColor: theme.bg,
-            borderRadius: '6px',
-            marginBottom: '6px',
-            flexShrink: 0,
-            WebkitOverflowScrolling: 'touch'
-          }}>
-            {stages.map(stage => {
-              const count = getLeadsForStage(stage.id).length
-              const isActive = (selectedMobileStage || stages[0].id) === stage.id
-              return (
-                <button
-                  key={stage.id}
-                  onClick={() => setSelectedMobileStage(stage.id)}
-                  style={{
-                    padding: '5px 8px',
-                    backgroundColor: isActive ? theme.bgCard : 'transparent',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '3px',
-                    whiteSpace: 'nowrap',
-                    boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
-                  }}
-                >
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: stage.color, flexShrink: 0 }} />
-                  <span style={{ fontSize: '11px', fontWeight: isActive ? '600' : '400', color: isActive ? theme.text : theme.textSecondary }}>
-                    {stage.name}
-                  </span>
-                  {count > 0 && (
-                    <span style={{ fontSize: '10px', padding: '0 4px', backgroundColor: stage.color + '20', color: stage.color, borderRadius: '8px', fontWeight: '600', lineHeight: '16px' }}>
-                      {count}
-                    </span>
-                  )}
+      {/* Mobile View — dark theme, full PWA experience */}
+      {isMobile ? (() => {
+        const m = { bg: '#09090b', bgCard: '#18181b', border: '#27272a', text: '#ffffff', textMuted: '#71717a', accent: '#f97316' }
+        const statusColors = { 'New': '#3b82f6', 'Contacted': '#a855f7', 'Appointment Set': '#22c55e', 'Qualified': '#f97316', 'Quote Sent': '#eab308', 'Negotiation': '#f97316', 'Won': '#22c55e', 'Lost': '#ef4444', 'Job Scheduled': '#0ea5e9', 'In Progress': '#f97316', 'Job Complete': '#22c55e', 'Invoiced': '#8b5cf6', 'Closed': '#6b7280' }
+        const getStatusColor = (status) => statusColors[status] || '#71717a'
+        const salesStages = stages.filter(s => !s.isDelivery && !s.isClosed)
+        const deliveryStages = stages.filter(s => s.isDelivery || s.isClosed)
+
+        // Filter leads by mobile tab
+        const mobileLeads = mobileFilter === 'All'
+          ? filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed })
+          : filteredPipelineLeads.filter(l => l.status === mobileFilter)
+
+        const deliveryLeadsList = filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) })
+
+        const filterTabs = [
+          { id: 'All', label: 'All', color: '#71717a' },
+          ...salesStages.map(s => ({ id: s.id, label: s.name, color: getStatusColor(s.id) }))
+        ]
+
+        const getSourceStyle = (source) => {
+          if (source?.includes('Lenard') || source?.includes('SRP') || source?.includes('RMP')) return { bg: 'rgba(249,115,22,0.15)', color: '#f97316', border: '1px solid rgba(249,115,22,0.3)' }
+          if (source === 'Referral') return { bg: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }
+          return { bg: 'rgba(255,255,255,0.08)', color: '#71717a', border: '1px solid rgba(255,255,255,0.1)' }
+        }
+
+        // Pull to refresh handlers
+        const handleTouchStart = (e) => { setPullStartY(e.touches[0].clientY) }
+        const handleTouchMove = (e) => {
+          const scrollEl = e.currentTarget
+          if (scrollEl.scrollTop > 0) return
+          const diff = e.touches[0].clientY - pullStartY
+          if (diff > 0) { setPullDistance(Math.min(diff, 100)); setIsPulling(true) }
+        }
+        const handleTouchEnd = () => {
+          if (pullDistance > 70) { fetchPipelineLeads(); setRefreshing(true) }
+          setPullDistance(0); setIsPulling(false)
+        }
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, top: '64px', backgroundColor: m.bg, display: 'flex', flexDirection: 'column', zIndex: 10 }}>
+
+            {/* Sticky Header Bar */}
+            <div style={{ height: '56px', backgroundColor: m.bg, borderBottom: `1px solid ${m.border}`, display: 'flex', alignItems: 'center', padding: '0 16px', flexShrink: 0, zIndex: 100 }}>
+              <span style={{ fontSize: '16px', fontWeight: '700', color: m.text, flex: 1 }}>Sales Pipeline</span>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button onClick={() => navigate('/leads')} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: `1px solid ${m.border}`, borderRadius: '8px', color: m.textMuted }}>
+                  <List size={18} />
                 </button>
-              )
-            })}
-          </div>
+                <button onClick={() => { fetchPipelineLeads(); setRefreshing(true) }} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: `1px solid ${m.border}`, borderRadius: '8px', color: m.textMuted }}>
+                  <RefreshCw size={18} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
+                </button>
+                <button onClick={() => navigate('/leads')} style={{ height: '40px', padding: '0 12px', display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: m.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '600' }}>
+                  <Plus size={16} /> Add
+                </button>
+              </div>
+            </div>
 
-          {/* Mobile Lead List - compact cards */}
-          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '2px' }}>
-            {(() => {
-              const currentStage = selectedMobileStage || stages[0].id
-              const stageLeads = getLeadsForStage(currentStage)
-              const stage = stages.find(s => s.id === currentStage)
-
-              if (stageLeads.length === 0) {
-                return (
-                  <div style={{ padding: '24px 16px', textAlign: 'center', color: theme.textMuted }}>
-                    <div style={{ fontSize: '13px' }}>No leads in {stage?.name}</div>
-                    <div style={{ fontSize: '11px', marginTop: '4px' }}>
-                      {stage?.isDelivery ? 'Auto-synced from jobs' : stage?.isClosed ? 'Moves here when paid' : 'Move leads to this stage'}
-                    </div>
-                  </div>
-                )
-              }
-
-              return stageLeads.map(lead => (
-                <div
-                  key={lead.id}
-                  onClick={() => navigate(`/leads/${lead.id}`)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '8px 10px',
-                    marginBottom: '4px',
-                    backgroundColor: theme.bgCard,
-                    borderRadius: '6px',
-                    border: `1px solid ${theme.border}`,
-                    borderLeft: `4px solid ${(() => {
-                      const first = (lead.customer_name || '').trim().split(/\s+/)[0]?.toLowerCase()
-                      if (MALE_NAMES.has(first)) return '#3B82F6'
-                      if (FEMALE_NAMES.has(first)) return '#EC4899'
-                      return '#6B7280'
-                    })()}`,
-                    cursor: 'pointer'
-                  }}
-                >
-                  {/* Left: Name + details */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontWeight: '600', color: theme.text, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {lead.customer_name}
-                      </span>
-                      {lead.business_name && (
-                        <span style={{ color: theme.textMuted, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>
-                          {lead.business_name}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
-                      {lead.appointment_time && (
-                        <span style={{ fontSize: '10px', color: isToday(lead.appointment_time) ? '#166534' : '#15803d', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                          <Calendar size={9} />
-                          {isToday(lead.appointment_time)
-                            ? `Today ${new Date(lead.appointment_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                            : new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                          }
-                        </span>
-                      )}
-                      {lead.lead_owner && (
-                        <span style={{ fontSize: '10px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '2px' }}>
-                          <User size={9} />{lead.lead_owner.name?.split(' ')[0]}
-                        </span>
-                      )}
-                      {lead.lead_source && (
-                        <span style={{ fontSize: '9px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
-                          {lead.lead_source}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Right: Value + quick action */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                    {parseFloat(lead.quote_amount) > 0 && (
-                      <span style={{ color: '#16a34a', fontWeight: '600', fontSize: '12px' }}>
-                        {formatCurrency(lead.quote_amount)}
-                      </span>
-                    )}
-                    {!stage?.isWon && !stage?.isLost && !stage?.isDelivery && !stage?.isClosed && (
-                      <select
-                        value=""
-                        onChange={async (e) => {
-                          e.stopPropagation()
-                          const newStatus = e.target.value
-                          if (!newStatus) return
-                          const targetStage = stages.find(s => s.id === newStatus)
-                          if (targetStage?.isWon) { setSelectedLead(lead); setShowWonModal(true) }
-                          else if (targetStage?.isLost) { setSelectedLead(lead); setShowLostModal(true) }
-                          else { await updateLead(lead.id, { status: newStatus, updated_at: new Date().toISOString() }); await fetchPipelineLeads() }
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          padding: '4px 2px',
-                          width: '28px',
-                          border: `1px solid ${theme.border}`,
-                          borderRadius: '4px',
-                          fontSize: '10px',
-                          backgroundColor: theme.bgCard,
-                          color: theme.textMuted,
-                          cursor: 'pointer',
-                          appearance: 'none',
-                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237d8a7f' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'center'
-                        }}
-                      >
-                        <option value=""></option>
-                        {stages.filter(s => s.id !== currentStage && !s.isDelivery && !s.isClosed).map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
-                    )}
-                    <ChevronRight size={14} color={theme.border} />
-                  </div>
+            {/* Scrollable content */}
+            <div
+              style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', WebkitOverflowScrolling: 'touch' }}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              {/* Pull indicator */}
+              {isPulling && (
+                <div style={{ textAlign: 'center', padding: '8px 0', color: m.textMuted, fontSize: '12px', transition: 'opacity 0.2s', opacity: pullDistance > 20 ? 1 : 0 }}>
+                  {pullDistance > 70 ? '↑ Release to refresh' : '↓ Pull to refresh'}
                 </div>
-              ))
-            })()}
+              )}
+
+              {/* Stats Row */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                {[
+                  { label: 'Active', value: statsData.active.value, color: '#3b82f6' },
+                  { label: 'Won', value: statsData.won.value, color: '#22c55e' },
+                  { label: 'Value', value: statsData.totalValue.value, color: '#f97316', isFormatted: true }
+                ].map(s => (
+                  <div key={s.label} style={{ flex: 1, height: '64px', backgroundColor: m.bgCard, borderRadius: '12px', border: `1px solid ${m.border}`, borderLeft: `3px solid ${s.color}`, padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: m.text }}>{s.isFormatted ? s.value : s.value}</div>
+                    <div style={{ fontSize: '11px', color: m.textMuted }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Owner filter */}
+              <div style={{ marginBottom: '12px' }}>
+                <select
+                  value={ownerFilter}
+                  onChange={(e) => setOwnerFilter(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', backgroundColor: m.bgCard, border: `1px solid ${m.border}`, borderRadius: '8px', color: m.text, fontSize: '13px' }}
+                >
+                  <option value="all">All Owners</option>
+                  <option value="unassigned">Unassigned</option>
+                  {activeEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div style={{ display: 'flex', overflowX: 'auto', gap: '8px', paddingBottom: '4px', marginBottom: '12px', flexShrink: 0, WebkitOverflowScrolling: 'touch' }}>
+                {filterTabs.map(tab => {
+                  const isActive = mobileFilter === tab.id
+                  const count = tab.id === 'All'
+                    ? filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed }).length
+                    : getLeadsForStage(tab.id).length
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setMobileFilter(tab.id)}
+                      style={{
+                        height: '36px', borderRadius: '18px', padding: '0 14px',
+                        display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+                        backgroundColor: isActive ? tab.color + '33' : 'transparent',
+                        border: `1px solid ${isActive ? tab.color : m.border}`,
+                        color: isActive ? tab.color : m.textMuted,
+                        fontSize: '13px', fontWeight: isActive ? '600' : '400'
+                      }}
+                    >
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: tab.color, flexShrink: 0 }} />
+                      {tab.label}
+                      {count > 0 && (
+                        <span style={{ minWidth: '18px', height: '18px', borderRadius: '9px', backgroundColor: tab.color, color: '#fff', fontSize: '10px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+              <style>{`.pipeline-mobile-tabs::-webkit-scrollbar { display: none; }`}</style>
+
+              {/* SALES PIPELINE Section */}
+              <div style={{ marginBottom: '16px' }}>
+                <div
+                  onClick={() => setMobileSalesExpanded(!mobileSalesExpanded)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}
+                >
+                  <ChevronRight size={14} color={m.textMuted} style={{ transform: mobileSalesExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: m.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: m.border }} />
+                  <span style={{ fontSize: '11px', color: m.textMuted, backgroundColor: m.bgCard, padding: '2px 8px', borderRadius: '10px', border: `1px solid ${m.border}` }}>
+                    {mobileLeads.length}
+                  </span>
+                </div>
+
+                {mobileSalesExpanded && (
+                  <>
+                    {mobileLeads.length === 0 ? (
+                      <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+                        <Search size={32} color={m.textMuted} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                        <div style={{ fontSize: '16px', color: m.text, marginBottom: '4px' }}>No {mobileFilter === 'All' ? '' : mobileFilter + ' '}leads</div>
+                        <div style={{ fontSize: '13px', color: m.textMuted }}>Leads will appear here as they progress</div>
+                      </div>
+                    ) : (
+                      mobileLeads.map(lead => {
+                        const sc = getStatusColor(lead.status)
+                        const srcStyle = getSourceStyle(lead.lead_source)
+                        return (
+                          <div
+                            key={lead.id}
+                            onClick={() => navigate(`/leads/${lead.id}`)}
+                            onTouchStart={() => setTouchedCardId(lead.id)}
+                            onTouchEnd={() => setTouchedCardId(null)}
+                            style={{
+                              backgroundColor: touchedCardId === lead.id ? '#222226' : m.bgCard,
+                              border: `1px solid ${m.border}`,
+                              borderLeft: `4px solid ${sc}`,
+                              borderRadius: '12px',
+                              padding: '14px 16px',
+                              marginBottom: '8px',
+                              cursor: 'pointer',
+                              transition: 'background-color 0.1s'
+                            }}
+                          >
+                            {/* Row 1: Name + Source */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                              <span style={{ flex: 1, fontSize: '16px', fontWeight: '700', color: m.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {lead.customer_name}
+                              </span>
+                              {lead.lead_source && (
+                                <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', backgroundColor: srcStyle.bg, color: srcStyle.color, border: srcStyle.border, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                  {lead.lead_source}
+                                </span>
+                              )}
+                            </div>
+                            {/* Row 2: Owner + Status */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                              {lead.lead_owner && (
+                                <span style={{ flex: 1, fontSize: '13px', color: m.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <User size={12} /> {lead.lead_owner.name}
+                                </span>
+                              )}
+                              {!lead.lead_owner && <span style={{ flex: 1 }} />}
+                              <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', backgroundColor: sc + '26', color: sc, fontWeight: '500' }}>
+                                {lead.status}
+                              </span>
+                              {parseFloat(lead.quote_amount) > 0 && (
+                                <span style={{ fontSize: '14px', fontWeight: '700', color: '#22c55e' }}>
+                                  {formatCurrency(lead.quote_amount)}
+                                </span>
+                              )}
+                            </div>
+                            {/* Row 3: Phone */}
+                            {lead.phone && (
+                              <a
+                                href={`tel:${lead.phone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#3b82f6', textDecoration: 'none' }}
+                              >
+                                <Phone size={12} /> {lead.phone}
+                              </a>
+                            )}
+                          </div>
+                        )
+                      })
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* DELIVERY PIPELINE Section */}
+              <div style={{ marginBottom: '80px' }}>
+                <div
+                  onClick={() => setMobileDeliveryExpanded(!mobileDeliveryExpanded)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}
+                >
+                  <ChevronRight size={14} color="#0ea5e9" style={{ transform: mobileDeliveryExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#0ea5e9', textTransform: 'uppercase', letterSpacing: '1px' }}>Delivery Pipeline</span>
+                  <span style={{ fontSize: '10px', color: m.textMuted }}>Auto-synced</span>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: m.border }} />
+                  <span style={{ fontSize: '11px', color: m.textMuted, backgroundColor: m.bgCard, padding: '2px 8px', borderRadius: '10px', border: `1px solid ${m.border}` }}>
+                    {deliveryLeadsList.length}
+                  </span>
+                </div>
+
+                {mobileDeliveryExpanded && (
+                  <>
+                    {deliveryLeadsList.length === 0 ? (
+                      <div style={{ padding: '24px 20px', textAlign: 'center', color: m.textMuted, fontSize: '13px' }}>
+                        No active jobs
+                      </div>
+                    ) : (
+                      deliveryStages.map(stage => {
+                        const stLeads = getLeadsForStage(stage.id)
+                        if (stLeads.length === 0) return null
+                        return (
+                          <div key={stage.id} style={{ marginBottom: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', padding: '4px 0' }}>
+                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: stage.color }} />
+                              <span style={{ fontSize: '12px', fontWeight: '600', color: m.textMuted }}>{stage.name}</span>
+                              <span style={{ fontSize: '10px', color: stage.color }}>({stLeads.length})</span>
+                            </div>
+                            {stLeads.map(lead => {
+                              const job = lead.jobs?.[0]
+                              return (
+                                <div
+                                  key={lead.id}
+                                  onClick={() => navigate(`/leads/${lead.id}`)}
+                                  style={{ backgroundColor: m.bgCard, border: `1px solid ${m.border}`, borderLeft: `4px solid ${stage.color}`, borderRadius: '12px', padding: '12px 16px', marginBottom: '6px', cursor: 'pointer' }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                    <span style={{ fontSize: '15px', fontWeight: '600', color: m.text }}>{lead.customer_name}</span>
+                                    {(job ? parseFloat(job.contract_amount) > 0 : parseFloat(lead.quote_amount) > 0) && (
+                                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#22c55e' }}>
+                                        {formatCurrency(job?.contract_amount || lead.quote_amount)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {job && (
+                                    <div style={{ display: 'flex', gap: '8px', fontSize: '12px', color: m.textMuted }}>
+                                      {job.job_id && <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Briefcase size={10} /> {job.job_id}</span>}
+                                      {job.assigned_team && <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><User size={10} /> {job.assigned_team}</span>}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Floating Action Button */}
+            <button
+              onClick={() => navigate('/leads')}
+              style={{
+                position: 'fixed', bottom: '80px', right: '20px',
+                width: '56px', height: '56px', borderRadius: '50%',
+                backgroundColor: m.accent, border: 'none',
+                color: '#fff', fontSize: '24px', fontWeight: '700',
+                boxShadow: '0 4px 20px rgba(249,115,22,0.4)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: 20, animation: 'fabPulse 3s ease-in-out infinite'
+              }}
+            >
+              +
+            </button>
+
+            <style>{`
+              @keyframes fabPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+            `}</style>
           </div>
-        </div>
-      ) : (
+        )
+      })() : (
         /* Desktop Pipeline Board - Two collapsible sections */
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', minHeight: 0 }}>
 
