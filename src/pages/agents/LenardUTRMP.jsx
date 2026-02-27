@@ -803,8 +803,16 @@ export default function LenardUTRMP() {
       const rawNotes = project.audit?.notes || project.notes;
       const pd = JSON.parse(rawNotes);
       setProjectName(project.customerName || '');
-      setSavePhone(project.phone || ''); setSaveEmail(project.email || ''); setSaveAddress(project.address || '');
-      setSaveCity(pd.city || ''); setSaveState(pd.state || 'UT'); setSaveZip(pd.zip || '');
+      setSavePhone(project.phone || ''); setSaveEmail(project.email || '');
+      // Strip city/state/zip from address to prevent accumulation on save/load cycles
+      let loadedAddr = project.address || '';
+      const loadedCity = pd.city || '';
+      if (loadedCity && loadedAddr.toUpperCase().includes(loadedCity.toUpperCase())) {
+        const idx = loadedAddr.toUpperCase().indexOf(loadedCity.toUpperCase());
+        if (idx > 0) loadedAddr = loadedAddr.substring(0, idx).replace(/[,\s]+$/, '');
+      }
+      setSaveAddress(loadedAddr);
+      setSaveCity(loadedCity); setSaveState(pd.state || 'UT'); setSaveZip(pd.zip || '');
       if (pd.operatingHours) setOperatingHours(pd.operatingHours);
       if (pd.daysPerYear) setDaysPerYear(pd.daysPerYear);
       if (pd.energyRate) setEnergyRate(pd.energyRate);
@@ -1031,7 +1039,8 @@ export default function LenardUTRMP() {
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(...gray);
-    const fullAddr = [saveAddress, saveCity, saveState, saveZip].filter(Boolean).join(', ');
+    const csz = [saveCity, saveState, saveZip].filter(Boolean).join(', ');
+    const fullAddr = csz && saveAddress && saveAddress.toUpperCase().includes((saveCity || '').toUpperCase()) ? saveAddress : [saveAddress, csz].filter(Boolean).join(', ');
     if (fullAddr) doc.text(fullAddr, M + 3, y + 10, { maxWidth: boxW - 6 });
     const contact = [savePhone, saveEmail].filter(Boolean).join('  |  ');
     if (contact) doc.text(contact, M + 3, y + 15, { maxWidth: boxW - 6 });
@@ -2622,7 +2631,7 @@ export default function LenardUTRMP() {
                   <div style={{ fontSize: '9px', fontWeight: '700', color: '#999', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '3px' }}>Prepared For</div>
                   <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e1e22' }}>{projectName || 'Customer'}</div>
                   {saveAddress && <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>{saveAddress}</div>}
-                  {(saveCity || saveState) && <div style={{ fontSize: '11px', color: '#666' }}>{[saveCity, saveState, saveZip].filter(Boolean).join(', ')}</div>}
+                  {(saveCity || saveState) && !(saveAddress && saveCity && saveAddress.toUpperCase().includes(saveCity.toUpperCase())) && <div style={{ fontSize: '11px', color: '#666' }}>{[saveCity, saveState, saveZip].filter(Boolean).join(', ')}</div>}
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '9px', fontWeight: '700', color: '#999', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '3px' }}>Date</div>
