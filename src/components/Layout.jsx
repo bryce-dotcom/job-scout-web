@@ -560,7 +560,10 @@ export default function Layout() {
       <div style={{
         display: 'flex',
         minHeight: '100vh',
-        backgroundColor: theme.bg
+        backgroundColor: theme.bg,
+        width: '100%',
+        maxWidth: '100vw',
+        overflow: 'hidden'
       }}>
         {/* Desktop Sidebar */}
         <aside style={{
@@ -1257,20 +1260,22 @@ export default function Layout() {
         <main
           style={{
             flex: 1,
-            marginLeft: '260px',
             minHeight: '100vh',
             backgroundImage: 'url(/topo-bg.png)',
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundAttachment: 'fixed',
-            backgroundColor: theme.bg
+            backgroundColor: theme.bg,
+            minWidth: 0,
+            maxWidth: '100%'
           }}
-          className="md:ml-[260px] ml-0 mt-[64px] md:mt-0"
+          className="main-content md:ml-[260px] ml-0 mt-[64px] md:mt-0"
         >
           {/* Semi-transparent overlay for readability */}
           <div style={{
             backgroundColor: 'rgba(247,245,239,0.85)',
             minHeight: '100vh',
+            width: '100%',
             maxWidth: '100%',
             overflowX: 'hidden'
           }}>
@@ -1494,6 +1499,16 @@ export default function Layout() {
           .mt-\\[64px\\] { margin-top: 64px !important; }
           .md\\:mt-0 { margin-top: 64px !important; }
 
+          /* Force main content to fill viewport on mobile */
+          .main-content {
+            width: 100vw !important;
+            max-width: 100vw !important;
+            min-width: 0 !important;
+            margin-left: 0 !important;
+            padding-left: env(safe-area-inset-left, 0px);
+            padding-right: env(safe-area-inset-right, 0px);
+          }
+
           /* Mobile grid responsiveness */
           .responsive-grid {
             grid-template-columns: 1fr !important;
@@ -1589,6 +1604,15 @@ export default function Layout() {
         /* Prevent horizontal scroll */
         html, body {
           overflow-x: hidden;
+          width: 100%;
+          max-width: 100vw;
+        }
+
+        /* iPhone safe area support */
+        @supports (padding: env(safe-area-inset-bottom)) {
+          body {
+            padding-bottom: env(safe-area-inset-bottom);
+          }
         }
       `}</style>
     </ThemeContext.Provider>
