@@ -52,7 +52,8 @@ export default function LeadSetter() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [settingsForm, setSettingsForm] = useState({
     setter_pay_per_appointment: 25,
-    commission_requires_quote: true
+    commission_requires_quote: true,
+    source_pay_per_lead: 0
   })
 
   // Calendar
@@ -156,7 +157,8 @@ export default function LeadSetter() {
     if (company) {
       setSettingsForm({
         setter_pay_per_appointment: company.setter_pay_per_appointment || 25,
-        commission_requires_quote: company.commission_requires_quote !== false
+        commission_requires_quote: company.commission_requires_quote !== false,
+        source_pay_per_lead: company.source_pay_per_lead || 0
       })
     }
 
@@ -489,7 +491,8 @@ export default function LeadSetter() {
           .eq('id', selectedLead.lead_source_employee_id)
           .single()
 
-        if (sourceEmployee?.commission_leads_rate > 0) {
+        const sourceRate = sourceEmployee?.commission_leads_rate || company?.source_pay_per_lead || 0
+        if (sourceRate > 0) {
           await supabase
             .from('lead_commissions')
             .insert({
@@ -498,11 +501,11 @@ export default function LeadSetter() {
               appointment_id: apt.id,
               commission_type: 'lead_source',
               employee_id: selectedLead.lead_source_employee_id,
-              amount: sourceEmployee.commission_leads_rate,
-              rate_type: sourceEmployee.commission_leads_type || 'flat',
+              amount: sourceRate,
+              rate_type: sourceEmployee?.commission_leads_type || 'flat',
               payment_status: 'pending'
             })
-          console.log('Lead source commission created:', sourceEmployee.commission_leads_rate)
+          console.log('Lead source commission created:', sourceRate)
         }
       }
     } catch (err) {
@@ -587,7 +590,8 @@ export default function LeadSetter() {
       .from('companies')
       .update({
         setter_pay_per_appointment: settingsForm.setter_pay_per_appointment,
-        commission_requires_quote: settingsForm.commission_requires_quote
+        commission_requires_quote: settingsForm.commission_requires_quote,
+        source_pay_per_lead: settingsForm.source_pay_per_lead
       })
       .eq('id', companyId)
 
@@ -1284,7 +1288,7 @@ export default function LeadSetter() {
                   />
                 </div>
 
-                {company?.setter_pay_per_appointment > 0 && (
+                {(company?.setter_pay_per_appointment > 0 || company?.source_pay_per_lead > 0) && (
                   <div style={{
                     padding: '12px',
                     backgroundColor: '#dcfce7',
@@ -1292,11 +1296,24 @@ export default function LeadSetter() {
                     fontSize: '13px',
                     color: '#166534'
                   }}>
-                    <DollarSign size={14} style={{ display: 'inline', verticalAlign: 'middle' }} />
-                    <span> Commission: ${company.setter_pay_per_appointment} </span>
-                    <span style={{ fontSize: '11px', color: '#15803d' }}>
-                      (paid when quote generated)
-                    </span>
+                    {company?.setter_pay_per_appointment > 0 && (
+                      <div style={{ marginBottom: company?.source_pay_per_lead > 0 ? '6px' : 0 }}>
+                        <DollarSign size={14} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                        <span> Setter Commission: ${company.setter_pay_per_appointment} </span>
+                        <span style={{ fontSize: '11px', color: '#15803d' }}>
+                          (paid when quote generated)
+                        </span>
+                      </div>
+                    )}
+                    {company?.source_pay_per_lead > 0 && selectedLead?.lead_source_employee_id && (
+                      <div>
+                        <DollarSign size={14} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                        <span> Source Commission: ${company.source_pay_per_lead} </span>
+                        <span style={{ fontSize: '11px', color: '#15803d' }}>
+                          (paid to lead source)
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1661,6 +1678,24 @@ export default function LeadSetter() {
               </div>
 
               <div style={{ marginBottom: '20px' }}>
+                <label style={labelStyle}>Pay Per Lead Sourced ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={settingsForm.source_pay_per_lead}
+                  onChange={(e) => setSettingsForm(prev => ({
+                    ...prev,
+                    source_pay_per_lead: parseFloat(e.target.value) || 0
+                  }))}
+                  style={inputStyle}
+                />
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                  Default amount paid to employees who source leads. Can be overridden per employee in the Employees page.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
                 <label style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1697,6 +1732,7 @@ export default function LeadSetter() {
                 </div>
                 <ul style={{ fontSize: '13px', color: theme.textSecondary, margin: 0, paddingLeft: '20px' }}>
                   <li style={{ marginBottom: '4px' }}>Setter schedules appointment → Lead moves to "Scheduled"</li>
+                  <li style={{ marginBottom: '4px' }}>Lead sourced by employee → Setter schedules appointment → Source commission created</li>
                   <li style={{ marginBottom: '4px' }}>Salesperson meets with lead → Creates quote</li>
                   <li style={{ marginBottom: '4px' }}>Quote generated → Lead moves to "Qualified"</li>
                   <li>Commission approved and paid to setter</li>
