@@ -327,6 +327,7 @@ export default function LenardUTRMP() {
   const [repBaseline, setRepBaseline] = useState(() => { try { return parseFloat(localStorage.getItem('lenard_rep_baseline')) || 0; } catch { return 0; } });
   const [repCurrentDown, setRepCurrentDown] = useState(0);
   const [repTargetDown, setRepTargetDown] = useState(0);
+  const [repAdditionalOOP, setRepAdditionalOOP] = useState(0);
 
   const showToast = useCallback((message, icon = '\u2713') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -570,16 +571,19 @@ export default function LenardUTRMP() {
   }, [lines, operatingHours, daysPerYear]);
 
   // ---- GIVE-ME ENGINE CALCULATIONS ----
+  // Baseline = project cost as built. Commission = 8.5% of baseline.
+  // Give-Me = 50% of (uncaptured incentive + additional OOP rep adds).
+  const COMMISSION_RATE = 0.085;
   const giveMe = useMemo(() => {
-    const baseline = repBaseline || 0;
-    const pool = Math.max(0, effectiveProjectCost - baseline);
-    const repSplit = pool * 0.5;
+    const baseline = effectiveProjectCost;
+    const commission = baseline * COMMISSION_RATE;
     const leftOnTable = Math.max(0, rawIncentive - estimatedRebate);
     const costForFullCapture = capPct > 0 ? Math.ceil(rawIncentive / capPct) : 0;
     const costGap = Math.max(0, costForFullCapture - effectiveProjectCost);
-    const customerNet = Math.max(0, effectiveProjectCost - estimatedRebate);
-    return { baseline, pool, repSplit, leftOnTable, costForFullCapture, costGap, customerNet };
-  }, [repBaseline, effectiveProjectCost, rawIncentive, estimatedRebate, capPct]);
+    const customerOOP = Math.max(0, effectiveProjectCost - estimatedRebate);
+    const potentialGiveMe = (leftOnTable + repAdditionalOOP) * 0.5;
+    return { baseline, commission, leftOnTable, costForFullCapture, costGap, customerOOP, potentialGiveMe, additionalOOP: repAdditionalOOP };
+  }, [effectiveProjectCost, rawIncentive, estimatedRebate, capPct, repAdditionalOOP]);
 
   // ---- MAX UTILITY-ALLOWED COST (highest tier per line) ----
   const maxUtilityCost = useMemo(() => {
@@ -728,7 +732,7 @@ export default function LenardUTRMP() {
         lines: lines.map(l => ({ name: l.name, qty: l.qty, existW: l.existW, newW: l.newW, height: l.height, location: l.location, controlsType: l.controlsType, controlsOnly: l.controlsOnly, controlsOnlyType: l.controlsOnlyType, productId: l.productId, productName: l.productName, productPrice: l.productPrice, fixtureCategory: l.fixtureCategory, lightingType: l.lightingType, confirmed: l.confirmed, overrideNotes: l.overrideNotes })),
         totals, financials, totalIncentive: estimatedRebate, projectCost: effectiveProjectCost,
         operatingHours, daysPerYear, energyRate, city: saveCity, state: saveState, zip: saveZip, photos: capturedPhotos,
-        ...(isRep ? { giveMe: { baseline: repBaseline, pool: giveMe.pool, repSplit: giveMe.repSplit, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, currentDown: repCurrentDown, targetDown: repTargetDown } } : {}),
+        ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, potentialGiveMe: giveMe.potentialGiveMe, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, currentDown: repCurrentDown, targetDown: repTargetDown } } : {}),
       };
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
       const data = await resp.json();
@@ -751,9 +755,9 @@ export default function LenardUTRMP() {
         //   suggestions JSONB,
         //   created_at TIMESTAMPTZ DEFAULT now()
         // );
-        if (isRep && repBaseline > 0) {
+        if (isRep && effectiveProjectCost > 0) {
           try {
-            await supabase.from('give_me_log').insert({ lead_id: data.leadId, audit_id: data.auditId, rep_name: leadOwnerName, baseline_cost: repBaseline, project_cost: effectiveProjectCost, give_me_pool: giveMe.pool, rep_split: giveMe.repSplit, raw_incentive: rawIncentive, captured_incentive: estimatedRebate, left_on_table: giveMe.leftOnTable, suggestions: giveMeSuggestions.slice(0, 5) });
+            await supabase.from('give_me_log').insert({ lead_id: data.leadId, audit_id: data.auditId, rep_name: leadOwnerName, baseline_cost: giveMe.baseline, project_cost: effectiveProjectCost, give_me_pool: giveMe.potentialGiveMe, rep_split: giveMe.potentialGiveMe, raw_incentive: rawIncentive, captured_incentive: estimatedRebate, left_on_table: giveMe.leftOnTable, suggestions: giveMeSuggestions.slice(0, 5) });
           } catch (_) { /* table may not exist yet */ }
         }
       }
@@ -1343,10 +1347,11 @@ export default function LenardUTRMP() {
 
       // Give-Me Breakdown
       sectionTitle('Give-Me Breakdown');
-      row('Quoted Project Cost', `$${Math.round(effectiveProjectCost).toLocaleString()}`, { bold: true });
-      row('Company Baseline Cost', repBaseline > 0 ? `$${Math.round(repBaseline).toLocaleString()}` : 'Not set', { color: gray });
-      row('Give-Me Pool (margin)', `$${Math.round(giveMe.pool).toLocaleString()}`, { bold: true, med: true, color: orange, topLine: true });
-      row('Rep 50% Split', `$${Math.round(giveMe.repSplit).toLocaleString()}`, { bold: true, big: true, color: green, topLine: true, lineColor: orange });
+      row('Baseline (Project Cost)', `$${Math.round(giveMe.baseline).toLocaleString()}`, { bold: true });
+      row('Commission (8.5%)', `$${Math.round(giveMe.commission).toLocaleString()}`, { color: green });
+      row('Customer OOP', `$${Math.round(giveMe.customerOOP).toLocaleString()}`);
+      if (repAdditionalOOP > 0) row('Additional OOP', `$${Math.round(repAdditionalOOP).toLocaleString()}`, { color: orange });
+      row('Potential Give-Me', `$${Math.round(giveMe.potentialGiveMe).toLocaleString()}`, { bold: true, big: true, color: green, topLine: true, lineColor: orange });
       y += 4;
 
       // Incentive Capture
@@ -1364,7 +1369,7 @@ export default function LenardUTRMP() {
 
       // Customer Position
       sectionTitle('Customer Position');
-      row('Customer Net (after rebate)', `$${Math.round(giveMe.customerNet).toLocaleString()}`, { bold: true });
+      row('Customer OOP (after rebate)', `$${Math.round(giveMe.customerOOP).toLocaleString()}`, { bold: true });
       if (repCurrentDown > 0) row('Current Down Payment', `$${Math.round(repCurrentDown).toLocaleString()}`);
       if (repTargetDown > 0) row('Target Down Payment', `$${Math.round(repTargetDown).toLocaleString()}`, { color: orange });
       y += 4;
@@ -1889,12 +1894,10 @@ export default function LenardUTRMP() {
             {isRep && (
               <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, paddingLeft: '10px' }}>
                 <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px' }}>{'\uD83D\uDD12'} Rep Settings</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                  <div><label style={S.label}>Baseline Cost $</label><input type="number" inputMode="decimal" value={repBaseline || ''} onChange={e => { const v = parseFloat(e.target.value) || 0; setRepBaseline(v); try { localStorage.setItem('lenard_rep_baseline', String(v)); } catch (_) {} markDirty(); }} placeholder="Company cost" style={S.input} /></div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                   <div><label style={S.label}>Current Down $</label><input type="number" inputMode="decimal" value={repCurrentDown || ''} onChange={e => { setRepCurrentDown(parseFloat(e.target.value) || 0); markDirty(); }} placeholder="Current deposit" style={S.input} /></div>
                   <div><label style={S.label}>Target Down $</label><input type="number" inputMode="decimal" value={repTargetDown || ''} onChange={e => { setRepTargetDown(parseFloat(e.target.value) || 0); markDirty(); }} placeholder="Target deposit" style={S.input} /></div>
                 </div>
-                <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '4px' }}>Baseline = your true project cost. Give-me = margin above baseline.</div>
               </div>
             )}
           </div>
@@ -2276,7 +2279,7 @@ export default function LenardUTRMP() {
                 <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>Give-Me Engine</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '12px', color: T.textSec }}>Your 50%: <span style={{ fontWeight: '700', color: T.green }}>${Math.round(giveMe.repSplit).toLocaleString()}</span></span>
+                <span style={{ fontSize: '12px', color: T.textSec }}>Potential: <span style={{ fontWeight: '700', color: T.green }}>${Math.round(giveMe.potentialGiveMe).toLocaleString()}</span></span>
                 <span style={{ fontSize: '14px', color: T.textMuted }}>{'\u25B8'}</span>
               </div>
             </button>
@@ -2293,52 +2296,53 @@ export default function LenardUTRMP() {
                 <button onClick={() => setShowGiveMe(false)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '16px', padding: '2px' }}>{'\u25BE'}</button>
               </div>
 
-              {/* Two big numbers */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
-                <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '9px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>YOUR MARGIN</div>
-                  <div style={{ fontSize: '20px', fontWeight: '800', color: T.accent }}>${Math.round(giveMe.pool).toLocaleString()}</div>
+              {/* Three key numbers */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px', marginBottom: '8px' }}>
+                <div style={{ background: T.bgInput, borderRadius: '8px', padding: '6px 4px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '8px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>BASELINE</div>
+                  <div style={{ fontSize: '16px', fontWeight: '800', color: T.text }}>${Math.round(giveMe.baseline).toLocaleString()}</div>
                 </div>
-                <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '9px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>YOUR 50%</div>
-                  <div style={{ fontSize: '20px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.repSplit).toLocaleString()}</div>
+                <div style={{ background: T.bgInput, borderRadius: '8px', padding: '6px 4px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '8px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>COMMISSION</div>
+                  <div style={{ fontSize: '16px', fontWeight: '800', color: T.accent }}>${Math.round(giveMe.commission).toLocaleString()}</div>
+                  <div style={{ fontSize: '8px', color: T.textMuted }}>8.5%</div>
+                </div>
+                <div style={{ background: T.bgInput, borderRadius: '8px', padding: '6px 4px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '8px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>GIVE-ME</div>
+                  <div style={{ fontSize: '16px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.potentialGiveMe).toLocaleString()}</div>
+                  <div style={{ fontSize: '8px', color: T.textMuted }}>50% split</div>
                 </div>
               </div>
 
-              {/* OOP summary */}
-              {(() => {
-                const currentOOP = Math.max(0, effectiveProjectCost - estimatedRebate);
-                const doubledOOP = currentOOP * 2;
-                const doubledProjectCost = doubledOOP + estimatedRebate;
-                const extraFromDouble = Math.max(0, doubledOOP - currentOOP);
-                const repCutFromDouble = extraFromDouble * 0.5;
-                const maxCeilingOOP = maxUtilityCost > 0 ? Math.max(0, maxUtilityCost - Math.min(rawIncentive, +(maxUtilityCost * capPct).toFixed(2))) : 0;
-                const atCeiling = maxUtilityCost > 0 && effectiveProjectCost >= maxUtilityCost;
-                const canGrow = currentOOP > 0 && !atCeiling;
-                return (
-                  <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', fontSize: '11px', color: T.textSec }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                      <span>Customer OOP: <span style={{ fontWeight: '700', color: T.text }}>${Math.round(currentOOP).toLocaleString()}</span></span>
-                      {maxUtilityCost > 0 && <span>Ceiling OOP: <span style={{ fontWeight: '700', color: T.text }}>${Math.round(maxCeilingOOP).toLocaleString()}</span></span>}
-                    </div>
-                    {canGrow && currentOOP > 0 && (
-                      <div style={{ color: T.green, fontWeight: '600' }}>Double OOP to ${Math.round(doubledOOP).toLocaleString()} = ${Math.round(repCutFromDouble).toLocaleString()} more for you</div>
-                    )}
-                    {capApplied && canGrow && (
-                      <div style={{ color: T.textMuted, marginTop: '1px' }}>Rebate is capped {'\u2014'} every $1 added to cost = $1 more OOP</div>
-                    )}
-                    {atCeiling && (
-                      <div style={{ color: T.accent, fontWeight: '600' }}>{'\u26A0\uFE0F'} At utility price ceiling</div>
-                    )}
+              {/* Additional OOP input */}
+              <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px 10px', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: T.text }}>Additional OOP</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '13px', color: T.textSec }}>$</span>
+                    <input type="number" inputMode="numeric" value={repAdditionalOOP || ''} placeholder="0"
+                      onChange={e => setRepAdditionalOOP(Math.max(0, parseFloat(e.target.value) || 0))}
+                      style={{ width: '80px', padding: '4px 6px', borderRadius: '6px', border: `1px solid ${T.border}`, background: T.bg, color: T.text, fontSize: '13px', fontWeight: '700', textAlign: 'right' }} />
                   </div>
-                );
-              })()}
+                </div>
+                <div style={{ fontSize: '10px', color: T.textMuted, lineHeight: '1.3' }}>
+                  Enter extra amount above current OOP you plan to charge the customer. You earn 50% of this.
+                </div>
+              </div>
 
-              {/* Compact info row */}
-              <div style={{ fontSize: '11px', color: T.textSec, display: 'flex', flexWrap: 'wrap', gap: '2px 10px', marginBottom: '8px' }}>
-                <span>Baseline: <span style={{ color: T.text, fontWeight: '600' }}>{repBaseline > 0 ? `$${Math.round(repBaseline).toLocaleString()}` : 'Not set'}</span></span>
-                <span>Project: <span style={{ color: T.text, fontWeight: '600' }}>${Math.round(effectiveProjectCost).toLocaleString()}</span></span>
-                <span>Net: <span style={{ color: T.text, fontWeight: '600' }}>${Math.round(giveMe.customerNet).toLocaleString()}</span></span>
+              {/* Give-Me explanation */}
+              <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', fontSize: '10px', color: T.textSec, lineHeight: '1.4' }}>
+                <div style={{ fontWeight: '600', color: T.text, marginBottom: '2px', fontSize: '11px' }}>How Give-Me works</div>
+                {giveMe.leftOnTable > 0 && (
+                  <div style={{ marginBottom: '2px' }}>{'\u2022'} <span style={{ color: T.green, fontWeight: '600' }}>${Math.round(giveMe.leftOnTable).toLocaleString()}</span> incentive left on table (rebate is capped). You get 50% = <span style={{ fontWeight: '600' }}>${Math.round(giveMe.leftOnTable * 0.5).toLocaleString()}</span></div>
+                )}
+                {repAdditionalOOP > 0 && (
+                  <div style={{ marginBottom: '2px' }}>{'\u2022'} <span style={{ color: T.green, fontWeight: '600' }}>${Math.round(repAdditionalOOP).toLocaleString()}</span> additional OOP you add. You get 50% = <span style={{ fontWeight: '600' }}>${Math.round(repAdditionalOOP * 0.5).toLocaleString()}</span></div>
+                )}
+                {giveMe.potentialGiveMe === 0 && (
+                  <div>{'\u2022'} No give-me available yet. Increase project cost above the cap threshold or add additional OOP to create give-me potential.</div>
+                )}
+                <div style={{ marginTop: '3px', color: T.textMuted }}>Customer OOP: <span style={{ fontWeight: '600', color: T.text }}>${Math.round(giveMe.customerOOP).toLocaleString()}</span>{repAdditionalOOP > 0 ? ` + $${Math.round(repAdditionalOOP).toLocaleString()} added = $${Math.round(giveMe.customerOOP + repAdditionalOOP).toLocaleString()} total` : ''}</div>
               </div>
 
               {/* Compact suggestion rows */}
