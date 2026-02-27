@@ -324,6 +324,7 @@ export default function LenardUTRMP() {
   // Rep-only state (Give-Me Engine) — only visible when authenticated
   const [isRep, setIsRep] = useState(false);
   const [showGiveMe, setShowGiveMe] = useState(false);
+  const [projectLocked, setProjectLocked] = useState(false);
   const [giveMeFrozenBaseline, setGiveMeFrozenBaseline] = useState(0);
   const [giveMeFrozenIncentive, setGiveMeFrozenIncentive] = useState(0);
   const [repCurrentDown, setRepCurrentDown] = useState(0);
@@ -488,7 +489,7 @@ export default function LenardUTRMP() {
   const capPct = program === 'smbe' ? SMBE.cap : program === 'express' ? EXPRESS.cap : LARGE.cap;
   const linesCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * (l.qty || 0)), 0);
   const giveMeQuoteTotal = giveMeQuoteItems.reduce((s, item) => s + (item.amount || 0), 0);
-  const baselineProjectCost = Math.max(projectCost, linesCost);
+  const baselineProjectCost = linesCost;
   const effectiveProjectCost = baselineProjectCost + giveMeQuoteTotal;
   const capAmount = effectiveProjectCost > 0 ? +(effectiveProjectCost * capPct).toFixed(2) : Infinity;
   const estimatedRebate = +Math.min(rawIncentive, capAmount).toFixed(2);
@@ -746,14 +747,12 @@ export default function LenardUTRMP() {
         lines: lines.map(l => ({ name: l.name, qty: l.qty, existW: l.existW, newW: l.newW, height: l.height, location: l.location, controlsType: l.controlsType, controlsOnly: l.controlsOnly, controlsOnlyType: l.controlsOnlyType, productId: l.productId, productName: l.productName, productPrice: l.productPrice, fixtureCategory: l.fixtureCategory, lightingType: l.lightingType, confirmed: l.confirmed, overrideNotes: l.overrideNotes })),
         totals, financials, totalIncentive: estimatedRebate, projectCost: effectiveProjectCost,
         operatingHours, daysPerYear, energyRate, city: saveCity, state: saveState, zip: saveZip, photos: capturedPhotos,
-        ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, realGiveMe: giveMe.realGiveMe, additionalIncentive: giveMe.additionalIncentive, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, quoteItems: giveMeQuoteItems, frozenBaseline: giveMeFrozenBaseline, frozenIncentive: giveMeFrozenIncentive, currentDown: repCurrentDown, targetDown: repTargetDown } } : {}),
+        ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, realGiveMe: giveMe.realGiveMe, additionalIncentive: giveMe.additionalIncentive, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, quoteItems: giveMeQuoteItems, frozenBaseline: giveMeFrozenBaseline, frozenIncentive: giveMeFrozenIncentive, currentDown: repCurrentDown, targetDown: repTargetDown, locked: projectLocked } } : {}),
       };
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
       const data = await resp.json();
       if (data.success) {
         setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false);
-        // Freeze baseline on first save so Give-Me can track changes from this point
-        if (!giveMeFrozenBaseline) { setGiveMeFrozenBaseline(effectiveProjectCost); setGiveMeFrozenIncentive(rawIncentive); if (!projectCost) setProjectCost(effectiveProjectCost); }
         showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
         // Attempt give_me_log insert (silent fail if table doesn't exist)
         // CREATE TABLE IF NOT EXISTS give_me_log (
@@ -816,8 +815,10 @@ export default function LenardUTRMP() {
         setRepAdditionalOOP(pd.giveMe.additionalOOP || 0);
         setRepCurrentDown(pd.giveMe.currentDown || 0);
         setRepTargetDown(pd.giveMe.targetDown || 0);
+        setProjectLocked(!!pd.giveMe.locked);
       } else {
         setGiveMeQuoteItems([]); setGiveMeFrozenBaseline(0); setGiveMeFrozenIncentive(0); setRepAdditionalOOP(0);
+        setProjectLocked(false);
       }
       setShowProjects(false);
       showToast('Project loaded', '\uD83D\uDCC2');
@@ -829,6 +830,7 @@ export default function LenardUTRMP() {
     setProjectName(''); setProjectCost(0);
     setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false);
     setCapturedPhotos([]); setGiveMeQuoteItems([]); setRepAdditionalOOP(0); setGiveMeFrozenBaseline(0); setGiveMeFrozenIncentive(0);
+    setProjectLocked(false); setShowGiveMe(false);
     setSavePhone(''); setSaveEmail(''); setSaveAddress('');
     setSaveCity(''); setSaveState('UT'); setSaveZip('');
   };
@@ -2368,14 +2370,22 @@ export default function LenardUTRMP() {
           </div>
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: '6px', paddingTop: '8px', marginTop: '4px' }}>
+            {isRep && !projectLocked && (
+              <button onClick={() => { setGiveMeFrozenBaseline(effectiveProjectCost); setGiveMeFrozenIncentive(rawIncentive); setProjectLocked(true); setShowGiveMe(true); markDirty(); showToast('Baseline locked', '\uD83D\uDD12'); }}
+                style={{ ...S.btn, flex: 1, fontSize: '12px', padding: '8px 14px', background: T.accent, color: '#fff' }}>{'\uD83D\uDD12'} Lock Project</button>
+            )}
+            {isRep && projectLocked && (
+              <button onClick={() => { setProjectLocked(false); setShowGiveMe(false); setGiveMeFrozenBaseline(0); setGiveMeFrozenIncentive(0); setGiveMeQuoteItems([]); setRepAdditionalOOP(0); markDirty(); showToast('Project unlocked', '\uD83D\uDD13'); }}
+                style={{ ...S.btn, fontSize: '11px', padding: '8px 10px', background: T.bgInput, color: T.textMuted }}>{'\uD83D\uDD13'}</button>
+            )}
             <button onClick={() => setShowSaveModal(true)} style={{ ...S.btn, flex: 1, fontSize: '12px', padding: '8px 14px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
             <button onClick={() => setShowSummary(true)} style={{ ...S.btn, flex: 1, fontSize: '11px', padding: '8px 12px' }}>{'\uD83D\uDCCB'} Audit & Contract</button>
           </div>
         </div>
       )}
 
-      {/* ===== GIVE-ME ENGINE (Rep Only — requires saved project) ===== */}
-      {isRep && results.length > 0 && savedLeadId && (
+      {/* ===== GIVE-ME ENGINE (Rep Only — requires locked project) ===== */}
+      {isRep && results.length > 0 && projectLocked && (
         <div style={{ margin: '0 16px 8px' }}>
           {/* Collapsed bar */}
           {!showGiveMe ? (
