@@ -590,9 +590,9 @@ export default function LeadSetter() {
     const { error } = await supabase
       .from('companies')
       .update({
-        setter_pay_per_appointment: settingsForm.setter_pay_per_appointment,
+        setter_pay_per_appointment: parseFloat(settingsForm.setter_pay_per_appointment) || 0,
         commission_requires_quote: settingsForm.commission_requires_quote,
-        source_pay_per_lead: settingsForm.source_pay_per_lead
+        source_pay_per_lead: parseFloat(settingsForm.source_pay_per_lead) || 0
       })
       .eq('id', companyId)
 
@@ -600,12 +600,11 @@ export default function LeadSetter() {
       // Update company in store so UI reflects new values immediately
       setCompany({
         ...company,
-        setter_pay_per_appointment: settingsForm.setter_pay_per_appointment,
+        setter_pay_per_appointment: parseFloat(settingsForm.setter_pay_per_appointment) || 0,
         commission_requires_quote: settingsForm.commission_requires_quote,
-        source_pay_per_lead: settingsForm.source_pay_per_lead
+        source_pay_per_lead: parseFloat(settingsForm.source_pay_per_lead) || 0
       })
       setShowSettingsModal(false)
-      await fetchData()
     }
   }
 
@@ -1680,13 +1679,12 @@ export default function LeadSetter() {
               <div style={{ marginBottom: '20px' }}>
                 <label style={labelStyle}>Pay Per Appointment ($)</label>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={settingsForm.setter_pay_per_appointment}
                   onChange={(e) => setSettingsForm(prev => ({
                     ...prev,
-                    setter_pay_per_appointment: parseFloat(e.target.value) || 0
+                    setter_pay_per_appointment: e.target.value
                   }))}
                   style={inputStyle}
                 />
@@ -1698,13 +1696,12 @@ export default function LeadSetter() {
               <div style={{ marginBottom: '20px' }}>
                 <label style={labelStyle}>Pay Per Lead Sourced ($)</label>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={settingsForm.source_pay_per_lead}
                   onChange={(e) => setSettingsForm(prev => ({
                     ...prev,
-                    source_pay_per_lead: parseFloat(e.target.value) || 0
+                    source_pay_per_lead: e.target.value
                   }))}
                   style={inputStyle}
                 />
