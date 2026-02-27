@@ -806,6 +806,15 @@ export default function LenardUTRMP() {
     } catch (_) { showToast('Could not parse project data', '\u26A0\uFE0F'); }
   };
 
+  const closeProject = () => {
+    setLines([]); setExpandedLine(null); setNewlyAdded(new Set());
+    setProjectName(''); setProjectCost(0);
+    setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false);
+    setCapturedPhotos([]); setGiveMeQuoteItems([]); setRepAdditionalOOP(0);
+    setSavePhone(''); setSaveEmail(''); setSaveAddress('');
+    setSaveCity(''); setSaveState('UT'); setSaveZip('');
+  };
+
   // ---- COPY SUMMARY ----
   const copySummary = () => {
     const pName = program === 'smbe' ? 'RMP Small/Medium Business Express' : program === 'express' ? 'RMP Standard Express' : 'RMP Large Non-Prescriptive';
@@ -1851,6 +1860,25 @@ export default function LenardUTRMP() {
           </div>
         )}
       </div>
+
+      {/* ===== CLOSE PROJECT BAR ===== */}
+      {lines.length > 0 && leadOwnerId && (
+        <div style={{ padding: '8px 16px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <span style={{ fontSize: '13px', flexShrink: 0 }}>{'\uD83D\uDCC4'}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{projectName || 'Untitled Project'}</div>
+                <div style={{ fontSize: '10px', color: T.textMuted }}>{lines.length} fixture{lines.length !== 1 ? 's' : ''}{isDirty ? ' \u2022 Unsaved changes' : savedLeadId ? ' \u2022 Saved' : ''}</div>
+              </div>
+            </div>
+            <button onClick={() => {
+              if (isDirty) { if (!confirm('You have unsaved changes. Close anyway?')) return; }
+              closeProject();
+            }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: '6px', padding: '5px 12px', color: T.textSec, cursor: 'pointer', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>Close</button>
+          </div>
+        </div>
+      )}
 
       {/* ===== MY RECENT AUDITS ===== */}
       {leadOwnerId && lines.length === 0 && projects.length > 0 && !cameraLoading && (
