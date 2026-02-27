@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import SignaturePad from "signature_pad";
 import * as XLSX from "xlsx";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { supabase } from '../../lib/supabase';
 
 // ============================================================
 // LENARD UT RMP â€” Rocky Mountain Power Lighting Rebate Calculator
@@ -299,6 +300,12 @@ export default function LenardUTRMP() {
   });
   const [attachingFiles, setAttachingFiles] = useState(false);
 
+  // Rep-only state (Give-Me Engine) — only visible when authenticated
+  const [isRep, setIsRep] = useState(false);
+  const [repBaseline, setRepBaseline] = useState(() => { try { return parseFloat(localStorage.getItem('lenard_rep_baseline')) || 0; } catch { return 0; } });
+  const [repCurrentDown, setRepCurrentDown] = useState(0);
+  const [repTargetDown, setRepTargetDown] = useState(0);
+
   const showToast = useCallback((message, icon = '\u2713') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ message, icon });
@@ -308,6 +315,16 @@ export default function LenardUTRMP() {
   useEffect(() => { if (keepLinesOnSwitch.current) { keepLinesOnSwitch.current = false; return; } setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('UT'); setSaveZip(''); }, [program]);
 
   useEffect(() => { if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw-lenard.js').catch(() => {}); } }, []);
+
+  // Check if user is authenticated (rep-only Give-Me Engine)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setIsRep(!!user);
+      } catch (_) { setIsRep(false); }
+    })();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -527,6 +544,83 @@ export default function LenardUTRMP() {
     return { existingMaintCost, proposedMaintCost, annualSavings, lineDetails };
   }, [lines, operatingHours, daysPerYear]);
 
+  // ---- GIVE-ME ENGINE CALCULATIONS ----
+  const giveMe = useMemo(() => {
+    const baseline = repBaseline || 0;
+    const pool = Math.max(0, effectiveProjectCost - baseline);
+    const repSplit = pool * 0.5;
+    const leftOnTable = Math.max(0, rawIncentive - estimatedRebate);
+    const costForFullCapture = capPct > 0 ? Math.ceil(rawIncentive / capPct) : 0;
+    const costGap = Math.max(0, costForFullCapture - effectiveProjectCost);
+    const customerNet = Math.max(0, effectiveProjectCost - estimatedRebate);
+    return { baseline, pool, repSplit, leftOnTable, costForFullCapture, costGap, customerNet };
+  }, [repBaseline, effectiveProjectCost, rawIncentive, estimatedRebate, capPct]);
+
+  // ---- GIVE-ME SUGGESTION ENGINE ----
+  const giveMeSuggestions = useMemo(() => {
+    if (!isRep || lines.length === 0) return [];
+    const suggestions = [];
+    const totalFixtures = lines.reduce((s, l) => s + (l.qty || 0), 0);
+
+    // 1. Controls upgrades (SMBE/Express interior lines)
+    const rateTable = program === 'smbe' ? SMBE.interior : program === 'express' ? EXPRESS.interior : null;
+    if (rateTable) {
+      lines.forEach(l => {
+        if (l.location !== 'interior' || l.controlsType === 'lllc') return;
+        const currentRate = rateTable[l.controlsType] || rateTable.none;
+        const lllcRate = rateTable.lllc;
+        const delta = (l.qty || 0) * (l.newW || 0) * (lllcRate - currentRate);
+        if (delta > 50) {
+          suggestions.push({ type: 'lllc', title: `Upgrade "${l.name || 'Interior fixture'}" to LLLC`, desc: `Rate: $${currentRate}/W \u2192 $${lllcRate}/W. Adds $${Math.round(delta).toLocaleString()} incentive. LLLC controller hardware also raises project cost.`, impact: delta });
+        }
+      });
+    }
+    // Large program controls upgrades
+    if (program === 'large') {
+      lines.forEach(l => {
+        if (l.location !== 'interior' || l.controlsType === 'lllc') return;
+        const currentRate = LARGE.interior_fixtures[l.controlsType] || LARGE.interior_fixtures.none;
+        const lllcRate = LARGE.interior_fixtures.lllc;
+        const delta = (l.qty || 0) * Math.max(0, (l.existW || 0) - (l.newW || 0)) * (lllcRate - currentRate);
+        if (delta > 50) {
+          suggestions.push({ type: 'lllc', title: `Upgrade "${l.name || 'Interior fixture'}" to LLLC`, desc: `Rate: $${currentRate}/W \u2192 $${lllcRate}/W reduced. Adds $${Math.round(delta).toLocaleString()} incentive.`, impact: delta });
+        }
+      });
+    }
+
+    // 2. Disposal fee
+    if (totalFixtures > 0) {
+      const cost = totalFixtures * 20;
+      suggestions.push({ type: 'disposal', title: 'Add disposal/recycling fee', desc: `${totalFixtures} fixtures \u00D7 $20 = $${cost.toLocaleString()} added to project cost. Raises cap by $${Math.round(cost * capPct).toLocaleString()}.`, impact: cost * capPct });
+    }
+
+    // 3. Lift rental
+    const highLines = lines.filter(l => (l.height || 0) > 12);
+    if (highLines.length > 0) {
+      const cost = 350;
+      suggestions.push({ type: 'lift', title: 'Add lift/scaffold rental', desc: `${highLines.length} area(s) above 12ft. ~$${cost} lift rental raises cap by $${Math.round(cost * capPct).toLocaleString()}.`, impact: cost * capPct });
+    }
+
+    // 4. Wiring/conduit
+    if (totalFixtures > 0) {
+      const cost = totalFixtures * 35;
+      suggestions.push({ type: 'wiring', title: 'Add wiring/conduit scope', desc: `${totalFixtures} fixtures \u00D7 $35 = $${cost.toLocaleString()} for wiring adds to project cost. Raises cap by $${Math.round(cost * capPct).toLocaleString()}.`, impact: cost * capPct });
+    }
+
+    // 5. Cap gap — most important if leaving money on table
+    if (giveMe.leftOnTable > 100 && giveMe.costGap > 0) {
+      suggestions.unshift({ type: 'cap_gap', title: `Raise project cost by $${Math.round(giveMe.costGap).toLocaleString()} to capture full rebate`, desc: `Leaving $${Math.round(giveMe.leftOnTable).toLocaleString()} on the table. Project cost of $${Math.round(giveMe.costForFullCapture).toLocaleString()} captures the full $${Math.round(rawIncentive).toLocaleString()}.`, impact: giveMe.leftOnTable });
+    }
+
+    // 6. Down payment closing script
+    if (effectiveProjectCost > 0 && estimatedRebate > 0) {
+      const net = Math.round(effectiveProjectCost - estimatedRebate);
+      suggestions.push({ type: 'close', title: 'Down payment closing script', desc: `"Your total is $${effectiveProjectCost.toLocaleString()}, but RMP covers $${estimatedRebate.toLocaleString()}. Your net is only $${net.toLocaleString()}\u2014and with a deposit today you lock in the rebate before funding runs out."`, impact: 0 });
+    }
+
+    return suggestions.sort((a, b) => b.impact - a.impact);
+  }, [isRep, lines, program, effectiveProjectCost, estimatedRebate, rawIncentive, capPct, giveMe]);
+
   // ---- AUTO-POPULATE APP & W9 FIELDS ----
   useEffect(() => {
     setAppFields(prev => ({
@@ -556,10 +650,35 @@ export default function LenardUTRMP() {
         lines: lines.map(l => ({ name: l.name, qty: l.qty, existW: l.existW, newW: l.newW, height: l.height, location: l.location, controlsType: l.controlsType, controlsOnly: l.controlsOnly, controlsOnlyType: l.controlsOnlyType, productId: l.productId, productName: l.productName, productPrice: l.productPrice, fixtureCategory: l.fixtureCategory, lightingType: l.lightingType, confirmed: l.confirmed, overrideNotes: l.overrideNotes })),
         totals, financials, totalIncentive: estimatedRebate, projectCost: effectiveProjectCost,
         operatingHours, daysPerYear, energyRate, city: saveCity, state: saveState, zip: saveZip, photos: capturedPhotos,
+        ...(isRep ? { giveMe: { baseline: repBaseline, pool: giveMe.pool, repSplit: giveMe.repSplit, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, currentDown: repCurrentDown, targetDown: repTargetDown } } : {}),
       };
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
       const data = await resp.json();
-      if (data.success) { setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false); showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713'); }
+      if (data.success) {
+        setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false); showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
+        // Attempt give_me_log insert (silent fail if table doesn't exist)
+        // CREATE TABLE IF NOT EXISTS give_me_log (
+        //   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        //   company_id INT REFERENCES companies(id),
+        //   lead_id INT REFERENCES leads(id),
+        //   audit_id INT,
+        //   rep_name TEXT,
+        //   baseline_cost DECIMAL DEFAULT 0,
+        //   project_cost DECIMAL DEFAULT 0,
+        //   give_me_pool DECIMAL DEFAULT 0,
+        //   rep_split DECIMAL DEFAULT 0,
+        //   raw_incentive DECIMAL DEFAULT 0,
+        //   captured_incentive DECIMAL DEFAULT 0,
+        //   left_on_table DECIMAL DEFAULT 0,
+        //   suggestions JSONB,
+        //   created_at TIMESTAMPTZ DEFAULT now()
+        // );
+        if (isRep && repBaseline > 0) {
+          try {
+            await supabase.from('give_me_log').insert({ lead_id: data.leadId, audit_id: data.auditId, rep_name: leadOwnerName, baseline_cost: repBaseline, project_cost: effectiveProjectCost, give_me_pool: giveMe.pool, rep_split: giveMe.repSplit, raw_incentive: rawIncentive, captured_incentive: estimatedRebate, left_on_table: giveMe.leftOnTable, suggestions: giveMeSuggestions.slice(0, 5) });
+          } catch (_) { /* table may not exist yet */ }
+        }
+      }
       else { showToast(data.error || 'Save failed', '\u26A0\uFE0F'); }
     } catch (err) { console.error('Save error:', err); showToast('Could not save project', '\u26A0\uFE0F'); }
     setSaving(false);
@@ -616,7 +735,7 @@ export default function LenardUTRMP() {
     URL.revokeObjectURL(url);
   };
 
-  const generatePDF = () => {
+  const generatePDF = (repMode = false) => {
     const doc = new jsPDF({ unit: 'mm', format: 'letter' });
     const W = doc.internal.pageSize.getWidth();
     const H = doc.internal.pageSize.getHeight();
@@ -1113,9 +1232,100 @@ export default function LenardUTRMP() {
 
     addFooter();
 
+    // ===== REP CONFIDENTIAL PAGE =====
+    if (repMode && isRep) {
+      doc.addPage();
+      pg++;
+      y = 20;
+
+      // Diagonal watermark
+      doc.setTextColor(240, 200, 200);
+      doc.setFontSize(36);
+      doc.setFont(undefined, 'bold');
+      doc.text('NOT FOR UTILITY OR CUSTOMER SUBMISSION', W / 2, H / 2, { align: 'center', angle: 35 });
+
+      // Header
+      y = 16;
+      doc.setFillColor(...orange);
+      doc.rect(0, 0, W, 4, 'F');
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...orange);
+      doc.text('CONFIDENTIAL \u2014 REP SUMMARY', M, y);
+      y += 6;
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...gray);
+      doc.text(`${projectName || 'Project'} | ${dateStr} | ${programLabel}`, M, y);
+      y += 8;
+      doc.setDrawColor(...orange);
+      doc.setLineWidth(1);
+      doc.line(M, y, R, y);
+      y += 8;
+
+      // Give-Me Breakdown
+      sectionTitle('Give-Me Breakdown');
+      row('Quoted Project Cost', `$${Math.round(effectiveProjectCost).toLocaleString()}`, { bold: true });
+      row('Company Baseline Cost', repBaseline > 0 ? `$${Math.round(repBaseline).toLocaleString()}` : 'Not set', { color: gray });
+      row('Give-Me Pool (margin)', `$${Math.round(giveMe.pool).toLocaleString()}`, { bold: true, med: true, color: orange, topLine: true });
+      row('Rep 50% Split', `$${Math.round(giveMe.repSplit).toLocaleString()}`, { bold: true, big: true, color: green, topLine: true, lineColor: orange });
+      y += 4;
+
+      // Incentive Capture
+      sectionTitle('Incentive Capture Analysis');
+      row('Raw Incentive Available', `$${Math.round(rawIncentive).toLocaleString()}`);
+      row('Captured (after cap)', `$${Math.round(estimatedRebate).toLocaleString()}`, { color: capApplied ? orange : green });
+      if (giveMe.leftOnTable > 0) {
+        row('LEFT ON TABLE', `$${Math.round(giveMe.leftOnTable).toLocaleString()}`, { bold: true, color: red, topLine: true });
+        row('Cost Needed for Full Capture', `$${Math.round(giveMe.costForFullCapture).toLocaleString()}`, { color: orange });
+        row('Cost Gap', `$${Math.round(giveMe.costGap).toLocaleString()}`, { color: orange, indent: 4 });
+      } else {
+        row('Full incentive captured', '\u2713', { color: green, bold: true, topLine: true });
+      }
+      y += 4;
+
+      // Customer Position
+      sectionTitle('Customer Position');
+      row('Customer Net (after rebate)', `$${Math.round(giveMe.customerNet).toLocaleString()}`, { bold: true });
+      if (repCurrentDown > 0) row('Current Down Payment', `$${Math.round(repCurrentDown).toLocaleString()}`);
+      if (repTargetDown > 0) row('Target Down Payment', `$${Math.round(repTargetDown).toLocaleString()}`, { color: orange });
+      y += 4;
+
+      // Suggestions
+      if (giveMeSuggestions.length > 0) {
+        sectionTitle('Top Suggestions');
+        giveMeSuggestions.slice(0, 6).forEach((s, i) => {
+          checkPage(14);
+          doc.setFontSize(9);
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(...dark);
+          doc.text(`${i + 1}. ${s.title}`, M, y);
+          if (s.impact > 0) {
+            doc.setTextColor(...green);
+            doc.text(`+$${Math.round(s.impact).toLocaleString()}`, R, y, { align: 'right' });
+          }
+          y += 4;
+          doc.setFontSize(7.5);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(...gray);
+          const descLines = doc.splitTextToSize(s.desc, LW - 10);
+          descLines.forEach(dl => { doc.text(dl, M + 4, y); y += 3.5; });
+          y += 3;
+        });
+      }
+
+      // Footer watermark
+      y = H - 20;
+      doc.setFontSize(8);
+      doc.setTextColor(...red);
+      doc.setFont(undefined, 'bold');
+      doc.text('CONFIDENTIAL \u2014 NOT FOR UTILITY OR CUSTOMER SUBMISSION', W / 2, y, { align: 'center' });
+      addFooter();
+    }
+
     // ===== OUTPUT =====
     const blob = doc.output('blob');
-    const fileName = `Energy_Scout_Audit_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    const fileName = `Energy_Scout_${repMode ? 'Rep_Summary_' : 'Audit_'}${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
     const file = new File([blob], fileName, { type: 'application/pdf' });
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
       navigator.share({ files: [file], title: `Energy Scout Audit - ${projectName}` }).catch(() => downloadBlob(blob, fileName));
@@ -1597,6 +1807,18 @@ export default function LenardUTRMP() {
               <input type="number" inputMode="decimal" step="0.01" value={projectCost || ''} onChange={e => { setProjectCost(e.target.value === '' ? 0 : parseFloat(e.target.value)); markDirty(); }} placeholder="Total project cost" style={S.input} />
               {projectCost > 0 && <div style={{ fontSize: '11px', color: T.textMuted, marginTop: '4px' }}>Cap: {Math.round(capPct * 100)}% = ${capAmount.toLocaleString()}</div>}
             </div>
+            {/* Rep-only settings — only visible when authenticated */}
+            {isRep && (
+              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, paddingLeft: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px' }}>{'\uD83D\uDD12'} Rep Settings</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  <div><label style={S.label}>Baseline Cost $</label><input type="number" inputMode="decimal" value={repBaseline || ''} onChange={e => { const v = parseFloat(e.target.value) || 0; setRepBaseline(v); try { localStorage.setItem('lenard_rep_baseline', String(v)); } catch (_) {} markDirty(); }} placeholder="Company cost" style={S.input} /></div>
+                  <div><label style={S.label}>Current Down $</label><input type="number" inputMode="decimal" value={repCurrentDown || ''} onChange={e => { setRepCurrentDown(parseFloat(e.target.value) || 0); markDirty(); }} placeholder="Current deposit" style={S.input} /></div>
+                  <div><label style={S.label}>Target Down $</label><input type="number" inputMode="decimal" value={repTargetDown || ''} onChange={e => { setRepTargetDown(parseFloat(e.target.value) || 0); markDirty(); }} placeholder="Target deposit" style={S.input} /></div>
+                </div>
+                <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '4px' }}>Baseline = your true project cost. Give-me = margin above baseline.</div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1921,6 +2143,68 @@ export default function LenardUTRMP() {
               <button onClick={() => setShowSummary(true)} style={{ ...S.btn, fontSize: '12px', padding: '8px 14px' }}>{'\uD83D\uDCCB'} Summary</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ===== GIVE-ME ENGINE (Rep Only) ===== */}
+      {isRep && results.length > 0 && effectiveProjectCost > 0 && (
+        <div style={{ margin: '0 16px 8px', borderLeft: `3px solid ${T.accent}`, borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, padding: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+            <span style={{ fontSize: '14px' }}>{'\uD83D\uDD12'}</span>
+            <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>Give-Me Engine</span>
+            <span style={{ fontSize: '10px', color: T.textMuted, marginLeft: 'auto' }}>Rep Only</span>
+          </div>
+
+          {/* Key metrics */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+            <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: T.textMuted }}>GIVE-ME POOL</div>
+              <div style={{ fontSize: '20px', fontWeight: '800', color: T.accent }}>${Math.round(giveMe.pool).toLocaleString()}</div>
+              <div style={{ fontSize: '10px', color: T.textMuted }}>Margin above baseline</div>
+            </div>
+            <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: T.textMuted }}>YOUR 50% SPLIT</div>
+              <div style={{ fontSize: '20px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.repSplit).toLocaleString()}</div>
+              <div style={{ fontSize: '10px', color: T.textMuted }}>Rep commission</div>
+            </div>
+          </div>
+
+          {/* Incentive capture */}
+          <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.textSec, marginBottom: '4px' }}><span>Raw Incentive Available</span><span>${Math.round(rawIncentive).toLocaleString()}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: capApplied ? T.accent : T.green, marginBottom: '4px' }}><span>Captured (after {Math.round(capPct * 100)}% cap)</span><span>${Math.round(estimatedRebate).toLocaleString()}</span></div>
+            {giveMe.leftOnTable > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: T.red, fontWeight: '600' }}><span>LEFT ON TABLE</span><span>${Math.round(giveMe.leftOnTable).toLocaleString()}</span></div>
+            )}
+            {giveMe.leftOnTable > 0 && (
+              <div style={{ marginTop: '6px', fontSize: '11px', color: T.accent }}>Need project cost of <span style={{ fontWeight: '700' }}>${Math.round(giveMe.costForFullCapture).toLocaleString()}</span> to capture full rebate (gap: ${Math.round(giveMe.costGap).toLocaleString()})</div>
+            )}
+          </div>
+
+          {/* Detail breakdown */}
+          <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', marginBottom: '10px', fontSize: '12px', color: T.textSec }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}><span>Project Cost (quoted)</span><span>${Math.round(effectiveProjectCost).toLocaleString()}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}><span>Baseline Cost (actual)</span><span>{repBaseline > 0 ? `$${Math.round(repBaseline).toLocaleString()}` : 'Not set'}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px', borderTop: `1px solid ${T.border}`, paddingTop: '3px' }}><span>Customer Net (after rebate)</span><span style={{ fontWeight: '600', color: T.text }}>${Math.round(giveMe.customerNet).toLocaleString()}</span></div>
+            {repCurrentDown > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}><span>Current Down Payment</span><span>${Math.round(repCurrentDown).toLocaleString()}</span></div>}
+            {repTargetDown > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Target Down Payment</span><span style={{ color: T.accent }}>${Math.round(repTargetDown).toLocaleString()}</span></div>}
+          </div>
+
+          {/* Suggestions */}
+          {giveMeSuggestions.length > 0 && (
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Suggestions</div>
+              {giveMeSuggestions.slice(0, 5).map((s, i) => (
+                <div key={i} style={{ padding: '8px 10px', background: s.type === 'cap_gap' ? T.accentDim : T.bgInput, border: `1px solid ${s.type === 'cap_gap' ? T.accent : T.border}`, borderRadius: '8px', marginBottom: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: T.text }}>{s.title}</div>
+                    {s.impact > 0 && <div style={{ fontSize: '11px', fontWeight: '700', color: T.green, whiteSpace: 'nowrap' }}>+${Math.round(s.impact).toLocaleString()}</div>}
+                  </div>
+                  <div style={{ fontSize: '11px', color: T.textMuted, marginTop: '2px' }}>{s.desc}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -2422,7 +2706,10 @@ export default function LenardUTRMP() {
 
               {/* ===== SECTION 6: Generate & Attach (after signing) ===== */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
-                <button onClick={generatePDF} style={{ width: '100%', padding: '12px', background: T.accent, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>{'\uD83D\uDCC4'} Download Financial Audit PDF{signatureData ? ' (Signed)' : ''}</button>
+                <button onClick={() => generatePDF(false)} style={{ width: '100%', padding: '12px', background: T.accent, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>{'\uD83D\uDCC4'} Download Financial Audit PDF{signatureData ? ' (Signed)' : ''}</button>
+                {isRep && (
+                  <button onClick={() => generatePDF(true)} style={{ width: '100%', padding: '12px', background: '#1e1e22', color: T.accent, border: `1px solid ${T.accent}`, borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', borderLeft: `3px solid ${T.accent}` }}>{'\uD83D\uDD12'} Download Rep Summary PDF (Confidential)</button>
+                )}
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button onClick={generateXLS} style={{ flex: 1, padding: '10px', background: '#1a5c1a', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>{'\uD83D\uDCCA'} RMP Application (XLS)</button>
                   <button onClick={generateW9PDF} style={{ flex: 1, padding: '10px', background: '#1a3c6e', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>{'\uD83C\uDFE6'} W9 (PDF)</button>
