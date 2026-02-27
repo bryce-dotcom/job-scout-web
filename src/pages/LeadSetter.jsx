@@ -40,6 +40,7 @@ export default function LeadSetter() {
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
   const company = useStore((state) => state.company)
+  const setCompany = useStore((state) => state.setCompany)
   const fetchAppointments = useStore((state) => state.fetchAppointments)
 
   // Data
@@ -596,8 +597,14 @@ export default function LeadSetter() {
       .eq('id', companyId)
 
     if (!error) {
+      // Update company in store so UI reflects new values immediately
+      setCompany({
+        ...company,
+        setter_pay_per_appointment: settingsForm.setter_pay_per_appointment,
+        commission_requires_quote: settingsForm.commission_requires_quote,
+        source_pay_per_lead: settingsForm.source_pay_per_lead
+      })
       setShowSettingsModal(false)
-      // Refresh company data
       await fetchData()
     }
   }
@@ -681,6 +688,17 @@ export default function LeadSetter() {
               </span>
               <span style={{ color: '#15803d' }}>/appt</span>
             </div>
+            {(company?.source_pay_per_lead > 0) && (
+              <>
+                <div style={{ width: '1px', height: '16px', backgroundColor: '#86efac' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontWeight: '600' }}>
+                    ${company.source_pay_per_lead}
+                  </span>
+                  <span style={{ color: '#15803d' }}>/source</span>
+                </div>
+              </>
+            )}
             <div style={{ width: '1px', height: '16px', backgroundColor: '#86efac' }} />
             <div>
               <span style={{ fontWeight: '600' }}>{commissions.filter(c => c.payment_status === 'pending').length}</span>
