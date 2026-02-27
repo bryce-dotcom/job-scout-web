@@ -437,6 +437,10 @@ export default function LenardUTRMP() {
   }, [expandedLine, showToast, markDirty]);
 
   const selectProduct = useCallback((lineId, product) => {
+    const line = lines.find(l => l.id === lineId);
+    if (line && (line.height || 0) > 16 && getProductTierInfo(product.name).tier === 'installed') {
+      showToast('Ceiling >16ft requires w/ Lift or Move product', '\u26A0\uFE0F'); return;
+    }
     setLines(prev => prev.map(l => {
       if (l.id !== lineId) return l;
       const updates = { productId: product.id, productName: product.name, productPrice: product.unit_price || 0 };
@@ -2172,13 +2176,14 @@ export default function LenardUTRMP() {
                             {family.map(p => {
                               const tier = getProductTierInfo(p.name);
                               const isCurrent = p.id === r.productId;
+                              const blocked = (r.height || 0) > 16 && tier.tier === 'installed';
                               return (
-                                <button key={p.id} onClick={() => selectProduct(r.id, p)}
+                                <button key={p.id} onClick={() => !blocked && selectProduct(r.id, p)} disabled={blocked}
                                   style={{ flex: 1, padding: '6px', borderRadius: '6px',
-                                    background: isCurrent ? T.accentDim : T.bgInput,
-                                    border: `1px solid ${isCurrent ? T.accent : T.border}`,
-                                    color: isCurrent ? T.accent : T.textSec,
-                                    fontSize: '11px', fontWeight: isCurrent ? '700' : '400', cursor: 'pointer' }}>
+                                    background: blocked ? T.bgInput : isCurrent ? T.accentDim : T.bgInput,
+                                    border: `1px solid ${blocked ? T.border : isCurrent ? T.accent : T.border}`,
+                                    color: blocked ? T.textMuted : isCurrent ? T.accent : T.textSec,
+                                    fontSize: '11px', fontWeight: isCurrent ? '700' : '400', cursor: blocked ? 'not-allowed' : 'pointer', opacity: blocked ? 0.4 : 1 }}>
                                   <div>{tierLabels[tier.tier]}</div>
                                   <div style={{ fontWeight: '700' }}>${p.unit_price}</div>
                                 </button>
@@ -2188,6 +2193,11 @@ export default function LenardUTRMP() {
                           {isHighest && (
                             <div style={{ marginTop: '4px', padding: '4px 8px', background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '6px', fontSize: '11px', color: T.accent }}>
                               {'\u26A0\uFE0F'} Highest utility-allowed price selected {'\u2014'} may draw scrutiny on approval
+                            </div>
+                          )}
+                          {(r.height || 0) > 16 && getProductTierInfo(selected.name).tier === 'installed' && (
+                            <div style={{ marginTop: '4px', padding: '4px 8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', fontSize: '11px', color: T.red }}>
+                              {'\u26A0\uFE0F'} Ceiling {'>'}16ft {'\u2014'} requires w/ Lift or Move product
                             </div>
                           )}
                         </>
@@ -2200,8 +2210,10 @@ export default function LenardUTRMP() {
                           <div style={{ maxHeight: '200px', overflow: 'auto', border: `1px solid ${T.border}`, borderRadius: '0 0 8px 8px', marginTop: '-1px' }}>
                             {(() => {
                               const q = productSearch.toLowerCase();
+                              const needsLift = (r.height || 0) > 16;
                               const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW);
-                              const filtered = q ? ranked.filter(p => (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)) : ranked;
+                              const heightFiltered = needsLift ? ranked.filter(p => getProductTierInfo(p.name).tier !== 'installed') : ranked;
+                              const filtered = q ? heightFiltered.filter(p => (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)) : heightFiltered;
                               const matched = filtered.filter(p => p._score >= 100).slice(0, 8);
                               const other = filtered.filter(p => p._score < 100).slice(0, 8);
                               if (filtered.length === 0) return <div style={{ padding: '10px', fontSize: '12px', color: T.textMuted, textAlign: 'center' }}>No products found</div>;
