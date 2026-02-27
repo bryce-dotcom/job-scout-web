@@ -324,7 +324,7 @@ export default function LenardUTRMP() {
   // Rep-only state (Give-Me Engine) — only visible when authenticated
   const [isRep, setIsRep] = useState(false);
   const [showGiveMe, setShowGiveMe] = useState(false);
-  const [repBaseline, setRepBaseline] = useState(() => { try { return parseFloat(localStorage.getItem('lenard_rep_baseline')) || 0; } catch { return 0; } });
+  const [giveMeFrozenBaseline, setGiveMeFrozenBaseline] = useState(0);
   const [repCurrentDown, setRepCurrentDown] = useState(0);
   const [repTargetDown, setRepTargetDown] = useState(0);
   const [repAdditionalOOP, setRepAdditionalOOP] = useState(0);
@@ -578,12 +578,13 @@ export default function LenardUTRMP() {
   // Give-Me = 50% of (uncaptured incentive + additional OOP rep adds).
   const COMMISSION_RATE = 0.085;
   const giveMe = useMemo(() => {
-    const baseline = baselineProjectCost;
+    // Frozen baseline = project cost snapshot from before any give-me actions
+    const baseline = giveMeFrozenBaseline > 0 ? giveMeFrozenBaseline : baselineProjectCost;
     const commission = baseline * COMMISSION_RATE;
-    // Rebate at baseline (before give-me quote add-ons)
+    // Rebate at frozen baseline (what the project earned before give-me manipulations)
     const baselineCapAmt = baseline > 0 ? +(baseline * capPct).toFixed(2) : Infinity;
     const baselineRebate = +Math.min(rawIncentive, baselineCapAmt).toFixed(2);
-    // Additional incentive captured by raising project price through quote items
+    // Additional incentive captured by raising project price (tier upsells + quote items)
     const additionalIncentive = Math.max(0, estimatedRebate - baselineRebate);
     const leftOnTable = Math.max(0, rawIncentive - estimatedRebate);
     const costForFullCapture = capPct > 0 ? Math.ceil(rawIncentive / capPct) : 0;
@@ -592,7 +593,7 @@ export default function LenardUTRMP() {
     // Real give-me = 50% of (extra incentive from raising price + additional OOP)
     const realGiveMe = (additionalIncentive + repAdditionalOOP) * 0.5;
     return { baseline, commission, additionalIncentive, leftOnTable, costForFullCapture, costGap, customerOOP, realGiveMe, additionalOOP: repAdditionalOOP, baselineRebate };
-  }, [baselineProjectCost, effectiveProjectCost, rawIncentive, estimatedRebate, capPct, repAdditionalOOP]);
+  }, [giveMeFrozenBaseline, baselineProjectCost, effectiveProjectCost, rawIncentive, estimatedRebate, capPct, repAdditionalOOP]);
 
   // ---- MAX UTILITY-ALLOWED COST (highest tier per line) ----
   const maxUtilityCost = useMemo(() => {
@@ -810,7 +811,7 @@ export default function LenardUTRMP() {
     setLines([]); setExpandedLine(null); setNewlyAdded(new Set());
     setProjectName(''); setProjectCost(0);
     setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false);
-    setCapturedPhotos([]); setGiveMeQuoteItems([]); setRepAdditionalOOP(0);
+    setCapturedPhotos([]); setGiveMeQuoteItems([]); setRepAdditionalOOP(0); setGiveMeFrozenBaseline(0);
     setSavePhone(''); setSaveEmail(''); setSaveAddress('');
     setSaveCity(''); setSaveState('UT'); setSaveZip('');
   };
@@ -2154,7 +2155,7 @@ export default function LenardUTRMP() {
                               const tier = getProductTierInfo(p.name);
                               const isCurrent = p.id === r.productId;
                               return (
-                                <button key={p.id} onClick={() => selectProduct(r.id, p)}
+                                <button key={p.id} onClick={() => { if (isRep && !giveMeFrozenBaseline) setGiveMeFrozenBaseline(baselineProjectCost); selectProduct(r.id, p); }}
                                   style={{ flex: 1, padding: '6px', borderRadius: '6px',
                                     background: isCurrent ? T.accentDim : T.bgInput,
                                     border: `1px solid ${isCurrent ? T.accent : T.border}`,
@@ -2253,7 +2254,9 @@ export default function LenardUTRMP() {
                   <div style={{ background: T.bgInput, borderRadius: '8px', padding: '10px', fontSize: '12px', color: T.textSec }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}><span>Fixture Incentive</span><span style={S.money}>${r.calc.fixtureIncentive.toLocaleString()}</span></div>
                     {r.calc.controlsIncentive > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}><span>Controls Incentive</span><span style={{ color: T.blue, fontWeight: '600' }}>${r.calc.controlsIncentive}</span></div>}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: `1px solid ${T.border}`, marginBottom: '4px' }}><span style={{ fontWeight: '600', color: T.green }}>Line Rebate</span><span style={{ color: T.green, fontWeight: '700', fontSize: '14px' }}>${r.calc.totalIncentive.toLocaleString()}</span></div>
+                    {(() => { const actualLineRebate = rawIncentive > 0 ? +(r.calc.totalIncentive / rawIncentive * estimatedRebate).toFixed(2) : r.calc.totalIncentive; return (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: `1px solid ${T.border}`, marginBottom: '4px' }}><span style={{ fontWeight: '600', color: T.green }}>Line Rebate</span><span style={{ color: T.green, fontWeight: '700', fontSize: '14px' }}>${actualLineRebate.toLocaleString()}</span></div>
+                    ); })()}
                     {(() => { const ep = getEffectivePrice(r); const lt = ep * (r.qty || 0); return lt > 0 ? (
                       <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: `1px solid ${T.border}` }}><span style={{ fontWeight: '600', color: T.text }}>Line Total</span><span style={{ ...S.money, fontSize: '14px' }}>${lt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                     ) : null; })()}
@@ -2438,7 +2441,7 @@ export default function LenardUTRMP() {
                         {s.costRaisers && s.costRaisers.map((cr, ci) => (
                           <div key={ci} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginLeft: '20px', padding: '4px 8px', background: T.bgInput, borderRadius: '6px', marginBottom: '2px' }}>
                             <span style={{ fontSize: '10px', color: T.textSec }}>{cr.title}</span>
-                            <button onClick={() => { setGiveMeQuoteItems(prev => [...prev, { id: Date.now() + ci, type: cr.type, label: cr.title, amount: cr.addCost }]); markDirty(); showToast(`Added ${cr.title}`, '\u2713'); }}
+                            <button onClick={() => { if (!giveMeFrozenBaseline) setGiveMeFrozenBaseline(baselineProjectCost); setGiveMeQuoteItems(prev => [...prev, { id: Date.now() + ci, type: cr.type, label: cr.title, amount: cr.addCost }]); markDirty(); showToast(`Added ${cr.title}`, '\u2713'); }}
                               style={{ padding: '2px 8px', background: T.accent, color: '#fff', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Add ${cr.addCost.toLocaleString()}</button>
                           </div>
                         ))}
@@ -2453,7 +2456,7 @@ export default function LenardUTRMP() {
                           <div style={{ fontSize: '10px', color: T.textSec }}>{s.desc}</div>
                         </div>
                         <span style={{ fontSize: '10px', color: T.green, fontWeight: '700', flexShrink: 0 }}>+${Math.round(s.impact).toLocaleString()}</span>
-                        <button onClick={() => { updateLine(s.lineId, 'controlsType', 'lllc'); showToast('Applied LLLC', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
+                        <button onClick={() => { if (!giveMeFrozenBaseline) setGiveMeFrozenBaseline(baselineProjectCost); updateLine(s.lineId, 'controlsType', 'lllc'); showToast('Applied LLLC', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
                       </div>
                     );
 
@@ -2465,7 +2468,7 @@ export default function LenardUTRMP() {
                           <div style={{ fontSize: '10px', color: T.textSec }}>{s.desc}</div>
                         </div>
                         <span style={{ fontSize: '10px', color: T.green, fontWeight: '700', flexShrink: 0 }}>+${Math.round(s.impact).toLocaleString()}</span>
-                        <button onClick={() => { selectProduct(s.lineId, s.targetProduct); showToast('Tier upgraded', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
+                        <button onClick={() => { if (!giveMeFrozenBaseline) setGiveMeFrozenBaseline(baselineProjectCost); selectProduct(s.lineId, s.targetProduct); showToast('Tier upgraded', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
                       </div>
                     );
 
