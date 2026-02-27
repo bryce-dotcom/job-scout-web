@@ -578,7 +578,7 @@ export default function JobDetail() {
   const statusStyle = statusColors[job.status] || statusColors['Scheduled']
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <button

@@ -746,7 +746,7 @@ export default function NewLightingAudit() {
   }, [products, areaForm.fixture_category])
 
   return (
-    <div className="audit-root page-padding" style={{ padding: '24px' }}>
+    <div className="audit-root page-padding" style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       <style>{`
         @media (max-width: 768px) {
           .audit-root input, .audit-root select, .audit-root textarea { font-size: 16px !important; }

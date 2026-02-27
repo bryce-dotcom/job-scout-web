@@ -457,7 +457,7 @@ export default function LightingAuditDetail() {
   }
 
   return (
-    <div className="audit-detail-root page-padding" style={{ padding: '24px' }}>
+    <div className="audit-detail-root page-padding" style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       <style>{`
         @media (max-width: 768px) {
           .audit-detail-root input, .audit-detail-root select, .audit-detail-root textarea { font-size: 16px !important; }

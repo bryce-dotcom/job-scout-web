@@ -183,7 +183,7 @@ export default function InvoiceDetail() {
   const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <button

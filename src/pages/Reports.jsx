@@ -497,7 +497,7 @@ export default function Reports() {
   // Report selector view
   if (!reportType) {
     return (
-      <div style={{ padding: '24px' }}>
+      <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
           <BarChart3 size={28} style={{ color: theme.accent }} />
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Reports</h1>
@@ -554,7 +554,7 @@ export default function Reports() {
   const currentReport = reportTypes.find(r => r.id === reportType)
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

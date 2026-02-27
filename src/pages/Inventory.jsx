@@ -717,7 +717,7 @@ export default function Inventory() {
   }
 
   return (
-    <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Low Stock Alert Banner */}
       {lowStockItems.length > 0 && (
         <div style={{

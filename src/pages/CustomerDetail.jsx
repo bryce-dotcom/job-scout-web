@@ -326,7 +326,7 @@ export default function CustomerDetail() {
   ]
 
   return (
-    <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',

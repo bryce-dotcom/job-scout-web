@@ -100,7 +100,7 @@ export default function LightingAudits() {
   }
 
   return (
-    <div className="page-padding audit-list-root" style={{ padding: '24px' }}>
+    <div className="page-padding audit-list-root" style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       <style>{`
         @media (max-width: 768px) {
           .audit-list-filters { gap: 8px !important; }
