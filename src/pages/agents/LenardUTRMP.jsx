@@ -745,7 +745,7 @@ export default function LenardUTRMP() {
         lines: lines.map(l => ({ name: l.name, qty: l.qty, existW: l.existW, newW: l.newW, height: l.height, location: l.location, controlsType: l.controlsType, controlsOnly: l.controlsOnly, controlsOnlyType: l.controlsOnlyType, productId: l.productId, productName: l.productName, productPrice: l.productPrice, fixtureCategory: l.fixtureCategory, lightingType: l.lightingType, confirmed: l.confirmed, overrideNotes: l.overrideNotes })),
         totals, financials, totalIncentive: estimatedRebate, projectCost: effectiveProjectCost,
         operatingHours, daysPerYear, energyRate, city: saveCity, state: saveState, zip: saveZip, photos: capturedPhotos,
-        ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, realGiveMe: giveMe.realGiveMe, additionalIncentive: giveMe.additionalIncentive, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, quoteItems: giveMeQuoteItems, currentDown: repCurrentDown, targetDown: repTargetDown } } : {}),
+        ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, realGiveMe: giveMe.realGiveMe, additionalIncentive: giveMe.additionalIncentive, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, quoteItems: giveMeQuoteItems, frozenBaseline: giveMeFrozenBaseline, frozenIncentive: giveMeFrozenIncentive, currentDown: repCurrentDown, targetDown: repTargetDown } } : {}),
       };
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
       const data = await resp.json();
@@ -807,6 +807,17 @@ export default function LenardUTRMP() {
       if (pd.projectCost) setProjectCost(pd.projectCost);
       setSavedLeadId(project.id); setSavedAuditId(project.audit?.id || null); setIsDirty(false);
       if (pd.lines) { lineIdRef.current = 0; setLines(pd.lines.map(l => ({ ...l, id: ++lineIdRef.current }))); }
+      // Restore give-me state
+      if (pd.giveMe) {
+        setGiveMeQuoteItems(pd.giveMe.quoteItems || []);
+        setGiveMeFrozenBaseline(pd.giveMe.frozenBaseline || 0);
+        setGiveMeFrozenIncentive(pd.giveMe.frozenIncentive || 0);
+        setRepAdditionalOOP(pd.giveMe.additionalOOP || 0);
+        setRepCurrentDown(pd.giveMe.currentDown || 0);
+        setRepTargetDown(pd.giveMe.targetDown || 0);
+      } else {
+        setGiveMeQuoteItems([]); setGiveMeFrozenBaseline(0); setGiveMeFrozenIncentive(0); setRepAdditionalOOP(0);
+      }
       setShowProjects(false);
       showToast('Project loaded', '\uD83D\uDCC2');
     } catch (_) { showToast('Could not parse project data', '\u26A0\uFE0F'); }
@@ -1046,7 +1057,7 @@ export default function LenardUTRMP() {
         { val: r.qty, x: c0 }, { val: (r.name || r.fixtureCategory || 'Fixture').substring(0, 26), x: c1 },
         { val: r.height ? `${r.height}'` : '-', x: c2 }, { val: `${r.existW}W`, x: c3 },
         { val: (r.productName || '-').substring(0, 24), x: c4 }, { val: `${r.newW}W`, x: c5 },
-        { val: `${r.calc.wattsReduced}W`, x: c6 }, { val: $(r.calc.totalIncentive), x: c7, align: 'right' },
+        { val: `${r.calc.wattsReduced}W`, x: c6 }, { val: $(rawIncentive > 0 ? Math.round(r.calc.totalIncentive / rawIncentive * estimatedRebate) : r.calc.totalIncentive), x: c7, align: 'right' },
       ], i % 2 === 0);
     });
     y += 1;
@@ -2015,8 +2026,7 @@ export default function LenardUTRMP() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ ...S.money, fontSize: '16px' }}>${r.calc.totalIncentive.toLocaleString()}</div>
-                    {r.calc.controlsIncentive > 0 && <div style={{ fontSize: '10px', color: T.blue }}>+${r.calc.controlsIncentive} ctrl</div>}
+                    <div style={{ ...S.money, fontSize: '16px' }}>${(rawIncentive > 0 ? Math.round(r.calc.totalIncentive / rawIncentive * estimatedRebate) : r.calc.totalIncentive).toLocaleString()}</div>
                   </div>
                   <div style={{ fontSize: '14px', color: T.textMuted, transition: 'transform 0.2s', transform: isExp ? 'rotate(90deg)' : 'none' }}>{'\u25B8'}</div>
                 </div>
@@ -2926,7 +2936,7 @@ export default function LenardUTRMP() {
                               <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.qty}</td>
                               <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.existW}</td>
                               <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.newW}</td>
-                              <td style={{ padding: '4px 6px', textAlign: 'right', color: T.accent, fontWeight: '600' }}>${r.calc.totalIncentive.toLocaleString()}</td>
+                              <td style={{ padding: '4px 6px', textAlign: 'right', color: T.accent, fontWeight: '600' }}>${(rawIncentive > 0 ? +(r.calc.totalIncentive / rawIncentive * estimatedRebate).toFixed(2) : r.calc.totalIncentive).toLocaleString()}</td>
                             </tr>
                           ))}
                         </tbody>
