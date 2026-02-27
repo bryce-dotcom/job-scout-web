@@ -80,7 +80,7 @@ export default function LeadDetail() {
     setLoading(true)
 
     // Fetch lead with relations
-    const { data: leadData, error: leadError } = await supabase
+    let { data: leadData, error: leadError } = await supabase
       .from('leads')
       .select(`
         *,
@@ -90,6 +90,20 @@ export default function LeadDetail() {
       `)
       .eq('id', id)
       .single()
+
+    // If join fails (e.g. PostgREST schema cache), fall back without source_employee
+    if (leadError) {
+      console.warn('Lead query with source_employee failed, falling back:', leadError.message);
+      ({ data: leadData, error: leadError } = await supabase
+        .from('leads')
+        .select(`
+          *,
+          lead_owner:employees!leads_lead_owner_id_fkey(id, name),
+          setter_owner:employees!leads_setter_owner_id_fkey(id, name)
+        `)
+        .eq('id', id)
+        .single())
+    }
 
     if (leadError) {
       console.error('Error fetching lead:', leadError)

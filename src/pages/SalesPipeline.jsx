@@ -229,12 +229,23 @@ export default function SalesPipeline() {
     const allStatuses = [...new Set([...stageIds, ...LEGACY_STATUSES])]
 
     // Fetch leads
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('leads')
       .select(LEAD_COLUMNS)
       .eq('company_id', companyId)
       .in('status', allStatuses)
       .order('updated_at', { ascending: false })
+
+    // If join fails (e.g. PostgREST schema cache), fall back to simpler query
+    if (error) {
+      console.warn('[Pipeline] Join query failed, falling back:', error.message);
+      ({ data, error } = await supabase
+        .from('leads')
+        .select('*, lead_owner:employees!leads_lead_owner_id_fkey(id, name)')
+        .eq('company_id', companyId)
+        .in('status', allStatuses)
+        .order('updated_at', { ascending: false }))
+    }
 
     if (error) {
       console.error('[Pipeline] Error fetching leads:', error)

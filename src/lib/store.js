@@ -259,11 +259,21 @@ export const useStore = create(
 
         // Network refresh
         try {
-          const { data, error } = await supabase
+          let { data, error } = await supabase
             .from('leads')
             .select('*, source_employee:employees!leads_lead_source_employee_id_fkey(id, name)')
             .eq('company_id', companyId)
             .order('created_at', { ascending: false });
+
+          // If join fails (e.g. PostgREST schema cache not refreshed), fall back to simple query
+          if (error) {
+            console.warn('[fetchLeads] Join query failed, falling back:', error.message);
+            ({ data, error } = await supabase
+              .from('leads')
+              .select('*')
+              .eq('company_id', companyId)
+              .order('created_at', { ascending: false }));
+          }
 
           if (error) {
             console.error('[fetchLeads] Error:', error);
