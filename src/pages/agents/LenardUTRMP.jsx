@@ -2268,9 +2268,9 @@ export default function LenardUTRMP() {
       {isRep && results.length > 0 && (
         <div style={{ margin: '0 16px 8px' }}>
           {/* Collapsed bar */}
-          {!showGiveMe && (
+          {!showGiveMe ? (
             <button onClick={() => setShowGiveMe(true)}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, cursor: 'pointer', marginBottom: '8px' }}>
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '14px' }}>{'\uD83D\uDD12'}</span>
                 <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>Give-Me Engine</span>
@@ -2280,177 +2280,118 @@ export default function LenardUTRMP() {
                 <span style={{ fontSize: '14px', color: T.textMuted }}>{'\u25B8'}</span>
               </div>
             </button>
-          )}
-
-          {/* Expanded Give-Me Engine */}
-          {showGiveMe && (<>
-            {/* Main Give-Me Card — two big numbers */}
-            <div style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, padding: '14px', marginBottom: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          ) : (
+            /* Expanded — single compact card */
+            <div style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.accent}`, padding: '12px' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ fontSize: '14px' }}>{'\uD83D\uDD12'}</span>
-                  <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>Give-Me Engine</span>
+                  <span style={{ fontSize: '13px', fontWeight: '700', color: T.accent }}>Give-Me Engine</span>
+                  <span style={{ fontSize: '9px', color: T.textMuted, background: T.bgInput, padding: '1px 6px', borderRadius: '4px' }}>Rep Only</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '10px', color: T.textMuted, background: T.bgInput, padding: '2px 8px', borderRadius: '4px' }}>Rep Only</span>
-                  <button onClick={() => setShowGiveMe(false)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '16px', padding: '2px' }}>{'\u25BE'}</button>
+                <button onClick={() => setShowGiveMe(false)} style={{ background: 'none', border: 'none', color: T.textMuted, cursor: 'pointer', fontSize: '16px', padding: '2px' }}>{'\u25BE'}</button>
+              </div>
+
+              {/* Two big numbers */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+                <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>YOUR MARGIN</div>
+                  <div style={{ fontSize: '20px', fontWeight: '800', color: T.accent }}>${Math.round(giveMe.pool).toLocaleString()}</div>
+                </div>
+                <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>YOUR 50%</div>
+                  <div style={{ fontSize: '20px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.repSplit).toLocaleString()}</div>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '10px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>YOUR MARGIN</div>
-                  <div style={{ fontSize: '22px', fontWeight: '800', color: T.accent }}>${Math.round(giveMe.pool).toLocaleString()}</div>
-                  <div style={{ fontSize: '10px', color: T.textMuted }}>above baseline</div>
-                </div>
-                <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '10px', color: T.textMuted, fontWeight: '600', letterSpacing: '0.5px' }}>YOUR 50%</div>
-                  <div style={{ fontSize: '22px', fontWeight: '800', color: T.green }}>${Math.round(giveMe.repSplit).toLocaleString()}</div>
-                  <div style={{ fontSize: '10px', color: T.textMuted }}>rep split</div>
-                </div>
-              </div>
-
-              <div style={{ fontSize: '12px', color: T.textSec, display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                <span>Project: <span style={{ color: T.text, fontWeight: '600' }}>${Math.round(effectiveProjectCost).toLocaleString()}</span></span>
-                <span>Baseline: <span style={{ color: T.text, fontWeight: '600' }}>{repBaseline > 0 ? `$${Math.round(repBaseline).toLocaleString()}` : 'Not set'}</span></span>
-                <span>Customer pays: <span style={{ color: T.text, fontWeight: '600' }}>${Math.round(giveMe.customerNet).toLocaleString()}</span> after rebate</span>
-              </div>
-            </div>
-
-            {/* Out-of-Pocket Block */}
-            {(() => {
-              const currentOOP = Math.max(0, effectiveProjectCost - estimatedRebate);
-              const maxOOP = maxUtilityCost > 0 ? Math.max(0, maxUtilityCost - Math.min(rawIncentive, +(maxUtilityCost * capPct).toFixed(2))) : 0;
-              const roomToGrow = Math.max(0, maxUtilityCost - effectiveProjectCost);
-              const atCeiling = maxUtilityCost > 0 && effectiveProjectCost >= maxUtilityCost;
-              return (
-                <div style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, padding: '14px', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: T.text, marginBottom: '10px' }}>Out-of-Pocket</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                    <div style={{ background: T.bgInput, borderRadius: '10px', padding: '10px', border: `1px solid ${T.border}` }}>
-                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.textMuted, letterSpacing: '0.5px', marginBottom: '4px' }}>CURRENT</div>
-                      <div style={{ fontSize: '11px', color: T.textSec }}>Project Cost</div>
-                      <div style={{ fontSize: '16px', fontWeight: '700', color: T.text }}>${Math.round(effectiveProjectCost).toLocaleString()}</div>
-                      <div style={{ fontSize: '11px', color: T.accent, marginTop: '4px' }}>OOP: <span style={{ fontWeight: '700' }}>${Math.round(currentOOP).toLocaleString()}</span></div>
+              {/* OOP summary line */}
+              {(() => {
+                const currentOOP = Math.max(0, effectiveProjectCost - estimatedRebate);
+                const roomToGrow = maxUtilityCost > 0 ? Math.max(0, maxUtilityCost - effectiveProjectCost) : 0;
+                const atCeiling = maxUtilityCost > 0 && effectiveProjectCost >= maxUtilityCost;
+                return (
+                  <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', fontSize: '11px', color: T.textSec }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <span>Customer OOP: <span style={{ fontWeight: '700', color: T.text }}>${Math.round(currentOOP).toLocaleString()}</span></span>
+                      {maxUtilityCost > 0 && <span>Max: <span style={{ fontWeight: '700', color: T.text }}>${Math.round(maxUtilityCost).toLocaleString()}</span></span>}
                     </div>
-                    {maxUtilityCost > 0 && (
-                      <div style={{ background: T.bgInput, borderRadius: '10px', padding: '10px', border: `1px solid ${T.green}` }}>
-                        <div style={{ fontSize: '9px', fontWeight: '700', color: T.green, letterSpacing: '0.5px', marginBottom: '4px' }}>MAX UTILITY</div>
-                        <div style={{ fontSize: '11px', color: T.textSec }}>Max Allowed</div>
-                        <div style={{ fontSize: '16px', fontWeight: '700', color: T.text }}>${Math.round(maxUtilityCost).toLocaleString()}</div>
-                        <div style={{ fontSize: '11px', color: T.green, marginTop: '4px' }}>OOP: <span style={{ fontWeight: '700' }}>${Math.round(maxOOP).toLocaleString()}</span></div>
-                      </div>
+                    {maxUtilityCost > 0 && !atCeiling && (
+                      <div style={{ color: T.green, fontWeight: '600' }}>Room to grow: ${Math.round(roomToGrow).toLocaleString()} {'\u2022'} $1 more OOP = $0.50 for you</div>
+                    )}
+                    {atCeiling && (
+                      <div style={{ color: T.accent, fontWeight: '600' }}>{'\u26A0\uFE0F'} At utility price ceiling {'\u2014'} no room to grow</div>
                     )}
                   </div>
-                  {maxUtilityCost > 0 && !atCeiling && (
-                    <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '4px' }}>
-                      Room to grow: <span style={{ fontWeight: '700', color: T.green }}>${Math.round(roomToGrow).toLocaleString()}</span>
-                    </div>
-                  )}
-                  <div style={{ fontSize: '11px', color: T.textMuted }}>Every $1 more OOP = $0.50 more for you</div>
-                  {atCeiling && (
-                    <div style={{ marginTop: '8px', padding: '6px 10px', background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '6px', fontSize: '11px', color: T.accent }}>
-                      {'\u26A0\uFE0F'} You're at the utility price ceiling {'\u2014'} no room to grow
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+                );
+              })()}
 
-            {/* Actionable Suggestion Cards */}
-            {giveMeSuggestions.map((s, i) => {
-              // Cap Gap card — orange background, before/after, sub-items
-              if (s.type === 'cap_gap') return (
-                <div key={i} style={{ borderRadius: '14px', background: 'rgba(249,115,22,0.08)', border: `1px solid ${T.accent}`, padding: '14px', marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '16px' }}>{'\uD83D\uDD36'}</span>
-                    <span style={{ fontSize: '14px', fontWeight: '700', color: T.accent }}>{s.title}</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                    <div style={{ background: T.bgCard, borderRadius: '10px', padding: '10px', border: `1px solid ${T.border}` }}>
-                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.textMuted, letterSpacing: '0.5px', marginBottom: '4px' }}>CURRENT</div>
-                      <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '2px' }}>Project Cost</div>
-                      <div style={{ fontSize: '16px', fontWeight: '700', color: T.text }}>${Math.round(s.currentCost).toLocaleString()}</div>
-                      <div style={{ fontSize: '11px', color: T.textSec, marginTop: '4px' }}>Rebate: <span style={{ fontWeight: '600' }}>${Math.round(s.currentRebate).toLocaleString()}</span></div>
-                    </div>
-                    <div style={{ background: T.bgCard, borderRadius: '10px', padding: '10px', border: `1px solid ${T.green}` }}>
-                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.green, letterSpacing: '0.5px', marginBottom: '4px' }}>FULL CAPTURE</div>
-                      <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '2px' }}>Project Cost</div>
-                      <div style={{ fontSize: '16px', fontWeight: '700', color: T.text }}>${Math.round(s.fullCaptureCost).toLocaleString()}</div>
-                      <div style={{ fontSize: '11px', color: T.green, marginTop: '4px' }}>Rebate: <span style={{ fontWeight: '600' }}>${Math.round(s.fullRebate).toLocaleString()}</span></div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '10px' }}>{s.desc}</div>
-                  {s.costRaisers && s.costRaisers.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: T.accent, marginBottom: '6px' }}>Ways to raise cost:</div>
-                      {s.costRaisers.map((cr, ci) => (
-                        <div key={ci} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', marginBottom: '4px' }}>
-                          <div>
-                            <div style={{ fontSize: '12px', fontWeight: '600', color: T.text }}>{cr.title}</div>
-                            <div style={{ fontSize: '11px', color: T.textMuted }}>{cr.desc}</div>
-                          </div>
-                          <button onClick={() => { setProjectCost(prev => (prev || effectiveProjectCost) + cr.addCost); markDirty(); showToast(`Added $${cr.addCost.toLocaleString()} to project cost`, '\u2713'); }} style={{ padding: '6px 12px', background: T.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ ${cr.addCost.toLocaleString()}</button>
+              {/* Compact info row */}
+              <div style={{ fontSize: '11px', color: T.textSec, display: 'flex', flexWrap: 'wrap', gap: '2px 10px', marginBottom: '8px' }}>
+                <span>Baseline: <span style={{ color: T.text, fontWeight: '600' }}>{repBaseline > 0 ? `$${Math.round(repBaseline).toLocaleString()}` : 'Not set'}</span></span>
+                <span>Project: <span style={{ color: T.text, fontWeight: '600' }}>${Math.round(effectiveProjectCost).toLocaleString()}</span></span>
+                <span>Net: <span style={{ color: T.text, fontWeight: '600' }}>${Math.round(giveMe.customerNet).toLocaleString()}</span></span>
+              </div>
+
+              {/* Compact suggestion rows */}
+              {giveMeSuggestions.length > 0 && (
+                <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: '8px' }}>
+                  {giveMeSuggestions.map((s, i) => {
+                    if (s.type === 'close') return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: i < giveMeSuggestions.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                        <span style={{ fontSize: '12px', flexShrink: 0 }}>{'\uD83D\uDCAC'}</span>
+                        <div style={{ flex: 1, minWidth: 0, fontSize: '11px', color: T.textSec, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
+                        <button onClick={() => { navigator.clipboard?.writeText(s.desc.replace(/^"|"$/g, '')); showToast('Script copied', '\uD83D\uDCCB'); }} style={{ padding: '4px 10px', background: T.bgInput, color: T.text, border: `1px solid ${T.border}`, borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Copy</button>
+                      </div>
+                    );
+
+                    if (s.type === 'cap_gap') return (
+                      <div key={i} style={{ padding: '6px 0', borderBottom: i < giveMeSuggestions.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '12px', flexShrink: 0 }}>{'\uD83D\uDD36'}</span>
+                          <div style={{ flex: 1, fontSize: '11px', fontWeight: '600', color: T.accent }}>{s.title}</div>
+                          <span style={{ fontSize: '11px', color: T.green, fontWeight: '700', flexShrink: 0 }}>+${Math.round(s.impact).toLocaleString()}</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
+                        <div style={{ fontSize: '10px', color: T.textSec, marginLeft: '20px', marginBottom: '4px' }}>{s.desc}</div>
+                        {s.costRaisers && s.costRaisers.map((cr, ci) => (
+                          <div key={ci} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginLeft: '20px', padding: '4px 8px', background: T.bgInput, borderRadius: '6px', marginBottom: '2px' }}>
+                            <span style={{ fontSize: '10px', color: T.textSec }}>{cr.title} {'\u2022'} {cr.desc}</span>
+                            <button onClick={() => { setProjectCost(prev => (prev || effectiveProjectCost) + cr.addCost); markDirty(); showToast(`+$${cr.addCost.toLocaleString()}`, '\u2713'); }} style={{ padding: '2px 8px', background: T.accent, color: '#fff', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>+${cr.addCost.toLocaleString()}</button>
+                          </div>
+                        ))}
+                      </div>
+                    );
 
-              // LLLC suggestion — before/after with Accept Suggestion button
-              if (s.type === 'lllc') return (
-                <div key={i} style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, padding: '14px', marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '14px' }}>{'\uD83D\uDCA1'}</span>
-                    <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>{s.title}</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '8px' }}>{s.desc}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                    <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.textMuted, letterSpacing: '0.5px', marginBottom: '2px' }}>BEFORE</div>
-                      <div style={{ fontSize: '11px', color: T.textSec }}>Rebate</div>
-                      <div style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>${Math.round(s.currentRebate).toLocaleString()}</div>
-                    </div>
-                    <div style={{ background: T.bgInput, borderRadius: '8px', padding: '8px', textAlign: 'center', border: `1px solid ${T.green}` }}>
-                      <div style={{ fontSize: '9px', fontWeight: '700', color: T.green, letterSpacing: '0.5px', marginBottom: '2px' }}>AFTER</div>
-                      <div style={{ fontSize: '11px', color: T.textSec }}>Rebate</div>
-                      <div style={{ fontSize: '15px', fontWeight: '700', color: T.green }}>${Math.round(s.newRebate).toLocaleString()}</div>
-                    </div>
-                  </div>
-                  <div style={{ background: 'rgba(34,197,94,0.1)', borderRadius: '6px', padding: '6px 10px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: T.green, marginBottom: '8px' }}>+${Math.round(s.impact).toLocaleString()} more incentive</div>
-                  <button onClick={() => { updateLine(s.lineId, 'controlsType', 'lllc'); showToast('Applied LLLC controls', '\u2713'); }} style={{ width: '100%', padding: '10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>Accept Suggestion</button>
-                </div>
-              );
+                    if (s.type === 'lllc') return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: i < giveMeSuggestions.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                        <span style={{ fontSize: '12px', flexShrink: 0 }}>{'\uD83D\uDCA1'}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '11px', fontWeight: '600', color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
+                          <div style={{ fontSize: '10px', color: T.textSec }}>{s.desc}</div>
+                        </div>
+                        <span style={{ fontSize: '10px', color: T.green, fontWeight: '700', flexShrink: 0 }}>+${Math.round(s.impact).toLocaleString()}</span>
+                        <button onClick={() => { updateLine(s.lineId, 'controlsType', 'lllc'); showToast('Applied LLLC', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
+                      </div>
+                    );
 
-              // Tier upsell suggestion — Accept Suggestion button
-              if (s.type === 'tier_upsell') return (
-                <div key={i} style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, padding: '14px', marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '14px' }}>{'\u2B06\uFE0F'}</span>
-                    <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>{s.title}</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '8px' }}>{s.desc}</div>
-                  <div style={{ background: 'rgba(34,197,94,0.1)', borderRadius: '6px', padding: '6px 10px', textAlign: 'center', fontSize: '12px', fontWeight: '700', color: T.green, marginBottom: '8px' }}>+${Math.round(s.impact).toLocaleString()} more toward cap</div>
-                  <button onClick={() => { selectProduct(s.lineId, s.targetProduct); showToast('Upgraded product tier', '\u2713'); }} style={{ width: '100%', padding: '10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>Accept Suggestion</button>
-                </div>
-              );
+                    if (s.type === 'tier_upsell') return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: i < giveMeSuggestions.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                        <span style={{ fontSize: '12px', flexShrink: 0 }}>{'\u2B06\uFE0F'}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '11px', fontWeight: '600', color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
+                          <div style={{ fontSize: '10px', color: T.textSec }}>{s.desc}</div>
+                        </div>
+                        <span style={{ fontSize: '10px', color: T.green, fontWeight: '700', flexShrink: 0 }}>+${Math.round(s.impact).toLocaleString()}</span>
+                        <button onClick={() => { selectProduct(s.lineId, s.targetProduct); showToast('Tier upgraded', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
+                      </div>
+                    );
 
-              // Close script — copy button
-              if (s.type === 'close') return (
-                <div key={i} style={{ borderRadius: '14px', background: T.bgCard, border: `1px solid ${T.border}`, padding: '14px', marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '14px' }}>{'\uD83D\uDCAC'}</span>
-                    <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>{s.title}</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: T.textSec, lineHeight: '1.5', fontStyle: 'italic', background: T.bgInput, borderRadius: '8px', padding: '10px', marginBottom: '8px' }}>{s.desc}</div>
-                  <button onClick={() => { navigator.clipboard?.writeText(s.desc.replace(/^"|"$/g, '')); showToast('Script copied', '\uD83D\uDCCB'); }} style={{ width: '100%', padding: '10px', background: T.bgInput, color: T.text, border: `1px solid ${T.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Copy Script</button>
+                    return null;
+                  })}
                 </div>
-              );
-
-              return null;
-            })}
-          </>)}
+              )}
+            </div>
+          )}
         </div>
       )}
 
