@@ -712,7 +712,7 @@ export default function SalesPipeline() {
 
       {/* Mobile View — dark theme, full PWA experience */}
       {isMobile ? (() => {
-        const m = { bg: '#09090b', bgCard: '#18181b', border: '#27272a', text: '#ffffff', textMuted: '#71717a', accent: '#f97316' }
+        const m = { bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8', text: '#2c3530', textMuted: '#7d8a7f', accent: '#5a6349' }
         const statusColors = { 'New': '#3b82f6', 'Contacted': '#a855f7', 'Appointment Set': '#22c55e', 'Qualified': '#f97316', 'Quote Sent': '#eab308', 'Negotiation': '#f97316', 'Won': '#22c55e', 'Lost': '#ef4444', 'Job Scheduled': '#0ea5e9', 'In Progress': '#f97316', 'Job Complete': '#22c55e', 'Invoiced': '#8b5cf6', 'Closed': '#6b7280' }
         const getStatusColor = (status) => statusColors[status] || '#71717a'
         const salesStages = stages.filter(s => !s.isDelivery && !s.isClosed)
@@ -731,9 +731,9 @@ export default function SalesPipeline() {
         ]
 
         const getSourceStyle = (source) => {
-          if (source?.includes('Lenard') || source?.includes('SRP') || source?.includes('RMP')) return { bg: 'rgba(249,115,22,0.15)', color: '#f97316', border: '1px solid rgba(249,115,22,0.3)' }
-          if (source === 'Referral') return { bg: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }
-          return { bg: 'rgba(255,255,255,0.08)', color: '#71717a', border: '1px solid rgba(255,255,255,0.1)' }
+          if (source?.includes('Lenard') || source?.includes('SRP') || source?.includes('RMP')) return { bg: 'rgba(249,115,22,0.1)', color: '#c2410c', border: '1px solid rgba(249,115,22,0.25)' }
+          if (source === 'Referral') return { bg: 'rgba(34,197,94,0.1)', color: '#16a34a', border: '1px solid rgba(34,197,94,0.25)' }
+          return { bg: 'rgba(90,99,73,0.08)', color: '#7d8a7f', border: `1px solid ${m.border}` }
         }
 
         // Pull to refresh handlers
@@ -762,7 +762,7 @@ export default function SalesPipeline() {
                 <button onClick={() => { fetchPipelineLeads(); setRefreshing(true) }} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: `1px solid ${m.border}`, borderRadius: '8px', color: m.textMuted }}>
                   <RefreshCw size={18} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
                 </button>
-                <button onClick={() => navigate('/leads')} style={{ height: '40px', padding: '0 12px', display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: m.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '600' }}>
+                <button onClick={() => navigate('/leads')} style={{ height: '40px', padding: '0 12px', display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#5a6349', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '600' }}>
                   <Plus size={16} /> Add
                 </button>
               </div>
@@ -785,9 +785,9 @@ export default function SalesPipeline() {
               {/* Stats Row */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 {[
-                  { label: 'Active', value: statsData.active.value, color: '#3b82f6' },
+                  { label: 'Active', value: statsData.active.value, color: '#5a6349' },
                   { label: 'Won', value: statsData.won.value, color: '#22c55e' },
-                  { label: 'Value', value: statsData.totalValue.value, color: '#f97316', isFormatted: true }
+                  { label: 'Value', value: statsData.totalValue.value, color: '#5a6349', isFormatted: true }
                 ].map(s => (
                   <div key={s.label} style={{ flex: 1, height: '64px', backgroundColor: m.bgCard, borderRadius: '12px', border: `1px solid ${m.border}`, borderLeft: `3px solid ${s.color}`, padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: m.text }}>{s.isFormatted ? s.value : s.value}</div>
@@ -825,7 +825,7 @@ export default function SalesPipeline() {
                       style={{
                         height: '36px', borderRadius: '18px', padding: '0 14px',
                         display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
-                        backgroundColor: isActive ? tab.color + '33' : 'transparent',
+                        backgroundColor: isActive ? tab.color + '1a' : 'transparent',
                         border: `1px solid ${isActive ? tab.color : m.border}`,
                         color: isActive ? tab.color : m.textMuted,
                         fontSize: '13px', fontWeight: isActive ? '600' : '400'
@@ -877,7 +877,7 @@ export default function SalesPipeline() {
                             onTouchStart={() => setTouchedCardId(lead.id)}
                             onTouchEnd={() => setTouchedCardId(null)}
                             style={{
-                              backgroundColor: touchedCardId === lead.id ? '#222226' : m.bgCard,
+                              backgroundColor: touchedCardId === lead.id ? '#eef2eb' : m.bgCard,
                               border: `1px solid ${m.border}`,
                               borderLeft: `4px solid ${sc}`,
                               borderRadius: '12px',
@@ -920,7 +920,7 @@ export default function SalesPipeline() {
                               <a
                                 href={`tel:${lead.phone}`}
                                 onClick={(e) => e.stopPropagation()}
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#3b82f6', textDecoration: 'none' }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#5a6349', textDecoration: 'none' }}
                               >
                                 <Phone size={12} /> {lead.phone}
                               </a>
@@ -939,8 +939,8 @@ export default function SalesPipeline() {
                   onClick={() => setMobileDeliveryExpanded(!mobileDeliveryExpanded)}
                   style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}
                 >
-                  <ChevronRight size={14} color="#0ea5e9" style={{ transform: mobileDeliveryExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#0ea5e9', textTransform: 'uppercase', letterSpacing: '1px' }}>Delivery Pipeline</span>
+                  <ChevronRight size={14} color="#0284c7" style={{ transform: mobileDeliveryExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#0284c7', textTransform: 'uppercase', letterSpacing: '1px' }}>Delivery Pipeline</span>
                   <span style={{ fontSize: '10px', color: m.textMuted }}>Auto-synced</span>
                   <div style={{ flex: 1, height: '1px', backgroundColor: m.border }} />
                   <span style={{ fontSize: '11px', color: m.textMuted, backgroundColor: m.bgCard, padding: '2px 8px', borderRadius: '10px', border: `1px solid ${m.border}` }}>
@@ -999,25 +999,6 @@ export default function SalesPipeline() {
               </div>
             </div>
 
-            {/* Floating Action Button */}
-            <button
-              onClick={() => navigate('/leads')}
-              style={{
-                position: 'fixed', bottom: '80px', right: '20px',
-                width: '56px', height: '56px', borderRadius: '50%',
-                backgroundColor: m.accent, border: 'none',
-                color: '#fff', fontSize: '24px', fontWeight: '700',
-                boxShadow: '0 4px 20px rgba(249,115,22,0.4)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                zIndex: 20, animation: 'fabPulse 3s ease-in-out infinite'
-              }}
-            >
-              +
-            </button>
-
-            <style>{`
-              @keyframes fabPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-            `}</style>
           </div>
         )
       })() : (
