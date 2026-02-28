@@ -912,12 +912,21 @@ export default function LenardUTRMP() {
     const sectionTitle = (title) => {
       checkPage(30);
       y += 4;
+      // Horizontal rule above section
+      doc.setDrawColor(...ltGray);
+      doc.setLineWidth(0.3);
+      doc.line(M, y - 6, R, y - 6);
+      // Accent left border bar
       doc.setFillColor(...orange);
-      doc.rect(M, y - 4.5, LW, 8, 'F');
+      doc.rect(M, y - 4.5, 3, 8, 'F');
+      // Light background
+      doc.setFillColor(255, 251, 245);
+      doc.rect(M + 3, y - 4.5, LW - 3, 8, 'F');
       doc.setFontSize(11);
       doc.setFont(undefined, 'bold');
-      doc.setTextColor(...white);
-      doc.text(title.toUpperCase(), M + 3, y);
+      doc.setTextColor(...orange);
+      doc.text(title.toUpperCase(), M + 7, y);
+      doc.setTextColor(...dark);
       y += 8;
     };
 
@@ -974,9 +983,23 @@ export default function LenardUTRMP() {
     const payback = adjPayback;
 
     // ===== HEADER =====
-    y = 16;
+    // Dark green header bar
+    doc.setFillColor(...brandGreen);
+    doc.rect(0, 0, W, 18, 'F');
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...white);
+    doc.text('ENERGY SCOUT', M + 2, 12);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.text('by HHH Building Services', M + 56, 12);
+    doc.setTextColor(249, 200, 150);
+    doc.text('Financial Audit Report', R, 12, { align: 'right' });
+    // Orange accent line below header bar
     doc.setFillColor(...orange);
-    doc.rect(0, 0, W, 4, 'F');
+    doc.rect(0, 18, W, 2, 'F');
+
+    y = 30;
 
     const logoB64 = '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';
     const logoW = 10;
@@ -1606,107 +1629,176 @@ export default function LenardUTRMP() {
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const black = rgb(0, 0, 0);
     const gray = rgb(0.4, 0.4, 0.4);
-    let y = 750;
-    const lm = 50;
+    const ltGray = rgb(0.85, 0.85, 0.85);
+    const white = rgb(1, 1, 1);
+    const headerBg = rgb(0.93, 0.93, 0.93);
+    let y = 760;
+    const lm = 40;
+    const rm = 572;
+    const fw = rm - lm; // full width of content area
+    const tinX = 420; // right column start for TIN area
 
     const drawText = (text, x, yy, size = 10, f = font, color = black) => {
       page.drawText(text, { x, y: yy, size, font: f, color });
     };
 
-    // Header
-    drawText('Form W-9', lm, y, 18, fontBold);
-    drawText('Request for Taxpayer Identification Number and Certification', lm + 100, y, 10, font, gray);
-    y -= 20;
-    drawText('(Rev. October 2018) Department of the Treasury - Internal Revenue Service', lm, y, 7, font, gray);
-    y -= 20;
+    // ===== GRAY HEADER BAND =====
+    page.drawRectangle({ x: lm, y: y - 8, width: fw, height: 42, color: headerBg, borderColor: black, borderWidth: 1 });
+    drawText('Form', lm + 6, y + 16, 10, font, gray);
+    drawText('W-9', lm + 6, y, 22, fontBold, black);
+    drawText('(Rev. October 2018)', lm + 6, y - 10, 7, font, gray);
+    // Right side of header
+    drawText('Request for Taxpayer', lm + 100, y + 14, 11, fontBold, black);
+    drawText('Identification Number and Certification', lm + 100, y + 2, 11, fontBold, black);
+    drawText('Department of the Treasury - Internal Revenue Service', lm + 100, y - 10, 7, font, gray);
+    y -= 22;
 
-    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 1, color: black });
-    y -= 15;
+    // ===== BORDERED SECTION: Lines 1-6 (left column) with TIN right column =====
+    const secTop = y;
+    const secHeight = 220;
+    // Main left bordered area
+    page.drawRectangle({ x: lm, y: secTop - secHeight, width: tinX - lm - 4, height: secHeight, borderColor: black, borderWidth: 0.75, color: white });
+    // Right TIN column
+    page.drawRectangle({ x: tinX - 4, y: secTop - secHeight, width: rm - tinX + 4, height: secHeight, borderColor: black, borderWidth: 0.75, color: white });
+
+    y -= 6;
 
     // Line 1: Name
-    drawText('1  Name (as shown on your income tax return)', lm, y, 8, font, gray);
-    y -= 14;
-    drawText(w9Fields.name || '', lm + 5, y, 11, fontBold);
-    y -= 5;
-    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 0.5, color: gray });
-    y -= 15;
+    drawText('1', lm + 4, y, 7, fontBold, black);
+    drawText('Name (as shown on your income tax return). Name is required on this line; do not leave blank.', lm + 14, y, 7, font, gray);
+    y -= 13;
+    drawText(w9Fields.name || '', lm + 14, y, 11, fontBold);
+    y -= 4;
+    page.drawLine({ start: { x: lm, y }, end: { x: tinX - 4, y }, thickness: 0.5, color: ltGray });
+    y -= 12;
 
     // Line 2: Business name
-    drawText('2  Business name/disregarded entity name, if different from above', lm, y, 8, font, gray);
-    y -= 14;
-    drawText(w9Fields.businessName || '', lm + 5, y, 11, font);
-    y -= 5;
-    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 0.5, color: gray });
-    y -= 15;
+    drawText('2', lm + 4, y, 7, fontBold, black);
+    drawText('Business name/disregarded entity name, if different from above', lm + 14, y, 7, font, gray);
+    y -= 13;
+    drawText(w9Fields.businessName || '', lm + 14, y, 11, font);
+    y -= 4;
+    page.drawLine({ start: { x: lm, y }, end: { x: tinX - 4, y }, thickness: 0.5, color: ltGray });
+    y -= 12;
 
     // Line 3: Tax classification
-    drawText('3  Check appropriate box for federal tax classification:', lm, y, 8, font, gray);
-    y -= 14;
-    const taxOpts = ['Individual/Sole Proprietor', 'C Corporation', 'S Corporation', 'Partnership', 'Trust/Estate', 'LLC', 'Other'];
-    let tx = lm + 5;
+    drawText('3', lm + 4, y, 7, fontBold, black);
+    drawText('Check appropriate box for federal tax classification of the person whose name is entered on line 1:', lm + 14, y, 6.5, font, gray);
+    y -= 12;
+    const taxOpts = ['Individual/Sole Proprietor', 'C Corp', 'S Corp', 'Partnership', 'Trust/Estate', 'LLC', 'Other'];
+    let tx = lm + 14;
     taxOpts.forEach(opt => {
-      const isChecked = w9Fields.taxClass === opt;
-      page.drawRectangle({ x: tx, y: y - 2, width: 8, height: 8, borderColor: black, borderWidth: 0.5, color: isChecked ? rgb(0, 0, 0) : rgb(1, 1, 1) });
-      drawText(opt, tx + 11, y, 7, font);
-      tx += font.widthOfTextAtSize(opt, 7) + 20;
-      if (tx > 480) { tx = lm + 5; y -= 14; }
+      const isChecked = w9Fields.taxClass === opt || (opt === 'C Corp' && w9Fields.taxClass === 'C Corporation') || (opt === 'S Corp' && w9Fields.taxClass === 'S Corporation');
+      // Checkbox square
+      page.drawRectangle({ x: tx, y: y - 2, width: 8, height: 8, borderColor: black, borderWidth: 0.75, color: isChecked ? black : white });
+      if (isChecked) {
+        drawText('\u2713', tx + 1, y - 1, 7, fontBold, white);
+      }
+      drawText(opt, tx + 11, y, 6.5, font);
+      tx += font.widthOfTextAtSize(opt, 6.5) + 19;
+      if (tx > tinX - 30) { tx = lm + 14; y -= 12; }
     });
-    y -= 20;
+    y -= 6;
+    page.drawLine({ start: { x: lm, y }, end: { x: tinX - 4, y }, thickness: 0.5, color: ltGray });
+    y -= 12;
 
     // Line 5: Address
-    drawText('5  Address (number, street, and apt. or suite no.)', lm, y, 8, font, gray);
-    y -= 14;
-    drawText(w9Fields.address || '', lm + 5, y, 11, font);
-    y -= 5;
-    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 0.5, color: gray });
-    y -= 15;
+    drawText('5', lm + 4, y, 7, fontBold, black);
+    drawText('Address (number, street, and apt. or suite no.)', lm + 14, y, 7, font, gray);
+    y -= 13;
+    drawText(w9Fields.address || '', lm + 14, y, 11, font);
+    y -= 4;
+    page.drawLine({ start: { x: lm, y }, end: { x: tinX - 4, y }, thickness: 0.5, color: ltGray });
+    y -= 12;
 
     // Line 6: City, state, ZIP
-    drawText('6  City, state, and ZIP code', lm, y, 8, font, gray);
-    y -= 14;
-    drawText(w9Fields.cityStateZip || '', lm + 5, y, 11, font);
-    y -= 5;
-    page.drawLine({ start: { x: lm, y }, end: { x: 562, y }, thickness: 0.5, color: gray });
-    y -= 25;
+    drawText('6', lm + 4, y, 7, fontBold, black);
+    drawText('City, state, and ZIP code', lm + 14, y, 7, font, gray);
+    y -= 13;
+    drawText(w9Fields.cityStateZip || '', lm + 14, y, 11, font);
 
-    // Part I: TIN
-    drawText('Part I', lm, y, 12, fontBold);
-    drawText('Taxpayer Identification Number (TIN)', lm + 50, y, 10, fontBold);
-    y -= 16;
-    drawText('Social security number:', lm, y, 9, font, gray);
-    drawText(w9Fields.ssn || '___-__-____', lm + 130, y, 11, fontBold);
-    y -= 14;
-    drawText('or Employer identification number:', lm, y, 9, font, gray);
-    drawText(w9Fields.ein || '__-_______', lm + 180, y, 11, fontBold);
-    y -= 25;
+    // ===== RIGHT COLUMN: Part I TIN =====
+    let tinY = secTop - 6;
+    // Part I header inside right column
+    page.drawRectangle({ x: tinX - 4, y: tinY - 4, width: rm - tinX + 4, height: 16, color: rgb(0.15, 0.15, 0.15) });
+    drawText('Part I', tinX + 4, tinY + 2, 9, fontBold, white);
+    drawText('Taxpayer Identification Number (TIN)', tinX + 40, tinY + 2, 7, fontBold, white);
+    tinY -= 20;
 
-    // Part II: Certification
-    drawText('Part II', lm, y, 12, fontBold);
-    drawText('Certification', lm + 55, y, 10, fontBold);
-    y -= 14;
-    const certText = 'Under penalties of perjury, I certify that: (1) The number shown on this form is my correct taxpayer identification number, (2) I am not subject to backup withholding, (3) I am a U.S. citizen or other U.S. person, and (4) The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.';
+    // SSN label and boxes
+    drawText('Social security number', tinX + 4, tinY, 7, font, gray);
+    tinY -= 14;
+    const ssnVal = w9Fields.ssn || '';
+    const ssnDigits = ssnVal.replace(/[^0-9]/g, '');
+    // Draw 9 SSN digit boxes
+    const boxSize = 14;
+    const boxGap = 2;
+    let bx = tinX + 8;
+    for (let i = 0; i < 9; i++) {
+      if (i === 3 || i === 5) { drawText('-', bx, tinY + 2, 10, font, gray); bx += 8; }
+      page.drawRectangle({ x: bx, y: tinY - 3, width: boxSize, height: boxSize, borderColor: black, borderWidth: 0.5, color: white });
+      if (ssnDigits[i]) drawText(ssnDigits[i], bx + 4, tinY, 10, fontBold);
+      bx += boxSize + boxGap;
+    }
+    tinY -= 22;
+
+    // EIN label and boxes
+    drawText('or', tinX + 4, tinY + 6, 7, font, gray);
+    drawText('Employer identification number', tinX + 4, tinY - 4, 7, font, gray);
+    tinY -= 18;
+    const einVal = w9Fields.ein || '';
+    const einDigits = einVal.replace(/[^0-9]/g, '');
+    bx = tinX + 8;
+    for (let i = 0; i < 9; i++) {
+      if (i === 2) { drawText('-', bx, tinY + 2, 10, font, gray); bx += 8; }
+      page.drawRectangle({ x: bx, y: tinY - 3, width: boxSize, height: boxSize, borderColor: black, borderWidth: 0.5, color: white });
+      if (einDigits[i]) drawText(einDigits[i], bx + 4, tinY, 10, fontBold);
+      bx += boxSize + boxGap;
+    }
+
+    // Move y below the bordered section
+    y = secTop - secHeight - 14;
+
+    // ===== PART II: CERTIFICATION =====
+    page.drawRectangle({ x: lm, y: y - 2, width: fw, height: 14, color: rgb(0.15, 0.15, 0.15) });
+    drawText('Part II', lm + 6, y + 2, 9, fontBold, white);
+    drawText('Certification', lm + 46, y + 2, 9, fontBold, white);
+    y -= 18;
+
+    const certText = 'Under penalties of perjury, I certify that: (1) The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and (2) I am not subject to backup withholding because: (a) I am exempt from backup withholding, or (b) I have not been notified by the IRS that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and (3) I am a U.S. citizen or other U.S. person; and (4) The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.';
     const certLines = [];
     let currentLine = '';
     certText.split(' ').forEach(word => {
       const test = currentLine ? `${currentLine} ${word}` : word;
-      if (font.widthOfTextAtSize(test, 8) < 500) currentLine = test;
+      if (font.widthOfTextAtSize(test, 7) < fw - 20) currentLine = test;
       else { certLines.push(currentLine); currentLine = word; }
     });
     if (currentLine) certLines.push(currentLine);
-    certLines.forEach(cl => { drawText(cl, lm, y, 8, font, gray); y -= 11; });
-    y -= 10;
+    certLines.forEach(cl => { drawText(cl, lm + 6, y, 7, font, gray); y -= 10; });
+    y -= 8;
 
-    // Signature
-    drawText('Signature:', lm, y, 10, fontBold);
+    // ===== SIGNATURE SECTION =====
+    page.drawRectangle({ x: lm, y: y - 30, width: fw, height: 40, borderColor: black, borderWidth: 0.75, color: white });
+    drawText('Sign', lm + 6, y + 2, 8, fontBold, black);
+    drawText('Here', lm + 6, y - 8, 8, fontBold, black);
+
+    drawText('Signature of', lm + 40, y + 4, 7, font, gray);
+    drawText('U.S. person', lm + 40, y - 4, 7, font, gray);
+
+    // Signature line
+    page.drawLine({ start: { x: lm + 90, y: y - 20 }, end: { x: 380, y: y - 20 }, thickness: 0.5, color: black });
+    drawText('Date', 400, y - 4, 7, font, gray);
+    page.drawLine({ start: { x: 420, y: y - 20 }, end: { x: rm - 6, y: y - 20 }, thickness: 0.5, color: black });
+
     if (signatureData) {
       try {
         const sigBytes = Uint8Array.from(atob(signatureData.split(',')[1]), c => c.charCodeAt(0));
         const sigImg = await pdfDoc.embedPng(sigBytes);
         const sigDims = sigImg.scale(0.3);
-        page.drawImage(sigImg, { x: lm + 70, y: y - 15, width: Math.min(sigDims.width, 200), height: Math.min(sigDims.height, 40) });
+        page.drawImage(sigImg, { x: lm + 95, y: y - 18, width: Math.min(sigDims.width, 200), height: Math.min(sigDims.height, 30) });
       } catch (_) {}
     }
-    drawText(`Date: ${new Date().toLocaleDateString('en-US')}`, 400, y, 10, font);
+    drawText(new Date().toLocaleDateString('en-US'), 425, y - 16, 10, font);
 
     const pdfBytes = await pdfDoc.save();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
@@ -2400,7 +2492,23 @@ export default function LenardUTRMP() {
                 style={{ ...S.btn, fontSize: '11px', padding: '8px 10px', background: T.bgInput, color: T.textMuted }}>{'\uD83D\uDD13'}</button>
             )}
             <button onClick={() => setShowSaveModal(true)} style={{ ...S.btn, flex: 1, fontSize: '12px', padding: '8px 14px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
-            <button onClick={() => setShowSummary(true)} style={{ ...S.btn, flex: 1, fontSize: '11px', padding: '8px 12px' }}>{'\uD83D\uDCCB'} Audit & Contract</button>
+            <button onClick={() => {
+              setAppFields(prev => ({
+                ...prev,
+                businessName: prev.businessName || projectName || '',
+                contactName: prev.contactName || projectName || '',
+                contactEmail: prev.contactEmail || saveEmail || '',
+                contactPhone: prev.contactPhone || savePhone || '',
+              }));
+              setW9Fields(prev => ({
+                ...prev,
+                name: prev.name || projectName || '',
+                address: prev.address || saveAddress || '',
+                cityStateZip: prev.cityStateZip || [saveCity, saveState, saveZip].filter(Boolean).join(', ') || '',
+              }));
+              setExpandedSection('contract');
+              setShowSummary(true);
+            }} style={{ ...S.btn, flex: 1, fontSize: '11px', padding: '8px 12px' }}>{'\uD83D\uDCCB'} Audit & Contract</button>
           </div>
         </div>
       )}
@@ -2843,213 +2951,202 @@ export default function LenardUTRMP() {
 
               <div style={{ fontSize: '10px', color: '#999', marginTop: '12px', textAlign: 'center' }}>Estimate only {'\u2014'} subject to Rocky Mountain Power review and approval</div>
 
-              {/* ===== SECTION 2: Contract & Terms (Accordion) ===== */}
-              <div style={{ marginTop: '16px', border: '1px solid #ddd', borderRadius: '12px', overflow: 'hidden' }}>
-                <button onClick={() => setExpandedSection(expandedSection === 'contract' ? null : 'contract')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: expandedSection === 'contract' ? '#f8f4ef' : '#fafafa', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '700', color: '#1e1e22' }}>
-                  <span>{'\uD83D\uDCDD'} Contract & Terms</span>
-                  <span style={{ color: '#999', fontSize: '12px' }}>{expandedSection === 'contract' ? '\u25B2' : '\u25BC'}</span>
-                </button>
-                {expandedSection === 'contract' && (
-                  <div style={{ padding: '16px', borderTop: '1px solid #eee' }}>
-                    {/* Scope of Work */}
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', textTransform: 'uppercase' }}>Scope of Work</div>
-                    <div style={{ fontSize: '12px', color: '#555', lineHeight: '1.6', marginBottom: '12px' }}>
-                      {results.map((r, i) => (
-                        <div key={r.id} style={{ marginBottom: '4px' }}>{i + 1}. Supply and install {r.qty}x {r.productName || 'LED fixture'} ({r.newW}W) replacing existing {r.name || 'fixture'} ({r.existW}W){r.name ? ` at ${r.name}` : ''}</div>
+              {/* ===== SECTION 2-4: Tab Bar (Contract / Application / W9) ===== */}
+              <div style={{ display: 'flex', borderBottom: '2px solid #eee', marginTop: '16px', marginBottom: '0' }}>
+                {[
+                  { key: 'contract', label: 'Contract' },
+                  { key: 'application', label: 'Application' },
+                  { key: 'w9', label: 'W-9' },
+                ].map(tab => {
+                  const isActive = expandedSection === tab.key;
+                  return (
+                    <button key={tab.key} onClick={() => setExpandedSection(tab.key)} style={{ flex: 1, padding: '10px 8px', background: 'none', border: 'none', borderBottom: isActive ? `2px solid ${T.accent}` : '2px solid transparent', color: isActive ? T.accent : '#888', fontSize: '12px', fontWeight: isActive ? '700' : '500', cursor: 'pointer', marginBottom: '-2px' }}>{tab.label}</button>
+                  );
+                })}
+              </div>
+
+              {/* --- Contract Tab Content --- */}
+              {expandedSection === 'contract' && (
+                <div style={{ padding: '16px 0' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', textTransform: 'uppercase' }}>Scope of Work</div>
+                  <div style={{ fontSize: '12px', color: '#555', lineHeight: '1.6', marginBottom: '12px' }}>
+                    {results.map((r, i) => (
+                      <div key={r.id} style={{ marginBottom: '4px' }}>{i + 1}. Supply and install {r.qty}x {r.productName || 'LED fixture'} ({r.newW}W) replacing existing {r.name || 'fixture'} ({r.existW}W){r.name ? ` at ${r.name}` : ''}</div>
+                    ))}
+                  </div>
+
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', textTransform: 'uppercase' }}>Terms & Conditions</div>
+                  <textarea
+                    value={contractTerms || `1. Work will commence within a reasonable timeframe upon execution of this agreement.\n2. All materials and labor are included as specified in the scope of work above.\n3. Warranty: LED products carry manufacturer warranty (typically 5-10 years). Labor warranty: 1 year from installation.\n4. RMP Incentive Assignment: Customer assigns the Rocky Mountain Power rebate incentive of $${estimatedRebate.toLocaleString()} to HHH Building Services.\n5. HHH Building Services shall not be liable for indirect, incidental, or consequential damages.\n6. Cancellation: Either party may cancel this agreement with written notice within 3 business days of execution. After 3 days, a restocking fee of 15% may apply.`}
+                    onChange={e => setContractTerms(e.target.value)}
+                    rows={10}
+                    style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '11px', color: '#333', lineHeight: '1.6', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                  />
+
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginTop: '14px', marginBottom: '8px', textTransform: 'uppercase' }}>Payment Terms</div>
+                  <div style={{ background: '#f8f8fa', borderRadius: '8px', padding: '12px', border: '1px solid #eee' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '600' }}>{waiveDeposit ? 'No deposit required' : `50% Deposit: $${Math.round(effectiveProjectCost * 0.5).toLocaleString()}`}</span>
+                      <button onClick={() => setWaiveDeposit(!waiveDeposit)} style={{ padding: '4px 12px', fontSize: '11px', background: waiveDeposit ? T.green : '#eee', color: waiveDeposit ? '#fff' : '#666', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>{waiveDeposit ? 'Deposit Waived' : 'Waive Deposit'}</button>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#666' }}>Balance of ${waiveDeposit ? Math.round(effectiveProjectCost).toLocaleString() : Math.round(effectiveProjectCost * 0.5).toLocaleString()} due upon completion.</div>
+                    <div style={{ fontSize: '12px', color: T.green, fontWeight: '600', marginTop: '4px' }}>RMP rebate of ${estimatedRebate.toLocaleString()} applied after utility approval.</div>
+                  </div>
+                </div>
+              )}
+
+              {/* --- Application Tab Content --- */}
+              {expandedSection === 'application' && (
+                <div style={{ padding: '16px 0' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', textTransform: 'uppercase' }}>Customer / Site Information</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Name</label>
+                      <input type="text" value={appFields.businessName} onChange={e => setAppFields(p => ({ ...p, businessName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Contact Name</label>
+                      <input type="text" value={appFields.contactName} onChange={e => setAppFields(p => ({ ...p, contactName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Email</label>
+                      <input type="email" value={appFields.contactEmail} onChange={e => setAppFields(p => ({ ...p, contactEmail: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Phone</label>
+                      <input type="tel" value={appFields.contactPhone} onChange={e => setAppFields(p => ({ ...p, contactPhone: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Type</label>
+                      <select value={appFields.businessType} onChange={e => setAppFields(p => ({ ...p, businessType: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }}>
+                        {['Commercial', 'Industrial', 'Retail', 'Office', 'Warehouse', 'Restaurant', 'Hotel', 'Healthcare', 'Education', 'Government', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Rate Schedule</label>
+                      <input type="text" value={appFields.rateSchedule} onChange={e => setAppFields(p => ({ ...p, rateSchedule: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                  </div>
+
+                  {program === 'large' && (<>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Vendor Information</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Vendor Name</label>
+                        <input type="text" value={appFields.vendorName} onChange={e => setAppFields(p => ({ ...p, vendorName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Vendor Contact</label>
+                        <input type="text" value={appFields.vendorContact} onChange={e => setAppFields(p => ({ ...p, vendorContact: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Payee Information</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Payee Name</label>
+                        <input type="text" value={appFields.payeeName} onChange={e => setAppFields(p => ({ ...p, payeeName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Payee City/State/ZIP</label>
+                        <input type="text" value={[appFields.payeeCity, appFields.payeeState, appFields.payeeZip].filter(Boolean).join(', ')} onChange={e => setAppFields(p => ({ ...p, payeeCity: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+                  </>)}
+
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Operating Schedule</div>
+                  <div style={{ fontSize: '12px', color: '#555', background: '#f8f8fa', borderRadius: '8px', padding: '10px', border: '1px solid #eee' }}>
+                    {operatingHours} hrs/day x {daysPerYear} days/yr = {(operatingHours * daysPerYear).toLocaleString()} annual hours
+                  </div>
+
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Cost Information</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Material $</label>
+                      <input type="number" value={appFields.materialCost || ''} onChange={e => setAppFields(p => ({ ...p, materialCost: parseFloat(e.target.value) || 0 }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Labor $</label>
+                      <input type="number" value={appFields.laborCost || ''} onChange={e => setAppFields(p => ({ ...p, laborCost: parseFloat(e.target.value) || 0 }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Other $</label>
+                      <input type="number" value={appFields.otherCost || ''} onChange={e => setAppFields(p => ({ ...p, otherCost: parseFloat(e.target.value) || 0 }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Application Line Items ({results.length})</div>
+                  <div style={{ fontSize: '11px', color: '#888', maxHeight: '200px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '8px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: '#f0f0f0' }}>
+                          <th style={{ padding: '4px 6px', textAlign: 'left', fontSize: '10px' }}>#</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'left', fontSize: '10px' }}>Location</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>Qty</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>Exist W</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>New W</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>Incentive</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {results.map((r, i) => (
+                          <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                            <td style={{ padding: '4px 6px' }}>{i + 1}</td>
+                            <td style={{ padding: '4px 6px', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || r.fixtureCategory}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.qty}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.existW}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.newW}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right', color: T.accent, fontWeight: '600' }}>${(rawIncentive > 0 ? +(r.calc.totalIncentive / rawIncentive * estimatedRebate).toFixed(2) : r.calc.totalIncentive).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* --- W-9 Tab Content --- */}
+              {expandedSection === 'w9' && (
+                <div style={{ padding: '16px 0' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Name (as on tax return)</label>
+                      <input type="text" value={w9Fields.name} onChange={e => setW9Fields(p => ({ ...p, name: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Name (if different)</label>
+                      <input type="text" value={w9Fields.businessName} onChange={e => setW9Fields(p => ({ ...p, businessName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Federal Tax Classification</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {['Individual/Sole Proprietor', 'C Corporation', 'S Corporation', 'Partnership', 'Trust/Estate', 'LLC', 'Other'].map(opt => (
+                        <button key={opt} onClick={() => setW9Fields(p => ({ ...p, taxClass: opt }))} style={{ padding: '5px 10px', fontSize: '11px', border: `1px solid ${w9Fields.taxClass === opt ? T.accent : '#ddd'}`, borderRadius: '6px', background: w9Fields.taxClass === opt ? '#fff5eb' : '#fff', color: w9Fields.taxClass === opt ? T.accent : '#555', cursor: 'pointer', fontWeight: w9Fields.taxClass === opt ? '600' : '400' }}>{opt}</button>
                       ))}
                     </div>
+                  </div>
 
-                    {/* Terms */}
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', textTransform: 'uppercase' }}>Terms & Conditions</div>
-                    <textarea
-                      value={contractTerms || `1. Work will commence within a reasonable timeframe upon execution of this agreement.\n2. All materials and labor are included as specified in the scope of work above.\n3. Warranty: LED products carry manufacturer warranty (typically 5-10 years). Labor warranty: 1 year from installation.\n4. RMP Incentive Assignment: Customer assigns the Rocky Mountain Power rebate incentive of $${estimatedRebate.toLocaleString()} to HHH Building Services.\n5. HHH Building Services shall not be liable for indirect, incidental, or consequential damages.\n6. Cancellation: Either party may cancel this agreement with written notice within 3 business days of execution. After 3 days, a restocking fee of 15% may apply.`}
-                      onChange={e => setContractTerms(e.target.value)}
-                      rows={10}
-                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '11px', color: '#333', lineHeight: '1.6', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
-                    />
-
-                    {/* Payment Terms */}
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginTop: '14px', marginBottom: '8px', textTransform: 'uppercase' }}>Payment Terms</div>
-                    <div style={{ background: '#f8f8fa', borderRadius: '8px', padding: '12px', border: '1px solid #eee' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '600' }}>{waiveDeposit ? 'No deposit required' : `50% Deposit: $${Math.round(effectiveProjectCost * 0.5).toLocaleString()}`}</span>
-                        <button onClick={() => setWaiveDeposit(!waiveDeposit)} style={{ padding: '4px 12px', fontSize: '11px', background: waiveDeposit ? T.green : '#eee', color: waiveDeposit ? '#fff' : '#666', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>{waiveDeposit ? 'Deposit Waived' : 'Waive Deposit'}</button>
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#666' }}>Balance of ${waiveDeposit ? Math.round(effectiveProjectCost).toLocaleString() : Math.round(effectiveProjectCost * 0.5).toLocaleString()} due upon completion.</div>
-                      <div style={{ fontSize: '12px', color: T.green, fontWeight: '600', marginTop: '4px' }}>RMP rebate of ${estimatedRebate.toLocaleString()} applied after utility approval.</div>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Address</label>
+                    <input type="text" value={w9Fields.address} onChange={e => setW9Fields(p => ({ ...p, address: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>City, State, ZIP</label>
+                    <input type="text" value={w9Fields.cityStateZip} onChange={e => setW9Fields(p => ({ ...p, cityStateZip: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>SSN</label>
+                      <input type="text" value={w9Fields.ssn} onChange={e => setW9Fields(p => ({ ...p, ssn: e.target.value }))} placeholder="___-__-____" style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>EIN</label>
+                      <input type="text" value={w9Fields.ein} onChange={e => setW9Fields(p => ({ ...p, ein: e.target.value }))} placeholder="__-_______" style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
                     </div>
                   </div>
-                )}
-              </div>
-
-              {/* ===== SECTION 3: RMP General Application (Accordion) ===== */}
-              <div style={{ marginTop: '8px', border: '1px solid #ddd', borderRadius: '12px', overflow: 'hidden' }}>
-                <button onClick={() => setExpandedSection(expandedSection === 'application' ? null : 'application')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: expandedSection === 'application' ? '#f8f4ef' : '#fafafa', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '700', color: '#1e1e22' }}>
-                  <span>{'\uD83D\uDCCB'} RMP General Application {program === 'large' ? '(Large)' : '(Express)'}</span>
-                  <span style={{ color: '#999', fontSize: '12px' }}>{expandedSection === 'application' ? '\u25B2' : '\u25BC'}</span>
-                </button>
-                {expandedSection === 'application' && (
-                  <div style={{ padding: '16px', borderTop: '1px solid #eee' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', textTransform: 'uppercase' }}>Customer / Site Information</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Name</label>
-                        <input type="text" value={appFields.businessName} onChange={e => setAppFields(p => ({ ...p, businessName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Contact Name</label>
-                        <input type="text" value={appFields.contactName} onChange={e => setAppFields(p => ({ ...p, contactName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Email</label>
-                        <input type="email" value={appFields.contactEmail} onChange={e => setAppFields(p => ({ ...p, contactEmail: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Phone</label>
-                        <input type="tel" value={appFields.contactPhone} onChange={e => setAppFields(p => ({ ...p, contactPhone: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Type</label>
-                        <select value={appFields.businessType} onChange={e => setAppFields(p => ({ ...p, businessType: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }}>
-                          {['Commercial', 'Industrial', 'Retail', 'Office', 'Warehouse', 'Restaurant', 'Hotel', 'Healthcare', 'Education', 'Government', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Rate Schedule</label>
-                        <input type="text" value={appFields.rateSchedule} onChange={e => setAppFields(p => ({ ...p, rateSchedule: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                    </div>
-
-                    {/* Large-only: Vendor + Payee */}
-                    {program === 'large' && (<>
-                      <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Vendor Information</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                        <div>
-                          <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Vendor Name</label>
-                          <input type="text" value={appFields.vendorName} onChange={e => setAppFields(p => ({ ...p, vendorName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Vendor Contact</label>
-                          <input type="text" value={appFields.vendorContact} onChange={e => setAppFields(p => ({ ...p, vendorContact: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                        </div>
-                      </div>
-                      <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Payee Information</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                        <div>
-                          <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Payee Name</label>
-                          <input type="text" value={appFields.payeeName} onChange={e => setAppFields(p => ({ ...p, payeeName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Payee City/State/ZIP</label>
-                          <input type="text" value={[appFields.payeeCity, appFields.payeeState, appFields.payeeZip].filter(Boolean).join(', ')} onChange={e => setAppFields(p => ({ ...p, payeeCity: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                        </div>
-                      </div>
-                    </>)}
-
-                    {/* Operating Schedule */}
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Operating Schedule</div>
-                    <div style={{ fontSize: '12px', color: '#555', background: '#f8f8fa', borderRadius: '8px', padding: '10px', border: '1px solid #eee' }}>
-                      {operatingHours} hrs/day x {daysPerYear} days/yr = {(operatingHours * daysPerYear).toLocaleString()} annual hours
-                    </div>
-
-                    {/* Cost Summary */}
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Cost Information</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Material $</label>
-                        <input type="number" value={appFields.materialCost || ''} onChange={e => setAppFields(p => ({ ...p, materialCost: parseFloat(e.target.value) || 0 }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Labor $</label>
-                        <input type="number" value={appFields.laborCost || ''} onChange={e => setAppFields(p => ({ ...p, laborCost: parseFloat(e.target.value) || 0 }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Other $</label>
-                        <input type="number" value={appFields.otherCost || ''} onChange={e => setAppFields(p => ({ ...p, otherCost: parseFloat(e.target.value) || 0 }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                    </div>
-
-                    {/* Line items preview */}
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: T.accent, marginBottom: '8px', marginTop: '12px', textTransform: 'uppercase' }}>Application Line Items ({results.length})</div>
-                    <div style={{ fontSize: '11px', color: '#888', maxHeight: '200px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '8px' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                          <tr style={{ background: '#f0f0f0' }}>
-                            <th style={{ padding: '4px 6px', textAlign: 'left', fontSize: '10px' }}>#</th>
-                            <th style={{ padding: '4px 6px', textAlign: 'left', fontSize: '10px' }}>Location</th>
-                            <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>Qty</th>
-                            <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>Exist W</th>
-                            <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>New W</th>
-                            <th style={{ padding: '4px 6px', textAlign: 'right', fontSize: '10px' }}>Incentive</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {results.map((r, i) => (
-                            <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                              <td style={{ padding: '4px 6px' }}>{i + 1}</td>
-                              <td style={{ padding: '4px 6px', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || r.fixtureCategory}</td>
-                              <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.qty}</td>
-                              <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.existW}</td>
-                              <td style={{ padding: '4px 6px', textAlign: 'right' }}>{r.newW}</td>
-                              <td style={{ padding: '4px 6px', textAlign: 'right', color: T.accent, fontWeight: '600' }}>${(rawIncentive > 0 ? +(r.calc.totalIncentive / rawIncentive * estimatedRebate).toFixed(2) : r.calc.totalIncentive).toLocaleString()}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ===== SECTION 4: W9 (Accordion) ===== */}
-              <div style={{ marginTop: '8px', border: '1px solid #ddd', borderRadius: '12px', overflow: 'hidden' }}>
-                <button onClick={() => setExpandedSection(expandedSection === 'w9' ? null : 'w9')} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: expandedSection === 'w9' ? '#f8f4ef' : '#fafafa', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '700', color: '#1e1e22' }}>
-                  <span>{'\uD83C\uDFE6'} W-9 Tax Information</span>
-                  <span style={{ color: '#999', fontSize: '12px' }}>{expandedSection === 'w9' ? '\u25B2' : '\u25BC'}</span>
-                </button>
-                {expandedSection === 'w9' && (
-                  <div style={{ padding: '16px', borderTop: '1px solid #eee' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Name (as on tax return)</label>
-                        <input type="text" value={w9Fields.name} onChange={e => setW9Fields(p => ({ ...p, name: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Name (if different)</label>
-                        <input type="text" value={w9Fields.businessName} onChange={e => setW9Fields(p => ({ ...p, businessName: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                    </div>
-
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Federal Tax Classification</label>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {['Individual/Sole Proprietor', 'C Corporation', 'S Corporation', 'Partnership', 'Trust/Estate', 'LLC', 'Other'].map(opt => (
-                          <button key={opt} onClick={() => setW9Fields(p => ({ ...p, taxClass: opt }))} style={{ padding: '5px 10px', fontSize: '11px', border: `1px solid ${w9Fields.taxClass === opt ? T.accent : '#ddd'}`, borderRadius: '6px', background: w9Fields.taxClass === opt ? '#fff5eb' : '#fff', color: w9Fields.taxClass === opt ? T.accent : '#555', cursor: 'pointer', fontWeight: w9Fields.taxClass === opt ? '600' : '400' }}>{opt}</button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Address</label>
-                      <input type="text" value={w9Fields.address} onChange={e => setW9Fields(p => ({ ...p, address: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                    </div>
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>City, State, ZIP</label>
-                      <input type="text" value={w9Fields.cityStateZip} onChange={e => setW9Fields(p => ({ ...p, cityStateZip: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>SSN</label>
-                        <input type="text" value={w9Fields.ssn} onChange={e => setW9Fields(p => ({ ...p, ssn: e.target.value }))} placeholder="___-__-____" style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>EIN</label>
-                        <input type="text" value={w9Fields.ein} onChange={e => setW9Fields(p => ({ ...p, ein: e.target.value }))} placeholder="__-_______" style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* ===== SECTION 5: Signature & Acceptance ===== */}
               <div style={{ marginTop: '16px', border: `2px solid ${contractAccepted ? T.green : T.accent}`, borderRadius: '12px', padding: '16px', background: contractAccepted ? 'rgba(34,197,94,0.05)' : '#fff' }}>
