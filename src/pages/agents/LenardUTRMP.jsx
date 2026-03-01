@@ -4,6 +4,8 @@ import SignaturePad from "signature_pad";
 import * as XLSX from "xlsx";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { supabase } from '../../lib/supabase';
+import { fillPdfForm } from '../../lib/pdfFormFiller';
+import { resolveAllMappings } from '../../lib/dataPathResolver';
 
 // ============================================================
 // LENARD UT RMP â€” Rocky Mountain Power Lighting Rebate Calculator
@@ -868,7 +870,7 @@ export default function LenardUTRMP() {
     URL.revokeObjectURL(url);
   };
 
-  const generatePDF = (repMode = false) => {
+  const buildAuditPdfBlob = (repMode = false) => {
     const doc = new jsPDF({ unit: 'mm', format: 'letter' });
     const W = doc.internal.pageSize.getWidth();
     const H = doc.internal.pageSize.getHeight();
@@ -1487,7 +1489,11 @@ export default function LenardUTRMP() {
     }
 
     // ===== OUTPUT =====
-    const blob = doc.output('blob');
+    return doc.output('blob');
+  };
+
+  const generatePDF = (repMode = false) => {
+    const blob = buildAuditPdfBlob(repMode);
     const fileName = `Energy_Scout_${repMode ? 'Rep_Summary_' : 'Audit_'}${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
     const file = new File([blob], fileName, { type: 'application/pdf' });
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
@@ -1814,19 +1820,27 @@ export default function LenardUTRMP() {
     try {
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const slug = (projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_');
       const files = [];
 
-      // Generate PDF blob
-      // We reuse generatePDF logic but capture the blob
+      // 1. Full Audit PDF
       const pdfBlob = generatePDFBlob();
-      if (pdfBlob) files.push({ blob: pdfBlob, name: `Energy_Scout_Audit_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`, type: 'application/pdf' });
+      if (pdfBlob) files.push({ blob: pdfBlob, name: `Energy_Scout_Audit_${slug}.pdf`, type: 'application/pdf' });
 
-      // Generate XLS blob
+      // 2. Filled W-9 PDF (graceful skip if not uploaded to Data Console)
+      const w9Blob = await fetchAndFillForm('W9');
+      if (w9Blob) files.push({ blob: w9Blob, name: `W9_${slug}.pdf`, type: 'application/pdf' });
+
+      // 3. Filled RMP Application PDF (graceful skip if not uploaded)
+      const appBlob = await fetchAndFillForm('Application');
+      if (appBlob) files.push({ blob: appBlob, name: `RMP_Application_${slug}.pdf`, type: 'application/pdf' });
+
+      // 4. XLS Workbook
       const wb = generateXLSWorkbook();
       if (wb) {
         const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         const xlsBlob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        files.push({ blob: xlsBlob, name: `RMP_Application_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        files.push({ blob: xlsBlob, name: `RMP_Application_${slug}.xlsx`, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       }
 
       // Upload each file
@@ -1846,7 +1860,7 @@ export default function LenardUTRMP() {
           body: formData,
         });
       }
-      showToast(`${files.length} files attached \u2022 Lead marked Won`, '\u2713');
+      showToast(`${files.length} file${files.length !== 1 ? 's' : ''} attached \u2022 Lead marked Won`, '\u2713');
     } catch (err) {
       console.error('Attach error:', err);
       showToast('Could not attach files', '\u26A0\uFE0F');
@@ -1875,20 +1889,136 @@ export default function LenardUTRMP() {
     return wb;
   };
 
-  // Helper: generate PDF blob (for attaching)
+  // Helper: generate full audit PDF blob (for attaching)
   const generatePDFBlob = () => {
+    try { return buildAuditPdfBlob(false); } catch (_) { return null; }
+  };
+
+  // Build data context for PDF form filling (compatible with resolveAllMappings)
+  const buildDataContext = () => {
+    const ssn = (w9Fields.ssn || '').replace(/\D/g, '');
+    const ein = (w9Fields.ein || '').replace(/\D/g, '');
+    return {
+      customer: {
+        name: projectName || appFields.businessName || '',
+        email: saveEmail || appFields.contactEmail || '',
+        phone: savePhone || appFields.contactPhone || '',
+        address: saveAddress || '',
+        city: saveCity || '', state: saveState || '', zip: saveZip || '',
+        contact_name: appFields.contactName || '',
+        business_type: appFields.buildingType || appFields.businessType || '',
+        participant_is: appFields.participantIs || '',
+        rate_schedule: appFields.rateSchedule || '',
+        account_number: '',
+      },
+      audit: {
+        address: saveAddress || '', city: saveCity || '', state: saveState || '', zip: saveZip || '',
+        operating_hours: operatingHours, days_per_year: daysPerYear,
+        energy_rate: energyRate, estimated_rebate: estimatedRebate,
+        project_cost: effectiveProjectCost,
+        total_fixtures: results.reduce((s, r) => s + (r.qty || 0), 0),
+        total_existing_watts: totals.existWatts,
+        total_proposed_watts: totals.newWatts,
+        annual_savings_kwh: Math.round(financials.annualKwhSaved),
+        annual_savings_dollars: financials.annualEnergySavings,
+        material_cost: appFields.materialCost || '',
+        labor_cost: appFields.laborCost || '',
+        other_cost: appFields.otherCost || '',
+      },
+      provider: { provider_name: 'Rocky Mountain Power' },
+      salesperson: { name: leadOwnerName || '', phone: '', email: '' },
+      vendor: {
+        name: appFields.vendorName || '',
+        address: appFields.vendorAddress || '',
+        contact: appFields.vendorContact || '',
+        phone: appFields.vendorPhone || '',
+      },
+      payee: {
+        name: appFields.payeeName || appFields.vendorName || '',
+        address: appFields.payeeAddress || '',
+        city: appFields.payeeCity || '',
+        state: appFields.payeeState || '',
+        zip: appFields.payeeZip || '',
+      },
+      w9: {
+        name: w9Fields.name || '', business_name: w9Fields.businessName || '',
+        tax_class: w9Fields.taxClass || '', llc_class: w9Fields.llcClass || '',
+        other_class: '', exempt_payee: w9Fields.exemptPayee || '',
+        exempt_fatca: w9Fields.exemptFatca || '',
+        address: w9Fields.address || '', city_state_zip: w9Fields.cityStateZip || '',
+        account_numbers: w9Fields.accountNumbers || '',
+        requester_name: 'Rocky Mountain Power',
+        ssn: w9Fields.ssn || '',
+        ssn_1: ssn.slice(0, 3), ssn_2: ssn.slice(3, 5), ssn_3: ssn.slice(5, 9),
+        ein: w9Fields.ein || '',
+        ein_1: ein.slice(0, 2), ein_2: ein.slice(2, 9),
+        signature_date: new Date().toLocaleDateString('en-US'),
+      },
+      quote: {
+        quote_amount: effectiveProjectCost,
+        utility_incentive: estimatedRebate,
+        discount: '',
+      },
+      lines: results.map(r => ({
+        item_name: r.name || r.fixtureCategory || 'Fixture',
+        quantity: r.qty, exist_watts: r.existW, new_watts: r.newW,
+        watts_reduced: r.calc.wattsReduced, incentive: r.calc.totalIncentive,
+        line_total: r.calc.totalIncentive,
+      })),
+    };
+  };
+
+  // Fetch a utility form from DB, fill it, and return as Blob (or null on failure)
+  const fetchAndFillForm = async (formType) => {
     try {
-      const doc = new jsPDF({ unit: 'mm', format: 'letter' });
-      // simplified version - just has title + line items for attachment
-      doc.setFontSize(16);
-      doc.text('Energy Scout Financial Audit', 16, 20);
-      doc.setFontSize(10);
-      doc.text(`Customer: ${projectName || 'N/A'}`, 16, 30);
-      doc.text(`Program: ${programLabel}`, 16, 36);
-      doc.text(`Estimated Rebate: $${estimatedRebate.toLocaleString()}`, 16, 42);
-      doc.text(`Date: ${new Date().toLocaleDateString('en-US')}`, 16, 48);
-      return doc.output('blob');
-    } catch (_) { return null; }
+      // Find Rocky Mountain Power provider
+      const { data: providers } = await supabase
+        .from('utility_providers')
+        .select('id')
+        .ilike('provider_name', '%Rocky Mountain%')
+        .limit(1);
+      if (!providers?.length) { console.warn(`No Rocky Mountain Power provider found for ${formType} form`); return null; }
+
+      // Find published form of this type
+      const { data: forms } = await supabase
+        .from('utility_forms')
+        .select('*')
+        .eq('provider_id', providers[0].id)
+        .eq('form_type', formType)
+        .eq('status', 'published')
+        .limit(1);
+      if (!forms?.length) { console.warn(`No published ${formType} form found`); return null; }
+
+      const form = forms[0];
+
+      // Resolve field mappings if available
+      let fieldValues = {};
+      if (form.field_mapping && typeof form.field_mapping === 'object') {
+        fieldValues = resolveAllMappings(form.field_mapping, buildDataContext());
+      }
+
+      // Fetch PDF bytes from storage or URL
+      let pdfBytes = null;
+      if (form.form_file) {
+        const { data } = supabase.storage.from('utility-pdfs').getPublicUrl(form.form_file);
+        if (data?.publicUrl) {
+          const res = await fetch(data.publicUrl);
+          if (res.ok) pdfBytes = new Uint8Array(await res.arrayBuffer());
+        }
+      }
+      if (!pdfBytes && form.form_url) {
+        const res = await fetch(form.form_url);
+        if (res.ok) pdfBytes = new Uint8Array(await res.arrayBuffer());
+      }
+      if (!pdfBytes) { console.warn(`Could not fetch PDF for ${formType} form`); return null; }
+
+      // Fill and return as Blob
+      const filledBytes = await fillPdfForm(pdfBytes, fieldValues);
+      return new Blob([filledBytes], { type: 'application/pdf' });
+    } catch (err) {
+      console.warn(`Error filling ${formType} form:`, err);
+      return null;
+    }
   };
 
   // Audible click + haptic

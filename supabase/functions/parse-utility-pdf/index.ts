@@ -52,31 +52,115 @@ Your job:
 3. Map each field to the best matching database data path, or null if no match
 
 Available data paths:
+CUSTOMER / PARTICIPANT:
 - customer.name — Customer/business name
 - customer.email — Customer email
 - customer.phone — Customer phone number
-- customer.address — Customer mailing address
+- customer.address — Customer street address
+- customer.city — Customer city
+- customer.state — Customer state
+- customer.zip — Customer zip code
+- customer.contact_name — Contact person name
+- customer.business_type — Business/building type
+- customer.participant_is — Participant role (Building Owner, Tenant, etc.)
+- customer.rate_schedule — Utility rate schedule
+- customer.account_number — Utility account number
+
+AUDIT / PROJECT:
 - audit.address — Project/service address
 - audit.city — Project city
 - audit.state — Project state
 - audit.zip — Project zip code
-- provider.provider_name — Utility company name
-- provider.contact_phone — Utility contact phone
-- salesperson.name — Sales representative name
-- salesperson.phone — Sales rep phone
-- salesperson.email — Sales rep email
-- quote.quote_amount — Total project cost
-- quote.utility_incentive — Estimated incentive/rebate amount
-- quote.discount — Discount amount
+- audit.operating_hours — Operating hours per day
+- audit.days_per_year — Operating days per year
+- audit.energy_rate — Electric rate in $/kWh
+- audit.estimated_rebate — Estimated rebate amount
+- audit.project_cost — Total project cost
 - audit.total_fixtures — Total fixture count
 - audit.total_existing_watts — Total existing wattage
 - audit.total_proposed_watts — Total proposed wattage
 - audit.annual_savings_kwh — Annual kWh savings
 - audit.annual_savings_dollars — Annual dollar savings
-- audit.estimated_rebate — Estimated rebate from audit
+- audit.material_cost — Material cost
+- audit.labor_cost — Labor cost
+- audit.other_cost — Other costs
+
+UTILITY PROVIDER:
+- provider.provider_name — Utility company name
+- provider.contact_phone — Utility contact phone
+
+SALESPERSON / REP:
+- salesperson.name — Sales representative name
+- salesperson.phone — Sales rep phone
+- salesperson.email — Sales rep email
+
+VENDOR / CONTRACTOR:
+- vendor.name — Vendor/contractor company name
+- vendor.address — Vendor address
+- vendor.contact — Vendor contact person name
+- vendor.phone — Vendor phone number
+
+PAYEE (incentive check recipient):
+- payee.name — Payee name
+- payee.address — Payee address
+- payee.city — Payee city
+- payee.state — Payee state
+- payee.zip — Payee zip code
+
+W-9 TAX FORM FIELDS:
+- w9.name — Name as shown on tax return (line 1)
+- w9.business_name — Business name / DBA (line 2)
+- w9.tax_class — Federal tax classification (Individual, C Corp, S Corp, Partnership, Trust, LLC, Other)
+- w9.llc_class — LLC tax classification letter (C, S, P)
+- w9.other_class — Other tax classification text
+- w9.exempt_payee — Exempt payee code
+- w9.exempt_fatca — FATCA exemption code
+- w9.address — Street address (line 5)
+- w9.city_state_zip — City, state, and ZIP (line 6)
+- w9.account_numbers — Account number(s) (line 7)
+- w9.requester_name — Requester name and address
+- w9.ssn — Full Social Security Number (XXX-XX-XXXX)
+- w9.ssn_1 — SSN first 3 digits
+- w9.ssn_2 — SSN middle 2 digits
+- w9.ssn_3 — SSN last 4 digits
+- w9.ein — Full Employer ID Number (XX-XXXXXXX)
+- w9.ein_1 — EIN first 2 digits
+- w9.ein_2 — EIN last 7 digits
+- w9.signature_date — Date of signature
+
+QUOTE:
+- quote.quote_amount — Total project cost/quote amount
+- quote.utility_incentive — Estimated incentive/rebate amount
+- quote.discount — Discount amount
+
+LINE ITEMS (indexed — use lines.N.field where N is 0-based row index):
+- lines.0.item_name — Row 1 fixture/item name or location description
+- lines.0.quantity — Row 1 quantity
+- lines.0.exist_watts — Row 1 existing wattage
+- lines.0.new_watts — Row 1 proposed/new wattage
+- lines.0.watts_reduced — Row 1 watts reduced
+- lines.0.incentive — Row 1 incentive amount
+- lines.1.item_name — Row 2 fixture/item name (and so on for rows 2, 3, 4...)
+Use lines.0.*, lines.1.*, lines.2.*, etc. for each row in a fixture/measure table.
+For forms with 10+ line-item rows, map ALL of them using the correct index.
+
+AGGREGATIONS (across all line items):
+- lines.quantity.sum — Sum of all line quantities
+- lines.line_total.sum — Sum of all line totals
+- lines.exist_watts.sum — Sum of existing watts
+- lines.new_watts.sum — Sum of new watts
+- lines.watts_reduced.sum — Sum of watts reduced
+- lines.incentive.sum — Sum of incentives
 - audit_areas.fixture_count.sum — Sum of fixtures across all areas
 - audit_areas.area_watts_reduced.sum — Sum of watts reduced across all areas
+
+COMPUTED:
 - today — Today's date (MM/DD/YYYY)
+
+IMPORTANT MAPPING GUIDANCE:
+- For W-9 forms: Map ALL fields. Tax classification checkboxes map to w9.tax_class. SSN/EIN digit boxes map to w9.ssn_1/ssn_2/ssn_3 or w9.ein_1/ein_2. Address, name, business name fields are straightforward w9.* paths.
+- For application forms with fixture/measure tables: Map EVERY row using indexed paths (lines.0.*, lines.1.*, etc.). Also map header fields (customer info, vendor info, operating hours, etc.).
+- Map as many fields as possible. Only use null for fields that truly have no matching path (signatures, decorative elements, internal-use-only fields).
 
 Return ONLY valid JSON:
 {
