@@ -8,7 +8,7 @@ import DealBreadcrumb from '../components/DealBreadcrumb'
 import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
-  Edit2, Save, AlertCircle, GripVertical, CheckCircle2
+  Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download
 } from 'lucide-react'
 
 // Default status colors (fallback when store is empty)
@@ -96,6 +96,7 @@ export default function JobDetail() {
   // Section state
   const [sections, setSections] = useState([])
   const [showSectionModal, setShowSectionModal] = useState(false)
+  const [attachments, setAttachments] = useState([])
   const [editingSection, setEditingSection] = useState(null)
   const [sectionForm, setSectionForm] = useState({
     name: '',
@@ -165,6 +166,14 @@ export default function JobDetail() {
         .order('sort_order')
 
       setSections(sectionsData || [])
+
+      // Fetch file attachments linked to this job
+      const { data: attachData } = await supabase
+        .from('file_attachments')
+        .select('*')
+        .eq('job_id', id)
+        .order('created_at', { ascending: false })
+      setAttachments(attachData || [])
     }
 
     setLoading(false)
@@ -1228,6 +1237,85 @@ export default function JobDetail() {
               style={{ ...inputStyle, resize: 'vertical' }}
               placeholder="Add notes..."
             />
+          </div>
+
+          {/* Documents */}
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <Paperclip size={16} color={theme.textMuted} />
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Documents ({attachments.length})</h3>
+            </div>
+            {attachments.length === 0 ? (
+              <p style={{ fontSize: '13px', color: theme.textMuted }}>No documents attached. Files from Lenard audits will appear here when the lead is converted to a job.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {attachments.map(att => {
+                  const ext = (att.file_name || '').split('.').pop()?.toLowerCase()
+                  const iconColor = ext === 'pdf' ? '#dc2626' : ext === 'xlsx' ? '#16a34a' : '#6366f1'
+                  const sizeKB = att.file_size ? Math.round(att.file_size / 1024) : null
+                  return (
+                    <div key={att.id} style={{
+                      padding: '10px 12px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '8px',
+                      border: `1px solid ${theme.border}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px'
+                    }}>
+                      <div style={{
+                        width: '32px', height: '32px',
+                        backgroundColor: iconColor + '18',
+                        borderRadius: '6px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0
+                      }}>
+                        <FileText size={16} color={iconColor} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontWeight: '500', color: theme.text, fontSize: '13px',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                        }}>
+                          {att.file_name}
+                        </div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                          {ext?.toUpperCase()}{sizeKB ? ` \u2022 ${sizeKB}KB` : ''}{' \u2022 '}{new Date(att.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const { data } = await supabase.storage.from(att.storage_bucket).createSignedUrl(att.file_path, 3600)
+                          if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          backgroundColor: theme.accentBg,
+                          color: theme.accent,
+                          border: `1px solid ${theme.accent}`,
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          flexShrink: 0
+                        }}
+                      >
+                        <Download size={12} />
+                        Open
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
