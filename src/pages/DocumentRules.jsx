@@ -353,15 +353,18 @@ export default function DocumentRules() {
     setMappingLoading(true)
 
     try {
-      // Fetch the PDF from storage
-      const { data } = supabase.storage.from('project-documents').getPublicUrl(template.file_path)
-      if (!data?.publicUrl) {
-        toast.error('Could not get PDF URL')
+      // Fetch the PDF from storage using a signed URL (bucket is not public)
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('project-documents')
+        .createSignedUrl(template.file_path, 300)
+
+      if (signedError || !signedData?.signedUrl) {
+        toast.error('Could not get PDF URL: ' + (signedError?.message || 'unknown error'))
         setMappingLoading(false)
         return
       }
 
-      const res = await fetch(data.publicUrl)
+      const res = await fetch(signedData.signedUrl)
       if (!res.ok) {
         toast.error('Could not fetch PDF file')
         setMappingLoading(false)
