@@ -8,7 +8,7 @@ import {
   ArrowLeft, Calendar, FileText, Clipboard, Plus, Send, Phone, Mail,
   MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
   CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package, Grid3X3,
-  Paperclip, Download, Briefcase, Upload, Loader, Check, Info
+  Paperclip, Download, Briefcase, Upload, Loader, Check, Info, Eye
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import Tooltip from '../components/Tooltip'
@@ -72,6 +72,9 @@ export default function LeadDetail() {
   const [attachments, setAttachments] = useState([])
   const [convertingToJob, setConvertingToJob] = useState(false)
   const fileInputRef = useRef(null)
+
+  // Document viewer state
+  const [viewingDoc, setViewingDoc] = useState(null) // { url, name }
 
   // Generate from Library state
   const [showGenerateModal, setShowGenerateModal] = useState(false)
@@ -347,6 +350,22 @@ export default function LeadDetail() {
       window.open(data.signedUrl, '_blank')
     } catch (err) {
       alert('Download failed: ' + (err.message || 'Unknown error'))
+    }
+  }
+
+  // View attached file in-app
+  const handleViewFile = async (att) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from(att.storage_bucket)
+        .createSignedUrl(att.file_path, 3600)
+      if (error || !data?.signedUrl) {
+        alert('Could not generate view link')
+        return
+      }
+      setViewingDoc({ url: data.signedUrl, name: att.file_name })
+    } catch (err) {
+      alert('View failed: ' + (err.message || 'Unknown error'))
     }
   }
 
@@ -1544,6 +1563,29 @@ export default function LeadDetail() {
                       </div>
                       <div style={{ display: 'flex', gap: '8px', width: isMobile ? '100%' : 'auto' }}>
                         <button
+                          onClick={() => handleViewFile(att)}
+                          style={{
+                            padding: isMobile ? '10px 16px' : '8px 14px',
+                            minHeight: isMobile ? '44px' : 'auto',
+                            backgroundColor: theme.accentBg,
+                            color: theme.accent,
+                            border: `1px solid ${theme.accent}`,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            whiteSpace: 'nowrap',
+                            flex: isMobile ? 1 : 'none',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Eye size={14} />
+                          View
+                        </button>
+                        <button
                           onClick={() => handleDownloadFile(att)}
                           style={{
                             padding: isMobile ? '10px 16px' : '8px 14px',
@@ -1593,6 +1635,20 @@ export default function LeadDetail() {
           </div>
         )}
       </div>
+
+      {/* Document Viewer Modal */}
+      {viewingDoc && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.8)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#1e1e22', color: '#fff' }}>
+            <div style={{ fontSize: '14px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '12px' }}>{viewingDoc.name}</div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => window.open(viewingDoc.url, '_blank')} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}><ExternalLink size={12} /> Open</button>
+              <button onClick={() => setViewingDoc(null)} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}><X size={14} /> Close</button>
+            </div>
+          </div>
+          <iframe src={viewingDoc.url} title={viewingDoc.name} style={{ flex: 1, border: 'none', background: '#fff' }} />
+        </div>
+      )}
 
       {/* Generate from Library Modal */}
       {showGenerateModal && (
