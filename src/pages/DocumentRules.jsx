@@ -616,34 +616,17 @@ export default function DocumentRules() {
         if (signedData?.signedUrl) body.pdf_url = signedData.signedUrl
       }
 
-      // Call edge function directly via fetch to get full error visibility
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      const { data: { session } } = await supabase.auth.getSession()
-      const authToken = session?.access_token || supabaseKey
-
-      const fnRes = await fetch(`${supabaseUrl}/functions/v1/parse-utility-pdf`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-          'apikey': supabaseKey
-        },
-        body: JSON.stringify(body)
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('parse-utility-pdf', {
+        body
       })
 
-      const res = { data: null, error: null }
-      if (!fnRes.ok) {
-        let errDetail = `HTTP ${fnRes.status}`
-        try {
-          const errBody = await fnRes.json()
-          if (errBody?.error) errDetail = errBody.error
-        } catch { /* ignore */ }
-        toast.error('Smart mapping failed: ' + errDetail)
+      if (fnError) {
+        const detail = fnData?.error || fnError.message || 'Unknown error'
+        toast.error('Smart mapping failed: ' + detail)
         setSmartMapLoading(false)
         return
       }
-      res.data = await fnRes.json()
+      const res = { data: fnData, error: null }
 
       if (res.data?.success && res.data.results?.field_mappings) {
         const suggestions = res.data.results.field_mappings
