@@ -230,6 +230,7 @@ export default function DocumentRules() {
   const [packageItems, setPackageItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const [filter, setFilter] = useState('all')
   const [saving, setSaving] = useState(false)
 
@@ -320,6 +321,25 @@ export default function DocumentRules() {
 
   // --- Helpers ---
   const isExcelFile = (fileName) => /\.xlsx$/i.test(fileName || '')
+
+  // --- Drag-and-drop handlers ---
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    setDragging(true)
+  }
+  const handleDragLeave = (e) => {
+    e.preventDefault()
+    setDragging(false)
+  }
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) {
+      // Reuse the same upload handler by simulating the event shape
+      handleUploadCustomForm({ target: { files: [file] } })
+    }
+  }
 
   // --- Upload handler ---
   const handleUploadCustomForm = async (e) => {
@@ -736,38 +756,6 @@ export default function DocumentRules() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {activeTab === 'library' && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.xlsx"
-                onChange={handleUploadCustomForm}
-                style={{ display: 'none' }}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 16px',
-                  backgroundColor: theme.accent,
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: uploading ? 'not-allowed' : 'pointer',
-                  opacity: uploading ? 0.6 : 1
-                }}
-              >
-                <Upload size={16} />
-                {uploading ? 'Uploading...' : '+ Upload Custom Form'}
-              </button>
-            </>
-          )}
           <button
             onClick={() => navigate('/settings')}
             style={{
@@ -884,6 +872,50 @@ export default function DocumentRules() {
               </div>
             ))}
           </div>
+
+          {/* Upload Drop Zone */}
+          <label
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            style={{
+              display: 'block',
+              padding: uploading ? '20px 40px' : '28px 40px',
+              border: `2px dashed ${dragging ? theme.accent : theme.border}`,
+              borderRadius: '10px',
+              textAlign: 'center',
+              cursor: uploading ? 'not-allowed' : 'pointer',
+              marginBottom: '20px',
+              backgroundColor: dragging ? theme.accentBg : 'transparent',
+              transition: 'border-color 0.2s, background-color 0.2s'
+            }}
+            onMouseEnter={(e) => { if (!uploading) e.currentTarget.style.borderColor = theme.accent }}
+            onMouseLeave={(e) => { if (!dragging) e.currentTarget.style.borderColor = theme.border }}
+          >
+            {uploading ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                <Loader size={20} style={{ color: theme.accent, animation: 'spin 1s linear infinite' }} />
+                <span style={{ color: theme.text, fontSize: '14px' }}>Uploading...</span>
+              </div>
+            ) : (
+              <>
+                <Upload size={32} style={{ color: theme.textMuted, marginBottom: '8px' }} />
+                <div style={{ color: theme.text, fontSize: '14px', marginBottom: '4px' }}>
+                  Click to upload a PDF or Excel template
+                </div>
+                <div style={{ color: theme.textMuted, fontSize: '12px' }}>
+                  or drag and drop &mdash; .pdf for fillable forms, .xlsx for {'{{tag}}'} templates
+                </div>
+              </>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.xlsx"
+              onChange={handleUploadCustomForm}
+              style={{ display: 'none' }}
+            />
+          </label>
 
           {/* Filter Chips */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
