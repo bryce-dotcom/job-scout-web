@@ -5,6 +5,7 @@ import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
 import { extractFormFields } from '../lib/pdfFormFiller'
+import { extractExcelTags, validateExcelTag } from '../lib/excelTemplateFiller'
 import {
   FileText,
   Upload,
@@ -243,6 +244,7 @@ export default function DocumentRules() {
   const [fieldLabels, setFieldLabels] = useState({})
   const [mappingLoading, setMappingLoading] = useState(false)
   const [smartMapLoading, setSmartMapLoading] = useState(false)
+  const [excelTags, setExcelTags] = useState([]) // for Excel templates: [{tag, locations, valid, reason}]
 
   useEffect(() => {
     if (!companyId) {
@@ -316,32 +318,65 @@ export default function DocumentRules() {
     return true
   })
 
+  // --- Helpers ---
+  const isExcelFile = (fileName) => /\.xlsx$/i.test(fileName || '')
+
   // --- Upload handler ---
   const handleUploadCustomForm = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.type !== 'application/pdf') {
-      toast.error('Only PDF files are accepted')
+
+    const ext = file.name.split('.').pop().toLowerCase()
+    if (ext !== 'pdf' && ext !== 'xlsx') {
+      toast.error('Only PDF and Excel (.xlsx) files are accepted')
       return
     }
+
+    const isExcel = ext === 'xlsx'
 
     setUploading(true)
     try {
       const arrayBuffer = await file.arrayBuffer()
 
-      let fields = []
-      try {
-        fields = await extractFormFields(arrayBuffer)
-      } catch {
-        // Not a fillable PDF — that's okay, field_count = 0
+      let fieldCount = 0
+      let fieldMapping = {}
+      let status = 'Ready'
+
+      if (isExcel) {
+        // Extract {{tags}} from all sheets
+        const tags = extractExcelTags(arrayBuffer)
+        fieldCount = tags.length
+
+        // Auto-create mapping: tag value IS the data path
+        const validPathValues = new Set(DATA_PATHS.map(dp => dp.value).filter(Boolean))
+        let allValid = true
+        for (const { tag } of tags) {
+          fieldMapping[tag] = tag
+          const { valid } = validateExcelTag(tag, DATA_PATHS)
+          if (!valid) allValid = false
+        }
+        status = fieldCount === 0 ? 'Ready' : (allValid ? 'Ready' : 'Pending')
+      } else {
+        // PDF: extract fillable form fields
+        let fields = []
+        try {
+          fields = await extractFormFields(arrayBuffer)
+        } catch {
+          // Not a fillable PDF — that's okay, field_count = 0
+        }
+        fieldCount = fields.length
+        status = fieldCount === 0 ? 'Ready' : 'Pending'
       }
 
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const filePath = `templates/${companyId}/${Date.now()}_${safeName}`
+      const contentType = isExcel
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'application/pdf'
 
       const { error: uploadError } = await supabase.storage
         .from('project-documents')
-        .upload(filePath, arrayBuffer, { contentType: 'application/pdf' })
+        .upload(filePath, arrayBuffer, { contentType })
 
       if (uploadError) {
         toast.error('Upload failed: ' + uploadError.message)
@@ -349,9 +384,7 @@ export default function DocumentRules() {
         return
       }
 
-      const fieldCount = fields.length
-      const status = fieldCount === 0 ? 'Ready' : 'Pending'
-      const formName = file.name.replace(/\.pdf$/i, '')
+      const formName = file.name.replace(/\.(pdf|xlsx)$/i, '')
 
       const { error: insertError } = await supabase
         .from('document_templates')
@@ -364,7 +397,7 @@ export default function DocumentRules() {
           file_name: file.name,
           file_size: file.size,
           field_count: fieldCount,
-          field_mapping: {},
+          field_mapping: fieldMapping,
           status,
           is_custom: true
         })
@@ -372,7 +405,9 @@ export default function DocumentRules() {
       if (insertError) {
         toast.error('Save failed: ' + insertError.message)
       } else {
-        toast.success(`Uploaded "${formName}" with ${fieldCount} form fields`)
+        const typeLabel = isExcel ? 'Excel' : 'PDF'
+        const fieldLabel = isExcel ? 'tag' : 'form field'
+        toast.success(`Uploaded ${typeLabel} "${formName}" with ${fieldCount} ${fieldLabel}${fieldCount !== 1 ? 's' : ''}`)
         await loadData()
       }
     } catch (err) {
@@ -424,59 +459,82 @@ export default function DocumentRules() {
 
     setMappingTemplate(template)
     setMappingFields([])
+    setExcelTags([])
     setFieldMapping(template.field_mapping || {})
     setFieldLabels({})
     setMappingLoading(true)
 
+    const excel = isExcelFile(template.file_name)
+
     try {
-      // Fetch the PDF from storage using a signed URL (bucket is not public)
+      // Fetch the file from storage using a signed URL (bucket is not public)
       const { data: signedData, error: signedError } = await supabase.storage
         .from('project-documents')
         .createSignedUrl(template.file_path, 300)
 
       if (signedError || !signedData?.signedUrl) {
-        toast.error('Could not get PDF URL: ' + (signedError?.message || 'unknown error'))
+        toast.error('Could not get file URL: ' + (signedError?.message || 'unknown error'))
         setMappingLoading(false)
         return
       }
 
       const res = await fetch(signedData.signedUrl)
       if (!res.ok) {
-        toast.error('Could not fetch PDF file')
+        toast.error('Could not fetch file')
         setMappingLoading(false)
         return
       }
 
-      const pdfBytes = new Uint8Array(await res.arrayBuffer())
-      const fields = await extractFormFields(pdfBytes)
-      setMappingFields(fields)
+      const fileBytes = await res.arrayBuffer()
 
-      // Merge existing mappings with any new fields
-      const existing = template.field_mapping || {}
-      const hasExisting = Object.values(existing).some(v => v)
-      const merged = {}
-      for (const f of fields) {
-        merged[f.name] = existing[f.name] || ''
-      }
+      if (excel) {
+        // Excel: extract tags and validate
+        const tags = extractExcelTags(fileBytes)
+        const validated = tags.map(({ tag, locations }) => {
+          const { valid, reason } = validateExcelTag(tag, DATA_PATHS)
+          return { tag, locations, valid, reason }
+        })
+        setExcelTags(validated)
 
-      // Auto-suggest W-9 mappings if no existing mappings and looks like a W-9
-      if (!hasExisting && isLikelyW9(fields)) {
+        // Build field mapping: tag → tag (self-mapping)
+        const mapping = {}
+        for (const { tag } of tags) {
+          mapping[tag] = tag
+        }
+        setFieldMapping(mapping)
+      } else {
+        // PDF: extract fillable form fields
+        const pdfBytes = new Uint8Array(fileBytes)
+        const fields = await extractFormFields(pdfBytes)
+        setMappingFields(fields)
+
+        // Merge existing mappings with any new fields
+        const existing = template.field_mapping || {}
+        const hasExisting = Object.values(existing).some(v => v)
+        const merged = {}
         for (const f of fields) {
-          if (!merged[f.name]) {
-            for (const [suffix, path] of Object.entries(W9_AUTO_MAP)) {
-              if (f.name.endsWith(suffix)) {
-                merged[f.name] = path
-                break
+          merged[f.name] = existing[f.name] || ''
+        }
+
+        // Auto-suggest W-9 mappings if no existing mappings and looks like a W-9
+        if (!hasExisting && isLikelyW9(fields)) {
+          for (const f of fields) {
+            if (!merged[f.name]) {
+              for (const [suffix, path] of Object.entries(W9_AUTO_MAP)) {
+                if (f.name.endsWith(suffix)) {
+                  merged[f.name] = path
+                  break
+                }
               }
             }
           }
+          toast.info('W-9 detected — fields have been auto-mapped. Review and save.')
         }
-        toast.info('W-9 detected — fields have been auto-mapped. Review and save.')
-      }
 
-      setFieldMapping(merged)
+        setFieldMapping(merged)
+      }
     } catch (err) {
-      toast.error('Error reading PDF fields: ' + err.message)
+      toast.error('Error reading file: ' + err.message)
     }
     setMappingLoading(false)
   }
@@ -538,6 +596,7 @@ export default function DocumentRules() {
   const handleSaveMapping = async () => {
     if (!mappingTemplate) return
     setSaving(true)
+    const excel = isExcelFile(mappingTemplate.file_name)
     try {
       // Filter out empty mappings
       const cleaned = {}
@@ -546,8 +605,15 @@ export default function DocumentRules() {
       }
 
       const mappedCount = Object.keys(cleaned).length
-      const totalFields = mappingFields.length
-      const newStatus = totalFields === 0 ? 'Ready' : (mappedCount >= totalFields ? 'Ready' : 'Pending')
+      const totalFields = excel ? excelTags.length : mappingFields.length
+      let newStatus
+      if (excel) {
+        // Excel: Ready only if all tags are valid paths
+        const allValid = excelTags.every(t => t.valid)
+        newStatus = totalFields === 0 ? 'Ready' : (allValid ? 'Ready' : 'Pending')
+      } else {
+        newStatus = totalFields === 0 ? 'Ready' : (mappedCount >= totalFields ? 'Ready' : 'Pending')
+      }
 
       const { error } = await supabase
         .from('document_templates')
@@ -675,7 +741,7 @@ export default function DocumentRules() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf"
+                accept=".pdf,.xlsx"
                 onChange={handleUploadCustomForm}
                 style={{ display: 'none' }}
               />
@@ -769,11 +835,11 @@ export default function DocumentRules() {
               <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>How It Works</span>
             </div>
             <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.6' }}>
-              <strong>1. Upload</strong> a fillable PDF form (contracts, applications, tax forms, etc.)
-              &nbsp;&rarr;&nbsp;<strong>2. Map Fields</strong> to connect each PDF field to your lead/job data (customer name, address, etc.)
+              <strong>1. Upload</strong> a fillable PDF form or an Excel file with <code style={{ backgroundColor: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: '3px', fontSize: '12px' }}>{'{{tags}}'}</code> (contracts, applications, tax forms, etc.)
+              &nbsp;&rarr;&nbsp;<strong>2. Map Fields</strong> to connect each PDF field to your lead/job data, or validate Excel tags automatically
               &nbsp;&rarr;&nbsp;<strong>3. Use</strong> the form from any lead or job to auto-fill it with that record's data.
               <br />
-              Forms with all fields mapped show as <span style={{ color: '#16a34a', fontWeight: '600' }}>Ready</span>.
+              Forms with all fields mapped (or all tags valid) show as <span style={{ color: '#16a34a', fontWeight: '600' }}>Ready</span>.
               Click the <Map size={12} style={{ verticalAlign: 'middle', margin: '0 2px' }} /> button on any custom form to open the field mapper.
             </div>
           </div>
@@ -857,7 +923,7 @@ export default function DocumentRules() {
             {/* Table Header */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 120px 80px 100px 80px',
+              gridTemplateColumns: '80px 1fr 120px 80px 100px 80px',
               gap: '12px',
               padding: '12px 16px',
               backgroundColor: theme.bg,
@@ -868,6 +934,7 @@ export default function DocumentRules() {
               textTransform: 'uppercase',
               letterSpacing: '0.05em'
             }}>
+              <span>Type</span>
               <span>Form Name</span>
               <span>Category</span>
               <span>Fields</span>
@@ -883,7 +950,7 @@ export default function DocumentRules() {
               }}>
                 <FileText size={32} style={{ opacity: 0.3, marginBottom: '8px' }} />
                 <p style={{ margin: 0, fontSize: '14px' }}>
-                  {filter !== 'all' ? 'No templates match this filter' : 'No form templates yet. Upload a PDF to get started.'}
+                  {filter !== 'all' ? 'No templates match this filter' : 'No form templates yet. Upload a PDF or Excel file to get started.'}
                 </p>
               </div>
             ) : (
@@ -891,12 +958,13 @@ export default function DocumentRules() {
                 const status = getStatusDisplay(template)
                 const catColor = CATEGORY_COLORS[template.category] || CATEGORY_COLORS.CUSTOM
                 const isCustom = !template._source
+                const excel = isExcelFile(template.file_name)
                 return (
                   <div
                     key={template.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '1fr 120px 80px 100px 80px',
+                      gridTemplateColumns: '80px 1fr 120px 80px 100px 80px',
                       gap: '12px',
                       padding: '12px 16px',
                       borderBottom: `1px solid ${theme.border}`,
@@ -907,6 +975,18 @@ export default function DocumentRules() {
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = theme.bgCardHover}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                   >
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      backgroundColor: excel ? '#dcfce7' : '#dbeafe',
+                      color: excel ? '#166534' : '#1e40af',
+                      textAlign: 'center'
+                    }}>
+                      {excel ? 'Excel' : 'PDF'}
+                    </span>
                     <div>
                       <div style={{ fontWeight: '500', color: theme.text }}>{template.form_name}</div>
                       {template.form_code && (
@@ -941,7 +1021,7 @@ export default function DocumentRules() {
                       {status.label}
                     </span>
                     <div style={{ display: 'flex', gap: '4px' }}>
-                      {isCustom && template.field_count > 0 && (
+                      {isCustom && (template.field_count > 0 || excel) && (
                         <button
                           onClick={() => handleMapFields(template)}
                           title="Map form fields to data"
@@ -1283,181 +1363,266 @@ export default function DocumentRules() {
             boxShadow: '0 20px 60px rgba(0,0,0,0.15)'
           }} className="modal-content">
             {/* Modal Header */}
-            <div style={{
-              padding: '16px 20px',
-              borderBottom: `1px solid ${theme.border}`
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                    Map Fields &mdash; {mappingTemplate.form_name}
-                  </h3>
-                  <p style={{ fontSize: '12px', color: theme.textMuted, margin: '2px 0 0' }}>
-                    {mappingFields.length} field{mappingFields.length !== 1 ? 's' : ''} found &middot; {mappedFieldCount} mapped
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <button
-                    onClick={handleSmartMap}
-                    disabled={smartMapLoading || mappingFields.length === 0}
-                    title="Use AI to auto-detect and map fields"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      padding: '6px 12px',
-                      backgroundColor: smartMapLoading ? theme.border : '#7c3aed',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: '#fff',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      cursor: smartMapLoading ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    {smartMapLoading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={13} />}
-                    {smartMapLoading ? 'Analyzing...' : 'Smart Map'}
-                  </button>
-                  <button
-                    onClick={() => setMappingTemplate(null)}
-                    style={{
-                      padding: '6px',
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      color: theme.textMuted,
-                      cursor: 'pointer',
-                      borderRadius: '4px'
-                    }}
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Instructions */}
-              <div style={{
-                marginTop: '12px',
-                padding: '10px 12px',
-                backgroundColor: '#fffbeb',
-                borderRadius: '6px',
-                fontSize: '12px',
-                color: '#92400e',
-                lineHeight: '1.5'
-              }}>
-                <strong>How to map:</strong> Each row is a fillable field found in your PDF. Use the dropdown to connect it to a data source.
-                When someone generates this form from a lead or job, the mapped fields will be auto-filled with that record's data
-                (e.g. customer name, address, project details). Leave a field as "-- None --" to skip it.
-              </div>
-            </div>
-
-            {/* Field Mapping Table */}
-            <div style={{ overflowY: 'auto', maxHeight: 'calc(85vh - 220px)' }}>
-              {mappingLoading ? (
-                <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted }}>
-                  <Loader size={20} style={{ marginBottom: '8px', animation: 'spin 1s linear infinite' }} />
-                  <div>Extracting form fields...</div>
-                </div>
-              ) : mappingFields.length === 0 ? (
-                <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
-                  No fillable fields found in this PDF.
-                </div>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: theme.bg, position: 'sticky', top: 0, zIndex: 1 }}>
-                      <th style={{ padding: '10px 16px', textAlign: 'left', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}` }}>
-                        PDF Field
-                      </th>
-                      <th style={{ padding: '10px 16px', textAlign: 'left', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}`, width: '45%' }}>
-                        Maps To
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mappingFields.map((field, i) => (
-                      <tr key={field.name} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : theme.bg }}>
-                        <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, verticalAlign: 'top' }}>
-                          <div style={{ fontWeight: '500', color: theme.text }}>{fieldLabels[field.name] || getFieldLabel(field.name)}</div>
-                          {(fieldLabels[field.name] || getFieldLabel(field.name) !== field.name) && (
-                            <div style={{ color: theme.textMuted, fontSize: '10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{field.name}</div>
-                          )}
-                          <div style={{ color: theme.textMuted, fontSize: '11px' }}>
-                            {field.type}{field.value ? ` \u2022 "${field.value}"` : ''}
-                          </div>
-                        </td>
-                        <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}` }}>
-                          <select
-                            value={fieldMapping[field.name] || ''}
-                            onChange={(e) => setFieldMapping(prev => ({ ...prev, [field.name]: e.target.value }))}
+            {(() => {
+              const modalIsExcel = isExcelFile(mappingTemplate.file_name)
+              const validTagCount = excelTags.filter(t => t.valid).length
+              const invalidTagCount = excelTags.filter(t => !t.valid).length
+              return (
+                <>
+                  <div style={{
+                    padding: '16px 20px',
+                    borderBottom: `1px solid ${theme.border}`
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                          {modalIsExcel ? 'Validate Tags' : 'Map Fields'} &mdash; {mappingTemplate.form_name}
+                        </h3>
+                        <p style={{ fontSize: '12px', color: theme.textMuted, margin: '2px 0 0' }}>
+                          {modalIsExcel
+                            ? `${excelTags.length} tag${excelTags.length !== 1 ? 's' : ''} found \u00b7 ${validTagCount} valid${invalidTagCount > 0 ? ` \u00b7 ${invalidTagCount} invalid` : ''}`
+                            : `${mappingFields.length} field${mappingFields.length !== 1 ? 's' : ''} found \u00b7 ${mappedFieldCount} mapped`
+                          }
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        {!modalIsExcel && (
+                          <button
+                            onClick={handleSmartMap}
+                            disabled={smartMapLoading || mappingFields.length === 0}
+                            title="Use AI to auto-detect and map fields"
                             style={{
-                              width: '100%',
-                              padding: '6px 8px',
-                              backgroundColor: theme.bg,
-                              border: `1px solid ${fieldMapping[field.name] ? '#16a34a' : theme.border}`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 12px',
+                              backgroundColor: smartMapLoading ? theme.border : '#7c3aed',
+                              border: 'none',
                               borderRadius: '6px',
-                              color: theme.text,
-                              fontSize: '12px'
+                              color: '#fff',
+                              fontSize: '12px',
+                              fontWeight: '500',
+                              cursor: smartMapLoading ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            {DATA_PATHS.map(dp => (
-                              <option key={dp.value} value={dp.value}>
-                                {dp.label}{dp.value ? ` (${dp.value})` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                            {smartMapLoading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={13} />}
+                            {smartMapLoading ? 'Analyzing...' : 'Smart Map'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setMappingTemplate(null)}
+                          style={{
+                            padding: '6px',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            color: theme.textMuted,
+                            cursor: 'pointer',
+                            borderRadius: '4px'
+                          }}
+                        >
+                          <X size={20} />
+                        </button>
+                      </div>
+                    </div>
 
-            {/* Modal Footer */}
-            <div style={{
-              padding: '12px 20px',
-              borderTop: `1px solid ${theme.border}`,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                {mappedFieldCount} of {mappingFields.length} fields mapped
-              </span>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={() => setMappingTemplate(null)}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: 'transparent',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '6px',
-                    color: theme.textMuted,
-                    fontSize: '14px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveMapping}
-                  disabled={saving}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: theme.accent,
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: '#fff',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                    opacity: saving ? 0.6 : 1
-                  }}
-                >
-                  {saving ? 'Saving...' : 'Save Mapping'}
-                </button>
-              </div>
-            </div>
+                    {/* Instructions */}
+                    <div style={{
+                      marginTop: '12px',
+                      padding: '10px 12px',
+                      backgroundColor: modalIsExcel ? '#eff6ff' : '#fffbeb',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      color: modalIsExcel ? '#1e40af' : '#92400e',
+                      lineHeight: '1.5'
+                    }}>
+                      {modalIsExcel ? (
+                        <>
+                          <strong>Excel tags:</strong> Your spreadsheet uses <code style={{ backgroundColor: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: '3px' }}>{'{{tag}}'}</code> placeholders.
+                          Each tag maps directly to a data path (e.g. <code style={{ backgroundColor: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: '3px' }}>{'{{customer.name}}'}</code>).
+                          Tags marked as valid will auto-fill when generating documents. Fix any invalid tags by editing the Excel file and re-uploading.
+                        </>
+                      ) : (
+                        <>
+                          <strong>How to map:</strong> Each row is a fillable field found in your PDF. Use the dropdown to connect it to a data source.
+                          When someone generates this form from a lead or job, the mapped fields will be auto-filled with that record's data
+                          (e.g. customer name, address, project details). Leave a field as "-- None --" to skip it.
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Content area */}
+                  <div style={{ overflowY: 'auto', maxHeight: 'calc(85vh - 220px)' }}>
+                    {mappingLoading ? (
+                      <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted }}>
+                        <Loader size={20} style={{ marginBottom: '8px', animation: 'spin 1s linear infinite' }} />
+                        <div>{modalIsExcel ? 'Scanning for tags...' : 'Extracting form fields...'}</div>
+                      </div>
+                    ) : modalIsExcel ? (
+                      /* Excel Tag Validation View */
+                      excelTags.length === 0 ? (
+                        <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                          No {'{{tags}}'} found in this Excel file.
+                        </div>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ backgroundColor: theme.bg, position: 'sticky', top: 0, zIndex: 1 }}>
+                              <th style={{ padding: '10px 16px', textAlign: 'left', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}` }}>
+                                Tag
+                              </th>
+                              <th style={{ padding: '10px 16px', textAlign: 'left', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}` }}>
+                                Location(s)
+                              </th>
+                              <th style={{ padding: '10px 16px', textAlign: 'center', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}`, width: '90px' }}>
+                                Status
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {excelTags.map((t, i) => (
+                              <tr key={t.tag} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : theme.bg }}>
+                                <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, verticalAlign: 'top' }}>
+                                  <code style={{
+                                    backgroundColor: 'rgba(0,0,0,0.06)',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    fontFamily: 'monospace',
+                                    wordBreak: 'break-all'
+                                  }}>
+                                    {`{{${t.tag}}}`}
+                                  </code>
+                                </td>
+                                <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, verticalAlign: 'top', fontSize: '12px', color: theme.textSecondary }}>
+                                  {t.locations.map(l => `${l.sheet}!${l.cell}`).join(', ')}
+                                </td>
+                                <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, textAlign: 'center' }}>
+                                  {t.valid ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#16a34a', fontSize: '12px', fontWeight: '500' }}>
+                                      <CheckCircle size={14} /> Valid
+                                    </span>
+                                  ) : (
+                                    <span title={t.reason} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#dc2626', fontSize: '12px', fontWeight: '500' }}>
+                                      <AlertCircle size={14} /> Invalid
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )
+                    ) : (
+                      /* PDF Field Mapping View */
+                      mappingFields.length === 0 ? (
+                        <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                          No fillable fields found in this PDF.
+                        </div>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ backgroundColor: theme.bg, position: 'sticky', top: 0, zIndex: 1 }}>
+                              <th style={{ padding: '10px 16px', textAlign: 'left', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}` }}>
+                                PDF Field
+                              </th>
+                              <th style={{ padding: '10px 16px', textAlign: 'left', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}`, width: '45%' }}>
+                                Maps To
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {mappingFields.map((field, i) => (
+                              <tr key={field.name} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : theme.bg }}>
+                                <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, verticalAlign: 'top' }}>
+                                  <div style={{ fontWeight: '500', color: theme.text }}>{fieldLabels[field.name] || getFieldLabel(field.name)}</div>
+                                  {(fieldLabels[field.name] || getFieldLabel(field.name) !== field.name) && (
+                                    <div style={{ color: theme.textMuted, fontSize: '10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{field.name}</div>
+                                  )}
+                                  <div style={{ color: theme.textMuted, fontSize: '11px' }}>
+                                    {field.type}{field.value ? ` \u2022 "${field.value}"` : ''}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}` }}>
+                                  <select
+                                    value={fieldMapping[field.name] || ''}
+                                    onChange={(e) => setFieldMapping(prev => ({ ...prev, [field.name]: e.target.value }))}
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px 8px',
+                                      backgroundColor: theme.bg,
+                                      border: `1px solid ${fieldMapping[field.name] ? '#16a34a' : theme.border}`,
+                                      borderRadius: '6px',
+                                      color: theme.text,
+                                      fontSize: '12px'
+                                    }}
+                                  >
+                                    {DATA_PATHS.map(dp => (
+                                      <option key={dp.value} value={dp.value}>
+                                        {dp.label}{dp.value ? ` (${dp.value})` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )
+                    )}
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div style={{
+                    padding: '12px 20px',
+                    borderTop: `1px solid ${theme.border}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                      {modalIsExcel
+                        ? `${validTagCount} of ${excelTags.length} tags valid`
+                        : `${mappedFieldCount} of ${mappingFields.length} fields mapped`
+                      }
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => setMappingTemplate(null)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: 'transparent',
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '6px',
+                          color: theme.textMuted,
+                          fontSize: '14px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveMapping}
+                        disabled={saving}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: theme.accent,
+                          border: 'none',
+                          borderRadius: '6px',
+                          color: '#fff',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          cursor: saving ? 'not-allowed' : 'pointer',
+                          opacity: saving ? 0.6 : 1
+                        }}
+                      >
+                        {saving ? 'Saving...' : 'Save Mapping'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </>
       )}
