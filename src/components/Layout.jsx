@@ -356,7 +356,7 @@ export default function Layout() {
 
   // Get current user's access level from store
   const currentUserRole = user?.user_role || user?.role
-  const isAdminOrOwner = currentUserRole === 'Admin' || currentUserRole === 'Owner'
+  const isAdminOrOwner = currentUserRole === 'Admin' || currentUserRole === 'Owner' || currentUserRole === 'Super Admin'
 
   // Admin section - shown to Admin/Owner access levels
   const adminSection = isAdminOrOwner ? {
