@@ -80,7 +80,6 @@ export default function DocumentRules() {
       supabase
         .from('utility_forms')
         .select('*')
-        .eq('company_id', companyId)
         .eq('status', 'published'),
       supabase
         .from('doc_package_items')
