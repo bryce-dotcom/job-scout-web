@@ -118,6 +118,7 @@ export function fillExcelTemplate(xlsxBytes, data) {
 export function extractExcelCellLabels(arrayBuffer) {
   const wb = XLSX.read(arrayBuffer, { type: 'array' })
   const results = []
+  const seenInputRefs = new Set()
 
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName]
@@ -128,6 +129,9 @@ export function extractExcelCellLabels(arrayBuffer) {
     const range = XLSX.utils.decode_range(ref)
     const merges = ws['!merges'] || []
     const maxRow = Math.min(range.e.r, 25)
+
+    // Skip sheets that look like data tables (many rows, few merged ranges)
+    if (range.e.r > 100 && merges.length < 5) continue
 
     // Build a set of cells that are part of full-width merged ranges (section headers)
     const fullWidthMergedCells = new Set()
@@ -143,7 +147,26 @@ export function extractExcelCellLabels(arrayBuffer) {
       }
     }
 
+    // First pass: count label-like cells per row to detect table header rows
+    const labelCountByRow = {}
     for (let r = 0; r <= maxRow; r++) {
+      let count = 0
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cellAddr = XLSX.utils.encode_cell({ r, c })
+        const cell = ws[cellAddr]
+        if (!cell || cell.t !== 's' || cell.f) continue
+        const text = String(cell.v || '').trim()
+        if (text.length >= 3 && text.length <= 60 && !fullWidthMergedCells.has(cellAddr)) {
+          count++
+        }
+      }
+      labelCountByRow[r] = count
+    }
+
+    for (let r = 0; r <= maxRow; r++) {
+      // Skip table header rows (rows with too many label-like cells)
+      if (labelCountByRow[r] > 4) continue
+
       for (let c = range.s.c; c <= range.e.c; c++) {
         const cellAddr = XLSX.utils.encode_cell({ r, c })
         const cell = ws[cellAddr]
@@ -191,12 +214,17 @@ export function extractExcelCellLabels(arrayBuffer) {
           }
         }
 
+        // Deduplicate: only keep the first label per input cell
+        const inputRef = inputCell ? `${sheetName}!${inputCell}` : null
+        if (inputRef && seenInputRefs.has(inputRef)) continue
+        if (inputRef) seenInputRefs.add(inputRef)
+
         results.push({
           sheet: sheetName,
           labelCell: cellAddr,
           labelText: text,
           inputCell,
-          inputRef: inputCell ? `${sheetName}!${inputCell}` : null
+          inputRef
         })
       }
     }

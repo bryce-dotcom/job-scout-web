@@ -1602,7 +1602,7 @@ export default function DocumentRules() {
                           </thead>
                           <tbody>
                             {excelCellLabels.filter(l => l.inputRef).map((label, i) => (
-                              <tr key={label.inputRef} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : theme.bg }}>
+                              <tr key={`${label.sheet}!${label.labelCell}`} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : theme.bg }}>
                                 <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, verticalAlign: 'top' }}>
                                   <div style={{ fontWeight: '500', color: theme.text }}>{label.labelText}</div>
                                   <div style={{ color: theme.textMuted, fontSize: '11px' }}>{label.sheet}</div>
