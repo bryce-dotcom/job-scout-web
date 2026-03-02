@@ -269,7 +269,7 @@ serve(async (req) => {
       }
     }
 
-    if (!pdfData) {
+    if (!pdfData && document_type !== 'form_field_analysis') {
       return new Response(JSON.stringify({ success: false, error: 'Either pdf_base64 or pdf_url is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -350,22 +350,27 @@ serve(async (req) => {
     if (provider_name) contextNote += `\nUtility Provider: ${provider_name}`;
 
     // Build user message content
-    const userContent: Array<Record<string, unknown>> = [
-      {
+    const userContent: Array<Record<string, unknown>> = [];
+
+    if (pdfData) {
+      userContent.push({
         type: 'document',
         source: {
           type: 'base64',
           media_type: 'application/pdf',
           data: pdfData
         }
-      }
-    ];
+      });
+    }
 
     if (document_type === 'form_field_analysis') {
       const fieldList = (field_names || []).join('\n- ');
+      const intro = pdfData
+        ? 'This is a fillable utility rebate application PDF. Here are the form field names extracted from it:'
+        : 'Here are labeled input fields from a utility rebate Excel form:';
       userContent.push({
         type: 'text',
-        text: `This is a fillable utility rebate application PDF. Here are the form field names extracted from it:\n\n- ${fieldList}\n\nMap each field to the best matching database data path.${contextNote}\n\nReturn the structured JSON as specified.`
+        text: `${intro}\n\n- ${fieldList}\n\nMap each field to the best matching database data path.${contextNote}\n\nReturn the structured JSON as specified.`
       });
     } else {
       userContent.push({

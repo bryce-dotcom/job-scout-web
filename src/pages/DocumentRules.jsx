@@ -608,8 +608,8 @@ export default function DocumentRules() {
         provider_name: mappingTemplate?.form_name || 'Custom Form'
       }
 
-      // Provide PDF URL for context if available
-      if (mappingTemplate?.file_path) {
+      // Provide PDF URL for context if available (skip for Excel files — not a PDF)
+      if (mappingTemplate?.file_path && !excelCellMode) {
         const { data: signedData } = await supabase.storage
           .from('project-documents')
           .createSignedUrl(mappingTemplate.file_path, 300)
