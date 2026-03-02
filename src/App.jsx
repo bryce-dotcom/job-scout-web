@@ -34,6 +34,7 @@ import UtilityPrograms from './pages/UtilityPrograms'
 import RebateRates from './pages/RebateRates'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
+import DocumentRules from './pages/DocumentRules'
 import Reports from './pages/Reports'
 import CommunicationsLog from './pages/CommunicationsLog'
 import Expenses from './pages/Expenses'
@@ -246,6 +247,7 @@ function App() {
           <Route path="/utility-programs" element={<UtilityPrograms />} />
           <Route path="/utility-programs/:id/rates" element={<RebateRates />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/document-rules" element={<DocumentRules />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/reports/:reportType" element={<Reports />} />
           <Route path="/communications" element={<CommunicationsLog />} />
