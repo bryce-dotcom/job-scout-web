@@ -20,7 +20,8 @@ import {
   AlertCircle,
   Map,
   Loader,
-  HelpCircle
+  HelpCircle,
+  Sparkles
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -239,7 +240,9 @@ export default function DocumentRules() {
   const [mappingTemplate, setMappingTemplate] = useState(null)
   const [mappingFields, setMappingFields] = useState([])
   const [fieldMapping, setFieldMapping] = useState({})
+  const [fieldLabels, setFieldLabels] = useState({})
   const [mappingLoading, setMappingLoading] = useState(false)
+  const [smartMapLoading, setSmartMapLoading] = useState(false)
 
   useEffect(() => {
     if (!companyId) {
@@ -422,6 +425,7 @@ export default function DocumentRules() {
     setMappingTemplate(template)
     setMappingFields([])
     setFieldMapping(template.field_mapping || {})
+    setFieldLabels({})
     setMappingLoading(true)
 
     try {
@@ -475,6 +479,60 @@ export default function DocumentRules() {
       toast.error('Error reading PDF fields: ' + err.message)
     }
     setMappingLoading(false)
+  }
+
+  const handleSmartMap = async () => {
+    if (mappingFields.length === 0) return
+    setSmartMapLoading(true)
+    try {
+      const fieldNames = mappingFields.map(f => f.name)
+
+      const body = {
+        document_type: 'form_field_analysis',
+        field_names: fieldNames,
+        provider_name: mappingTemplate?.form_name || 'Custom Form'
+      }
+
+      // Provide PDF URL for context if available
+      if (mappingTemplate?.file_path) {
+        const { data: signedData } = await supabase.storage
+          .from('project-documents')
+          .createSignedUrl(mappingTemplate.file_path, 300)
+        if (signedData?.signedUrl) body.pdf_url = signedData.signedUrl
+      }
+
+      const res = await supabase.functions.invoke('parse-utility-pdf', { body })
+
+      if (res.error) {
+        toast.error('Smart mapping failed: ' + (res.error.message || res.error))
+        setSmartMapLoading(false)
+        return
+      }
+
+      if (res.data?.success && res.data.results?.field_mappings) {
+        const suggestions = res.data.results.field_mappings
+        const updated = { ...fieldMapping }
+        const validPathValues = new Set(DATA_PATHS.map(dp => dp.value).filter(Boolean))
+        const lineItemPattern = /^lines\.\d+\.\w+$/
+        for (const [field, path] of Object.entries(suggestions)) {
+          if (path && (validPathValues.has(path) || lineItemPattern.test(path))) {
+            updated[field] = path
+          }
+        }
+        setFieldMapping(updated)
+        // Store human-readable labels from AI
+        if (res.data.results.field_labels) {
+          setFieldLabels(res.data.results.field_labels)
+        }
+        const mappedCount = Object.values(updated).filter(Boolean).length
+        toast.success(`Smart Map suggested ${mappedCount} field mappings`)
+      } else {
+        toast.error('Smart mapping failed: ' + (res.data?.error || 'Unknown error'))
+      }
+    } catch (err) {
+      toast.error('Smart map error: ' + err.message)
+    }
+    setSmartMapLoading(false)
   }
 
   const handleSaveMapping = async () => {
@@ -1238,19 +1296,42 @@ export default function DocumentRules() {
                     {mappingFields.length} field{mappingFields.length !== 1 ? 's' : ''} found &middot; {mappedFieldCount} mapped
                   </p>
                 </div>
-                <button
-                  onClick={() => setMappingTemplate(null)}
-                  style={{
-                    padding: '6px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    color: theme.textMuted,
-                    cursor: 'pointer',
-                    borderRadius: '4px'
-                  }}
-                >
-                  <X size={20} />
-                </button>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <button
+                    onClick={handleSmartMap}
+                    disabled={smartMapLoading || mappingFields.length === 0}
+                    title="Use AI to auto-detect and map fields"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '6px 12px',
+                      backgroundColor: smartMapLoading ? theme.border : '#7c3aed',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      cursor: smartMapLoading ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {smartMapLoading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={13} />}
+                    {smartMapLoading ? 'Analyzing...' : 'Smart Map'}
+                  </button>
+                  <button
+                    onClick={() => setMappingTemplate(null)}
+                    style={{
+                      padding: '6px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      color: theme.textMuted,
+                      cursor: 'pointer',
+                      borderRadius: '4px'
+                    }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
 
               {/* Instructions */}
@@ -1296,8 +1377,10 @@ export default function DocumentRules() {
                     {mappingFields.map((field, i) => (
                       <tr key={field.name} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : theme.bg }}>
                         <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, verticalAlign: 'top' }}>
-                          <div style={{ fontWeight: '500', color: theme.text }}>{getFieldLabel(field.name)}</div>
-                          <div style={{ color: theme.textMuted, fontSize: '10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{field.name}</div>
+                          <div style={{ fontWeight: '500', color: theme.text }}>{fieldLabels[field.name] || getFieldLabel(field.name)}</div>
+                          {(fieldLabels[field.name] || getFieldLabel(field.name) !== field.name) && (
+                            <div style={{ color: theme.textMuted, fontSize: '10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{field.name}</div>
+                          )}
                           <div style={{ color: theme.textMuted, fontSize: '11px' }}>
                             {field.type}{field.value ? ` \u2022 "${field.value}"` : ''}
                           </div>
