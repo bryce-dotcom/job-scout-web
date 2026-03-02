@@ -9,33 +9,10 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'Scout_LOGO_GUY.png', 'topo-bg.png'],
-      manifest: {
-        name: 'Job Scout',
-        short_name: 'JobScout',
-        description: 'Field service management and lighting audit tool',
-        theme_color: '#5a6349',
-        background_color: '#f7f5ef',
-        display: 'standalone',
-        start_url: '/',
-        icons: [
-          {
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable'
-          }
-        ]
-      },
+      // Manifest injection disabled — handled by inline script in index.html
+      // so each Lenard agent gets its own PWA name/scope on Add to Home Screen.
+      // Manifest files live in public/ (manifest.json, manifest-lenard.json, manifest-lenard-ut.json).
+      manifest: false,
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
