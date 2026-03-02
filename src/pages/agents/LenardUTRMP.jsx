@@ -8,11 +8,14 @@ import { fillPdfForm } from '../../lib/pdfFormFiller';
 import { resolveAllMappings } from '../../lib/dataPathResolver';
 
 // ============================================================
-// LENARD UT RMP â€” Rocky Mountain Power Lighting Rebate Calculator
+// LENARD UT RMP â€" Rocky Mountain Power Lighting Rebate Calculator
 // Three programs: SMBE (Small/Med Business), Express, Large
 // Camera: Lenard AI fixture identification
 // Offline: PWA with service worker
 // ============================================================
+
+// Swap PWA manifest so "Add to Home Screen" uses the UT RMP name/scope
+const MANIFEST_HREF = '/manifest-lenard-ut.json'
 
 // ==================== RATE TABLES ====================
 
@@ -256,6 +259,14 @@ const T = {
 // ==================== MAIN COMPONENT ====================
 
 export default function LenardUTRMP() {
+  // Swap manifest for PWA home screen name
+  useEffect(() => {
+    const link = document.querySelector('link[rel="manifest"]')
+    const original = link?.getAttribute('href')
+    if (link) link.setAttribute('href', MANIFEST_HREF)
+    return () => { if (link && original) link.setAttribute('href', original) }
+  }, [])
+
   const [program, setProgram] = useState('smbe');
   const [projectName, setProjectName] = useState('');
   const [projectCost, setProjectCost] = useState(0);

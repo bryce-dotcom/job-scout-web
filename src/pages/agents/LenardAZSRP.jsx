@@ -8,6 +8,9 @@ import { jsPDF } from "jspdf";
 // Offline: PWA with service worker
 // ============================================================
 
+// Swap PWA manifest so "Add to Home Screen" uses the AZ SRP name/scope
+const MANIFEST_HREF = '/manifest-lenard.json'
+
 // ==================== RATE TABLES ====================
 
 const SBS_RATES = {
@@ -298,6 +301,14 @@ const T = {
 // ==================== MAIN COMPONENT ====================
 
 export default function LenardAZSRP() {
+  // Swap manifest for PWA home screen name
+  useEffect(() => {
+    const link = document.querySelector('link[rel="manifest"]')
+    const original = link?.getAttribute('href')
+    if (link) link.setAttribute('href', MANIFEST_HREF)
+    return () => { if (link && original) link.setAttribute('href', original) }
+  }, [])
+
   const [program, setProgram] = useState('sbc');
   const [projectName, setProjectName] = useState('');
   const [lines, setLines] = useState([]);

@@ -1,0 +1,13 @@
+{
+  "name": "Lenard UT RMP - Rebate Calculator",
+  "short_name": "Lenard RMP",
+  "description": "Rocky Mountain Power Lighting Rebate Calculator",
+  "start_url": "/agent/lenard-ut-rmp",
+  "scope": "/agent/lenard-ut-rmp",
+  "display": "standalone",
+  "background_color": "#0a0a0b",
+  "theme_color": "#f97316",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" }
+  ]
+}
