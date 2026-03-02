@@ -233,13 +233,18 @@ export default function DocumentRules() {
   }
 
   // --- Doc Package handlers ---
+  // Build a composite key for matching package items to templates
+  const getTemplateKey = (t) => t._source === 'utility_forms' ? `uf_${t._sourceId}` : `dt_${t.id}`
+  const getPackageKey = (p) => p.source_table === 'utility_forms' ? `uf_${p.template_id}` : `dt_${p.template_id}`
+
   const openEditPackage = (serviceType) => {
-    const currentIds = packageItems
+    const currentKeys = packageItems
       .filter(p => p.service_type === serviceType)
-      .map(p => p.template_id)
+      .map(p => getPackageKey(p))
     const selections = {}
     templates.forEach(t => {
-      selections[t.id] = currentIds.includes(t.id)
+      const key = getTemplateKey(t)
+      selections[key] = currentKeys.includes(key)
     })
     setPackageSelections(selections)
     setEditingPackage(serviceType)
@@ -258,12 +263,17 @@ export default function DocumentRules() {
       // Insert new selections
       const selectedIds = Object.entries(packageSelections)
         .filter(([, checked]) => checked)
-        .map(([id], idx) => ({
-          company_id: companyId,
-          service_type: editingPackage,
-          template_id: Number(id),
-          sort_order: idx
-        }))
+        .map(([key], idx) => {
+          const isUtility = key.startsWith('uf_')
+          const rawId = Number(key.split('_')[1])
+          return {
+            company_id: companyId,
+            service_type: editingPackage,
+            template_id: rawId,
+            source_table: isUtility ? 'utility_forms' : 'document_templates',
+            sort_order: idx
+          }
+        })
 
       if (selectedIds.length > 0) {
         const { error } = await supabase
@@ -297,8 +307,8 @@ export default function DocumentRules() {
 
   // --- Helpers for packages ---
   const getPackageTemplates = (serviceType) => {
-    const ids = packageItems.filter(p => p.service_type === serviceType).map(p => p.template_id)
-    return templates.filter(t => ids.includes(t.id))
+    const keys = packageItems.filter(p => p.service_type === serviceType).map(p => getPackageKey(p))
+    return templates.filter(t => keys.includes(getTemplateKey(t)))
   }
 
   const tabs = [
@@ -797,8 +807,8 @@ export default function DocumentRules() {
                     >
                       <input
                         type="checkbox"
-                        checked={!!packageSelections[t.id]}
-                        onChange={(e) => setPackageSelections(prev => ({ ...prev, [t.id]: e.target.checked }))}
+                        checked={!!packageSelections[getTemplateKey(t)]}
+                        onChange={(e) => setPackageSelections(prev => ({ ...prev, [getTemplateKey(t)]: e.target.checked }))}
                         style={{ width: '16px', height: '16px', accentColor: theme.accent }}
                       />
                       <span style={{ flex: 1, fontSize: '14px', color: theme.text }}>{t.form_name}</span>
