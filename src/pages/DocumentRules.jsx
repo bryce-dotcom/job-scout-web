@@ -616,6 +616,9 @@ export default function DocumentRules() {
         if (signedData?.signedUrl) body.pdf_url = signedData.signedUrl
       }
 
+      // Refresh auth token to avoid 401 from expired JWT
+      await supabase.auth.refreshSession()
+
       const { data: fnData, error: fnError } = await supabase.functions.invoke('parse-utility-pdf', {
         body
       })
