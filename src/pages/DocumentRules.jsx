@@ -45,6 +45,78 @@ const CATEGORY_COLORS = {
   CUSTOM: { bg: '#fef9c3', text: '#854d0e' }
 }
 
+// Human-readable labels for known PDF form fields (IRS W-9, etc.)
+// Keys match against the end of the raw field name for flexible matching
+const W9_FIELD_LABELS = {
+  'f1_01[0]': 'Name (as shown on tax return)',
+  'f1_02[0]': 'Business Name / Disregarded Entity',
+  'c1_1[0]': 'Individual / Sole Proprietor',
+  'c1_1[1]': 'C Corporation',
+  'c1_1[2]': 'S Corporation',
+  'c1_1[3]': 'Partnership',
+  'c1_1[4]': 'Trust / Estate',
+  'c1_1[5]': 'LLC (check box)',
+  'f1_03[0]': 'LLC Tax Classification',
+  'c1_1[6]': 'Other (check box)',
+  'f1_04[0]': 'Other Classification Description',
+  'c1_2[0]': 'Exempt from FATCA',
+  'f1_05[0]': 'Exempt Payee Code',
+  'f1_06[0]': 'FATCA Exemption Code',
+  'f1_07[0]': 'Address (street, apt/suite)',
+  'f1_08[0]': 'City, State, ZIP',
+  'f1_09[0]': 'Account Number(s)',
+  'f1_10[0]': "Requester's Name & Address",
+  'f1_11[0]': 'SSN — First 3 Digits',
+  'f1_12[0]': 'SSN — Middle 2 Digits',
+  'f1_13[0]': 'SSN — Last 4 Digits',
+  'f1_14[0]': 'EIN — First 2 Digits',
+  'f1_15[0]': 'EIN — Last 7 Digits',
+}
+
+// Auto-mapping for W-9 fields → data paths
+const W9_AUTO_MAP = {
+  'f1_01[0]': 'w9.name',
+  'f1_02[0]': 'w9.business_name',
+  'f1_03[0]': 'w9.llc_class',
+  'f1_04[0]': 'w9.other_class',
+  'f1_05[0]': 'w9.exempt_payee',
+  'f1_06[0]': 'w9.exempt_fatca',
+  'f1_07[0]': 'w9.address',
+  'f1_08[0]': 'w9.city_state_zip',
+  'f1_09[0]': 'w9.account_numbers',
+  'f1_10[0]': 'w9.requester_name',
+  'f1_11[0]': 'w9.ssn_1',
+  'f1_12[0]': 'w9.ssn_2',
+  'f1_13[0]': 'w9.ssn_3',
+  'f1_14[0]': 'w9.ein_1',
+  'f1_15[0]': 'w9.ein_2',
+  'c1_1[0]': 'w9.tax_class',  // Individual checkbox
+}
+
+// Get a human-readable label for a raw PDF field name
+function getFieldLabel(rawName) {
+  // Check W-9 known labels by matching the end of the name
+  for (const [suffix, label] of Object.entries(W9_FIELD_LABELS)) {
+    if (rawName.endsWith(suffix)) return label
+  }
+  // General prettifier: strip common prefixes, brackets, and clean up
+  let clean = rawName
+    .replace(/^topmostSubform\[\d+\]\./, '')
+    .replace(/Page\d+\[\d+\]\./, '')
+    .replace(/\[\d+\]$/g, '')
+    .replace(/_ReadOrder/g, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')   // camelCase → spaced
+    .replace(/[_.-]+/g, ' ')                 // underscores/dots → spaces
+    .trim()
+  return clean || rawName
+}
+
+// Detect if a set of fields looks like a W-9 form
+function isLikelyW9(fields) {
+  const names = fields.map(f => f.name).join(' ')
+  return names.includes('f1_01') && names.includes('f1_07') && names.includes('f1_11')
+}
+
 // Data path options for field mapping — maps PDF form fields to record data
 const DATA_PATHS = [
   { value: '', label: '-- None --' },
@@ -377,10 +449,27 @@ export default function DocumentRules() {
 
       // Merge existing mappings with any new fields
       const existing = template.field_mapping || {}
+      const hasExisting = Object.values(existing).some(v => v)
       const merged = {}
       for (const f of fields) {
         merged[f.name] = existing[f.name] || ''
       }
+
+      // Auto-suggest W-9 mappings if no existing mappings and looks like a W-9
+      if (!hasExisting && isLikelyW9(fields)) {
+        for (const f of fields) {
+          if (!merged[f.name]) {
+            for (const [suffix, path] of Object.entries(W9_AUTO_MAP)) {
+              if (f.name.endsWith(suffix)) {
+                merged[f.name] = path
+                break
+              }
+            }
+          }
+        }
+        toast.info('W-9 detected — fields have been auto-mapped. Review and save.')
+      }
+
       setFieldMapping(merged)
     } catch (err) {
       toast.error('Error reading PDF fields: ' + err.message)
@@ -1207,7 +1296,8 @@ export default function DocumentRules() {
                     {mappingFields.map((field, i) => (
                       <tr key={field.name} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : theme.bg }}>
                         <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, verticalAlign: 'top' }}>
-                          <div style={{ fontWeight: '500', color: theme.text, wordBreak: 'break-word' }}>{field.name}</div>
+                          <div style={{ fontWeight: '500', color: theme.text }}>{getFieldLabel(field.name)}</div>
+                          <div style={{ color: theme.textMuted, fontSize: '10px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{field.name}</div>
                           <div style={{ color: theme.textMuted, fontSize: '11px' }}>
                             {field.type}{field.value ? ` \u2022 "${field.value}"` : ''}
                           </div>
