@@ -6,21 +6,6 @@
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#5a6349" />
-    <link rel="manifest" href="/manifest.json" />
-    <script>
-      (function(){
-        var p = location.pathname;
-        var m = document.querySelector('link[rel="manifest"]');
-        if (!m) return;
-        if (p.indexOf('/agent/lenard-ut-rmp') === 0) {
-          m.setAttribute('href', '/manifest-lenard-ut.json');
-          document.title = 'Lenard UT RMP';
-        } else if (p.indexOf('/agent/lenard-az-srp') === 0) {
-          m.setAttribute('href', '/manifest-lenard.json');
-          document.title = 'Lenard AZ SRP';
-        }
-      })();
-    </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Job Scout</title>
@@ -28,5 +13,22 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      (function(){
+        var p = location.pathname;
+        var href;
+        if (p.indexOf('/agent/lenard-ut-rmp') === 0) {
+          href = '/manifest-lenard-ut.json';
+          document.title = 'Lenard UT RMP';
+        } else if (p.indexOf('/agent/lenard-az-srp') === 0) {
+          href = '/manifest-lenard.json';
+          document.title = 'Lenard AZ SRP';
+        }
+        if (href) {
+          var links = document.querySelectorAll('link[rel="manifest"]');
+          for (var i = 0; i < links.length; i++) links[i].setAttribute('href', href);
+        }
+      })();
+    </script>
   </body>
 </html>

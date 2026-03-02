@@ -1,13 +1,14 @@
 {
-  "name": "Lenard AZ SRP - Rebate Calculator",
-  "short_name": "Lenard SRP",
-  "description": "SRP Lighting Rebate Calculator by HHH Building Services",
-  "start_url": "/agent/lenard-az-srp",
-  "scope": "/agent/lenard-az-srp",
+  "name": "Job Scout",
+  "short_name": "JobScout",
+  "description": "Field service management and lighting audit tool",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0a0a0b",
-  "theme_color": "#f97316",
+  "background_color": "#f7f5ef",
+  "theme_color": "#5a6349",
   "icons": [
-    { "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" }
+    { "src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/pwa-512x512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
