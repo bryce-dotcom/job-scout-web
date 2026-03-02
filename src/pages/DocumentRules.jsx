@@ -71,19 +71,51 @@ export default function DocumentRules() {
 
   const loadData = async () => {
     setLoading(true)
-    const [templatesRes, packagesRes] = await Promise.all([
+    const [templatesRes, utilityFormsRes, packagesRes] = await Promise.all([
       supabase
         .from('document_templates')
         .select('*')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false }),
       supabase
+        .from('utility_forms')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('status', 'published'),
+      supabase
         .from('doc_package_items')
         .select('*')
         .eq('company_id', companyId)
         .order('sort_order', { ascending: true })
     ])
-    if (templatesRes.data) setTemplates(templatesRes.data)
+
+    // Normalize utility_forms into the same shape as document_templates
+    const utilityTemplates = (utilityFormsRes.data || []).map(uf => {
+      const mapping = uf.field_mapping || {}
+      const fieldCount = Object.keys(mapping).length
+      const mappedCount = Object.values(mapping).filter(v => v).length
+      return {
+        id: `uf_${uf.id}`,
+        _source: 'utility_forms',
+        _sourceId: uf.id,
+        company_id: uf.company_id,
+        form_name: uf.form_name,
+        form_code: uf.form_type || '',
+        category: (uf.form_type || 'APPLICATION').toUpperCase(),
+        file_path: uf.form_file || '',
+        file_name: uf.form_name,
+        file_size: null,
+        field_count: fieldCount,
+        field_mapping: mapping,
+        status: mappedCount >= fieldCount && fieldCount > 0 ? 'Ready' : (fieldCount === 0 ? 'Ready' : 'Pending'),
+        is_custom: false,
+        created_at: uf.created_at,
+        updated_at: uf.updated_at
+      }
+    })
+
+    const allTemplates = [...(templatesRes.data || []), ...utilityTemplates]
+    setTemplates(allTemplates)
     if (packagesRes.data) setPackageItems(packagesRes.data)
     setLoading(false)
   }
@@ -170,6 +202,10 @@ export default function DocumentRules() {
 
   // --- Delete handler ---
   const handleDeleteTemplate = async (template) => {
+    if (template._source === 'utility_forms') {
+      toast.info('Utility forms are managed in the Data Console')
+      return
+    }
     if (!confirm(`Delete "${template.form_name}"? This will also remove it from any doc packages.`)) return
 
     try {
