@@ -167,13 +167,17 @@ export default function JobDetail() {
 
       setSections(sectionsData || [])
 
-      // Fetch file attachments linked to this job
-      const { data: attachData } = await supabase
-        .from('file_attachments')
-        .select('*')
-        .eq('job_id', id)
-        .order('created_at', { ascending: false })
-      setAttachments(attachData || [])
+      // Fetch file attachments linked to this job (by job_id or by lead_id)
+      const jobIdFilter = supabase.from('file_attachments').select('*').eq('job_id', id).order('created_at', { ascending: false })
+      const { data: byJob } = await jobIdFilter
+      if (byJob?.length) {
+        setAttachments(byJob)
+      } else if (jobData.lead_id) {
+        const { data: byLead } = await supabase.from('file_attachments').select('*').eq('lead_id', jobData.lead_id).order('created_at', { ascending: false })
+        setAttachments(byLead || [])
+      } else {
+        setAttachments([])
+      }
     }
 
     setLoading(false)
