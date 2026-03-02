@@ -619,7 +619,15 @@ export default function DocumentRules() {
       const res = await supabase.functions.invoke('parse-utility-pdf', { body })
 
       if (res.error) {
-        toast.error('Smart mapping failed: ' + (res.error.message || res.error))
+        // Try to extract the actual error from the response context
+        let errDetail = res.error.message || String(res.error)
+        try {
+          if (res.error.context?.body) {
+            const errBody = await res.error.context.json()
+            if (errBody?.error) errDetail = errBody.error
+          }
+        } catch { /* ignore parse errors */ }
+        toast.error('Smart mapping failed: ' + errDetail)
         setSmartMapLoading(false)
         return
       }
