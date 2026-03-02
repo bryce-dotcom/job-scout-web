@@ -277,7 +277,7 @@ serve(async (req) => {
     }
 
     // Validate size (<32MB base64)
-    if (pdfData.length > 32 * 1024 * 1024) {
+    if (pdfData && pdfData.length > 32 * 1024 * 1024) {
       return new Response(JSON.stringify({ success: false, error: 'PDF exceeds 32MB limit' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -379,14 +379,18 @@ serve(async (req) => {
       });
     }
 
+    const apiHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    };
+    if (pdfData) {
+      apiHeaders['anthropic-beta'] = 'pdfs-2024-09-25';
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'pdfs-2024-09-25'
-      },
+      headers: apiHeaders,
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 64000,
@@ -407,32 +411,14 @@ serve(async (req) => {
         await new Promise(r => setTimeout(r, 61000));
         const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-            'anthropic-beta': 'pdfs-2024-09-25'
-          },
+          headers: apiHeaders,
           body: JSON.stringify({
             model: 'claude-sonnet-4-20250514',
             max_tokens: 64000,
             system: systemPrompt,
             messages: [{
               role: 'user',
-              content: [
-                {
-                  type: 'document',
-                  source: {
-                    type: 'base64',
-                    media_type: 'application/pdf',
-                    data: pdfData
-                  }
-                },
-                {
-                  type: 'text',
-                  text: `Extract all ${document_type === 'rebate_program' ? 'prescriptive measure line items' : 'rate schedule information'} from this PDF document.${contextNote}\n\nReturn the structured JSON as specified.`
-                }
-              ]
+              content: userContent
             }]
           })
         });
