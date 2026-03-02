@@ -8,7 +8,7 @@ import DealBreadcrumb from '../components/DealBreadcrumb'
 import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
-  Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download
+  Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload
 } from 'lucide-react'
 
 // Default status colors (fallback when store is empty)
@@ -109,6 +109,7 @@ export default function JobDetail() {
   })
   const [sectionFormError, setSectionFormError] = useState('')
   const ganttRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -508,6 +509,53 @@ export default function JobDetail() {
     })
     setSectionFormError('')
     setShowSectionModal(true)
+  }
+
+  // Upload a document
+  const handleUploadDocument = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const filePath = `jobs/${id}/${Date.now()}_${safeName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('project-documents')
+      .upload(filePath, file)
+
+    if (uploadError) {
+      alert('Upload failed: ' + uploadError.message)
+      return
+    }
+
+    const { error: dbError } = await supabase.from('file_attachments').insert({
+      company_id: companyId,
+      job_id: parseInt(id),
+      lead_id: job.lead_id || null,
+      file_name: file.name,
+      file_path: filePath,
+      file_type: file.type || null,
+      file_size: file.size,
+      storage_bucket: 'project-documents'
+    })
+
+    if (dbError) {
+      alert('Failed to save attachment record: ' + dbError.message)
+      return
+    }
+
+    await fetchJobData()
+  }
+
+  // Delete an attachment
+  const handleDeleteAttachment = async (att) => {
+    if (!confirm(`Delete "${att.file_name}"?`)) return
+
+    await supabase.from('file_attachments').delete().eq('id', att.id)
+    await supabase.storage.from(att.storage_bucket).remove([att.file_path])
+
+    await fetchJobData()
   }
 
   // Mini Gantt helpers
@@ -1252,7 +1300,27 @@ export default function JobDetail() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
               <Paperclip size={16} color={theme.textMuted} />
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Documents ({attachments.length})</h3>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, flex: 1 }}>Documents ({attachments.length})</h3>
+              <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleUploadDocument} />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 10px',
+                  backgroundColor: theme.accent,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500'
+                }}
+              >
+                <Upload size={14} />
+                Upload
+              </button>
             </div>
             {attachments.length === 0 ? (
               <p style={{ fontSize: '13px', color: theme.textMuted }}>No documents attached. Files from Lenard audits will appear here when the lead is converted to a job.</p>
@@ -1292,29 +1360,46 @@ export default function JobDetail() {
                           {ext?.toUpperCase()}{sizeKB ? ` \u2022 ${sizeKB}KB` : ''}{' \u2022 '}{new Date(att.created_at).toLocaleDateString()}
                         </div>
                       </div>
-                      <button
-                        onClick={async () => {
-                          const { data } = await supabase.storage.from(att.storage_bucket).createSignedUrl(att.file_path, 3600)
-                          if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-                        }}
-                        style={{
-                          padding: '6px 10px',
-                          backgroundColor: theme.accentBg,
-                          color: theme.accent,
-                          border: `1px solid ${theme.accent}`,
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          fontSize: '12px',
-                          fontWeight: '500',
-                          flexShrink: 0
-                        }}
-                      >
-                        <Download size={12} />
-                        Open
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <button
+                          onClick={async () => {
+                            const { data } = await supabase.storage.from(att.storage_bucket).createSignedUrl(att.file_path, 3600)
+                            if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                          }}
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: theme.accentBg,
+                            color: theme.accent,
+                            border: `1px solid ${theme.accent}`,
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '12px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          <Download size={12} />
+                          Open
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAttachment(att)}
+                          style={{
+                            padding: '6px',
+                            backgroundColor: '#fee2e2',
+                            color: '#dc2626',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
                   )
                 })}

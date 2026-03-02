@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -8,7 +8,7 @@ import {
   ArrowLeft, Calendar, FileText, Clipboard, Plus, Send, Phone, Mail,
   MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
   CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package, Grid3X3,
-  Paperclip, Download, Briefcase
+  Paperclip, Download, Briefcase, Upload
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import FlowIndicator from '../components/FlowIndicator'
@@ -58,6 +58,7 @@ export default function LeadDetail() {
   const [showProductPicker, setShowProductPicker] = useState(false)
   const [attachments, setAttachments] = useState([])
   const [convertingToJob, setConvertingToJob] = useState(false)
+  const fileInputRef = useRef(null)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -326,6 +327,54 @@ export default function LeadDetail() {
     } catch (err) {
       alert('Download failed: ' + (err.message || 'Unknown error'))
     }
+  }
+
+  // Upload a document
+  const handleUploadDocument = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const filePath = `leads/${id}/${Date.now()}_${safeName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('project-documents')
+      .upload(filePath, file)
+
+    if (uploadError) {
+      alert('Upload failed: ' + uploadError.message)
+      return
+    }
+
+    const { error: dbError } = await supabase.from('file_attachments').insert({
+      company_id: companyId,
+      lead_id: parseInt(id),
+      file_name: file.name,
+      file_path: filePath,
+      file_type: file.type || null,
+      file_size: file.size,
+      storage_bucket: 'project-documents'
+    })
+
+    if (dbError) {
+      alert('Failed to save attachment record: ' + dbError.message)
+      return
+    }
+
+    toast.success('File uploaded')
+    await fetchLeadData()
+  }
+
+  // Delete an attachment
+  const handleDeleteAttachment = async (att) => {
+    if (!confirm(`Delete "${att.file_name}"?`)) return
+
+    await supabase.from('file_attachments').delete().eq('id', att.id)
+    await supabase.storage.from(att.storage_bucket).remove([att.file_path])
+
+    toast.success('File deleted')
+    await fetchLeadData()
   }
 
   // Convert Won lead to Job & Customer
@@ -1261,6 +1310,28 @@ export default function LeadDetail() {
                   Files attached from Lenard audits and contract signing
                 </p>
               </div>
+              <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleUploadDocument} />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  padding: isMobile ? '12px 16px' : '10px 16px',
+                  minHeight: isMobile ? '44px' : 'auto',
+                  backgroundColor: theme.accent,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                <Upload size={16} />
+                Upload
+              </button>
             </div>
 
             {attachments.length === 0 ? (
@@ -1312,29 +1383,49 @@ export default function LeadDetail() {
                           </div>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDownloadFile(att)}
-                        style={{
-                          padding: isMobile ? '10px 16px' : '8px 14px',
-                          minHeight: isMobile ? '44px' : 'auto',
-                          backgroundColor: theme.accentBg,
-                          color: theme.accent,
-                          border: `1px solid ${theme.accent}`,
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          fontSize: '13px',
-                          fontWeight: '500',
-                          whiteSpace: 'nowrap',
-                          width: isMobile ? '100%' : 'auto',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        <Download size={14} />
-                        Download
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', width: isMobile ? '100%' : 'auto' }}>
+                        <button
+                          onClick={() => handleDownloadFile(att)}
+                          style={{
+                            padding: isMobile ? '10px 16px' : '8px 14px',
+                            minHeight: isMobile ? '44px' : 'auto',
+                            backgroundColor: theme.accentBg,
+                            color: theme.accent,
+                            border: `1px solid ${theme.accent}`,
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            whiteSpace: 'nowrap',
+                            flex: isMobile ? 1 : 'none',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Download size={14} />
+                          Download
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAttachment(att)}
+                          style={{
+                            padding: isMobile ? '10px' : '8px',
+                            minHeight: isMobile ? '44px' : 'auto',
+                            minWidth: isMobile ? '44px' : 'auto',
+                            backgroundColor: '#fee2e2',
+                            color: '#dc2626',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
                   )
                 })}
