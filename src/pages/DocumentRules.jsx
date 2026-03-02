@@ -5,7 +5,7 @@ import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
 import { extractFormFields } from '../lib/pdfFormFiller'
-import { extractExcelTags, validateExcelTag } from '../lib/excelTemplateFiller'
+import { extractExcelTags, validateExcelTag, extractExcelCellLabels } from '../lib/excelTemplateFiller'
 import {
   FileText,
   Upload,
@@ -246,6 +246,8 @@ export default function DocumentRules() {
   const [mappingLoading, setMappingLoading] = useState(false)
   const [smartMapLoading, setSmartMapLoading] = useState(false)
   const [excelTags, setExcelTags] = useState([]) // for Excel templates: [{tag, locations, valid, reason}]
+  const [excelCellLabels, setExcelCellLabels] = useState([]) // for cell-mapping mode: [{sheet, labelCell, labelText, inputCell, inputRef}]
+  const [excelCellMode, setExcelCellMode] = useState(false) // true when in cell-mapping mode
 
   useEffect(() => {
     if (!companyId) {
@@ -365,17 +367,28 @@ export default function DocumentRules() {
       if (isExcel) {
         // Extract {{tags}} from all sheets
         const tags = extractExcelTags(arrayBuffer)
-        fieldCount = tags.length
 
-        // Auto-create mapping: tag value IS the data path
-        const validPathValues = new Set(DATA_PATHS.map(dp => dp.value).filter(Boolean))
-        let allValid = true
-        for (const { tag } of tags) {
-          fieldMapping[tag] = tag
-          const { valid } = validateExcelTag(tag, DATA_PATHS)
-          if (!valid) allValid = false
+        if (tags.length > 0) {
+          // Tag mode: existing behavior
+          fieldCount = tags.length
+          const validPathValues = new Set(DATA_PATHS.map(dp => dp.value).filter(Boolean))
+          let allValid = true
+          for (const { tag } of tags) {
+            fieldMapping[tag] = tag
+            const { valid } = validateExcelTag(tag, DATA_PATHS)
+            if (!valid) allValid = false
+          }
+          status = allValid ? 'Ready' : 'Pending'
+        } else {
+          // Cell mapping mode: scan for labeled input cells
+          const cellLabels = extractExcelCellLabels(arrayBuffer)
+          fieldCount = cellLabels.length
+          fieldMapping = { _mode: 'cell_mapping' }
+          for (const label of cellLabels) {
+            if (label.inputRef) fieldMapping[label.inputRef] = ''
+          }
+          status = 'Pending'
         }
-        status = fieldCount === 0 ? 'Ready' : (allValid ? 'Ready' : 'Pending')
       } else {
         // PDF: extract fillable form fields
         let fields = []
@@ -425,8 +438,9 @@ export default function DocumentRules() {
       if (insertError) {
         toast.error('Save failed: ' + insertError.message)
       } else {
-        const typeLabel = isExcel ? 'Excel' : 'PDF'
-        const fieldLabel = isExcel ? 'tag' : 'form field'
+        const isCellMapping = isExcel && fieldMapping._mode === 'cell_mapping'
+        const typeLabel = isCellMapping ? 'Excel form' : (isExcel ? 'Excel' : 'PDF')
+        const fieldLabel = isCellMapping ? 'label' : (isExcel ? 'tag' : 'form field')
         toast.success(`Uploaded ${typeLabel} "${formName}" with ${fieldCount} ${fieldLabel}${fieldCount !== 1 ? 's' : ''}`)
         await loadData()
       }
@@ -480,6 +494,8 @@ export default function DocumentRules() {
     setMappingTemplate(template)
     setMappingFields([])
     setExcelTags([])
+    setExcelCellLabels([])
+    setExcelCellMode(false)
     setFieldMapping(template.field_mapping || {})
     setFieldLabels({})
     setMappingLoading(true)
@@ -510,18 +526,37 @@ export default function DocumentRules() {
       if (excel) {
         // Excel: extract tags and validate
         const tags = extractExcelTags(fileBytes)
-        const validated = tags.map(({ tag, locations }) => {
-          const { valid, reason } = validateExcelTag(tag, DATA_PATHS)
-          return { tag, locations, valid, reason }
-        })
-        setExcelTags(validated)
 
-        // Build field mapping: tag → tag (self-mapping)
-        const mapping = {}
-        for (const { tag } of tags) {
-          mapping[tag] = tag
+        if (tags.length > 0) {
+          // Tag mode
+          const validated = tags.map(({ tag, locations }) => {
+            const { valid, reason } = validateExcelTag(tag, DATA_PATHS)
+            return { tag, locations, valid, reason }
+          })
+          setExcelTags(validated)
+
+          const mapping = {}
+          for (const { tag } of tags) {
+            mapping[tag] = tag
+          }
+          setFieldMapping(mapping)
+        } else {
+          // Cell mapping mode
+          const cellLabels = extractExcelCellLabels(fileBytes)
+          setExcelCellLabels(cellLabels)
+          setExcelCellMode(true)
+
+          // Merge existing cell mappings with detected labels
+          const existing = template.field_mapping || {}
+          const isCellMode = existing._mode === 'cell_mapping'
+          const mapping = { _mode: 'cell_mapping' }
+          for (const label of cellLabels) {
+            if (label.inputRef) {
+              mapping[label.inputRef] = (isCellMode && existing[label.inputRef]) || ''
+            }
+          }
+          setFieldMapping(mapping)
         }
-        setFieldMapping(mapping)
       } else {
         // PDF: extract fillable form fields
         const pdfBytes = new Uint8Array(fileBytes)
@@ -560,10 +595,12 @@ export default function DocumentRules() {
   }
 
   const handleSmartMap = async () => {
-    if (mappingFields.length === 0) return
+    if (mappingFields.length === 0 && excelCellLabels.length === 0) return
     setSmartMapLoading(true)
     try {
-      const fieldNames = mappingFields.map(f => f.name)
+      const fieldNames = excelCellMode
+        ? excelCellLabels.filter(l => l.inputRef).map(l => l.labelText)
+        : mappingFields.map(f => f.name)
 
       const body = {
         document_type: 'form_field_analysis',
@@ -592,9 +629,24 @@ export default function DocumentRules() {
         const updated = { ...fieldMapping }
         const validPathValues = new Set(DATA_PATHS.map(dp => dp.value).filter(Boolean))
         const lineItemPattern = /^lines\.\d+\.\w+$/
-        for (const [field, path] of Object.entries(suggestions)) {
-          if (path && (validPathValues.has(path) || lineItemPattern.test(path))) {
-            updated[field] = path
+
+        if (excelCellMode) {
+          // Map AI suggestions (keyed by label text) back to inputRef keys
+          const labelToRef = {}
+          for (const label of excelCellLabels) {
+            if (label.inputRef) labelToRef[label.labelText] = label.inputRef
+          }
+          for (const [field, path] of Object.entries(suggestions)) {
+            const ref = labelToRef[field]
+            if (ref && path && (validPathValues.has(path) || lineItemPattern.test(path))) {
+              updated[ref] = path
+            }
+          }
+        } else {
+          for (const [field, path] of Object.entries(suggestions)) {
+            if (path && (validPathValues.has(path) || lineItemPattern.test(path))) {
+              updated[field] = path
+            }
           }
         }
         setFieldMapping(updated)
@@ -602,7 +654,7 @@ export default function DocumentRules() {
         if (res.data.results.field_labels) {
           setFieldLabels(res.data.results.field_labels)
         }
-        const mappedCount = Object.values(updated).filter(Boolean).length
+        const mappedCount = Object.values(updated).filter(v => v && v !== 'cell_mapping').length
         toast.success(`Smart Map suggested ${mappedCount} field mappings`)
       } else {
         toast.error('Smart mapping failed: ' + (res.data?.error || 'Unknown error'))
@@ -618,20 +670,26 @@ export default function DocumentRules() {
     setSaving(true)
     const excel = isExcelFile(mappingTemplate.file_name)
     try {
-      // Filter out empty mappings
+      // Filter out empty mappings, but keep _mode marker
       const cleaned = {}
       for (const [field, path] of Object.entries(fieldMapping)) {
+        if (field === '_mode') { cleaned._mode = path; continue }
         if (path) cleaned[field] = path
       }
 
-      const mappedCount = Object.keys(cleaned).length
-      const totalFields = excel ? excelTags.length : mappingFields.length
-      let newStatus
-      if (excel) {
-        // Excel: Ready only if all tags are valid paths
+      const mappedCount = Object.keys(cleaned).filter(k => k !== '_mode').length
+      let totalFields, newStatus
+      if (excelCellMode) {
+        // Cell mapping: Ready when all labels with inputRef have a mapping
+        totalFields = excelCellLabels.filter(l => l.inputRef).length
+        newStatus = totalFields === 0 ? 'Ready' : (mappedCount >= totalFields ? 'Ready' : 'Pending')
+      } else if (excel) {
+        totalFields = excelTags.length
+        // Excel tag mode: Ready only if all tags are valid paths
         const allValid = excelTags.every(t => t.valid)
         newStatus = totalFields === 0 ? 'Ready' : (allValid ? 'Ready' : 'Pending')
       } else {
+        totalFields = mappingFields.length
         newStatus = totalFields === 0 ? 'Ready' : (mappedCount >= totalFields ? 'Ready' : 'Pending')
       }
 
@@ -1397,8 +1455,11 @@ export default function DocumentRules() {
             {/* Modal Header */}
             {(() => {
               const modalIsExcel = isExcelFile(mappingTemplate.file_name)
+              const modalIsExcelTagMode = modalIsExcel && !excelCellMode
               const validTagCount = excelTags.filter(t => t.valid).length
               const invalidTagCount = excelTags.filter(t => !t.valid).length
+              const cellLabelCount = excelCellLabels.filter(l => l.inputRef).length
+              const cellMappedCount = excelCellMode ? Object.entries(fieldMapping).filter(([k, v]) => k !== '_mode' && v).length : 0
               return (
                 <>
                   <div style={{
@@ -1408,20 +1469,22 @@ export default function DocumentRules() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                          {modalIsExcel ? 'Validate Tags' : 'Map Fields'} &mdash; {mappingTemplate.form_name}
+                          {modalIsExcelTagMode ? 'Validate Tags' : 'Map Fields'} &mdash; {mappingTemplate.form_name}
                         </h3>
                         <p style={{ fontSize: '12px', color: theme.textMuted, margin: '2px 0 0' }}>
-                          {modalIsExcel
+                          {modalIsExcelTagMode
                             ? `${excelTags.length} tag${excelTags.length !== 1 ? 's' : ''} found \u00b7 ${validTagCount} valid${invalidTagCount > 0 ? ` \u00b7 ${invalidTagCount} invalid` : ''}`
-                            : `${mappingFields.length} field${mappingFields.length !== 1 ? 's' : ''} found \u00b7 ${mappedFieldCount} mapped`
+                            : excelCellMode
+                              ? `${cellLabelCount} label${cellLabelCount !== 1 ? 's' : ''} found \u00b7 ${cellMappedCount} mapped`
+                              : `${mappingFields.length} field${mappingFields.length !== 1 ? 's' : ''} found \u00b7 ${mappedFieldCount} mapped`
                           }
                         </p>
                       </div>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        {!modalIsExcel && (
+                        {(!modalIsExcelTagMode) && (
                           <button
                             onClick={handleSmartMap}
-                            disabled={smartMapLoading || mappingFields.length === 0}
+                            disabled={smartMapLoading || (excelCellMode ? excelCellLabels.length === 0 : mappingFields.length === 0)}
                             title="Use AI to auto-detect and map fields"
                             style={{
                               display: 'flex',
@@ -1461,17 +1524,22 @@ export default function DocumentRules() {
                     <div style={{
                       marginTop: '12px',
                       padding: '10px 12px',
-                      backgroundColor: modalIsExcel ? '#eff6ff' : '#fffbeb',
+                      backgroundColor: modalIsExcelTagMode ? '#eff6ff' : '#fffbeb',
                       borderRadius: '6px',
                       fontSize: '12px',
-                      color: modalIsExcel ? '#1e40af' : '#92400e',
+                      color: modalIsExcelTagMode ? '#1e40af' : '#92400e',
                       lineHeight: '1.5'
                     }}>
-                      {modalIsExcel ? (
+                      {modalIsExcelTagMode ? (
                         <>
                           <strong>Excel tags:</strong> Your spreadsheet uses <code style={{ backgroundColor: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: '3px' }}>{'{{tag}}'}</code> placeholders.
                           Each tag maps directly to a data path (e.g. <code style={{ backgroundColor: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: '3px' }}>{'{{customer.name}}'}</code>).
                           Tags marked as valid will auto-fill when generating documents. Fix any invalid tags by editing the Excel file and re-uploading.
+                        </>
+                      ) : excelCellMode ? (
+                        <>
+                          <strong>How to map:</strong> Each row is a labeled field detected in your Excel form.
+                          Use the dropdown to connect it to a data source. When generating this form, the mapped cells will be filled with the selected data.
                         </>
                       ) : (
                         <>
@@ -1488,9 +1556,74 @@ export default function DocumentRules() {
                     {mappingLoading ? (
                       <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted }}>
                         <Loader size={20} style={{ marginBottom: '8px', animation: 'spin 1s linear infinite' }} />
-                        <div>{modalIsExcel ? 'Scanning for tags...' : 'Extracting form fields...'}</div>
+                        <div>{modalIsExcelTagMode ? 'Scanning for tags...' : excelCellMode ? 'Scanning for labels...' : 'Extracting form fields...'}</div>
                       </div>
-                    ) : modalIsExcel ? (
+                    ) : excelCellMode ? (
+                      /* Excel Cell Mapping View */
+                      excelCellLabels.filter(l => l.inputRef).length === 0 ? (
+                        <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                          No labeled input cells found in this Excel file.
+                        </div>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ backgroundColor: theme.bg, position: 'sticky', top: 0, zIndex: 1 }}>
+                              <th style={{ padding: '10px 16px', textAlign: 'left', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}` }}>
+                                Excel Field
+                              </th>
+                              <th style={{ padding: '10px 16px', textAlign: 'left', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}`, width: '70px' }}>
+                                Cell
+                              </th>
+                              <th style={{ padding: '10px 16px', textAlign: 'left', color: theme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${theme.border}`, width: '40%' }}>
+                                Maps To
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {excelCellLabels.filter(l => l.inputRef).map((label, i) => (
+                              <tr key={label.inputRef} style={{ backgroundColor: i % 2 === 0 ? 'transparent' : theme.bg }}>
+                                <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, verticalAlign: 'top' }}>
+                                  <div style={{ fontWeight: '500', color: theme.text }}>{label.labelText}</div>
+                                  <div style={{ color: theme.textMuted, fontSize: '11px' }}>{label.sheet}</div>
+                                </td>
+                                <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, verticalAlign: 'top' }}>
+                                  <code style={{
+                                    backgroundColor: 'rgba(0,0,0,0.06)',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    fontFamily: 'monospace'
+                                  }}>
+                                    {label.inputCell}
+                                  </code>
+                                </td>
+                                <td style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}` }}>
+                                  <select
+                                    value={fieldMapping[label.inputRef] || ''}
+                                    onChange={(e) => setFieldMapping(prev => ({ ...prev, [label.inputRef]: e.target.value }))}
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px 8px',
+                                      backgroundColor: theme.bg,
+                                      border: `1px solid ${fieldMapping[label.inputRef] ? '#16a34a' : theme.border}`,
+                                      borderRadius: '6px',
+                                      color: theme.text,
+                                      fontSize: '12px'
+                                    }}
+                                  >
+                                    {DATA_PATHS.map(dp => (
+                                      <option key={dp.value} value={dp.value}>
+                                        {dp.label}{dp.value ? ` (${dp.value})` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )
+                    ) : modalIsExcelTagMode ? (
                       /* Excel Tag Validation View */
                       excelTags.length === 0 ? (
                         <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
@@ -1613,9 +1746,11 @@ export default function DocumentRules() {
                     alignItems: 'center'
                   }}>
                     <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                      {modalIsExcel
+                      {modalIsExcelTagMode
                         ? `${validTagCount} of ${excelTags.length} tags valid`
-                        : `${mappedFieldCount} of ${mappingFields.length} fields mapped`
+                        : excelCellMode
+                          ? `${cellMappedCount} of ${cellLabelCount} fields mapped`
+                          : `${mappedFieldCount} of ${mappingFields.length} fields mapped`
                       }
                     </span>
                     <div style={{ display: 'flex', gap: '8px' }}>
