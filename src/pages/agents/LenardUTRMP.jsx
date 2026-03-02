@@ -1158,8 +1158,8 @@ export default function LenardUTRMP() {
 
     if (projCost > 0) {
       row('Gross Project Cost', $c(projCost));
-      row('Less: RMP Incentive', `(${$c(estimatedRebate)})`, { color: green });
-      row('Net Capital Investment', $c(netCost), { bold: true, med: true, topLine: true });
+      row('Less: RMP Incentive', `(${$c(estimatedRebate - repAdditionalOOP)})`, { color: green });
+      row('Net Capital Investment', $c(netCost + repAdditionalOOP), { bold: true, med: true, topLine: true });
       y += 2;
       row('Annual Energy Savings', $c(annSav), { color: green });
       if (maintSav > 0) row('Annual Maintenance Savings', $c(maintSav), { color: green });
@@ -1827,20 +1827,10 @@ export default function LenardUTRMP() {
       const pdfBlob = generatePDFBlob();
       if (pdfBlob) files.push({ blob: pdfBlob, name: `Energy_Scout_Audit_${slug}.pdf`, type: 'application/pdf' });
 
-      // 2. Filled W-9 PDF (graceful skip if not uploaded to Data Console)
-      const w9Blob = await fetchAndFillForm('W9');
-      if (w9Blob) files.push({ blob: w9Blob, name: `W9_${slug}.pdf`, type: 'application/pdf' });
-
-      // 3. Filled RMP Application PDF (graceful skip if not uploaded)
-      const appBlob = await fetchAndFillForm('Application');
-      if (appBlob) files.push({ blob: appBlob, name: `RMP_Application_${slug}.pdf`, type: 'application/pdf' });
-
-      // 4. XLS Workbook
-      const wb = generateXLSWorkbook();
-      if (wb) {
-        const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-        const xlsBlob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        files.push({ blob: xlsBlob, name: `RMP_Application_${slug}.xlsx`, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      // 2. Rep Summary PDF (only if rep)
+      if (isRep) {
+        const repBlob = generatePDFBlob(true);
+        if (repBlob) files.push({ blob: repBlob, name: `Energy_Scout_Rep_Summary_${slug}.pdf`, type: 'application/pdf' });
       }
 
       // Upload each file
@@ -1890,8 +1880,8 @@ export default function LenardUTRMP() {
   };
 
   // Helper: generate full audit PDF blob (for attaching)
-  const generatePDFBlob = () => {
-    try { return buildAuditPdfBlob(false); } catch (_) { return null; }
+  const generatePDFBlob = (repMode = false) => {
+    try { return buildAuditPdfBlob(repMode); } catch (_) { return null; }
   };
 
   // Build data context for PDF form filling (compatible with resolveAllMappings)
@@ -2898,12 +2888,12 @@ export default function LenardUTRMP() {
                 {estimatedRebate > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
                     <span style={{ color: T.green }}>RMP Incentive</span>
-                    <span style={{ fontWeight: '700', color: T.green }}>-${Math.round(estimatedRebate).toLocaleString()}</span>
+                    <span style={{ fontWeight: '700', color: T.green }}>-${Math.round(estimatedRebate - repAdditionalOOP).toLocaleString()}</span>
                   </div>
                 )}
                 <div style={{ borderTop: '2px solid #1e1e22', paddingTop: '6px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
                   <span style={{ fontWeight: '800', color: '#1e1e22' }}>Customer Out-of-Pocket</span>
-                  <span style={{ fontWeight: '800', color: '#1e1e22' }}>${Math.round(Math.max(0, effectiveProjectCost - estimatedRebate)).toLocaleString()}</span>
+                  <span style={{ fontWeight: '800', color: '#1e1e22' }}>${Math.round(Math.max(0, effectiveProjectCost - estimatedRebate + repAdditionalOOP)).toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -3337,10 +3327,6 @@ export default function LenardUTRMP() {
                 {isRep && (
                   <button onClick={() => generatePDF(true)} style={{ width: '100%', padding: '12px', background: '#1e1e22', color: T.accent, border: `1px solid ${T.accent}`, borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', borderLeft: `3px solid ${T.accent}` }}>{'\uD83D\uDD12'} Download Rep Summary PDF (Confidential)</button>
                 )}
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={generateXLS} style={{ flex: 1, padding: '10px', background: '#1a5c1a', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>{'\uD83D\uDCCA'} RMP Application (XLS)</button>
-                  <button onClick={generateW9PDF} style={{ flex: 1, padding: '10px', background: '#1a3c6e', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>{'\uD83C\uDFE6'} W9 (PDF)</button>
-                </div>
                 {savedLeadId && (
                   <button onClick={attachToLead} disabled={attachingFiles} style={{ width: '100%', padding: '12px', background: attachingFiles ? '#ccc' : T.blue, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>{attachingFiles ? 'Attaching...' : '\uD83D\uDCCE Attach All to Lead'}</button>
                 )}
