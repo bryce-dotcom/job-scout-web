@@ -9,7 +9,7 @@ import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
-  Package, Loader, Check, Info
+  Package, Loader, Check, Info, Eye
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 
@@ -124,6 +124,9 @@ export default function JobDetail() {
   const [sectionFormError, setSectionFormError] = useState('')
   const ganttRef = useRef(null)
   const fileInputRef = useRef(null)
+
+  // Document viewer state
+  const [viewingDoc, setViewingDoc] = useState(null) // { url, name }
 
   // Generate from Library state
   const [showGenerateModal, setShowGenerateModal] = useState(false)
@@ -1548,6 +1551,28 @@ export default function JobDetail() {
                         <button
                           onClick={async () => {
                             const { data } = await supabase.storage.from(att.storage_bucket).createSignedUrl(att.file_path, 3600)
+                            if (data?.signedUrl) setViewingDoc({ url: data.signedUrl, name: att.file_name })
+                          }}
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: theme.accentBg,
+                            color: theme.accent,
+                            border: `1px solid ${theme.accent}`,
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '12px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          <Eye size={12} />
+                          View
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const { data } = await supabase.storage.from(att.storage_bucket).createSignedUrl(att.file_path, 3600)
                             if (data?.signedUrl) window.open(data.signedUrl, '_blank')
                           }}
                           style={{
@@ -1565,7 +1590,7 @@ export default function JobDetail() {
                           }}
                         >
                           <Download size={12} />
-                          Open
+                          Download
                         </button>
                         <button
                           onClick={() => handleDeleteAttachment(att)}
@@ -1592,6 +1617,20 @@ export default function JobDetail() {
           </div>
         </div>
       </div>
+
+      {/* Document Viewer Modal */}
+      {viewingDoc && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.8)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#1e1e22', color: '#fff' }}>
+            <div style={{ fontSize: '14px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '12px' }}>{viewingDoc.name}</div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => window.open(viewingDoc.url, '_blank')} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}><ExternalLink size={12} /> Open</button>
+              <button onClick={() => setViewingDoc(null)} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}><X size={14} /> Close</button>
+            </div>
+          </div>
+          <iframe src={viewingDoc.url} title={viewingDoc.name} style={{ flex: 1, border: 'none', background: '#fff' }} />
+        </div>
+      )}
 
       {/* Generate from Library Modal */}
       {showGenerateModal && (
