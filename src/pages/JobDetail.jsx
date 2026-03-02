@@ -8,8 +8,22 @@ import DealBreadcrumb from '../components/DealBreadcrumb'
 import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
-  Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload
+  Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
+  Package, Loader, Check, Info
 } from 'lucide-react'
+import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
+
+const CATEGORY_COLORS = {
+  CONTRACT: { bg: '#dcfce7', text: '#166534' },
+  APPLICATION: { bg: '#dbeafe', text: '#1e40af' },
+  TAX: { bg: '#f3e8ff', text: '#6b21a8' },
+  PERMIT: { bg: '#ffedd5', text: '#9a3412' },
+  PROPOSAL: { bg: '#e0e7ff', text: '#3730a3' },
+  CUSTOM: { bg: '#fef9c3', text: '#854d0e' }
+}
+
+const getTemplateKey = (t) => t._source === 'utility_forms' ? `uf_${t._sourceId}` : `dt_${t.id}`
+const getPackageKey = (p) => p.source_table === 'utility_forms' ? `uf_${p.template_id}` : `dt_${p.template_id}`
 
 // Default status colors (fallback when store is empty)
 const defaultSectionStatusColors = {
@@ -110,6 +124,14 @@ export default function JobDetail() {
   const [sectionFormError, setSectionFormError] = useState('')
   const ganttRef = useRef(null)
   const fileInputRef = useRef(null)
+
+  // Generate from Library state
+  const [showGenerateModal, setShowGenerateModal] = useState(false)
+  const [libraryTemplates, setLibraryTemplates] = useState([])
+  const [packageTemplateKeys, setPackageTemplateKeys] = useState([])
+  const [selectedTemplates, setSelectedTemplates] = useState(new Set())
+  const [generating, setGenerating] = useState(false)
+  const [generateProgress, setGenerateProgress] = useState('')
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -556,6 +578,149 @@ export default function JobDetail() {
     await supabase.storage.from(att.storage_bucket).remove([att.file_path])
 
     await fetchJobData()
+  }
+
+  // Fetch library templates and supplementary data when generate modal opens
+  const handleOpenGenerateModal = async () => {
+    setShowGenerateModal(true)
+
+    // Fetch templates
+    const [templatesRes, utilityFormsRes, packagesRes] = await Promise.all([
+      supabase
+        .from('document_templates')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('status', 'Ready')
+        .order('category'),
+      supabase
+        .from('utility_forms')
+        .select('*')
+        .eq('status', 'published'),
+      supabase
+        .from('doc_package_items')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('sort_order', { ascending: true })
+    ])
+
+    // Normalize utility_forms into same shape
+    const utilityTemplates = (utilityFormsRes.data || []).map(uf => {
+      const mapping = uf.field_mapping || {}
+      const fieldCount = Object.keys(mapping).length
+      const mappedCount = Object.values(mapping).filter(v => v).length
+      return {
+        id: `uf_${uf.id}`,
+        _source: 'utility_forms',
+        _sourceId: uf.id,
+        company_id: uf.company_id,
+        form_name: uf.form_name,
+        form_code: uf.form_type || '',
+        category: (uf.form_type || 'APPLICATION').toUpperCase(),
+        file_path: uf.form_file || '',
+        file_name: uf.form_name,
+        file_size: null,
+        field_count: fieldCount,
+        field_mapping: mapping,
+        status: mappedCount >= fieldCount && fieldCount > 0 ? 'Ready' : (fieldCount === 0 ? 'Ready' : 'Pending'),
+        is_custom: false,
+        created_at: uf.created_at,
+        updated_at: uf.updated_at
+      }
+    }).filter(t => t.status === 'Ready')
+
+    const allTemplates = [...(templatesRes.data || []), ...utilityTemplates]
+    setLibraryTemplates(allTemplates)
+
+    // Fetch supplementary data via lead_id for package matching
+    let serviceType = null
+    if (job?.lead_id) {
+      const { data: leadData } = await supabase
+        .from('leads')
+        .select('service_type')
+        .eq('id', job.lead_id)
+        .single()
+      serviceType = leadData?.service_type || null
+    }
+
+    const pkgItems = packagesRes.data || []
+    const matchingPkg = serviceType
+      ? pkgItems.filter(p => p.service_type === serviceType)
+      : []
+    const pkgKeys = matchingPkg.map(getPackageKey)
+    setPackageTemplateKeys(pkgKeys)
+
+    if (pkgKeys.length > 0) {
+      const preSelected = new Set()
+      for (const t of allTemplates) {
+        if (pkgKeys.includes(getTemplateKey(t))) preSelected.add(getTemplateKey(t))
+      }
+      setSelectedTemplates(preSelected)
+    } else {
+      setSelectedTemplates(new Set())
+    }
+  }
+
+  const handleGenerateSelected = async () => {
+    if (selectedTemplates.size === 0) return
+    setGenerating(true)
+
+    const templatesToGenerate = libraryTemplates.filter(t => selectedTemplates.has(getTemplateKey(t)))
+
+    // Fetch supplementary data for data context
+    let audits = []
+    let quotes = []
+    if (job?.lead_id) {
+      const [auditsRes, quotesRes] = await Promise.all([
+        supabase.from('lighting_audits').select('*').eq('lead_id', job.lead_id),
+        job.quote?.id
+          ? supabase.from('quotes').select('*').eq('id', job.quote.id)
+          : supabase.from('quotes').select('*').eq('lead_id', job.lead_id).order('created_at', { ascending: false }).limit(1)
+      ])
+      audits = auditsRes.data || []
+      quotes = quotesRes.data || []
+    }
+
+    const dataContext = await buildDataContext({
+      lead: null,
+      job,
+      audits,
+      quotes,
+      lineItems: lineItems || [],
+      appointment: null
+    })
+
+    let successCount = 0
+    let errorCount = 0
+
+    for (let i = 0; i < templatesToGenerate.length; i++) {
+      setGenerateProgress(`Generating ${i + 1} of ${templatesToGenerate.length}...`)
+      const result = await generateAndUploadTemplate(templatesToGenerate[i], dataContext, {
+        entityType: 'job',
+        entityId: id,
+        companyId,
+        leadId: job?.lead_id || null
+      })
+      if (result.success) successCount++
+      else {
+        errorCount++
+        const { toast } = await import('../lib/toast')
+        toast.error(`Failed: ${templatesToGenerate[i].form_name} — ${result.error}`)
+      }
+    }
+
+    setGenerating(false)
+    setGenerateProgress('')
+    setShowGenerateModal(false)
+
+    if (successCount > 0) {
+      const { toast } = await import('../lib/toast')
+      toast.success(`Generated ${successCount} document${successCount > 1 ? 's' : ''}`)
+      await fetchJobData()
+    }
+    if (errorCount > 0 && successCount === 0) {
+      const { toast } = await import('../lib/toast')
+      toast.error('All document generations failed')
+    }
   }
 
   // Mini Gantt helpers
@@ -1303,6 +1468,25 @@ export default function JobDetail() {
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, flex: 1 }}>Documents ({attachments.length})</h3>
               <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleUploadDocument} />
               <button
+                onClick={handleOpenGenerateModal}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '5px 8px',
+                  backgroundColor: theme.accentBg,
+                  color: theme.accent,
+                  border: `1px solid ${theme.accent}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                  fontWeight: '500'
+                }}
+              >
+                <Package size={12} />
+                Generate
+              </button>
+              <button
                 onClick={() => fileInputRef.current?.click()}
                 style={{
                   display: 'flex',
@@ -1408,6 +1592,254 @@ export default function JobDetail() {
           </div>
         </div>
       </div>
+
+      {/* Generate from Library Modal */}
+      {showGenerateModal && (
+        <>
+          <div
+            onClick={() => !generating && setShowGenerateModal(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 50
+            }}
+          />
+          <div style={{
+            position: 'fixed',
+            top: isMobile ? 0 : '50%',
+            left: isMobile ? 0 : '50%',
+            right: isMobile ? 0 : 'auto',
+            bottom: isMobile ? 0 : 'auto',
+            transform: isMobile ? 'none' : 'translate(-50%, -50%)',
+            backgroundColor: theme.bgCard || '#ffffff',
+            borderRadius: isMobile ? 0 : '16px',
+            border: isMobile ? 'none' : `1px solid ${theme.border}`,
+            width: isMobile ? '100%' : '90%',
+            maxWidth: isMobile ? '100%' : '700px',
+            height: isMobile ? '100%' : 'auto',
+            maxHeight: isMobile ? '100%' : '85vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 51
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: isMobile ? '16px' : '20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <div>
+                <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Generate Documents
+                </h2>
+                <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
+                  {job?.customer?.name || job?.title || 'Job'}
+                </p>
+              </div>
+              <button
+                onClick={() => !generating && setShowGenerateModal(false)}
+                disabled={generating}
+                style={{
+                  padding: '8px', backgroundColor: 'transparent', border: 'none',
+                  cursor: generating ? 'not-allowed' : 'pointer', color: theme.textMuted,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  opacity: generating ? 0.5 : 1
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '20px' }}>
+              {generating && (
+                <div style={{
+                  padding: '16px', marginBottom: '16px', borderRadius: '10px',
+                  backgroundColor: '#dbeafe', border: '1px solid #93c5fd',
+                  display: 'flex', alignItems: 'center', gap: '10px'
+                }}>
+                  <Loader size={16} color="#2563eb" style={{ animation: 'spin 1s linear infinite' }} />
+                  <span style={{ fontSize: '14px', color: '#1e40af', fontWeight: '500' }}>{generateProgress}</span>
+                </div>
+              )}
+
+              {libraryTemplates.length === 0 ? (
+                <div style={{
+                  padding: '32px 16px', textAlign: 'center', color: theme.textMuted
+                }}>
+                  <Info size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                  <p style={{ fontSize: '14px', margin: 0 }}>No ready templates found. Configure templates in Document Rules first.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Package quick-select */}
+                  {packageTemplateKeys.length > 0 && (
+                    <div style={{
+                      marginBottom: '20px', padding: '16px', borderRadius: '10px',
+                      backgroundColor: '#f0fdf4', border: '1px solid #86efac'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Package size={16} color="#166534" />
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#166534' }}>
+                            Package Templates
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const pkgTemplates = libraryTemplates.filter(t => packageTemplateKeys.includes(getTemplateKey(t)))
+                            const allSelected = pkgTemplates.every(t => selectedTemplates.has(getTemplateKey(t)))
+                            const next = new Set(selectedTemplates)
+                            pkgTemplates.forEach(t => {
+                              if (allSelected) next.delete(getTemplateKey(t))
+                              else next.add(getTemplateKey(t))
+                            })
+                            setSelectedTemplates(next)
+                          }}
+                          style={{
+                            padding: '4px 10px', fontSize: '12px', fontWeight: '500',
+                            backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac',
+                            borderRadius: '6px', cursor: 'pointer'
+                          }}
+                        >
+                          {libraryTemplates.filter(t => packageTemplateKeys.includes(getTemplateKey(t))).every(t => selectedTemplates.has(getTemplateKey(t)))
+                            ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+                      {libraryTemplates.filter(t => packageTemplateKeys.includes(getTemplateKey(t))).map(t => {
+                        const key = getTemplateKey(t)
+                        return (
+                          <label key={key} style={{
+                            display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0',
+                            cursor: 'pointer', fontSize: '13px', color: '#166534'
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedTemplates.has(key)}
+                              onChange={() => {
+                                const next = new Set(selectedTemplates)
+                                next.has(key) ? next.delete(key) : next.add(key)
+                                setSelectedTemplates(next)
+                              }}
+                            />
+                            <span style={{ flex: 1 }}>{t.form_name}</span>
+                            {(() => {
+                              const cat = (t.category || 'CUSTOM').toUpperCase()
+                              const colors = CATEGORY_COLORS[cat] || CATEGORY_COLORS.CUSTOM
+                              return (
+                                <span style={{
+                                  padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '500',
+                                  backgroundColor: colors.bg, color: colors.text
+                                }}>{cat}</span>
+                              )
+                            })()}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* All templates grouped by category */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>All Templates</span>
+                      <button
+                        onClick={() => {
+                          if (selectedTemplates.size === libraryTemplates.length) {
+                            setSelectedTemplates(new Set())
+                          } else {
+                            setSelectedTemplates(new Set(libraryTemplates.map(getTemplateKey)))
+                          }
+                        }}
+                        style={{
+                          padding: '4px 10px', fontSize: '12px', fontWeight: '500',
+                          backgroundColor: theme.accentBg, color: theme.accent,
+                          border: `1px solid ${theme.accent}`, borderRadius: '6px', cursor: 'pointer'
+                        }}
+                      >
+                        {selectedTemplates.size === libraryTemplates.length ? 'Deselect All' : 'Select All'}
+                      </button>
+                    </div>
+                    {Object.entries(
+                      libraryTemplates.reduce((groups, t) => {
+                        const cat = (t.category || 'CUSTOM').toUpperCase()
+                        if (!groups[cat]) groups[cat] = []
+                        groups[cat].push(t)
+                        return groups
+                      }, {})
+                    ).map(([cat, templates]) => {
+                      const colors = CATEGORY_COLORS[cat] || CATEGORY_COLORS.CUSTOM
+                      return (
+                        <div key={cat} style={{ marginBottom: '14px' }}>
+                          <div style={{
+                            display: 'inline-block', padding: '2px 10px', borderRadius: '4px', fontSize: '11px',
+                            fontWeight: '600', backgroundColor: colors.bg, color: colors.text, marginBottom: '8px'
+                          }}>{cat}</div>
+                          {templates.map(t => {
+                            const key = getTemplateKey(t)
+                            const isExcel = /\.xlsx$/i.test(t.file_path || '') || /\.xlsx$/i.test(t.file_name || '')
+                            return (
+                              <label key={key} style={{
+                                display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px',
+                                borderRadius: '8px', cursor: 'pointer', marginBottom: '2px',
+                                backgroundColor: selectedTemplates.has(key) ? theme.accentBg : 'transparent',
+                                transition: 'background-color 0.15s'
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedTemplates.has(key)}
+                                  onChange={() => {
+                                    const next = new Set(selectedTemplates)
+                                    next.has(key) ? next.delete(key) : next.add(key)
+                                    setSelectedTemplates(next)
+                                  }}
+                                />
+                                <FileText size={14} color={isExcel ? '#16a34a' : '#dc2626'} />
+                                <span style={{ flex: 1, fontSize: '13px', color: theme.text }}>{t.form_name}</span>
+                                <span style={{
+                                  padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '600',
+                                  backgroundColor: isExcel ? '#dcfce7' : '#fee2e2',
+                                  color: isExcel ? '#16a34a' : '#dc2626'
+                                }}>{isExcel ? 'XLSX' : 'PDF'}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: isMobile ? '16px' : '16px 20px',
+              borderTop: `1px solid ${theme.border}`
+            }}>
+              <span style={{ fontSize: '13px', color: theme.textMuted }}>
+                {selectedTemplates.size} selected
+              </span>
+              <button
+                onClick={handleGenerateSelected}
+                disabled={generating || selectedTemplates.size === 0}
+                style={{
+                  padding: '10px 20px', backgroundColor: theme.accent, color: '#fff',
+                  border: 'none', borderRadius: '8px', cursor: generating || selectedTemplates.size === 0 ? 'not-allowed' : 'pointer',
+                  fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px',
+                  opacity: generating || selectedTemplates.size === 0 ? 0.6 : 1
+                }}
+              >
+                {generating ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
+                {generating ? 'Generating...' : 'Generate Selected'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Add Line Item Modal */}
       {showAddLine && (
