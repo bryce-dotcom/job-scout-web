@@ -9,7 +9,7 @@ import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
-  Package, Loader, Check, Info, Eye
+  Package, Loader, Check, Info, Eye, Zap
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 
@@ -398,6 +398,61 @@ export default function JobDetail() {
 
       await fetchJobData()
       navigate(`/invoices/${invoice.id}`)
+    }
+
+    setSaving(false)
+  }
+
+  const createUtilityInvoice = async () => {
+    if (!job.lead_id) return
+    setSaving(true)
+
+    try {
+      // Fetch the lighting audit linked to this job's lead
+      const { data: audits } = await supabase
+        .from('lighting_audits')
+        .select('*, utility_provider:utility_providers!lighting_audits_utility_provider_id_fkey(id, provider_name)')
+        .eq('lead_id', job.lead_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      const audit = audits?.[0]
+      if (!audit) {
+        const { toast } = await import('../lib/toast')
+        toast.error('No lighting audit found for this lead')
+        setSaving(false)
+        return
+      }
+
+      const utilityName = audit.utility_provider?.provider_name || 'Utility'
+      const totalFixtures = audit.total_fixtures || 0
+      const incentive = audit.estimated_rebate || 0
+
+      const { error } = await supabase
+        .from('utility_invoices')
+        .insert([{
+          company_id: companyId,
+          job_id: parseInt(id),
+          lead_id: job.lead_id,
+          customer_name: job.customer?.name || '',
+          utility_name: utilityName,
+          amount: audit.est_project_cost || 0,
+          project_cost: audit.est_project_cost || 0,
+          incentive_amount: incentive,
+          net_cost: audit.net_cost || 0,
+          payment_status: 'Pending',
+          notes: `Lighting Audit — ${totalFixtures} fixtures, ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(incentive)} incentive`
+        }])
+
+      const { toast } = await import('../lib/toast')
+      if (error) {
+        toast.error('Failed to create utility invoice: ' + error.message)
+      } else {
+        toast.success('Utility invoice created')
+      }
+    } catch (err) {
+      const { toast } = await import('../lib/toast')
+      toast.error('Error creating utility invoice')
     }
 
     setSaving(false)
@@ -1445,6 +1500,16 @@ export default function JobDetail() {
                 <FileText size={18} />
                 Generate Work Order
               </button>
+              {job.lead_id && (
+                <button onClick={createUtilityInvoice} disabled={saving} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  padding: '12px 16px', backgroundColor: 'rgba(212,148,10,0.12)', color: '#d4940a',
+                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+                }}>
+                  <Zap size={18} />
+                  Create Utility Invoice
+                </button>
+              )}
             </div>
           </div>
 

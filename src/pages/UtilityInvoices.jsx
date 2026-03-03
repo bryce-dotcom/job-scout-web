@@ -22,7 +22,11 @@ const emptyInvoice = {
   job_id: '',
   amount: '',
   payment_status: 'Pending',
-  notes: ''
+  notes: '',
+  project_cost: '',
+  incentive_amount: '',
+  net_cost: '',
+  customer_name: ''
 }
 
 export default function UtilityInvoices() {
@@ -52,9 +56,11 @@ export default function UtilityInvoices() {
   }, [companyId, navigate, fetchUtilityInvoices])
 
   const filteredInvoices = utilityInvoices.filter(inv => {
+    const term = searchTerm.toLowerCase()
     const matchesSearch = searchTerm === '' ||
-      inv.utility_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(inv.job_id || '').toLowerCase().includes(searchTerm.toLowerCase())
+      inv.utility_name?.toLowerCase().includes(term) ||
+      inv.customer_name?.toLowerCase().includes(term) ||
+      String(inv.job_id || '').toLowerCase().includes(term)
     return matchesSearch
   })
 
@@ -75,7 +81,11 @@ export default function UtilityInvoices() {
       job_id: invoice.job_id || '',
       amount: invoice.amount || '',
       payment_status: invoice.payment_status || 'Pending',
-      notes: invoice.notes || ''
+      notes: invoice.notes || '',
+      project_cost: invoice.project_cost || '',
+      incentive_amount: invoice.incentive_amount || '',
+      net_cost: invoice.net_cost || '',
+      customer_name: invoice.customer_name || ''
     })
     setError(null)
     setShowModal(true)
@@ -106,6 +116,10 @@ export default function UtilityInvoices() {
       payment_status: formData.payment_status || 'Pending',
       notes: formData.notes || null,
       job_description: formData.job_description || null,
+      project_cost: parseFloat(formData.project_cost) || null,
+      incentive_amount: parseFloat(formData.incentive_amount) || null,
+      net_cost: parseFloat(formData.net_cost) || null,
+      customer_name: formData.customer_name || null,
       updated_at: new Date().toISOString()
     }
 
@@ -306,8 +320,8 @@ export default function UtilityInvoices() {
         }}>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '100px 1fr 1fr 100px 100px 80px',
-            gap: '16px',
+            gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
+            gap: '12px',
             padding: '14px 20px',
             backgroundColor: theme.accentBg,
             borderBottom: `1px solid ${theme.border}`,
@@ -317,10 +331,13 @@ export default function UtilityInvoices() {
             textTransform: 'uppercase'
           }}>
             <div>Date</div>
+            <div>Customer</div>
             <div>Utility</div>
             <div>Status</div>
             <div style={{ textAlign: 'right' }}>Job</div>
-            <div style={{ textAlign: 'right' }}>Amount</div>
+            <div style={{ textAlign: 'right' }}>Project Cost</div>
+            <div style={{ textAlign: 'right' }}>Incentive</div>
+            <div style={{ textAlign: 'right' }}>Net Cost</div>
             <div style={{ textAlign: 'right' }}>Actions</div>
           </div>
 
@@ -329,8 +346,8 @@ export default function UtilityInvoices() {
               key={invoice.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '100px 1fr 1fr 100px 100px 80px',
-                gap: '16px',
+                gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
+                gap: '12px',
                 padding: '16px 20px',
                 borderBottom: `1px solid ${theme.border}`,
                 alignItems: 'center'
@@ -339,7 +356,10 @@ export default function UtilityInvoices() {
               <div style={{ fontSize: '14px', color: theme.textSecondary }}>
                 {formatDate(invoice.created_at)}
               </div>
-              <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
+              <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {invoice.customer_name || '-'}
+              </div>
+              <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {invoice.utility_name || '-'}
               </div>
               <div style={{ fontSize: '14px', color: theme.textSecondary }}>
@@ -349,13 +369,19 @@ export default function UtilityInvoices() {
                 {invoice.job_id || '-'}
               </div>
               <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
-                {formatCurrency(invoice.amount)}
+                {formatCurrency(invoice.project_cost || invoice.amount)}
+              </div>
+              <div style={{ textAlign: 'right', fontWeight: '600', color: '#d4940a' }}>
+                {formatCurrency(invoice.incentive_amount)}
+              </div>
+              <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
+                {formatCurrency(invoice.net_cost)}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
                 <button
                   onClick={() => openEditModal(invoice)}
                   style={{
-                    padding: '8px',
+                    padding: '6px',
                     backgroundColor: 'transparent',
                     border: 'none',
                     borderRadius: '6px',
@@ -363,12 +389,12 @@ export default function UtilityInvoices() {
                     color: theme.textMuted
                   }}
                 >
-                  <Pencil size={16} />
+                  <Pencil size={15} />
                 </button>
                 <button
                   onClick={() => handleDelete(invoice)}
                   style={{
-                    padding: '8px',
+                    padding: '6px',
                     backgroundColor: 'transparent',
                     border: 'none',
                     borderRadius: '6px',
@@ -376,7 +402,7 @@ export default function UtilityInvoices() {
                     color: theme.textMuted
                   }}
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={15} />
                 </button>
               </div>
             </div>
@@ -434,15 +460,15 @@ export default function UtilityInvoices() {
                     <input type="text" name="utility_name" value={formData.utility_name} onChange={handleChange} required style={inputStyle} placeholder="Utility name" />
                   </div>
                   <div>
-                    <label style={labelStyle}>Job ID</label>
-                    <input type="text" name="job_id" value={formData.job_id} onChange={handleChange} style={inputStyle} placeholder="Job ID" />
+                    <label style={labelStyle}>Customer Name</label>
+                    <input type="text" name="customer_name" value={formData.customer_name} onChange={handleChange} style={inputStyle} placeholder="Customer name" />
                   </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Amount</label>
-                    <input type="number" name="amount" value={formData.amount} onChange={handleChange} step="0.01" style={inputStyle} />
+                    <label style={labelStyle}>Job ID</label>
+                    <input type="text" name="job_id" value={formData.job_id} onChange={handleChange} style={inputStyle} placeholder="Job ID" />
                   </div>
                   <div>
                     <label style={labelStyle}>Payment Status</label>
@@ -451,6 +477,21 @@ export default function UtilityInvoices() {
                       <option value="Paid">Paid</option>
                       <option value="Overdue">Overdue</option>
                     </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Project Cost</label>
+                    <input type="number" name="project_cost" value={formData.project_cost} onChange={handleChange} step="0.01" style={inputStyle} placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Incentive Amount</label>
+                    <input type="number" name="incentive_amount" value={formData.incentive_amount} onChange={handleChange} step="0.01" style={inputStyle} placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Net Cost</label>
+                    <input type="number" name="net_cost" value={formData.net_cost} onChange={handleChange} step="0.01" style={inputStyle} placeholder="0.00" />
                   </div>
                 </div>
 
