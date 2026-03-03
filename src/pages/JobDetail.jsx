@@ -110,6 +110,7 @@ export default function JobDetail() {
   const [leadMeter, setLeadMeter] = useState(null)
   const [leadEin, setLeadEin] = useState(null)
   const [jobInvoices, setJobInvoices] = useState([])
+  const [jobUtilityInvoices, setJobUtilityInvoices] = useState([])
 
   // Section state
   const [sections, setSections] = useState([])
@@ -217,6 +218,14 @@ export default function JobDetail() {
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobInvoices(invoicesData || [])
+
+      // Fetch utility invoices linked to this job
+      const { data: utilInvoicesData } = await supabase
+        .from('utility_invoices')
+        .select('id, invoice_id, amount, payment_status, utility_name, created_at')
+        .eq('job_id', id)
+        .order('created_at', { ascending: false })
+      setJobUtilityInvoices(utilInvoicesData || [])
 
       // Fetch file attachments linked to this job (by job_id or by lead_id)
       const jobIdFilter = supabase.from('file_attachments').select('*').eq('job_id', id).order('created_at', { ascending: false })
@@ -533,6 +542,7 @@ export default function JobDetail() {
         toast.error('Failed to create utility invoice: ' + error.message)
       } else {
         toast.success('Utility invoice created')
+        await fetchJobData()
       }
     } catch (err) {
       const { toast } = await import('../lib/toast')
@@ -1659,7 +1669,7 @@ export default function JobDetail() {
           )}
 
           {/* Linked Invoices */}
-          {jobInvoices.length > 0 && (
+          {(jobInvoices.length > 0 || jobUtilityInvoices.length > 0) && (
             <div style={{
               backgroundColor: theme.bgCard,
               borderRadius: '12px',
@@ -1667,11 +1677,11 @@ export default function JobDetail() {
               padding: '20px'
             }}>
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
-                Invoices ({jobInvoices.length})
+                Invoices ({jobInvoices.length + jobUtilityInvoices.length})
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {jobInvoices.map(inv => (
-                  <div key={inv.id} style={{
+                  <div key={'c-' + inv.id} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
                     border: `1px solid ${theme.border}`
@@ -1684,7 +1694,38 @@ export default function JobDetail() {
                         {inv.invoice_id}
                       </button>
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                        <span style={{ padding: '1px 6px', borderRadius: '8px', backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6', fontWeight: '500', marginRight: '4px' }}>Customer</span>
                         {new Date(inv.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>
+                        {formatCurrency(inv.amount)}
+                      </div>
+                      <div style={{
+                        fontSize: '11px', fontWeight: '500',
+                        color: inv.payment_status === 'Paid' ? '#4a7c59' : inv.payment_status === 'Overdue' ? '#dc2626' : theme.textMuted
+                      }}>
+                        {inv.payment_status}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {jobUtilityInvoices.map(inv => (
+                  <div key={'u-' + inv.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
+                    border: `1px solid ${theme.border}`
+                  }}>
+                    <div>
+                      <div style={{
+                        fontSize: '14px', fontWeight: '500', color: theme.text
+                      }}>
+                        {inv.invoice_id || `UTL-${inv.id}`}
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                        <span style={{ padding: '1px 6px', borderRadius: '8px', backgroundColor: 'rgba(20,184,166,0.12)', color: '#14b8a6', fontWeight: '500', marginRight: '4px' }}>Utility</span>
+                        {inv.utility_name} — {new Date(inv.created_at).toLocaleDateString()}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
