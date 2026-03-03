@@ -334,7 +334,7 @@ export default function LeadDetail() {
 
   // Start new audit
   const handleNewAudit = () => {
-    navigate(`/audits/new?lead_id=${lead.id}`)
+    navigate(`/lighting-audits/new?lead_id=${lead.id}`)
   }
 
   // Download attached file via signed URL
@@ -626,6 +626,8 @@ export default function LeadDetail() {
       lead_owner_id: lead.lead_owner_id || '',
       setter_owner_id: lead.setter_owner_id || '',
       lead_source_employee_id: lead.lead_source_employee_id || '',
+      meter_number: lead.meter_number || '',
+      ein: lead.ein || '',
       notes: lead.notes || ''
     })
     setIsEditing(true)
@@ -648,6 +650,8 @@ export default function LeadDetail() {
       lead_owner_id: editForm.lead_owner_id || null,
       setter_owner_id: editForm.setter_owner_id || null,
       lead_source_employee_id: editForm.lead_source_employee_id || null,
+      meter_number: editForm.meter_number || null,
+      ein: editForm.ein || null,
       notes: editForm.notes || null,
       updated_at: new Date().toISOString()
     })
@@ -1029,6 +1033,26 @@ export default function LeadDetail() {
                       <div style={{ fontSize: '14px', color: theme.text }}>{lead.service_type || '-'}</div>
                     )}
                   </div>
+                  {/energy|lighting/i.test(isEditing ? editForm.service_type : lead.service_type) && (
+                    <>
+                      <div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Meter #</div>
+                        {isEditing ? (
+                          <input type="text" value={editForm.meter_number} onChange={(e) => setEditForm({ ...editForm, meter_number: e.target.value })} style={inputStyle} placeholder="Meter number" />
+                        ) : (
+                          <div style={{ fontSize: '14px', color: theme.text }}>{lead.meter_number || '-'}</div>
+                        )}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>EIN</div>
+                        {isEditing ? (
+                          <input type="text" value={editForm.ein} onChange={(e) => setEditForm({ ...editForm, ein: e.target.value })} style={inputStyle} placeholder="XX-XXXXXXX" />
+                        ) : (
+                          <div style={{ fontSize: '14px', color: theme.text }}>{lead.ein || '-'}</div>
+                        )}
+                      </div>
+                    </>
+                  )}
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Lead Owner</div>
                     {isEditing ? (
@@ -1250,7 +1274,7 @@ export default function LeadDetail() {
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button
-                        onClick={() => navigate(`/audits/${audit.id}`)}
+                        onClick={() => navigate(`/lighting-audits/${audit.id}`)}
                         style={{
                           padding: isMobile ? '10px 14px' : '8px 14px',
                           minHeight: isMobile ? '44px' : 'auto',

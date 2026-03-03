@@ -56,6 +56,12 @@ export async function buildDataContext({ lead, job, audits, quotes, lineItems, a
     }
   }
 
+  // Add meter_number and ein from lead
+  if (lead) {
+    customer.meter_number = lead.meter_number || ''
+    customer.ein = lead.ein || ''
+  }
+
   // Salesperson from job join or lead
   const salesperson = job?.salesperson || {}
 
@@ -81,10 +87,12 @@ export async function buildDataContext({ lead, job, audits, quotes, lineItems, a
     exempt_fatca: '',
     address: customer.address || '',
     city_state_zip: [customer.city, customer.state, customer.zip].filter(Boolean).join(', ') || '',
-    account_numbers: customer.account_number || '',
+    account_numbers: lead?.meter_number || customer.account_number || '',
     requester_name: '',
     ssn: '', ssn_1: '', ssn_2: '', ssn_3: '',
-    ein: '', ein_1: '', ein_2: '',
+    ein: lead?.ein || '',
+    ein_1: lead?.ein ? lead.ein.replace(/\D/g, '').slice(0, 2) : '',
+    ein_2: lead?.ein ? lead.ein.replace(/\D/g, '').slice(2, 9) : '',
     signature_date: new Date().toLocaleDateString('en-US'),
   }
 

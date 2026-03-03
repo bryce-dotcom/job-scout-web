@@ -106,6 +106,8 @@ export default function JobDetail() {
   const [editMode, setEditMode] = useState(false)
   const [formData, setFormData] = useState({})
   const [isMobile, setIsMobile] = useState(false)
+  const [leadMeter, setLeadMeter] = useState(null)
+  const [leadEin, setLeadEin] = useState(null)
 
   // Section state
   const [sections, setSections] = useState([])
@@ -174,6 +176,19 @@ export default function JobDetail() {
     if (jobData) {
       setJob(jobData)
       setFormData(jobData)
+
+      // Fetch lead's meter_number and ein if linked
+      if (jobData.lead_id) {
+        const { data: leadData } = await supabase
+          .from('leads')
+          .select('meter_number, ein')
+          .eq('id', jobData.lead_id)
+          .single()
+        if (leadData) {
+          setLeadMeter(leadData.meter_number || null)
+          setLeadEin(leadData.ein || null)
+        }
+      }
 
       const { data: lines } = await supabase
         .from('job_lines')
@@ -1194,6 +1209,18 @@ export default function JobDetail() {
                     <p style={{ fontSize: '14px', color: theme.text }}>-</p>
                   )}
                 </div>
+                {leadMeter && (
+                  <div>
+                    <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Meter #</p>
+                    <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{leadMeter}</p>
+                  </div>
+                )}
+                {leadEin && (
+                  <div>
+                    <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>EIN</p>
+                    <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{leadEin}</p>
+                  </div>
+                )}
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Start Date</p>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatDateTime(job.start_date)}</p>
