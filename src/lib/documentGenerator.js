@@ -70,6 +70,24 @@ export async function buildDataContext({ lead, job, audits, quotes, lineItems, a
     line_total: li.line_total || 0,
   }))
 
+  // Build w9 convenience object from available customer/lead data
+  const w9 = {
+    name: customer.name || '',
+    business_name: customer.name || '',
+    tax_class: '',
+    llc_class: '',
+    other_class: '',
+    exempt_payee: '',
+    exempt_fatca: '',
+    address: customer.address || '',
+    city_state_zip: [customer.city, customer.state, customer.zip].filter(Boolean).join(', ') || '',
+    account_numbers: customer.account_number || '',
+    requester_name: '',
+    ssn: '', ssn_1: '', ssn_2: '', ssn_3: '',
+    ein: '', ein_1: '', ein_2: '',
+    signature_date: new Date().toLocaleDateString('en-US'),
+  }
+
   return {
     customer,
     audit: audit || {},
@@ -81,6 +99,7 @@ export async function buildDataContext({ lead, job, audits, quotes, lineItems, a
     appointment: appointment || {},
     lead: lead || {},
     job: job || {},
+    w9,
   }
 }
 
