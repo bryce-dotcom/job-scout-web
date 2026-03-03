@@ -520,7 +520,7 @@ export default function JobDetail() {
           lead_id: job.lead_id,
           customer_name: job.customer?.name || '',
           utility_name: utilityName,
-          amount: audit.est_project_cost || 0,
+          amount: incentive,
           project_cost: audit.est_project_cost || 0,
           incentive_amount: incentive,
           net_cost: audit.net_cost || 0,

@@ -5,12 +5,13 @@ import { useTheme } from '../components/Layout'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
-  Calendar, FileText, Search
+  Calendar, FileText, Search, Zap
 } from 'lucide-react'
 
 export default function Books() {
   const companyId = useStore((state) => state.companyId)
   const invoices = useStore((state) => state.invoices)
+  const utilityInvoices = useStore((state) => state.utilityInvoices)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || {
@@ -32,6 +33,7 @@ export default function Books() {
   const [assets, setAssets] = useState([])
   const [liabilities, setLiabilities] = useState([])
   const [loading, setLoading] = useState(true)
+  const [arFilter, setArFilter] = useState('all') // 'all' | 'customer' | 'utility'
 
   // Modal states
   const [showExpenseModal, setShowExpenseModal] = useState(false)
@@ -127,6 +129,11 @@ export default function Books() {
 
   const totalAssetValue = assets.filter(a => a.status === 'active').reduce((sum, a) => sum + (parseFloat(a.current_value) || 0), 0)
   const totalLiabilities = liabilities.filter(l => l.status === 'active').reduce((sum, l) => sum + (parseFloat(l.current_balance) || 0), 0)
+
+  // AR calculations
+  const customerAR = unpaidInvoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0)
+  const unpaidUtilityInvoices = utilityInvoices?.filter(inv => inv.payment_status !== 'Paid') || []
+  const utilityAR = unpaidUtilityInvoices.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0)
 
   // Expense handlers
   const handleSaveExpense = async () => {
@@ -332,6 +339,7 @@ export default function Books() {
           <button onClick={() => setActiveTab('health')} style={tabStyle(activeTab === 'health')}>Health</button>
           <button onClick={() => setActiveTab('expenses')} style={tabStyle(activeTab === 'expenses')}>Expenses</button>
           <button onClick={() => setActiveTab('booked')} style={tabStyle(activeTab === 'booked')}>Booked</button>
+          <button onClick={() => setActiveTab('ar')} style={tabStyle(activeTab === 'ar')}>AR</button>
         </div>
       </div>
 
@@ -355,9 +363,19 @@ export default function Books() {
                 <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(59,130,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <FileText size={20} style={{ color: '#3b82f6' }} />
                 </div>
-                <span style={{ fontSize: '13px', color: theme.textMuted }}>Receivables</span>
+                <span style={{ fontSize: '13px', color: theme.textMuted }}>Customer AR</span>
               </div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: '#3b82f6' }}>{formatCurrency(totalReceivables)}</div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#3b82f6' }}>{formatCurrency(customerAR)}</div>
+            </div>
+
+            <div style={statCardStyle}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(20,184,166,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Zap size={20} style={{ color: '#14b8a6' }} />
+                </div>
+                <span style={{ fontSize: '13px', color: theme.textMuted }}>Utility AR</span>
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#14b8a6' }}>{formatCurrency(utilityAR)}</div>
             </div>
 
             <div style={statCardStyle}>
@@ -565,6 +583,138 @@ export default function Books() {
               )
             })}
           </div>
+        </>
+      )}
+
+      {/* AR TAB */}
+      {activeTab === 'ar' && (
+        <>
+          {/* Summary Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+            <div style={statCardStyle}>
+              <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Customer AR</div>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: '#3b82f6' }}>{formatCurrency(customerAR)}</div>
+            </div>
+            <div style={statCardStyle}>
+              <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Utility AR</div>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: '#14b8a6' }}>{formatCurrency(utilityAR)}</div>
+            </div>
+            <div style={statCardStyle}>
+              <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Combined AR</div>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>{formatCurrency(customerAR + utilityAR)}</div>
+            </div>
+          </div>
+
+          {/* Filter */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'customer', label: 'Customer Only' },
+              { key: 'utility', label: 'Utility Only' }
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => setArFilter(f.key)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: arFilter === f.key ? theme.accent : 'transparent',
+                  color: arFilter === f.key ? '#fff' : theme.textMuted,
+                  border: arFilter === f.key ? 'none' : `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Combined AR Table */}
+          {(() => {
+            const customerRows = (arFilter === 'all' || arFilter === 'customer')
+              ? unpaidInvoices.map(inv => ({
+                  id: 'c-' + inv.id,
+                  type: 'Customer',
+                  name: inv.customer_name || inv.customer?.name || '-',
+                  reference: inv.invoice_id || '-',
+                  amount: parseFloat(inv.amount) || 0,
+                  status: inv.payment_status,
+                  created: inv.created_at
+                }))
+              : []
+            const utilityRows = (arFilter === 'all' || arFilter === 'utility')
+              ? unpaidUtilityInvoices.map(inv => ({
+                  id: 'u-' + inv.id,
+                  type: 'Utility',
+                  name: inv.utility_name || '-',
+                  reference: inv.invoice_id || `UTL-${inv.id}`,
+                  amount: parseFloat(inv.amount) || 0,
+                  status: inv.payment_status,
+                  created: inv.created_at
+                }))
+              : []
+            const allRows = [...customerRows, ...utilityRows].sort((a, b) => new Date(b.created) - new Date(a.created))
+
+            const thStyle = { padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase' }
+
+            return allRows.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px', backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}` }}>
+                <DollarSign size={48} style={{ color: theme.textMuted, marginBottom: '16px' }} />
+                <p style={{ color: theme.textSecondary }}>No unpaid invoices.</p>
+              </div>
+            ) : (
+              <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: theme.bg }}>
+                      <th style={thStyle}>Type</th>
+                      <th style={thStyle}>Name</th>
+                      <th style={thStyle}>Reference</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Amount</th>
+                      <th style={thStyle}>Status</th>
+                      <th style={thStyle}>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allRows.map(row => (
+                      <tr key={row.id} style={{ borderTop: `1px solid ${theme.border}` }}>
+                        <td style={{ padding: '12px 16px', fontSize: '14px' }}>
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            backgroundColor: row.type === 'Customer' ? 'rgba(59,130,246,0.12)' : 'rgba(20,184,166,0.12)',
+                            color: row.type === 'Customer' ? '#3b82f6' : '#14b8a6'
+                          }}>
+                            {row.type}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '500', color: theme.text }}>{row.name}</td>
+                        <td style={{ padding: '12px 16px', fontSize: '14px', color: theme.textSecondary }}>{row.reference}</td>
+                        <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '600', color: theme.text, textAlign: 'right' }}>{formatCurrency(row.amount)}</td>
+                        <td style={{ padding: '12px 16px', fontSize: '14px' }}>
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            backgroundColor: row.status === 'Overdue' ? 'rgba(139,90,90,0.12)' : 'rgba(194,139,56,0.12)',
+                            color: row.status === 'Overdue' ? '#8b5a5a' : '#c28b38'
+                          }}>
+                            {row.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 16px', fontSize: '14px', color: theme.textSecondary }}>{formatDate(row.created)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })()}
         </>
       )}
 

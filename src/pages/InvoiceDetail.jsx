@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send } from 'lucide-react'
+import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText } from 'lucide-react'
+import { jsPDF } from 'jspdf'
 
 // Light theme fallback
 const defaultTheme = {
@@ -29,6 +30,7 @@ export default function InvoiceDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const company = useStore((state) => state.company)
   const fetchInvoices = useStore((state) => state.fetchInvoices)
 
   const [invoice, setInvoice] = useState(null)
@@ -43,6 +45,18 @@ export default function InvoiceDetail() {
     status: 'Completed',
     notes: ''
   })
+
+  // Edit mode state
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    amount: '',
+    discount_applied: '',
+    job_description: '',
+    notes: ''
+  })
+
+  // PDF state
+  const [generatingPdf, setGeneratingPdf] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -129,6 +143,265 @@ export default function InvoiceDetail() {
     setSaving(false)
   }
 
+  // Edit mode handlers
+  const startEditing = () => {
+    setEditForm({
+      amount: invoice.amount || '',
+      discount_applied: invoice.discount_applied || '',
+      job_description: invoice.job_description || '',
+      notes: invoice.notes || ''
+    })
+    setIsEditing(true)
+  }
+
+  const cancelEditing = () => {
+    setIsEditing(false)
+    setEditForm({ amount: '', discount_applied: '', job_description: '', notes: '' })
+  }
+
+  const saveEdits = async () => {
+    setSaving(true)
+    const { error } = await supabase.from('invoices').update({
+      amount: parseFloat(editForm.amount) || 0,
+      discount_applied: parseFloat(editForm.discount_applied) || 0,
+      job_description: editForm.job_description || null,
+      notes: editForm.notes || null,
+      updated_at: new Date().toISOString()
+    }).eq('id', id)
+
+    const { toast } = await import('../lib/toast')
+    if (error) {
+      toast.error('Failed to save: ' + error.message)
+    } else {
+      toast.success('Invoice updated')
+      setIsEditing(false)
+      await fetchInvoiceData()
+      await fetchInvoices()
+    }
+    setSaving(false)
+  }
+
+  const handleLockInvoice = async () => {
+    if (!confirm('Once locked, this invoice cannot be edited. Are you sure?')) return
+
+    setSaving(true)
+    const { error } = await supabase.from('invoices').update({
+      is_locked: true,
+      updated_at: new Date().toISOString()
+    }).eq('id', id)
+
+    const { toast } = await import('../lib/toast')
+    if (error) {
+      toast.error('Failed to lock invoice: ' + error.message)
+    } else {
+      toast.success('Invoice locked')
+      await fetchInvoiceData()
+    }
+    setSaving(false)
+  }
+
+  // PDF generation
+  const generateInvoicePDF = () => {
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+    let y = 20
+
+    // Company header
+    const companyName = company?.name || 'Company'
+    doc.setFontSize(20)
+    doc.setFont('helvetica', 'bold')
+    doc.text(companyName, 20, y)
+    y += 10
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100)
+    if (company?.address) { doc.text(company.address, 20, y); y += 5 }
+    if (company?.phone) { doc.text(company.phone, 20, y); y += 5 }
+    if (company?.email) { doc.text(company.email, 20, y); y += 5 }
+    y += 5
+
+    // Invoice title
+    doc.setTextColor(0)
+    doc.setFontSize(16)
+    doc.setFont('helvetica', 'bold')
+    doc.text('INVOICE', pageWidth - 20, 20, { align: 'right' })
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Invoice #: ${invoice.invoice_id || ''}`, pageWidth - 20, 30, { align: 'right' })
+    doc.text(`Date: ${formatDate(invoice.created_at)}`, pageWidth - 20, 36, { align: 'right' })
+    if (invoice.due_date) {
+      doc.text(`Due Date: ${formatDate(invoice.due_date)}`, pageWidth - 20, 42, { align: 'right' })
+    }
+
+    // Divider line
+    doc.setDrawColor(200)
+    doc.line(20, y, pageWidth - 20, y)
+    y += 10
+
+    // Bill To
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Bill To:', 20, y)
+    y += 6
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    if (invoice.customer?.name) { doc.text(invoice.customer.name, 20, y); y += 5 }
+    if (invoice.customer?.address) { doc.text(invoice.customer.address, 20, y); y += 5 }
+    if (invoice.customer?.email) { doc.text(invoice.customer.email, 20, y); y += 5 }
+    if (invoice.customer?.phone) { doc.text(invoice.customer.phone, 20, y); y += 5 }
+    y += 10
+
+    // Description / line items
+    if (invoice.job_description) {
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Description', 20, y)
+      doc.text('Amount', pageWidth - 20, y, { align: 'right' })
+      y += 2
+      doc.setDrawColor(200)
+      doc.line(20, y, pageWidth - 20, y)
+      y += 6
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(10)
+
+      // Wrap long descriptions
+      const lines = doc.splitTextToSize(invoice.job_description, pageWidth - 80)
+      doc.text(lines, 20, y)
+      doc.text(formatCurrency(invoice.amount), pageWidth - 20, y, { align: 'right' })
+      y += lines.length * 5 + 5
+
+      doc.setDrawColor(200)
+      doc.line(20, y, pageWidth - 20, y)
+      y += 8
+    }
+
+    // Totals section
+    const totalsX = pageWidth - 80
+    doc.setFontSize(10)
+
+    doc.setFont('helvetica', 'normal')
+    doc.text('Subtotal:', totalsX, y)
+    doc.text(formatCurrency(invoice.amount), pageWidth - 20, y, { align: 'right' })
+    y += 6
+
+    if (parseFloat(invoice.discount_applied) > 0) {
+      doc.text('Discount:', totalsX, y)
+      doc.setTextColor(200, 0, 0)
+      doc.text(`-${formatCurrency(invoice.discount_applied)}`, pageWidth - 20, y, { align: 'right' })
+      doc.setTextColor(0)
+      y += 6
+    }
+
+    const totalPaidAmt = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+    if (totalPaidAmt > 0) {
+      doc.text('Paid:', totalsX, y)
+      doc.text(formatCurrency(totalPaidAmt), pageWidth - 20, y, { align: 'right' })
+      y += 6
+    }
+
+    y += 2
+    doc.setDrawColor(0)
+    doc.line(totalsX, y, pageWidth - 20, y)
+    y += 6
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    const balDue = (parseFloat(invoice.amount) || 0) - (parseFloat(invoice.discount_applied) || 0) - totalPaidAmt
+    doc.text('Balance Due:', totalsX, y)
+    doc.text(formatCurrency(Math.max(0, balDue)), pageWidth - 20, y, { align: 'right' })
+    y += 15
+
+    // Notes
+    if (invoice.notes) {
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Notes:', 20, y)
+      y += 5
+      doc.setFont('helvetica', 'normal')
+      const noteLines = doc.splitTextToSize(invoice.notes, pageWidth - 40)
+      doc.text(noteLines, 20, y)
+      y += noteLines.length * 5 + 10
+    }
+
+    // Footer
+    doc.setFontSize(9)
+    doc.setTextColor(150)
+    doc.text('Thank you for your business!', pageWidth / 2, 280, { align: 'center' })
+
+    return doc
+  }
+
+  const handleGenerateAndUploadPDF = async () => {
+    setGeneratingPdf(true)
+    const { toast } = await import('../lib/toast')
+
+    try {
+      const doc = generateInvoicePDF()
+      const pdfBlob = doc.output('blob')
+
+      const filePath = `invoices/${companyId}/${invoice.invoice_id || id}.pdf`
+
+      const { error: uploadError } = await supabase.storage
+        .from('project-documents')
+        .upload(filePath, pdfBlob, { contentType: 'application/pdf', upsert: true })
+
+      if (uploadError) {
+        toast.error('Failed to upload PDF: ' + uploadError.message)
+        setGeneratingPdf(false)
+        return
+      }
+
+      await supabase.from('invoices').update({
+        pdf_url: filePath,
+        updated_at: new Date().toISOString()
+      }).eq('id', id)
+
+      toast.success('PDF generated and saved')
+      await fetchInvoiceData()
+    } catch (err) {
+      toast.error('Error generating PDF')
+    }
+
+    setGeneratingPdf(false)
+  }
+
+  const handleDownloadPDF = async () => {
+    if (!invoice.pdf_url) return
+    const { toast } = await import('../lib/toast')
+
+    const { data, error } = await supabase.storage
+      .from('project-documents')
+      .createSignedUrl(invoice.pdf_url, 300)
+
+    if (error || !data?.signedUrl) {
+      toast.error('Failed to get download link')
+      return
+    }
+
+    window.open(data.signedUrl, '_blank')
+  }
+
+  const handleSendInvoice = async () => {
+    if (!invoice.pdf_url) {
+      await handleGenerateAndUploadPDF()
+    }
+    // Re-read invoice to get fresh pdf_url
+    const { data: freshInvoice } = await supabase
+      .from('invoices')
+      .select('pdf_url')
+      .eq('id', id)
+      .single()
+
+    if (freshInvoice?.pdf_url) {
+      const { data } = await supabase.storage
+        .from('project-documents')
+        .createSignedUrl(freshInvoice.pdf_url, 300)
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, '_blank')
+      }
+    }
+  }
+
   const formatCurrency = (amount) => {
     if (!amount) return '$0.00'
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
@@ -158,6 +431,22 @@ export default function InvoiceDetail() {
     color: theme.textSecondary,
     marginBottom: '6px'
   }
+
+  const actionBtnStyle = (bg, color) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    padding: '12px 16px',
+    backgroundColor: bg,
+    color: color,
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    width: '100%'
+  })
 
   if (loading) {
     return (
@@ -200,7 +489,15 @@ export default function InvoiceDetail() {
           <ArrowLeft size={20} />
         </button>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600' }}>{invoice.invoice_id}</p>
+          <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600' }}>
+            {invoice.invoice_id}
+            {invoice.is_locked && (
+              <span style={{ marginLeft: '8px', fontSize: '11px', color: theme.textMuted }}>
+                <Lock size={12} style={{ verticalAlign: 'middle', marginRight: '2px' }} />
+                Locked
+              </span>
+            )}
+          </p>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
             {invoice.customer?.name || 'Invoice'}
           </h1>
@@ -280,17 +577,91 @@ export default function InvoiceDetail() {
           )}
 
           {/* Description */}
-          {invoice.job_description && (
-            <div style={{
-              backgroundColor: theme.bgCard,
-              borderRadius: '12px',
-              border: `1px solid ${theme.border}`,
-              padding: '20px'
-            }}>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
-                Description
-              </h3>
-              <p style={{ fontSize: '14px', color: theme.textSecondary }}>{invoice.job_description}</p>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
+              Description
+            </h3>
+            {isEditing ? (
+              <textarea
+                value={editForm.job_description}
+                onChange={(e) => setEditForm(prev => ({ ...prev, job_description: e.target.value }))}
+                rows={3}
+                style={{ ...inputStyle, resize: 'vertical' }}
+                placeholder="Invoice description..."
+              />
+            ) : (
+              <p style={{ fontSize: '14px', color: theme.textSecondary }}>
+                {invoice.job_description || <span style={{ color: theme.textMuted, fontStyle: 'italic' }}>No description</span>}
+              </p>
+            )}
+          </div>
+
+          {/* Notes */}
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
+              Notes
+            </h3>
+            {isEditing ? (
+              <textarea
+                value={editForm.notes}
+                onChange={(e) => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+                rows={3}
+                style={{ ...inputStyle, resize: 'vertical' }}
+                placeholder="Invoice notes..."
+              />
+            ) : (
+              <p style={{ fontSize: '14px', color: theme.textSecondary }}>
+                {invoice.notes || <span style={{ color: theme.textMuted, fontStyle: 'italic' }}>No notes</span>}
+              </p>
+            )}
+          </div>
+
+          {/* Edit Save/Cancel buttons */}
+          {isEditing && (
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={cancelEditing}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  border: `1px solid ${theme.border}`,
+                  backgroundColor: 'transparent',
+                  color: theme.text,
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEdits}
+                disabled={saving}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  backgroundColor: theme.accent,
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  opacity: saving ? 0.6 : 1
+                }}
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
             </div>
           )}
 
@@ -383,17 +754,39 @@ export default function InvoiceDetail() {
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
                 <span style={{ color: theme.textSecondary }}>Invoice Total</span>
-                <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(invoice.amount)}</span>
+                {isEditing ? (
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editForm.amount}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, amount: e.target.value }))}
+                    style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                  />
+                ) : (
+                  <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(invoice.amount)}</span>
+                )}
               </div>
 
-              {invoice.discount_applied > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                  <span style={{ color: theme.textSecondary }}>Discount</span>
-                  <span style={{ color: '#dc2626' }}>-{formatCurrency(invoice.discount_applied)}</span>
-                </div>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                <span style={{ color: theme.textSecondary }}>Discount</span>
+                {isEditing ? (
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editForm.discount_applied}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, discount_applied: e.target.value }))}
+                    style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                  />
+                ) : (
+                  invoice.discount_applied > 0 ? (
+                    <span style={{ color: '#dc2626' }}>-{formatCurrency(invoice.discount_applied)}</span>
+                  ) : (
+                    <span style={{ color: theme.textMuted }}>$0.00</span>
+                  )
+                )}
+              </div>
 
               {invoice.credit_card_fee > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
@@ -437,20 +830,7 @@ export default function InvoiceDetail() {
                 <>
                   <button
                     onClick={() => setShowPaymentModal(true)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      padding: '12px 16px',
-                      backgroundColor: theme.accent,
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      cursor: 'pointer'
-                    }}
+                    style={actionBtnStyle(theme.accent, '#ffffff')}
                   >
                     <DollarSign size={18} />
                     Record Payment
@@ -458,62 +838,63 @@ export default function InvoiceDetail() {
                   <button
                     onClick={markAsPaid}
                     disabled={saving}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      padding: '12px 16px',
-                      backgroundColor: '#4a7c59',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      cursor: 'pointer'
-                    }}
+                    style={actionBtnStyle('#4a7c59', '#ffffff')}
                   >
                     <CheckCircle size={18} />
                     Mark as Paid
                   </button>
                 </>
               )}
+
+              {/* Edit button — only if not locked and not currently editing */}
+              {!invoice.is_locked && !isEditing && (
+                <button onClick={startEditing} style={actionBtnStyle(theme.accentBg, theme.accent)}>
+                  <Pencil size={18} />
+                  Edit Invoice
+                </button>
+              )}
+
+              {/* Lock / Finalize button — only if not locked */}
+              {!invoice.is_locked && (
+                <button
+                  onClick={handleLockInvoice}
+                  disabled={saving}
+                  style={actionBtnStyle('rgba(194,139,56,0.12)', '#c28b38')}
+                >
+                  <Lock size={18} />
+                  Lock / Finalize
+                </button>
+              )}
+
+              {/* PDF generation */}
               <button
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  padding: '12px 16px',
-                  backgroundColor: theme.accentBg,
-                  color: theme.accent,
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer'
-                }}
+                onClick={handleGenerateAndUploadPDF}
+                disabled={generatingPdf}
+                style={actionBtnStyle('rgba(59,130,246,0.12)', '#3b82f6')}
+              >
+                <FileText size={18} />
+                {generatingPdf ? 'Generating...' : 'Generate PDF'}
+              </button>
+
+              {/* Download PDF — only if pdf_url exists */}
+              {invoice.pdf_url && (
+                <button onClick={handleDownloadPDF} style={actionBtnStyle('rgba(34,197,94,0.12)', '#22c55e')}>
+                  <Download size={18} />
+                  Download PDF
+                </button>
+              )}
+
+              {/* Send Invoice */}
+              <button
+                onClick={handleSendInvoice}
+                disabled={generatingPdf}
+                style={actionBtnStyle(theme.accentBg, theme.accent)}
               >
                 <Send size={18} />
                 Send Invoice
               </button>
             </div>
           </div>
-
-          {/* Notes */}
-          {invoice.notes && (
-            <div style={{
-              backgroundColor: theme.bgCard,
-              borderRadius: '12px',
-              border: `1px solid ${theme.border}`,
-              padding: '20px'
-            }}>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
-                Notes
-              </h3>
-              <p style={{ fontSize: '14px', color: theme.textSecondary }}>{invoice.notes}</p>
-            </div>
-          )}
         </div>
       </div>
 
