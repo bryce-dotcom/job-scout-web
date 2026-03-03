@@ -63,6 +63,7 @@ export default function JobDetail() {
   const timeLogs = useStore((state) => state.timeLogs)
   const fetchJobs = useStore((state) => state.fetchJobs)
   const fetchTimeLogs = useStore((state) => state.fetchTimeLogs)
+  const isAdmin = useStore((state) => state.isAdmin)
   const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
 
   // Normalize section statuses from store
@@ -878,6 +879,27 @@ export default function JobDetail() {
     }
   }
 
+  const handleDeleteJob = async () => {
+    if (!confirm('Permanently delete this job and all its line items and sections?')) return
+    setSaving(true)
+    // Nullify job_id on tables that would block deletion (no CASCADE)
+    await Promise.all([
+      supabase.from('time_log').update({ job_id: null }).eq('job_id', id),
+      supabase.from('expenses').update({ job_id: null }).eq('job_id', id),
+      supabase.from('invoices').update({ job_id: null }).eq('job_id', id),
+      supabase.from('utility_invoices').update({ job_id: null }).eq('job_id', id),
+    ])
+    const { error } = await supabase.from('jobs').delete().eq('id', id)
+    setSaving(false)
+    if (error) {
+      const { toast } = await import('../lib/toast')
+      toast.error('Failed to delete job: ' + error.message)
+      return
+    }
+    await fetchJobs()
+    navigate('/jobs')
+  }
+
   // Mini Gantt helpers
   const getGanttDateRange = () => {
     const dates = sections.filter(s => s.scheduled_date).map(s => new Date(s.scheduled_date))
@@ -1602,6 +1624,19 @@ export default function JobDetail() {
                   <Zap size={18} />
                   Create Utility Invoice
                 </button>
+              )}
+              {isAdmin && (
+                <>
+                  <div style={{ borderTop: `1px solid ${theme.border}`, margin: '6px 0' }} />
+                  <button onClick={handleDeleteJob} disabled={saving} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px 16px', backgroundColor: 'rgba(220,38,38,0.10)', color: '#dc2626',
+                    border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+                  }}>
+                    <Trash2 size={18} />
+                    Delete Job
+                  </button>
+                </>
               )}
             </div>
           </div>
