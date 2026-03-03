@@ -413,7 +413,6 @@ export default function LeadDetail() {
         .from('document_templates')
         .select('*')
         .eq('company_id', companyId)
-        .eq('status', 'Ready')
         .order('category'),
       supabase
         .from('utility_forms')
@@ -449,7 +448,7 @@ export default function LeadDetail() {
         created_at: uf.created_at,
         updated_at: uf.updated_at
       }
-    }).filter(t => t.status === 'Ready')
+    })
 
     const allTemplates = [...(templatesRes.data || []), ...utilityTemplates]
     setLibraryTemplates(allTemplates)
