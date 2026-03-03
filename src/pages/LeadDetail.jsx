@@ -579,8 +579,6 @@ export default function LeadDetail() {
           job_address: lead.address || null,
           status: 'Scheduled',
           details: lead.notes || null,
-          contract_amount: audit?.est_project_cost || 0,
-          utility_incentive: audit?.estimated_rebate || 0,
           start_date: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
