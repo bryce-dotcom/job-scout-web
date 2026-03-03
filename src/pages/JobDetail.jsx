@@ -222,7 +222,7 @@ export default function JobDetail() {
       // Fetch utility invoices linked to this job
       const { data: utilInvoicesData } = await supabase
         .from('utility_invoices')
-        .select('id, invoice_id, amount, payment_status, utility_name, created_at')
+        .select('id, amount, payment_status, utility_name, created_at')
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobUtilityInvoices(utilInvoicesData || [])
@@ -1721,7 +1721,7 @@ export default function JobDetail() {
                       <div style={{
                         fontSize: '14px', fontWeight: '500', color: theme.text
                       }}>
-                        {inv.invoice_id || `UTL-${inv.id}`}
+                        {`UTL-${inv.id}`}
                       </div>
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
                         <span style={{ padding: '1px 6px', borderRadius: '8px', backgroundColor: 'rgba(20,184,166,0.12)', color: '#14b8a6', fontWeight: '500', marginRight: '4px' }}>Utility</span>
