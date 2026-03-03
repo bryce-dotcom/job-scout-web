@@ -32,7 +32,7 @@ serve(async (req) => {
     const leadParams = new URLSearchParams({
       company_id: `eq.${companyId}`,
       lead_source: `eq.${leadSource || 'Lenard AZ SRP'}`,
-      select: 'id,customer_name,created_at,status,notes,phone,email,address,lead_owner_id',
+      select: 'id,customer_name,created_at,status,notes,phone,email,address,lead_owner_id,meter_number,ein',
       order: 'created_at.desc',
       limit: '50',
     });
@@ -66,6 +66,8 @@ serve(async (req) => {
       estimatedValue: 0,
       status: l.status,
       notes: l.notes,
+      meter_number: l.meter_number,
+      ein: l.ein,
       leadOwnerId: l.lead_owner_id,
       audit: auditsMap[l.id] || null,
     }));

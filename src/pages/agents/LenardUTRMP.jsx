@@ -290,6 +290,8 @@ export default function LenardUTRMP() {
   const [saveCity, setSaveCity] = useState('');
   const [saveState, setSaveState] = useState('UT');
   const [saveZip, setSaveZip] = useState('');
+  const [saveMeterNumber, setSaveMeterNumber] = useState('');
+  const [saveEIN, setSaveEIN] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedLeadId, setSavedLeadId] = useState(null);
   const [savedAuditId, setSavedAuditId] = useState(null);
@@ -340,7 +342,7 @@ export default function LenardUTRMP() {
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   }, []);
 
-  useEffect(() => { if (keepLinesOnSwitch.current) { keepLinesOnSwitch.current = false; return; } setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('UT'); setSaveZip(''); }, [program]);
+  useEffect(() => { if (keepLinesOnSwitch.current) { keepLinesOnSwitch.current = false; return; } setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('UT'); setSaveZip(''); setSaveMeterNumber(''); setSaveEIN(''); }, [program]);
 
   useEffect(() => { if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw-lenard.js').catch(() => {}); } }, []);
 
@@ -755,7 +757,7 @@ export default function LenardUTRMP() {
         operatingHours, daysPerYear, energyRate, city: saveCity, state: saveState, zip: saveZip, photos: capturedPhotos,
         ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, realGiveMe: giveMe.realGiveMe, additionalIncentive: giveMe.additionalIncentive, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, quoteItems: giveMeQuoteItems, frozenBaseline: giveMeFrozenBaseline, frozenIncentive: giveMeFrozenIncentive, currentDown: repCurrentDown, targetDown: repTargetDown, locked: projectLocked } } : {}),
       };
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, meterNumber: saveMeterNumber, ein: saveEIN, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
       const data = await resp.json();
       if (data.success) {
         setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false);
@@ -815,6 +817,7 @@ export default function LenardUTRMP() {
       }
       setSaveAddress(loadedAddr);
       setSaveCity(loadedCity); setSaveState(pd.state || 'UT'); setSaveZip(pd.zip || '');
+      setSaveMeterNumber(project.meter_number || ''); setSaveEIN(project.ein || '');
       if (pd.operatingHours) setOperatingHours(pd.operatingHours);
       if (pd.daysPerYear) setDaysPerYear(pd.daysPerYear);
       if (pd.energyRate) setEnergyRate(pd.energyRate);
@@ -847,6 +850,7 @@ export default function LenardUTRMP() {
     setProjectLocked(false); setShowGiveMe(false);
     setSavePhone(''); setSaveEmail(''); setSaveAddress('');
     setSaveCity(''); setSaveState('UT'); setSaveZip('');
+    setSaveMeterNumber(''); setSaveEIN('');
   };
 
   // ---- COPY SUMMARY ----
@@ -3365,6 +3369,10 @@ export default function LenardUTRMP() {
             <div><label style={S.label}>City</label><input type="text" value={saveCity} onChange={e => setSaveCity(e.target.value)} style={S.input} /></div>
             <div><label style={S.label}>State</label><input type="text" value={saveState} onChange={e => setSaveState(e.target.value)} style={S.input} /></div>
             <div><label style={S.label}>ZIP</label><input type="text" inputMode="numeric" value={saveZip} onChange={e => setSaveZip(e.target.value)} style={S.input} /></div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+            <div><label style={S.label}>Meter #</label><input type="text" value={saveMeterNumber} onChange={e => setSaveMeterNumber(e.target.value)} placeholder="Optional" style={S.input} /></div>
+            <div><label style={S.label}>EIN</label><input type="text" value={saveEIN} onChange={e => setSaveEIN(e.target.value)} placeholder="Optional" style={S.input} /></div>
           </div>
           {capturedPhotos.length > 0 && <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '12px' }}>{'\uD83D\uDCF7'} {capturedPhotos.length} photo{capturedPhotos.length > 1 ? 's' : ''} will be saved to the audit</div>}
           <div style={{ display: 'flex', gap: '8px' }}>

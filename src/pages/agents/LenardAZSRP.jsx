@@ -338,6 +338,8 @@ export default function LenardAZSRP() {
   const [saveCity, setSaveCity] = useState('');
   const [saveState, setSaveState] = useState('AZ');
   const [saveZip, setSaveZip] = useState('');
+  const [saveMeterNumber, setSaveMeterNumber] = useState('');
+  const [saveEIN, setSaveEIN] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedLeadId, setSavedLeadId] = useState(null);
   const [savedAuditId, setSavedAuditId] = useState(null);
@@ -362,7 +364,7 @@ export default function LenardAZSRP() {
   }, []);
 
   // Reset lines when switching programs
-  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('AZ'); setSaveZip(''); }, [program]);
+  useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('AZ'); setSaveZip(''); setSaveMeterNumber(''); setSaveEIN(''); }, [program]);
 
   // Register PWA service worker
   useEffect(() => {
@@ -690,6 +692,8 @@ export default function LenardAZSRP() {
           city: saveCity,
           state: saveState,
           zip: saveZip,
+          meterNumber: saveMeterNumber,
+          ein: saveEIN,
           projectData,
           programType: program,
           leadOwnerId: leadOwnerId || null,
@@ -743,6 +747,8 @@ export default function LenardAZSRP() {
       setSaveCity(pd.city || '');
       setSaveState(pd.state || 'AZ');
       setSaveZip(pd.zip || '');
+      setSaveMeterNumber(project.meter_number || '');
+      setSaveEIN(project.ein || '');
       if (pd.operatingHours) setOperatingHours(pd.operatingHours);
       if (pd.daysPerYear) setDaysPerYear(pd.daysPerYear);
       if (pd.energyRate) setEnergyRate(pd.energyRate);
@@ -1975,6 +1981,10 @@ export default function LenardAZSRP() {
             <div><label style={S.label}>City</label><input type="text" value={saveCity} onChange={e => setSaveCity(e.target.value)} style={S.input} /></div>
             <div><label style={S.label}>State</label><input type="text" value={saveState} onChange={e => setSaveState(e.target.value)} style={S.input} /></div>
             <div><label style={S.label}>ZIP</label><input type="text" inputMode="numeric" value={saveZip} onChange={e => setSaveZip(e.target.value)} style={S.input} /></div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+            <div><label style={S.label}>Meter #</label><input type="text" value={saveMeterNumber} onChange={e => setSaveMeterNumber(e.target.value)} placeholder="Optional" style={S.input} /></div>
+            <div><label style={S.label}>EIN</label><input type="text" value={saveEIN} onChange={e => setSaveEIN(e.target.value)} placeholder="Optional" style={S.input} /></div>
           </div>
           {capturedPhotos.length > 0 && <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '12px' }}>{'\uD83D\uDCF7'} {capturedPhotos.length} photo{capturedPhotos.length > 1 ? 's' : ''} will be saved to the audit</div>}
           <div style={{ display: 'flex', gap: '8px' }}>

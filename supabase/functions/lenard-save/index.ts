@@ -60,7 +60,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { customerName, phone, email, address, city, state, zip, projectData, programType, leadOwnerId, existingLeadId, existingAuditId } = await req.json();
+    const { customerName, phone, email, address, city, state, zip, meterNumber, ein, projectData, programType, leadOwnerId, existingLeadId, existingAuditId } = await req.json();
     if (!customerName) {
       return new Response(JSON.stringify({ error: 'Customer name is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -139,6 +139,8 @@ serve(async (req) => {
         email: email || null,
         phone: phone || null,
         address: fullAddress,
+        meter_number: meterNumber || null,
+        ein: ein || null,
         notes: noteLines,
         lead_owner_id: leadOwnerId ? parseInt(leadOwnerId) : null,
         updated_at: new Date().toISOString(),
@@ -153,6 +155,8 @@ serve(async (req) => {
         email: email || null,
         phone: phone || null,
         address: fullAddress,
+        meter_number: meterNumber || null,
+        ein: ein || null,
         service_type: 'Energy Efficiency',
         lead_source: programType === 'ut-rmp' ? 'Lenard UT RMP' : 'Lenard AZ SRP',
         status: 'New',
