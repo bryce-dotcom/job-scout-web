@@ -590,7 +590,31 @@ export default function LeadDetail() {
       // Advance lead to Job Scheduled in the delivery pipeline
       await updateLead(lead.id, { status: 'Job Scheduled', updated_at: new Date().toISOString() })
 
-      // 3. Link file attachments to the new job
+      // 3. Copy audit line items as job_lines
+      if (audit) {
+        const { data: areas } = await supabase
+          .from('audit_areas')
+          .select('*, product:products_services!audit_areas_led_replacement_id_fkey(id, name, unit_price)')
+          .eq('audit_id', audit.id)
+
+        if (areas?.length > 0) {
+          const jobLines = areas.map(area => {
+            const qty = area.fixture_count || 1
+            const price = area.product?.unit_price || 0
+            return {
+              company_id: companyId,
+              job_id: newJob.id,
+              item_id: area.led_replacement_id || null,
+              quantity: qty,
+              price,
+              total: qty * price
+            }
+          })
+          await supabase.from('job_lines').insert(jobLines)
+        }
+      }
+
+      // 4. Link file attachments to the new job
       if (attachments.length > 0) {
         for (const att of attachments) {
           await supabase
@@ -600,7 +624,7 @@ export default function LeadDetail() {
         }
       }
 
-      // 4. Navigate to the new job
+      // 5. Navigate to the new job
       toast.success('Moved to delivery pipeline')
       setConvertingToJob(false)
       navigate(`/jobs/${newJob.id}`)

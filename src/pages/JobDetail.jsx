@@ -108,6 +108,7 @@ export default function JobDetail() {
   const [isMobile, setIsMobile] = useState(false)
   const [leadMeter, setLeadMeter] = useState(null)
   const [leadEin, setLeadEin] = useState(null)
+  const [jobInvoices, setJobInvoices] = useState([])
 
   // Section state
   const [sections, setSections] = useState([])
@@ -207,6 +208,14 @@ export default function JobDetail() {
         .order('sort_order')
 
       setSections(sectionsData || [])
+
+      // Fetch invoices linked to this job
+      const { data: invoicesData } = await supabase
+        .from('invoices')
+        .select('id, invoice_id, amount, payment_status, created_at')
+        .eq('job_id', id)
+        .order('created_at', { ascending: false })
+      setJobInvoices(invoicesData || [])
 
       // Fetch file attachments linked to this job (by job_id or by lead_id)
       const jobIdFilter = supabase.from('file_attachments').select('*').eq('job_id', id).order('created_at', { ascending: false })
@@ -468,7 +477,6 @@ export default function JobDetail() {
 
         await fetchJobData()
         toast.success('Customer invoice created')
-        navigate(`/invoices/${invoice.id}`)
       }
     } catch (err) {
       const { toast } = await import('../lib/toast')
@@ -1612,6 +1620,52 @@ export default function JobDetail() {
               }}>
                 {job.quote.quote_id}
               </button>
+            </div>
+          )}
+
+          {/* Linked Invoices */}
+          {jobInvoices.length > 0 && (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              padding: '20px'
+            }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
+                Invoices ({jobInvoices.length})
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {jobInvoices.map(inv => (
+                  <div key={inv.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
+                    border: `1px solid ${theme.border}`
+                  }}>
+                    <div>
+                      <button onClick={() => navigate(`/invoices/${inv.id}`)} style={{
+                        color: theme.accent, background: 'none', border: 'none', cursor: 'pointer',
+                        fontSize: '14px', fontWeight: '500', textDecoration: 'underline', padding: 0
+                      }}>
+                        {inv.invoice_id}
+                      </button>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                        {new Date(inv.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>
+                        {formatCurrency(inv.amount)}
+                      </div>
+                      <div style={{
+                        fontSize: '11px', fontWeight: '500',
+                        color: inv.payment_status === 'Paid' ? '#4a7c59' : inv.payment_status === 'Overdue' ? '#dc2626' : theme.textMuted
+                      }}>
+                        {inv.payment_status}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
