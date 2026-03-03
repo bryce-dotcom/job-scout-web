@@ -356,6 +356,20 @@ export default function InvoiceDetail() {
         updated_at: new Date().toISOString()
       }).eq('id', id)
 
+      // Also save as a file_attachment on the job so it shows in Documents
+      if (invoice.job?.id) {
+        await supabase.from('file_attachments').insert({
+          company_id: companyId,
+          job_id: invoice.job.id,
+          lead_id: null,
+          file_name: `${invoice.invoice_id || 'Invoice'}.pdf`,
+          file_path: filePath,
+          file_type: 'application/pdf',
+          file_size: pdfBlob.size,
+          storage_bucket: 'project-documents'
+        })
+      }
+
       toast.success('PDF generated and saved')
       await fetchInvoiceData()
     } catch (err) {
