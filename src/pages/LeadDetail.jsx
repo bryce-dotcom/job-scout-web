@@ -1646,7 +1646,7 @@ export default function LeadDetail() {
               <button onClick={() => setViewingDoc(null)} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}><X size={14} /> Close</button>
             </div>
           </div>
-          <iframe src={viewingDoc.url} title={viewingDoc.name} style={{ flex: 1, border: 'none', background: '#fff' }} />
+          <iframe src={/\.(xlsx?|docx?|pptx?)$/i.test(viewingDoc.name) ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(viewingDoc.url)}` : viewingDoc.url} title={viewingDoc.name} style={{ flex: 1, border: 'none', background: '#fff' }} />
         </div>
       )}
 
