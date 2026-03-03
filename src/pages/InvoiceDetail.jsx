@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText } from 'lucide-react'
+import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2 } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 
 // Light theme fallback
@@ -210,6 +210,33 @@ export default function InvoiceDetail() {
       await fetchInvoiceData()
     }
     setSaving(false)
+  }
+
+  const handleDeleteInvoice = async () => {
+    if (!confirm('Are you sure you want to delete this invoice? This cannot be undone.')) return
+
+    setSaving(true)
+    const { toast } = await import('../lib/toast')
+
+    // Delete associated payments first
+    await supabase.from('payments').delete().eq('invoice_id', parseInt(id))
+
+    // Delete file attachments linked to this invoice's PDFs
+    if (pdfHistory.length > 0) {
+      const paths = pdfHistory.map(d => d.file_path)
+      await supabase.from('file_attachments').delete().in('file_path', paths)
+    }
+
+    const { error } = await supabase.from('invoices').delete().eq('id', id)
+
+    if (error) {
+      toast.error('Failed to delete invoice: ' + error.message)
+      setSaving(false)
+    } else {
+      toast.success('Invoice deleted')
+      await fetchInvoices()
+      navigate('/invoices')
+    }
   }
 
   // PDF generation
@@ -921,6 +948,17 @@ export default function InvoiceDetail() {
               >
                 <Send size={18} />
                 Send Invoice
+              </button>
+
+              {/* Delete Invoice */}
+              <div style={{ borderTop: `1px solid ${theme.border}`, margin: '6px 0' }} />
+              <button
+                onClick={handleDeleteInvoice}
+                disabled={saving}
+                style={actionBtnStyle('rgba(220,38,38,0.10)', '#dc2626')}
+              >
+                <Trash2 size={18} />
+                Delete Invoice
               </button>
             </div>
           </div>
