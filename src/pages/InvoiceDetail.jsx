@@ -57,6 +57,7 @@ export default function InvoiceDetail() {
 
   // PDF state
   const [generatingPdf, setGeneratingPdf] = useState(false)
+  const [pdfHistory, setPdfHistory] = useState([])
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -90,6 +91,17 @@ export default function InvoiceDetail() {
         .order('date', { ascending: false })
 
       setPayments(paymentsData || [])
+
+      // Fetch PDF history from file_attachments
+      const invoicePrefix = `invoices/${companyId}/${invoiceData.invoice_id || id}`
+      const { data: pdfDocs } = await supabase
+        .from('file_attachments')
+        .select('*')
+        .eq('company_id', companyId)
+        .like('file_path', `${invoicePrefix}%`)
+        .order('created_at', { ascending: false })
+
+      setPdfHistory(pdfDocs || [])
     }
 
     setLoading(false)
@@ -339,11 +351,12 @@ export default function InvoiceDetail() {
       const doc = generateInvoicePDF()
       const pdfBlob = doc.output('blob')
 
-      const filePath = `invoices/${companyId}/${invoice.invoice_id || id}.pdf`
+      const timestamp = Date.now()
+      const filePath = `invoices/${companyId}/${invoice.invoice_id || id}_${timestamp}.pdf`
 
       const { error: uploadError } = await supabase.storage
         .from('project-documents')
-        .upload(filePath, pdfBlob, { contentType: 'application/pdf', upsert: true })
+        .upload(filePath, pdfBlob, { contentType: 'application/pdf' })
 
       if (uploadError) {
         toast.error('Failed to upload PDF: ' + uploadError.message)
@@ -351,18 +364,20 @@ export default function InvoiceDetail() {
         return
       }
 
+      // Update pdf_url to always point to the latest PDF
       await supabase.from('invoices').update({
         pdf_url: filePath,
         updated_at: new Date().toISOString()
       }).eq('id', id)
 
-      // Also save as a file_attachment on the job so it shows in Documents
+      // Save as a file_attachment on the job so it shows in Documents
+      const snapshotDate = new Date().toLocaleDateString()
       if (invoice.job?.id) {
         await supabase.from('file_attachments').insert({
           company_id: companyId,
           job_id: invoice.job.id,
           lead_id: null,
-          file_name: `${invoice.invoice_id || 'Invoice'}.pdf`,
+          file_name: `${invoice.invoice_id || 'Invoice'} - ${snapshotDate}.pdf`,
           file_path: filePath,
           file_type: 'application/pdf',
           file_size: pdfBlob.size,
@@ -370,7 +385,7 @@ export default function InvoiceDetail() {
         })
       }
 
-      toast.success('PDF generated and saved')
+      toast.success('PDF snapshot generated and saved')
       await fetchInvoiceData()
     } catch (err) {
       toast.error('Error generating PDF')
@@ -887,7 +902,7 @@ export default function InvoiceDetail() {
                 style={actionBtnStyle('rgba(59,130,246,0.12)', '#3b82f6')}
               >
                 <FileText size={18} />
-                {generatingPdf ? 'Generating...' : 'Generate PDF'}
+                {generatingPdf ? 'Generating...' : 'Generate PDF Snapshot'}
               </button>
 
               {/* Download PDF — only if pdf_url exists */}
@@ -909,6 +924,70 @@ export default function InvoiceDetail() {
               </button>
             </div>
           </div>
+
+          {/* PDF History */}
+          {pdfHistory.length > 0 && (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: `1px solid ${theme.border}`
+              }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>
+                  PDF History ({pdfHistory.length})
+                </h3>
+              </div>
+              <div>
+                {pdfHistory.map((doc) => (
+                  <div key={doc.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 20px',
+                    borderBottom: `1px solid ${theme.border}`
+                  }}>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {doc.file_name}
+                      </p>
+                      <p style={{ fontSize: '11px', color: theme.textMuted }}>
+                        {new Date(doc.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const { data } = await supabase.storage
+                          .from('project-documents')
+                          .createSignedUrl(doc.file_path, 300)
+                        if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '6px 10px',
+                        backgroundColor: 'rgba(34,197,94,0.12)',
+                        color: '#22c55e',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        flexShrink: 0
+                      }}
+                    >
+                      <Download size={14} />
+                      View
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

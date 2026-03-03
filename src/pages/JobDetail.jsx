@@ -1597,7 +1597,7 @@ export default function JobDetail() {
                   Mark Completed
                 </button>
               )}
-              {job.status === 'Completed' && job.invoice_status !== 'Invoiced' && job.invoice_status !== 'Paid' && (
+              {job.status === 'Completed' && job.invoice_status !== 'Invoiced' && job.invoice_status !== 'Paid' && jobInvoices.length === 0 && (
                 <button onClick={generateInvoice} disabled={saving} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   padding: '12px 16px', backgroundColor: theme.accent, color: '#ffffff',
@@ -1615,7 +1615,7 @@ export default function JobDetail() {
                 <FileText size={18} />
                 Generate Work Order
               </button>
-              {job.lead_id && (
+              {job.lead_id && jobInvoices.length === 0 && (
                 <button onClick={createCustomerInvoice} disabled={saving} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   padding: '12px 16px', backgroundColor: theme.accentBg, color: theme.accent,
@@ -1625,7 +1625,7 @@ export default function JobDetail() {
                   Create Customer Invoice
                 </button>
               )}
-              {job.lead_id && (
+              {job.lead_id && jobUtilityInvoices.length === 0 && (
                 <button onClick={createUtilityInvoice} disabled={saving} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   padding: '12px 16px', backgroundColor: 'rgba(212,148,10,0.12)', color: '#d4940a',
