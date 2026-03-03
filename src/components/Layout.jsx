@@ -283,7 +283,8 @@ export default function Layout() {
       baseItems: [
         { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Create and track customer invoices' },
         { to: '/lead-payments', icon: CreditCard, label: 'Payments', hint: 'Record and manage payments received' },
-        { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and costs' }
+        { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and costs' },
+        { to: '/books', icon: BookOpen, label: 'Books', hint: 'Accounting and financial overview' }
       ]
     },
     {
