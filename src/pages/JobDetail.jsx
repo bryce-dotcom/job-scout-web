@@ -403,6 +403,81 @@ export default function JobDetail() {
     setSaving(false)
   }
 
+  const createCustomerInvoice = async () => {
+    if (!job.lead_id) return
+    setSaving(true)
+
+    try {
+      // Fetch the lighting audit linked to this job's lead
+      const { data: audits } = await supabase
+        .from('lighting_audits')
+        .select('*')
+        .eq('lead_id', job.lead_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      const audit = audits?.[0]
+      if (!audit) {
+        const { toast } = await import('../lib/toast')
+        toast.error('No lighting audit found for this lead')
+        setSaving(false)
+        return
+      }
+
+      // Parse the notes JSON to get Give Me adjustments
+      let additionalOOP = 0
+      try {
+        const pd = JSON.parse(audit.notes || '{}')
+        additionalOOP = pd.giveMe?.additionalOOP || 0
+      } catch (_) { /* notes may not be JSON */ }
+
+      // Customer-presented numbers
+      const projectCost = audit.est_project_cost || 0
+      const customerIncentive = (audit.estimated_rebate || 0) - additionalOOP
+      const customerOOP = (audit.net_cost || 0) + additionalOOP
+
+      const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+
+      const { data: invoice, error } = await supabase
+        .from('invoices')
+        .insert([{
+          company_id: companyId,
+          invoice_id: invoiceNumber,
+          job_id: parseInt(id),
+          customer_id: job.customer_id,
+          amount: customerOOP,
+          discount_applied: customerIncentive,
+          payment_status: 'Pending',
+          job_description: `Lighting Project — $${Math.round(projectCost).toLocaleString()} project, $${Math.round(customerIncentive).toLocaleString()} incentive`
+        }])
+        .select()
+        .single()
+
+      const { toast } = await import('../lib/toast')
+      if (error) {
+        toast.error('Failed to create customer invoice: ' + error.message)
+      } else {
+        await supabase.from('jobs').update({
+          invoice_status: 'Invoiced',
+          updated_at: new Date().toISOString()
+        }).eq('id', id)
+
+        if (job.lead_id) {
+          await supabase.from('leads').update({ status: 'Invoiced', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
+        }
+
+        await fetchJobData()
+        toast.success('Customer invoice created')
+        navigate(`/invoices/${invoice.id}`)
+      }
+    } catch (err) {
+      const { toast } = await import('../lib/toast')
+      toast.error('Error creating customer invoice')
+    }
+
+    setSaving(false)
+  }
+
   const createUtilityInvoice = async () => {
     if (!job.lead_id) return
     setSaving(true)
@@ -1500,6 +1575,16 @@ export default function JobDetail() {
                 <FileText size={18} />
                 Generate Work Order
               </button>
+              {job.lead_id && (
+                <button onClick={createCustomerInvoice} disabled={saving} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  padding: '12px 16px', backgroundColor: theme.accentBg, color: theme.accent,
+                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+                }}>
+                  <DollarSign size={18} />
+                  Create Customer Invoice
+                </button>
+              )}
               {job.lead_id && (
                 <button onClick={createUtilityInvoice} disabled={saving} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
