@@ -242,29 +242,50 @@ serve(async (req) => {
     }
 
     // =====================================================
-    // 4. Store photos in Supabase Storage (best-effort, only for new audits)
+    // 4. Store photos in Supabase Storage (best-effort)
     // =====================================================
-    if (!existingAuditId) {
+    {
       const photos = pd.photos || [];
-      for (let i = 0; i < photos.length; i++) {
+      if (photos.length > 0) {
+        // Find how many photos already exist for this audit
+        let startIndex = 0;
         try {
-          const photoBase64 = photos[i];
-          if (!photoBase64) continue;
-          const binaryStr = atob(photoBase64);
-          const bytes = new Uint8Array(binaryStr.length);
-          for (let b = 0; b < binaryStr.length; b++) bytes[b] = binaryStr.charCodeAt(b);
-          const filePath = `audits/${auditDbId}/photo_${i}.jpg`;
-          await fetch(`${SUPABASE_URL}/storage/v1/object/audit-photos/${filePath}`, {
+          const listRes = await fetch(`${SUPABASE_URL}/storage/v1/object/list/audit-photos`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${key}`,
               'apikey': key,
-              'Content-Type': 'image/jpeg',
+              'Content-Type': 'application/json',
             },
-            body: bytes,
+            body: JSON.stringify({ prefix: `audits/${auditDbId}/`, search: 'photo_' }),
           });
-        } catch (_) {
-          // Photo upload is best-effort
+          if (listRes.ok) {
+            const existing = await listRes.json();
+            startIndex = (existing || []).filter((f: any) => f.name?.startsWith('photo_')).length;
+          }
+        } catch (_) { /* best-effort */ }
+
+        for (let i = startIndex; i < photos.length; i++) {
+          try {
+            const photoBase64 = photos[i];
+            if (!photoBase64) continue;
+            const binaryStr = atob(photoBase64);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let b = 0; b < binaryStr.length; b++) bytes[b] = binaryStr.charCodeAt(b);
+            const filePath = `audits/${auditDbId}/photo_${i}.jpg`;
+            await fetch(`${SUPABASE_URL}/storage/v1/object/audit-photos/${filePath}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${key}`,
+                'apikey': key,
+                'Content-Type': 'image/jpeg',
+                'x-upsert': 'true',
+              },
+              body: bytes,
+            });
+          } catch (_) {
+            // Photo upload is best-effort
+          }
         }
       }
     }

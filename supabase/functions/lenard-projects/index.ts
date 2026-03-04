@@ -54,6 +54,29 @@ serve(async (req) => {
       for (const a of audits) {
         auditsMap[a.lead_id] = a;
       }
+
+      // Fetch photo paths for each audit (best-effort)
+      for (const a of audits) {
+        try {
+          const listRes = await fetch(`${SUPABASE_URL}/storage/v1/object/list/audit-photos`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${key}`,
+              'apikey': key,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prefix: `audits/${a.id}/`, search: 'photo_' }),
+          });
+          if (listRes.ok) {
+            const files = await listRes.json();
+            const photoPaths = (files || [])
+              .filter((f: any) => f.name?.startsWith('photo_'))
+              .sort((a: any, b: any) => a.name.localeCompare(b.name))
+              .map((f: any) => `audits/${a.id}/${f.name}`);
+            auditsMap[a.lead_id].photoPaths = photoPaths;
+          }
+        } catch (_) { /* best-effort */ }
+      }
     }
 
     const projects = leads.map((l: any) => ({

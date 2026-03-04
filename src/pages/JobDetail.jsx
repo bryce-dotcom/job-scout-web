@@ -9,7 +9,7 @@ import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
-  Package, Loader, Check, Info, Eye, Zap
+  Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 
@@ -133,6 +133,15 @@ export default function JobDetail() {
   // Document viewer state
   const [viewingDoc, setViewingDoc] = useState(null) // { url, name }
 
+  // Photo state
+  const [linePhotos, setLinePhotos] = useState({}) // { [lineId]: attachment[] }
+  const [notesPhotos, setNotesPhotos] = useState([]) // attachment[]
+  const [auditPhotos, setAuditPhotos] = useState([]) // { url, name }[]
+  const [expandedLineId, setExpandedLineId] = useState(null)
+  const [viewingPhoto, setViewingPhoto] = useState(null) // { url, name }
+  const photoInputRef = useRef(null)
+  const [photoUploadTarget, setPhotoUploadTarget] = useState(null) // { lineId, context }
+
   // Generate from Library state
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [libraryTemplates, setLibraryTemplates] = useState([])
@@ -230,13 +239,65 @@ export default function JobDetail() {
       // Fetch file attachments linked to this job (by job_id or by lead_id)
       const jobIdFilter = supabase.from('file_attachments').select('*').eq('job_id', id).order('created_at', { ascending: false })
       const { data: byJob } = await jobIdFilter
-      if (byJob?.length) {
-        setAttachments(byJob)
-      } else if (jobData.lead_id) {
+      let allAttachments = byJob || []
+      if (!allAttachments.length && jobData.lead_id) {
         const { data: byLead } = await supabase.from('file_attachments').select('*').eq('lead_id', jobData.lead_id).order('created_at', { ascending: false })
-        setAttachments(byLead || [])
+        allAttachments = byLead || []
+      }
+
+      // Separate photo attachments from document attachments
+      const isPhoto = (att) => att.photo_context && att.file_type?.startsWith('image/')
+      const docAttachments = allAttachments.filter(a => !isPhoto(a))
+      const photoAttachments = allAttachments.filter(a => isPhoto(a))
+      setAttachments(docAttachments)
+
+      // Group line photos by job_line_id
+      const grouped = {}
+      const notePhotos = []
+      for (const p of photoAttachments) {
+        if (p.photo_context === 'notes') {
+          notePhotos.push(p)
+        } else if (p.job_line_id) {
+          if (!grouped[p.job_line_id]) grouped[p.job_line_id] = []
+          grouped[p.job_line_id].push(p)
+        }
+      }
+      setLinePhotos(grouped)
+      setNotesPhotos(notePhotos)
+
+      // Fetch audit photos if job has lead_id
+      if (jobData.lead_id) {
+        try {
+          const { data: auditData } = await supabase
+            .from('lighting_audits')
+            .select('id')
+            .eq('lead_id', jobData.lead_id)
+            .limit(1)
+            .single()
+          if (auditData?.id) {
+            const { data: files } = await supabase.storage
+              .from('audit-photos')
+              .list(`audits/${auditData.id}`, { search: 'photo_' })
+            if (files?.length) {
+              const photos = files
+                .filter(f => f.name?.startsWith('photo_'))
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(f => {
+                  const { data: urlData } = supabase.storage.from('audit-photos').getPublicUrl(`audits/${auditData.id}/${f.name}`)
+                  return { url: urlData.publicUrl, name: f.name }
+                })
+              setAuditPhotos(photos)
+            } else {
+              setAuditPhotos([])
+            }
+          } else {
+            setAuditPhotos([])
+          }
+        } catch (_) {
+          setAuditPhotos([])
+        }
       } else {
-        setAttachments([])
+        setAuditPhotos([])
       }
     }
 
@@ -685,6 +746,61 @@ export default function JobDetail() {
     setShowSectionModal(true)
   }
 
+  // Photo upload handler
+  const handleUploadPhoto = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !photoUploadTarget) return
+    e.target.value = ''
+
+    const { lineId, context } = photoUploadTarget
+    setPhotoUploadTarget(null)
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const subPath = context === 'notes' ? 'notes' : `${context}/${lineId}`
+    const filePath = `jobs/${id}/photos/${subPath}/${Date.now()}_${safeName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('project-documents')
+      .upload(filePath, file)
+
+    if (uploadError) {
+      alert('Upload failed: ' + uploadError.message)
+      return
+    }
+
+    const insertData = {
+      company_id: companyId,
+      job_id: parseInt(id),
+      lead_id: job.lead_id || null,
+      file_name: file.name,
+      file_path: filePath,
+      file_type: file.type || null,
+      file_size: file.size,
+      storage_bucket: 'project-documents',
+      photo_context: context,
+    }
+    if (lineId && context !== 'notes') insertData.job_line_id = lineId
+
+    const { error: dbError } = await supabase.from('file_attachments').insert(insertData)
+    if (dbError) {
+      alert('Failed to save photo record: ' + dbError.message)
+      return
+    }
+    await fetchJobData()
+  }
+
+  const handleDeletePhoto = async (att) => {
+    if (!confirm('Delete this photo?')) return
+    await supabase.from('file_attachments').delete().eq('id', att.id)
+    await supabase.storage.from(att.storage_bucket).remove([att.file_path])
+    await fetchJobData()
+  }
+
+  const triggerPhotoInput = (lineId, context) => {
+    setPhotoUploadTarget({ lineId, context })
+    setTimeout(() => photoInputRef.current?.click(), 50)
+  }
+
   const openEditSection = (section) => {
     setEditingSection(section)
     setSectionForm({
@@ -990,8 +1106,46 @@ export default function JobDetail() {
 
   const statusStyle = statusColors[job.status] || statusColors['Scheduled']
 
+  // Inline photo helpers
+  const PhotoThumbnail = ({ att, theme: t, onView, onDelete }) => {
+    const [thumbUrl, setThumbUrl] = useState(null)
+    useEffect(() => {
+      let cancelled = false
+      supabase.storage.from(att.storage_bucket).createSignedUrl(att.file_path, 3600).then(({ data }) => {
+        if (!cancelled && data?.signedUrl) setThumbUrl(data.signedUrl)
+      })
+      return () => { cancelled = true }
+    }, [att.id])
+    return (
+      <div style={{ position: 'relative', width: '64px', height: '64px', flexShrink: 0 }}>
+        {thumbUrl ? (
+          <img src={thumbUrl} alt={att.file_name} onClick={() => onView({ url: thumbUrl, name: att.file_name })}
+            style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '8px', cursor: 'pointer', border: `1px solid ${t.border}` }} />
+        ) : (
+          <div style={{ width: '64px', height: '64px', borderRadius: '8px', backgroundColor: t.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Image size={20} color={t.textMuted} />
+          </div>
+        )}
+        <button onClick={(e) => { e.stopPropagation(); onDelete(att) }}
+          style={{ position: 'absolute', top: '-4px', right: '-4px', width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', border: 'none', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
+          {'\u2715'}
+        </button>
+      </div>
+    )
+  }
+
+  const AddPhotoButton = ({ theme: t, onClick }) => (
+    <button onClick={onClick} style={{ width: '64px', height: '64px', borderRadius: '8px', border: `2px dashed ${t.border}`, backgroundColor: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', color: t.textMuted, flexShrink: 0 }}>
+      <Camera size={18} />
+      <span style={{ fontSize: '10px' }}>Add</span>
+    </button>
+  )
+
   return (
     <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+      {/* Hidden photo file input */}
+      <input type="file" ref={photoInputRef} accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUploadPhoto} />
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <button
@@ -1450,34 +1604,78 @@ export default function JobDetail() {
             ) : (
               <>
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '2fr 80px 100px 100px 40px', gap: '12px',
+                  display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 100px 40px', gap: '12px',
                   padding: '12px 20px', backgroundColor: theme.accentBg,
                   fontSize: '12px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px'
                 }}>
+                  <div></div>
                   <div>Item</div>
                   <div style={{ textAlign: 'right' }}>Qty</div>
                   <div style={{ textAlign: 'right' }}>Price</div>
                   <div style={{ textAlign: 'right' }}>Total</div>
                   <div></div>
                 </div>
-                {lineItems.map((line) => (
-                  <div key={line.id} style={{
-                    display: 'grid', gridTemplateColumns: '2fr 80px 100px 100px 40px', gap: '12px',
-                    padding: '14px 20px', borderBottom: `1px solid ${theme.border}`, alignItems: 'center'
-                  }}>
-                    <div>
-                      <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>{line.item?.name || 'Unknown'}</p>
+                {lineItems.map((line) => {
+                  const photoCount = (linePhotos[line.id] || []).length
+                  const isExpanded = expandedLineId === line.id
+                  const beforePhotos = (linePhotos[line.id] || []).filter(p => p.photo_context === 'line_before')
+                  const afterPhotos = (linePhotos[line.id] || []).filter(p => p.photo_context === 'line_after')
+                  return (
+                    <div key={line.id}>
+                      <div
+                        onClick={() => setExpandedLineId(isExpanded ? null : line.id)}
+                        style={{
+                          display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 100px 40px', gap: '12px',
+                          padding: '14px 20px', borderBottom: `1px solid ${theme.border}`, alignItems: 'center', cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
+                          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>{line.item?.name || 'Unknown'}</p>
+                          {photoCount > 0 && (
+                            <span style={{ fontSize: '11px', backgroundColor: theme.accentBg, color: theme.accent, padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
+                              <Camera size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{photoCount}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{line.quantity}</div>
+                        <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{formatCurrency(line.price)}</div>
+                        <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatCurrency(line.total)}</div>
+                        <div style={{ textAlign: 'right' }}>
+                          <button onClick={(e) => { e.stopPropagation(); removeLineItem(line.id) }} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}>
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                      {isExpanded && (
+                        <div style={{ padding: '12px 20px 16px', backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                          {/* Before Photos */}
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Before</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {beforePhotos.map(photo => (
+                                <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
+                              ))}
+                              <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(line.id, 'line_before')} />
+                            </div>
+                          </div>
+                          {/* After (Completion) Photos */}
+                          <div>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>After (Completion)</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {afterPhotos.map(photo => (
+                                <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
+                              ))}
+                              <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(line.id, 'line_after')} />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{line.quantity}</div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{formatCurrency(line.price)}</div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatCurrency(line.total)}</div>
-                    <div style={{ textAlign: 'right' }}>
-                      <button onClick={() => removeLineItem(line.id)} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
                 <div style={{ padding: '16px 20px', backgroundColor: theme.accentBg }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <span style={{ color: theme.textSecondary }}>Subtotal</span>
@@ -1763,7 +1961,40 @@ export default function JobDetail() {
               style={{ ...inputStyle, resize: 'vertical' }}
               placeholder="Add notes..."
             />
+            {/* Notes photos */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' }}>
+              {notesPhotos.map(photo => (
+                <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
+              ))}
+              <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(null, 'notes')} />
+            </div>
           </div>
+
+          {/* Audit Photos */}
+          {auditPhotos.length > 0 && (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              padding: '20px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <Zap size={16} color={theme.textMuted} />
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Audit Photos ({auditPhotos.length})</h3>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {auditPhotos.map((photo, idx) => (
+                  <img
+                    key={idx}
+                    src={photo.url}
+                    alt={photo.name}
+                    onClick={() => setViewingPhoto({ url: photo.url, name: photo.name })}
+                    style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px', cursor: 'pointer', border: `1px solid ${theme.border}` }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Documents */}
           <div style={{
@@ -2483,6 +2714,16 @@ export default function JobDetail() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Photo Lightbox */}
+      {viewingPhoto && (
+        <div onClick={() => setViewingPhoto(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#fff', fontSize: '22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2001 }}>
+            {'\u2715'}
+          </button>
+          <img src={viewingPhoto.url} alt={viewingPhoto.name || 'Photo'} style={{ maxWidth: '95vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
         </div>
       )}
     </div>

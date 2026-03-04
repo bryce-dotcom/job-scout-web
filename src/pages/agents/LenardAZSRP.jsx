@@ -353,6 +353,7 @@ export default function LenardAZSRP() {
 
   // Camera photos (stored for audit)
   const [capturedPhotos, setCapturedPhotos] = useState([]);
+  const [viewingPhoto, setViewingPhoto] = useState(null);
 
   // SBC fixture type info popup
   const [showSbcInfo, setShowSbcInfo] = useState(false);
@@ -791,6 +792,32 @@ export default function LenardAZSRP() {
       } else {
         setSignatureData(null);
         setContractAccepted(false);
+      }
+      // Restore photos from storage (best-effort, fire-and-forget)
+      if (project.audit?.photoPaths?.length > 0) {
+        setCapturedPhotos([]);
+        (async () => {
+          try {
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            const restored = [];
+            for (const path of project.audit.photoPaths) {
+              try {
+                const res = await fetch(`${SUPABASE_URL}/storage/v1/object/public/audit-photos/${path}`, {
+                  headers: { 'Authorization': `Bearer ${SUPABASE_ANON}`, 'apikey': SUPABASE_ANON }
+                });
+                if (res.ok) {
+                  const blob = await res.blob();
+                  const b64 = await new Promise(r => { const rd = new FileReader(); rd.onloadend = () => r(rd.result.split(',')[1]); rd.readAsDataURL(blob); });
+                  restored.push(b64);
+                }
+              } catch (_) { /* skip individual photo */ }
+            }
+            if (restored.length > 0) setCapturedPhotos(restored);
+          } catch (_) { /* best-effort */ }
+        })();
+      } else {
+        setCapturedPhotos([]);
       }
       setShowProjects(false);
       showToast('Project loaded', '\uD83D\uDCC2');
@@ -2096,7 +2123,16 @@ export default function LenardAZSRP() {
             <div><label style={S.label}>Meter #</label><input type="text" value={saveMeterNumber} onChange={e => setSaveMeterNumber(e.target.value)} placeholder="Optional" style={S.input} /></div>
             <div><label style={S.label}>EIN</label><input type="text" value={saveEIN} onChange={e => setSaveEIN(e.target.value)} placeholder="Optional" style={S.input} /></div>
           </div>
-          {capturedPhotos.length > 0 && <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '12px' }}>{'\uD83D\uDCF7'} {capturedPhotos.length} photo{capturedPhotos.length > 1 ? 's' : ''} will be saved to the audit</div>}
+          {capturedPhotos.length > 0 && (<div style={{ marginBottom: '12px' }}>
+            <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '8px' }}>{'\uD83D\uDCF7'} {capturedPhotos.length} photo{capturedPhotos.length > 1 ? 's' : ''} will be saved to the audit</div>
+            <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {capturedPhotos.map((photo, idx) => (
+                <img key={idx} src={`data:image/jpeg;base64,${photo}`} alt={`Photo ${idx + 1}`}
+                  onClick={() => setViewingPhoto(idx)}
+                  style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', flexShrink: 0, border: `1px solid ${T.border}` }} />
+              ))}
+            </div>
+          </div>)}
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={saveProject} disabled={saving} style={{ ...S.btn, flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving...' : 'Save'}</button>
             <button onClick={() => setShowSaveModal(false)} style={{ ...S.btnGhost, flex: 1 }}>Cancel</button>
@@ -2138,6 +2174,13 @@ export default function LenardAZSRP() {
       </>)}
 
       <div style={{ textAlign: 'center', padding: '20px 16px 0', fontSize: '11px', color: T.textMuted }}>Powered by <span style={{ color: T.accent }}>Job Scout</span> {'\u2022'} HHH Building Services</div>
+
+      {viewingPhoto !== null && capturedPhotos[viewingPhoto] && (
+        <div onClick={() => setViewingPhoto(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', color: '#fff', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{'\u2715'}</button>
+          <img src={`data:image/jpeg;base64,${capturedPhotos[viewingPhoto]}`} alt="Full size" style={{ maxWidth: '95vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
+        </div>
+      )}
     </div>
   );
 }
