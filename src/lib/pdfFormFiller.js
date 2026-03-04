@@ -61,6 +61,58 @@ export async function fillPdfForm(pdfBytes, fieldValues) {
 }
 
 /**
+ * Fill a PDF form with values AND embed image overlays (e.g. signatures).
+ * @param {Uint8Array|ArrayBuffer} pdfBytes - raw PDF data
+ * @param {Record<string, string>} fieldValues - { pdfFieldName: value }
+ * @param {Array<{imageBytes: Uint8Array, page?: number, x: number, y: number, width: number, height: number}>} imageOverlays
+ * @returns {Promise<Uint8Array>} - filled PDF bytes
+ */
+export async function fillPdfFormWithImages(pdfBytes, fieldValues, imageOverlays) {
+  const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  const form = pdfDoc.getForm();
+
+  // Fill text fields (same as fillPdfForm)
+  for (const [fieldName, value] of Object.entries(fieldValues)) {
+    if (value === undefined || value === null || value === '') continue;
+    try {
+      const field = form.getField(fieldName);
+      const type = field.constructor.name;
+      if (type.includes('Text')) {
+        field.setText(String(value));
+      } else if (type.includes('CheckBox')) {
+        const truthyValues = ['true', '1', 'yes', 'on'];
+        if (truthyValues.includes(String(value).toLowerCase())) field.check();
+        else field.uncheck();
+      } else if (type.includes('Dropdown') || type.includes('OptionList')) {
+        field.select(String(value));
+      } else if (type.includes('RadioGroup')) {
+        field.select(String(value));
+      }
+    } catch (err) {
+      console.warn(`Could not fill field "${fieldName}":`, err.message);
+    }
+  }
+
+  // Embed image overlays
+  for (const overlay of imageOverlays) {
+    try {
+      const img = await pdfDoc.embedPng(overlay.imageBytes);
+      const page = pdfDoc.getPage(overlay.page || 0);
+      page.drawImage(img, {
+        x: overlay.x,
+        y: overlay.y,
+        width: overlay.width,
+        height: overlay.height,
+      });
+    } catch (err) {
+      console.warn('Could not embed image overlay:', err.message);
+    }
+  }
+
+  return await pdfDoc.save();
+}
+
+/**
  * Trigger a browser download of the given PDF bytes.
  * @param {Uint8Array} bytes
  * @param {string} filename

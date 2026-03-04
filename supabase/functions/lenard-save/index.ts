@@ -60,7 +60,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { customerName, phone, email, address, city, state, zip, meterNumber, ein, projectData, programType, leadOwnerId, existingLeadId, existingAuditId } = await req.json();
+    const { customerName, phone, email, address, city, state, zip, meterNumber, ein, projectData, programType, leadOwnerId, existingLeadId, existingAuditId, signatureData } = await req.json();
     if (!customerName) {
       return new Response(JSON.stringify({ error: 'Customer name is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -266,6 +266,34 @@ serve(async (req) => {
         } catch (_) {
           // Photo upload is best-effort
         }
+      }
+    }
+
+    // =====================================================
+    // 5. Store customer signature (best-effort)
+    // =====================================================
+    if (signatureData) {
+      try {
+        const raw = signatureData.replace(/^data:image\/png;base64,/, '');
+        const binaryStr = atob(raw);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let b = 0; b < binaryStr.length; b++) bytes[b] = binaryStr.charCodeAt(b);
+        const sigPath = `audits/${auditDbId}/customer_signature.png`;
+        await fetch(`${SUPABASE_URL}/storage/v1/object/audit-photos/${sigPath}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${key}`,
+            'apikey': key,
+            'Content-Type': 'image/png',
+            'x-upsert': 'true',
+          },
+          body: bytes,
+        });
+        await supabasePatch(SUPABASE_URL!, 'lighting_audits', key, auditDbId, {
+          customer_signature: sigPath,
+        });
+      } catch (_) {
+        // Signature upload is best-effort
       }
     }
 

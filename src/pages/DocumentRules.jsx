@@ -213,6 +213,9 @@ const DATA_PATHS = [
     { value: `lines.${i}.watts_reduced`, label: `Row ${i + 1}: Watts Reduced` },
     { value: `lines.${i}.incentive`, label: `Row ${i + 1}: Incentive` },
   ]).flat(),
+  // Signature
+  { value: 'signature.customer', label: 'Customer Signature (Image)' },
+  { value: 'signature.customer_date', label: 'Signature Date' },
   // Computed
   { value: 'today', label: "Today's Date" },
 ]
@@ -684,7 +687,7 @@ export default function DocumentRules() {
         if (path) cleaned[field] = path
       }
 
-      const mappedCount = Object.keys(cleaned).filter(k => k !== '_mode').length
+      const mappedCount = Object.keys(cleaned).filter(k => k !== '_mode' && !k.startsWith('_sig_')).length
       let totalFields, newStatus
       if (excelCellMode) {
         // Cell mapping: Ready when all labels with inputRef have a mapping
@@ -1735,6 +1738,31 @@ export default function DocumentRules() {
                                       </option>
                                     ))}
                                   </select>
+                                  {fieldMapping[field.name] === 'signature.customer' && (
+                                    <div style={{ marginTop: '6px', padding: '8px', background: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
+                                      <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textSecondary, marginBottom: '6px' }}>Signature Position (PDF points)</div>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
+                                        {[
+                                          { key: 'page', label: 'Page', placeholder: '0' },
+                                          { key: 'x', label: 'X', placeholder: '72' },
+                                          { key: 'y', label: 'Y', placeholder: '200' },
+                                          { key: 'width', label: 'Width', placeholder: '150' },
+                                          { key: 'height', label: 'Height', placeholder: '50' },
+                                        ].map(({ key, label, placeholder }) => (
+                                          <div key={key}>
+                                            <label style={{ fontSize: '10px', color: theme.textMuted }}>{label}</label>
+                                            <input
+                                              type="number"
+                                              value={fieldMapping[`_sig_${field.name}_${key}`] || ''}
+                                              onChange={(e) => setFieldMapping(prev => ({ ...prev, [`_sig_${field.name}_${key}`]: e.target.value }))}
+                                              placeholder={placeholder}
+                                              style={{ width: '100%', padding: '4px 6px', fontSize: '11px', border: `1px solid ${theme.border}`, borderRadius: '4px', backgroundColor: '#fff', color: theme.text }}
+                                            />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             ))}

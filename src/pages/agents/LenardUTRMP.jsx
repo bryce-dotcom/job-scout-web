@@ -757,7 +757,7 @@ export default function LenardUTRMP() {
         operatingHours, daysPerYear, energyRate, city: saveCity, state: saveState, zip: saveZip, photos: capturedPhotos,
         ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, realGiveMe: giveMe.realGiveMe, additionalIncentive: giveMe.additionalIncentive, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, quoteItems: giveMeQuoteItems, frozenBaseline: giveMeFrozenBaseline, frozenIncentive: giveMeFrozenIncentive, currentDown: repCurrentDown, targetDown: repTargetDown, locked: projectLocked } } : {}),
       };
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, meterNumber: saveMeterNumber, ein: saveEIN, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null }) });
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-save`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ customerName: projectName, phone: savePhone, email: saveEmail, address: saveAddress, city: saveCity, state: saveState, zip: saveZip, meterNumber: saveMeterNumber, ein: saveEIN, projectData, programType: 'ut-rmp', leadOwnerId: leadOwnerId || null, existingLeadId: savedLeadId || null, existingAuditId: savedAuditId || null, signatureData: signatureData || null }) });
       const data = await resp.json();
       if (data.success) {
         setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false);
@@ -836,6 +836,27 @@ export default function LenardUTRMP() {
       } else {
         setGiveMeQuoteItems([]); setGiveMeFrozenBaseline(0); setGiveMeFrozenIncentive(0); setRepAdditionalOOP(0);
         setProjectLocked(false);
+      }
+      // Restore signature from storage (best-effort, fire-and-forget)
+      if (project.audit?.customer_signature) {
+        (async () => {
+          try {
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            const res = await fetch(`${SUPABASE_URL}/storage/v1/object/public/audit-photos/${project.audit.customer_signature}`, {
+              headers: { 'Authorization': `Bearer ${SUPABASE_ANON}`, 'apikey': SUPABASE_ANON }
+            });
+            if (res.ok) {
+              const blob = await res.blob();
+              const reader = new FileReader();
+              reader.onloadend = () => { setSignatureData(reader.result); setContractAccepted(true); };
+              reader.readAsDataURL(blob);
+            }
+          } catch (_) { /* best-effort */ }
+        })();
+      } else {
+        setSignatureData(null);
+        setContractAccepted(false);
       }
       setShowProjects(false);
       showToast('Project loaded', '\uD83D\uDCC2');

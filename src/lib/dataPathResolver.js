@@ -19,6 +19,21 @@ export function resolveDataPath(path, data) {
     return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
   }
 
+  // Signature paths
+  if (path === 'signature.customer') {
+    return data.signature?.customer || '';
+  }
+  if (path === 'signature.has_customer') {
+    return data.signature?.has_customer ? 'true' : 'false';
+  }
+  if (path === 'signature.customer_date') {
+    if (data.audit?.updated_at) {
+      const d = new Date(data.audit.updated_at);
+      return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
+    }
+    return '';
+  }
+
   // Aggregation paths: "collection.field.agg"
   const aggMatch = path.match(/^(\w+)\.(\w+)\.(sum|count|avg|min|max|join)$/);
   if (aggMatch) {
@@ -59,6 +74,8 @@ export function resolveDataPath(path, data) {
 export function resolveAllMappings(fieldMapping, data) {
   const result = {};
   for (const [pdfField, dataPath] of Object.entries(fieldMapping)) {
+    // Skip signature image fields and companion position keys — handled as image overlays
+    if (dataPath === 'signature.customer' || pdfField.startsWith('_sig_')) continue;
     result[pdfField] = resolveDataPath(dataPath, data);
   }
   return result;

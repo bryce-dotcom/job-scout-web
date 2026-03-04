@@ -48,7 +48,7 @@ serve(async (req) => {
       const auditParams = new URLSearchParams({
         company_id: `eq.${companyId}`,
         lead_id: `in.(${leadIds.join(',')})`,
-        select: 'id,lead_id,audit_id,status,total_existing_watts,total_proposed_watts,watts_reduced,estimated_rebate,annual_savings_kwh,annual_savings_dollars,est_project_cost,payback_months,notes',
+        select: 'id,lead_id,audit_id,status,total_existing_watts,total_proposed_watts,watts_reduced,estimated_rebate,annual_savings_kwh,annual_savings_dollars,est_project_cost,payback_months,notes,customer_signature',
       });
       const audits = await querySupabase(SUPABASE_URL!, 'lighting_audits', key, auditParams.toString());
       for (const a of audits) {

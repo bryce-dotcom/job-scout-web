@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { jsPDF } from "jspdf";
+import SignaturePad from 'signature_pad';
 
 // ============================================================
 // LENARD AZ SRP — SRP Lighting Rebate Calculator
@@ -356,6 +357,12 @@ export default function LenardAZSRP() {
   // SBC fixture type info popup
   const [showSbcInfo, setShowSbcInfo] = useState(false);
 
+  // Signature capture
+  const [signatureData, setSignatureData] = useState(null);
+  const [contractAccepted, setContractAccepted] = useState(false);
+  const sigCanvasRef = useRef(null);
+  const sigPadRef = useRef(null);
+
   // Toast helper
   const showToast = useCallback((message, icon = '\u2713') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -699,6 +706,7 @@ export default function LenardAZSRP() {
           leadOwnerId: leadOwnerId || null,
           existingLeadId: savedLeadId || null,
           existingAuditId: savedAuditId || null,
+          signatureData: signatureData || null,
         }),
       });
       const data = await resp.json();
@@ -762,6 +770,27 @@ export default function LenardAZSRP() {
           return { ...l, id };
         });
         setLines(loaded);
+      }
+      // Restore signature from storage (best-effort, fire-and-forget)
+      if (project.audit?.customer_signature) {
+        (async () => {
+          try {
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+            const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+            const res = await fetch(`${SUPABASE_URL}/storage/v1/object/public/audit-photos/${project.audit.customer_signature}`, {
+              headers: { 'Authorization': `Bearer ${SUPABASE_ANON}`, 'apikey': SUPABASE_ANON }
+            });
+            if (res.ok) {
+              const blob = await res.blob();
+              const reader = new FileReader();
+              reader.onloadend = () => { setSignatureData(reader.result); setContractAccepted(true); };
+              reader.readAsDataURL(blob);
+            }
+          } catch (_) { /* best-effort */ }
+        })();
+      } else {
+        setSignatureData(null);
+        setContractAccepted(false);
       }
       setShowProjects(false);
       showToast('Project loaded', '\uD83D\uDCC2');
@@ -1249,6 +1278,34 @@ export default function LenardAZSRP() {
     doc.text('A division of HHH Building Services  |  Commercial Energy Solutions', M, y + 4);
     const preparedLine = leadOwnerName ? `Auditor: ${leadOwnerName}  |  ` : '';
     doc.text(`${preparedLine}Report generated ${dateStr}  |  Ref: ${reportId}`, M, y + 8);
+
+    // Customer Signature (if signed)
+    if (signatureData) {
+      y += 16;
+      checkPage(30);
+      doc.setDrawColor(...orange);
+      doc.setLineWidth(0.4);
+      doc.line(M, y, R, y);
+      y += 5;
+      doc.setFontSize(9);
+      doc.setTextColor(...dark);
+      doc.setFont(undefined, 'bold');
+      doc.text('Customer Acceptance', M, y);
+      y += 5;
+      try {
+        doc.addImage(signatureData, 'PNG', M, y, 60, 20);
+        y += 22;
+      } catch (_) { y += 2; }
+      doc.setDrawColor(...gray);
+      doc.setLineWidth(0.3);
+      doc.line(M, y, M + 80, y);
+      y += 4;
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...gray);
+      doc.text(`Signed: ${new Date().toLocaleDateString('en-US')}`, M, y);
+      doc.text(projectName || '', M + 60, y);
+    }
 
     addFooter();
 
@@ -1940,6 +1997,59 @@ export default function LenardAZSRP() {
               </>)}
 
               <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '12px', textAlign: 'center' }}>Estimate only \u2014 subject to SRP review and approval</div>
+
+              {/* ===== Signature & Acceptance ===== */}
+              <div style={{ marginTop: '16px', border: `2px solid ${contractAccepted ? T.green : T.accent}`, borderRadius: '12px', padding: '16px', background: contractAccepted ? 'rgba(34,197,94,0.05)' : '#fff' }}>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e1e22', marginBottom: '8px' }}>{contractAccepted ? '\u2713 Contract Accepted' : 'Customer Signature'}</div>
+
+                {!contractAccepted ? (
+                  <>
+                    <div style={{ fontSize: '11px', color: '#666', marginBottom: '10px', lineHeight: '1.5' }}>
+                      By signing below, I authorize the scope of work described above and agree to the terms and conditions.
+                    </div>
+                    <div style={{ border: '1px solid #ddd', borderRadius: '8px', overflow: 'hidden', background: '#fff', marginBottom: '8px' }}>
+                      <canvas
+                        ref={el => {
+                          sigCanvasRef.current = el;
+                          if (el && !sigPadRef.current) {
+                            sigPadRef.current = new SignaturePad(el, { backgroundColor: 'rgb(255,255,255)', penColor: 'rgb(0,0,0)' });
+                            const ratio = Math.max(window.devicePixelRatio || 1, 1);
+                            el.width = el.offsetWidth * ratio;
+                            el.height = 120 * ratio;
+                            el.getContext('2d').scale(ratio, ratio);
+                            el.style.height = '120px';
+                          }
+                        }}
+                        style={{ width: '100%', height: '120px', touchAction: 'none' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                      <button onClick={() => { if (sigPadRef.current) sigPadRef.current.clear(); setSignatureData(null); }} style={{ padding: '6px 14px', fontSize: '12px', background: '#f0f0f0', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', color: '#555' }}>Clear</button>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (sigPadRef.current && !sigPadRef.current.isEmpty()) {
+                          const data = sigPadRef.current.toDataURL('image/png');
+                          setSignatureData(data);
+                          setContractAccepted(true);
+                          showToast('Contract accepted', '\u2713');
+                        } else {
+                          showToast('Please sign above first', '\u26A0\uFE0F');
+                        }
+                      }}
+                      style={{ width: '100%', padding: '14px', background: T.accent, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}
+                    >
+                      Accept & Sign
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {signatureData && <img src={signatureData} alt="Signature" style={{ maxWidth: '200px', height: '60px', objectFit: 'contain', border: '1px solid #eee', borderRadius: '6px', marginBottom: '8px' }} />}
+                    <div style={{ fontSize: '11px', color: '#888' }}>Signed on {new Date().toLocaleDateString('en-US')}</div>
+                    <button onClick={() => { setContractAccepted(false); setSignatureData(null); if (sigPadRef.current) { sigPadRef.current.clear(); } }} style={{ marginTop: '8px', padding: '6px 14px', fontSize: '11px', background: '#f0f0f0', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', color: '#666' }}>Redo Signature</button>
+                  </>
+                )}
+              </div>
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '14px' }}>

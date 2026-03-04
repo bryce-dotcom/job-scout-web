@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { resolveAllMappings } from './dataPathResolver'
-import { fillPdfForm } from './pdfFormFiller'
+import { fillPdfForm, fillPdfFormWithImages } from './pdfFormFiller'
 import { fillExcelTemplate, fillExcelCellMapping } from './excelTemplateFiller'
 
 /**
@@ -96,6 +96,28 @@ export async function buildDataContext({ lead, job, audits, quotes, lineItems, a
     signature_date: new Date().toLocaleDateString('en-US'),
   }
 
+  // Fetch customer signature if audit has one
+  let signature = { customer: '', customer_bytes: null, has_customer: false }
+  if (audit?.customer_signature) {
+    try {
+      const { data: sigUrlData } = supabase.storage.from('audit-photos').getPublicUrl(audit.customer_signature)
+      if (sigUrlData?.publicUrl) {
+        const sigRes = await fetch(sigUrlData.publicUrl)
+        if (sigRes.ok) {
+          const sigBuf = await sigRes.arrayBuffer()
+          const sigBytes = new Uint8Array(sigBuf)
+          // Build data URL for non-PDF use
+          const base64 = btoa(String.fromCharCode(...sigBytes))
+          signature = {
+            customer: `data:image/png;base64,${base64}`,
+            customer_bytes: sigBytes,
+            has_customer: true,
+          }
+        }
+      }
+    } catch (_) { /* best-effort */ }
+  }
+
   return {
     customer,
     audit: audit || {},
@@ -108,6 +130,7 @@ export async function buildDataContext({ lead, job, audits, quotes, lineItems, a
     lead: lead || {},
     job: job || {},
     w9,
+    signature,
   }
 }
 
@@ -163,7 +186,27 @@ export async function generateAndUploadTemplate(template, dataContext, { entityT
     } else {
       // PDF
       const fieldValues = resolveAllMappings(fieldMapping, dataContext)
-      filledBytes = await fillPdfForm(fileBytes, fieldValues)
+
+      // Build image overlays from signature field mappings
+      const imageOverlays = []
+      for (const [fieldName, dataPath] of Object.entries(fieldMapping)) {
+        if (dataPath === 'signature.customer' && dataContext.signature?.customer_bytes) {
+          imageOverlays.push({
+            imageBytes: dataContext.signature.customer_bytes,
+            page: Number(fieldMapping[`_sig_${fieldName}_page`]) || 0,
+            x: Number(fieldMapping[`_sig_${fieldName}_x`]) || 0,
+            y: Number(fieldMapping[`_sig_${fieldName}_y`]) || 0,
+            width: Number(fieldMapping[`_sig_${fieldName}_width`]) || 150,
+            height: Number(fieldMapping[`_sig_${fieldName}_height`]) || 50,
+          })
+        }
+      }
+
+      if (imageOverlays.length > 0) {
+        filledBytes = await fillPdfFormWithImages(fileBytes, fieldValues, imageOverlays)
+      } else {
+        filledBytes = await fillPdfForm(fileBytes, fieldValues)
+      }
     }
 
     // Upload filled file
