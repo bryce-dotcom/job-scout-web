@@ -892,12 +892,12 @@ export default function JobDetail() {
   const handleDeleteJob = async () => {
     if (!confirm('Permanently delete this job and all its line items and sections?')) return
     setSaving(true)
-    // Nullify job_id on tables that would block deletion (no CASCADE)
+    // Delete or nullify related records before deleting the job (no CASCADE)
     await Promise.all([
       supabase.from('time_log').update({ job_id: null }).eq('job_id', id),
       supabase.from('expenses').update({ job_id: null }).eq('job_id', id),
-      supabase.from('invoices').update({ job_id: null }).eq('job_id', id),
-      supabase.from('utility_invoices').update({ job_id: null }).eq('job_id', id),
+      supabase.from('invoices').delete().eq('job_id', id),
+      supabase.from('utility_invoices').delete().eq('job_id', id),
     ])
     const { error } = await supabase.from('jobs').delete().eq('id', id)
     setSaving(false)
