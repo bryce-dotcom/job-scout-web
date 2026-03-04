@@ -142,7 +142,7 @@ export default function UtilityInvoices() {
   }
 
   const handleDelete = async (invoice) => {
-    if (!confirm(`Delete this utility invoice?`)) return
+    if (!confirm(`Delete this utility bill?`)) return
     await supabase.from('utility_invoices').delete().eq('id', invoice.id)
     await fetchUtilityInvoices()
   }
@@ -193,7 +193,7 @@ export default function UtilityInvoices() {
         flexWrap: 'wrap'
       }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
-          Utility Invoices
+          Utility Bills
         </h1>
         <button
           onClick={openAddModal}
@@ -212,7 +212,7 @@ export default function UtilityInvoices() {
           }}
         >
           <Plus size={18} />
-          Add Invoice
+          Add Bill
         </button>
       </div>
 
@@ -289,7 +289,7 @@ export default function UtilityInvoices() {
           }} />
           <input
             type="text"
-            placeholder="Search invoices..."
+            placeholder="Search bills..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ ...inputStyle, paddingLeft: '40px' }}
@@ -308,7 +308,7 @@ export default function UtilityInvoices() {
         }}>
           <FileText size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
           <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
-            No utility invoices found. Add your first invoice.
+            No utility bills found. Add your first bill.
           </p>
         </div>
       ) : (
@@ -441,7 +441,7 @@ export default function UtilityInvoices() {
               borderBottom: `1px solid ${theme.border}`
             }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
-                {editingInvoice ? 'Edit Utility Invoice' : 'New Utility Invoice'}
+                {editingInvoice ? 'Edit Utility Bill' : 'New Utility Bill'}
               </h2>
               <button onClick={closeModal} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
                 <X size={20} />
@@ -515,7 +515,7 @@ export default function UtilityInvoices() {
                   border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',
                   cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1
                 }}>
-                  {loading ? 'Saving...' : (editingInvoice ? 'Update' : 'Add Invoice')}
+                  {loading ? 'Saving...' : (editingInvoice ? 'Update' : 'Add Bill')}
                 </button>
               </div>
             </form>

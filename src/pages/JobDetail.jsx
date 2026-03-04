@@ -539,14 +539,14 @@ export default function JobDetail() {
 
       const { toast } = await import('../lib/toast')
       if (error) {
-        toast.error('Failed to create utility invoice: ' + error.message)
+        toast.error('Failed to create utility bill: ' + error.message)
       } else {
-        toast.success('Utility invoice created')
+        toast.success('Utility bill created')
         await fetchJobData()
       }
     } catch (err) {
       const { toast } = await import('../lib/toast')
-      toast.error('Error creating utility invoice')
+      toast.error('Error creating utility bill')
     }
 
     setSaving(false)
@@ -1632,7 +1632,7 @@ export default function JobDetail() {
                   border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
                 }}>
                   <Zap size={18} />
-                  Create Utility Invoice
+                  Create Utility Bill
                 </button>
               )}
               {isAdmin && (
