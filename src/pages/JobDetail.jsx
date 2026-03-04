@@ -1597,7 +1597,7 @@ export default function JobDetail() {
                   Mark Completed
                 </button>
               )}
-              {job.status === 'Completed' && job.invoice_status !== 'Invoiced' && job.invoice_status !== 'Paid' && jobInvoices.length === 0 && (
+              {lineItems.length > 0 && job.invoice_status !== 'Invoiced' && job.invoice_status !== 'Paid' && jobInvoices.length === 0 && (
                 <button onClick={generateInvoice} disabled={saving} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   padding: '12px 16px', backgroundColor: theme.accent, color: '#ffffff',
