@@ -44,6 +44,7 @@ import RoutesCalendar from './pages/RoutesCalendar'
 import Bookings from './pages/Bookings'
 import LeadPayments from './pages/LeadPayments'
 import UtilityInvoices from './pages/UtilityInvoices'
+import UtilityInvoiceDetail from './pages/UtilityInvoiceDetail'
 import Incentives from './pages/Incentives'
 import TimeClock from './pages/TimeClock'
 import Payroll from './pages/Payroll'
@@ -258,6 +259,7 @@ function App() {
           <Route path="/bookings" element={<Bookings />} />
           <Route path="/lead-payments" element={<LeadPayments />} />
           <Route path="/utility-invoices" element={<UtilityInvoices />} />
+          <Route path="/utility-invoices/:id" element={<UtilityInvoiceDetail />} />
           <Route path="/incentives" element={<Incentives />} />
           <Route path="/time-clock" element={<TimeClock />} />
           <Route path="/payroll" element={<Payroll />} />

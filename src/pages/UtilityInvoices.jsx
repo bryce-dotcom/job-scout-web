@@ -344,13 +344,15 @@ export default function UtilityInvoices() {
           {filteredInvoices.map((invoice) => (
             <div
               key={invoice.id}
+              onClick={() => navigate(`/utility-invoices/${invoice.id}`)}
               style={{
                 display: 'grid',
                 gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
                 gap: '12px',
                 padding: '16px 20px',
                 borderBottom: `1px solid ${theme.border}`,
-                alignItems: 'center'
+                alignItems: 'center',
+                cursor: 'pointer'
               }}
             >
               <div style={{ fontSize: '14px', color: theme.textSecondary }}>
@@ -379,7 +381,7 @@ export default function UtilityInvoices() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
                 <button
-                  onClick={() => openEditModal(invoice)}
+                  onClick={(e) => { e.stopPropagation(); openEditModal(invoice) }}
                   style={{
                     padding: '6px',
                     backgroundColor: 'transparent',
@@ -392,7 +394,7 @@ export default function UtilityInvoices() {
                   <Pencil size={15} />
                 </button>
                 <button
-                  onClick={() => handleDelete(invoice)}
+                  onClick={(e) => { e.stopPropagation(); handleDelete(invoice) }}
                   style={{
                     padding: '6px',
                     backgroundColor: 'transparent',

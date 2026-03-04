@@ -1712,10 +1712,10 @@ export default function JobDetail() {
                   </div>
                 ))}
                 {jobUtilityInvoices.map(inv => (
-                  <div key={'u-' + inv.id} style={{
+                  <div key={'u-' + inv.id} onClick={() => navigate(`/utility-invoices/${inv.id}`)} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
-                    border: `1px solid ${theme.border}`
+                    border: `1px solid ${theme.border}`, cursor: 'pointer'
                   }}>
                     <div>
                       <div style={{
