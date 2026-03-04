@@ -227,7 +227,7 @@ export default function Layout() {
     FINANCIAL: [
       { value: '', label: '(Section level)' },
       { value: 'Invoices', label: 'Under Invoices' },
-      { value: 'Payments', label: 'Under Payments' },
+      { value: 'Deposits', label: 'Under Deposits' },
       { value: 'Expenses', label: 'Under Expenses' }
     ],
     TEAM: [
@@ -281,9 +281,8 @@ export default function Layout() {
       title: 'FINANCIAL',
       sectionIcon: DollarSign,
       baseItems: [
-        { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Create and track customer invoices' },
-        { to: '/lead-payments', icon: CreditCard, label: 'Payments', hint: 'Record and manage payments received' },
-        { to: '/utility-invoices', icon: Zap, label: 'Utility Bills', hint: 'Track utility company invoices and rebates' },
+        { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Customer invoices and utility rebate claims' },
+        { to: '/lead-payments', icon: CreditCard, label: 'Deposits', hint: 'Lead deposits and pre-job payments' },
         { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and costs' },
         { to: '/books', icon: BookOpen, label: 'Books', hint: 'Accounting and financial overview' }
       ]

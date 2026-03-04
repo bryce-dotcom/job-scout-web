@@ -115,7 +115,7 @@ export default function UtilityInvoiceDetail() {
     if (error) {
       toast.error('Failed to save: ' + error.message)
     } else {
-      toast.success('Utility bill updated')
+      toast.success('Utility rebate updated')
       setIsEditing(false)
       await fetchInvoiceData()
       await fetchUtilityInvoices()
@@ -124,7 +124,7 @@ export default function UtilityInvoiceDetail() {
   }
 
   const handleDeleteInvoice = async () => {
-    if (!confirm('Are you sure you want to delete this utility bill? This cannot be undone.')) return
+    if (!confirm('Are you sure you want to delete this utility rebate? This cannot be undone.')) return
 
     setSaving(true)
     const { toast } = await import('../lib/toast')
@@ -134,9 +134,9 @@ export default function UtilityInvoiceDetail() {
       toast.error('Failed to delete bill: ' + error.message)
       setSaving(false)
     } else {
-      toast.success('Utility bill deleted')
+      toast.success('Utility rebate deleted')
       await fetchUtilityInvoices()
-      navigate('/utility-invoices')
+      navigate('/invoices?type=utility')
     }
   }
 
@@ -188,7 +188,7 @@ export default function UtilityInvoiceDetail() {
   if (loading) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: theme.textMuted }}>Loading utility bill...</p>
+        <p style={{ color: theme.textMuted }}>Loading utility rebate...</p>
       </div>
     )
   }
@@ -196,9 +196,9 @@ export default function UtilityInvoiceDetail() {
   if (!invoice) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: '#dc2626', marginBottom: '16px' }}>Utility bill not found</p>
-        <button onClick={() => navigate('/utility-invoices')} style={{ color: theme.accent, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
-          Back to Utility Bills
+        <p style={{ color: '#dc2626', marginBottom: '16px' }}>Utility rebate not found</p>
+        <button onClick={() => navigate('/invoices?type=utility')} style={{ color: theme.accent, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
+          Back to Utility Rebates
         </button>
       </div>
     )
@@ -211,7 +211,7 @@ export default function UtilityInvoiceDetail() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <button
-          onClick={() => navigate('/utility-invoices')}
+          onClick={() => navigate('/invoices?type=utility')}
           style={{
             padding: '10px',
             backgroundColor: theme.bgCard,
@@ -228,7 +228,7 @@ export default function UtilityInvoiceDetail() {
             UTL-{invoice.id}
           </p>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
-            {invoice.customer_name || 'Utility Bill'}
+            {invoice.customer_name || 'Utility Rebate'}
           </h1>
         </div>
         <span style={{
@@ -498,7 +498,7 @@ export default function UtilityInvoiceDetail() {
               {!isEditing && (
                 <button onClick={startEditing} style={actionBtnStyle(theme.accentBg, theme.accent)}>
                   <Pencil size={18} />
-                  Edit Bill
+                  Edit Rebate
                 </button>
               )}
 
@@ -509,7 +509,7 @@ export default function UtilityInvoiceDetail() {
                 style={actionBtnStyle('rgba(220,38,38,0.10)', '#dc2626')}
               >
                 <Trash2 size={18} />
-                Delete Bill
+                Delete Rebate
               </button>
             </div>
           </div>

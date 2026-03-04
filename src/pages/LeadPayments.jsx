@@ -174,7 +174,7 @@ export default function LeadPayments() {
         flexWrap: 'wrap'
       }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
-          Lead Payments
+          Deposits
         </h1>
         <button
           onClick={openAddModal}
@@ -193,7 +193,7 @@ export default function LeadPayments() {
           }}
         >
           <Plus size={18} />
-          Add Payment
+          Add Deposit
         </button>
       </div>
 
@@ -263,7 +263,7 @@ export default function LeadPayments() {
         }}>
           <CreditCard size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
           <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
-            No payments found. Record your first lead payment.
+            No deposits found. Record your first deposit.
           </p>
         </div>
       ) : (
@@ -382,7 +382,7 @@ export default function LeadPayments() {
               borderBottom: `1px solid ${theme.border}`
             }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
-                {editingPayment ? 'Edit Payment' : 'New Payment'}
+                {editingPayment ? 'Edit Deposit' : 'New Deposit'}
               </h2>
               <button onClick={closeModal} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
                 <X size={20} />
@@ -452,7 +452,7 @@ export default function LeadPayments() {
                   border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',
                   cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1
                 }}>
-                  {loading ? 'Saving...' : (editingPayment ? 'Update' : 'Record Payment')}
+                  {loading ? 'Saving...' : (editingPayment ? 'Update' : 'Record Deposit')}
                 </button>
               </div>
             </form>
