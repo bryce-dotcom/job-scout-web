@@ -6,8 +6,10 @@ import { useTheme } from '../components/Layout'
 import {
   Plus, Pencil, X, User, Phone, Mail, Eye,
   DollarSign, Clock, Calendar, Briefcase, Lock,
-  Camera, FileText, Upload, Settings, Trash2, Send, KeyRound
+  Camera, FileText, Upload, Download, Settings, Trash2, Send, KeyRound
 } from 'lucide-react'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { employeesFields } from '../lib/importExportFields'
 
 // Role colors (OG DiX style)
 const roleColors = {
@@ -123,6 +125,7 @@ export default function Employees() {
   const [inviteSentMessage, setInviteSentMessage] = useState(null)
   const [resettingPassword, setResettingPassword] = useState(false)
   const [resetMessage, setResetMessage] = useState(null)
+  const [showImportExport, setShowImportExport] = useState(false)
 
   // Check if current user is admin
   const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' || currentUser?.user_role === 'Super Admin' ||
@@ -861,6 +864,12 @@ export default function Employees() {
               >
                 <Send size={18} />
                 Invite
+              </button>
+              <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+                <Upload size={18} /> Import
+              </button>
+              <button onClick={() => exportToCSV(displayedEmployees || employees, employeesFields, 'employees_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+                <Download size={18} /> Export
               </button>
               <button
                 onClick={openAddModal}
@@ -2327,6 +2336,19 @@ export default function Employees() {
             </div>
           </div>
         </>
+      )}
+
+      {showImportExport && (
+        <ImportExportModal
+          tableName="employees"
+          entityName="Employees"
+          fields={employeesFields}
+          companyId={companyId}
+          requiredField="name"
+          defaultValues={{ company_id: companyId, active: true, tax_classification: 'W2' }}
+          onImportComplete={() => fetchEmployees()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )

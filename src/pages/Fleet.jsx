@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { Truck, Search, Plus, AlertTriangle, Calendar, Wrench, Settings } from 'lucide-react'
+import { Truck, Search, Plus, AlertTriangle, Calendar, Wrench, Settings, Upload, Download } from 'lucide-react'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { fleetFields } from '../lib/importExportFields'
 
 // Light theme fallback
 const defaultTheme = {
@@ -54,6 +56,7 @@ export default function Fleet() {
     next_pm_due: '',
     maintenance_alert: ''
   })
+  const [showImportExport, setShowImportExport] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -190,6 +193,12 @@ export default function Fleet() {
         </div>
 
         <div style={{ display: 'flex', gap: '12px' }}>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} /> Import
+          </button>
+          <button onClick={() => exportToCSV(filteredFleet, fleetFields, 'fleet_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={18} /> Export
+          </button>
           <button
             onClick={() => navigate('/fleet/calendar')}
             style={{
@@ -905,6 +914,18 @@ export default function Fleet() {
             </form>
           </div>
         </div>
+      )}
+      {showImportExport && (
+        <ImportExportModal
+          tableName="fleet"
+          entityName="Fleet"
+          fields={fleetFields}
+          companyId={companyId}
+          requiredField="name"
+          defaultValues={{ company_id: companyId, status: 'Available', type: 'Vehicle' }}
+          onImportComplete={() => fetchFleet()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )

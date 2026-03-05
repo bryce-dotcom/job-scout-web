@@ -3,8 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap } from 'lucide-react'
+import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { invoicesFields } from '../lib/importExportFields'
 
 // Light theme fallback
 const defaultTheme = {
@@ -78,6 +80,7 @@ export default function Invoices() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [showImportExport, setShowImportExport] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -385,6 +388,12 @@ export default function Invoices() {
               New Rebate Claim
             </button>
           )}
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} /> Import
+          </button>
+          <button onClick={() => exportToCSV(invoices, invoicesFields, 'invoices_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={18} /> Export
+          </button>
         </div>
       </div>
 
@@ -1139,6 +1148,19 @@ export default function Invoices() {
             </form>
           </div>
         </div>
+      )}
+
+      {showImportExport && (
+        <ImportExportModal
+          tableName="invoices"
+          entityName="Invoices"
+          fields={invoicesFields}
+          companyId={companyId}
+          requiredField="amount"
+          defaultValues={{ company_id: companyId, payment_status: 'Pending' }}
+          onImportComplete={() => fetchInvoices()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )

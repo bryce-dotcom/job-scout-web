@@ -6,9 +6,11 @@ import { supabase } from '../lib/supabase'
 import {
   Package, Search, Plus, AlertTriangle, Minus, Check, X, Camera,
   Wrench, Droplets, Boxes, User, Hash, MapPin, ScanBarcode, Image as ImageIcon,
-  Pencil, Trash2, Settings, ChevronRight, Upload
+  Pencil, Trash2, Settings, ChevronRight, Upload, Download
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { inventoryFields } from '../lib/importExportFields'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -58,6 +60,7 @@ export default function Inventory() {
   const [adjustAmount, setAdjustAmount] = useState(0)
   const [adjustReason, setAdjustReason] = useState('')
   const [saving, setSaving] = useState(false)
+  const [showImportExport, setShowImportExport] = useState(false)
 
   // Camera states
   const [cameraMode, setCameraMode] = useState('barcode') // 'barcode' or 'photo'
@@ -782,6 +785,12 @@ export default function Inventory() {
               <Camera size={18} />
             </button>
           </Tooltip>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+              <Upload size={18} /> {!isMobile && 'Import'}
+            </button>
+            <button onClick={() => exportToCSV(filteredInventory, inventoryFields, 'inventory_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+              <Download size={18} /> {!isMobile && 'Export'}
+            </button>
           <button
             onClick={() => openForm()}
             style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}
@@ -1334,6 +1343,19 @@ export default function Inventory() {
             </button>
           </div>
         </>
+      )}
+
+      {showImportExport && (
+        <ImportExportModal
+          tableName="inventory"
+          entityName="Inventory"
+          fields={inventoryFields}
+          companyId={companyId}
+          requiredField="name"
+          defaultValues={{ company_id: companyId, inventory_type: 'Material', quantity: 0, min_quantity: 0, condition: 'Good' }}
+          onImportComplete={() => fetchInventory()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )

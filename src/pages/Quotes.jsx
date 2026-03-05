@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar } from 'lucide-react'
+import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar, Upload, Download } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { quotesFields } from '../lib/importExportFields'
 
 // Light theme fallback
 const defaultTheme = {
@@ -49,6 +51,7 @@ export default function Quotes() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [showImportExport, setShowImportExport] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -169,25 +172,33 @@ export default function Quotes() {
         }}>
           Quotes
         </h1>
-        <button
-          onClick={() => setShowModal(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 16px',
-            backgroundColor: theme.accent,
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-            cursor: 'pointer'
-          }}
-        >
-          <Plus size={18} />
-          New Quote
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} /> Import
+          </button>
+          <button onClick={() => exportToCSV(filteredQuotes, quotesFields, 'quotes_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={18} /> Export
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 16px',
+              backgroundColor: theme.accent,
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Plus size={18} />
+            New Quote
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -555,6 +566,18 @@ export default function Quotes() {
             </form>
           </div>
         </div>
+      )}
+
+      {showImportExport && (
+        <ImportExportModal
+          tableName="quotes"
+          entityName="Quotes"
+          fields={quotesFields}
+          companyId={companyId}
+          defaultValues={{ company_id: companyId, status: 'Draft', quote_amount: 0 }}
+          onImportComplete={() => fetchQuotes()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )

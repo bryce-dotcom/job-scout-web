@@ -4,7 +4,9 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { APPOINTMENT_STATUS } from '../lib/schema'
 import AppointmentsCalendar from '../components/AppointmentsCalendar'
-import { Plus, X, Trash2 } from 'lucide-react'
+import { Plus, X, Trash2, Upload, Download } from 'lucide-react'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { appointmentsFields } from '../lib/importExportFields'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -42,10 +44,12 @@ export default function Appointments() {
   const createAppointment = useStore((state) => state.createAppointment)
   const updateAppointment = useStore((state) => state.updateAppointment)
   const deleteAppointment = useStore((state) => state.deleteAppointment)
+  const appointments = useStore((state) => state.appointments)
 
   const calendarRef = useRef(null)
 
   const [showModal, setShowModal] = useState(false)
+  const [showImportExport, setShowImportExport] = useState(false)
   const [editingAppointment, setEditingAppointment] = useState(null)
   const [formData, setFormData] = useState(emptyAppointment)
   const [loading, setLoading] = useState(false)
@@ -222,6 +226,12 @@ export default function Appointments() {
             ))}
           </select>
 
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} /> Import
+          </button>
+          <button onClick={() => exportToCSV(appointments || [], appointmentsFields, 'appointments_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={18} /> Export
+          </button>
           <button
             onClick={() => openAddModal()}
             style={{
@@ -427,6 +437,19 @@ export default function Appointments() {
             </form>
           </div>
         </div>
+      )}
+
+      {showImportExport && (
+        <ImportExportModal
+          tableName="appointments"
+          entityName="Appointments"
+          fields={appointmentsFields}
+          companyId={companyId}
+          requiredField="title"
+          defaultValues={{ company_id: companyId, status: 'Scheduled' }}
+          onImportComplete={() => fetchAppointments()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )

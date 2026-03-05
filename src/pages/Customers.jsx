@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Pencil, Trash2, X, User, Phone, Mail, Building2, Search } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, User, Phone, Mail, Building2, Search, Upload, Download } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { customersFields } from '../lib/importExportFields'
 
 const emptyCustomer = {
   name: '',
@@ -53,6 +55,7 @@ export default function Customers() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [showImportExport, setShowImportExport] = useState(false)
 
   // Guard clause - redirect if no company
   useEffect(() => {
@@ -204,25 +207,33 @@ export default function Customers() {
         }}>
           Customers
         </h1>
-        <button
-          onClick={openAddModal}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 16px',
-            backgroundColor: theme.accent,
-            color: '#fff',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-            cursor: 'pointer'
-          }}
-        >
-          <Plus size={20} />
-          Add Customer
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} /> Import
+          </button>
+          <button onClick={() => exportToCSV(filteredCustomers, customersFields, 'customers_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={18} /> Export
+          </button>
+          <button
+            onClick={openAddModal}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 16px',
+              backgroundColor: theme.accent,
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Plus size={20} />
+            Add Customer
+          </button>
+        </div>
       </div>
 
       {/* Search and Filter */}
@@ -783,6 +794,18 @@ export default function Customers() {
             </form>
           </div>
         </>
+      )}
+      {showImportExport && (
+        <ImportExportModal
+          tableName="customers"
+          entityName="Customers"
+          fields={customersFields}
+          companyId={companyId}
+          requiredField="name"
+          defaultValues={{ company_id: companyId, status: 'Active' }}
+          onImportComplete={() => fetchCustomers()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )

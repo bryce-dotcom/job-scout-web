@@ -6,9 +6,11 @@ import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
 import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin,
-  Play, CheckCircle, FileText, ChevronRight, User
+  Play, CheckCircle, FileText, ChevronRight, User, Upload, Download
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { jobsFields } from '../lib/importExportFields'
 
 // Light theme fallback
 const defaultTheme = {
@@ -76,6 +78,7 @@ export default function Jobs() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [teamFilter, setTeamFilter] = useState('all')
+  const [showImportExport, setShowImportExport] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -334,6 +337,12 @@ export default function Jobs() {
           Jobs
         </h1>
         <div style={{ display: 'flex', gap: '12px' }}>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} /> Import
+          </button>
+          <button onClick={() => exportToCSV(filteredJobs, jobsFields, 'jobs_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={18} /> Export
+          </button>
           <button
             onClick={() => navigate('/jobs/calendar')}
             style={{
@@ -827,6 +836,18 @@ export default function Jobs() {
             </form>
           </div>
         </div>
+      )}
+      {showImportExport && (
+        <ImportExportModal
+          tableName="jobs"
+          entityName="Jobs"
+          fields={jobsFields}
+          companyId={companyId}
+          requiredField="job_title"
+          defaultValues={{ company_id: companyId, status: 'Scheduled' }}
+          onImportComplete={() => fetchJobs()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )
