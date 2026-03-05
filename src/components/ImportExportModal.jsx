@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useTheme } from './Layout'
-import { Upload, X, ArrowRight, CheckCircle, AlertCircle, Loader, FileSpreadsheet } from 'lucide-react'
+import { Upload, X, ArrowRight, CheckCircle, AlertCircle, Loader, FileSpreadsheet, Undo2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 const defaultTheme = {
@@ -117,6 +117,9 @@ export default function ImportExportModal({
   const [notes, setNotes] = useState('')
   const [mappingLoading, setMappingLoading] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0, errors: [] })
+  const [insertedIds, setInsertedIds] = useState([])
+  const [undoing, setUndoing] = useState(false)
+  const [undone, setUndone] = useState(false)
 
   const reqField = requiredField || fields.find(f => f.required)?.field || fields[0]?.field
 
@@ -224,6 +227,7 @@ export default function ImportExportModal({
     const total = rows.length
     setProgress({ done: 0, total, errors: [] })
     const errors = []
+    const allInsertedIds = []
     const BATCH_SIZE = 25
 
     for (let i = 0; i < total; i += BATCH_SIZE) {
@@ -247,14 +251,17 @@ export default function ImportExportModal({
       }).filter(Boolean)
 
       if (records.length > 0) {
-        const { error } = await supabase.from(tableName).insert(records)
+        const { data, error } = await supabase.from(tableName).insert(records).select('id')
         if (error) {
           errors.push(`Rows ${i + 1}-${i + batch.length}: ${error.message}`)
+        } else if (data) {
+          allInsertedIds.push(...data.map(r => r.id))
         }
       }
       setProgress({ done: Math.min(i + BATCH_SIZE, total), total, errors: [...errors] })
     }
 
+    setInsertedIds(allInsertedIds)
     setStep('done')
     setProgress(prev => ({ ...prev, done: total, errors }))
     if (onImportComplete) onImportComplete()
@@ -524,14 +531,28 @@ export default function ImportExportModal({
           {/* STEP 5: DONE */}
           {step === 'done' && (
             <div style={{ textAlign: 'center', padding: '20px' }}>
-              <CheckCircle size={40} style={{ color: '#22c55e', marginBottom: '12px' }} />
-              <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '6px' }}>
-                Import Complete
-              </div>
-              <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px' }}>
-                {progress.total - progress.errors.length} {entityName.toLowerCase()} imported successfully
-              </div>
-              {progress.errors.length > 0 && (
+              {undone ? (
+                <>
+                  <Undo2 size={40} style={{ color: '#3b82f6', marginBottom: '12px' }} />
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '6px' }}>
+                    Import Undone
+                  </div>
+                  <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px' }}>
+                    {insertedIds.length} {entityName.toLowerCase()} have been removed
+                  </div>
+                </>
+              ) : (
+                <>
+                  <CheckCircle size={40} style={{ color: '#22c55e', marginBottom: '12px' }} />
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '6px' }}>
+                    Import Complete
+                  </div>
+                  <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px' }}>
+                    {insertedIds.length || (progress.total - progress.errors.length)} {entityName.toLowerCase()} imported successfully
+                  </div>
+                </>
+              )}
+              {progress.errors.length > 0 && !undone && (
                 <div style={{
                   textAlign: 'left', padding: '10px 14px', backgroundColor: '#fef2f2',
                   borderRadius: '8px', marginBottom: '16px'
@@ -544,14 +565,43 @@ export default function ImportExportModal({
                   ))}
                 </div>
               )}
-              <button onClick={onClose} style={{
-                padding: '10px 16px', border: 'none', borderRadius: '8px',
-                backgroundColor: theme.accent, color: '#fff', fontSize: '14px', fontWeight: '500',
-                cursor: 'pointer', width: '100%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
-              }}>
-                Done
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {insertedIds.length > 0 && !undone && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Undo this import? This will delete all ${insertedIds.length} imported ${entityName.toLowerCase()}.`)) return
+                      setUndoing(true)
+                      const BATCH = 100
+                      for (let i = 0; i < insertedIds.length; i += BATCH) {
+                        const batch = insertedIds.slice(i, i + BATCH)
+                        await supabase.from(tableName).delete().in('id', batch)
+                      }
+                      setUndoing(false)
+                      setUndone(true)
+                      if (onImportComplete) onImportComplete()
+                    }}
+                    disabled={undoing}
+                    style={{
+                      flex: 1, padding: '10px 16px', borderRadius: '8px',
+                      backgroundColor: '#fef2f2', color: '#dc2626', fontSize: '14px', fontWeight: '500',
+                      cursor: undoing ? 'not-allowed' : 'pointer', border: '1px solid rgba(220,38,38,0.2)',
+                      opacity: undoing ? 0.6 : 1,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                    }}
+                  >
+                    <Undo2 size={16} />
+                    {undoing ? 'Undoing...' : 'Undo Import'}
+                  </button>
+                )}
+                <button onClick={onClose} style={{
+                  flex: 1, padding: '10px 16px', border: 'none', borderRadius: '8px',
+                  backgroundColor: theme.accent, color: '#fff', fontSize: '14px', fontWeight: '500',
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                }}>
+                  Done
+                </button>
+              </div>
             </div>
           )}
         </div>
