@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import {
   Plus, Pencil, X, User, Phone, Mail, Eye,
   DollarSign, Clock, Calendar, Briefcase, Lock,
-  Camera, FileText, Upload, Settings, Trash2
+  Camera, FileText, Upload, Settings, Trash2, Send
 } from 'lucide-react'
 
 // Role colors (OG DiX style)
@@ -112,6 +112,13 @@ export default function Employees() {
   const [newJobTitle, setNewJobTitle] = useState('')
   const [newAccessLevel, setNewAccessLevel] = useState({ name: '', description: '' })
   const [savingSettings, setSavingSettings] = useState(false)
+
+  // Invite employee state
+  const [showInviteModal, setShowInviteModal] = useState(false)
+  const [inviteData, setInviteData] = useState({ email: '', name: '', role: 'Field Tech', userRole: 'User' })
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteError, setInviteError] = useState(null)
+  const [inviteSuccess, setInviteSuccess] = useState(null)
 
   // Check if current user is admin
   const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' || currentUser?.user_role === 'Super Admin' ||
@@ -450,6 +457,53 @@ export default function Employees() {
     await loadEmployees()
   }
 
+  const handleInviteEmployee = async (e) => {
+    e.preventDefault()
+    setInviteLoading(true)
+    setInviteError(null)
+    setInviteSuccess(null)
+
+    try {
+      const res = await supabase.functions.invoke('invite-employee', {
+        body: {
+          companyId,
+          email: inviteData.email,
+          name: inviteData.name,
+          role: inviteData.role,
+          userRole: inviteData.userRole,
+          invitedById: currentUser?.id
+        }
+      })
+
+      if (res.error) {
+        setInviteError(res.error.message || 'Failed to send invitation')
+        setInviteLoading(false)
+        return
+      }
+
+      const data = res.data
+      if (!data.success) {
+        setInviteError(data.error || 'Failed to send invitation')
+        setInviteLoading(false)
+        return
+      }
+
+      setInviteSuccess(`Invitation sent to ${inviteData.email}`)
+      await fetchEmployees()
+      await loadEmployees()
+
+      setTimeout(() => {
+        setShowInviteModal(false)
+        setInviteData({ email: '', name: '', role: 'Field Tech', userRole: 'User' })
+        setInviteSuccess(null)
+      }, 1500)
+    } catch (err) {
+      setInviteError(err.message || 'An unexpected error occurred')
+    }
+
+    setInviteLoading(false)
+  }
+
   const inputStyle = {
     width: '100%',
     padding: '10px 12px',
@@ -639,6 +693,25 @@ export default function Employees() {
                 }}
               >
                 <Settings size={20} />
+              </button>
+              <button
+                onClick={() => { setShowInviteModal(true); setInviteError(null); setInviteSuccess(null) }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 16px',
+                  backgroundColor: 'transparent',
+                  color: theme.accent,
+                  border: `1px solid ${theme.accent}`,
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                <Send size={18} />
+                Invite
               </button>
               <button
                 onClick={openAddModal}
@@ -1516,6 +1589,143 @@ export default function Employees() {
                   </button>
                 </div>
               )}
+            </form>
+          </div>
+        </>
+      )}
+
+      {/* Invite Employee Modal */}
+      {showInviteModal && (
+        <>
+          <div
+            onClick={() => setShowInviteModal(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.4)',
+              zIndex: 50
+            }}
+          />
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            border: `1px solid ${theme.border}`,
+            width: '100%',
+            maxWidth: '480px',
+            zIndex: 51
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Send size={20} style={{ color: theme.accent }} />
+                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Invite Employee</h2>
+              </div>
+              <button
+                onClick={() => setShowInviteModal(false)}
+                style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleInviteEmployee} style={{ padding: '20px' }}>
+              {inviteError && (
+                <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '8px', color: '#b91c1c', fontSize: '14px' }}>
+                  {inviteError}
+                </div>
+              )}
+              {inviteSuccess && (
+                <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', color: '#16a34a', fontSize: '14px' }}>
+                  {inviteSuccess}
+                </div>
+              )}
+
+              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '20px' }}>
+                Send an email invitation. The employee will be added to your team and receive a link to set up their account.
+              </p>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Email *</label>
+                <input
+                  type="email"
+                  value={inviteData.email}
+                  onChange={(e) => setInviteData(prev => ({ ...prev, email: e.target.value }))}
+                  required
+                  placeholder="employee@company.com"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Full Name *</label>
+                <input
+                  type="text"
+                  value={inviteData.name}
+                  onChange={(e) => setInviteData(prev => ({ ...prev, name: e.target.value }))}
+                  required
+                  placeholder="John Smith"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <label style={labelStyle}>Job Title</label>
+                  <select
+                    value={inviteData.role}
+                    onChange={(e) => setInviteData(prev => ({ ...prev, role: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Access Level</label>
+                  <select
+                    value={inviteData.userRole}
+                    onChange={(e) => setInviteData(prev => ({ ...prev, userRole: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    {USER_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowInviteModal(false)}
+                  style={{
+                    flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`,
+                    borderRadius: '8px', color: theme.textSecondary, fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={inviteLoading}
+                  style={{
+                    flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none',
+                    borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500',
+                    cursor: inviteLoading ? 'not-allowed' : 'pointer', opacity: inviteLoading ? 0.7 : 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                  }}
+                >
+                  <Send size={16} />
+                  {inviteLoading ? 'Sending...' : 'Send Invitation'}
+                </button>
+              </div>
             </form>
           </div>
         </>

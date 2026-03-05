@@ -4,6 +4,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import { useStore } from './lib/store'
 import Login from './pages/Login'
+import AuthCallback from './pages/AuthCallback'
+import Onboarding from './pages/Onboarding'
 import Employees from './pages/Employees'
 import Customers from './pages/Customers'
 import CustomerDetail from './pages/CustomerDetail'
@@ -84,6 +86,7 @@ const defaultTheme = {
 // Protected route that checks for companyId (not just user)
 function ProtectedRoute({ children }) {
   const companyId = useStore((state) => state.companyId)
+  const company = useStore((state) => state.company)
   const isLoading = useStore((state) => state.isLoading)
 
   if (isLoading) {
@@ -101,6 +104,37 @@ function ProtectedRoute({ children }) {
   }
 
   // Must have companyId to access protected routes
+  if (!companyId) {
+    return <Navigate to="/login" replace />
+  }
+
+  // Redirect to onboarding if setup not complete
+  if (company && company.setup_complete === false) {
+    return <Navigate to="/onboarding" replace />
+  }
+
+  return children
+}
+
+// Protected route for onboarding (requires auth but no onboarding redirect)
+function ProtectedOnboardingRoute({ children }) {
+  const companyId = useStore((state) => state.companyId)
+  const isLoading = useStore((state) => state.isLoading)
+
+  if (isLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: defaultTheme.bg,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ color: defaultTheme.textMuted }}>Loading...</div>
+      </div>
+    )
+  }
+
   if (!companyId) {
     return <Navigate to="/login" replace />
   }
@@ -210,6 +244,12 @@ function App() {
 
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+
+        {/* Onboarding (protected, full-screen, no layout) */}
+        <Route path="/onboarding" element={
+          <ProtectedOnboardingRoute><Onboarding /></ProtectedOnboardingRoute>
+        } />
         <Route
           element={
             <ProtectedRoute>
