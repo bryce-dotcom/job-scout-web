@@ -125,6 +125,8 @@ export default function Login() {
     setUser(result.employee)
     setCompany(result.company)
     await checkDeveloperStatus()
+    // Stamp last_login
+    supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
     navigate(result.company.setup_complete === false ? '/onboarding' : '/')
   }
 
@@ -185,6 +187,7 @@ export default function Login() {
       setUser(result.employee)
       setCompany(result.company)
       await checkDeveloperStatus()
+      supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
       navigate('/onboarding')
     } catch (err) {
       setError(err.message || 'An unexpected error occurred')

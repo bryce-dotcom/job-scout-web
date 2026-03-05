@@ -89,6 +89,7 @@ export default function AuthCallback() {
           setUser(result.employee)
           setCompany(result.company)
           await checkDeveloperStatus()
+          supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
           navigate(result.company.setup_complete === false ? '/onboarding' : '/', { replace: true })
           return
         }
@@ -110,6 +111,7 @@ export default function AuthCallback() {
       setUser(result.employee)
       setCompany(result.company)
       await checkDeveloperStatus()
+      supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
       navigate(result.company.setup_complete === false ? '/onboarding' : '/', { replace: true })
     }
 

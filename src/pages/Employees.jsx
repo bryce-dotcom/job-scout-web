@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import {
   Plus, Pencil, X, User, Phone, Mail, Eye,
   DollarSign, Clock, Calendar, Briefcase, Lock,
-  Camera, FileText, Upload, Settings, Trash2, Send
+  Camera, FileText, Upload, Settings, Trash2, Send, KeyRound
 } from 'lucide-react'
 
 // Role colors (OG DiX style)
@@ -121,6 +121,8 @@ export default function Employees() {
   const [inviteSuccess, setInviteSuccess] = useState(null)
   const [sendingInvite, setSendingInvite] = useState(false)
   const [inviteSentMessage, setInviteSentMessage] = useState(null)
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const [resetMessage, setResetMessage] = useState(null)
 
   // Check if current user is admin
   const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' || currentUser?.user_role === 'Super Admin' ||
@@ -320,6 +322,8 @@ export default function Employees() {
     setIsEditing(false)
     setFormData(emptyEmployee)
     setError(null)
+    setInviteSentMessage(null)
+    setResetMessage(null)
   }
 
   const [uploading, setUploading] = useState(false)
@@ -496,6 +500,26 @@ export default function Employees() {
     }
 
     setSendingInvite(false)
+  }
+
+  // Send password reset email for an employee
+  const handleResetPassword = async (employeeEmail) => {
+    if (!employeeEmail) return
+    setResettingPassword(true)
+    setResetMessage(null)
+
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(employeeEmail, {
+      redirectTo: window.location.origin + '/auth/callback?type=recovery'
+    })
+
+    if (resetError) {
+      setError(resetError.message)
+    } else {
+      setResetMessage(`Password reset email sent to ${employeeEmail}`)
+      setTimeout(() => setResetMessage(null), 4000)
+    }
+
+    setResettingPassword(false)
   }
 
   // Add employee and immediately send invite
@@ -1459,6 +1483,98 @@ export default function Employees() {
                       </div>
                     </label>
                   </div>
+                )}
+
+                {/* ===== ACCOUNT SECTION (Admin only, viewing existing employee) ===== */}
+                {viewingEmployee && isAdmin && !isEditing && (
+                  <>
+                    <div style={sectionHeaderStyle}>Account</div>
+
+                    {/* Last Login */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '14px 16px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '10px',
+                      marginBottom: '12px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Clock size={16} style={{ color: theme.textMuted }} />
+                        <div>
+                          <p style={{ fontSize: '13px', fontWeight: '500', color: theme.textSecondary }}>Last Login</p>
+                          <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '2px' }}>
+                            {viewingEmployee.last_login
+                              ? new Date(viewingEmployee.last_login).toLocaleString('en-US', {
+                                  month: 'short', day: 'numeric', year: 'numeric',
+                                  hour: 'numeric', minute: '2-digit', hour12: true
+                                })
+                              : 'Never logged in'}
+                          </p>
+                        </div>
+                      </div>
+                      {!viewingEmployee.last_login && viewingEmployee.email && (
+                        <span style={{
+                          fontSize: '11px', padding: '4px 10px', borderRadius: '20px',
+                          backgroundColor: 'rgba(249,115,22,0.1)', color: '#f97316', fontWeight: '500'
+                        }}>
+                          Pending
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Reset Password + Invite buttons */}
+                    {viewingEmployee.email && (
+                      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleResetPassword(viewingEmployee.email)}
+                          disabled={resettingPassword}
+                          style={{
+                            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                            padding: '10px 16px', backgroundColor: 'transparent',
+                            border: `1px solid ${theme.border}`, borderRadius: '8px',
+                            color: theme.textSecondary, fontSize: '13px', fontWeight: '500',
+                            cursor: resettingPassword ? 'not-allowed' : 'pointer',
+                            opacity: resettingPassword ? 0.7 : 1
+                          }}
+                        >
+                          <KeyRound size={14} />
+                          {resettingPassword ? 'Sending...' : 'Reset Password'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendInviteToEmployee(viewingEmployee)}
+                          disabled={sendingInvite}
+                          style={{
+                            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                            padding: '10px 16px', backgroundColor: 'transparent',
+                            border: `1px solid ${theme.border}`, borderRadius: '8px',
+                            color: theme.textSecondary, fontSize: '13px', fontWeight: '500',
+                            cursor: sendingInvite ? 'not-allowed' : 'pointer',
+                            opacity: sendingInvite ? 0.7 : 1
+                          }}
+                        >
+                          <Send size={14} />
+                          {sendingInvite ? 'Sending...' : 'Resend Invite'}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Reset/Invite success message */}
+                    {resetMessage && (
+                      <div style={{
+                        marginBottom: '16px', padding: '12px',
+                        backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)',
+                        borderRadius: '8px', color: '#16a34a', fontSize: '13px',
+                        display: 'flex', alignItems: 'center', gap: '8px'
+                      }}>
+                        <KeyRound size={14} />
+                        {resetMessage}
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* ===== PAY SECTION ===== */}
