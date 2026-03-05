@@ -489,11 +489,6 @@ export default function DocumentRules() {
 
   // --- Field Mapping handlers ---
   const handleMapFields = async (template) => {
-    if (template._source === 'utility_forms') {
-      toast.info('Utility form mappings are managed in the Data Console')
-      return
-    }
-
     setMappingTemplate(template)
     setMappingFields([])
     setExcelTags([])
@@ -504,12 +499,14 @@ export default function DocumentRules() {
     setMappingLoading(true)
 
     const excel = isExcelFile(template.file_name)
+    const bucket = template._source === 'utility_forms' ? 'utility-pdfs' : 'project-documents'
+    const filePath = template._source === 'utility_forms' ? template.form_file : template.file_path
 
     try {
       // Fetch the file from storage using a signed URL (bucket is not public)
       const { data: signedData, error: signedError } = await supabase.storage
-        .from('project-documents')
-        .createSignedUrl(template.file_path, 300)
+        .from(bucket)
+        .createSignedUrl(filePath, 300)
 
       if (signedError || !signedData?.signedUrl) {
         toast.error('Could not get file URL: ' + (signedError?.message || 'unknown error'))
@@ -612,10 +609,12 @@ export default function DocumentRules() {
       }
 
       // Provide PDF URL for context if available (skip for Excel files — not a PDF)
-      if (mappingTemplate?.file_path && !excelCellMode) {
+      const smartBucket = mappingTemplate?._source === 'utility_forms' ? 'utility-pdfs' : 'project-documents'
+      const smartPath = mappingTemplate?._source === 'utility_forms' ? mappingTemplate.form_file : mappingTemplate?.file_path
+      if (smartPath && !excelCellMode) {
         const { data: signedData } = await supabase.storage
-          .from('project-documents')
-          .createSignedUrl(mappingTemplate.file_path, 300)
+          .from(smartBucket)
+          .createSignedUrl(smartPath, 300)
         if (signedData?.signedUrl) body.pdf_url = signedData.signedUrl
       }
 
@@ -703,14 +702,18 @@ export default function DocumentRules() {
         newStatus = totalFields === 0 ? 'Ready' : (mappedCount >= totalFields ? 'Ready' : 'Pending')
       }
 
+      const table = mappingTemplate._source === 'utility_forms' ? 'utility_forms' : 'document_templates'
+      const updateId = mappingTemplate._source === 'utility_forms' ? mappingTemplate._sourceId : mappingTemplate.id
+      const updateData = { field_mapping: Object.keys(cleaned).length > 0 ? cleaned : {} }
+      if (table === 'document_templates') {
+        updateData.status = newStatus
+        updateData.updated_at = new Date().toISOString()
+      }
+
       const { error } = await supabase
-        .from('document_templates')
-        .update({
-          field_mapping: Object.keys(cleaned).length > 0 ? cleaned : {},
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', mappingTemplate.id)
+        .from(table)
+        .update(updateData)
+        .eq('id', updateId)
 
       if (error) {
         toast.error('Save failed: ' + error.message)
