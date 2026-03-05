@@ -119,6 +119,8 @@ export default function Employees() {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteError, setInviteError] = useState(null)
   const [inviteSuccess, setInviteSuccess] = useState(null)
+  const [sendingInvite, setSendingInvite] = useState(false)
+  const [inviteSentMessage, setInviteSentMessage] = useState(null)
 
   // Check if current user is admin
   const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' || currentUser?.user_role === 'Super Admin' ||
@@ -455,6 +457,129 @@ export default function Employees() {
 
     await fetchEmployees()
     await loadEmployees()
+  }
+
+  // Send invite to an existing employee (from the employee detail modal)
+  const sendInviteToEmployee = async (employee) => {
+    if (!employee?.email) {
+      setError('Employee must have an email address to send an invite')
+      return
+    }
+
+    setSendingInvite(true)
+    setError(null)
+    setInviteSentMessage(null)
+
+    try {
+      const res = await supabase.functions.invoke('invite-employee', {
+        body: {
+          companyId,
+          email: employee.email,
+          name: employee.name,
+          role: employee.role || 'Field Tech',
+          userRole: employee.user_role || 'User',
+          invitedById: currentUser?.id
+        }
+      })
+
+      const data = res.data
+      if (res.error || !data?.success) {
+        setError(data?.error || res.error?.message || 'Failed to send invitation')
+        setSendingInvite(false)
+        return
+      }
+
+      setInviteSentMessage(`Invitation sent to ${employee.email}`)
+      setTimeout(() => setInviteSentMessage(null), 3000)
+    } catch (err) {
+      setError(err.message || 'An unexpected error occurred')
+    }
+
+    setSendingInvite(false)
+  }
+
+  // Add employee and immediately send invite
+  const handleAddAndInvite = async (e) => {
+    e.preventDefault()
+    if (!isEditing) return
+    if (!formData.email) {
+      setError('Email is required to send an invitation')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    const payload = {
+      company_id: companyId,
+      name: formData.name,
+      email: formData.email || null,
+      phone: formData.phone || null,
+      role: formData.role,
+      user_role: formData.user_role,
+      is_developer: formData.is_developer || false,
+      business_unit: formData.business_unit || null,
+      employee_id: formData.employee_id || null,
+      active: formData.active,
+      headshot_url: formData.headshot_url || null,
+      tax_classification: formData.tax_classification || 'W2',
+      is_hourly: formData.is_hourly,
+      is_salary: formData.is_salary,
+      is_commission: formData.is_commission,
+      hourly_rate: parseFloat(formData.hourly_rate) || 0,
+      annual_salary: parseFloat(formData.annual_salary) || 0,
+      commission_goods_rate: parseFloat(formData.commission_goods_rate) || 0,
+      commission_goods_type: formData.commission_goods_type,
+      commission_services_rate: parseFloat(formData.commission_services_rate) || 0,
+      commission_services_type: formData.commission_services_type,
+      commission_software_rate: parseFloat(formData.commission_software_rate) || 0,
+      commission_software_type: formData.commission_software_type,
+      commission_leads_rate: parseFloat(formData.commission_leads_rate) || 0,
+      commission_leads_type: formData.commission_leads_type,
+      commission_setter_rate: parseFloat(formData.commission_setter_rate) || 0,
+      commission_setter_type: formData.commission_setter_type,
+      pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
+      pto_accrued: parseFloat(formData.pto_accrued) || 0,
+      pto_used: parseFloat(formData.pto_used) || 0,
+      updated_at: new Date().toISOString()
+    }
+
+    // Insert the employee
+    const result = await supabase
+      .from('employees')
+      .insert([payload])
+      .select()
+      .single()
+
+    if (result.error) {
+      setError(result.error.message)
+      setLoading(false)
+      return
+    }
+
+    // Now send the invite via edge function
+    try {
+      const res = await supabase.functions.invoke('invite-employee', {
+        body: {
+          companyId,
+          email: formData.email,
+          name: formData.name,
+          role: formData.role,
+          userRole: formData.user_role,
+          invitedById: currentUser?.id
+        }
+      })
+
+      // Edge function may report duplicate employee since we just created it — that's OK,
+      // the invite email is still sent via auth.admin.inviteUserByEmail
+    } catch (err) {
+      console.error('Invite after add error (non-fatal):', err)
+    }
+
+    await fetchEmployees()
+    await loadEmployees()
+    closeModal()
+    setLoading(false)
   }
 
   const handleInviteEmployee = async (e) => {
@@ -1002,6 +1127,29 @@ export default function Employees() {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {viewingEmployee && isAdmin && !isEditing && viewingEmployee.email && (
+                  <button
+                    onClick={() => sendInviteToEmployee(viewingEmployee)}
+                    disabled={sendingInvite}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${theme.accent}`,
+                      borderRadius: '8px',
+                      color: theme.accent,
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      cursor: sendingInvite ? 'not-allowed' : 'pointer',
+                      opacity: sendingInvite ? 0.7 : 1
+                    }}
+                  >
+                    <Send size={14} />
+                    {sendingInvite ? 'Sending...' : 'Send Invite'}
+                  </button>
+                )}
                 {viewingEmployee && canEdit(viewingEmployee) && !isEditing && (
                   <button
                     onClick={() => setIsEditing(true)}
@@ -1052,6 +1200,24 @@ export default function Employees() {
                     fontSize: '14px'
                   }}>
                     {error}
+                  </div>
+                )}
+
+                {inviteSentMessage && (
+                  <div style={{
+                    marginBottom: '16px',
+                    padding: '12px',
+                    backgroundColor: 'rgba(34,197,94,0.08)',
+                    border: '1px solid rgba(34,197,94,0.2)',
+                    borderRadius: '8px',
+                    color: '#16a34a',
+                    fontSize: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <Send size={14} />
+                    {inviteSentMessage}
                   </div>
                 )}
 
@@ -1569,6 +1735,32 @@ export default function Employees() {
                   >
                     Cancel
                   </button>
+                  {!viewingEmployee && isAdmin && (
+                    <button
+                      type="button"
+                      onClick={handleAddAndInvite}
+                      disabled={loading}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        backgroundColor: 'transparent',
+                        border: `1px solid ${theme.accent}`,
+                        borderRadius: '8px',
+                        color: theme.accent,
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        cursor: loading ? 'not-allowed' : 'pointer',
+                        opacity: loading ? 0.7 : 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <Send size={14} />
+                      {loading ? 'Sending...' : 'Add & Invite'}
+                    </button>
+                  )}
                   <button
                     type="submit"
                     disabled={loading}

@@ -47,28 +47,29 @@ serve(async (req) => {
       .eq('email', email)
       .single();
 
-    if (existingEmployee) {
-      return new Response(JSON.stringify({ error: 'An employee with this email already exists' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    let employeeId = existingEmployee?.id || null;
 
-    // 3. Create employee record (active immediately so they appear in the team)
-    const { data: employee, error: empError } = await supabase
-      .from('employees')
-      .insert({
-        company_id: companyId,
-        name,
-        email,
-        role: role || 'Field Tech',
-        user_role: userRole || 'User',
-        active: true
-      })
-      .select()
-      .single();
+    // 3. Create employee record if not exists (active immediately so they appear in the team)
+    if (!existingEmployee) {
+      const { data: employee, error: empError } = await supabase
+        .from('employees')
+        .insert({
+          company_id: companyId,
+          name,
+          email,
+          role: role || 'Field Tech',
+          user_role: userRole || 'User',
+          active: true
+        })
+        .select()
+        .single();
 
-    if (empError) {
-      return new Response(JSON.stringify({ error: 'Failed to create employee: ' + empError.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      if (empError) {
+        return new Response(JSON.stringify({ error: 'Failed to create employee: ' + empError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      employeeId = employee.id;
     }
 
     // 4. Create invitation record
@@ -102,9 +103,10 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true,
-      employeeId: employee.id,
+      employeeId,
       invitationId: invitation?.id || null,
-      emailSent: !inviteError
+      emailSent: !inviteError,
+      employeeExisted: !!existingEmployee
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
