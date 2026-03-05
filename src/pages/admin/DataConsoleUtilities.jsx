@@ -207,6 +207,9 @@ export default function DataConsoleUtilities() {
       { value: `lines.${i}.watts_reduced`, label: `Row ${i + 1}: Watts Reduced` },
       { value: `lines.${i}.incentive`, label: `Row ${i + 1}: Incentive` },
     ]).flat(),
+    // Signature
+    { value: 'signature.customer', label: 'Customer Signature (Image)' },
+    { value: 'signature.customer_date', label: 'Signature Date' },
     // Computed
     { value: 'today', label: "Today's Date" },
   ]
@@ -2858,9 +2861,23 @@ export default function DataConsoleUtilities() {
                 <Loader size={20} className="animate-spin" style={{ marginBottom: '8px' }} />
                 <div>Extracting form fields...</div>
               </div>
-            ) : mappingFields.length === 0 ? (
+            ) : (<>
+              {!mappingFields.some(f => f.name === '__signature_overlay__') && (
+                <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => {
+                      setMappingFields(prev => [...prev, { name: '__signature_overlay__', type: 'Signature', value: '' }])
+                      setFieldMapping(prev => ({ ...prev, '__signature_overlay__': 'signature.customer' }))
+                    }}
+                    style={{ padding: '5px 10px', backgroundColor: adminTheme.bgInput, color: adminTheme.text, border: `1px solid ${adminTheme.border}`, borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                  >
+                    + Add Signature
+                  </button>
+                </div>
+              )}
+              {mappingFields.length === 0 ? (
               <div style={{ padding: '40px', textAlign: 'center', color: adminTheme.textMuted, fontSize: '13px' }}>
-                No fillable fields found. Upload a fillable PDF to get started.
+                No fillable fields found. Upload a fillable PDF to get started. Use "Add Signature" above to overlay a signature image.
               </div>
             ) : (
               <div style={{ maxHeight: '400px', overflowY: 'auto', border: `1px solid ${adminTheme.border}`, borderRadius: '8px' }}>
@@ -2897,6 +2914,31 @@ export default function DataConsoleUtilities() {
                               <option key={dp.value} value={dp.value}>{dp.label}{dp.value ? ` (${dp.value})` : ''}</option>
                             ))}
                           </select>
+                          {fieldMapping[field.name] === 'signature.customer' && (
+                            <div style={{ marginTop: '6px', padding: '6px', background: adminTheme.bgInput, borderRadius: '4px', border: `1px solid ${adminTheme.border}` }}>
+                              <div style={{ fontSize: '10px', fontWeight: '600', color: adminTheme.textMuted, marginBottom: '4px' }}>Signature Position (PDF points)</div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
+                                {[
+                                  { key: 'page', label: 'Page', placeholder: '0' },
+                                  { key: 'x', label: 'X', placeholder: '72' },
+                                  { key: 'y', label: 'Y', placeholder: '200' },
+                                  { key: 'width', label: 'Width', placeholder: '150' },
+                                  { key: 'height', label: 'Height', placeholder: '50' },
+                                ].map(({ key, label, placeholder }) => (
+                                  <div key={key}>
+                                    <label style={{ fontSize: '9px', color: adminTheme.textMuted }}>{label}</label>
+                                    <input
+                                      type="number"
+                                      value={fieldMapping[`_sig_${field.name}_${key}`] || ''}
+                                      onChange={(e) => setFieldMapping(prev => ({ ...prev, [`_sig_${field.name}_${key}`]: e.target.value }))}
+                                      placeholder={placeholder}
+                                      style={{ width: '100%', padding: '3px 4px', fontSize: '10px', border: `1px solid ${adminTheme.border}`, borderRadius: '3px', backgroundColor: '#fff', color: adminTheme.text }}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -2904,6 +2946,7 @@ export default function DataConsoleUtilities() {
                 </table>
               </div>
             )}
+            </>)}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
               <button

@@ -1690,9 +1690,23 @@ export default function DocumentRules() {
                       )
                     ) : (
                       /* PDF Field Mapping View */
-                      mappingFields.length === 0 ? (
+                      <>
+                        {!mappingFields.some(f => f.name === '__signature_overlay__') && (
+                          <div style={{ padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                              onClick={() => {
+                                setMappingFields(prev => [...prev, { name: '__signature_overlay__', type: 'Signature', value: '' }])
+                                setFieldMapping(prev => ({ ...prev, '__signature_overlay__': 'signature.customer' }))
+                              }}
+                              style={{ padding: '6px 12px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              + Add Signature
+                            </button>
+                          </div>
+                        )}
+                        {mappingFields.length === 0 ? (
                         <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
-                          No fillable fields found in this PDF.
+                          No fillable fields found in this PDF. Use "Add Signature" above to overlay a signature image.
                         </div>
                       ) : (
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
@@ -1768,7 +1782,8 @@ export default function DocumentRules() {
                             ))}
                           </tbody>
                         </table>
-                      )
+                      )}
+                      </>
                     )}
                   </div>
 
