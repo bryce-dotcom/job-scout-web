@@ -273,13 +273,13 @@ export const fleetFields = [
 // --- Related / child table field definitions (for multi-sheet XLSX export/import) ---
 
 export const jobLinesFields = [
-  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name' },
+  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name (resolved from product ID)' },
   { field: 'description', label: 'Description', type: 'text', desc: 'Line item description' },
   { field: 'quantity', label: 'Quantity', type: 'number', required: true, desc: 'Quantity' },
-  { field: 'unit_price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
+  { field: 'price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
   { field: 'cost', label: 'Cost', type: 'number', desc: 'Cost per unit' },
   { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
-  { field: 'line_total', label: 'Line Total', type: 'number', desc: 'Line total' },
+  { field: 'total', label: 'Line Total', type: 'number', desc: 'Line total' },
   { field: 'completed', label: 'Completed', type: 'boolean', desc: 'Whether line item is completed' },
   { field: 'notes', label: 'Notes', type: 'text', desc: 'Line item notes' },
   { field: 'sort_order', label: 'Sort Order', type: 'number', desc: 'Display order' },
@@ -300,10 +300,10 @@ export const jobSectionsFields = [
 ]
 
 export const quoteLinesFields = [
-  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name' },
+  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name (resolved from product ID)' },
   { field: 'description', label: 'Description', type: 'text', desc: 'Line item description' },
   { field: 'quantity', label: 'Quantity', type: 'number', required: true, desc: 'Quantity' },
-  { field: 'unit_price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
+  { field: 'price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
   { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
   { field: 'discount_percent', label: 'Discount %', type: 'number', desc: 'Discount percentage' },
   { field: 'line_total', label: 'Line Total', type: 'number', desc: 'Line total' },
@@ -313,10 +313,10 @@ export const quoteLinesFields = [
 ]
 
 export const invoiceLinesFields = [
-  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name' },
+  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name (resolved from product ID)' },
   { field: 'description', label: 'Description', type: 'text', desc: 'Line item description' },
   { field: 'quantity', label: 'Quantity', type: 'number', required: true, desc: 'Quantity' },
-  { field: 'unit_price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
+  { field: 'price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
   { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
   { field: 'line_total', label: 'Line Total', type: 'number', desc: 'Line total' },
   { field: 'taxable', label: 'Taxable', type: 'boolean', desc: 'Whether line item is taxable' },

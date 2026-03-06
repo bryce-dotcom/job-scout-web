@@ -89,7 +89,12 @@ export default function Jobs() {
       fields: jobLinesFields,
       fetchData: async (parentIds) => {
         const { data } = await supabase.from('job_lines').select('*, item:products_services(name)').in('job_id', parentIds)
-        return (data || []).map(r => ({ ...r, item_name: r.item?.name || r.item_name || '' }))
+        return (data || []).map(r => ({
+          ...r,
+          item_name: r.item?.name || r.item_name || '',
+          price: r.price ?? r.unit_price ?? 0,
+          total: r.total ?? r.line_total ?? 0,
+        }))
       },
     },
     {

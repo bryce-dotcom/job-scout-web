@@ -130,7 +130,12 @@ export default function Invoices() {
       fields: invoiceLinesFields,
       fetchData: async (parentIds) => {
         const { data } = await supabase.from('invoice_lines').select('*, item:products_services(name)').in('invoice_id', parentIds)
-        return (data || []).map(r => ({ ...r, item_name: r.item?.name || r.item_name || '' }))
+        return (data || []).map(r => ({
+          ...r,
+          item_name: r.item?.name || r.item_name || '',
+          price: r.price ?? r.unit_price ?? 0,
+          line_total: r.line_total ?? r.total ?? 0,
+        }))
       },
     },
     {
