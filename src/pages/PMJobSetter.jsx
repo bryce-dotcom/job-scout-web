@@ -371,9 +371,16 @@ export default function PMJobSetter() {
     return filtered
   }
 
-  // Get jobs by status
+  // Get jobs by status, sorted by start_date (soonest first, unscheduled last)
   const getJobsByStatus = (statusId) => {
-    return getFilteredJobs().filter(j => j.status === statusId)
+    return getFilteredJobs()
+      .filter(j => j.status === statusId)
+      .sort((a, b) => {
+        if (!a.start_date && !b.start_date) return 0
+        if (!a.start_date) return 1
+        if (!b.start_date) return -1
+        return new Date(a.start_date) - new Date(b.start_date)
+      })
   }
 
   // Get sections for a job
@@ -551,11 +558,12 @@ export default function PMJobSetter() {
     const dateStr = date.toISOString().split('T')[0]
 
     if (draggedJob) {
-      // Dropping a whole job onto the calendar — set start_date
+      // Dropping a whole job onto the calendar — set start_date + mark Scheduled
       await supabase
         .from('jobs')
         .update({
           start_date: dateStr,
+          status: 'Scheduled',
           updated_at: new Date().toISOString()
         })
         .eq('id', draggedJob.id)
