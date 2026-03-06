@@ -447,10 +447,11 @@ export default function PMJobSetter() {
   }
 
   const getSectionsForSlot = (date, hour) => {
+    const slotDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     return jobSections.filter(section => {
       if (!section.scheduled_date) return false
-      const sectionDate = new Date(section.scheduled_date)
-      const sameDay = sectionDate.toDateString() === date.toDateString()
+      const sectionDateStr = section.scheduled_date.substring(0, 10)
+      const sameDay = sectionDateStr === slotDateStr
 
       // Filter by selected calendar (via job's business unit)
       if (selectedCalendar !== 'all') {
@@ -471,10 +472,13 @@ export default function PMJobSetter() {
 
   // Get jobs (not sections) scheduled for a calendar slot
   const getJobsForSlot = (date, hour) => {
+    // Build local date string to compare (avoids UTC shift from new Date parsing)
+    const slotDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     return jobs.filter(job => {
       if (!job.start_date) return false
-      const jobDate = new Date(job.start_date)
-      const sameDay = jobDate.toDateString() === date.toDateString()
+      // Compare date strings directly (both YYYY-MM-DD) to avoid timezone issues
+      const jobDateStr = job.start_date.substring(0, 10)
+      const sameDay = jobDateStr === slotDateStr
       if (!sameDay) return false
 
       // Filter by selected calendar
@@ -555,7 +559,8 @@ export default function PMJobSetter() {
 
     const startTime = new Date(date)
     startTime.setHours(hour, 0, 0, 0)
-    const dateStr = date.toISOString().split('T')[0]
+    // Use local date parts to avoid UTC shift (toISOString converts to UTC, off by a day in US timezones)
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
     if (draggedJob) {
       // Dropping a whole job onto the calendar — set start_date + mark Scheduled
@@ -599,12 +604,17 @@ export default function PMJobSetter() {
 
     if (draggedJob) {
       // Dropping a whole job onto a status column — update job status
+      // If not Scheduled, clear start_date so it leaves the calendar
+      const updateData = {
+        status: statusId,
+        updated_at: new Date().toISOString()
+      }
+      if (statusId !== 'Scheduled') {
+        updateData.start_date = null
+      }
       await supabase
         .from('jobs')
-        .update({
-          status: statusId,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', draggedJob.id)
 
       setDraggedJob(null)
