@@ -462,6 +462,25 @@ export default function PMJobSetter() {
     })
   }
 
+  // Get jobs (not sections) scheduled for a calendar slot
+  const getJobsForSlot = (date, hour) => {
+    return jobs.filter(job => {
+      if (!job.start_date) return false
+      const jobDate = new Date(job.start_date)
+      const sameDay = jobDate.toDateString() === date.toDateString()
+      if (!sameDay) return false
+
+      // Filter by selected calendar
+      if (selectedCalendar !== 'all') {
+        const cal = jobCalendars.find(c => c.id === selectedCalendar)
+        if (cal?.business_unit && job.business_unit !== cal.business_unit) return false
+      }
+
+      // Show jobs at 8 AM by default (same as sections without start_time)
+      return hour === 8
+    })
+  }
+
   const isToday = (date) => {
     const today = new Date()
     return date.toDateString() === today.toDateString()
@@ -1764,6 +1783,7 @@ export default function PMJobSetter() {
                   {/* Hour Slots */}
                   {hourSlots.map(hour => {
                     const slotSections = getSectionsForSlot(day, hour)
+                    const slotJobs = getJobsForSlot(day, hour)
                     const isOver = dragOverSlot?.date?.toDateString() === day.toDateString() && dragOverSlot?.hour === hour
 
                     return (
@@ -1779,6 +1799,46 @@ export default function PMJobSetter() {
                           transition: 'background-color 0.15s'
                         }}
                       >
+                        {/* Render jobs (whole-job events) */}
+                        {slotJobs.map(job => {
+                          const calendar = getCalendarForJob(job)
+                          const calColor = calendar?.color || theme.accent
+                          const statusColor = defaultStatusColors[job.status] || theme.accent
+
+                          return (
+                            <div
+                              key={`job-${job.id}`}
+                              draggable
+                              onDragStart={(e) => handleJobDragStart(e, job)}
+                              onDragEnd={handleDragEnd}
+                              onClick={() => navigate(`/jobs/${job.id}`)}
+                              style={{
+                                backgroundColor: `${statusColor}18`,
+                                borderRadius: '4px',
+                                padding: '4px 6px',
+                                marginBottom: '2px',
+                                cursor: 'grab',
+                                fontSize: '10px',
+                                fontWeight: '600',
+                                color: theme.text,
+                                borderLeft: `3px solid ${statusColor}`,
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                position: 'relative'
+                              }}
+                              title={`${job.job_title || 'Untitled Job'} — ${job.customer?.name || ''}${calendar ? ` (${calendar.name})` : ''}`}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Briefcase size={9} style={{ flexShrink: 0, opacity: 0.7 }} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {job.job_title || `Job #${job.id}`}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {/* Render sections */}
                         {slotSections.map(section => {
                           const job = jobs.find(j => j.id === section.job_id)
                           const calendar = job ? getCalendarForJob(job) : null
