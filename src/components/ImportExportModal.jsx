@@ -295,49 +295,37 @@ export default function ImportExportModal({
         setNotes('AI mapping unavailable — please map columns manually')
       }
 
-      // AI-map child sheets too
+      // AI-map child sheets too (use local childData, not state which hasn't updated yet)
       if (hasMultipleSheets) {
         for (const rt of relatedTables) {
-          const cd = childSheets[rt.tableName] || {}
-          // Try to auto-map child sheets too (re-read from childData since state may not be set yet)
-          const matchedSheet = workbook.SheetNames.find(sn =>
-            sn.toLowerCase() === rt.sheetName.toLowerCase() ||
-            sn.toLowerCase().includes(rt.sheetName.toLowerCase()) ||
-            rt.sheetName.toLowerCase().includes(sn.toLowerCase())
-          )
-          if (matchedSheet) {
-            const sheet = workbook.Sheets[matchedSheet]
-            const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-            if (json.length >= 2) {
-              const cHeaders = json[0].map(h => String(h).trim())
-              const cRows = json.slice(1).filter(row => row.some(cell => cell !== ''))
-              const childTargetFields = [
-                { field: '_parentRef', type: 'text', required: true, desc: rt.parentRefLabel || 'Parent reference ID' },
-                ...rt.fields.map(f => ({ field: f.field, type: f.type, required: !!f.required, desc: f.desc || f.label }))
-              ]
-              try {
-                const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-                const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
-                const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-map-columns`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
-                  body: JSON.stringify({
-                    headers: cHeaders,
-                    sampleRows: cRows.slice(0, 5),
-                    targetFields: childTargetFields,
-                    requiredField: '_parentRef',
-                  }),
-                })
-                const result = await resp.json()
-                if (result.mapping) {
-                  setChildSheets(prev => ({
-                    ...prev,
-                    [rt.tableName]: { ...prev[rt.tableName], headers: cHeaders, rows: cRows, mapping: result.mapping, sheetName: matchedSheet }
-                  }))
-                }
-              } catch (_) { /* manual mapping fallback */ }
+          const cd = childData[rt.tableName]
+          if (!cd || !cd.headers || cd.rows.length === 0) continue
+
+          const childTargetFields = [
+            { field: '_parentRef', type: 'text', required: true, desc: rt.parentRefLabel || 'Parent reference ID' },
+            ...rt.fields.map(f => ({ field: f.field, type: f.type, required: !!f.required, desc: f.desc || f.label }))
+          ]
+          try {
+            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+            const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+            const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-map-columns`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+              body: JSON.stringify({
+                headers: cd.headers,
+                sampleRows: cd.rows.slice(0, 5),
+                targetFields: childTargetFields,
+                requiredField: '_parentRef',
+              }),
+            })
+            const result = await resp.json()
+            if (result.mapping) {
+              setChildSheets(prev => ({
+                ...prev,
+                [rt.tableName]: { ...prev[rt.tableName], mapping: result.mapping }
+              }))
             }
-          }
+          } catch (_) { /* manual mapping fallback */ }
         }
       }
 
@@ -415,10 +403,12 @@ export default function ImportExportModal({
     const allInsertedIds = []
     const BATCH_SIZE = 25
 
-    // --- Phase 1: Insert parent records ---
-    // Track ref value → index mapping so we can link parents to children
-    const parentRefValues = [] // ordered list of ref values, matching insertion order
+    // For multi-sheet: select the ref field alongside id so we can build the lookup from actual DB data
+    const selectFields = (isMultiSheet && parentRefField) ? `id, ${parentRefField}` : 'id'
+    const refToId = {} // ref value → new DB id (built from actual insert responses)
 
+    // --- Phase 1: Insert parent records ---
+    let autoRefCounter = 0
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE)
       const records = batch.map(row => {
@@ -436,31 +426,29 @@ export default function ImportExportModal({
         const reqVal = record[reqField]
         if (reqVal === null || reqVal === undefined || reqVal === '') return null
 
+        // Auto-generate ref ID if missing (so child sheets can link to this parent)
+        if (isMultiSheet && parentRefField && !record[parentRefField]) {
+          const prefix = tableName === 'jobs' ? 'JOB' : tableName === 'quotes' ? 'EST' : tableName === 'invoices' ? 'INV' : 'REF'
+          record[parentRefField] = `${prefix}-${Date.now().toString(36).toUpperCase()}${autoRefCounter++}`
+        }
+
         return record
       }).filter(Boolean)
 
-      // Track parent ref values for linking
-      if (isMultiSheet && parentRefField) {
-        batch.forEach(row => {
-          const record = {}
-          fields.forEach(f => {
-            const raw = getMappedValue(row, f.field)
-            const parsed = parseValue(raw, f)
-            if (parsed !== null) record[f.field] = parsed
-          })
-          const reqVal = record[reqField]
-          if (reqVal !== null && reqVal !== undefined && reqVal !== '') {
-            parentRefValues.push(record[parentRefField] || '')
-          }
-        })
-      }
-
       if (records.length > 0) {
-        const { data, error } = await supabase.from(tableName).insert(records).select('id')
+        const { data, error } = await supabase.from(tableName).insert(records).select(selectFields)
         if (error) {
           errors.push(`${entityName} rows ${i + 1}-${i + batch.length}: ${error.message}`)
         } else if (data) {
           allInsertedIds.push(...data.map(r => r.id))
+          // Build ref lookup from actual DB response
+          if (isMultiSheet && parentRefField) {
+            data.forEach(row => {
+              if (row[parentRefField]) {
+                refToId[String(row[parentRefField]).trim()] = row.id
+              }
+            })
+          }
         }
       }
       setProgress({ done: Math.min(i + BATCH_SIZE, rows.length), total, errors: [...errors] })
@@ -470,13 +458,6 @@ export default function ImportExportModal({
 
     // --- Phase 2: Insert child records (multi-sheet only) ---
     if (isMultiSheet && allInsertedIds.length > 0) {
-      // Build ref value → new DB ID lookup
-      const refToId = {}
-      parentRefValues.forEach((refVal, idx) => {
-        if (refVal && allInsertedIds[idx]) {
-          refToId[String(refVal).trim()] = allInsertedIds[idx]
-        }
-      })
 
       const allChildInserted = {}
       const summary = {}

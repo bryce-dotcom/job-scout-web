@@ -1,6 +1,6 @@
 // Field definitions for AI-powered import/export across all major data pages.
 // Each array defines the importable/exportable fields for a Supabase table.
-// Foreign key fields (customer_id, job_id, etc.) are excluded — CSV imports are flat data only.
+// Human-readable reference IDs (job_id, quote_id, invoice_id) are included for multi-sheet XLSX linking.
 
 export const leadsFields = [
   { field: 'customer_name', label: 'Customer Name', type: 'text', required: true, desc: 'Full name of the lead / contact' },
@@ -32,6 +32,7 @@ export const customersFields = [
 ]
 
 export const jobsFields = [
+  { field: 'job_id', label: 'Job ID', type: 'text', required: false, desc: 'Unique job identifier (e.g. JOB-ABC123). Auto-generated if blank.' },
   { field: 'job_title', label: 'Job Title', type: 'text', required: true, desc: 'Title or name of the job' },
   { field: 'job_address', label: 'Job Address', type: 'text', required: false, desc: 'Address where the job takes place' },
   { field: 'status', label: 'Status', type: 'text', required: false, desc: 'Job status (Scheduled, In Progress, Completed, Cancelled)' },
@@ -44,12 +45,14 @@ export const jobsFields = [
 ]
 
 export const quotesFields = [
+  { field: 'quote_id', label: 'Quote ID', type: 'text', required: false, desc: 'Unique quote identifier (e.g. QUO-ABC123). Auto-generated if blank.' },
   { field: 'service_type', label: 'Service Type', type: 'text', required: false, desc: 'Type of service being quoted' },
   { field: 'status', label: 'Status', type: 'text', required: false, desc: 'Quote status (Draft, Sent, Approved, Rejected)' },
   { field: 'notes', label: 'Notes', type: 'text', required: false, desc: 'Quote notes or description' },
 ]
 
 export const estimatesFields = [
+  { field: 'quote_id', label: 'Estimate ID', type: 'text', required: false, desc: 'Unique estimate identifier (e.g. EST-ABC123). Auto-generated if blank.' },
   { field: 'estimate_name', label: 'Estimate Name', type: 'text', required: false, desc: 'Display name for the estimate' },
   { field: 'service_type', label: 'Service Type', type: 'text', required: false, desc: 'Type of service being estimated' },
   { field: 'status', label: 'Status', type: 'text', required: false, desc: 'Estimate status (Draft, Sent, Approved, Rejected, Expired)' },
@@ -60,6 +63,7 @@ export const estimatesFields = [
 ]
 
 export const invoicesFields = [
+  { field: 'invoice_id', label: 'Invoice ID', type: 'text', required: false, desc: 'Unique invoice identifier (e.g. INV-ABC123). Auto-generated if blank.' },
   { field: 'amount', label: 'Amount', type: 'number', required: true, desc: 'Invoice amount in dollars' },
   { field: 'status', label: 'Status', type: 'text', required: false, desc: 'Payment status (Pending, Paid, Overdue, Cancelled)' },
   { field: 'discount_applied', label: 'Discount', type: 'number', required: false, desc: 'Discount amount applied' },
