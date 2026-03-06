@@ -9,7 +9,7 @@ import {
   RefreshCw, Filter, Search, Settings, Plus, Briefcase, CheckCircle2,
   AlertCircle, PauseCircle, PlayCircle, ClipboardList, CalendarPlus, Trash2,
   LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2,
-  Palette, Edit2, Layers, ChevronUp
+  Palette, Edit2, Layers, ChevronUp, MessageSquare, Mail, Phone
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 
@@ -59,6 +59,7 @@ const defaultTheme = {
 export default function PMJobSetter() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const company = useStore((state) => state.company)
   const employees = useStore((state) => state.employees)
   const businessUnits = useStore((state) => state.businessUnits)
   const fetchSettings = useStore((state) => state.fetchSettings)
@@ -141,7 +142,11 @@ export default function PMJobSetter() {
     start_time: '',
     duration_hours: 4,
     pm_id: '',
-    notes: ''
+    notes: '',
+    sendText: false,
+    sendEmail: false,
+    phone: '',
+    email: ''
   })
   const [scheduleError, setScheduleError] = useState(null)
   const [scheduleSaving, setScheduleSaving] = useState(false)
@@ -177,7 +182,7 @@ export default function PMJobSetter() {
     // Fetch jobs with customer and PM info
     const { data: jobsData } = await supabase
       .from('jobs')
-      .select('*, customer:customers(id, name, business_name, address), pm:employees!jobs_pm_id_fkey(id, name)')
+      .select('*, customer:customers(id, name, business_name, address, phone, email), pm:employees!jobs_pm_id_fkey(id, name)')
       .eq('company_id', companyId)
       .order('start_date', { ascending: true })
 
@@ -590,7 +595,11 @@ export default function PMJobSetter() {
         start_time: formatDateTimeLocal(startTime),
         duration_hours: draggedJob.allotted_time_hours || 4,
         pm_id: draggedJob.pm_id || '',
-        notes: draggedJob.notes || ''
+        notes: draggedJob.notes || '',
+        sendText: false,
+        sendEmail: false,
+        phone: draggedJob.customer?.phone || '',
+        email: draggedJob.customer?.email || ''
       })
       setScheduleError(null)
       setShowScheduleModal(true)
@@ -683,6 +692,43 @@ export default function PMJobSetter() {
       setScheduleError(error.message)
       setScheduleSaving(false)
       return
+    }
+
+    // Send notifications
+    const companyName = company?.name || 'our team'
+    const customerName = scheduleJob.customer?.name || 'Customer'
+    const jobTitle = scheduleJob.job_title || 'your job'
+    const formattedDate = new Date(scheduleForm.start_time).toLocaleString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit'
+    })
+    const confirmMsg = `Hi ${customerName}, your job "${jobTitle}" has been scheduled for ${formattedDate} with ${companyName}. We look forward to working with you!`
+
+    if (scheduleForm.sendText && scheduleForm.phone) {
+      const cleanPhone = scheduleForm.phone.replace(/\D/g, '')
+      window.open(`sms:${cleanPhone}?body=${encodeURIComponent(confirmMsg)}`, '_blank')
+    }
+
+    if (scheduleForm.sendEmail && scheduleForm.email) {
+      const subject = `Job Scheduled — ${jobTitle}`
+      window.open(`mailto:${scheduleForm.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(confirmMsg)}`, '_blank')
+    }
+
+    // Log communication
+    if (scheduleForm.sendText || scheduleForm.sendEmail) {
+      const methods = []
+      if (scheduleForm.sendText) methods.push('text')
+      if (scheduleForm.sendEmail) methods.push('email')
+      await supabase.from('communications_log').insert({
+        company_id: companyId,
+        customer_id: scheduleJob.customer?.id || null,
+        job_id: scheduleJob.id,
+        type: methods.join(', '),
+        direction: 'outbound',
+        summary: `Scheduling confirmation sent via ${methods.join(' & ')}`,
+        content: confirmMsg,
+        created_at: new Date().toISOString()
+      }).then(() => {}).catch(() => {})
     }
 
     setScheduleSaving(false)
@@ -2605,6 +2651,94 @@ export default function PMJobSetter() {
                     {scheduleJob.job_address}
                   </div>
                 )}
+
+                {/* Send Confirmation */}
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: theme.accentBg,
+                  borderRadius: '10px',
+                  border: `1px solid ${theme.border}`
+                }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
+                    Send Confirmation to Customer
+                  </div>
+
+                  {/* Text option */}
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    marginBottom: scheduleForm.sendText ? '8px' : '12px',
+                    fontSize: '13px',
+                    color: theme.text
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={scheduleForm.sendText}
+                      onChange={(e) => setScheduleForm(prev => ({ ...prev, sendText: e.target.checked }))}
+                      style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                    />
+                    <MessageSquare size={15} style={{ color: theme.accent }} />
+                    Send Text Message
+                  </label>
+                  {scheduleForm.sendText && (
+                    <div style={{ marginLeft: '26px', marginBottom: '12px' }}>
+                      <input
+                        type="tel"
+                        value={scheduleForm.phone}
+                        onChange={(e) => setScheduleForm(prev => ({ ...prev, phone: e.target.value }))}
+                        placeholder="Phone number"
+                        style={{ ...inputStyle, fontSize: '13px' }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Email option */}
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    marginBottom: scheduleForm.sendEmail ? '8px' : '0',
+                    fontSize: '13px',
+                    color: theme.text
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={scheduleForm.sendEmail}
+                      onChange={(e) => setScheduleForm(prev => ({ ...prev, sendEmail: e.target.checked }))}
+                      style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                    />
+                    <Mail size={15} style={{ color: theme.accent }} />
+                    Send Email
+                  </label>
+                  {scheduleForm.sendEmail && (
+                    <div style={{ marginLeft: '26px' }}>
+                      <input
+                        type="email"
+                        value={scheduleForm.email}
+                        onChange={(e) => setScheduleForm(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="Email address"
+                        style={{ ...inputStyle, fontSize: '13px' }}
+                      />
+                    </div>
+                  )}
+
+                  {(scheduleForm.sendText || scheduleForm.sendEmail) && (
+                    <div style={{
+                      marginTop: '10px',
+                      padding: '10px',
+                      backgroundColor: theme.bgCard,
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      color: theme.textMuted,
+                      lineHeight: '1.5'
+                    }}>
+                      <strong style={{ color: theme.textSecondary }}>Preview:</strong> Hi {scheduleJob.customer?.name || 'Customer'}, your job "{scheduleJob.job_title || 'your job'}" has been scheduled for {scheduleForm.start_time ? new Date(scheduleForm.start_time).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '...'} with {company?.name || 'our team'}. We look forward to working with you!
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
