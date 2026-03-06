@@ -3,10 +3,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download } from 'lucide-react'
+import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download, Settings as SettingsIcon, Sliders, CreditCard, Mail } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { invoicesFields } from '../lib/importExportFields'
+import { toast } from '../lib/toast'
 
 // Light theme fallback
 const defaultTheme = {
@@ -40,6 +41,39 @@ const emptyUtilityInvoice = {
   customer_name: ''
 }
 
+const INVOICE_DEFAULTS = {
+  invoice_progressive_enabled: false,
+  invoice_match_job_number: false,
+  invoice_include_images: false,
+  invoice_accept_credit_card: false,
+  invoice_save_card_on_file: false,
+  invoice_accept_ach: false,
+  invoice_accept_klarna: false,
+  invoice_accept_tips: false,
+  invoice_separate_tip_screen: false,
+  invoice_reminders_enabled: true,
+  invoice_reminder_frequency_days: 30,
+  invoice_reminder_max_count: 2,
+  invoice_reminder_subject: 'Reminder: Invoice {invoice_number} is due from {company_name} - {invoice_total}',
+  invoice_reminder_body: 'Hi {customer_first_name},\n\nThis is a friendly reminder from {company_name} that invoice {invoice_number} for {invoice_total} is due. Please see the attached invoice to review and pay.',
+  invoice_auto_charge_enabled: false,
+  invoice_default_terms: 'Upon receipt',
+  invoice_visible_fields: { job_number: true, invoice_number: true, service_date: true, invoice_date: true, summary: true, technician: true, customer_name: true, customer_company: true, line_items: true, subtotal: true, discount: true, tax: true },
+  invoice_default_message: '',
+  invoice_view_format: 'email',
+  invoice_email_subject: 'Invoice {invoice_number} due from {company_name} - {invoice_total}',
+  invoice_email_body: 'Hi {customer_first_name},\n\nThank you for choosing {company_name}. Please see attached invoice due {invoice_due_terms}.',
+  invoice_sms_message: 'Invoice due from {company_name}'
+}
+
+const invoiceSettingsTabs = [
+  { id: 'preferences', label: 'Preferences', icon: Sliders },
+  { id: 'payment', label: 'Payment Options', icon: CreditCard },
+  { id: 'automations', label: 'Automations', icon: Zap },
+  { id: 'customer_view', label: 'Customer View', icon: FileText },
+  { id: 'email_sms', label: 'Email & SMS', icon: Mail }
+]
+
 export default function Invoices() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -50,6 +84,9 @@ export default function Invoices() {
   const jobs = useStore((state) => state.jobs)
   const fetchInvoices = useStore((state) => state.fetchInvoices)
   const fetchUtilityInvoices = useStore((state) => state.fetchUtilityInvoices)
+  const settings = useStore((state) => state.settings)
+  const fetchSettings = useStore((state) => state.fetchSettings)
+  const getSettingValue = useStore((state) => state.getSettingValue)
 
   // Type filter from URL param
   const initialType = searchParams.get('type') || 'all'
@@ -81,6 +118,8 @@ export default function Invoices() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [settingsTab, setSettingsTab] = useState('preferences')
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -93,7 +132,8 @@ export default function Invoices() {
     }
     fetchInvoices()
     fetchUtilityInvoices()
-  }, [companyId, navigate, fetchInvoices, fetchUtilityInvoices])
+    fetchSettings()
+  }, [companyId, navigate, fetchInvoices, fetchUtilityInvoices, fetchSettings])
 
   // Sync typeFilter to URL
   const handleTypeFilter = (type) => {
@@ -331,6 +371,269 @@ export default function Invoices() {
     transition: 'all 0.15s ease'
   })
 
+  // --- Invoice Settings helpers ---
+  const getSetting = (key) => {
+    const raw = getSettingValue(key)
+    if (raw === null || raw === undefined) return INVOICE_DEFAULTS[key]
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return raw
+    }
+  }
+
+  const saveInvoiceSetting = async (key, value) => {
+    const existing = settings.find(s => s.key === key)
+    const valueStr = JSON.stringify(value)
+    if (existing) {
+      await supabase.from('settings').update({ value: valueStr }).eq('id', existing.id)
+    } else {
+      await supabase.from('settings').insert({ company_id: companyId, key, value: valueStr })
+    }
+    fetchSettings()
+  }
+
+  const renderToggle = (label, description, key, extraStyle) => {
+    const checked = getSetting(key)
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: `1px solid ${theme.border}`, ...extraStyle }}>
+        <div style={{ flex: 1, marginRight: '16px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{label}</div>
+          {description && <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>{description}</div>}
+        </div>
+        <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer', flexShrink: 0 }}>
+          <input type="checkbox" checked={!!checked} onChange={(e) => saveInvoiceSetting(key, e.target.checked)} style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
+          <span style={{ position: 'absolute', inset: 0, backgroundColor: checked ? theme.accent : theme.border, borderRadius: '12px', transition: 'background-color 0.2s' }}>
+            <span style={{ position: 'absolute', left: checked ? '22px' : '2px', top: '2px', width: '20px', height: '20px', backgroundColor: '#fff', borderRadius: '50%', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+          </span>
+        </label>
+      </div>
+    )
+  }
+
+  const renderVisibleFieldToggle = (label, field, visibleFields) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0' }}>
+      <span style={{ fontSize: '13px', color: theme.text }}>{label}</span>
+      <label style={{ position: 'relative', display: 'inline-block', width: '38px', height: '20px', cursor: 'pointer', flexShrink: 0 }}>
+        <input type="checkbox" checked={!!visibleFields[field]} onChange={() => saveInvoiceSetting('invoice_visible_fields', { ...visibleFields, [field]: !visibleFields[field] })} style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
+        <span style={{ position: 'absolute', inset: 0, backgroundColor: visibleFields[field] ? theme.accent : theme.border, borderRadius: '10px', transition: 'background-color 0.2s' }}>
+          <span style={{ position: 'absolute', left: visibleFields[field] ? '20px' : '2px', top: '2px', width: '16px', height: '16px', backgroundColor: '#fff', borderRadius: '50%', transition: 'left 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+        </span>
+      </label>
+    </div>
+  )
+
+  const renderMergeTags = (tags) => (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+      {tags.map(tag => (
+        <span key={tag} style={{ display: 'inline-block', padding: '2px 8px', backgroundColor: theme.accentBg, borderRadius: '4px', fontSize: '11px', fontWeight: '500', color: theme.accent, fontFamily: 'monospace' }}>{tag}</span>
+      ))}
+    </div>
+  )
+
+  const settingsLabelStyle = { display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }
+  const settingsInputStyle = { width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bg, outline: 'none' }
+
+  const renderSettingsContent = () => {
+    switch (settingsTab) {
+      case 'preferences':
+        return (
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Preferences</h3>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>Configure how invoices are created and displayed.</p>
+            {renderToggle('Progressive invoicing', 'Send multiple invoices per job with distinct amounts & terms', 'invoice_progressive_enabled')}
+            {renderToggle('Match invoice and job number', 'Future invoice numbers will match their job numbers', 'invoice_match_job_number')}
+            {renderToggle('Include images on print', 'Include job images on printed/downloaded invoices (not emailed PDFs)', 'invoice_include_images', { borderBottom: 'none' })}
+          </div>
+        )
+
+      case 'payment':
+        return (
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Payment Options</h3>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>Choose which payment methods customers can use.</p>
+            {renderToggle('Accept credit card', 'Allow customers to pay invoices with credit card', 'invoice_accept_credit_card')}
+            {getSetting('invoice_accept_credit_card') && (
+              <div style={{ paddingLeft: '24px' }}>
+                {renderToggle('Customer can save card on file', 'Allow customers to save their card for future payments', 'invoice_save_card_on_file')}
+              </div>
+            )}
+            {renderToggle('Accept ACH', 'Allow customers to pay via bank transfer (ACH)', 'invoice_accept_ach')}
+            {renderToggle('Accept Klarna', 'Allow customers to pay with Klarna buy-now-pay-later', 'invoice_accept_klarna')}
+
+            <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: `2px solid ${theme.border}` }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Tipping</h4>
+              <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>Configure tipping options for online payments.</p>
+              {renderToggle('Accept tips on online payments', null, 'invoice_accept_tips')}
+              {getSetting('invoice_accept_tips') && renderToggle('Use a separate tipping screen on checkout', null, 'invoice_separate_tip_screen', { borderBottom: 'none' })}
+            </div>
+          </div>
+        )
+
+      case 'automations':
+        return (
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Automations</h3>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>Set up automatic reminders and payments.</p>
+
+            {/* Invoice Reminders */}
+            <div style={{ marginBottom: '32px' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Invoice Reminders</h4>
+              <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>Automatically send reminders for unpaid invoices after the due date.</p>
+              {renderToggle('Send invoice reminders', null, 'invoice_reminders_enabled')}
+
+              {getSetting('invoice_reminders_enabled') && (
+                <div style={{ marginTop: '16px', padding: '16px', backgroundColor: theme.bg, borderRadius: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                    <div>
+                      <label style={settingsLabelStyle}>Frequency (days after due date)</label>
+                      <input type="number" defaultValue={getSetting('invoice_reminder_frequency_days')} onBlur={(e) => saveInvoiceSetting('invoice_reminder_frequency_days', parseInt(e.target.value) || 30)} min="1" style={settingsInputStyle} />
+                    </div>
+                    <div>
+                      <label style={settingsLabelStyle}>Max reminders</label>
+                      <input type="number" defaultValue={getSetting('invoice_reminder_max_count')} onBlur={(e) => saveInvoiceSetting('invoice_reminder_max_count', parseInt(e.target.value) || 2)} min="1" max="10" style={settingsInputStyle} />
+                    </div>
+                  </div>
+
+                  <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>0 customers excluded from reminders</p>
+
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={settingsLabelStyle}>Reminder email subject</label>
+                    {renderMergeTags(['{invoice_number}', '{company_name}', '{invoice_total}'])}
+                    <input type="text" defaultValue={getSetting('invoice_reminder_subject')} onBlur={(e) => saveInvoiceSetting('invoice_reminder_subject', e.target.value)} style={settingsInputStyle} />
+                  </div>
+
+                  <div>
+                    <label style={settingsLabelStyle}>Reminder email body</label>
+                    {renderMergeTags(['{customer_first_name}', '{company_name}', '{invoice_number}', '{invoice_total}'])}
+                    <textarea defaultValue={getSetting('invoice_reminder_body')} onBlur={(e) => saveInvoiceSetting('invoice_reminder_body', e.target.value)} rows={5} style={{ ...settingsInputStyle, resize: 'vertical' }} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Automatic Payments */}
+            <div style={{ paddingTop: '16px', borderTop: `2px solid ${theme.border}` }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Automatic Payments</h4>
+              <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>Automatically charge the customer's card on file on the due date.</p>
+              {renderToggle('Auto-charge card on file for unpaid balance on due date', null, 'invoice_auto_charge_enabled', { borderBottom: 'none' })}
+              {getSetting('invoice_auto_charge_enabled') && (
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>0 customers excluded from auto-charge</p>
+              )}
+            </div>
+          </div>
+        )
+
+      case 'customer_view': {
+        const visibleFields = getSetting('invoice_visible_fields')
+        return (
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Customer View</h3>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>Customize what customers see on their invoices.</p>
+
+            {/* Payment Terms */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={settingsLabelStyle}>Default payment terms</label>
+              <select value={getSetting('invoice_default_terms')} onChange={(e) => saveInvoiceSetting('invoice_default_terms', e.target.value)} style={{ ...settingsInputStyle, width: 'auto', minWidth: '200px' }}>
+                <option value="Upon receipt">Upon receipt</option>
+                <option value="Net 30">Net 30</option>
+              </select>
+            </div>
+
+            {/* Visible Fields */}
+            <div style={{ marginBottom: '24px' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Visible fields</h4>
+              <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>Choose which fields appear on the invoice.</p>
+              <div style={{ padding: '12px 16px', backgroundColor: theme.bg, borderRadius: '10px' }}>
+                {renderVisibleFieldToggle('Job number', 'job_number', visibleFields)}
+                {renderVisibleFieldToggle('Invoice number', 'invoice_number', visibleFields)}
+                {renderVisibleFieldToggle('Service date', 'service_date', visibleFields)}
+                {renderVisibleFieldToggle('Invoice date', 'invoice_date', visibleFields)}
+                {renderVisibleFieldToggle('Summary of work', 'summary', visibleFields)}
+                {renderVisibleFieldToggle('Technician name', 'technician', visibleFields)}
+                {renderVisibleFieldToggle('Customer display name', 'customer_name', visibleFields)}
+                {renderVisibleFieldToggle('Customer company name', 'customer_company', visibleFields)}
+                {renderVisibleFieldToggle('Line item details', 'line_items', visibleFields)}
+                {renderVisibleFieldToggle('Subtotal', 'subtotal', visibleFields)}
+                {renderVisibleFieldToggle('Discount', 'discount', visibleFields)}
+                {renderVisibleFieldToggle('Tax breakdown', 'tax', visibleFields)}
+              </div>
+            </div>
+
+            {/* Default Message */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={settingsLabelStyle}>Default invoice message</label>
+              <textarea defaultValue={getSetting('invoice_default_message')} onBlur={(e) => saveInvoiceSetting('invoice_default_message', e.target.value)} rows={3} placeholder="Footer message that appears on all invoices..." style={{ ...settingsInputStyle, resize: 'vertical' }} />
+            </div>
+
+            {/* View Format */}
+            <div>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>View format</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {[
+                  { value: 'email', label: 'Email optimized', desc: 'Best for sending invoices via email' },
+                  { value: 'envelope', label: 'Envelope optimized (#9/#10 window)', desc: 'Best for printing and mailing in standard envelopes' }
+                ].map(opt => (
+                  <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px', backgroundColor: getSetting('invoice_view_format') === opt.value ? theme.accentBg : theme.bg, borderRadius: '8px', cursor: 'pointer', border: getSetting('invoice_view_format') === opt.value ? `1px solid ${theme.accent}` : '1px solid transparent' }}>
+                    <input type="radio" name="invoice_view_format" checked={getSetting('invoice_view_format') === opt.value} onChange={() => saveInvoiceSetting('invoice_view_format', opt.value)} style={{ marginTop: '2px' }} />
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{opt.label}</div>
+                      <div style={{ fontSize: '12px', color: theme.textMuted }}>{opt.desc}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      case 'email_sms':
+        return (
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Email & SMS Templates</h3>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>Customize the messages sent to customers with invoices.</p>
+
+            {/* Email */}
+            <div style={{ marginBottom: '32px' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Email</h4>
+              <div style={{ marginBottom: '4px' }}>
+                <label style={{ fontSize: '12px', color: theme.textMuted }}>Available merge tags:</label>
+              </div>
+              {renderMergeTags(['{invoice_number}', '{company_name}', '{invoice_total}', '{customer_first_name}', '{invoice_due_terms}'])}
+
+              <div style={{ marginTop: '12px', marginBottom: '16px' }}>
+                <label style={settingsLabelStyle}>Subject</label>
+                <input type="text" defaultValue={getSetting('invoice_email_subject')} onBlur={(e) => saveInvoiceSetting('invoice_email_subject', e.target.value)} style={settingsInputStyle} />
+              </div>
+
+              <div>
+                <label style={settingsLabelStyle}>Body</label>
+                <textarea defaultValue={getSetting('invoice_email_body')} onBlur={(e) => saveInvoiceSetting('invoice_email_body', e.target.value)} rows={5} style={{ ...settingsInputStyle, resize: 'vertical' }} />
+              </div>
+            </div>
+
+            {/* SMS */}
+            <div style={{ paddingTop: '16px', borderTop: `2px solid ${theme.border}` }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>SMS</h4>
+              <div style={{ marginBottom: '4px' }}>
+                <label style={{ fontSize: '12px', color: theme.textMuted }}>Available merge tags:</label>
+              </div>
+              {renderMergeTags(['{invoice_number}', '{company_name}', '{invoice_total}', '{customer_first_name}'])}
+
+              <div style={{ marginTop: '12px' }}>
+                <label style={settingsLabelStyle}>Message</label>
+                <textarea defaultValue={getSetting('invoice_sms_message')} onBlur={(e) => saveInvoiceSetting('invoice_sms_message', e.target.value)} rows={3} style={{ ...settingsInputStyle, resize: 'vertical' }} />
+              </div>
+            </div>
+          </div>
+        )
+
+      default:
+        return null
+    }
+  }
+
   return (
     <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
@@ -393,6 +696,9 @@ export default function Invoices() {
           </button>
           <button onClick={() => exportToCSV(invoices, invoicesFields, 'invoices_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
+          </button>
+          <button onClick={() => setShowSettings(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <SettingsIcon size={18} /> Settings
           </button>
         </div>
       </div>
@@ -1146,6 +1452,70 @@ export default function Invoices() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Settings Modal */}
+      {showSettings && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px', zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard, borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            width: '100%', maxWidth: '900px', maxHeight: '90vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '20px 24px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <SettingsIcon size={20} style={{ color: theme.accent }} />
+                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Invoice Settings</h2>
+              </div>
+              <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body: sidebar + content */}
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden', flexWrap: 'wrap' }}>
+              {/* Sidebar */}
+              <div style={{
+                width: '180px', flexShrink: 0, borderRight: `1px solid ${theme.border}`,
+                padding: '8px', overflowY: 'auto', backgroundColor: theme.bg
+              }}>
+                {invoiceSettingsTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setSettingsTab(tab.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      width: '100%', padding: '12px 14px',
+                      backgroundColor: settingsTab === tab.id ? theme.accentBg : 'transparent',
+                      border: 'none', borderRadius: '8px',
+                      color: settingsTab === tab.id ? theme.accent : theme.textMuted,
+                      fontSize: '13px', fontWeight: settingsTab === tab.id ? '500' : '400',
+                      cursor: 'pointer', textAlign: 'left',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <tab.icon size={18} />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Content */}
+              <div style={{ flex: 1, padding: '24px', overflowY: 'auto', minWidth: 0 }}>
+                {renderSettingsContent()}
+              </div>
+            </div>
           </div>
         </div>
       )}
