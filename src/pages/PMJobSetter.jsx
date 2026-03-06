@@ -472,14 +472,13 @@ export default function PMJobSetter() {
 
   // Get jobs (not sections) scheduled for a calendar slot
   const getJobsForSlot = (date, hour) => {
-    // Build local date string to compare (avoids UTC shift from new Date parsing)
     const slotDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     return jobs.filter(job => {
       if (!job.start_date) return false
-      // Compare date strings directly (both YYYY-MM-DD) to avoid timezone issues
-      const jobDateStr = job.start_date.substring(0, 10)
-      const sameDay = jobDateStr === slotDateStr
-      if (!sameDay) return false
+      const jobDt = new Date(job.start_date)
+      // Compare local date parts
+      const jobDateStr = `${jobDt.getFullYear()}-${String(jobDt.getMonth() + 1).padStart(2, '0')}-${String(jobDt.getDate()).padStart(2, '0')}`
+      if (jobDateStr !== slotDateStr) return false
 
       // Filter by selected calendar
       if (selectedCalendar !== 'all') {
@@ -487,8 +486,9 @@ export default function PMJobSetter() {
         if (cal?.business_unit && job.business_unit !== cal.business_unit) return false
       }
 
-      // Show jobs at 8 AM by default (same as sections without start_time)
-      return hour === 8
+      // Match by hour (default to 8 AM if no time component)
+      const jobHour = jobDt.getHours()
+      return jobHour === hour || (jobHour === 0 && hour === 8)
     })
   }
 
@@ -563,11 +563,11 @@ export default function PMJobSetter() {
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
     if (draggedJob) {
-      // Dropping a whole job onto the calendar — set start_date + mark Scheduled
+      // Dropping a whole job onto the calendar — set start_date (full datetime) + mark Scheduled
       await supabase
         .from('jobs')
         .update({
-          start_date: dateStr,
+          start_date: startTime.toISOString(),
           status: 'Scheduled',
           updated_at: new Date().toISOString()
         })
