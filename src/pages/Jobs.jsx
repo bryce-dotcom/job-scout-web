@@ -9,8 +9,8 @@ import {
   Play, CheckCircle, FileText, ChevronRight, User, Upload, Download
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
-import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
-import { jobsFields } from '../lib/importExportFields'
+import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
+import { jobsFields, jobLinesFields, jobSectionsFields } from '../lib/importExportFields'
 
 // Light theme fallback
 const defaultTheme = {
@@ -79,6 +79,31 @@ export default function Jobs() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [teamFilter, setTeamFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
+
+  const jobRelatedTables = [
+    {
+      tableName: 'job_lines',
+      sheetName: 'Line Items',
+      parentIdField: 'job_id',
+      parentRefLabel: 'Job ID',
+      fields: jobLinesFields,
+      fetchData: async (parentIds) => {
+        const { data } = await supabase.from('job_lines').select('*, item:products_services(name)').in('job_id', parentIds)
+        return (data || []).map(r => ({ ...r, item_name: r.item?.name || r.item_name || '' }))
+      },
+    },
+    {
+      tableName: 'job_sections',
+      sheetName: 'Sections',
+      parentIdField: 'job_id',
+      parentRefLabel: 'Job ID',
+      fields: jobSectionsFields,
+      fetchData: async (parentIds) => {
+        const { data } = await supabase.from('job_sections').select('*').in('job_id', parentIds)
+        return data || []
+      },
+    },
+  ]
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -340,7 +365,7 @@ export default function Jobs() {
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
-          <button onClick={() => exportToCSV(filteredJobs, jobsFields, 'jobs_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+          <button onClick={() => exportToXLSX(filteredJobs, jobsFields, 'jobs_export', { relatedTables: jobRelatedTables, parentRefField: 'job_id', mainSheetName: 'Jobs', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
           </button>
           <button
@@ -845,6 +870,8 @@ export default function Jobs() {
           companyId={companyId}
           requiredField="job_title"
           defaultValues={{ company_id: companyId, status: 'Scheduled' }}
+          relatedTables={jobRelatedTables}
+          parentRefField="job_id"
           onImportComplete={() => fetchJobs()}
           onClose={() => setShowImportExport(false)}
         />

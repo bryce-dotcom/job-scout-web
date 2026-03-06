@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar, Upload, Download } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
-import { quotesFields, quoteLinesFields } from '../lib/importExportFields'
+import { estimatesFields, quoteLinesFields } from '../lib/importExportFields'
 
 // Light theme fallback
 const defaultTheme = {
@@ -29,7 +29,7 @@ const statusColors = {
   'Expired': { bg: 'rgba(124,111,74,0.12)', text: '#7c6f4a' }
 }
 
-export default function Quotes() {
+export default function Estimates() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const quotes = useStore((state) => state.quotes)
@@ -45,6 +45,7 @@ export default function Quotes() {
     customer_id: '',
     salesperson_id: '',
     service_type: '',
+    estimate_name: '',
     notes: ''
   })
   const [loading, setLoading] = useState(false)
@@ -53,12 +54,12 @@ export default function Quotes() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
 
-  const quoteRelatedTables = [
+  const estimateRelatedTables = [
     {
       tableName: 'quote_lines',
       sheetName: 'Line Items',
       parentIdField: 'quote_id',
-      parentRefLabel: 'Quote ID',
+      parentRefLabel: 'Estimate ID',
       fields: quoteLinesFields,
       fetchData: async (parentIds) => {
         const { data } = await supabase.from('quote_lines').select('*, item:products_services(name)').in('quote_id', parentIds)
@@ -79,11 +80,12 @@ export default function Quotes() {
     fetchQuotes()
   }, [companyId, navigate, fetchQuotes])
 
-  const filteredQuotes = quotes.filter(quote => {
+  const filteredEstimates = quotes.filter(quote => {
     const customerName = quote.customer?.name || quote.lead?.customer_name || ''
     const matchesSearch = searchTerm === '' ||
       customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      quote.quote_id?.toLowerCase().includes(searchTerm.toLowerCase())
+      quote.quote_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      quote.estimate_name?.toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesStatus = statusFilter === 'all' || quote.status === statusFilter
 
@@ -95,22 +97,23 @@ export default function Quotes() {
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
-  const handleCreateQuote = async (e) => {
+  const handleCreateEstimate = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
-    const quoteNumber = `Q-${Date.now().toString(36).toUpperCase()}`
+    const estimateNumber = `EST-${Date.now().toString(36).toUpperCase()}`
 
     const { data, error: insertError } = await supabase
       .from('quotes')
       .insert([{
         company_id: companyId,
-        quote_id: quoteNumber,
+        quote_id: estimateNumber,
         lead_id: formData.lead_id || null,
         customer_id: formData.customer_id || null,
         salesperson_id: formData.salesperson_id || null,
         service_type: formData.service_type || null,
+        estimate_name: formData.estimate_name || null,
         notes: formData.notes || null,
         status: 'Draft',
         quote_amount: 0
@@ -125,9 +128,9 @@ export default function Quotes() {
     }
 
     setShowModal(false)
-    setFormData({ lead_id: '', customer_id: '', salesperson_id: '', service_type: '', notes: '' })
+    setFormData({ lead_id: '', customer_id: '', salesperson_id: '', service_type: '', estimate_name: '', notes: '' })
     await fetchQuotes()
-    navigate(`/quotes/${data.id}`)
+    navigate(`/estimates/${data.id}`)
     setLoading(false)
   }
 
@@ -184,13 +187,13 @@ export default function Quotes() {
           fontWeight: '700',
           color: theme.text
         }}>
-          Quotes
+          Estimates
         </h1>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
-          <button onClick={() => exportToXLSX(filteredQuotes, quotesFields, 'quotes_export', { relatedTables: quoteRelatedTables, parentRefField: 'quote_id', mainSheetName: 'Quotes', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+          <button onClick={() => exportToXLSX(filteredEstimates, estimatesFields, 'estimates_export', { relatedTables: estimateRelatedTables, parentRefField: 'quote_id', mainSheetName: 'Estimates', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
           </button>
           <button
@@ -210,7 +213,7 @@ export default function Quotes() {
             }}
           >
             <Plus size={18} />
-            New Quote
+            New Estimate
           </button>
         </div>
       </div>
@@ -282,7 +285,7 @@ export default function Quotes() {
           }} />
           <input
             type="text"
-            placeholder="Search quotes..."
+            placeholder="Search estimates..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
@@ -301,10 +304,11 @@ export default function Quotes() {
           <option value="Sent">Sent</option>
           <option value="Approved">Approved</option>
           <option value="Rejected">Rejected</option>
+          <option value="Expired">Expired</option>
         </select>
       </div>
 
-      {filteredQuotes.length === 0 ? (
+      {filteredEstimates.length === 0 ? (
         <div style={{
           textAlign: 'center',
           padding: '48px 24px',
@@ -315,8 +319,8 @@ export default function Quotes() {
           <FileText size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
           <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
             {searchTerm || statusFilter !== 'all'
-              ? 'No quotes match your search.'
-              : 'No quotes yet. Create your first quote.'}
+              ? 'No estimates match your search.'
+              : 'No estimates yet. Create your first estimate.'}
           </p>
         </div>
       ) : (
@@ -325,20 +329,20 @@ export default function Quotes() {
           flexDirection: 'column',
           gap: '12px'
         }}>
-          {filteredQuotes.map((quote) => {
-            const statusStyle = statusColors[quote.status] || statusColors['Draft']
-            const customerName = quote.customer?.name || quote.lead?.customer_name || 'No customer'
+          {filteredEstimates.map((estimate) => {
+            const statusStyle = statusColors[estimate.status] || statusColors['Draft']
+            const customerName = estimate.customer?.name || estimate.lead?.customer_name || 'No customer'
 
             return (
               <EntityCard
-                key={quote.id}
+                key={estimate.id}
                 name={customerName}
-                businessName={quote.customer?.business_name || quote.lead?.business_name}
-                onClick={() => navigate(`/quotes/${quote.id}`)}
+                businessName={estimate.customer?.business_name || estimate.lead?.business_name}
+                onClick={() => navigate(`/estimates/${estimate.id}`)}
                 style={{ padding: '16px 20px' }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                {/* Quote Number & Customer */}
+                {/* Estimate Number & Customer */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                     <span style={{
@@ -346,7 +350,7 @@ export default function Quotes() {
                       color: theme.accent,
                       fontSize: '14px'
                     }}>
-                      {quote.quote_id || `#${quote.id}`}
+                      {estimate.quote_id || `#${estimate.id}`}
                     </span>
                     <span style={{
                       padding: '2px 8px',
@@ -356,7 +360,7 @@ export default function Quotes() {
                       backgroundColor: statusStyle.bg,
                       color: statusStyle.text
                     }}>
-                      {quote.status}
+                      {estimate.status}
                     </span>
                   </div>
                   <p style={{
@@ -367,7 +371,7 @@ export default function Quotes() {
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap'
                   }}>
-                    {customerName}
+                    {estimate.estimate_name || customerName}
                   </p>
                 </div>
 
@@ -382,7 +386,7 @@ export default function Quotes() {
                   }}>
                     <DollarSign size={14} style={{ color: theme.textMuted }} />
                     <span style={{ fontWeight: '600', fontSize: '15px' }}>
-                      {formatCurrency(quote.quote_amount)}
+                      {formatCurrency(estimate.quote_amount)}
                     </span>
                   </div>
                 </div>
@@ -391,7 +395,7 @@ export default function Quotes() {
                 <div style={{ minWidth: '120px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <User size={14} style={{ color: theme.textMuted }} />
                   <span style={{ fontSize: '13px', color: theme.textSecondary }}>
-                    {quote.salesperson?.name || '-'}
+                    {estimate.salesperson?.name || '-'}
                   </span>
                 </div>
 
@@ -399,7 +403,7 @@ export default function Quotes() {
                 <div style={{ minWidth: '100px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Calendar size={14} style={{ color: theme.textMuted }} />
                   <span style={{ fontSize: '13px', color: theme.textSecondary }}>
-                    {formatDate(quote.sent_date || quote.created_at)}
+                    {formatDate(estimate.sent_date || estimate.created_at)}
                   </span>
                 </div>
 
@@ -412,7 +416,7 @@ export default function Quotes() {
         </div>
       )}
 
-      {/* Create Quote Modal */}
+      {/* Create Estimate Modal */}
       {showModal && (
         <div style={{
           position: 'fixed',
@@ -443,7 +447,7 @@ export default function Quotes() {
                 fontWeight: '600',
                 color: theme.text
               }}>
-                New Quote
+                New Estimate
               </h2>
               <button
                 onClick={() => setShowModal(false)}
@@ -460,7 +464,7 @@ export default function Quotes() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateQuote} style={{ padding: '20px' }}>
+            <form onSubmit={handleCreateEstimate} style={{ padding: '20px' }}>
               {error && (
                 <div style={{
                   marginBottom: '16px',
@@ -476,6 +480,18 @@ export default function Quotes() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={labelStyle}>Estimate Name</label>
+                  <input
+                    type="text"
+                    name="estimate_name"
+                    value={formData.estimate_name}
+                    onChange={handleChange}
+                    placeholder="e.g. Kitchen Remodel, LED Retrofit"
+                    style={inputStyle}
+                  />
+                </div>
+
                 <div>
                   <label style={labelStyle}>Lead</label>
                   <select
@@ -574,7 +590,7 @@ export default function Quotes() {
                     opacity: loading ? 0.6 : 1
                   }}
                 >
-                  {loading ? 'Creating...' : 'Create Quote'}
+                  {loading ? 'Creating...' : 'Create Estimate'}
                 </button>
               </div>
             </form>
@@ -585,11 +601,11 @@ export default function Quotes() {
       {showImportExport && (
         <ImportExportModal
           tableName="quotes"
-          entityName="Quotes"
-          fields={quotesFields}
+          entityName="Estimates"
+          fields={estimatesFields}
           companyId={companyId}
           defaultValues={{ company_id: companyId, status: 'Draft', quote_amount: 0 }}
-          relatedTables={quoteRelatedTables}
+          relatedTables={estimateRelatedTables}
           parentRefField="quote_id"
           onImportComplete={() => fetchQuotes()}
           onClose={() => setShowImportExport(false)}

@@ -25,6 +25,9 @@ export const customersFields = [
   { field: 'state', label: 'State', type: 'text', required: false, desc: 'State or province' },
   { field: 'zip', label: 'ZIP Code', type: 'text', required: false, desc: 'ZIP or postal code' },
   { field: 'preferred_contact', label: 'Preferred Contact', type: 'text', required: false, desc: 'Preferred contact method (Phone, Email, Text)' },
+  { field: 'secondary_contact_name', label: 'Secondary Contact Name', type: 'text', required: false, desc: 'Name of secondary contact person' },
+  { field: 'secondary_contact_email', label: 'Secondary Contact Email', type: 'text', required: false, desc: 'Email of secondary contact' },
+  { field: 'secondary_contact_phone', label: 'Secondary Contact Phone', type: 'text', required: false, desc: 'Phone number of secondary contact' },
   { field: 'notes', label: 'Notes', type: 'text', required: false, desc: 'Additional notes' },
 ]
 
@@ -44,6 +47,16 @@ export const quotesFields = [
   { field: 'service_type', label: 'Service Type', type: 'text', required: false, desc: 'Type of service being quoted' },
   { field: 'status', label: 'Status', type: 'text', required: false, desc: 'Quote status (Draft, Sent, Approved, Rejected)' },
   { field: 'notes', label: 'Notes', type: 'text', required: false, desc: 'Quote notes or description' },
+]
+
+export const estimatesFields = [
+  { field: 'estimate_name', label: 'Estimate Name', type: 'text', required: false, desc: 'Display name for the estimate' },
+  { field: 'service_type', label: 'Service Type', type: 'text', required: false, desc: 'Type of service being estimated' },
+  { field: 'status', label: 'Status', type: 'text', required: false, desc: 'Estimate status (Draft, Sent, Approved, Rejected, Expired)' },
+  { field: 'summary', label: 'Summary', type: 'text', required: false, desc: 'Estimate summary or scope description' },
+  { field: 'expiration_date', label: 'Expiration Date', type: 'date', required: false, desc: 'When the estimate expires' },
+  { field: 'service_date', label: 'Service Date', type: 'date', required: false, desc: 'Planned service date' },
+  { field: 'notes', label: 'Notes', type: 'text', required: false, desc: 'Estimate notes or description' },
 ]
 
 export const invoicesFields = [
@@ -105,4 +118,45 @@ export const fleetFields = [
   { field: 'type', label: 'Type', type: 'text', required: false, desc: 'Asset type (Vehicle, Trailer, Equipment, Tool)' },
   { field: 'status', label: 'Status', type: 'text', required: false, desc: 'Current status (Available, In Use, Maintenance, Out of Service)' },
   { field: 'mileage_hours', label: 'Mileage/Hours', type: 'number', required: false, desc: 'Current mileage or operating hours' },
+]
+
+// --- Related / child table field definitions (for multi-sheet XLSX export/import) ---
+
+export const jobLinesFields = [
+  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name' },
+  { field: 'quantity', label: 'Quantity', type: 'number', required: true },
+  { field: 'price', label: 'Unit Price', type: 'number', required: true },
+  { field: 'total', label: 'Total', type: 'number' },
+]
+
+export const jobSectionsFields = [
+  { field: 'name', label: 'Section Name', type: 'text', required: true },
+  { field: 'description', label: 'Description', type: 'text' },
+  { field: 'sort_order', label: 'Sort Order', type: 'number' },
+  { field: 'status', label: 'Status', type: 'text' },
+  { field: 'percent_of_job', label: '% of Job', type: 'number' },
+  { field: 'estimated_hours', label: 'Est. Hours', type: 'number' },
+  { field: 'notes', label: 'Notes', type: 'text' },
+]
+
+export const quoteLinesFields = [
+  { field: 'item_name', label: 'Product/Service', type: 'text' },
+  { field: 'quantity', label: 'Quantity', type: 'number', required: true },
+  { field: 'price', label: 'Unit Price', type: 'number', required: true },
+  { field: 'line_total', label: 'Total', type: 'number' },
+]
+
+export const invoiceLinesFields = [
+  { field: 'item_name', label: 'Product/Service', type: 'text' },
+  { field: 'quantity', label: 'Quantity', type: 'number', required: true },
+  { field: 'price', label: 'Unit Price', type: 'number', required: true },
+  { field: 'line_total', label: 'Total', type: 'number' },
+]
+
+export const paymentsFields = [
+  { field: 'date', label: 'Payment Date', type: 'date', required: true },
+  { field: 'amount', label: 'Amount', type: 'number', required: true },
+  { field: 'method', label: 'Payment Method', type: 'text' },
+  { field: 'status', label: 'Status', type: 'text' },
+  { field: 'notes', label: 'Notes', type: 'text' },
 ]

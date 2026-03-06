@@ -5,8 +5,8 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download, Settings as SettingsIcon, Sliders, CreditCard, Mail } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
-import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
-import { invoicesFields } from '../lib/importExportFields'
+import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
+import { invoicesFields, invoiceLinesFields, paymentsFields } from '../lib/importExportFields'
 import { toast } from '../lib/toast'
 
 // Light theme fallback
@@ -120,6 +120,31 @@ export default function Invoices() {
   const [showImportExport, setShowImportExport] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState('preferences')
+
+  const invoiceRelatedTables = [
+    {
+      tableName: 'invoice_lines',
+      sheetName: 'Line Items',
+      parentIdField: 'invoice_id',
+      parentRefLabel: 'Invoice ID',
+      fields: invoiceLinesFields,
+      fetchData: async (parentIds) => {
+        const { data } = await supabase.from('invoice_lines').select('*, item:products_services(name)').in('invoice_id', parentIds)
+        return (data || []).map(r => ({ ...r, item_name: r.item?.name || r.item_name || '' }))
+      },
+    },
+    {
+      tableName: 'payments',
+      sheetName: 'Payments',
+      parentIdField: 'invoice_id',
+      parentRefLabel: 'Invoice ID',
+      fields: paymentsFields,
+      fetchData: async (parentIds) => {
+        const { data } = await supabase.from('payments').select('*').in('invoice_id', parentIds)
+        return data || []
+      },
+    },
+  ]
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -694,7 +719,7 @@ export default function Invoices() {
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
-          <button onClick={() => exportToCSV(invoices, invoicesFields, 'invoices_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+          <button onClick={() => exportToXLSX(invoices, invoicesFields, 'invoices_export', { relatedTables: invoiceRelatedTables, parentRefField: 'invoice_id', mainSheetName: 'Invoices', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
           </button>
           <button onClick={() => setShowSettings(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
@@ -1528,6 +1553,8 @@ export default function Invoices() {
           companyId={companyId}
           requiredField="amount"
           defaultValues={{ company_id: companyId, payment_status: 'Pending' }}
+          relatedTables={invoiceRelatedTables}
+          parentRefField="invoice_id"
           onImportComplete={() => fetchInvoices()}
           onClose={() => setShowImportExport(false)}
         />
