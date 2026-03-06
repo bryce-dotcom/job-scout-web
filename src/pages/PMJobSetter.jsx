@@ -1227,7 +1227,8 @@ export default function PMJobSetter() {
       <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden', flexDirection: isMobile ? 'column' : 'row' }}>
         {/* Left: Kanban Jobs */}
         <div style={{
-          width: isMobile ? '100%' : '500px',
+          width: isMobile ? '100%' : '55%',
+          minWidth: isMobile ? undefined : '400px',
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
@@ -1312,24 +1313,24 @@ export default function PMJobSetter() {
                     <div style={{
                       backgroundColor: status.color,
                       color: '#fff',
-                      padding: '8px',
+                      padding: '10px',
                       borderRadius: '8px 8px 0 0',
-                      fontSize: '11px',
+                      fontSize: '12px',
                       fontWeight: '600',
                       textAlign: 'center',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '4px'
+                      gap: '5px'
                     }}>
-                      <StatusIcon size={12} />
-                      <span>{status.name.split(' ')[0]}</span>
+                      <StatusIcon size={14} />
+                      <span>{status.name}</span>
                       <span style={{
                         marginLeft: '4px',
                         backgroundColor: 'rgba(255,255,255,0.25)',
-                        padding: '1px 6px',
+                        padding: '2px 7px',
                         borderRadius: '8px',
-                        fontSize: '10px'
+                        fontSize: '11px'
                       }}>
                         {getJobsByStatus(status.id).length}
                       </span>
@@ -1340,11 +1341,11 @@ export default function PMJobSetter() {
                       flex: 1,
                       backgroundColor: dragOverStatus === status.id ? theme.accentBg : 'rgba(0,0,0,0.02)',
                       borderRadius: '0 0 8px 8px',
-                      padding: '6px',
+                      padding: '8px',
                       overflowY: 'auto',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '6px'
+                      gap: '8px'
                     }}>
                       {getJobsByStatus(status.id).map(job => {
                         const progress = calculateJobProgress(job.id)
@@ -1358,17 +1359,17 @@ export default function PMJobSetter() {
                             <EntityCard
                               name={job.customer?.name}
                               businessName={job.customer?.business_name}
-                              style={{ padding: '0px', overflow: 'hidden', fontSize: '12px' }}
+                              style={{ padding: '0px', overflow: 'hidden' }}
                             >
                               {/* Job Header */}
                               <div
                                 onClick={() => toggleJobExpanded(job.id)}
                                 style={{
-                                  padding: '8px 10px',
+                                  padding: '10px 12px',
                                   cursor: 'pointer',
                                   display: 'flex',
                                   alignItems: 'flex-start',
-                                  gap: '6px'
+                                  gap: '8px'
                                 }}
                               >
                                 {isExpanded ? (
@@ -1378,50 +1379,52 @@ export default function PMJobSetter() {
                                 )}
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{
-                                    fontSize: '12px',
+                                    fontSize: '13px',
                                     fontWeight: '600',
                                     color: theme.text,
-                                    marginBottom: '2px',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis'
+                                    marginBottom: '3px',
+                                    lineHeight: '1.3',
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden'
                                   }}>
                                     {job.job_title || `Job #${job.id}`}
                                   </div>
-                                  <div style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+                                  <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '6px' }}>
                                     {job.customer?.name}
                                   </div>
 
                                   {/* Progress Bar */}
                                   <div style={{
-                                    height: '4px',
+                                    height: '5px',
                                     backgroundColor: theme.border,
-                                    borderRadius: '2px',
+                                    borderRadius: '3px',
                                     overflow: 'hidden',
-                                    marginBottom: '4px'
+                                    marginBottom: '5px'
                                   }}>
                                     <div style={{
                                       height: '100%',
                                       width: `${progress}%`,
                                       backgroundColor: progress === 100 ? '#22c55e' : '#3b82f6',
-                                      borderRadius: '2px',
+                                      borderRadius: '3px',
                                       transition: 'width 0.3s'
                                     }} />
                                   </div>
 
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '9px', color: theme.textMuted }}>
+                                    <span style={{ fontSize: '11px', color: theme.textMuted }}>
                                       {Math.round(progress)}% complete
                                     </span>
                                     {job.pm?.name && (
-                                      <span style={{ fontSize: '9px', color: theme.textSecondary }}>
-                                        <User size={9} style={{ marginRight: '2px' }} />
+                                      <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center' }}>
+                                        <User size={11} style={{ marginRight: '3px' }} />
                                         {job.pm.name}
                                       </span>
                                     )}
                                     {job.start_date && (
-                                      <span style={{ fontSize: '9px', color: theme.textSecondary }}>
-                                        <Calendar size={9} style={{ marginRight: '2px' }} />
+                                      <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center' }}>
+                                        <Calendar size={11} style={{ marginRight: '3px' }} />
                                         {new Date(job.start_date).toLocaleDateString()}
                                       </span>
                                     )}
@@ -1451,19 +1454,19 @@ export default function PMJobSetter() {
                                           onDragEnd={handleDragEnd}
                                           style={{
                                             backgroundColor: theme.bgCard,
-                                            borderRadius: '4px',
-                                            padding: '6px 8px',
+                                            borderRadius: '6px',
+                                            padding: '8px 10px',
                                             marginBottom: '4px',
                                             border: `1px solid ${theme.border}`,
                                             cursor: 'grab',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            gap: '6px'
+                                            gap: '8px'
                                           }}
                                         >
                                           <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{
-                                              fontSize: '11px',
+                                              fontSize: '12px',
                                               fontWeight: '500',
                                               color: theme.text,
                                               whiteSpace: 'nowrap',
@@ -1472,7 +1475,7 @@ export default function PMJobSetter() {
                                             }}>
                                               {section.name}
                                             </div>
-                                            <div style={{ fontSize: '9px', color: theme.textMuted }}>
+                                            <div style={{ fontSize: '11px', color: theme.textMuted }}>
                                               {section.percent_of_job || 0}%
                                               {section.assigned_employee?.name && ` · ${section.assigned_employee.name}`}
                                             </div>
@@ -1485,8 +1488,8 @@ export default function PMJobSetter() {
                                             }}
                                             onClick={(e) => e.stopPropagation()}
                                             style={{
-                                              padding: '2px 4px',
-                                              fontSize: '9px',
+                                              padding: '3px 6px',
+                                              fontSize: '10px',
                                               borderRadius: '4px',
                                               border: 'none',
                                               backgroundColor: statusColor.bg,
