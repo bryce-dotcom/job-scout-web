@@ -396,15 +396,16 @@ export default function ImportExportModal({
     }
 
     setStep('importing')
-    const childRowCount = isMultiSheet ? Object.values(childSheets).reduce((sum, cs) => sum + (cs.rows?.length || 0), 0) : 0
+    const hasChildData = hasRelated && Object.keys(childSheets).length > 0
+    const childRowCount = hasChildData ? Object.values(childSheets).reduce((sum, cs) => sum + (cs.rows?.length || 0), 0) : 0
     const total = rows.length + childRowCount
     setProgress({ done: 0, total, errors: [] })
     const errors = []
     const allInsertedIds = []
     const BATCH_SIZE = 25
 
-    // For multi-sheet: select the ref field alongside id so we can build the lookup from actual DB data
-    const selectFields = (isMultiSheet && parentRefField) ? `id, ${parentRefField}` : 'id'
+    // Select the ref field alongside id so we can build the lookup from actual DB data
+    const selectFields = (hasRelated && parentRefField) ? `id, ${parentRefField}` : 'id'
     const refToId = {} // ref value → new DB id (built from actual insert responses)
 
     // --- Phase 1: Insert parent records ---
@@ -427,7 +428,7 @@ export default function ImportExportModal({
         if (reqVal === null || reqVal === undefined || reqVal === '') return null
 
         // Auto-generate ref ID if missing (so child sheets can link to this parent)
-        if (isMultiSheet && parentRefField && !record[parentRefField]) {
+        if (hasRelated && parentRefField && !record[parentRefField]) {
           const prefix = tableName === 'jobs' ? 'JOB' : tableName === 'quotes' ? 'EST' : tableName === 'invoices' ? 'INV' : 'REF'
           record[parentRefField] = `${prefix}-${Date.now().toString(36).toUpperCase()}${autoRefCounter++}`
         }
@@ -442,7 +443,7 @@ export default function ImportExportModal({
         } else if (data) {
           allInsertedIds.push(...data.map(r => r.id))
           // Build ref lookup from actual DB response
-          if (isMultiSheet && parentRefField) {
+          if (hasRelated && parentRefField) {
             data.forEach(row => {
               if (row[parentRefField]) {
                 refToId[String(row[parentRefField]).trim()] = row.id
@@ -456,8 +457,8 @@ export default function ImportExportModal({
 
     setInsertedIds(allInsertedIds)
 
-    // --- Phase 2: Insert child records (multi-sheet only) ---
-    if (isMultiSheet && allInsertedIds.length > 0) {
+    // --- Phase 2: Insert child records (when child sheet data exists) ---
+    if (hasChildData && allInsertedIds.length > 0) {
 
       const allChildInserted = {}
       const summary = {}
@@ -520,9 +521,10 @@ export default function ImportExportModal({
 
   const activeFields = fields.filter(f => mapping[f.field] !== undefined || defaults[f.field] !== undefined)
 
-  // Tabs config for multi-sheet mapping
-  const mappingTabs = isMultiSheet
-    ? [{ label: entityName, key: 'main' }, ...relatedTables.filter(rt => childSheets[rt.tableName]).map(rt => ({ label: rt.sheetName, key: rt.tableName }))]
+  // Tabs config — always show when relatedTables are configured (not just multi-sheet files)
+  const hasRelated = relatedTables.length > 0
+  const mappingTabs = hasRelated
+    ? [{ label: entityName, key: 'main' }, ...relatedTables.map(rt => ({ label: rt.sheetName, key: rt.tableName }))]
     : []
 
   return (
@@ -625,7 +627,7 @@ export default function ImportExportModal({
                 <>
                   <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>
                     {importFile?.name} — {rows.length} rows found
-                    {isMultiSheet && ` + ${Object.values(childSheets).reduce((s, cs) => s + (cs.rows?.length || 0), 0)} child rows across ${Object.keys(childSheets).length} sheet(s)`}
+                    {Object.keys(childSheets).length > 0 && ` + ${Object.values(childSheets).reduce((s, cs) => s + (cs.rows?.length || 0), 0)} child rows across ${Object.keys(childSheets).length} sheet(s)`}
                   </div>
                   {notes && (
                     <div style={{
@@ -636,8 +638,8 @@ export default function ImportExportModal({
                     </div>
                   )}
 
-                  {/* Tabs for multi-sheet */}
-                  {isMultiSheet && mappingTabs.length > 1 && (
+                  {/* Tabs for related tables — always visible when relatedTables configured */}
+                  {hasRelated && mappingTabs.length > 1 && (
                     <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '0' }}>
                       {mappingTabs.map((tab, idx) => (
                         <button key={tab.key} onClick={() => setActiveTab(idx)} style={{
@@ -656,7 +658,7 @@ export default function ImportExportModal({
                   )}
 
                   {/* Main sheet mapping (tab 0 or single-sheet) */}
-                  {(!isMultiSheet || activeTab === 0) && (
+                  {(!hasRelated || activeTab === 0) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {fields.map(f => (
                         <div key={f.field} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -688,11 +690,19 @@ export default function ImportExportModal({
                   )}
 
                   {/* Child sheet mapping (tabs 1+) */}
-                  {isMultiSheet && activeTab > 0 && (() => {
-                    const rt = relatedTables.filter(r => childSheets[r.tableName])[activeTab - 1]
+                  {hasRelated && activeTab > 0 && (() => {
+                    const rt = relatedTables[activeTab - 1]
                     if (!rt) return null
                     const cs = childSheets[rt.tableName]
-                    if (!cs) return null
+                    if (!cs || !cs.headers || cs.headers.length === 0) {
+                      return (
+                        <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                          <AlertCircle size={24} style={{ color: theme.textMuted, marginBottom: '8px' }} />
+                          <div style={{ fontWeight: '500', marginBottom: '4px' }}>No "{rt.sheetName}" sheet found in the uploaded file</div>
+                          <div>To import {rt.sheetName.toLowerCase()}, upload a multi-sheet XLSX file with a sheet named "{rt.sheetName}".</div>
+                        </div>
+                      )
+                    }
                     const allChildFields = [
                       { field: '_parentRef', label: rt.parentRefLabel || 'Parent Ref', type: 'text', required: true },
                       ...rt.fields
@@ -730,7 +740,7 @@ export default function ImportExportModal({
                   })()}
 
                   {/* Defaults section */}
-                  {Object.keys(defaults).length > 0 && (!isMultiSheet || activeTab === 0) && (
+                  {Object.keys(defaults).length > 0 && (!hasRelated || activeTab === 0) && (
                     <div style={{ marginTop: '16px', padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px' }}>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px' }}>Default Values</div>
                       {Object.entries(defaults).map(([field, val]) => (
@@ -774,7 +784,7 @@ export default function ImportExportModal({
             <div>
               <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
                 Showing first {Math.min(10, rows.length)} of {rows.length} {entityName.toLowerCase()} to import
-                {isMultiSheet && Object.keys(childSheets).length > 0 && (
+                {Object.keys(childSheets).length > 0 && (
                   <span> + {relatedTables.filter(rt => childSheets[rt.tableName]?.rows?.length > 0).map(rt =>
                     `${childSheets[rt.tableName].rows.length} ${rt.sheetName.toLowerCase()}`
                   ).join(', ')}</span>
@@ -875,7 +885,7 @@ export default function ImportExportModal({
                   </div>
                   <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px' }}>
                     {insertedIds.length || (progress.total - progress.errors.length)} {entityName.toLowerCase()} imported successfully
-                    {isMultiSheet && Object.keys(importSummary).length > 0 && (
+                    {Object.keys(importSummary).length > 0 && (
                       <div style={{ marginTop: '8px', fontSize: '13px' }}>
                         {relatedTables.filter(rt => importSummary[rt.tableName]).map(rt => (
                           <div key={rt.tableName}>{importSummary[rt.tableName].count} {rt.sheetName.toLowerCase()} linked</div>
