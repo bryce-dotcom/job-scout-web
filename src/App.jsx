@@ -14,8 +14,8 @@ import LeadDetail from './pages/LeadDetail'
 import LeadSetter from './pages/LeadSetter'
 import SalesPipeline from './pages/SalesPipeline'
 import ProductsServices from './pages/ProductsServices'
-import Quotes from './pages/Quotes'
-import QuoteDetail from './pages/QuoteDetail'
+import Estimates from './pages/Estimates'
+import EstimateDetail from './pages/EstimateDetail'
 import Jobs from './pages/Jobs'
 import JobDetail from './pages/JobDetail'
 import JobCalendar from './pages/JobCalendar'
@@ -267,8 +267,8 @@ function App() {
           <Route path="/lead-setter" element={<LeadSetter />} />
           <Route path="/pipeline" element={<SalesPipeline />} />
           <Route path="/products" element={<ProductsServices />} />
-          <Route path="/quotes" element={<Quotes />} />
-          <Route path="/quotes/:id" element={<QuoteDetail />} />
+          <Route path="/estimates" element={<Estimates />} />
+          <Route path="/estimates/:id" element={<EstimateDetail />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/jobs/calendar" element={<JobCalendar />} />
           <Route path="/jobs/:id" element={<JobDetail />} />

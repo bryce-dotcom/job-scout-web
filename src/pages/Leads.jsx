@@ -285,7 +285,7 @@ export default function Leads() {
   }
 
   const handleCreateQuote = (lead) => {
-    navigate(`/quotes/new?lead_id=${lead.id}`)
+    navigate(`/estimates/new?lead_id=${lead.id}`)
   }
 
   const handleConvertToCustomer = async (lead) => {

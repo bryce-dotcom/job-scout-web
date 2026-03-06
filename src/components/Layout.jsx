@@ -211,7 +211,7 @@ export default function Layout() {
       { value: 'Leads', label: 'Under Leads' },
       { value: 'Lead Setter', label: 'Under Lead Setter' },
       { value: 'Pipeline', label: 'Under Pipeline' },
-      { value: 'Quotes', label: 'Under Quotes' },
+      { value: 'Estimates', label: 'Under Estimates' },
       { value: 'Jobs', label: 'Under Jobs' }
     ],
     CUSTOMERS: [
@@ -252,7 +252,7 @@ export default function Layout() {
     { to: '/leads', icon: UserPlus, label: 'Leads', step: 1, hint: 'All potential customers start here', color: '#6b7280' },
     { to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 2, hint: 'Call leads and schedule appointments', color: '#8b5cf6' },
     { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 3, hint: 'Track leads through sales process', color: '#f59e0b' },
-    { to: '/quotes', icon: FileText, label: 'Quotes', step: 4, hint: 'Create and send price quotes', color: '#3b82f6' },
+    { to: '/estimates', icon: FileText, label: 'Estimates', step: 4, hint: 'Create and send estimates', color: '#3b82f6' },
     { to: '/jobs', icon: Briefcase, label: 'Jobs', step: 5, hint: 'Won quotes become jobs', color: '#22c55e' }
   ]
 

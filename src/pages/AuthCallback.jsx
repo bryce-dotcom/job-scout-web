@@ -52,6 +52,28 @@ export default function AuthCallback() {
     return { success: true, employee, company: employee.company }
   }
 
+  // Store Google Calendar token if present in session
+  const storeGoogleCalendarToken = async (session, employee) => {
+    try {
+      const providerToken = session.provider_token
+      const providerRefreshToken = session.provider_refresh_token
+      if (!providerToken || !employee?.id || !employee?.company_id) return
+
+      await supabase.functions.invoke('google-calendar-token', {
+        body: {
+          action: 'store',
+          employee_id: employee.id,
+          company_id: employee.company_id,
+          access_token: providerToken,
+          refresh_token: providerRefreshToken || null,
+          expires_in: 3600
+        }
+      })
+    } catch (e) {
+      console.warn('Failed to store Google Calendar token:', e)
+    }
+  }
+
   useEffect(() => {
     const handleCallback = async () => {
       // Check URL for recovery type
@@ -59,6 +81,7 @@ export default function AuthCallback() {
       const params = new URLSearchParams(window.location.search)
       const hashParams = new URLSearchParams(hash.replace('#', ''))
       const type = params.get('type') || hashParams.get('type')
+      const gcalConnect = params.get('gcal_connect') === 'true'
 
       if (type === 'recovery') {
         setIsRecovery(true)
@@ -89,8 +112,10 @@ export default function AuthCallback() {
           setUser(result.employee)
           setCompany(result.company)
           await checkDeveloperStatus()
+          // Store Google Calendar token if present
+          await storeGoogleCalendarToken(data.session, result.employee)
           supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
-          navigate(result.company.setup_complete === false ? '/onboarding' : '/', { replace: true })
+          navigate(gcalConnect ? '/appointments' : (result.company.setup_complete === false ? '/onboarding' : '/'), { replace: true })
           return
         }
 
@@ -111,8 +136,10 @@ export default function AuthCallback() {
       setUser(result.employee)
       setCompany(result.company)
       await checkDeveloperStatus()
+      // Store Google Calendar token if present
+      await storeGoogleCalendarToken(session, result.employee)
       supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
-      navigate(result.company.setup_complete === false ? '/onboarding' : '/', { replace: true })
+      navigate(gcalConnect ? '/appointments' : (result.company.setup_complete === false ? '/onboarding' : '/'), { replace: true })
     }
 
     handleCallback()

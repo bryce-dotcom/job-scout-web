@@ -17,7 +17,7 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MB — main bundle is ~2.7 MB
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB — main bundle is ~4.2 MB
         runtimeCaching: [
           {
             // Cache Supabase REST API calls — network first, fall back to cache

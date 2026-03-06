@@ -246,7 +246,7 @@ export default function CustomerDetail() {
       .eq('id', quoteId)
 
     await fetchCustomerData()
-    alert('Quote marked as sent!')
+    alert('Estimate marked as sent!')
   }
 
   // Send customer to setter pipeline
@@ -321,7 +321,7 @@ export default function CustomerDetail() {
 
   const tabs = [
     { id: 'info', label: 'Info', icon: FileText, hint: 'Customer contact information' },
-    { id: 'quotes', label: `Quotes (${quotes.length})`, icon: FileText, hint: 'Price proposals for this customer' },
+    { id: 'quotes', label: `Estimates (${quotes.length})`, icon: FileText, hint: 'Price estimates for this customer' },
     { id: 'jobs', label: `Jobs (${jobs.length})`, icon: Briefcase, hint: 'Work orders for this customer' }
   ]
 
@@ -665,9 +665,9 @@ export default function CustomerDetail() {
               marginBottom: '20px'
             }}>
               <div>
-                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Quotes</h3>
+                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Estimates</h3>
                 <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
-                  Create and send quotes to this customer
+                  Create and send estimates to this customer
                 </p>
               </div>
               <button
@@ -689,7 +689,7 @@ export default function CustomerDetail() {
                 }}
               >
                 <Plus size={16} />
-                New Quote
+                New Estimate
               </button>
             </div>
 
@@ -697,9 +697,9 @@ export default function CustomerDetail() {
               <EmptyState
                 icon={FileText}
                 iconColor="#3b82f6"
-                title="No quotes yet"
-                message="Create a quote to send a price proposal to this customer."
-                actionLabel="Create Quote"
+                title="No estimates yet"
+                message="Create an estimate to send a price proposal to this customer."
+                actionLabel="Create Estimate"
                 onAction={openQuoteModal}
               />
             ) : (
@@ -751,7 +751,7 @@ export default function CustomerDetail() {
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
-                          onClick={() => navigate(`/quotes/${quote.id}`)}
+                          onClick={() => navigate(`/estimates/${quote.id}`)}
                           style={{
                             padding: isMobile ? '10px 14px' : '8px 14px',
                             minHeight: isMobile ? '44px' : 'auto',
@@ -768,7 +768,7 @@ export default function CustomerDetail() {
                           View/Edit
                         </button>
                         {quote.status === 'Draft' && (
-                          <Tooltip text="Mark this quote as sent to the customer">
+                          <Tooltip text="Mark this estimate as sent to the customer">
                             <button
                               onClick={() => handleSendQuote(quote.id)}
                               style={{
@@ -956,7 +956,7 @@ export default function CustomerDetail() {
             }}>
               <div>
                 <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                  Create Quote
+                  Create Estimate
                 </h2>
                 <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
                   {customer.name}
@@ -1315,7 +1315,7 @@ export default function CustomerDetail() {
                 <textarea
                   value={quoteNotes}
                   onChange={(e) => setQuoteNotes(e.target.value)}
-                  placeholder="Optional notes for this quote..."
+                  placeholder="Optional notes for this estimate..."
                   rows={3}
                   style={{
                     width: '100%',
@@ -1377,11 +1377,11 @@ export default function CustomerDetail() {
                 }}
               >
                 <Save size={16} />
-                {savingQuote ? 'Saving...' : 'Create Quote'}
+                {savingQuote ? 'Saving...' : 'Create Estimate'}
               </button>
             </div>
             <p style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'center', margin: '8px 0 0' }}>
-              Quote will be tracked in your sales pipeline
+              Estimate will be tracked in your sales pipeline
             </p>
           </div>
         </>

@@ -201,6 +201,41 @@ async function clearSynced() {
   }
 }
 
+// Remove stuck entries (retries >= 10) from the queue
+async function clearStuck() {
+  const queue = await offlineDb.getAll('_syncQueue')
+  for (const entry of queue) {
+    if (entry.status === 'failed' && entry.retries >= 10) {
+      await offlineDb.remove('_syncQueue', entry.id)
+    }
+  }
+  notifyUpdate()
+}
+
+// Reset stuck entries so they can be retried
+async function retryStuck() {
+  const queue = await offlineDb.getAll('_syncQueue')
+  for (const entry of queue) {
+    if (entry.status === 'failed' && entry.retries >= 10) {
+      entry.retries = 0
+      entry.status = 'pending'
+      await offlineDb.put('_syncQueue', entry)
+    }
+  }
+  notifyUpdate()
+}
+
+// Remove all pending/failed entries from the queue
+async function clearAll() {
+  const queue = await offlineDb.getAll('_syncQueue')
+  for (const entry of queue) {
+    if (entry.status !== 'syncing') {
+      await offlineDb.remove('_syncQueue', entry.id)
+    }
+  }
+  notifyUpdate()
+}
+
 // Check if currently processing
 function isProcessing() {
   return _processing
@@ -213,5 +248,8 @@ export const syncQueue = {
   getStuckCount,
   getQueue,
   clearSynced,
+  clearStuck,
+  clearAll,
+  retryStuck,
   isProcessing
 }

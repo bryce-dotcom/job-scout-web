@@ -1857,8 +1857,8 @@ export default function JobDetail() {
               border: `1px solid ${theme.border}`,
               padding: '20px'
             }}>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Linked Quote</h3>
-              <button onClick={() => navigate(`/quotes/${job.quote_id}`)} style={{
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Linked Estimate</h3>
+              <button onClick={() => navigate(`/estimates/${job.quote_id}`)} style={{
                 color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', textDecoration: 'underline'
               }}>
                 {job.quote.quote_id}

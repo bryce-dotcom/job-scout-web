@@ -181,7 +181,7 @@ export default function LightingAuditDetail() {
       }
     }
 
-    navigate(`/quotes/${quoteTempId}`)
+    navigate(`/estimates/${quoteTempId}`)
   }
 
   const recalculateAudit = async () => {
@@ -653,7 +653,7 @@ export default function LightingAuditDetail() {
               }}
             >
               <FileText size={16} />
-              Create Quote
+              Create Estimate
             </button>
           )}
         </div>

@@ -19,7 +19,8 @@ import {
   Code,
   Database,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  FileStack
 } from 'lucide-react'
 import { seedSampleData, clearAllData } from '../lib/seedData'
 import { toast } from '../lib/toast'
@@ -42,6 +43,7 @@ const baseTabs = [
   { id: 'lead_sources', label: 'Lead Sources', icon: Target },
   { id: 'service_types', label: 'Service Types', icon: Wrench },
   { id: 'statuses', label: 'Job Statuses', icon: CheckSquare },
+  { id: 'estimate_defaults', label: 'Estimate Defaults', icon: FileStack },
   { id: 'users', label: 'User Management', icon: Users },
   { id: 'integrations', label: 'Integrations', icon: Link2 }
 ]
@@ -515,6 +517,9 @@ export default function Settings() {
           </div>
         )
 
+      case 'estimate_defaults':
+        return <EstimateDefaultsTab theme={theme} settings={settings} saveSetting={saveSetting} />
+
       case 'integrations':
         return (
           <div>
@@ -788,6 +793,166 @@ export default function Settings() {
         }}>
           {renderContent()}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Estimate Defaults Tab Component
+function EstimateDefaultsTab({ theme, settings, saveSetting }) {
+  const existing = settings.find(s => s.key === 'estimate_defaults')
+  let defaults = {
+    default_message: '',
+    expiration_days: 30,
+    show_logo: true,
+    show_company_address: true,
+    show_company_phone: true,
+    show_company_email: true,
+    show_customer_company: true,
+    show_line_descriptions: true,
+    show_line_images: false,
+    show_technician: true,
+    show_service_date: true,
+    pdf_layout: 'email',
+    footer_text: ''
+  }
+  if (existing) {
+    try { defaults = { ...defaults, ...JSON.parse(existing.value) } } catch {}
+  }
+
+  const [form, setForm] = useState(defaults)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    await saveSetting('estimate_defaults', form)
+    setSaving(false)
+    toast.success('Estimate defaults saved!')
+  }
+
+  const toggle = (key) => setForm(prev => ({ ...prev, [key]: !prev[key] }))
+
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '8px',
+    border: `1px solid ${theme.border}`,
+    backgroundColor: theme.bg,
+    color: theme.text,
+    fontSize: '14px'
+  }
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: '500',
+    color: theme.textSecondary,
+    marginBottom: '6px'
+  }
+
+  return (
+    <div>
+      <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Estimate Defaults</h3>
+      <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '24px' }}>
+        Configure default settings for all new estimates. Individual estimates can override these.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '500px' }}>
+        <div>
+          <label style={labelStyle}>Default Estimate Message</label>
+          <textarea
+            value={form.default_message || ''}
+            onChange={(e) => setForm(prev => ({ ...prev, default_message: e.target.value }))}
+            rows={3}
+            placeholder="Message displayed on estimates for customers..."
+            style={{ ...inputStyle, resize: 'vertical' }}
+          />
+        </div>
+
+        <div>
+          <label style={labelStyle}>Expiration Days</label>
+          <input
+            type="number"
+            value={form.expiration_days || ''}
+            onChange={(e) => setForm(prev => ({ ...prev, expiration_days: parseInt(e.target.value) || 0 }))}
+            placeholder="30"
+            style={{ ...inputStyle, maxWidth: '120px' }}
+          />
+          <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>Days until new estimates expire by default</p>
+        </div>
+
+        <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '16px' }}>
+          <p style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>PDF Display Options</p>
+
+          {[
+            { key: 'show_logo', label: 'Show Company Logo' },
+            { key: 'show_company_address', label: 'Show Company Address' },
+            { key: 'show_company_phone', label: 'Show Company Phone' },
+            { key: 'show_company_email', label: 'Show Company Email' },
+            { key: 'show_customer_company', label: 'Show Customer Company Name' },
+            { key: 'show_line_descriptions', label: 'Show Line Item Descriptions' },
+            { key: 'show_line_images', label: 'Show Line Item Images' },
+            { key: 'show_technician', label: 'Show Technician' },
+            { key: 'show_service_date', label: 'Show Service Date' }
+          ].map(item => (
+            <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={form[item.key] || false}
+                onChange={() => toggle(item.key)}
+                style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+              />
+              <span style={{ fontSize: '14px', color: theme.text }}>{item.label}</span>
+            </label>
+          ))}
+        </div>
+
+        <div>
+          <label style={labelStyle}>Default PDF Layout</label>
+          <select
+            value={form.pdf_layout || 'email'}
+            onChange={(e) => setForm(prev => ({ ...prev, pdf_layout: e.target.value }))}
+            style={inputStyle}
+          >
+            <option value="email">Email Optimized</option>
+            <option value="envelope">Envelope Optimized (#9/#10 window)</option>
+          </select>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Footer Text</label>
+          <textarea
+            value={form.footer_text || ''}
+            onChange={(e) => setForm(prev => ({ ...prev, footer_text: e.target.value }))}
+            rows={2}
+            placeholder="Text displayed at the bottom of estimate PDFs..."
+            style={{ ...inputStyle, resize: 'vertical' }}
+          />
+        </div>
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            padding: '12px 24px',
+            backgroundColor: theme.accent,
+            color: '#fff',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            cursor: saving ? 'not-allowed' : 'pointer',
+            opacity: saving ? 0.6 : 1,
+            alignSelf: 'flex-start'
+          }}
+        >
+          <Save size={16} />
+          {saving ? 'Saving...' : 'Save Defaults'}
+        </button>
       </div>
     </div>
   )

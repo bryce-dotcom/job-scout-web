@@ -64,7 +64,45 @@ export default function OfflineBanner() {
     content = (
       <>
         <AlertTriangle size={16} />
-        {stuckCount} change{stuckCount !== 1 ? 's' : ''} failed to sync — data is saved locally, contact support if this persists
+        {stuckCount} change{stuckCount !== 1 ? 's' : ''} failed to sync — data is saved locally
+        <button
+          onClick={async () => {
+            await syncQueue.clearStuck()
+            await refreshPending()
+          }}
+          style={{
+            marginLeft: '8px',
+            padding: '2px 10px',
+            fontSize: '12px',
+            fontWeight: '600',
+            backgroundColor: 'rgba(255,255,255,0.25)',
+            color: '#fff',
+            border: '1px solid rgba(255,255,255,0.4)',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Dismiss
+        </button>
+        <button
+          onClick={async () => {
+            await syncQueue.retryStuck()
+            await syncQueue.processQueue()
+            await refreshPending()
+          }}
+          style={{
+            padding: '2px 10px',
+            fontSize: '12px',
+            fontWeight: '600',
+            backgroundColor: 'rgba(255,255,255,0.25)',
+            color: '#fff',
+            border: '1px solid rgba(255,255,255,0.4)',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Retry
+        </button>
       </>
     )
   } else if (syncing) {
@@ -96,6 +134,43 @@ export default function OfflineBanner() {
       <>
         <RefreshCw size={16} />
         {pendingCount} change{pendingCount !== 1 ? 's' : ''} pending sync
+        <button
+          onClick={async () => {
+            await syncQueue.clearAll()
+            await refreshPending()
+          }}
+          style={{
+            marginLeft: '8px',
+            padding: '2px 10px',
+            fontSize: '12px',
+            fontWeight: '600',
+            backgroundColor: 'rgba(255,255,255,0.25)',
+            color: '#fff',
+            border: '1px solid rgba(255,255,255,0.4)',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Dismiss
+        </button>
+        <button
+          onClick={async () => {
+            await syncQueue.processQueue()
+            await refreshPending()
+          }}
+          style={{
+            padding: '2px 10px',
+            fontSize: '12px',
+            fontWeight: '600',
+            backgroundColor: 'rgba(255,255,255,0.25)',
+            color: '#fff',
+            border: '1px solid rgba(255,255,255,0.4)',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Retry
+        </button>
       </>
     )
   }

@@ -219,7 +219,7 @@ export default function LeadDetail() {
       }
     }
 
-    navigate(`/quotes/${quoteTempId}`)
+    navigate(`/estimates/${quoteTempId}`)
   }
 
   // Open quote creation modal
@@ -713,7 +713,7 @@ export default function LeadDetail() {
     { id: 'info', label: 'Info', icon: FileText, hint: 'Basic contact information' },
     { id: 'appointment', label: 'Appointment', icon: Calendar, hint: 'Scheduled meetings with this lead' },
     { id: 'audits', label: `Audits (${audits.length})`, icon: Clipboard, hint: 'Site surveys - Lenard can help with lighting' },
-    { id: 'quotes', label: `Quotes (${quotes.length})`, icon: FileText, hint: 'Price proposals from audits' },
+    { id: 'quotes', label: `Estimates (${quotes.length})`, icon: FileText, hint: 'Price estimates from audits' },
     { id: 'documents', label: `Docs (${attachments.length})`, icon: Paperclip, hint: 'Attached files and documents' }
   ]
 
@@ -1231,7 +1231,7 @@ export default function LeadDetail() {
               <div>
                 <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Audits & Takeoffs</h3>
                 <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
-                  Create lighting audits to generate accurate quotes
+                  Create lighting audits to generate accurate estimates
                 </p>
               </div>
               <button
@@ -1328,7 +1328,7 @@ export default function LeadDetail() {
                             flex: isMobile ? 1 : 'none'
                           }}
                         >
-                          Create Quote
+                          Create Estimate
                         </button>
                       </Tooltip>
                     </div>
@@ -1351,9 +1351,9 @@ export default function LeadDetail() {
               marginBottom: '20px'
             }}>
               <div>
-                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Quotes</h3>
+                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Estimates</h3>
                 <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
-                  Create and send quotes to convert this lead
+                  Create and send estimates to convert this lead
                 </p>
               </div>
               <button
@@ -1375,7 +1375,7 @@ export default function LeadDetail() {
                 }}
               >
                 <Plus size={16} />
-                New Quote
+                New Estimate
               </button>
             </div>
 
@@ -1383,11 +1383,11 @@ export default function LeadDetail() {
               <EmptyState
                 icon={ClipboardList}
                 iconColor="#3b82f6"
-                title="No quotes yet"
+                title="No estimates yet"
                 message={audits.length > 0
-                  ? "You have audits available! Create a quote from an audit to auto-fill line items and pricing."
-                  : "Create a quote manually, or go to the Audits tab first to generate one automatically."}
-                actionLabel="Create Quote"
+                  ? "You have audits available! Create an estimate from an audit to auto-fill line items and pricing."
+                  : "Create an estimate manually, or go to the Audits tab first to generate one automatically."}
+                actionLabel="Create Estimate"
                 onAction={openQuoteModal}
                 secondaryLabel={audits.length === 0 ? "Create Audit First" : undefined}
                 onSecondaryAction={audits.length === 0 ? () => setActiveTab('audits') : undefined}
@@ -1442,7 +1442,7 @@ export default function LeadDetail() {
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
-                          onClick={() => navigate(`/quotes/${quote.id}`)}
+                          onClick={() => navigate(`/estimates/${quote.id}`)}
                           style={{
                             padding: isMobile ? '10px 14px' : '8px 14px',
                             minHeight: isMobile ? '44px' : 'auto',
@@ -1984,7 +1984,7 @@ export default function LeadDetail() {
             }}>
               <div>
                 <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                  Create Quote
+                  Create Estimate
                 </h2>
                 <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
                   {lead.customer_name}
@@ -2405,7 +2405,7 @@ export default function LeadDetail() {
                 }}
               >
                 <Save size={16} />
-                {savingQuote ? 'Saving...' : 'Create Quote'}
+                {savingQuote ? 'Saving...' : 'Create Estimate'}
               </button>
             </div>
           </div>

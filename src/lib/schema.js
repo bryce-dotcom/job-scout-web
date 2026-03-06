@@ -102,6 +102,7 @@ export const TABLES = {
 export const STATUS = {
   lead: ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost'],
   pipeline: ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost'],
+  estimate: ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired'],
   quote: ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired'],
   job: ['Scheduled', 'In Progress', 'Completed', 'On Hold', 'Cancelled'],
   invoice: ['Draft', 'Sent', 'Paid', 'Partial', 'Overdue', 'Void'],
@@ -165,7 +166,7 @@ export const QUERIES = {
   leads: '*, salesperson:employees(id, name), lead_owner:employees!lead_owner_id(id, name), setter_owner:employees!setter_owner_id(id, name)',
   salesPipeline: '*, lead:leads!lead_id(id, customer_name, phone, email), customer:customers!customer_id(id, name), salesperson:employees!salesperson_id(id, name)',
   appointments: '*, lead:leads!lead_id(id, customer_name, phone, address, service_type), customer:customers!customer_id(id, name), employee:employees!employee_id(id, name), setter:employees!setter_id(id, name), salesperson:employees!salesperson_id(id, name), lead_owner:employees!lead_owner_id(id, name)',
-  quotes: '*, lead:leads!lead_id(id, customer_name), customer:customers!customer_id(id, name, email, phone, address), salesperson:employees!salesperson_id(id, name)',
+  quotes: '*, lead:leads!lead_id(id, customer_name), customer:customers!customer_id(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name)',
   quoteLines: '*, item:products_services(id, name, description)',
   jobs: '*, customer:customers!customer_id(id, name, email, phone, address), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id)',
   jobLines: '*, item:products_services(id, name, description)',

@@ -39,16 +39,35 @@ CREATE POLICY "Allow all access to job_sections" ON job_sections
 -- Add pm_id column to jobs table for Project Manager assignment
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS pm_id INTEGER REFERENCES employees(id);
 
--- Add employee_roles setting with Project Manager role (update if exists, insert if not)
-INSERT INTO settings (company_id, key, value)
-SELECT 3, 'employee_roles', '["Sales","Setter","Technician","Project Manager","Admin"]'
-WHERE NOT EXISTS (
-  SELECT 1 FROM settings WHERE company_id = 3 AND key = 'employee_roles'
-);
+-- Add settings for company_id 3 using INSERT ... ON CONFLICT DO NOTHING pattern
+-- First ensure settings table has unique constraint on (company_id, key)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'settings_company_id_key_unique'
+  ) THEN
+    ALTER TABLE settings ADD CONSTRAINT settings_company_id_key_unique UNIQUE (company_id, key);
+  END IF;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
--- Update existing employee_roles if it exists but doesn't have Project Manager
-UPDATE settings
-SET value = '["Sales","Setter","Technician","Project Manager","Admin"]'
-WHERE company_id = 3
-  AND key = 'employee_roles'
-  AND value NOT LIKE '%Project Manager%';
+-- Insert job_statuses
+INSERT INTO settings (company_id, key, value)
+VALUES (3, 'job_statuses', '["Scheduled","In Progress","On Hold","Complete"]')
+ON CONFLICT (company_id, key) DO NOTHING;
+
+-- Insert job_section_statuses
+INSERT INTO settings (company_id, key, value)
+VALUES (3, 'job_section_statuses', '["Not Started","In Progress","Complete","Verified"]')
+ON CONFLICT (company_id, key) DO NOTHING;
+
+-- Insert employee_roles
+INSERT INTO settings (company_id, key, value)
+VALUES (3, 'employee_roles', '["Sales","Setter","Technician","Project Manager","Admin"]')
+ON CONFLICT (company_id, key) DO NOTHING;
+
+-- Insert job_calendars
+INSERT INTO settings (company_id, key, value)
+VALUES (3, 'job_calendars', '["General"]')
+ON CONFLICT (company_id, key) DO NOTHING;
