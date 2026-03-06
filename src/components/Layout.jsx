@@ -45,7 +45,8 @@ import {
   Wrench,
   Settings as SettingsIcon,
   X as XIcon,
-  Database
+  Database,
+  Compass
 } from 'lucide-react'
 
 // Theme context
@@ -271,6 +272,7 @@ export default function Layout() {
       title: 'OPERATIONS',
       sectionIcon: Wrench,
       baseItems: [
+        { to: '/field-scout', icon: Compass, label: 'Field Scout', hint: 'Daily dashboard for field techs' },
         { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'PM workspace to schedule and track job sections' },
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
         { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' }

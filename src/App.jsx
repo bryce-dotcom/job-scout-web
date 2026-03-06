@@ -48,6 +48,7 @@ import LeadPayments from './pages/LeadPayments'
 import UtilityInvoiceDetail from './pages/UtilityInvoiceDetail'
 import Incentives from './pages/Incentives'
 import TimeClock from './pages/TimeClock'
+import FieldScout from './pages/FieldScout'
 import Payroll from './pages/Payroll'
 import Books from './pages/Books'
 import BaseCamp from './pages/BaseCamp'
@@ -301,6 +302,7 @@ function App() {
           <Route path="/utility-invoices/:id" element={<UtilityInvoiceDetail />} />
           <Route path="/incentives" element={<Incentives />} />
           <Route path="/time-clock" element={<TimeClock />} />
+          <Route path="/field-scout" element={<FieldScout />} />
           <Route path="/payroll" element={<Payroll />} />
           <Route path="/books" element={<Books />} />
 
