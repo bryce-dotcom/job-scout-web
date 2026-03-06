@@ -273,7 +273,7 @@ export const fleetFields = [
 // --- Related / child table field definitions (for multi-sheet XLSX export/import) ---
 
 export const jobLinesFields = [
-  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name (resolved from product ID)' },
+  { field: 'item_name', label: 'Product/Service', type: 'text', virtual: true, desc: 'Product or service name (matched to item_id on import)' },
   { field: 'description', label: 'Description', type: 'text', desc: 'Line item description' },
   { field: 'quantity', label: 'Quantity', type: 'number', required: true, desc: 'Quantity' },
   { field: 'price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
@@ -300,7 +300,7 @@ export const jobSectionsFields = [
 ]
 
 export const quoteLinesFields = [
-  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name (resolved from product ID)' },
+  { field: 'item_name', label: 'Product/Service', type: 'text', virtual: true, desc: 'Product or service name (matched to item_id on import)' },
   { field: 'description', label: 'Description', type: 'text', desc: 'Line item description' },
   { field: 'quantity', label: 'Quantity', type: 'number', required: true, desc: 'Quantity' },
   { field: 'price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
@@ -313,7 +313,7 @@ export const quoteLinesFields = [
 ]
 
 export const invoiceLinesFields = [
-  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name (resolved from product ID)' },
+  { field: 'item_name', label: 'Product/Service', type: 'text', virtual: true, desc: 'Product or service name (matched to item_id on import)' },
   { field: 'description', label: 'Description', type: 'text', desc: 'Line item description' },
   { field: 'quantity', label: 'Quantity', type: 'number', required: true, desc: 'Quantity' },
   { field: 'price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },

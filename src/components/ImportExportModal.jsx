@@ -470,6 +470,16 @@ export default function ImportExportModal({
         const childIds = []
         let childErrors = 0
 
+        // Pre-fetch product name → id lookup for item_name resolution
+        const hasItemName = rt.fields.some(f => f.field === 'item_name' && f.virtual)
+        let productLookup = {}
+        if (hasItemName) {
+          const { data: allProducts } = await supabase.from('products_services').select('id, name').eq('company_id', companyId)
+          if (allProducts) {
+            allProducts.forEach(p => { productLookup[p.name.toLowerCase()] = p.id })
+          }
+        }
+
         for (let i = 0; i < cs.rows.length; i += BATCH_SIZE) {
           const batch = cs.rows.slice(i, i + BATCH_SIZE)
           const records = batch.map(row => {
@@ -481,12 +491,25 @@ export default function ImportExportModal({
             const record = { company_id: companyId, [rt.parentIdField]: parentId }
 
             rt.fields.forEach(f => {
+              if (f.virtual) return // skip virtual fields (resolved separately below)
               const raw = getChildMappedValue(row, f.field, cs.mapping)
               const parsed = parseValue(raw, f)
               if (parsed !== null) {
                 record[f.field] = parsed
               }
             })
+
+            // Resolve item_name → item_id by looking up product/service
+            if (hasItemName) {
+              const itemNameRaw = getChildMappedValue(row, 'item_name', cs.mapping)
+              if (itemNameRaw && String(itemNameRaw).trim()) {
+                const name = String(itemNameRaw).trim().toLowerCase()
+                if (productLookup[name]) {
+                  record.item_id = productLookup[name]
+                }
+              }
+            }
+
             return record
           }).filter(Boolean)
 
@@ -695,11 +718,53 @@ export default function ImportExportModal({
                     if (!rt) return null
                     const cs = childSheets[rt.tableName]
                     if (!cs || !cs.headers || cs.headers.length === 0) {
+                      const handleChildFile = async (file) => {
+                        try {
+                          const arrBuf = await file.arrayBuffer()
+                          const wb = XLSX.read(arrBuf, { type: 'array' })
+                          const sheet = wb.Sheets[wb.SheetNames[0]]
+                          const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+                          if (json.length < 2) { alert('File must have a header row and at least one data row'); return }
+                          const cHeaders = json[0].map(h => String(h).trim())
+                          const cRows = json.slice(1).filter(row => row.some(cell => cell !== ''))
+                          const newChild = { headers: cHeaders, rows: cRows, mapping: {}, sheetName: file.name }
+                          setChildSheets(prev => ({ ...prev, [rt.tableName]: newChild }))
+                          // AI-map child columns
+                          const childTargetFields = [
+                            { field: '_parentRef', type: 'text', required: true, desc: rt.parentRefLabel || 'Parent reference ID' },
+                            ...rt.fields.map(f => ({ field: f.field, type: f.type, required: !!f.required, desc: f.desc || f.label }))
+                          ]
+                          try {
+                            const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+                            const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+                            const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-map-columns`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+                              body: JSON.stringify({ headers: cHeaders, sampleRows: cRows.slice(0, 5), targetFields: childTargetFields, requiredField: '_parentRef' }),
+                            })
+                            const result = await resp.json()
+                            if (result.mapping) {
+                              setChildSheets(prev => ({ ...prev, [rt.tableName]: { ...prev[rt.tableName], mapping: result.mapping } }))
+                            }
+                          } catch (_) { /* manual fallback */ }
+                        } catch (err) { alert('Could not read file: ' + err.message) }
+                      }
                       return (
-                        <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
-                          <AlertCircle size={24} style={{ color: theme.textMuted, marginBottom: '8px' }} />
-                          <div style={{ fontWeight: '500', marginBottom: '4px' }}>No "{rt.sheetName}" sheet found in the uploaded file</div>
-                          <div>To import {rt.sheetName.toLowerCase()}, upload a multi-sheet XLSX file with a sheet named "{rt.sheetName}".</div>
+                        <div
+                          onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#3b82f6' }}
+                          onDragLeave={e => { e.currentTarget.style.borderColor = theme.border }}
+                          onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = theme.border; const f = e.dataTransfer.files[0]; if (f) handleChildFile(f) }}
+                          onClick={() => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.csv,.xlsx,.xls,.tsv'; inp.onchange = ev => { const f = ev.target.files?.[0]; if (f) handleChildFile(f) }; inp.click() }}
+                          style={{ padding: '24px', textAlign: 'center', border: `2px dashed ${theme.border}`, borderRadius: '12px', cursor: 'pointer', transition: 'border-color 0.2s' }}
+                        >
+                          <Upload size={24} style={{ color: '#3b82f6', marginBottom: '8px' }} />
+                          <div style={{ fontWeight: '500', marginBottom: '4px', fontSize: '13px', color: theme.text }}>
+                            Upload {rt.sheetName} file
+                          </div>
+                          <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                            Drop a CSV or Excel file with {rt.sheetName.toLowerCase()} data, or click to browse.
+                            Include a "{rt.parentRefLabel}" column to link items to their parent {entityName.toLowerCase()}.
+                          </div>
                         </div>
                       )
                     }
