@@ -494,15 +494,26 @@ export default function PMJobSetter() {
     setCurrentDate(new Date())
   }
 
-  // Drag handlers
+  // Drag handlers — supports both sections and whole jobs
+  const [draggedJob, setDraggedJob] = useState(null)
+
   const handleSectionDragStart = (e, section, job) => {
     setDraggedSection({ ...section, job })
+    setDraggedJob(null)
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', section.id.toString())
   }
 
+  const handleJobDragStart = (e, job) => {
+    setDraggedJob(job)
+    setDraggedSection(null)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', `job-${job.id}`)
+  }
+
   const handleDragEnd = () => {
     setDraggedSection(null)
+    setDraggedJob(null)
     setDragOverSlot(null)
     setDragOverStatus(null)
   }
@@ -516,15 +527,31 @@ export default function PMJobSetter() {
     e.preventDefault()
     setDragOverSlot(null)
 
-    if (!draggedSection) return
-
     const startTime = new Date(date)
     startTime.setHours(hour, 0, 0, 0)
+    const dateStr = date.toISOString().split('T')[0]
+
+    if (draggedJob) {
+      // Dropping a whole job onto the calendar — set start_date
+      await supabase
+        .from('jobs')
+        .update({
+          start_date: dateStr,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', draggedJob.id)
+
+      setDraggedJob(null)
+      await fetchData()
+      return
+    }
+
+    if (!draggedSection) return
 
     await supabase
       .from('job_sections')
       .update({
-        scheduled_date: date.toISOString().split('T')[0],
+        scheduled_date: dateStr,
         start_time: startTime.toISOString(),
         updated_at: new Date().toISOString()
       })
@@ -542,6 +569,21 @@ export default function PMJobSetter() {
   const handleStatusDrop = async (e, statusId) => {
     e.preventDefault()
     setDragOverStatus(null)
+
+    if (draggedJob) {
+      // Dropping a whole job onto a status column — update job status
+      await supabase
+        .from('jobs')
+        .update({
+          status: statusId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', draggedJob.id)
+
+      setDraggedJob(null)
+      await fetchData()
+      return
+    }
 
     if (!draggedSection) return
 
@@ -1354,12 +1396,17 @@ export default function PMJobSetter() {
                         const calendar = getCalendarForJob(job)
 
                         return (
-                          <div key={job.id}>
+                          <div
+                            key={job.id}
+                            draggable
+                            onDragStart={(e) => handleJobDragStart(e, job)}
+                            onDragEnd={handleDragEnd}
+                          >
                             {/* Job Card */}
                             <EntityCard
                               name={job.customer?.name}
                               businessName={job.customer?.business_name}
-                              style={{ padding: '0px', overflow: 'hidden' }}
+                              style={{ padding: '0px', overflow: 'hidden', cursor: 'grab' }}
                             >
                               {/* Job Header */}
                               <div
@@ -1373,14 +1420,14 @@ export default function PMJobSetter() {
                                 }}
                               >
                                 {isExpanded ? (
-                                  <ChevronDown size={14} style={{ color: theme.textMuted, flexShrink: 0, marginTop: '2px' }} />
+                                  <ChevronDown size={16} style={{ color: theme.textMuted, flexShrink: 0, marginTop: '2px' }} />
                                 ) : (
-                                  <ChevronRight size={14} style={{ color: theme.textMuted, flexShrink: 0, marginTop: '2px' }} />
+                                  <ChevronRight size={16} style={{ color: theme.textMuted, flexShrink: 0, marginTop: '2px' }} />
                                 )}
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{
-                                    fontSize: '13px',
-                                    fontWeight: '600',
+                                    fontSize: '14px',
+                                    fontWeight: '700',
                                     color: theme.text,
                                     marginBottom: '3px',
                                     lineHeight: '1.3',
@@ -1391,7 +1438,7 @@ export default function PMJobSetter() {
                                   }}>
                                     {job.job_title || `Job #${job.id}`}
                                   </div>
-                                  <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '6px' }}>
+                                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '6px' }}>
                                     {job.customer?.name}
                                   </div>
 
