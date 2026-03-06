@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download, Settings as SettingsIcon, Sliders, CreditCard, Mail } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
-import { invoicesFields, invoiceLinesFields, paymentsFields } from '../lib/importExportFields'
+import { invoicesFields, paymentsFields } from '../lib/importExportFields'
 import { toast } from '../lib/toast'
 
 // Light theme fallback
@@ -121,23 +121,8 @@ export default function Invoices() {
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState('preferences')
 
+  // invoice_lines table does not exist in production DB — only payments is a child table
   const invoiceRelatedTables = [
-    {
-      tableName: 'invoice_lines',
-      sheetName: 'Line Items',
-      parentIdField: 'invoice_id',
-      parentRefLabel: 'Invoice ID',
-      fields: invoiceLinesFields,
-      fetchData: async (parentIds) => {
-        const { data } = await supabase.from('invoice_lines').select('*, item:products_services(name)').in('invoice_id', parentIds)
-        return (data || []).map(r => ({
-          ...r,
-          item_name: r.item?.name || r.item_name || '',
-          price: r.price ?? r.unit_price ?? 0,
-          line_total: r.line_total ?? r.total ?? 0,
-        }))
-      },
-    },
     {
       tableName: 'payments',
       sheetName: 'Payments',
@@ -1556,11 +1541,11 @@ export default function Invoices() {
           entityName="Invoices"
           fields={invoicesFields}
           companyId={companyId}
-          requiredField="total"
-          defaultValues={{ company_id: companyId, status: 'Pending' }}
+          requiredField="amount"
+          defaultValues={{ company_id: companyId, payment_status: 'Pending' }}
           relatedTables={invoiceRelatedTables}
           parentRefField="invoice_id"
-          extraContext="Invoices and billing. Map as many columns as possible. Common aliases: invoice_id=Invoice #/Invoice ID/Invoice Number, invoice_number=Number/Ref #, status=Invoice Status/Payment Status/Stage, invoice_date=Date/Invoice Date/Created, due_date=Due Date/Due/Payment Due, paid_date=Paid Date/Date Paid, billing_address=Bill To Address/Billing Address, billing_city=City, billing_state=State, billing_zip=ZIP, subtotal=Subtotal/Sub Total, discount=Discount $, discount_percent=Discount %, tax_rate=Tax Rate/Tax %, tax_amount=Tax/Sales Tax, shipping=Shipping/Freight, total=Total/Grand Total/Amount/Invoice Total/Invoice Amount, amount_paid=Paid/Amount Paid/Payments, balance_due=Balance/Balance Due/Amount Due/Outstanding, deposit_applied=Deposit Applied/Deposit, payment_terms=Terms/Payment Terms/Net Terms, payment_method=Payment Method/Pay Method, po_number=PO/PO #/Purchase Order, notes=Notes/Comments/Memo, internal_notes=Internal Notes, footer_text=Footer/Invoice Footer"
+          extraContext="Invoices and billing. Map as many columns as possible. Common aliases: invoice_id=Invoice #/Invoice ID/Invoice Number, payment_status=Status/Invoice Status/Payment Status/Stage, amount=Total/Amount/Invoice Total/Invoice Amount/Grand Total/Balance, payment_method=Payment Method/Pay Method/Method, discount_applied=Discount/Discount Applied, credit_card_fee=CC Fee/Processing Fee/Card Fee, job_description=Description/Job Description/Memo/Notes, business_unit=Business Unit/Division/Department"
           onImportComplete={() => fetchInvoices()}
           onClose={() => setShowImportExport(false)}
         />

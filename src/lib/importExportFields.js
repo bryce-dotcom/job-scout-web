@@ -79,116 +79,64 @@ export const jobsFields = [
   { field: 'gps_location', label: 'GPS Location', type: 'text', desc: 'GPS coordinates' },
 ]
 
+// Verified against production DB: quotes has quote_id, business_unit, customer_id, salesperson_id,
+// quote_amount, sent_date, status, contract_required, contract_signed, follow_up_1, follow_up_2,
+// job_title, utility_incentive, discount, discount_description, service_type, notes,
+// estimate_name, summary, expiration_date, service_date, estimate_message,
+// deposit_amount, deposit_method, deposit_date, deposit_notes, job_id, pdf_url
 export const quotesFields = [
   { field: 'quote_id', label: 'Quote ID', type: 'text', desc: 'Unique quote identifier (e.g. QUO-ABC123). Auto-generated if blank.' },
   { field: 'customer_name', label: 'Customer Name', type: 'text', virtual: true, desc: 'Customer or client name (matched to customer_id on import)' },
   { field: 'status', label: 'Status', type: 'text', desc: 'Quote status (Draft, Sent, Approved, Rejected)' },
-  { field: 'quote_date', label: 'Quote Date', type: 'date', desc: 'Date the quote was created' },
-  { field: 'expiration_date', label: 'Expiration Date', type: 'date', desc: 'When the quote expires' },
   { field: 'sent_date', label: 'Sent Date', type: 'date', desc: 'Date the quote was sent' },
-  { field: 'approved_date', label: 'Approved Date', type: 'date', desc: 'Date the quote was approved' },
-  { field: 'rejected_date', label: 'Rejected Date', type: 'date', desc: 'Date the quote was rejected' },
-  // Address
-  { field: 'job_address', label: 'Job Address', type: 'text', desc: 'Job site address' },
-  { field: 'job_city', label: 'City', type: 'text', desc: 'Job city' },
-  { field: 'job_state', label: 'State', type: 'text', desc: 'Job state' },
-  { field: 'job_zip', label: 'ZIP', type: 'text', desc: 'Job ZIP code' },
   { field: 'job_title', label: 'Job Title', type: 'text', desc: 'Job title for the quote' },
   { field: 'business_unit', label: 'Business Unit', type: 'text', desc: 'Business unit or division' },
-  // Financials
   { field: 'quote_amount', label: 'Quote Amount', type: 'number', desc: 'Total quote amount' },
-  { field: 'subtotal', label: 'Subtotal', type: 'number', desc: 'Subtotal before tax/discount' },
-  { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
-  { field: 'discount_percent', label: 'Discount %', type: 'number', desc: 'Discount percentage' },
-  { field: 'discount_description', label: 'Discount Description', type: 'text', desc: 'Description of the discount' },
-  { field: 'tax_rate', label: 'Tax Rate', type: 'number', desc: 'Tax rate percentage' },
-  { field: 'tax_amount', label: 'Tax Amount', type: 'number', desc: 'Tax amount' },
-  { field: 'total', label: 'Total', type: 'number', desc: 'Total with tax' },
   { field: 'utility_incentive', label: 'Utility Incentive', type: 'number', desc: 'Utility rebate / incentive amount' },
-  { field: 'out_of_pocket', label: 'Out of Pocket', type: 'number', desc: 'Customer out-of-pocket cost' },
-  { field: 'deposit_required', label: 'Deposit Required', type: 'number', desc: 'Required deposit amount' },
-  { field: 'deposit_received', label: 'Deposit Received', type: 'number', desc: 'Deposit amount received' },
-  { field: 'payment_terms', label: 'Payment Terms', type: 'text', desc: 'Payment terms' },
-  { field: 'warranty_terms', label: 'Warranty Terms', type: 'text', desc: 'Warranty terms' },
-  { field: 'terms_conditions', label: 'Terms & Conditions', type: 'text', desc: 'Quote terms and conditions' },
+  { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
+  { field: 'discount_description', label: 'Discount Description', type: 'text', desc: 'Description of the discount' },
   { field: 'contract_required', label: 'Contract Required', type: 'boolean', desc: 'Whether a contract is required' },
   { field: 'contract_signed', label: 'Contract Signed', type: 'boolean', desc: 'Whether the contract has been signed' },
-  { field: 'contract_signed_date', label: 'Contract Signed Date', type: 'date', desc: 'Date the contract was signed' },
+  { field: 'service_type', label: 'Service Type', type: 'text', desc: 'Type of service' },
   { field: 'notes', label: 'Notes', type: 'text', desc: 'Quote notes or description' },
-  { field: 'internal_notes', label: 'Internal Notes', type: 'text', desc: 'Internal-only notes' },
 ]
 
+// Same table as quotes — uses estimate-specific columns
 export const estimatesFields = [
   { field: 'quote_id', label: 'Estimate ID', type: 'text', desc: 'Unique estimate identifier (e.g. EST-ABC123). Auto-generated if blank.' },
   { field: 'customer_name', label: 'Customer Name', type: 'text', virtual: true, desc: 'Customer or client name (matched to customer_id on import)' },
   { field: 'estimate_name', label: 'Estimate Name', type: 'text', desc: 'Display name for the estimate' },
   { field: 'status', label: 'Status', type: 'text', desc: 'Estimate status (Draft, Sent, Approved, Rejected, Expired)' },
   { field: 'summary', label: 'Summary', type: 'text', desc: 'Estimate summary or scope description' },
-  { field: 'quote_date', label: 'Estimate Date', type: 'date', desc: 'Date the estimate was created' },
   { field: 'expiration_date', label: 'Expiration Date', type: 'date', desc: 'When the estimate expires' },
   { field: 'service_date', label: 'Service Date', type: 'date', desc: 'Planned service date' },
+  { field: 'sent_date', label: 'Sent Date', type: 'date', desc: 'Date the estimate was sent' },
   { field: 'estimate_message', label: 'Message', type: 'text', desc: 'Message to customer' },
-  // Address
-  { field: 'job_address', label: 'Job Address', type: 'text', desc: 'Job site address' },
-  { field: 'job_city', label: 'City', type: 'text', desc: 'Job city' },
-  { field: 'job_state', label: 'State', type: 'text', desc: 'Job state' },
-  { field: 'job_zip', label: 'ZIP', type: 'text', desc: 'Job ZIP code' },
   { field: 'job_title', label: 'Job Title', type: 'text', desc: 'Job title for the estimate' },
   { field: 'business_unit', label: 'Business Unit', type: 'text', desc: 'Business unit or division' },
-  // Financials
   { field: 'quote_amount', label: 'Estimate Amount', type: 'number', desc: 'Total estimate amount' },
-  { field: 'subtotal', label: 'Subtotal', type: 'number', desc: 'Subtotal before tax/discount' },
-  { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
-  { field: 'discount_percent', label: 'Discount %', type: 'number', desc: 'Discount percentage' },
-  { field: 'discount_description', label: 'Discount Description', type: 'text', desc: 'Description of the discount' },
-  { field: 'tax_rate', label: 'Tax Rate', type: 'number', desc: 'Tax rate percentage' },
-  { field: 'tax_amount', label: 'Tax Amount', type: 'number', desc: 'Tax amount' },
-  { field: 'total', label: 'Total', type: 'number', desc: 'Total with tax' },
   { field: 'utility_incentive', label: 'Utility Incentive', type: 'number', desc: 'Utility rebate / incentive amount' },
-  { field: 'out_of_pocket', label: 'Out of Pocket', type: 'number', desc: 'Customer out-of-pocket cost' },
-  { field: 'deposit_required', label: 'Deposit Required', type: 'number', desc: 'Required deposit amount' },
+  { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
+  { field: 'discount_description', label: 'Discount Description', type: 'text', desc: 'Description of the discount' },
   { field: 'deposit_amount', label: 'Deposit Amount', type: 'number', desc: 'Deposit amount collected' },
   { field: 'deposit_method', label: 'Deposit Method', type: 'text', desc: 'Deposit payment method' },
   { field: 'deposit_date', label: 'Deposit Date', type: 'date', desc: 'Date deposit was received' },
   { field: 'deposit_notes', label: 'Deposit Notes', type: 'text', desc: 'Notes about the deposit' },
-  { field: 'payment_terms', label: 'Payment Terms', type: 'text', desc: 'Payment terms' },
-  { field: 'warranty_terms', label: 'Warranty Terms', type: 'text', desc: 'Warranty terms' },
-  { field: 'terms_conditions', label: 'Terms & Conditions', type: 'text', desc: 'Estimate terms and conditions' },
   { field: 'notes', label: 'Notes', type: 'text', desc: 'Estimate notes or description' },
-  { field: 'internal_notes', label: 'Internal Notes', type: 'text', desc: 'Internal-only notes' },
 ]
 
+// Verified against production DB: invoices table has invoice_id, business_unit, customer_id, job_id,
+// amount, payment_method, payment_status, discount_applied, credit_card_fee, job_description, is_locked
 export const invoicesFields = [
   { field: 'invoice_id', label: 'Invoice ID', type: 'text', desc: 'Unique invoice identifier (e.g. INV-ABC123). Auto-generated if blank.' },
   { field: 'customer_name', label: 'Customer Name', type: 'text', virtual: true, desc: 'Customer or client name (matched to customer_id on import)' },
-  { field: 'invoice_number', label: 'Invoice Number', type: 'text', desc: 'Invoice number' },
-  { field: 'status', label: 'Status', type: 'text', desc: 'Payment status (Draft, Pending, Paid, Overdue, Cancelled)' },
-  { field: 'invoice_date', label: 'Invoice Date', type: 'date', desc: 'Date the invoice was issued' },
-  { field: 'due_date', label: 'Due Date', type: 'date', desc: 'Payment due date' },
-  { field: 'sent_date', label: 'Sent Date', type: 'date', desc: 'Date the invoice was sent' },
-  { field: 'paid_date', label: 'Paid Date', type: 'date', desc: 'Date payment was received' },
-  // Address
-  { field: 'billing_address', label: 'Billing Address', type: 'text', desc: 'Billing street address' },
-  { field: 'billing_city', label: 'Billing City', type: 'text', desc: 'Billing city' },
-  { field: 'billing_state', label: 'Billing State', type: 'text', desc: 'Billing state' },
-  { field: 'billing_zip', label: 'Billing ZIP', type: 'text', desc: 'Billing ZIP code' },
-  // Financials
-  { field: 'subtotal', label: 'Subtotal', type: 'number', desc: 'Subtotal before tax/discount' },
-  { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
-  { field: 'discount_percent', label: 'Discount %', type: 'number', desc: 'Discount percentage' },
-  { field: 'tax_rate', label: 'Tax Rate', type: 'number', desc: 'Tax rate percentage' },
-  { field: 'tax_amount', label: 'Tax Amount', type: 'number', desc: 'Tax amount' },
-  { field: 'shipping', label: 'Shipping', type: 'number', desc: 'Shipping cost' },
-  { field: 'total', label: 'Total', type: 'number', desc: 'Invoice total' },
-  { field: 'amount_paid', label: 'Amount Paid', type: 'number', desc: 'Total amount paid so far' },
-  { field: 'balance_due', label: 'Balance Due', type: 'number', desc: 'Remaining balance' },
-  { field: 'deposit_applied', label: 'Deposit Applied', type: 'number', desc: 'Deposit amount applied' },
-  { field: 'payment_terms', label: 'Payment Terms', type: 'text', desc: 'Payment terms' },
-  { field: 'payment_method', label: 'Payment Method', type: 'text', desc: 'Payment method (Cash, Check, Credit Card, etc.)' },
-  { field: 'po_number', label: 'PO Number', type: 'text', desc: 'Purchase order number' },
-  { field: 'notes', label: 'Notes', type: 'text', desc: 'Invoice notes' },
-  { field: 'internal_notes', label: 'Internal Notes', type: 'text', desc: 'Internal-only notes' },
-  { field: 'footer_text', label: 'Footer Text', type: 'text', desc: 'Invoice footer text' },
+  { field: 'business_unit', label: 'Business Unit', type: 'text', desc: 'Business unit or division' },
+  { field: 'payment_status', label: 'Status', type: 'text', desc: 'Payment status (Pending, Paid, Overdue, Cancelled)' },
+  { field: 'amount', label: 'Amount', type: 'number', desc: 'Invoice amount / total' },
+  { field: 'payment_method', label: 'Payment Method', type: 'text', desc: 'Payment method (Cash, Check, Credit Card, ACH)' },
+  { field: 'discount_applied', label: 'Discount Applied', type: 'number', desc: 'Discount amount applied' },
+  { field: 'credit_card_fee', label: 'CC Fee', type: 'number', desc: 'Credit card processing fee' },
+  { field: 'job_description', label: 'Description', type: 'text', desc: 'Invoice / job description' },
 ]
 
 export const employeesFields = [
@@ -245,17 +193,14 @@ export const fleetFields = [
 
 // --- Related / child table field definitions (for multi-sheet XLSX export/import) ---
 
+// Verified against production DB: job_lines has job_line_id, job_id, item_id, quantity, price, total, description, notes
 export const jobLinesFields = [
   { field: 'item_name', label: 'Product/Service', type: 'text', virtual: true, desc: 'Product or service name (matched to item_id on import)' },
   { field: 'description', label: 'Description', type: 'text', desc: 'Line item description' },
   { field: 'quantity', label: 'Quantity', type: 'number', required: true, desc: 'Quantity' },
   { field: 'price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
-  { field: 'cost', label: 'Cost', type: 'number', desc: 'Cost per unit' },
-  { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
   { field: 'total', label: 'Line Total', type: 'number', desc: 'Line total' },
-  { field: 'completed', label: 'Completed', type: 'boolean', desc: 'Whether line item is completed' },
   { field: 'notes', label: 'Notes', type: 'text', desc: 'Line item notes' },
-  { field: 'sort_order', label: 'Sort Order', type: 'number', desc: 'Display order' },
 ]
 
 export const jobSectionsFields = [
@@ -272,44 +217,24 @@ export const jobSectionsFields = [
   { field: 'notes', label: 'Notes', type: 'text', desc: 'Section notes' },
 ]
 
+// Verified against production DB: quote_lines has line_id, quote_id, item_id, item_name, quantity, price, line_total, total, description, sort_order, image_url
 export const quoteLinesFields = [
-  { field: 'item_name', label: 'Product/Service', type: 'text', virtual: true, desc: 'Product or service name (matched to item_id on import)' },
+  { field: 'item_name', label: 'Product/Service', type: 'text', desc: 'Product or service name' },
   { field: 'description', label: 'Description', type: 'text', desc: 'Line item description' },
   { field: 'quantity', label: 'Quantity', type: 'number', required: true, desc: 'Quantity' },
   { field: 'price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
-  { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
-  { field: 'discount_percent', label: 'Discount %', type: 'number', desc: 'Discount percentage' },
   { field: 'line_total', label: 'Line Total', type: 'number', desc: 'Line total' },
-  { field: 'taxable', label: 'Taxable', type: 'boolean', desc: 'Whether line item is taxable' },
-  { field: 'notes', label: 'Notes', type: 'text', desc: 'Line item notes' },
   { field: 'sort_order', label: 'Sort Order', type: 'number', desc: 'Display order' },
 ]
 
-export const invoiceLinesFields = [
-  { field: 'item_name', label: 'Product/Service', type: 'text', virtual: true, desc: 'Product or service name (matched to item_id on import)' },
-  { field: 'description', label: 'Description', type: 'text', desc: 'Line item description' },
-  { field: 'quantity', label: 'Quantity', type: 'number', required: true, desc: 'Quantity' },
-  { field: 'price', label: 'Unit Price', type: 'number', required: true, desc: 'Price per unit' },
-  { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
-  { field: 'line_total', label: 'Line Total', type: 'number', desc: 'Line total' },
-  { field: 'taxable', label: 'Taxable', type: 'boolean', desc: 'Whether line item is taxable' },
-  { field: 'sort_order', label: 'Sort Order', type: 'number', desc: 'Display order' },
-]
+// NOTE: invoice_lines table does NOT exist in production DB. Invoices have no line items table.
 
+// Verified against production DB: payments has payment_id, invoice_id, amount, date, method, status, notes
 export const paymentsFields = [
-  { field: 'payment_date', label: 'Payment Date', type: 'date', required: true, desc: 'Date of payment' },
+  { field: 'payment_id', label: 'Payment ID', type: 'text', desc: 'Payment reference ID' },
   { field: 'amount', label: 'Amount', type: 'number', required: true, desc: 'Payment amount' },
-  { field: 'payment_method', label: 'Payment Method', type: 'text', desc: 'Payment method (Cash, Check, Credit Card, ACH)' },
-  { field: 'payment_type', label: 'Payment Type', type: 'text', desc: 'Payment type (Payment, Deposit, Refund)' },
-  { field: 'status', label: 'Status', type: 'text', desc: 'Payment status (Pending, Completed, Failed, Refunded)' },
-  { field: 'reference_number', label: 'Reference #', type: 'text', desc: 'Payment reference number' },
-  { field: 'check_number', label: 'Check #', type: 'text', desc: 'Check number' },
-  { field: 'transaction_id', label: 'Transaction ID', type: 'text', desc: 'Processor transaction ID' },
-  { field: 'processor', label: 'Processor', type: 'text', desc: 'Payment processor name' },
-  { field: 'processor_fee', label: 'Processor Fee', type: 'number', desc: 'Processing fee' },
-  { field: 'net_amount', label: 'Net Amount', type: 'number', desc: 'Net amount after fees' },
-  { field: 'deposited', label: 'Deposited', type: 'boolean', desc: 'Whether payment has been deposited' },
-  { field: 'deposited_date', label: 'Deposited Date', type: 'date', desc: 'Date payment was deposited' },
-  { field: 'bank_account', label: 'Bank Account', type: 'text', desc: 'Bank account deposited to' },
+  { field: 'date', label: 'Payment Date', type: 'date', required: true, desc: 'Date of payment' },
+  { field: 'method', label: 'Payment Method', type: 'text', desc: 'Payment method (Cash, Check, Credit Card, ACH)' },
+  { field: 'status', label: 'Status', type: 'text', desc: 'Payment status (Pending, Paid, Completed)' },
   { field: 'notes', label: 'Notes', type: 'text', desc: 'Payment notes' },
 ]

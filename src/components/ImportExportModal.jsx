@@ -386,12 +386,13 @@ export default function ImportExportModal({
     })
   }
 
-  const isMappingValid = mapping[reqField] !== undefined || mapping[reqField] === 0
+  // Valid if at least one field is mapped (don't block on a single required field)
+  const isMappingValid = Object.keys(mapping).length > 0
 
   // Execute the import (handles both single-sheet and multi-sheet)
   const executeImport = async () => {
     if (!isMappingValid) {
-      alert(`${fields.find(f => f.field === reqField)?.label || reqField} mapping is required`)
+      alert('At least one column must be mapped before importing')
       return
     }
 
@@ -487,9 +488,11 @@ export default function ImportExportModal({
           }
         }
 
-        // Check required field exists
-        const reqVal = record[reqField]
-        if (reqVal === null || reqVal === undefined || reqVal === '') return null
+        // Check required field exists (only if that field was actually mapped)
+        if (mapping[reqField] !== undefined) {
+          const reqVal = record[reqField]
+          if (reqVal === null || reqVal === undefined || reqVal === '') return null
+        }
 
         // Auto-generate ref ID if missing (so child sheets can link to this parent)
         if (hasRelated && parentRefField && !record[parentRefField]) {
