@@ -408,6 +408,25 @@ export default function ImportExportModal({
     const selectFields = (hasRelated && parentRefField) ? `id, ${parentRefField}` : 'id'
     const refToId = {} // ref value → new DB id (built from actual insert responses)
 
+    // Pre-fetch lookups for virtual fields
+    const hasCustomerName = fields.some(f => f.field === 'customer_name' && f.virtual)
+    let customerLookup = {}
+    if (hasCustomerName && mapping['customer_name'] !== undefined) {
+      const { data: allCustomers } = await supabase.from('customers').select('id, name, business_name').eq('company_id', companyId)
+      if (allCustomers) {
+        allCustomers.forEach(c => {
+          if (c.name) customerLookup[c.name.toLowerCase().trim()] = c.id
+          if (c.business_name) customerLookup[c.business_name.toLowerCase().trim()] = c.id
+        })
+      }
+    }
+
+    // Check if we need address parsing (full address mapped to job_address but city/state/zip not mapped)
+    const addressField = fields.find(f => f.field === 'job_address' || f.field === 'address')
+    const needsAddressParsing = addressField && mapping[addressField.field] !== undefined &&
+      fields.some(f => f.field === (tableName === 'leads' ? 'city' : 'job_city')) &&
+      !mapping[tableName === 'leads' ? 'city' : 'job_city']
+
     // --- Phase 1: Insert parent records ---
     let autoRefCounter = 0
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
@@ -416,12 +435,57 @@ export default function ImportExportModal({
         const record = { ...defaultValues }
 
         fields.forEach(f => {
+          if (f.virtual) return // skip virtual fields (resolved below)
           const raw = getMappedValue(row, f.field)
           const parsed = parseValue(raw, f)
           if (parsed !== null) {
             record[f.field] = parsed
           }
         })
+
+        // Resolve customer_name → customer_id
+        if (hasCustomerName && mapping['customer_name'] !== undefined) {
+          const rawName = getMappedValue(row, 'customer_name')
+          if (rawName && String(rawName).trim()) {
+            const name = String(rawName).trim().toLowerCase()
+            if (customerLookup[name]) {
+              record.customer_id = customerLookup[name]
+            }
+          }
+        }
+
+        // Parse full address into city/state/zip if not separately mapped
+        if (needsAddressParsing) {
+          const cityField = tableName === 'leads' ? 'city' : 'job_city'
+          const stateField = tableName === 'leads' ? 'state' : 'job_state'
+          const zipField = tableName === 'leads' ? 'zip' : 'job_zip'
+          const fullAddr = record[addressField.field]
+          if (fullAddr && typeof fullAddr === 'string') {
+            // Parse "Street, City, ST ZIP" or "Street, City, ST" format
+            const parts = fullAddr.split(',').map(p => p.trim())
+            if (parts.length >= 3) {
+              const lastPart = parts[parts.length - 1] // "ST ZIP" or "ST"
+              const stateZipMatch = lastPart.match(/^([A-Za-z]{2})\s*(\d{5}(?:-\d{4})?)$/)
+              if (stateZipMatch) {
+                record[stateField] = stateZipMatch[1].toUpperCase()
+                record[zipField] = stateZipMatch[2]
+                record[cityField] = parts[parts.length - 2]
+                // Keep only street portion in address field
+                record[addressField.field] = parts.slice(0, parts.length - 2).join(', ')
+              } else if (lastPart.match(/^\d{5}/)) {
+                // Last part is just ZIP
+                record[zipField] = lastPart
+                record[cityField] = parts[parts.length - 2]
+                record[addressField.field] = parts.slice(0, parts.length - 2).join(', ')
+              } else if (lastPart.length === 2) {
+                // Last part is just state abbreviation
+                record[stateField] = lastPart.toUpperCase()
+                record[cityField] = parts[parts.length - 2]
+                record[addressField.field] = parts.slice(0, parts.length - 2).join(', ')
+              }
+            }
+          }
+        }
 
         // Check required field exists
         const reqVal = record[reqField]

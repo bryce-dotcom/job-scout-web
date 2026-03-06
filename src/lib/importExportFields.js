@@ -51,6 +51,7 @@ export const customersFields = [
 
 export const jobsFields = [
   { field: 'job_id', label: 'Job ID', type: 'text', desc: 'Unique job identifier (e.g. JOB-ABC123). Auto-generated if blank.' },
+  { field: 'customer_name', label: 'Customer Name', type: 'text', virtual: true, desc: 'Customer or client name (matched to customer_id on import)' },
   { field: 'job_title', label: 'Job Title', type: 'text', required: true, desc: 'Title or name of the job' },
   { field: 'status', label: 'Status', type: 'text', desc: 'Job status (Scheduled, In Progress, Completed, Cancelled)' },
   { field: 'priority', label: 'Priority', type: 'text', desc: 'Priority level (Low, Normal, High, Urgent)' },
@@ -111,6 +112,7 @@ export const jobsFields = [
 
 export const quotesFields = [
   { field: 'quote_id', label: 'Quote ID', type: 'text', desc: 'Unique quote identifier (e.g. QUO-ABC123). Auto-generated if blank.' },
+  { field: 'customer_name', label: 'Customer Name', type: 'text', virtual: true, desc: 'Customer or client name (matched to customer_id on import)' },
   { field: 'status', label: 'Status', type: 'text', desc: 'Quote status (Draft, Sent, Approved, Rejected)' },
   { field: 'quote_date', label: 'Quote Date', type: 'date', desc: 'Date the quote was created' },
   { field: 'expiration_date', label: 'Expiration Date', type: 'date', desc: 'When the quote expires' },
@@ -149,6 +151,7 @@ export const quotesFields = [
 
 export const estimatesFields = [
   { field: 'quote_id', label: 'Estimate ID', type: 'text', desc: 'Unique estimate identifier (e.g. EST-ABC123). Auto-generated if blank.' },
+  { field: 'customer_name', label: 'Customer Name', type: 'text', virtual: true, desc: 'Customer or client name (matched to customer_id on import)' },
   { field: 'estimate_name', label: 'Estimate Name', type: 'text', desc: 'Display name for the estimate' },
   { field: 'status', label: 'Status', type: 'text', desc: 'Estimate status (Draft, Sent, Approved, Rejected, Expired)' },
   { field: 'summary', label: 'Summary', type: 'text', desc: 'Estimate summary or scope description' },
@@ -188,6 +191,7 @@ export const estimatesFields = [
 
 export const invoicesFields = [
   { field: 'invoice_id', label: 'Invoice ID', type: 'text', desc: 'Unique invoice identifier (e.g. INV-ABC123). Auto-generated if blank.' },
+  { field: 'customer_name', label: 'Customer Name', type: 'text', virtual: true, desc: 'Customer or client name (matched to customer_id on import)' },
   { field: 'invoice_number', label: 'Invoice Number', type: 'text', desc: 'Invoice number' },
   { field: 'status', label: 'Status', type: 'text', desc: 'Payment status (Draft, Pending, Paid, Overdue, Cancelled)' },
   { field: 'invoice_date', label: 'Invoice Date', type: 'date', desc: 'Date the invoice was issued' },
