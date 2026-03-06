@@ -134,6 +134,18 @@ export default function PMJobSetter() {
   const [dragOverSlot, setDragOverSlot] = useState(null)
   const [dragOverStatus, setDragOverStatus] = useState(null)
 
+  // Schedule modal (opened when dropping a job onto the calendar)
+  const [showScheduleModal, setShowScheduleModal] = useState(false)
+  const [scheduleJob, setScheduleJob] = useState(null)
+  const [scheduleForm, setScheduleForm] = useState({
+    start_time: '',
+    duration_hours: 4,
+    pm_id: '',
+    notes: ''
+  })
+  const [scheduleError, setScheduleError] = useState(null)
+  const [scheduleSaving, setScheduleSaving] = useState(false)
+
   // Section form
   const [sectionForm, setSectionForm] = useState({
     name: '',
@@ -553,6 +565,15 @@ export default function PMJobSetter() {
     setDragOverSlot({ date, hour })
   }
 
+  const formatDateTimeLocal = (date) => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    const h = String(date.getHours()).padStart(2, '0')
+    const min = String(date.getMinutes()).padStart(2, '0')
+    return `${y}-${m}-${d}T${h}:${min}`
+  }
+
   const handleSlotDrop = async (e, date, hour) => {
     e.preventDefault()
     setDragOverSlot(null)
@@ -563,18 +584,17 @@ export default function PMJobSetter() {
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
     if (draggedJob) {
-      // Dropping a whole job onto the calendar — set start_date (full datetime) + mark Scheduled
-      await supabase
-        .from('jobs')
-        .update({
-          start_date: startTime.toISOString(),
-          status: 'Scheduled',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', draggedJob.id)
-
+      // Open schedule modal with pre-filled time
+      setScheduleJob(draggedJob)
+      setScheduleForm({
+        start_time: formatDateTimeLocal(startTime),
+        duration_hours: draggedJob.allotted_time_hours || 4,
+        pm_id: draggedJob.pm_id || '',
+        notes: draggedJob.notes || ''
+      })
+      setScheduleError(null)
+      setShowScheduleModal(true)
       setDraggedJob(null)
-      await fetchData()
       return
     }
 
@@ -630,6 +650,44 @@ export default function PMJobSetter() {
     })
 
     setDraggedSection(null)
+    await fetchData()
+  }
+
+  // Schedule job from modal
+  const handleScheduleJobSubmit = async (e) => {
+    e.preventDefault()
+    if (!scheduleJob || !scheduleForm.start_time) return
+
+    setScheduleSaving(true)
+    setScheduleError(null)
+
+    const startTime = new Date(scheduleForm.start_time)
+    const endTime = new Date(startTime)
+    endTime.setHours(endTime.getHours() + (scheduleForm.duration_hours || 4))
+
+    const updateData = {
+      start_date: startTime.toISOString(),
+      end_date: endTime.toISOString(),
+      status: 'Scheduled',
+      updated_at: new Date().toISOString()
+    }
+    if (scheduleForm.pm_id) updateData.pm_id = parseInt(scheduleForm.pm_id)
+    if (scheduleForm.notes) updateData.notes = scheduleForm.notes
+
+    const { error } = await supabase
+      .from('jobs')
+      .update(updateData)
+      .eq('id', scheduleJob.id)
+
+    if (error) {
+      setScheduleError(error.message)
+      setScheduleSaving(false)
+      return
+    }
+
+    setScheduleSaving(false)
+    setShowScheduleModal(false)
+    setScheduleJob(null)
     await fetchData()
   }
 
@@ -2419,6 +2477,179 @@ export default function PMJobSetter() {
       )}
 
       {/* Add Section Modal */}
+      {/* Schedule Job Modal */}
+      {showScheduleModal && scheduleJob && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 60
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '440px',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <div style={{
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Schedule Job
+                </h2>
+                <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '2px' }}>
+                  {scheduleJob.job_title || `Job #${scheduleJob.id}`}
+                  {scheduleJob.customer?.name && ` — ${scheduleJob.customer.name}`}
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowScheduleModal(false); setScheduleJob(null) }}
+                style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleScheduleJobSubmit} style={{ padding: '20px' }}>
+              {scheduleError && (
+                <div style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '8px',
+                  color: '#dc2626',
+                  fontSize: '14px'
+                }}>
+                  Error: {scheduleError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={labelStyle}>Start Date & Time *</label>
+                  <input
+                    type="datetime-local"
+                    value={scheduleForm.start_time}
+                    onChange={(e) => setScheduleForm(prev => ({ ...prev, start_time: e.target.value }))}
+                    required
+                    style={inputStyle}
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Duration</label>
+                  <select
+                    value={scheduleForm.duration_hours}
+                    onChange={(e) => setScheduleForm(prev => ({ ...prev, duration_hours: parseFloat(e.target.value) }))}
+                    style={inputStyle}
+                  >
+                    <option value={1}>1 hour</option>
+                    <option value={2}>2 hours</option>
+                    <option value={4}>4 hours (half day)</option>
+                    <option value={8}>8 hours (full day)</option>
+                    <option value={16}>2 days</option>
+                    <option value={24}>3 days</option>
+                    <option value={40}>1 week</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Assign Project Manager</label>
+                  <select
+                    value={scheduleForm.pm_id}
+                    onChange={(e) => setScheduleForm(prev => ({ ...prev, pm_id: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select PM --</option>
+                    {employees.filter(e => e.role === 'Project Manager' || e.role === 'Manager' || e.role === 'Admin').map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Notes</label>
+                  <textarea
+                    value={scheduleForm.notes}
+                    onChange={(e) => setScheduleForm(prev => ({ ...prev, notes: e.target.value }))}
+                    rows={3}
+                    placeholder="Scheduling notes..."
+                    style={{ ...inputStyle, resize: 'vertical' }}
+                  />
+                </div>
+
+                {scheduleJob.job_address && (
+                  <div style={{
+                    padding: '12px',
+                    backgroundColor: theme.accentBg,
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    color: theme.textSecondary,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <MapPin size={14} style={{ flexShrink: 0 }} />
+                    {scheduleJob.job_address}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowScheduleModal(false); setScheduleJob(null) }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    minHeight: '44px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={scheduleSaving}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    minHeight: '44px',
+                    opacity: scheduleSaving ? 0.6 : 1
+                  }}
+                >
+                  {scheduleSaving ? 'Scheduling...' : 'Schedule Job'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showSectionModal && (
         <div style={{
           position: 'fixed',
