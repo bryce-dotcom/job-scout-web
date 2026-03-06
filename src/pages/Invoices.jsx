@@ -1551,10 +1551,11 @@ export default function Invoices() {
           entityName="Invoices"
           fields={invoicesFields}
           companyId={companyId}
-          requiredField="amount"
-          defaultValues={{ company_id: companyId, payment_status: 'Pending' }}
+          requiredField="total"
+          defaultValues={{ company_id: companyId, status: 'Pending' }}
           relatedTables={invoiceRelatedTables}
           parentRefField="invoice_id"
+          extraContext="Invoices and billing. Map as many columns as possible. Common aliases: invoice_id=Invoice #/Invoice ID/Invoice Number, invoice_number=Number/Ref #, status=Invoice Status/Payment Status/Stage, invoice_date=Date/Invoice Date/Created, due_date=Due Date/Due/Payment Due, paid_date=Paid Date/Date Paid, billing_address=Bill To Address/Billing Address, billing_city=City, billing_state=State, billing_zip=ZIP, subtotal=Subtotal/Sub Total, discount=Discount $, discount_percent=Discount %, tax_rate=Tax Rate/Tax %, tax_amount=Tax/Sales Tax, shipping=Shipping/Freight, total=Total/Grand Total/Amount/Invoice Total/Invoice Amount, amount_paid=Paid/Amount Paid/Payments, balance_due=Balance/Balance Due/Amount Due/Outstanding, deposit_applied=Deposit Applied/Deposit, payment_terms=Terms/Payment Terms/Net Terms, payment_method=Payment Method/Pay Method, po_number=PO/PO #/Purchase Order, notes=Notes/Comments/Memo, internal_notes=Internal Notes, footer_text=Footer/Invoice Footer"
           onImportComplete={() => fetchInvoices()}
           onClose={() => setShowImportExport(false)}
         />
