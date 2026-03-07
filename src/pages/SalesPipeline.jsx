@@ -131,11 +131,27 @@ export default function SalesPipeline() {
   // Business Unit filter
   const [buFilter, setBuFilter] = useState('all')
 
+  // Date range filter for delivery stages
+  const [dateRange, setDateRange] = useState('ytd')
+
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
   // Get active employees for filter
   const activeEmployees = employees.filter(e => e.active !== false)
+
+  // Compute cutoff date from range selection
+  const getDateCutoff = (range) => {
+    const now = new Date()
+    switch (range) {
+      case 'mtd': return new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+      case 'ytd': return new Date(now.getFullYear(), 0, 1).toISOString()
+      case 'last30': { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString() }
+      case 'last90': { const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString() }
+      case 'all': return null
+      default: return new Date(now.getFullYear(), 0, 1).toISOString()
+    }
+  }
 
   // Check if user can edit pipeline settings (Super Admin or Owner)
   const isSuperAdmin = user?.user_role === 'Super Admin' || user?.user_role === 'Owner' || user?.role === 'Super Admin' || user?.role === 'Owner'
@@ -285,23 +301,21 @@ export default function SalesPipeline() {
 
     // Fetch standalone jobs for delivery stages
     try {
-      // Active jobs (no date limit) + recent Completed (last 90 days only)
-      const cutoff = new Date()
-      cutoff.setDate(cutoff.getDate() - 90)
+      const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)'
+      const rangeCutoff = getDateCutoff(dateRange)
 
-      const [activeRes, completedRes] = await Promise.all([
-        supabase
-          .from('jobs')
-          .select('id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)')
-          .eq('company_id', companyId)
-          .in('status', ['Scheduled', 'Needs scheduling', 'In Progress']),
-        supabase
-          .from('jobs')
-          .select('id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)')
-          .eq('company_id', companyId)
-          .eq('status', 'Completed')
-          .gte('start_date', cutoff.toISOString())
-      ])
+      // Active jobs: always fetch (small count), apply date filter only to Completed
+      let activeQuery = supabase.from('jobs').select(jobSelect)
+        .eq('company_id', companyId)
+        .in('status', ['Scheduled', 'Needs scheduling', 'In Progress'])
+      if (rangeCutoff) activeQuery = activeQuery.gte('start_date', rangeCutoff)
+
+      let completedQuery = supabase.from('jobs').select(jobSelect)
+        .eq('company_id', companyId)
+        .eq('status', 'Completed')
+      if (rangeCutoff) completedQuery = completedQuery.gte('start_date', rangeCutoff)
+
+      const [activeRes, completedRes] = await Promise.all([activeQuery, completedQuery])
 
       const standaloneJobs = [...(activeRes.data || []), ...(completedRes.data || [])]
 
@@ -352,7 +366,7 @@ export default function SalesPipeline() {
       return
     }
     fetchPipelineLeads()
-  }, [companyId, navigate, stages])
+  }, [companyId, navigate, stages, dateRange])
 
   // Extract unique business units for filter dropdown
   const businessUnits = useMemo(() => {
@@ -713,6 +727,33 @@ export default function SalesPipeline() {
               </div>
             )}
 
+            <div style={{ display: 'flex', gap: '2px', backgroundColor: theme.bgCard, borderRadius: '8px', border: `1px solid ${theme.border}`, padding: '2px' }}>
+              {[
+                { id: 'mtd', label: 'MTD' },
+                { id: 'ytd', label: 'YTD' },
+                { id: 'last30', label: '30d' },
+                { id: 'last90', label: '90d' },
+                { id: 'all', label: 'All' }
+              ].map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => setDateRange(opt.id)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '12px',
+                    fontWeight: dateRange === opt.id ? '600' : '400',
+                    backgroundColor: dateRange === opt.id ? theme.accent : 'transparent',
+                    color: dateRange === opt.id ? '#fff' : theme.textMuted,
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
             <select
               value={ownerFilter}
               onChange={(e) => setOwnerFilter(e.target.value)}
@@ -908,6 +949,35 @@ export default function SalesPipeline() {
                     <div style={{ fontSize: '20px', fontWeight: '700', color: m.text }}>{s.isFormatted ? s.value : s.value}</div>
                     <div style={{ fontSize: '11px', color: m.textMuted }}>{s.label}</div>
                   </div>
+                ))}
+              </div>
+
+              {/* Date range pills */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', backgroundColor: m.bgCard, borderRadius: '8px', border: `1px solid ${m.border}`, padding: '3px' }}>
+                {[
+                  { id: 'mtd', label: 'MTD' },
+                  { id: 'ytd', label: 'YTD' },
+                  { id: 'last30', label: '30d' },
+                  { id: 'last90', label: '90d' },
+                  { id: 'all', label: 'All' }
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setDateRange(opt.id)}
+                    style={{
+                      flex: 1,
+                      padding: '6px 0',
+                      fontSize: '12px',
+                      fontWeight: dateRange === opt.id ? '600' : '400',
+                      backgroundColor: dateRange === opt.id ? '#5a6349' : 'transparent',
+                      color: dateRange === opt.id ? '#fff' : m.textMuted,
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {opt.label}
+                  </button>
                 ))}
               </div>
 

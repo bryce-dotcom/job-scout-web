@@ -38,6 +38,9 @@ export default function JobCalendar() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
+  const [dateRange, setDateRange] = useState('all')
+  const [autoNavigated, setAutoNavigated] = useState(false)
+
   useEffect(() => {
     if (!companyId) {
       navigate('/')
@@ -46,16 +49,67 @@ export default function JobCalendar() {
     fetchJobs()
   }, [companyId, navigate, fetchJobs])
 
+  // Auto-navigate to the latest month that has jobs (only once on load)
+  useEffect(() => {
+    if (autoNavigated || jobs.length === 0) return
+    const today = new Date()
+    const todayMonth = today.getFullYear() * 12 + today.getMonth()
+
+    // Check if current month has jobs
+    const todayStr = today.toISOString().split('T')[0].slice(0, 7) // YYYY-MM
+    const hasCurrentMonthJobs = jobs.some(j => j.start_date && new Date(j.start_date).toISOString().split('T')[0].startsWith(todayStr))
+
+    if (!hasCurrentMonthJobs) {
+      // Find the most recent month with jobs
+      let latestDate = null
+      jobs.forEach(j => {
+        if (!j.start_date) return
+        const d = new Date(j.start_date)
+        if (!latestDate || d > latestDate) latestDate = d
+      })
+      if (latestDate) {
+        const latestMonth = latestDate.getFullYear() * 12 + latestDate.getMonth()
+        if (latestMonth !== todayMonth) {
+          setCurrentDate(new Date(latestDate.getFullYear(), latestDate.getMonth(), 1))
+        }
+      }
+    }
+    setAutoNavigated(true)
+  }, [jobs, autoNavigated])
+
+  // Compute date range filter cutoff
+  const getDateCutoff = (range) => {
+    const now = new Date()
+    switch (range) {
+      case 'mtd': return new Date(now.getFullYear(), now.getMonth(), 1)
+      case 'ytd': return new Date(now.getFullYear(), 0, 1)
+      case 'last30': { const d = new Date(); d.setDate(d.getDate() - 30); return d }
+      case 'last90': { const d = new Date(); d.setDate(d.getDate() - 90); return d }
+      case 'all': return null
+      default: return null
+    }
+  }
+
+  // Filter jobs by date range
+  const filteredJobs = useMemo(() => {
+    const cutoff = getDateCutoff(dateRange)
+    if (!cutoff) return jobs
+    return jobs.filter(j => {
+      if (!j.start_date) return false
+      return new Date(j.start_date) >= cutoff
+    })
+  }, [jobs, dateRange])
+
   // Extract unique business units for filter
   const businessUnits = useMemo(() => {
     const bus = new Set()
-    jobs.forEach(j => {
+    filteredJobs.forEach(j => {
       if (!j.business_unit) return
       const buName = typeof j.business_unit === 'object' ? j.business_unit.name : j.business_unit
       if (buName) bus.add(buName)
     })
     return [...bus].sort()
-  }, [jobs])
+  }, [filteredJobs])
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
@@ -81,7 +135,7 @@ export default function JobCalendar() {
     const date = new Date(year, month, day)
     const dateStr = date.toISOString().split('T')[0]
 
-    return jobs.filter(job => {
+    return filteredJobs.filter(job => {
       if (!job.start_date) return false
       const jobDate = new Date(job.start_date).toISOString().split('T')[0]
       if (jobDate !== dateStr) return false
@@ -163,6 +217,31 @@ export default function JobCalendar() {
           >
             Today
           </button>
+          <div style={{ display: 'flex', gap: '2px', backgroundColor: theme.bgCard, borderRadius: '8px', border: `1px solid ${theme.border}`, padding: '2px' }}>
+            {[
+              { id: 'mtd', label: 'MTD' },
+              { id: 'ytd', label: 'YTD' },
+              { id: 'last90', label: '90d' },
+              { id: 'all', label: 'All' }
+            ].map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setDateRange(opt.id)}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '12px',
+                  fontWeight: dateRange === opt.id ? '600' : '400',
+                  backgroundColor: dateRange === opt.id ? theme.accent : 'transparent',
+                  color: dateRange === opt.id ? '#fff' : theme.textMuted,
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           <select
             value={buFilter}
             onChange={(e) => setBuFilter(e.target.value)}
