@@ -1159,9 +1159,10 @@ export default function PMJobSetter() {
             style={{ ...inputStyle, minHeight: '36px', padding: '6px 10px' }}
           >
             <option value="">Select Business Unit</option>
-            {businessUnits.map(unit => (
-              <option key={unit} value={unit}>{unit}</option>
-            ))}
+            {businessUnits.map(unit => {
+              const name = typeof unit === 'object' ? unit.name : unit
+              return <option key={name} value={name}>{name}</option>
+            })}
           </select>
         </div>
       ))}
@@ -1347,9 +1348,10 @@ export default function PMJobSetter() {
             style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
           >
             <option value="">All Units</option>
-            {businessUnits.map(unit => (
-              <option key={unit} value={unit}>{unit}</option>
-            ))}
+            {businessUnits.map(unit => {
+              const name = typeof unit === 'object' ? unit.name : unit
+              return <option key={name} value={name}>{name}</option>
+            })}
           </select>
 
           {/* Search */}
