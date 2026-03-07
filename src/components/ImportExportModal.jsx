@@ -945,7 +945,7 @@ export default function ImportExportModal({
                             padding: '6px 10px', color: theme.text,
                             maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
                           }}>
-                            {String(row[f.field] || '—')}
+                            {String(row[f.field] ?? '—')}
                           </td>
                         ))}
                       </tr>
