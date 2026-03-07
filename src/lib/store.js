@@ -405,15 +405,29 @@ export const useStore = create(
 
         // Network refresh
         try {
-          const { data, error } = await supabase
+          let { data, error } = await supabase
             .from(TABLES.jobs)
             .select(QUERIES.jobs)
             .eq('company_id', companyId)
-            .order('start_date', { ascending: false });
+            .order('start_date', { ascending: false })
+            .limit(5000);
 
-          if (!error) {
-            set({ jobs: data || [] });
-            await offlineDb.putAll('jobs', data || []);
+          // If join query fails/times out, fall back to simple select
+          if (error) {
+            console.warn('[fetchJobs] Join query failed, falling back:', error.message);
+            ({ data, error } = await supabase
+              .from(TABLES.jobs)
+              .select('*')
+              .eq('company_id', companyId)
+              .order('start_date', { ascending: false })
+              .limit(5000));
+          }
+
+          if (!error && data) {
+            set({ jobs: data });
+            await offlineDb.putAll('jobs', data);
+          } else if (error) {
+            console.error('[fetchJobs] Error:', error.message);
           }
         } catch (e) {
           console.log('[fetchJobs] Offline, using cache');
@@ -482,17 +496,26 @@ export const useStore = create(
         const cached = await offlineDb.getAll('invoices');
         if (cached.length > 0 && get().invoices.length === 0) set({ invoices: cached });
 
-        // Network refresh
+        // Network refresh — paginate to get all invoices (Supabase caps at 1000/request)
         try {
-          const { data, error } = await supabase
-            .from(TABLES.invoices)
-            .select(QUERIES.invoices)
-            .eq('company_id', companyId)
-            .order('created_at', { ascending: false });
-
-          if (!error) {
-            set({ invoices: data || [] });
-            await offlineDb.putAll('invoices', data || []);
+          let allData = [];
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from(TABLES.invoices)
+              .select(QUERIES.invoices)
+              .eq('company_id', companyId)
+              .order('created_at', { ascending: false })
+              .range(from, from + PAGE - 1);
+            if (error) break;
+            allData = allData.concat(data || []);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
+          }
+          if (allData.length > 0) {
+            set({ invoices: allData });
+            await offlineDb.putAll('invoices', allData);
           }
         } catch (e) {
           console.log('[fetchInvoices] Offline, using cache');
