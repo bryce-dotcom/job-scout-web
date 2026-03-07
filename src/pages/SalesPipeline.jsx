@@ -343,7 +343,11 @@ export default function SalesPipeline() {
   // Extract unique business units for filter dropdown
   const businessUnits = useMemo(() => {
     const bus = new Set()
-    pipelineLeads.forEach(l => { if (l.business_unit) bus.add(l.business_unit) })
+    pipelineLeads.forEach(l => {
+      if (!l.business_unit) return
+      const buName = typeof l.business_unit === 'object' ? l.business_unit.name : l.business_unit
+      if (buName) bus.add(buName)
+    })
     return [...bus].sort()
   }, [pipelineLeads])
 
@@ -356,7 +360,10 @@ export default function SalesPipeline() {
         return false
       }
     }
-    if (buFilter !== 'all' && (lead.business_unit || '') !== buFilter) return false
+    if (buFilter !== 'all') {
+      const buName = typeof lead.business_unit === 'object' ? lead.business_unit?.name : (lead.business_unit || '')
+      if (buName !== buFilter) return false
+    }
     return true
   })
 

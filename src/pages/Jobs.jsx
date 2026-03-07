@@ -785,7 +785,10 @@ export default function Jobs() {
                     <label style={labelStyle}>Business Unit</label>
                     <select name="business_unit" value={formData.business_unit} onChange={handleChange} style={inputStyle}>
                       <option value="">-- Select --</option>
-                      {businessUnits.map(bu => <option key={bu} value={bu}>{bu}</option>)}
+                      {businessUnits.map(bu => {
+                        const buName = typeof bu === 'object' ? bu.name : bu
+                        return <option key={buName} value={buName}>{buName}</option>
+                      })}
                     </select>
                   </div>
                 </div>
@@ -873,11 +876,11 @@ export default function Jobs() {
           entityName="Jobs"
           fields={jobsFields}
           companyId={companyId}
-          requiredField="job_title"
+          requiredField="job_id"
           defaultValues={{ company_id: companyId, status: 'Scheduled' }}
           relatedTables={jobRelatedTables}
           parentRefField="job_id"
-          extraContext="Field service / construction job management data. Map as many columns as possible to the available fields. Common aliases: customer_name=Customer/Client/Client Name/Customer Name/Account Name, job_title=Job Name/Project Name/Work Order/Job Description/Description/Service, job_id=Job Number/Work Order #/Job #/Job No, job_address=Site Address/Service Address/Location/Address, status=Job Status/Stage, business_unit=Division/Department/Segments/Business Unit, start_date=Start/Begin Date/Job Created Date/Created/Date, end_date=End/Completion Date, assigned_team=Team/Crew Name/Assigned To, allotted_time_hours=Budgeted Hours/Estimated Hours/Travel Duration/Duration, utility_incentive=Incentive/Rebate/Utility Rebate/Job Amount/Amount/Revenue/Price/Contract Value, discount=Discount/Discount Amount, expense_amount=Expense/Commission Cost/Labor Cost/Cost, details=Details/Job Details/Scope/SOW/Description, notes=Notes/Comments/Segments, recurrence=Recurrence/Recurring/Frequency, profit_margin=Profit/Margin"
+          extraContext="Field service / construction job management data. Map as many columns as possible. IMPORTANT: 'Customer name' or 'Customer' columns must map to customer_name (NOT job_title). 'Job description' or 'Description' columns must map to job_title. 'Job amount' or 'Amount' or 'Revenue' or 'Price' must map to job_total. Common aliases: customer_name=Customer/Client/Client Name/Customer Name/Account Name, job_title=Job Name/Project Name/Work Order/Job Description/Description/Service Type, job_id=Job Number/Work Order #/Job #/Job No, job_address=Site Address/Service Address/Location/Address, status=Job Status/Stage, business_unit=Division/Department/Business Unit, start_date=Start/Begin Date/Job Created Date/Created/Date, end_date=End/Completion Date, assigned_team=Team/Crew Name/Assigned To, allotted_time_hours=Budgeted Hours/Estimated Hours, job_total=Job Amount/Amount/Revenue/Price/Contract Value/Total, expense_amount=Expense/Commission Cost/Labor Cost/Cost, details=Details/Job Details/Scope/SOW, notes=Notes/Comments"
           onImportComplete={() => fetchJobs()}
           onClose={() => setShowImportExport(false)}
         />

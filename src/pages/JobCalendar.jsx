@@ -49,7 +49,11 @@ export default function JobCalendar() {
   // Extract unique business units for filter
   const businessUnits = useMemo(() => {
     const bus = new Set()
-    jobs.forEach(j => { if (j.business_unit) bus.add(j.business_unit) })
+    jobs.forEach(j => {
+      if (!j.business_unit) return
+      const buName = typeof j.business_unit === 'object' ? j.business_unit.name : j.business_unit
+      if (buName) bus.add(buName)
+    })
     return [...bus].sort()
   }, [jobs])
 
@@ -81,7 +85,10 @@ export default function JobCalendar() {
       if (!job.start_date) return false
       const jobDate = new Date(job.start_date).toISOString().split('T')[0]
       if (jobDate !== dateStr) return false
-      if (buFilter !== 'all' && (job.business_unit || '') !== buFilter) return false
+      if (buFilter !== 'all') {
+        const buName = typeof job.business_unit === 'object' ? job.business_unit?.name : (job.business_unit || '')
+        if (buName !== buFilter) return false
+      }
       return true
     })
   }
