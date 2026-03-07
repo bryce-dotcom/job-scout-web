@@ -24,6 +24,7 @@ const defaultTheme = {
 
 const statusColors = {
   'Pending': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
+  'Open': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
   'Paid': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
   'Overdue': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
   'Cancelled': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
@@ -343,15 +344,16 @@ export default function Invoices() {
     return new Date(date).toLocaleDateString()
   }
 
-  // --- Stats ---
-  const customerPendingCount = invoices.filter(i => i.payment_status === 'Pending').length
+  // --- Stats --- (treat anything not "Paid" as outstanding/pending)
+  const isUnpaid = (i) => i.payment_status !== 'Paid'
+  const customerPendingCount = invoices.filter(isUnpaid).length
   const customerPaidCount = invoices.filter(i => i.payment_status === 'Paid').length
-  const customerTotalPending = invoices.filter(i => i.payment_status === 'Pending').reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
+  const customerTotalPending = invoices.filter(isUnpaid).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
   const customerTotalPaid = invoices.filter(i => i.payment_status === 'Paid').reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
 
-  const utilityPendingCount = utilityInvoices.filter(i => i.payment_status === 'Pending').length
+  const utilityPendingCount = utilityInvoices.filter(isUnpaid).length
   const utilityPaidCount = utilityInvoices.filter(i => i.payment_status === 'Paid').length
-  const utilityTotalPending = utilityInvoices.filter(i => i.payment_status === 'Pending').reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
+  const utilityTotalPending = utilityInvoices.filter(isUnpaid).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
   const utilityTotalPaid = utilityInvoices.filter(i => i.payment_status === 'Paid').reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
 
   // --- Styles ---
@@ -749,7 +751,7 @@ export default function Invoices() {
               padding: '16px',
               textAlign: 'center'
             }}>
-              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Pending</p>
+              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Outstanding</p>
               <p style={{ fontSize: '24px', fontWeight: '600', color: '#c28b38' }}>{customerPendingCount}</p>
               <p style={{ fontSize: '12px', color: theme.textMuted }}>{formatCurrency(customerTotalPending)}</p>
             </div>
@@ -824,6 +826,7 @@ export default function Invoices() {
         >
           <option value="all">All Status</option>
           <option value="Pending">Pending</option>
+          <option value="Open">Open</option>
           <option value="Paid">Paid</option>
           <option value="Overdue">Overdue</option>
           <option value="Cancelled">Cancelled</option>
