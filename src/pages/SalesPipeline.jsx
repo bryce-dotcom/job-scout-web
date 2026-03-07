@@ -128,6 +128,9 @@ export default function SalesPipeline() {
   // Owner filter — default to logged-in user
   const [ownerFilter, setOwnerFilter] = useState(() => user?.id ? String(user.id) : 'all')
 
+  // Business Unit filter
+  const [buFilter, setBuFilter] = useState('all')
+
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
@@ -193,6 +196,14 @@ export default function SalesPipeline() {
     ...lead,
     status: STATUS_MAP[lead.status] || lead.status
   })
+
+  // Map standalone job status to pipeline delivery stage
+  const mapJobToStage = (job) => {
+    if (job.invoice_status === 'Invoiced') return 'Invoiced'
+    if (job.status === 'Completed') return 'Job Complete'
+    if (job.status === 'In Progress') return 'In Progress'
+    return 'Job Scheduled'
+  }
 
   // Attach jobs data to leads
   const attachJobs = (normalized, jobsData) => {
@@ -272,6 +283,47 @@ export default function SalesPipeline() {
       } catch (e) { /* non-critical */ }
     }
 
+    // Fetch standalone jobs for delivery stages
+    try {
+      const { data: standaloneJobs } = await supabase
+        .from('jobs')
+        .select('id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)')
+        .eq('company_id', companyId)
+        .in('status', ['Scheduled', 'Needs scheduling', 'In Progress', 'Completed'])
+
+      if (standaloneJobs?.length) {
+        const pipelineLeadIds = new Set(normalized.map(l => l.id))
+        const todayStr = new Date().toISOString().split('T')[0]
+
+        const orphanJobs = standaloneJobs.filter(j => !j.lead_id || !pipelineLeadIds.has(j.lead_id))
+        orphanJobs.forEach(job => {
+          const stage = mapJobToStage(job)
+
+          // For "Job Scheduled" + status "Scheduled", skip past-dated jobs
+          if (stage === 'Job Scheduled' && job.status === 'Scheduled') {
+            const jobDate = job.start_date ? new Date(job.start_date).toISOString().split('T')[0] : null
+            if (jobDate && jobDate < todayStr) return
+          }
+
+          normalized.push({
+            id: `job-${job.id}`,
+            _isJob: true,
+            _jobId: job.id,
+            customer_name: job.customer?.name || job.job_title || 'Untitled Job',
+            business_name: null,
+            business_unit: job.business_unit,
+            status: stage,
+            quote_amount: job.job_total,
+            lead_owner: null,
+            lead_owner_id: null,
+            salesperson_id: null,
+            lead_source: 'Direct Job',
+            jobs: [job],
+          })
+        })
+      }
+    } catch (e) { /* non-critical */ }
+
     setPipelineLeads(normalized)
     setLoading(false)
     setRefreshing(false)
@@ -288,11 +340,24 @@ export default function SalesPipeline() {
     fetchPipelineLeads()
   }, [companyId, navigate, stages])
 
-  // Filter leads by owner
+  // Extract unique business units for filter dropdown
+  const businessUnits = useMemo(() => {
+    const bus = new Set()
+    pipelineLeads.forEach(l => { if (l.business_unit) bus.add(l.business_unit) })
+    return [...bus].sort()
+  }, [pipelineLeads])
+
+  // Filter leads by owner and business unit
   const filteredPipelineLeads = pipelineLeads.filter(lead => {
-    if (ownerFilter === 'all') return true
-    if (ownerFilter === 'unassigned') return !lead.lead_owner_id && !lead.salesperson_id
-    return lead.lead_owner_id === parseInt(ownerFilter) || lead.salesperson_id === parseInt(ownerFilter)
+    if (ownerFilter !== 'all') {
+      if (ownerFilter === 'unassigned') {
+        if (lead.lead_owner_id || lead.salesperson_id) return false
+      } else if (lead.lead_owner_id !== parseInt(ownerFilter) && lead.salesperson_id !== parseInt(ownerFilter)) {
+        return false
+      }
+    }
+    if (buFilter !== 'all' && (lead.business_unit || '') !== buFilter) return false
+    return true
   })
 
   // Get leads for a stage
@@ -646,6 +711,23 @@ export default function SalesPipeline() {
               ))}
             </select>
 
+            <select
+              value={buFilter}
+              onChange={(e) => setBuFilter(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                backgroundColor: theme.bgCard,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                color: theme.text,
+                fontSize: '13px',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="all">All Business Units</option>
+              {businessUnits.map(bu => <option key={bu} value={bu}>{bu}</option>)}
+            </select>
+
             <button
               onClick={fetchPipelineLeads}
               disabled={refreshing}
@@ -807,18 +889,26 @@ export default function SalesPipeline() {
                 ))}
               </div>
 
-              {/* Owner filter */}
-              <div style={{ marginBottom: '12px' }}>
+              {/* Owner + BU filters */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 <select
                   value={ownerFilter}
                   onChange={(e) => setOwnerFilter(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', backgroundColor: m.bgCard, border: `1px solid ${m.border}`, borderRadius: '8px', color: m.text, fontSize: '13px' }}
+                  style={{ flex: 1, padding: '10px 12px', backgroundColor: m.bgCard, border: `1px solid ${m.border}`, borderRadius: '8px', color: m.text, fontSize: '13px' }}
                 >
                   <option value="all">All Owners</option>
                   <option value="unassigned">Unassigned</option>
                   {activeEmployees.map(emp => (
                     <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
                   ))}
+                </select>
+                <select
+                  value={buFilter}
+                  onChange={(e) => setBuFilter(e.target.value)}
+                  style={{ flex: 1, padding: '10px 12px', backgroundColor: m.bgCard, border: `1px solid ${m.border}`, borderRadius: '8px', color: m.text, fontSize: '13px' }}
+                >
+                  <option value="all">All BUs</option>
+                  {businessUnits.map(bu => <option key={bu} value={bu}>{bu}</option>)}
                 </select>
               </div>
 
@@ -986,11 +1076,16 @@ export default function SalesPipeline() {
                               return (
                                 <div
                                   key={lead.id}
-                                  onClick={() => navigate(`/leads/${lead.id}`)}
+                                  onClick={() => navigate(lead._isJob ? `/jobs/${lead._jobId}` : `/leads/${lead.id}`)}
                                   style={{ backgroundColor: m.bgCard, border: `1px solid ${m.border}`, borderLeft: `4px solid ${stage.color}`, borderRadius: '12px', padding: '12px 16px', marginBottom: '6px', cursor: 'pointer' }}
                                 >
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                    <span style={{ fontSize: '15px', fontWeight: '600', color: m.text }}>{lead.customer_name}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden' }}>
+                                      <span style={{ fontSize: '15px', fontWeight: '600', color: m.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.customer_name}</span>
+                                      {lead._isJob && (
+                                        <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: '#f97316' + '20', color: '#f97316', fontWeight: '600', flexShrink: 0 }}>Job</span>
+                                      )}
+                                    </div>
                                     {(job ? parseFloat(job.contract_amount) > 0 : parseFloat(lead.quote_amount) > 0) && (
                                       <span style={{ fontSize: '14px', fontWeight: '700', color: '#22c55e' }}>
                                         {formatCurrency(job?.contract_amount || lead.quote_amount)}
@@ -1248,11 +1343,16 @@ export default function SalesPipeline() {
                               key={lead.id}
                               name={lead.customer_name}
                               businessName={lead.business_name}
-                              onClick={() => navigate(`/leads/${lead.id}`)}
+                              onClick={() => navigate(lead._isJob ? `/jobs/${lead._jobId}` : `/leads/${lead.id}`)}
                               style={{ cursor: 'pointer', padding: '8px' }}
                             >
-                              <div style={{ fontWeight: '600', color: theme.text, fontSize: '12px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {lead.customer_name}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                                <div style={{ fontWeight: '600', color: theme.text, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                  {lead.customer_name}
+                                </div>
+                                {lead._isJob && (
+                                  <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: '#f97316' + '20', color: '#f97316', fontWeight: '600', flexShrink: 0 }}>Job</span>
+                                )}
                               </div>
                               {job ? (
                                 <div style={{ fontSize: '10px', color: theme.textSecondary, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '3px' }}>

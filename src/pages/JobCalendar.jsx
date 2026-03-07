@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -32,6 +32,7 @@ export default function JobCalendar() {
   const fetchJobs = useStore((state) => state.fetchJobs)
 
   const [currentDate, setCurrentDate] = useState(new Date())
+  const [buFilter, setBuFilter] = useState('all')
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -44,6 +45,13 @@ export default function JobCalendar() {
     }
     fetchJobs()
   }, [companyId, navigate, fetchJobs])
+
+  // Extract unique business units for filter
+  const businessUnits = useMemo(() => {
+    const bus = new Set()
+    jobs.forEach(j => { if (j.business_unit) bus.add(j.business_unit) })
+    return [...bus].sort()
+  }, [jobs])
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
@@ -72,7 +80,9 @@ export default function JobCalendar() {
     return jobs.filter(job => {
       if (!job.start_date) return false
       const jobDate = new Date(job.start_date).toISOString().split('T')[0]
-      return jobDate === dateStr
+      if (jobDate !== dateStr) return false
+      if (buFilter !== 'all' && (job.business_unit || '') !== buFilter) return false
+      return true
     })
   }
 
@@ -146,6 +156,22 @@ export default function JobCalendar() {
           >
             Today
           </button>
+          <select
+            value={buFilter}
+            onChange={(e) => setBuFilter(e.target.value)}
+            style={{
+              padding: '8px 12px',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              color: theme.text,
+              fontSize: '13px',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="all">All Business Units</option>
+            {businessUnits.map(bu => <option key={bu} value={bu}>{bu}</option>)}
+          </select>
           <button
             onClick={prevMonth}
             style={{
