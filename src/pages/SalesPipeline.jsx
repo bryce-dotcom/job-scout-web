@@ -283,20 +283,29 @@ export default function SalesPipeline() {
       } catch (e) { /* non-critical */ }
     }
 
-    // Fetch standalone jobs for delivery stages (limit Completed to last 90 days)
+    // Fetch standalone jobs for delivery stages
     try {
+      // Active jobs (no date limit) + recent Completed (last 90 days only)
       const cutoff = new Date()
       cutoff.setDate(cutoff.getDate() - 90)
-      const cutoffStr = cutoff.toISOString()
 
-      const { data: standaloneJobs } = await supabase
-        .from('jobs')
-        .select('id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)')
-        .eq('company_id', companyId)
-        .in('status', ['Scheduled', 'Needs scheduling', 'In Progress', 'Completed'])
-        .gte('updated_at', cutoffStr)
+      const [activeRes, completedRes] = await Promise.all([
+        supabase
+          .from('jobs')
+          .select('id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)')
+          .eq('company_id', companyId)
+          .in('status', ['Scheduled', 'Needs scheduling', 'In Progress']),
+        supabase
+          .from('jobs')
+          .select('id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)')
+          .eq('company_id', companyId)
+          .eq('status', 'Completed')
+          .gte('start_date', cutoff.toISOString())
+      ])
 
-      if (standaloneJobs?.length) {
+      const standaloneJobs = [...(activeRes.data || []), ...(completedRes.data || [])]
+
+      if (standaloneJobs.length) {
         const pipelineLeadIds = new Set(normalized.map(l => l.id))
         const todayStr = new Date().toISOString().split('T')[0]
 
