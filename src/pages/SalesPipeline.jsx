@@ -283,13 +283,18 @@ export default function SalesPipeline() {
       } catch (e) { /* non-critical */ }
     }
 
-    // Fetch standalone jobs for delivery stages
+    // Fetch standalone jobs for delivery stages (limit Completed to last 90 days)
     try {
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - 90)
+      const cutoffStr = cutoff.toISOString()
+
       const { data: standaloneJobs } = await supabase
         .from('jobs')
         .select('id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)')
         .eq('company_id', companyId)
         .in('status', ['Scheduled', 'Needs scheduling', 'In Progress', 'Completed'])
+        .gte('updated_at', cutoffStr)
 
       if (standaloneJobs?.length) {
         const pipelineLeadIds = new Set(normalized.map(l => l.id))
@@ -353,7 +358,8 @@ export default function SalesPipeline() {
 
   // Filter leads by owner and business unit
   const filteredPipelineLeads = pipelineLeads.filter(lead => {
-    if (ownerFilter !== 'all') {
+    // Standalone jobs don't have lead owners — skip owner filter for them
+    if (ownerFilter !== 'all' && !lead._isJob) {
       if (ownerFilter === 'unassigned') {
         if (lead.lead_owner_id || lead.salesperson_id) return false
       } else if (lead.lead_owner_id !== parseInt(ownerFilter) && lead.salesperson_id !== parseInt(ownerFilter)) {
