@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import {
   Clock, Play, Square, Coffee, MapPin, Calendar, AlertTriangle,
-  Plus, X, ChevronRight
+  Plus, X, ChevronRight, DollarSign, TrendingUp, Award
 } from 'lucide-react'
 
 const AVATAR_COLORS = [
@@ -15,6 +15,7 @@ const AVATAR_COLORS = [
 export default function TimeClock() {
   const { theme } = useTheme()
   const companyId = useStore((state) => state.companyId)
+  const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
 
@@ -31,6 +32,24 @@ export default function TimeClock() {
   })
   const [savingPTO, setSavingPTO] = useState(false)
 
+  // Pay summary data
+  const [periodEntries, setPeriodEntries] = useState([])
+  const [leadCommissions, setLeadCommissions] = useState([])
+  const [invoices, setInvoices] = useState([])
+  const [payments, setPayments] = useState([])
+  const [jobs, setJobs] = useState([])
+  const [payrollConfig, setPayrollConfig] = useState({
+    pay_frequency: 'bi-weekly',
+    pay_day_1: '20',
+    pay_day_2: '5',
+    commission_trigger: 'payment_received',
+    overtime_threshold: 40,
+    overtime_multiplier: 1.5,
+  })
+
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Manager' || user?.is_admin ||
+    user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin'
+
   // Update current time every second
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000)
@@ -38,7 +57,10 @@ export default function TimeClock() {
   }, [])
 
   useEffect(() => {
-    if (companyId) fetchTimeEntries()
+    if (companyId) {
+      fetchTimeEntries()
+      fetchPayData()
+    }
   }, [companyId])
 
   const fetchTimeEntries = async () => {
@@ -63,6 +85,185 @@ export default function TimeClock() {
       setLoading(false)
     }
   }
+
+  // ── Pay Period & Data ──────────────────────────────────
+  const getCurrentPeriod = () => {
+    const today = new Date()
+    const freq = payrollConfig.pay_frequency
+    let periodStart, periodEnd
+
+    if (freq === 'weekly') {
+      const day = today.getDay()
+      periodStart = new Date(today)
+      periodStart.setDate(today.getDate() - (day === 0 ? 6 : day - 1))
+      periodEnd = new Date(periodStart)
+      periodEnd.setDate(periodStart.getDate() + 6)
+    } else if (freq === 'bi-weekly') {
+      const day1 = parseInt(payrollConfig.pay_day_1) || 20
+      const day2 = parseInt(payrollConfig.pay_day_2) || 5
+      if (today.getDate() <= day2) {
+        periodStart = new Date(today.getFullYear(), today.getMonth() - 1, 16)
+        periodEnd = new Date(today.getFullYear(), today.getMonth(), 0)
+      } else if (today.getDate() <= day1) {
+        periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
+        periodEnd = new Date(today.getFullYear(), today.getMonth(), 15)
+      } else {
+        periodStart = new Date(today.getFullYear(), today.getMonth(), 16)
+        periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      }
+    } else if (freq === 'semi-monthly') {
+      if (today.getDate() <= 15) {
+        periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
+        periodEnd = new Date(today.getFullYear(), today.getMonth(), 15)
+      } else {
+        periodStart = new Date(today.getFullYear(), today.getMonth(), 16)
+        periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      }
+    } else {
+      periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
+      periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+    }
+    periodStart.setHours(0, 0, 0, 0)
+    periodEnd.setHours(23, 59, 59, 999)
+    return { periodStart, periodEnd }
+  }
+
+  const getNextPayDate = () => {
+    const today = new Date()
+    const day1 = parseInt(payrollConfig.pay_day_1) || 20
+    const day2 = parseInt(payrollConfig.pay_day_2) || 5
+    if (payrollConfig.pay_frequency === 'weekly') {
+      const daysUntilFriday = (5 - today.getDay() + 7) % 7 || 7
+      const next = new Date(today)
+      next.setDate(today.getDate() + daysUntilFriday)
+      return next
+    }
+    if (today.getDate() < day2) return new Date(today.getFullYear(), today.getMonth(), day2)
+    if (today.getDate() < day1) return new Date(today.getFullYear(), today.getMonth(), day1)
+    return new Date(today.getFullYear(), today.getMonth() + 1, day2)
+  }
+
+  const fetchPayData = async () => {
+    try {
+      const { periodStart, periodEnd } = getCurrentPeriod()
+
+      // Load payroll config
+      const configPromise = supabase
+        .from('settings')
+        .select('value')
+        .eq('company_id', companyId)
+        .eq('key', 'payroll_config')
+        .single()
+
+      const [configRes, entriesRes, commRes, paymentsRes, invoicesRes, jobsRes] = await Promise.allSettled([
+        configPromise,
+        supabase.from('time_clock').select('*').eq('company_id', companyId)
+          .gte('clock_in', periodStart.toISOString()).lte('clock_in', periodEnd.toISOString())
+          .not('clock_out', 'is', null),
+        supabase.from('lead_commissions').select('*').eq('company_id', companyId)
+          .gte('created_at', periodStart.toISOString()).lte('created_at', periodEnd.toISOString()),
+        supabase.from('payments').select('*').eq('company_id', companyId)
+          .gte('date', periodStart.toISOString().split('T')[0]).lte('date', periodEnd.toISOString().split('T')[0]),
+        supabase.from('invoices').select('*').eq('company_id', companyId),
+        supabase.from('jobs').select('id, company_id, job_id, salesperson_id, allotted_time_hours, status, customer_name, job_title, assigned_team')
+          .eq('company_id', companyId),
+      ])
+
+      if (configRes.status === 'fulfilled' && configRes.value?.data?.value) {
+        try {
+          const parsed = JSON.parse(configRes.value.data.value)
+          setPayrollConfig(prev => ({ ...prev, ...parsed }))
+        } catch {}
+      }
+
+      setPeriodEntries(entriesRes.status === 'fulfilled' ? entriesRes.value?.data || [] : [])
+      setLeadCommissions(commRes.status === 'fulfilled' ? commRes.value?.data || [] : [])
+      setPayments(paymentsRes.status === 'fulfilled' ? paymentsRes.value?.data || [] : [])
+      setInvoices(invoicesRes.status === 'fulfilled' ? invoicesRes.value?.data || [] : [])
+      setJobs(jobsRes.status === 'fulfilled' ? jobsRes.value?.data || [] : [])
+    } catch (e) { /* non-critical */ }
+  }
+
+  // Sync company pay settings
+  useEffect(() => {
+    if (company) {
+      setPayrollConfig(prev => ({
+        ...prev,
+        pay_frequency: company.pay_frequency || prev.pay_frequency,
+        pay_day_1: company.pay_day_1 || prev.pay_day_1,
+        pay_day_2: company.pay_day_2 || prev.pay_day_2,
+      }))
+    }
+  }, [company])
+
+  // Calculate pay for an employee
+  const calculatePay = (employee) => {
+    const empEntries = periodEntries.filter(e => e.employee_id === employee.id)
+    const hourlyRate = employee.hourly_rate || 0
+    const otMultiplier = payrollConfig.overtime_multiplier || 1.5
+    const otThreshold = payrollConfig.overtime_threshold || 40
+
+    // Hours grouped by week for overtime
+    let regularHours = 0, overtimeHours = 0
+    const weeklyHours = {}
+    empEntries.forEach(entry => {
+      if (!entry.total_hours) return
+      const d = new Date(entry.clock_in)
+      const ws = new Date(d)
+      ws.setDate(d.getDate() - d.getDay())
+      const key = ws.toISOString().split('T')[0]
+      weeklyHours[key] = (weeklyHours[key] || 0) + entry.total_hours
+    })
+    Object.values(weeklyHours).forEach(h => {
+      if (h <= otThreshold) { regularHours += h } else { regularHours += otThreshold; overtimeHours += h - otThreshold }
+    })
+
+    let hourlyPay = 0, salaryPay = 0
+    if (employee.is_hourly) {
+      hourlyPay = (regularHours * hourlyRate) + (overtimeHours * hourlyRate * otMultiplier)
+    }
+    if (employee.is_salary) {
+      const ppy = payrollConfig.pay_frequency === 'weekly' ? 52 : payrollConfig.pay_frequency === 'bi-weekly' ? 26 : payrollConfig.pay_frequency === 'semi-monthly' ? 24 : 12
+      salaryPay = (employee.annual_salary || 0) / ppy
+    }
+
+    // Invoice-based commissions
+    let commissionPay = 0
+    if (employee.is_commission) {
+      const empJobs = jobs.filter(j => j.salesperson_id === employee.id)
+      const empJobIds = empJobs.map(j => j.id)
+      const empInvoices = invoices.filter(inv => empJobIds.includes(inv.job_id))
+      empInvoices.forEach(inv => {
+        const invAmount = inv.amount || 0
+        if (invAmount <= 0) return
+        const rate = employee.commission_services_rate || 0
+        const rateType = employee.commission_services_type || 'percent'
+        const commAmt = rateType === 'percent' ? invAmount * (rate / 100) : rate
+        if (commAmt <= 0) return
+        const invPayments = payments.filter(p => p.invoice_id === inv.id)
+        const totalPaid = invPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
+        const isPaid = totalPaid >= invAmount || inv.payment_status === 'Paid'
+        if (payrollConfig.commission_trigger === 'payment_received' && isPaid) commissionPay += commAmt
+        else if (payrollConfig.commission_trigger === 'invoice_created') commissionPay += commAmt
+        else if (payrollConfig.commission_trigger === 'job_completed') {
+          const job = empJobs.find(j => j.id === inv.job_id)
+          if (job?.status === 'Completed' || job?.status === 'Complete') commissionPay += commAmt
+        }
+      })
+    }
+
+    // Lead commissions
+    const empLeadComm = leadCommissions.filter(c => c.employee_id === employee.id)
+    const leadCommTotal = empLeadComm.reduce((sum, c) => sum + (c.amount || 0), 0)
+    commissionPay += leadCommTotal
+
+    const grossPay = hourlyPay + salaryPay + commissionPay
+    const ptoBalance = (employee.pto_accrued || 0) - (employee.pto_used || 0)
+
+    return { regularHours, overtimeHours, hourlyPay, salaryPay, commissionPay, grossPay: Math.round(grossPay * 100) / 100, ptoBalance, hourlyRate }
+  }
+
+  const fmt = (n) => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const getLocation = () => {
     return new Promise((resolve) => {
@@ -304,7 +505,7 @@ export default function TimeClock() {
         gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
         gap: '20px'
       }}>
-        {employees.filter(e => e.active).map(employee => {
+        {employees.filter(e => e.active && (isAdmin || e.id === user?.id)).map(employee => {
           const activeEntry = getActiveEntry(employee.id)
           const weekTotal = getWeekTotal(employee.id)
           const recentSessions = getRecentSessions(employee.id)
@@ -652,6 +853,116 @@ export default function TimeClock() {
                   ))}
                 </div>
               )}
+
+              {/* My Pay This Period */}
+              {(() => {
+                const pay = calculatePay(employee)
+                const { periodStart, periodEnd } = getCurrentPeriod()
+                const nextPay = getNextPayDate()
+                const daysUntil = Math.max(0, Math.ceil((nextPay - new Date()) / (1000 * 60 * 60 * 24)))
+
+                return (
+                  <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${theme.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <DollarSign size={14} />
+                        Pay This Period
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                        {periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </div>
+                    </div>
+
+                    {/* Gross Pay */}
+                    <div style={{
+                      backgroundColor: theme.accent + '12',
+                      border: `1px solid ${theme.accent}30`,
+                      borderRadius: '12px',
+                      padding: '12px 16px',
+                      marginBottom: '10px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>Gross Pay</span>
+                      <span style={{ fontSize: '20px', fontWeight: '700', color: '#16a34a' }}>{fmt(pay.grossPay)}</span>
+                    </div>
+
+                    {/* Breakdown */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
+                      {employee.is_hourly && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Clock size={12} /> Hours ({formatDuration(pay.regularHours)}{pay.overtimeHours > 0 ? ` + ${formatDuration(pay.overtimeHours)} OT` : ''})
+                          </span>
+                          <span style={{ fontWeight: '500', color: theme.text }}>{fmt(pay.hourlyPay)}</span>
+                        </div>
+                      )}
+                      {employee.is_salary && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: theme.textMuted }}>Salary</span>
+                          <span style={{ fontWeight: '500', color: theme.text }}>{fmt(pay.salaryPay)}</span>
+                        </div>
+                      )}
+                      {pay.commissionPay > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <TrendingUp size={12} /> Commissions
+                          </span>
+                          <span style={{ fontWeight: '500', color: '#16a34a' }}>{fmt(pay.commissionPay)}</span>
+                        </div>
+                      )}
+
+                      {/* Divider */}
+                      <div style={{ height: '1px', backgroundColor: theme.border, margin: '4px 0' }} />
+
+                      {/* PTO */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Calendar size={12} /> PTO Balance
+                        </span>
+                        <span style={{ fontWeight: '500', color: pay.ptoBalance > 0 ? '#8b5cf6' : theme.textMuted }}>
+                          {pay.ptoBalance} days
+                        </span>
+                      </div>
+
+                      {/* Pay Rate */}
+                      {employee.is_hourly && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: theme.textMuted }}>Pay Rate</span>
+                          <span style={{ fontWeight: '500', color: theme.text }}>${employee.hourly_rate}/hr</span>
+                        </div>
+                      )}
+
+                      {/* Next Payday */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: theme.textMuted }}>Next Payday</span>
+                        <span style={{ fontWeight: '500', color: theme.text }}>
+                          {nextPay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          <span style={{ color: theme.textMuted, fontWeight: '400' }}> ({daysUntil}d)</span>
+                        </span>
+                      </div>
+
+                      {/* Tax classification */}
+                      {employee.tax_classification && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: theme.textMuted }}>Classification</span>
+                          <span style={{
+                            fontSize: '11px',
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            backgroundColor: employee.tax_classification === 'W2' ? '#3b82f620' : '#f9731620',
+                            color: employee.tax_classification === 'W2' ? '#3b82f6' : '#f97316',
+                            fontWeight: '600'
+                          }}>
+                            {employee.tax_classification}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )
         })}
