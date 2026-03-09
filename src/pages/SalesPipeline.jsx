@@ -58,6 +58,7 @@ const PIPELINE_VERSION = 3
 
 // Available stats to show in header
 const availableStats = [
+  { id: 'salesWon', label: 'Sales Won', color: '#16a34a' },
   { id: 'active', label: 'Active Leads', color: null },
   { id: 'won', label: 'Won', color: '#22c55e' },
   { id: 'lost', label: 'Lost', color: '#64748b' },
@@ -73,7 +74,7 @@ const availableStats = [
   { id: 'deliveryValue', label: 'Delivery Value', color: '#0ea5e9' }
 ]
 
-const defaultVisibleStats = ['active', 'won', 'totalValue']
+const defaultVisibleStats = ['salesWon', 'active', 'won', 'totalValue']
 
 export default function SalesPipeline() {
   const navigate = useNavigate()
@@ -695,7 +696,17 @@ export default function SalesPipeline() {
     const todayAppointments = leadsWithAppointments.filter(l => new Date(l.appointment_time).toDateString() === today)
     const sumAmount = (arr) => arr.reduce((sum, l) => sum + getLeadAmount(l), 0)
 
+    // "Sales Won" — all leads that were converted (won) within the date range,
+    // regardless of current status (so deals in delivery still count as sales wins)
+    const rangeCutoff = getDateCutoff(dateRange)
+    const salesWonLeads = leads.filter(l => {
+      if (!l.converted_at) return false
+      if (rangeCutoff && l.converted_at < rangeCutoff) return false
+      return true
+    })
+
     return {
+      salesWon: { value: formatCurrency(sumAmount(salesWonLeads)), label: `Sales Won`, sublabel: `${salesWonLeads.length} deals`, color: '#16a34a', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
       lost: { value: lostLeadsList.length, label: 'Lost', color: '#64748b' },
@@ -710,7 +721,7 @@ export default function SalesPipeline() {
       invoiced: { value: leads.filter(l => l.status === 'Invoiced').length, label: 'Invoiced', color: '#8b5cf6' },
       deliveryValue: { value: formatCurrency(sumAmount(deliveryLeads)), label: 'Delivery $', color: '#0ea5e9', isFormatted: true }
     }
-  }, [filteredPipelineLeads, stages])
+  }, [filteredPipelineLeads, stages, dateRange])
 
   if (loading && pipelineLeads.length === 0) {
     return (
@@ -767,6 +778,7 @@ export default function SalesPipeline() {
                           {stat.value}
                         </div>
                         <div style={{ fontSize: '11px', color: theme.textMuted }}>{stat.label}</div>
+                        {stat.sublabel && <div style={{ fontSize: '10px', color: theme.textMuted }}>{stat.sublabel}</div>}
                       </div>
                     </div>
                   )
@@ -988,9 +1000,9 @@ export default function SalesPipeline() {
               {/* Stats Row */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 {[
+                  { label: 'Sales Won', value: statsData.salesWon.value, color: '#16a34a', isFormatted: true },
                   { label: 'Active', value: statsData.active.value, color: '#5a6349' },
-                  { label: 'Won', value: statsData.won.value, color: '#22c55e' },
-                  { label: 'Value', value: statsData.totalValue.value, color: '#5a6349', isFormatted: true }
+                  { label: 'Won', value: statsData.won.value, color: '#22c55e' }
                 ].map(s => (
                   <div key={s.label} style={{ flex: 1, height: '64px', backgroundColor: m.bgCard, borderRadius: '12px', border: `1px solid ${m.border}`, borderLeft: `3px solid ${s.color}`, padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: m.text }}>{s.isFormatted ? s.value : s.value}</div>
