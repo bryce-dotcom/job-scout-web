@@ -179,34 +179,26 @@ export default function PMJobSetter() {
     if (!companyId) return
     setLoading(true)
 
-    // Fetch jobs with customer and PM info (paginated to get all)
-    const allJobs = []
-    let offset = 0
-    const pageSize = 1000
-    while (true) {
-      const { data: page, error } = await supabase
-        .from('jobs')
-        .select('*, customer:customers(id, name, business_name, address, phone, email), pm:employees!jobs_pm_id_fkey(id, name)')
-        .eq('company_id', companyId)
-        .order('start_date', { ascending: true })
-        .range(offset, offset + pageSize - 1)
-      if (error) {
-        console.error('[PMJobSetter] jobs query error:', error.message)
-        // Fallback without joins
-        const { data: fallback } = await supabase
-          .from('jobs')
-          .select('*')
-          .eq('company_id', companyId)
-          .order('start_date', { ascending: true })
-          .range(offset, offset + pageSize - 1)
-        if (fallback) allJobs.push(...fallback)
-        break
-      }
-      if (page) allJobs.push(...page)
-      if (!page || page.length < pageSize) break
-      offset += pageSize
+    // Only fetch jobs with statuses the board displays (avoids loading all 6000+ jobs)
+    const validStatuses = jobStatuses.map(s => s.id)
+    let query = supabase
+      .from('jobs')
+      .select('*, customer:customers(id, name, business_name, address, phone, email), pm:employees!jobs_pm_id_fkey(id, name)')
+      .eq('company_id', companyId)
+      .order('start_date', { ascending: true })
+      .limit(5000)
+    if (validStatuses.length > 0) {
+      query = query.in('status', validStatuses)
     }
-    const jobsData = allJobs
+    let { data: jobsData, error } = await query
+    if (error) {
+      console.warn('[PMJobSetter] Join query failed, falling back:', error.message)
+      let fallbackQuery = supabase.from('jobs').select('*')
+        .eq('company_id', companyId).order('start_date', { ascending: true }).limit(5000)
+      if (validStatuses.length > 0) fallbackQuery = fallbackQuery.in('status', validStatuses)
+      const res = await fallbackQuery
+      jobsData = res.data
+    }
 
     // Fetch all job sections
     const { data: sectionsData } = await supabase
