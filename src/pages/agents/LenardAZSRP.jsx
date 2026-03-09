@@ -523,6 +523,21 @@ export default function LenardAZSRP() {
     markDirty();
   }, [program, markDirty]);
 
+  const duplicateLine = useCallback((line) => {
+    const id = ++lineIdRef.current;
+    const copy = {
+      ...line,
+      id,
+      name: line.name ? `${line.name} (Copy)` : '',
+      confirmed: false
+    };
+    setLines(prev => [...prev, copy]);
+    setNewlyAdded(prev => new Set(prev).add(id));
+    setTimeout(() => setNewlyAdded(prev => { const next = new Set(prev); next.delete(id); return next; }), 2000);
+    showToast('Line duplicated', '\u{1F4CB}');
+    markDirty();
+  }, [showToast, markDirty]);
+
   const removeLine = useCallback((id) => {
     setLines(prev => prev.filter(l => l.id !== id));
     if (expandedLine === id) setExpandedLine(null);
@@ -1822,6 +1837,7 @@ export default function LenardAZSRP() {
                   <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                     <button onClick={() => setExpandedLine(null)} style={{ ...S.btn, flex: 1, fontSize: '13px' }}>Done</button>
                     <button onClick={() => { setExpandedLine(null); setShowSaveModal(true); }} style={{ ...S.btn, flex: 1, fontSize: '13px', background: (savedLeadId && !isDirty) ? T.bgInput : T.blue, color: (savedLeadId && !isDirty) ? T.textMuted : '#fff' }}>{(savedLeadId && !isDirty) ? '\u2713 Saved' : '\uD83D\uDCBE Save'}</button>
+                    <button onClick={() => duplicateLine(r)} style={{ ...S.btnGhost, fontSize: '12px', padding: '10px 14px' }}>{'\uD83D\uDCCB'} Duplicate</button>
                     <button onClick={() => removeLine(r.id)} style={{ ...S.btnGhost, color: T.red, borderColor: T.red, fontSize: '12px', padding: '10px 14px' }}>{'\uD83D\uDDD1'} Remove</button>
                   </div>
                 </div>
