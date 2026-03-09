@@ -30,8 +30,21 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-const DEFAULT_PIPELINE_STAGES = ['New Lead', 'Quoted', 'Under Review', 'Approved', 'Lost']
-const STAGE_COLOR_PALETTE = ['#5a9bd5', '#f4b942', '#9b59b6', '#4a7c59', '#c25a5a', '#e67e22', '#1abc9c', '#e74c3c']
+// Pipeline stages matching actual SalesPipeline page
+const PIPELINE_STAGES = [
+  { id: 'New', name: 'New', color: '#3b82f6' },
+  { id: 'Contacted', name: 'Contacted', color: '#8b5cf6' },
+  { id: 'Appointment Set', name: 'Scheduled', color: '#22c55e' },
+  { id: 'Appointment Scheduled', name: 'Scheduled', color: '#22c55e' },
+  { id: 'Qualified', name: 'Qualified', color: '#f97316' },
+  { id: 'Quote Sent', name: 'Quote Sent', color: '#eab308' },
+  { id: 'Negotiation', name: 'Negotiation', color: '#f59e0b' },
+  { id: 'Won', name: 'Won', color: '#10b981' },
+  { id: 'Lost', name: 'Lost', color: '#64748b' }
+]
+// Merge duplicates for display (Appointment Set + Appointment Scheduled → Scheduled)
+const DISPLAY_STAGES = ['New', 'Contacted', 'Scheduled', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost']
+const STAGE_COLORS = { 'New': '#3b82f6', 'Contacted': '#8b5cf6', 'Scheduled': '#22c55e', 'Qualified': '#f97316', 'Quote Sent': '#eab308', 'Negotiation': '#f59e0b', 'Won': '#10b981', 'Lost': '#64748b' }
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -40,22 +53,16 @@ export default function Dashboard() {
   const user = useStore((state) => state.user)
   const leads = useStore((state) => state.leads)
   const jobs = useStore((state) => state.jobs)
+  const quotes = useStore((state) => state.quotes)
   const invoices = useStore((state) => state.invoices)
   const payments = useStore((state) => state.payments)
-  const salesPipeline = useStore((state) => state.salesPipeline)
   const inventory = useStore((state) => state.inventory)
   const fleet = useStore((state) => state.fleet)
   const appointments = useStore((state) => state.appointments)
   const employees = useStore((state) => state.employees)
   const timeLogs = useStore((state) => state.timeLogs)
-  const storePipelineStages = useStore((state) => state.pipelineStages)
 
   const currentEmployee = employees.find(e => e.email === user?.email)
-
-  const pipelineStages = storePipelineStages?.length > 0 ? storePipelineStages : DEFAULT_PIPELINE_STAGES
-  const pipelineColors = Object.fromEntries(
-    pipelineStages.map((stage, i) => [stage, STAGE_COLOR_PALETTE[i % STAGE_COLOR_PALETTE.length]])
-  )
 
   const [clockedIn, setClockedIn] = useState(false)
   const [activeTimeLog, setActiveTimeLog] = useState(null)
@@ -120,17 +127,39 @@ export default function Dashboard() {
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
 
   const activeLeads = leads.filter(l => !['Won', 'Lost', 'Converted', 'Not Qualified'].includes(l.status)).length
-  const openJobs = jobs.filter(j => ['Scheduled', 'In Progress'].includes(j.status)).length
+  const openJobs = jobs.filter(j => {
+    const s = (j.status || '').toLowerCase()
+    return ['scheduled', 'in progress', 'needs scheduling', 'chillin', 'waiting product'].includes(s)
+  }).length
   const pendingInvoices = invoices.filter(i => i.payment_status === 'Pending').length
 
   const thisMonthRevenue = payments
     .filter(p => new Date(p.date) >= firstOfMonth)
     .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 
-  // Pipeline counts
-  const pipelineCounts = pipelineStages.map(stage => ({
-    stage,
-    count: salesPipeline.filter(p => p.stage === stage).length
+  // MTD Sales Won — leads converted this month (in Won or delivery stages)
+  const wonOrDeliveryStatuses = ['Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed']
+  const mtdWonLeads = leads.filter(l => {
+    if (!wonOrDeliveryStatuses.includes(l.status)) return false
+    const wonDate = l.converted_at || l.updated_at
+    return wonDate && new Date(wonDate) >= firstOfMonth
+  })
+  // Build quote lookup for lead amounts
+  const quoteByLead = {}
+  ;(quotes || []).forEach(q => {
+    const amt = parseFloat(q.quote_amount) || 0
+    if (q.lead_id && amt > (quoteByLead[q.lead_id] || 0)) quoteByLead[q.lead_id] = amt
+  })
+  const mtdSalesWon = mtdWonLeads.reduce((sum, l) => sum + (quoteByLead[l.id] || 0), 0)
+
+  // Pipeline counts from actual leads data
+  const mapLeadToDisplay = (status) => {
+    const stage = PIPELINE_STAGES.find(s => s.id === status || s.id === (status || '').trim())
+    return stage?.name || null
+  }
+  const pipelineCounts = DISPLAY_STAGES.map(displayName => ({
+    stage: displayName,
+    count: leads.filter(l => mapLeadToDisplay(l.status) === displayName).length
   }))
   const totalPipeline = pipelineCounts.reduce((sum, p) => sum + p.count, 0)
 
@@ -219,6 +248,13 @@ export default function Dashboard() {
       {/* Row 1: Key Metrics */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         <MetricCard
+          icon={TrendingUp}
+          label="MTD Sales Won"
+          value={formatCurrency(mtdSalesWon)}
+          color="#16a34a"
+          onClick={() => navigate('/pipeline')}
+        />
+        <MetricCard
           icon={UserPlus}
           label="Active Leads"
           value={activeLeads}
@@ -292,7 +328,7 @@ export default function Dashboard() {
                   key={p.stage}
                   style={{
                     width: `${(p.count / Math.max(totalPipeline, 1)) * 100}%`,
-                    backgroundColor: pipelineColors[p.stage],
+                    backgroundColor: STAGE_COLORS[p.stage] || '#6b7280',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -308,13 +344,13 @@ export default function Dashboard() {
 
         {/* Pipeline Legend */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
-          {pipelineCounts.map(p => (
+          {pipelineCounts.filter(p => p.count > 0).map(p => (
             <div key={p.stage} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{
                 width: '12px',
                 height: '12px',
                 borderRadius: '3px',
-                backgroundColor: pipelineColors[p.stage]
+                backgroundColor: STAGE_COLORS[p.stage] || '#6b7280'
               }} />
               <span style={{ fontSize: '13px', color: theme.textSecondary }}>{p.stage}</span>
               <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{p.count}</span>

@@ -699,9 +699,14 @@ export default function SalesPipeline() {
     // "Sales Won" — all leads that were converted (won) within the date range,
     // regardless of current status (so deals in delivery still count as sales wins)
     const rangeCutoff = getDateCutoff(dateRange)
+    const wonOrDeliveryStatuses = new Set(['Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed'])
     const salesWonLeads = leads.filter(l => {
-      if (!l.converted_at) return false
-      if (rangeCutoff && l.converted_at < rangeCutoff) return false
+      // Must be in a won or delivery stage
+      if (!wonOrDeliveryStatuses.has(l.status)) return false
+      // Use converted_at if available, fall back to updated_at
+      const wonDate = l.converted_at || l.updated_at
+      if (!wonDate) return false
+      if (rangeCutoff && wonDate < rangeCutoff) return false
       return true
     })
 
