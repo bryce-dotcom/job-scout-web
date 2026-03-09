@@ -15,7 +15,7 @@ serve(async (req) => {
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 
     if (!RESEND_API_KEY) {
-      return new Response(JSON.stringify({ error: 'RESEND_API_KEY not configured. Add it to your Supabase Edge Function secrets.' }),
+      return new Response(JSON.stringify({ error: 'RESEND_API_KEY not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -25,11 +25,12 @@ serve(async (req) => {
 
     const {
       company_id,
-      estimate_id,
+      invoice_id,
       recipient_email,
       pdf_storage_path,
       company_name,
-      estimate_number,
+      invoice_number,
+      amount,
       portal_url,
       business_unit_name,
       business_unit_phone,
@@ -37,8 +38,8 @@ serve(async (req) => {
       business_unit_address,
     } = await req.json();
 
-    if (!recipient_email || !estimate_id) {
-      return new Response(JSON.stringify({ error: 'recipient_email and estimate_id are required' }),
+    if (!recipient_email || !invoice_id) {
+      return new Response(JSON.stringify({ error: 'recipient_email and invoice_id are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -51,8 +52,6 @@ serve(async (req) => {
 
       if (dlError) {
         console.error('PDF download error:', dlError);
-        return new Response(JSON.stringify({ error: 'Failed to download PDF: ' + dlError.message }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       if (pdfData) {
@@ -71,7 +70,8 @@ serve(async (req) => {
     const contactPhone = business_unit_phone || '';
     const contactEmail = business_unit_email || '';
     const contactAddress = business_unit_address || '';
-    const estNum = estimate_number || `EST-${estimate_id}`;
+    const invNum = invoice_number || `INV-${invoice_id}`;
+    const amountStr = amount ? `$${parseFloat(amount).toFixed(2)}` : '';
 
     // Build contact info line for footer
     const contactParts: string[] = [];
@@ -79,6 +79,18 @@ serve(async (req) => {
     if (contactEmail) contactParts.push(contactEmail);
     if (contactAddress) contactParts.push(contactAddress);
     const contactLine = contactParts.join(' &nbsp;|&nbsp; ');
+
+    // Portal CTA button
+    const portalButton = portal_url ? `
+      <div style="text-align:center;margin:28px 0 8px 0;">
+        <a href="${portal_url}" style="display:inline-block;padding:14px 36px;background-color:#5a6349;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;border-radius:8px;">
+          View &amp; Pay Invoice
+        </a>
+      </div>
+      <p style="text-align:center;color:#7d8a7f;font-size:12px;margin:8px 0 0 0;">
+        Click above to view your invoice online and make a payment.
+      </p>
+    ` : '';
 
     const htmlBody = `
 <!DOCTYPE html>
@@ -99,30 +111,20 @@ serve(async (req) => {
       <div style="text-align:center;margin-bottom:28px;">
         <h1 style="color:#3e4532;font-size:26px;margin:0 0 6px 0;font-weight:700;">${displayName}</h1>
         <div style="display:inline-block;background-color:rgba(90,99,73,0.1);padding:6px 16px;border-radius:20px;">
-          <span style="color:#5a6349;font-size:14px;font-weight:600;">Estimate ${estNum}</span>
+          <span style="color:#5a6349;font-size:14px;font-weight:600;">Invoice ${invNum}${amountStr ? ` &mdash; ${amountStr}` : ''}</span>
         </div>
       </div>
 
       <!-- Body -->
       <div style="border-top:1px solid #e8e4db;padding-top:24px;">
         <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
-          Thank you for your interest. Please find your estimate attached to this email as a PDF document.
+          Please find your invoice attached to this email as a PDF document.${amountStr ? ` The total amount due is <strong>${amountStr}</strong>.` : ''}
         </p>
         <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
-          If you have any questions or would like to proceed, please don't hesitate to reach out${contactPhone ? ` at <strong>${contactPhone}</strong>` : ''}.
+          If you have any questions about this invoice, please don't hesitate to reach out${contactPhone ? ` at <strong>${contactPhone}</strong>` : ''}.
         </p>
-        ${contactEmail ? `<p style="color:#4d5a52;font-size:14px;line-height:1.6;margin:0;">You can also reply directly to this email or contact us at <a href="mailto:${contactEmail}" style="color:#5a6349;font-weight:600;">${contactEmail}</a>.</p>` : ''}
 
-        ${portal_url ? `
-        <div style="text-align:center;margin:28px 0 8px 0;">
-          <a href="${portal_url}" style="display:inline-block;padding:14px 36px;background-color:#5a6349;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;border-radius:8px;">
-            View Estimate Online
-          </a>
-        </div>
-        <p style="text-align:center;color:#7d8a7f;font-size:12px;margin:8px 0 0 0;">
-          Click above to view and approve your estimate online.
-        </p>
-        ` : ''}
+        ${portalButton}
       </div>
 
       <!-- Footer -->
@@ -141,16 +143,16 @@ serve(async (req) => {
 
     // Send via Resend API
     const emailPayload: Record<string, unknown> = {
-      from: `${displayName} <estimates@jobscout.appsannex.com>`,
+      from: `${displayName} <invoices@jobscout.appsannex.com>`,
       to: [recipient_email],
-      subject: `Estimate ${estNum} from ${displayName}`,
+      subject: `Invoice ${invNum} from ${displayName}`,
       html: htmlBody,
     };
 
     // Attach PDF if available
     if (pdfBase64) {
       emailPayload.attachments = [{
-        filename: `${estNum}.pdf`,
+        filename: `${invNum}.pdf`,
         content: pdfBase64,
       }];
     }
@@ -180,7 +182,7 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
-    console.error('send-estimate error:', error);
+    console.error('send-invoice error:', error);
     return new Response(JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }

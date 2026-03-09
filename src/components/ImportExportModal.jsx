@@ -504,8 +504,11 @@ export default function ImportExportModal({
       }).filter(Boolean)
 
       if (records.length > 0) {
+        // Debug: log first batch to console so we can verify field values
+        if (i === 0) console.log(`[Import] First batch of ${tableName} records:`, JSON.stringify(records.slice(0, 3), null, 2))
         const { data, error } = await supabase.from(tableName).insert(records).select(selectFields)
         if (error) {
+          console.error(`[Import] Insert error for ${tableName}:`, error.message, 'First record:', records[0])
           errors.push(`${entityName} rows ${i + 1}-${i + batch.length}: ${error.message}`)
         } else if (data) {
           allInsertedIds.push(...data.map(r => r.id))

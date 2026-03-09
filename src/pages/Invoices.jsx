@@ -163,11 +163,17 @@ export default function Invoices() {
 
   // Customer invoice filtering
   const filteredCustomerInvoices = invoices.filter(invoice => {
-    const customerName = invoice.customer?.name || ''
-    const matchesSearch = searchTerm === '' ||
-      customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.invoice_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.job?.job_title?.toLowerCase().includes(searchTerm.toLowerCase())
+    if (searchTerm === '') {
+      return statusFilter === 'all' || invoice.payment_status === statusFilter
+    }
+    const term = searchTerm.toLowerCase()
+    const matchesSearch =
+      (invoice.customer?.name || '').toLowerCase().includes(term) ||
+      (invoice.invoice_id || '').toLowerCase().includes(term) ||
+      (invoice.job?.job_title || '').toLowerCase().includes(term) ||
+      (invoice.job_description || '').toLowerCase().includes(term) ||
+      (invoice.business_unit || '').toLowerCase().includes(term) ||
+      (invoice.job?.job_id || '').toLowerCase().includes(term)
     const matchesStatus = statusFilter === 'all' || invoice.payment_status === statusFilter
     return matchesSearch && matchesStatus
   })
@@ -344,12 +350,13 @@ export default function Invoices() {
     return new Date(date).toLocaleDateString()
   }
 
-  // --- Stats --- (treat anything not "Paid" as outstanding/pending)
+  // --- Stats ---
   const isUnpaid = (i) => i.payment_status !== 'Paid'
+  const customerTotalCount = invoices.length
   const customerPendingCount = invoices.filter(isUnpaid).length
   const customerPaidCount = invoices.filter(i => i.payment_status === 'Paid').length
   const customerTotalPending = invoices.filter(isUnpaid).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
-  const customerTotalPaid = invoices.filter(i => i.payment_status === 'Paid').reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
+  const customerTotalAll = invoices.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
 
   const utilityPendingCount = utilityInvoices.filter(isUnpaid).length
   const utilityPaidCount = utilityInvoices.filter(i => i.payment_status === 'Paid').length
@@ -751,6 +758,17 @@ export default function Invoices() {
               padding: '16px',
               textAlign: 'center'
             }}>
+              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Total Invoices</p>
+              <p style={{ fontSize: '24px', fontWeight: '600', color: theme.text }}>{customerTotalCount}</p>
+              <p style={{ fontSize: '12px', color: theme.textMuted }}>{formatCurrency(customerTotalAll)}</p>
+            </div>
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              padding: '16px',
+              textAlign: 'center'
+            }}>
               <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Outstanding</p>
               <p style={{ fontSize: '24px', fontWeight: '600', color: '#c28b38' }}>{customerPendingCount}</p>
               <p style={{ fontSize: '12px', color: theme.textMuted }}>{formatCurrency(customerTotalPending)}</p>
@@ -764,7 +782,6 @@ export default function Invoices() {
             }}>
               <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Paid</p>
               <p style={{ fontSize: '24px', fontWeight: '600', color: '#4a7c59' }}>{customerPaidCount}</p>
-              <p style={{ fontSize: '12px', color: theme.textMuted }}>{formatCurrency(customerTotalPaid)}</p>
             </div>
           </>
         )}
@@ -1548,7 +1565,7 @@ export default function Invoices() {
           defaultValues={{ company_id: companyId, payment_status: 'Pending' }}
           relatedTables={invoiceRelatedTables}
           parentRefField="invoice_id"
-          extraContext="Invoices and billing. Map as many columns as possible. Common aliases: invoice_id=Invoice #/Invoice ID/Invoice Number, payment_status=Status/Invoice Status/Payment Status/Stage, amount=Total/Amount/Invoice Total/Invoice Amount/Grand Total/Balance, payment_method=Payment Method/Pay Method/Method, discount_applied=Discount/Discount Applied, credit_card_fee=CC Fee/Processing Fee/Card Fee, job_description=Description/Job Description/Memo/Notes, business_unit=Business Unit/Division/Department"
+          extraContext="Invoices and billing. Map as many columns as possible. Common aliases: invoice_id=Invoice #/Invoice ID/Invoice Number, payment_status=Status/Invoice Status/Payment Status/Stage, amount=Total/Amount/Amount due/Invoice Total/Invoice Amount/Grand Total/Balance, payment_method=Payment Method/Pay Method/Method, discount_applied=Discount/Discount Applied, credit_card_fee=CC Fee/Processing Fee/Card Fee, job_description=Description/Job Description/Memo/Notes, business_unit=Business Unit/Division/Department"
           onImportComplete={() => fetchInvoices()}
           onClose={() => setShowImportExport(false)}
         />

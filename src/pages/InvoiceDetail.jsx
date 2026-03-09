@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2 } from 'lucide-react'
+import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2 } from 'lucide-react'
+import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
 
 // Light theme fallback
@@ -59,6 +60,11 @@ export default function InvoiceDetail() {
   const [generatingPdf, setGeneratingPdf] = useState(false)
   const [pdfHistory, setPdfHistory] = useState([])
 
+  // Send modal state
+  const [showSendModal, setShowSendModal] = useState(false)
+  const [sendEmail, setSendEmail] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
+
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -82,6 +88,7 @@ export default function InvoiceDetail() {
 
     if (invoiceData) {
       setInvoice(invoiceData)
+      setSendEmail(invoiceData.sent_to_email || invoiceData.customer?.email || '')
 
       // Fetch payments for this invoice
       const { data: paymentsData } = await supabase
@@ -438,24 +445,88 @@ export default function InvoiceDetail() {
   }
 
   const handleSendInvoice = async () => {
-    if (!invoice.pdf_url) {
-      await handleGenerateAndUploadPDF()
+    if (!sendEmail) {
+      toast.error('Please enter a recipient email.')
+      return
     }
-    // Re-read invoice to get fresh pdf_url
-    const { data: freshInvoice } = await supabase
-      .from('invoices')
-      .select('pdf_url')
-      .eq('id', id)
-      .single()
-
-    if (freshInvoice?.pdf_url) {
-      const { data } = await supabase.storage
-        .from('project-documents')
-        .createSignedUrl(freshInvoice.pdf_url, 300)
-      if (data?.signedUrl) {
-        window.open(data.signedUrl, '_blank')
+    setSendingEmail(true)
+    try {
+      // Auto-generate PDF if none exists
+      if (!invoice.pdf_url) {
+        await handleGenerateAndUploadPDF()
       }
+      // Re-read invoice to get fresh pdf_url
+      const { data: freshInvoice } = await supabase
+        .from('invoices')
+        .select('pdf_url')
+        .eq('id', id)
+        .single()
+
+      // Create portal token
+      const { data: portalToken } = await supabase
+        .from('customer_portal_tokens')
+        .insert({
+          document_type: 'invoice',
+          document_id: invoice.id,
+          company_id: companyId,
+          customer_id: invoice.customer_id || null,
+          expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), // 90 days
+        })
+        .select('token')
+        .single()
+
+      const portalUrl = portalToken?.token
+        ? `${window.location.origin}/portal/${portalToken.token}`
+        : null
+
+      // Get business unit info
+      const settings = useStore.getState().settings
+      const buSetting = settings.find(s => s.key === 'business_units')
+      let buObject = null
+      if (buSetting?.value && invoice.business_unit) {
+        try {
+          const units = JSON.parse(buSetting.value)
+          buObject = units.find(u => u.name === invoice.business_unit)
+        } catch { /* ignore */ }
+      }
+
+      // Call send-invoice edge function
+      const { error: fnError } = await supabase.functions.invoke('send-invoice', {
+        body: {
+          company_id: companyId,
+          invoice_id: invoice.id,
+          recipient_email: sendEmail,
+          pdf_storage_path: freshInvoice?.pdf_url || invoice.pdf_url,
+          company_name: company?.company_name || '',
+          invoice_number: invoice.invoice_id || `INV-${invoice.id}`,
+          amount: invoice.amount,
+          portal_url: portalUrl,
+          business_unit_name: buObject?.name || invoice.business_unit || '',
+          business_unit_phone: buObject?.phone || company?.phone || '',
+          business_unit_email: buObject?.email || company?.owner_email || '',
+          business_unit_address: buObject?.address || company?.address || ''
+        }
+      })
+
+      if (fnError) throw fnError
+
+      // Update invoice
+      await supabase.from('invoices').update({
+        payment_status: invoice.payment_status === 'Draft' ? 'Sent' : invoice.payment_status,
+        last_sent_at: new Date().toISOString(),
+        sent_to_email: sendEmail,
+        portal_token: portalToken?.token || null,
+        updated_at: new Date().toISOString()
+      }).eq('id', id)
+
+      toast.success('Invoice sent successfully!')
+      setShowSendModal(false)
+      await fetchInvoiceData()
+      await fetchInvoices()
+    } catch (err) {
+      toast.error('Failed to send: ' + err.message)
     }
+    setSendingEmail(false)
   }
 
   const formatCurrency = (amount) => {
@@ -942,13 +1013,50 @@ export default function InvoiceDetail() {
 
               {/* Send Invoice */}
               <button
-                onClick={handleSendInvoice}
+                onClick={() => setShowSendModal(true)}
                 disabled={generatingPdf}
-                style={actionBtnStyle(theme.accentBg, theme.accent)}
+                style={actionBtnStyle(theme.accent, '#ffffff')}
               >
-                <Send size={18} />
+                <Mail size={18} />
                 Send Invoice
               </button>
+
+              {/* Portal Link */}
+              {invoice.portal_token && (
+                <div style={{
+                  padding: '10px 12px',
+                  backgroundColor: theme.accentBg,
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <Link2 size={14} style={{ color: theme.textSecondary, flexShrink: 0 }} />
+                  <span style={{ fontSize: '13px', color: theme.textSecondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Portal link available
+                  </span>
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}/portal/${invoice.portal_token}`
+                      navigator.clipboard.writeText(url)
+                      toast.success('Portal link copied!')
+                    }}
+                    style={{
+                      padding: '4px 10px',
+                      backgroundColor: theme.accent,
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Copy Link
+                  </button>
+                </div>
+              )}
 
               {/* Delete Invoice */}
               <div style={{ borderTop: `1px solid ${theme.border}`, margin: '6px 0' }} />
@@ -1149,6 +1257,96 @@ export default function InvoiceDetail() {
                   }}
                 >
                   {saving ? 'Saving...' : 'Record Payment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send Invoice Modal */}
+      {showSendModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            width: '100%',
+            maxWidth: '450px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
+                Send Invoice
+              </h2>
+              <button onClick={() => setShowSendModal(false)} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
+                Send this invoice via email. A PDF will be attached and a payment portal link will be included.
+              </p>
+              <div>
+                <label style={labelStyle}>Recipient Email</label>
+                <input
+                  type="email"
+                  value={sendEmail}
+                  onChange={(e) => setSendEmail(e.target.value)}
+                  placeholder="customer@email.com"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowSendModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: theme.bg,
+                    color: theme.textSecondary,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendInvoice}
+                  disabled={sendingEmail || !sendEmail}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: sendingEmail || !sendEmail ? 'not-allowed' : 'pointer',
+                    opacity: sendingEmail || !sendEmail ? 0.6 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <Mail size={16} />
+                  {sendingEmail ? 'Sending...' : 'Send Email'}
                 </button>
               </div>
             </div>

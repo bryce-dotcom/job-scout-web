@@ -1,482 +1,575 @@
 import { jsPDF } from 'jspdf'
 
-const COLORS = {
-  primary: [90, 99, 73],      // #5a6349
-  text: [44, 53, 48],         // #2c3530
-  muted: [125, 138, 127],     // #7d8a7f
-  border: [214, 205, 184],    // #d6cdb8
-  white: [255, 255, 255],
-  headerBg: [247, 245, 239],  // #f7f5ef
-  greenAccent: [74, 124, 89]  // #4a7c59
+// ─── Design tokens ──────────────────────────────────────────────
+const C = {
+  primary:    [90, 99, 73],       // #5a6349  olive
+  primaryDk:  [62, 69, 50],       // darker olive for headings
+  text:       [44, 53, 48],       // #2c3530
+  muted:      [125, 138, 127],    // #7d8a7f
+  light:      [180, 185, 175],    // lighter muted
+  border:     [214, 205, 184],    // #d6cdb8
+  white:      [255, 255, 255],
+  cream:      [247, 245, 239],    // #f7f5ef
+  creamDark:  [235, 232, 222],    // slightly darker cream for alternating rows
+  green:      [74, 124, 89],      // #4a7c59
+  accent:     [90, 99, 73],       // same as primary
+  accentBg:   [240, 242, 236],    // very light olive tint
 }
 
-const formatCurrency = (amount) => {
-  if (!amount) return '$0.00'
+const fmt = (amount) => {
+  if (!amount && amount !== 0) return '$0.00'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 }
 
-/**
- * Generate an estimate PDF.
- * @param {Object} options
- * @param {Object} options.estimate - The estimate record
- * @param {Array} options.lineItems - Line items array
- * @param {Object} options.company - Company record
- * @param {Object} options.settings - Effective settings (merged defaults + overrides)
- * @param {string} options.layout - 'email' or 'envelope'
- * @returns {Blob} PDF blob
- */
-export async function generateEstimatePdf({ estimate, lineItems, company, settings, layout = 'email' }) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const pageWidth = doc.internal.pageSize.getWidth()
-  const margin = 20
-  const contentWidth = pageWidth - margin * 2
-
-  if (layout === 'envelope') {
-    return generateEnvelopeLayout(doc, { estimate, lineItems, company, settings, margin, contentWidth, pageWidth })
-  }
-
-  return generateEmailLayout(doc, { estimate, lineItems, company, settings, margin, contentWidth, pageWidth })
+const fmtDate = (d) => {
+  if (!d) return ''
+  try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }
+  catch { return '' }
 }
 
-function generateEmailLayout(doc, { estimate, lineItems, company, settings, margin, contentWidth, pageWidth }) {
-  let y = margin
+// ─── Logo helper ────────────────────────────────────────────────
+async function fetchImageAsBase64(url) {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch { return null }
+}
 
-  // Company header
-  if (settings.show_logo && company?.logo_url) {
-    // We can't easily load images in jsPDF without base64, so show company name prominently instead
-    doc.setFontSize(20)
-    doc.setTextColor(...COLORS.primary)
-    doc.setFont('helvetica', 'bold')
-    doc.text(company?.company_name || 'Company', margin, y)
-    y += 8
+// ─── Public API ─────────────────────────────────────────────────
+/**
+ * Generate a beautiful estimate PDF.
+ * @param {Object} opts
+ * @param {Object} opts.estimate
+ * @param {Array}  opts.lineItems
+ * @param {Object} opts.company
+ * @param {Object} opts.settings   – merged defaults + per-estimate overrides
+ * @param {string} opts.layout     – 'email' | 'envelope'
+ * @param {Object} [opts.businessUnit] – { name, logo_url, address, phone, email }
+ * @returns {Promise<Blob>}
+ */
+export async function generateEstimatePdf({ estimate, lineItems, company, settings, layout = 'email', businessUnit }) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
+  const pw = doc.internal.pageSize.getWidth()   // 215.9
+  const ph = doc.internal.pageSize.getHeight()   // 279.4
+  const m = 18 // margin
+  const cw = pw - m * 2
+
+  // Resolve branding
+  const brand = {
+    name:    businessUnit?.name    || company?.company_name || 'Company',
+    address: businessUnit?.address || company?.address      || '',
+    phone:   businessUnit?.phone   || company?.phone        || '',
+    email:   businessUnit?.email   || company?.owner_email  || '',
+  }
+
+  // Pre-fetch logo
+  const logoUrl = businessUnit?.logo_url || (settings.show_logo && company?.logo_url) || null
+  let logo = null
+  if (logoUrl) logo = await fetchImageAsBase64(logoUrl)
+
+  if (layout === 'envelope') {
+    drawEnvelopePage(doc, { estimate, company, brand, logo, settings, m, pw, ph, cw })
+    doc.addPage()
+  }
+
+  drawEstimate(doc, { estimate, lineItems, company, brand, logo, settings, m, pw, ph, cw })
+
+  return doc.output('blob')
+}
+
+// ─── Main estimate layout ───────────────────────────────────────
+function drawEstimate(doc, { estimate, lineItems, company, brand, logo, settings, m, pw, ph, cw }) {
+  let y = m
+
+  // ── Header band ──
+  // Accent bar across top
+  doc.setFillColor(...C.primary)
+  doc.rect(0, 0, pw, 3, 'F')
+
+  y = 12
+
+  // ── Logo + brand name (left)  |  Contact info (right) ──
+  const rightColX = pw - m
+  let headerLeftBottom = y
+
+  if (logo && settings.show_logo) {
+    try {
+      const logoH = 16
+      const logoW = 40
+      doc.addImage(logo, 'AUTO', m, y, logoW, logoH)
+      headerLeftBottom = y + logoH + 2
+
+      // Brand name below logo
+      doc.setFontSize(14)
+      doc.setTextColor(...C.primaryDk)
+      doc.setFont('helvetica', 'bold')
+      doc.text(brand.name, m, headerLeftBottom + 4)
+      headerLeftBottom += 8
+    } catch {
+      doc.setFontSize(18)
+      doc.setTextColor(...C.primaryDk)
+      doc.setFont('helvetica', 'bold')
+      doc.text(brand.name, m, y + 6)
+      headerLeftBottom = y + 10
+    }
   } else {
-    doc.setFontSize(20)
-    doc.setTextColor(...COLORS.primary)
+    doc.setFontSize(18)
+    doc.setTextColor(...C.primaryDk)
     doc.setFont('helvetica', 'bold')
-    doc.text(company?.company_name || 'Company', margin, y)
-    y += 8
+    doc.text(brand.name, m, y + 6)
+    headerLeftBottom = y + 10
   }
 
-  // Company contact info
-  doc.setFontSize(9)
-  doc.setTextColor(...COLORS.muted)
+  // Contact info — right-aligned
+  doc.setFontSize(8.5)
   doc.setFont('helvetica', 'normal')
-  if (settings.show_company_address && company?.address) {
-    doc.text(company.address, margin, y)
-    y += 4
+  doc.setTextColor(...C.muted)
+  let ry = y + 2
+  if (settings.show_company_address && brand.address) {
+    const lines = doc.splitTextToSize(brand.address, 70)
+    doc.text(lines, rightColX, ry, { align: 'right' })
+    ry += lines.length * 3.5
   }
-  if (settings.show_company_phone && company?.phone) {
-    doc.text(company.phone, margin, y)
-    y += 4
+  if (settings.show_company_phone && brand.phone) {
+    doc.text(brand.phone, rightColX, ry, { align: 'right' })
+    ry += 3.5
   }
-  if (settings.show_company_email && company?.owner_email) {
-    doc.text(company.owner_email, margin, y)
-    y += 4
+  if (settings.show_company_email && brand.email) {
+    doc.text(brand.email, rightColX, ry, { align: 'right' })
+    ry += 3.5
   }
 
+  y = Math.max(headerLeftBottom, ry) + 4
+
+  // ── Divider ──
+  doc.setDrawColor(...C.border)
+  doc.setLineWidth(0.4)
+  doc.line(m, y, pw - m, y)
   y += 6
 
-  // Divider line
-  doc.setDrawColor(...COLORS.border)
-  doc.setLineWidth(0.5)
-  doc.line(margin, y, pageWidth - margin, y)
-  y += 8
-
-  // ESTIMATE header with number and dates
-  doc.setFontSize(22)
-  doc.setTextColor(...COLORS.text)
+  // ── "ESTIMATE" title + estimate number ──
+  doc.setFontSize(24)
+  doc.setTextColor(...C.primaryDk)
   doc.setFont('helvetica', 'bold')
-  doc.text('ESTIMATE', margin, y)
+  doc.text('ESTIMATE', m, y + 1)
 
-  // Estimate number on right
-  doc.setFontSize(11)
+  const estNum = estimate.quote_id || `EST-${estimate.id}`
+  doc.setFontSize(12)
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...COLORS.primary)
-  const estimateNum = estimate.quote_id || `EST-${estimate.id}`
-  doc.text(estimateNum, pageWidth - margin, y, { align: 'right' })
-  y += 8
-
-  // Dates row
-  doc.setFontSize(9)
-  doc.setTextColor(...COLORS.muted)
-  const dateStr = estimate.created_at ? new Date(estimate.created_at).toLocaleDateString() : '-'
-  doc.text(`Date: ${dateStr}`, margin, y)
-
-  if (estimate.expiration_date) {
-    const expStr = new Date(estimate.expiration_date).toLocaleDateString()
-    doc.text(`Expires: ${expStr}`, margin + 60, y)
-  }
-
-  if (settings.show_service_date && estimate.service_date) {
-    const svcStr = new Date(estimate.service_date).toLocaleDateString()
-    doc.text(`Service Date: ${svcStr}`, pageWidth - margin, y, { align: 'right' })
-  }
+  doc.setTextColor(...C.primary)
+  doc.text(estNum, pw - m, y + 1, { align: 'right' })
   y += 10
 
-  // Customer info block
+  // ── Two-column info block: Bill To (left) | Details (right) ──
+  const midX = m + cw * 0.55
+
+  // Left: Bill To
   const customer = estimate.customer || estimate.lead
-  doc.setFontSize(10)
-  doc.setTextColor(...COLORS.text)
+  doc.setFontSize(8)
+  doc.setTextColor(...C.muted)
   doc.setFont('helvetica', 'bold')
-  doc.text('Bill To:', margin, y)
-  y += 5
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  const custName = customer?.name || customer?.customer_name || '-'
-  doc.text(custName, margin, y)
+  doc.text('BILL TO', m, y)
   y += 4.5
 
+  doc.setFontSize(11)
+  doc.setTextColor(...C.text)
+  doc.setFont('helvetica', 'bold')
+  doc.text(customer?.name || customer?.customer_name || '—', m, y)
+  let leftY = y + 5
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(...C.muted)
   if (settings.show_customer_company && customer?.business_name) {
-    doc.setTextColor(...COLORS.muted)
-    doc.text(customer.business_name, margin, y)
-    y += 4.5
+    doc.text(customer.business_name, m, leftY)
+    leftY += 4
   }
   if (customer?.address) {
-    doc.setTextColor(...COLORS.muted)
-    doc.text(customer.address, margin, y)
-    y += 4.5
+    const addrLines = doc.splitTextToSize(customer.address, midX - m - 10)
+    doc.text(addrLines, m, leftY)
+    leftY += addrLines.length * 4
+  }
+  if (customer?.phone) {
+    doc.text(customer.phone, m, leftY)
+    leftY += 4
   }
   if (customer?.email) {
-    doc.setTextColor(...COLORS.muted)
-    doc.text(customer.email, margin, y)
-    y += 4.5
+    doc.text(customer.email, m, leftY)
+    leftY += 4
   }
 
-  // Technician
-  if (settings.show_technician && estimate.technician?.name) {
-    y += 2
-    doc.setTextColor(...COLORS.text)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9)
-    doc.text(`Technician: `, margin, y)
+  // Right: Details table
+  let detY = y - 4.5
+  doc.setFontSize(8)
+  doc.setTextColor(...C.muted)
+  doc.setFont('helvetica', 'bold')
+  doc.text('DETAILS', midX, detY)
+  detY += 5
+
+  const detailRows = []
+  detailRows.push(['Date', fmtDate(estimate.created_at)])
+  if (estimate.expiration_date) detailRows.push(['Expires', fmtDate(estimate.expiration_date)])
+  if (settings.show_service_date && estimate.service_date) detailRows.push(['Service Date', fmtDate(estimate.service_date)])
+  if (settings.show_technician && estimate.technician?.name) detailRows.push(['Technician', estimate.technician.name])
+  if (estimate.status) detailRows.push(['Status', estimate.status])
+
+  doc.setFontSize(9)
+  for (const [label, value] of detailRows) {
     doc.setFont('helvetica', 'normal')
-    doc.text(estimate.technician.name, margin + 25, y)
-    y += 4
+    doc.setTextColor(...C.muted)
+    doc.text(label, midX, detY)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...C.text)
+    doc.text(value || '—', midX + 35, detY)
+    detY += 5
   }
 
-  y += 6
+  y = Math.max(leftY, detY) + 4
 
-  // Estimate name / summary
+  // ── Estimate name ──
   if (estimate.estimate_name) {
-    doc.setFontSize(12)
-    doc.setTextColor(...COLORS.text)
+    doc.setFontSize(13)
+    doc.setTextColor(...C.text)
     doc.setFont('helvetica', 'bold')
-    doc.text(estimate.estimate_name, margin, y)
+    doc.text(estimate.estimate_name, m, y)
     y += 6
   }
 
-  // Estimate message
+  // ── Estimate message ──
   const message = estimate.estimate_message || settings.estimate_message
   if (message) {
     doc.setFontSize(9)
-    doc.setTextColor(...COLORS.muted)
+    doc.setTextColor(...C.muted)
+    doc.setFont('helvetica', 'italic')
+    const msgLines = doc.splitTextToSize(message, cw)
+    doc.text(msgLines, m, y)
+    y += msgLines.length * 4 + 3
     doc.setFont('helvetica', 'normal')
-    const messageLines = doc.splitTextToSize(message, contentWidth)
-    doc.text(messageLines, margin, y)
-    y += messageLines.length * 4 + 4
   }
 
-  // Line items table
-  y = drawLineItemsTable(doc, lineItems, settings, y, margin, contentWidth, pageWidth)
+  y += 2
 
-  y += 6
+  // ── Line items table ──
+  y = drawTable(doc, lineItems, settings, y, m, cw, pw, ph)
 
-  // Totals
+  // ── Totals ──
+  y = drawTotals(doc, estimate, lineItems, y, m, pw, ph)
+
+  // ── Footer ──
+  drawFooter(doc, brand, settings, m, pw, ph)
+
+  return y
+}
+
+// ─── Line items table ───────────────────────────────────────────
+function drawTable(doc, lineItems, settings, startY, m, cw, pw, ph) {
+  let y = startY
+  const showDesc = settings.show_line_descriptions
+
+  // Column layout
+  const cols = showDesc
+    ? [
+        { label: 'Item',        w: cw * 0.30, align: 'left'  },
+        { label: 'Description', w: cw * 0.28, align: 'left'  },
+        { label: 'Qty',         w: cw * 0.10, align: 'right' },
+        { label: 'Price',       w: cw * 0.15, align: 'right' },
+        { label: 'Amount',      w: cw * 0.17, align: 'right' },
+      ]
+    : [
+        { label: 'Item',   w: cw * 0.46, align: 'left'  },
+        { label: 'Qty',    w: cw * 0.14, align: 'right' },
+        { label: 'Price',  w: cw * 0.20, align: 'right' },
+        { label: 'Amount', w: cw * 0.20, align: 'right' },
+      ]
+
+  const rowH = 7
+  const headerH = 8
+
+  // Ensure space
+  if (y + headerH + rowH * 2 > ph - 30) { doc.addPage(); y = m }
+
+  // Header row
+  doc.setFillColor(...C.primary)
+  doc.roundedRect(m, y, cw, headerH, 1.5, 1.5, 'F')
+
+  doc.setFontSize(7.5)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(...C.white)
+
+  let hx = m + 3
+  for (const col of cols) {
+    if (col.align === 'right') {
+      doc.text(col.label.toUpperCase(), hx + col.w - 3, y + 5.5, { align: 'right' })
+    } else {
+      doc.text(col.label.toUpperCase(), hx, y + 5.5)
+    }
+    hx += col.w
+  }
+  y += headerH + 1
+
+  // Rows
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+
+  lineItems.forEach((line, idx) => {
+    if (y + rowH > ph - 30) {
+      doc.addPage()
+      y = m
+    }
+
+    // Alternating row background
+    if (idx % 2 === 0) {
+      doc.setFillColor(...C.cream)
+      doc.rect(m, y - 1, cw, rowH, 'F')
+    }
+
+    let rx = m + 3
+    const itemName = line.item_name || line.item?.name || 'Item'
+
+    // Item name
+    doc.setTextColor(...C.text)
+    doc.setFont('helvetica', 'normal')
+    const maxNameW = cols[0].w - 5
+    const truncName = doc.getTextWidth(itemName) > maxNameW
+      ? itemName.substring(0, Math.floor(maxNameW / doc.getTextWidth('A') * itemName.length)) + '...'
+      : itemName
+    doc.text(truncName, rx, y + 4)
+    rx += cols[0].w
+
+    // Description (if shown)
+    if (showDesc) {
+      doc.setTextColor(...C.muted)
+      const desc = line.description || line.item?.description || ''
+      const maxDescW = cols[1].w - 5
+      const truncDesc = doc.getTextWidth(desc) > maxDescW
+        ? desc.substring(0, Math.floor(maxDescW / doc.getTextWidth('A') * desc.length)) + '...'
+        : desc
+      doc.text(truncDesc, rx, y + 4)
+      rx += cols[1].w
+    }
+
+    // Qty
+    const qtyColIdx = showDesc ? 2 : 1
+    doc.setTextColor(...C.text)
+    doc.text(String(line.quantity || 0), rx + cols[qtyColIdx].w - 3, y + 4, { align: 'right' })
+    rx += cols[qtyColIdx].w
+
+    // Price
+    const priceColIdx = showDesc ? 3 : 2
+    doc.setTextColor(...C.muted)
+    doc.text(fmt(line.price), rx + cols[priceColIdx].w - 3, y + 4, { align: 'right' })
+    rx += cols[priceColIdx].w
+
+    // Amount
+    const amtColIdx = showDesc ? 4 : 3
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...C.text)
+    doc.text(fmt(line.line_total), rx + cols[amtColIdx].w - 3, y + 4, { align: 'right' })
+    doc.setFont('helvetica', 'normal')
+
+    y += rowH
+  })
+
+  // Bottom border of table
+  doc.setDrawColor(...C.border)
+  doc.setLineWidth(0.3)
+  doc.line(m, y, m + cw, y)
+
+  return y + 2
+}
+
+// ─── Totals section ─────────────────────────────────────────────
+function drawTotals(doc, estimate, lineItems, startY, m, pw, ph) {
+  let y = startY + 4
+
+  if (y > ph - 50) { doc.addPage(); y = m }
+
   const subtotal = lineItems.reduce((sum, l) => sum + (parseFloat(l.line_total) || 0), 0)
   const discount = parseFloat(estimate.discount) || 0
   const incentive = parseFloat(estimate.utility_incentive) || 0
   const total = subtotal - discount
   const outOfPocket = total - incentive
 
-  const totalsX = pageWidth - margin - 70
-  const totalsValX = pageWidth - margin
+  const boxW = 80
+  const boxX = pw - m - boxW
+  const lineH = 6.5
 
-  doc.setFontSize(10)
-  doc.setTextColor(...COLORS.text)
+  // Subtotal
+  doc.setFontSize(9.5)
   doc.setFont('helvetica', 'normal')
+  doc.setTextColor(...C.muted)
+  doc.text('Subtotal', boxX, y)
+  doc.setTextColor(...C.text)
+  doc.text(fmt(subtotal), pw - m, y, { align: 'right' })
+  y += lineH
 
-  doc.text('Subtotal:', totalsX, y)
-  doc.text(formatCurrency(subtotal), totalsValX, y, { align: 'right' })
-  y += 5
-
+  // Discount
   if (discount > 0) {
-    doc.text('Discount:', totalsX, y)
-    doc.text(`-${formatCurrency(discount)}`, totalsValX, y, { align: 'right' })
-    y += 5
+    doc.setTextColor(...C.muted)
+    doc.text('Discount', boxX, y)
+    doc.setTextColor(...C.green)
+    doc.text(`-${fmt(discount)}`, pw - m, y, { align: 'right' })
+    y += lineH
   }
 
+  // Incentive
   if (incentive > 0) {
-    doc.setTextColor(...COLORS.greenAccent)
-    doc.text('Utility Incentive:', totalsX, y)
-    doc.text(`-${formatCurrency(incentive)}`, totalsValX, y, { align: 'right' })
-    y += 5
+    doc.setTextColor(...C.muted)
+    doc.text('Utility Incentive', boxX, y)
+    doc.setTextColor(...C.green)
+    doc.text(`-${fmt(incentive)}`, pw - m, y, { align: 'right' })
+    y += lineH
   }
 
-  // Total line
-  doc.setDrawColor(...COLORS.border)
-  doc.line(totalsX, y, pageWidth - margin, y)
+  // Divider
+  y += 1
+  doc.setDrawColor(...C.primary)
+  doc.setLineWidth(0.6)
+  doc.line(boxX, y, pw - m, y)
   y += 5
-  doc.setFontSize(13)
-  doc.setTextColor(...COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.text('Total:', totalsX, y)
-  doc.text(formatCurrency(total), totalsValX, y, { align: 'right' })
-  y += 6
 
+  // Total — prominent
+  doc.setFillColor(...C.primary)
+  doc.roundedRect(boxX - 4, y - 5, boxW + 4, 12, 2, 2, 'F')
+  doc.setFontSize(13)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(...C.white)
+  doc.text('TOTAL', boxX, y + 2)
+  doc.text(fmt(total), pw - m, y + 2, { align: 'right' })
+  y += 12
+
+  // Out of pocket
   if (incentive > 0) {
     doc.setFontSize(10)
-    doc.setTextColor(...COLORS.greenAccent)
     doc.setFont('helvetica', 'normal')
-    doc.text('Out of Pocket:', totalsX, y)
-    doc.text(formatCurrency(outOfPocket), totalsValX, y, { align: 'right' })
-    y += 6
+    doc.setTextColor(...C.green)
+    doc.text('Your Cost After Incentive', boxX, y)
+    doc.setFont('helvetica', 'bold')
+    doc.text(fmt(outOfPocket), pw - m, y, { align: 'right' })
+    y += 8
   }
 
-  // Footer
-  y += 10
-  if (y > 260) {
-    doc.addPage()
-    y = margin
+  // Deposit paid
+  if (parseFloat(estimate.deposit_amount) > 0) {
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...C.muted)
+    doc.text('Deposit Received', boxX, y)
+    doc.setTextColor(...C.text)
+    doc.text(fmt(estimate.deposit_amount), pw - m, y, { align: 'right' })
+    y += 5
+    doc.setTextColor(...C.muted)
+    doc.text('Balance Due', boxX, y)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...C.text)
+    const balance = (incentive > 0 ? outOfPocket : total) - parseFloat(estimate.deposit_amount)
+    doc.text(fmt(balance), pw - m, y, { align: 'right' })
+    y += 8
   }
-  doc.setFontSize(8)
-  doc.setTextColor(...COLORS.muted)
-  doc.setFont('helvetica', 'normal')
-  doc.text('Thank you for your business!', pageWidth / 2, y, { align: 'center' })
 
-  return doc.output('blob')
+  return y
 }
 
-function generateEnvelopeLayout(doc, { estimate, lineItems, company, settings, margin, contentWidth, pageWidth }) {
-  // Page 1: Envelope-optimized with address positioning for #9/#10 window envelopes
+// ─── Footer ─────────────────────────────────────────────────────
+function drawFooter(doc, brand, settings, m, pw, ph) {
+  const footerY = ph - 16
+
+  // Accent bar
+  doc.setFillColor(...C.primary)
+  doc.rect(0, ph - 3, pw, 3, 'F')
+
+  // Thank you text
+  doc.setFontSize(9)
+  doc.setTextColor(...C.primary)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Thank you for your business!', pw / 2, footerY, { align: 'center' })
+
+  // Brand contact line
+  const contactParts = [brand.name]
+  if (brand.phone) contactParts.push(brand.phone)
+  if (brand.email) contactParts.push(brand.email)
+  doc.setFontSize(7.5)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(...C.muted)
+  doc.text(contactParts.join('  |  '), pw / 2, footerY + 5, { align: 'center' })
+
+  // Footer text from settings
+  if (settings.footer_text) {
+    doc.setFontSize(7)
+    doc.setTextColor(...C.light)
+    const ftLines = doc.splitTextToSize(settings.footer_text, pw - m * 2)
+    doc.text(ftLines, pw / 2, footerY + 10, { align: 'center' })
+  }
+}
+
+// ─── Envelope page (cover sheet for mailing) ────────────────────
+function drawEnvelopePage(doc, { estimate, company, brand, logo, settings, m, pw, ph, cw }) {
+  // Accent bar
+  doc.setFillColor(...C.primary)
+  doc.rect(0, 0, pw, 3, 'F')
+
   let y = 15
 
-  // Return address - top left corner
+  // Return address (top left)
+  if (logo && settings.show_logo) {
+    try {
+      doc.addImage(logo, 'AUTO', 15, y, 28, 11)
+      y += 14
+    } catch { /* fallthrough */ }
+  }
+
   doc.setFontSize(9)
-  doc.setTextColor(...COLORS.text)
+  doc.setTextColor(...C.text)
   doc.setFont('helvetica', 'bold')
-  doc.text(company?.company_name || 'Company', 15, y)
+  doc.text(brand.name, 15, y)
   y += 4
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  if (company?.address) {
-    const addrLines = doc.splitTextToSize(company.address, 70)
+  if (brand.address) {
+    const addrLines = doc.splitTextToSize(brand.address, 70)
     doc.text(addrLines, 15, y)
     y += addrLines.length * 3.5
   }
-  if (company?.phone) {
-    doc.text(company.phone, 15, y)
-    y += 3.5
-  }
+  if (brand.phone) { doc.text(brand.phone, 15, y); y += 3.5 }
 
-  // Customer address - positioned for standard window envelope
-  // Window area: ~25mm from left, ~55mm from top
-  const windowX = 25
-  const windowY = 55
-
-  doc.setFontSize(11)
-  doc.setTextColor(...COLORS.text)
-  doc.setFont('helvetica', 'bold')
+  // Customer address — window position
   const customer = estimate.customer || estimate.lead
-  const custName = customer?.name || customer?.customer_name || '-'
-  doc.text(custName, windowX, windowY)
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  let addrY = windowY + 5
-  if (customer?.business_name) {
-    doc.text(customer.business_name, windowX, addrY)
-    addrY += 5
-  }
-  if (customer?.address) {
-    const addrLines = doc.splitTextToSize(customer.address, 80)
-    doc.text(addrLines, windowX, addrY)
-    addrY += addrLines.length * 5
-  }
-
-  // Estimate number in top right
-  doc.setFontSize(12)
-  doc.setTextColor(...COLORS.primary)
-  doc.setFont('helvetica', 'bold')
-  const estimateNum = estimate.quote_id || `EST-${estimate.id}`
-  doc.text(estimateNum, pageWidth - 20, 20, { align: 'right' })
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...COLORS.muted)
-  const dateStr = estimate.created_at ? new Date(estimate.created_at).toLocaleDateString() : '-'
-  doc.text(dateStr, pageWidth - 20, 25, { align: 'right' })
-
-  // Page 2+: Full estimate content
-  doc.addPage()
-  const emailBlob = generateEmailLayout(new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' }), {
-    estimate, lineItems, company, settings, margin: 20, contentWidth: doc.internal.pageSize.getWidth() - 40, pageWidth: doc.internal.pageSize.getWidth()
-  })
-
-  // Since we can't easily merge PDFs in jsPDF, we'll just put all content on page 2 of the same doc
-  let contentY = 20
-  // Re-draw email layout content on page 2
-  contentY = drawEmailContentOnPage(doc, { estimate, lineItems, company, settings, margin: 20, pageWidth, contentWidth: pageWidth - 40, startY: contentY })
-
-  return doc.output('blob')
-}
-
-function drawEmailContentOnPage(doc, { estimate, lineItems, company, settings, margin, pageWidth, contentWidth, startY }) {
-  let y = startY
-
-  // Company name
-  doc.setFontSize(16)
-  doc.setTextColor(...COLORS.primary)
-  doc.setFont('helvetica', 'bold')
-  doc.text(company?.company_name || 'Company', margin, y)
-  y += 8
-
-  // ESTIMATE header
-  doc.setFontSize(18)
-  doc.setTextColor(...COLORS.text)
-  doc.text('ESTIMATE', margin, y)
+  const custName = customer?.name || customer?.customer_name || '—'
+  const windowX = 25
+  const windowY = 58
 
   doc.setFontSize(11)
+  doc.setTextColor(...C.text)
+  doc.setFont('helvetica', 'bold')
+  doc.text(custName, windowX, windowY)
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...COLORS.primary)
-  const estimateNum = estimate.quote_id || `EST-${estimate.id}`
-  doc.text(estimateNum, pageWidth - margin, y, { align: 'right' })
-  y += 8
-
-  // Estimate name
-  if (estimate.estimate_name) {
-    doc.setFontSize(12)
-    doc.setTextColor(...COLORS.text)
-    doc.setFont('helvetica', 'bold')
-    doc.text(estimate.estimate_name, margin, y)
-    y += 6
-  }
-
-  // Message
-  const message = estimate.estimate_message || settings.estimate_message
-  if (message) {
-    doc.setFontSize(9)
-    doc.setTextColor(...COLORS.muted)
-    doc.setFont('helvetica', 'normal')
-    const msgLines = doc.splitTextToSize(message, contentWidth)
-    doc.text(msgLines, margin, y)
-    y += msgLines.length * 4 + 4
-  }
-
-  y += 2
-
-  // Line items
-  y = drawLineItemsTable(doc, lineItems, settings, y, margin, contentWidth, pageWidth)
-
-  // Totals
-  y += 6
-  const subtotal = lineItems.reduce((sum, l) => sum + (parseFloat(l.line_total) || 0), 0)
-  const discount = parseFloat(estimate.discount) || 0
-  const incentive = parseFloat(estimate.utility_incentive) || 0
-  const total = subtotal - discount
-
-  const totalsX = pageWidth - margin - 70
-  const totalsValX = pageWidth - margin
-
   doc.setFontSize(10)
-  doc.setTextColor(...COLORS.text)
-  doc.setFont('helvetica', 'normal')
-  doc.text('Subtotal:', totalsX, y)
-  doc.text(formatCurrency(subtotal), totalsValX, y, { align: 'right' })
-  y += 5
-
-  if (discount > 0) {
-    doc.text('Discount:', totalsX, y)
-    doc.text(`-${formatCurrency(discount)}`, totalsValX, y, { align: 'right' })
-    y += 5
+  let wy = windowY + 5
+  if (customer?.business_name) { doc.text(customer.business_name, windowX, wy); wy += 5 }
+  if (customer?.address) {
+    const al = doc.splitTextToSize(customer.address, 80)
+    doc.text(al, windowX, wy)
   }
 
-  doc.setDrawColor(...COLORS.border)
-  doc.line(totalsX, y, pageWidth - margin, y)
-  y += 5
-  doc.setFontSize(13)
+  // Estimate number top-right
+  const estNum = estimate.quote_id || `EST-${estimate.id}`
+  doc.setFontSize(12)
+  doc.setTextColor(...C.primary)
   doc.setFont('helvetica', 'bold')
-  doc.text('Total:', totalsX, y)
-  doc.text(formatCurrency(total), totalsValX, y, { align: 'right' })
-
-  return y
-}
-
-function drawLineItemsTable(doc, lineItems, settings, startY, margin, contentWidth, pageWidth) {
-  let y = startY
-
-  // Check if we need a new page
-  if (y > 240) {
-    doc.addPage()
-    y = 20
-  }
-
-  // Table header
-  const showDesc = settings.show_line_descriptions
-  const colWidths = showDesc
-    ? { name: 55, desc: 45, qty: 20, price: 25, total: 25 }
-    : { name: 80, qty: 25, price: 30, total: 30 }
-
-  doc.setFillColor(...COLORS.headerBg)
-  doc.rect(margin, y - 4, contentWidth, 8, 'F')
-  doc.setFontSize(8)
-  doc.setTextColor(...COLORS.muted)
-  doc.setFont('helvetica', 'bold')
-
-  let colX = margin + 2
-  doc.text('ITEM', colX, y)
-  colX += colWidths.name
-  if (showDesc) {
-    doc.text('DESCRIPTION', colX, y)
-    colX += colWidths.desc
-  }
-  doc.text('QTY', colX + colWidths.qty - 2, y, { align: 'right' })
-  colX += colWidths.qty
-  doc.text('PRICE', colX + colWidths.price - 2, y, { align: 'right' })
-  colX += colWidths.price
-  doc.text('AMOUNT', colX + colWidths.total - 2, y, { align: 'right' })
-
-  y += 6
-
-  // Table rows
+  doc.text(estNum, pw - 20, 20, { align: 'right' })
+  doc.setFontSize(8.5)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
+  doc.setTextColor(...C.muted)
+  doc.text(fmtDate(estimate.created_at), pw - 20, 25, { align: 'right' })
 
-  for (const line of lineItems) {
-    if (y > 270) {
-      doc.addPage()
-      y = 20
-    }
-
-    colX = margin + 2
-    doc.setTextColor(...COLORS.text)
-    const itemName = line.item?.name || 'Item'
-    const truncatedName = itemName.length > 30 ? itemName.substring(0, 28) + '...' : itemName
-    doc.text(truncatedName, colX, y)
-    colX += colWidths.name
-
-    if (showDesc) {
-      doc.setTextColor(...COLORS.muted)
-      const desc = line.description || line.item?.description || ''
-      const truncDesc = desc.length > 25 ? desc.substring(0, 23) + '...' : desc
-      doc.text(truncDesc, colX, y)
-      colX += colWidths.desc
-    }
-
-    doc.setTextColor(...COLORS.text)
-    doc.text(String(line.quantity || 0), colX + colWidths.qty - 2, y, { align: 'right' })
-    colX += colWidths.qty
-    doc.text(formatCurrency(line.price), colX + colWidths.price - 2, y, { align: 'right' })
-    colX += colWidths.price
-    doc.setFont('helvetica', 'bold')
-    doc.text(formatCurrency(line.line_total), colX + colWidths.total - 2, y, { align: 'right' })
-    doc.setFont('helvetica', 'normal')
-
-    y += 6
-
-    // Light separator
-    doc.setDrawColor(...COLORS.border)
-    doc.setLineWidth(0.2)
-    doc.line(margin, y - 2, pageWidth - margin, y - 2)
-  }
-
-  return y
+  // Bottom accent
+  doc.setFillColor(...C.primary)
+  doc.rect(0, ph - 3, pw, 3, 'F')
 }

@@ -72,6 +72,8 @@ const emptyEmployee = {
   commission_leads_type: 'flat',
   commission_setter_rate: 25,
   commission_setter_type: 'flat',
+  // Skill level
+  skill_level: '',
   // PTO
   pto_days_per_year: 10,
   pto_accrued: 0,
@@ -111,8 +113,10 @@ export default function Employees() {
   const [settingsTab, setSettingsTab] = useState('job_titles')
   const [jobTitles, setJobTitles] = useState([])
   const [accessLevels, setAccessLevels] = useState([])
+  const [skillLevels, setSkillLevels] = useState([])
   const [newJobTitle, setNewJobTitle] = useState('')
   const [newAccessLevel, setNewAccessLevel] = useState({ name: '', description: '' })
+  const [newSkillLevel, setNewSkillLevel] = useState('')
   const [savingSettings, setSavingSettings] = useState(false)
 
   // Invite employee state
@@ -186,6 +190,23 @@ export default function Employees() {
     } else {
       setAccessLevels(DEFAULT_ACCESS_LEVELS)
     }
+
+    // Load skill_levels from settings
+    const { data: skillData } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('company_id', companyId)
+      .eq('key', 'skill_levels')
+      .single()
+
+    if (skillData?.value) {
+      try {
+        const parsed = JSON.parse(skillData.value)
+        setSkillLevels(parsed)
+      } catch {
+        setSkillLevels([])
+      }
+    }
   }
 
   const saveJobTitles = async (titles) => {
@@ -241,9 +262,36 @@ export default function Employees() {
     saveAccessLevels(updated)
   }
 
+  const saveSkillLevels = async (levels) => {
+    setSavingSettings(true)
+    await supabase
+      .from('settings')
+      .upsert({
+        company_id: companyId,
+        key: 'skill_levels',
+        value: JSON.stringify(levels),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'company_id,key' })
+    setSkillLevels(levels)
+    setSavingSettings(false)
+  }
+
+  const addSkillLevel = () => {
+    if (!newSkillLevel.trim()) return
+    const updated = [...skillLevels, newSkillLevel.trim()]
+    saveSkillLevels(updated)
+    setNewSkillLevel('')
+  }
+
+  const removeSkillLevel = (level) => {
+    const updated = skillLevels.filter(l => l !== level)
+    saveSkillLevels(updated)
+  }
+
   // Use settings-driven values or defaults
   const ROLES = jobTitles.length > 0 ? jobTitles : DEFAULT_JOB_TITLES
   const USER_ROLES = accessLevels.length > 0 ? accessLevels.map(l => l.name) : DEFAULT_ACCESS_LEVELS.map(l => l.name)
+  const SKILL_LEVELS = skillLevels
 
   const loadEmployees = async () => {
     if (!companyId) return
@@ -310,6 +358,7 @@ export default function Employees() {
       commission_leads_type: employee.commission_leads_type || 'flat',
       commission_setter_rate: employee.commission_setter_rate || 25,
       commission_setter_type: employee.commission_setter_type || 'flat',
+      skill_level: employee.skill_level || '',
       pto_days_per_year: employee.pto_days_per_year || 10,
       pto_accrued: employee.pto_accrued || 0,
       pto_used: employee.pto_used || 0
@@ -424,6 +473,7 @@ export default function Employees() {
       commission_leads_type: formData.commission_leads_type,
       commission_setter_rate: parseFloat(formData.commission_setter_rate) || 0,
       commission_setter_type: formData.commission_setter_type,
+      skill_level: formData.skill_level || null,
       pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
       pto_accrued: parseFloat(formData.pto_accrued) || 0,
       pto_used: parseFloat(formData.pto_used) || 0,
@@ -565,6 +615,7 @@ export default function Employees() {
       commission_leads_type: formData.commission_leads_type,
       commission_setter_rate: parseFloat(formData.commission_setter_rate) || 0,
       commission_setter_type: formData.commission_setter_type,
+      skill_level: formData.skill_level || null,
       pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
       pto_accrued: parseFloat(formData.pto_accrued) || 0,
       pto_used: parseFloat(formData.pto_used) || 0,
@@ -1001,6 +1052,17 @@ export default function Employees() {
                         color: employee.tax_classification === 'W2' ? '#3b82f6' : '#f97316'
                       }}>
                         {employee.tax_classification}
+                      </span>
+                    )}
+                    {employee.skill_level && (
+                      <span style={{
+                        fontSize: '11px',
+                        padding: '3px 10px',
+                        borderRadius: '20px',
+                        backgroundColor: 'rgba(168,85,247,0.1)',
+                        color: '#a855f7'
+                      }}>
+                        {employee.skill_level}
                       </span>
                     )}
                   </div>
@@ -1458,6 +1520,23 @@ export default function Employees() {
                     </div>
                   )}
                 </div>
+
+                {/* Skill Level */}
+                {SKILL_LEVELS.length > 0 && (
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={labelStyle}>Skill Level</label>
+                    <select
+                      name="skill_level"
+                      value={formData.skill_level}
+                      onChange={handleChange}
+                      disabled={!isEditing}
+                      style={isEditing ? inputStyle : inputStyleDisabled}
+                    >
+                      <option value="">— None —</option>
+                      {SKILL_LEVELS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                )}
 
                 {/* Developer Access - Only visible to developers */}
                 {isDeveloper && (
@@ -2140,6 +2219,21 @@ export default function Employees() {
               >
                 Access Levels
               </button>
+              <button
+                onClick={() => setSettingsTab('skill_levels')}
+                style={{
+                  padding: '12px 16px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  borderBottom: settingsTab === 'skill_levels' ? `2px solid ${theme.accent}` : '2px solid transparent',
+                  color: settingsTab === 'skill_levels' ? theme.accent : theme.textMuted,
+                  fontSize: '14px',
+                  fontWeight: settingsTab === 'skill_levels' ? '600' : '400',
+                  cursor: 'pointer'
+                }}
+              >
+                Skill Levels
+              </button>
             </div>
 
             {/* Tab Content */}
@@ -2330,6 +2424,96 @@ export default function Employees() {
                         )}
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {settingsTab === 'skill_levels' && (
+                <div>
+                  <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
+                    Skill levels define expertise tiers for your team (e.g., Apprentice, Journeyman, Master). These can be assigned to employees and used for payroll bonus calculations.
+                  </p>
+
+                  {/* Add new skill level */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                    <input
+                      type="text"
+                      value={newSkillLevel}
+                      onChange={(e) => setNewSkillLevel(e.target.value)}
+                      placeholder="Add skill level..."
+                      onKeyDown={(e) => e.key === 'Enter' && addSkillLevel()}
+                      style={{
+                        flex: 1,
+                        padding: '10px 12px',
+                        backgroundColor: theme.bg,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: '8px',
+                        color: theme.text,
+                        fontSize: '14px'
+                      }}
+                    />
+                    <button
+                      onClick={addSkillLevel}
+                      disabled={savingSettings || !newSkillLevel.trim()}
+                      style={{
+                        padding: '10px 16px',
+                        backgroundColor: theme.accent,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        opacity: savingSettings || !newSkillLevel.trim() ? 0.6 : 1
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {/* List of skill levels */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {skillLevels.length === 0 ? (
+                      <p style={{ fontSize: '13px', color: theme.textMuted, textAlign: 'center', padding: '24px' }}>
+                        No skill levels defined yet. Add levels like "Apprentice", "Journeyman", or "Master" above.
+                      </p>
+                    ) : (
+                      skillLevels.map((level, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            backgroundColor: theme.bg,
+                            borderRadius: '8px',
+                            border: `1px solid ${theme.border}`
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: '#a855f7'
+                            }} />
+                            <span style={{ fontSize: '14px', color: theme.text }}>{level}</span>
+                          </div>
+                          <button
+                            onClick={() => removeSkillLevel(level)}
+                            style={{
+                              padding: '4px',
+                              backgroundColor: 'transparent',
+                              border: 'none',
+                              color: theme.textMuted,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

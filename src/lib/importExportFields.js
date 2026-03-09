@@ -52,13 +52,13 @@ export const customersFields = [
 export const jobsFields = [
   { field: 'job_id', label: 'Job ID', type: 'text', desc: 'Unique job identifier (e.g. JOB-ABC123). Auto-generated if blank.' },
   { field: 'customer_name', label: 'Customer Name', type: 'text', virtual: true, desc: 'Customer or client name (matched to customer_id on import)' },
-  { field: 'job_title', label: 'Job Title', type: 'text', required: true, desc: 'Title or name of the job' },
-  { field: 'status', label: 'Status', type: 'text', desc: 'Job status (Scheduled, In Progress, Completed, Cancelled)' },
+  { field: 'job_title', label: 'Job Title', type: 'text', desc: 'Title, name, or description of the job/service performed' },
+  { field: 'status', label: 'Status', type: 'text', desc: 'Job status (Scheduled, In Progress, Completed, Cancelled, Needs scheduling)' },
   { field: 'business_unit', label: 'Business Unit', type: 'text', desc: 'Business unit or division' },
   // Location
   { field: 'job_address', label: 'Job Address', type: 'text', desc: 'Full address (auto-parsed into city/state/zip)' },
   // Scheduling
-  { field: 'start_date', label: 'Start Date', type: 'date', desc: 'Job start date' },
+  { field: 'start_date', label: 'Start Date', type: 'date', desc: 'Job start or created date' },
   { field: 'end_date', label: 'End Date', type: 'date', desc: 'Job end date' },
   // Crew
   { field: 'assigned_team', label: 'Team', type: 'text', desc: 'Assigned team name' },
@@ -66,16 +66,17 @@ export const jobsFields = [
   { field: 'allotted_time_hours', label: 'Allotted Hours', type: 'number', desc: 'Estimated hours for the job' },
   { field: 'time_tracked', label: 'Time Tracked', type: 'number', desc: 'Tracked time in hours' },
   // Financials
-  { field: 'utility_incentive', label: 'Utility Incentive', type: 'number', desc: 'Utility rebate / incentive amount' },
+  { field: 'job_total', label: 'Job Total', type: 'number', desc: 'Total job amount / revenue / price / contract value' },
+  { field: 'utility_incentive', label: 'Utility Incentive', type: 'number', desc: 'Utility rebate or incentive amount (NOT the job total)' },
   { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
   { field: 'discount_description', label: 'Discount Description', type: 'text', desc: 'Description of the discount' },
-  { field: 'expense_amount', label: 'Expense Amount', type: 'number', desc: 'Additional expense amount' },
+  { field: 'expense_amount', label: 'Expense Amount', type: 'number', desc: 'Expense or commission cost' },
   { field: 'profit_margin', label: 'Profit Margin', type: 'number', desc: 'Profit margin percentage' },
   { field: 'invoice_status', label: 'Invoice Status', type: 'text', desc: 'Invoice status (Not Invoiced, Invoiced, Paid)' },
   { field: 'recurrence', label: 'Recurrence', type: 'text', desc: 'Recurrence pattern (None, Weekly, Monthly, etc.)' },
   // Description & notes
-  { field: 'details', label: 'Details', type: 'text', desc: 'Job details' },
-  { field: 'notes', label: 'Notes', type: 'text', desc: 'Additional notes' },
+  { field: 'details', label: 'Details', type: 'text', desc: 'Job details or scope of work' },
+  { field: 'notes', label: 'Notes', type: 'text', desc: 'Additional notes or comments' },
   { field: 'gps_location', label: 'GPS Location', type: 'text', desc: 'GPS coordinates' },
 ]
 

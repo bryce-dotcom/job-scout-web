@@ -2,6 +2,7 @@ import { useState, createContext, useContext, useMemo } from 'react'
 import { useNavigate, NavLink, Outlet } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import FeedbackButton from './FeedbackButton'
+import GlobalSearch from './GlobalSearch'
 import {
   LayoutDashboard,
   UserPlus,
@@ -295,7 +296,8 @@ export default function Layout() {
       sectionIcon: Users,
       baseItems: [
         { to: '/employees', icon: UserCog, label: 'Employees', hint: 'Manage team members and roles' },
-        { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' }
+        { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' },
+        { to: '/payroll', icon: DollarSign, label: 'Payroll', hint: 'Commissions, hours, bonuses, and pay runs' }
       ]
     }
   ]
@@ -623,6 +625,11 @@ export default function Layout() {
           </div>
 
           {/* Navigation */}
+          {/* Global Search - pinned above scroll */}
+          <div style={{ padding: '8px 8px 0' }}>
+            <GlobalSearch theme={theme} />
+          </div>
+
           <nav style={{
             flex: 1,
             padding: '8px 8px',
@@ -999,6 +1006,11 @@ export default function Layout() {
                   </div>
                 </div>
               )}
+              {/* Global Search - Mobile, pinned above scroll */}
+              <div style={{ padding: '8px 8px 0' }}>
+                <GlobalSearch mobile onNavigate={() => setMobileMenuOpen(false)} theme={theme} />
+              </div>
+
               <nav style={{ flex: 1, padding: '8px 8px' }}>
                 {/* Dashboard Link - Mobile */}
                 <div style={{ marginBottom: '8px' }}>

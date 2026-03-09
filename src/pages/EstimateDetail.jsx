@@ -63,6 +63,7 @@ export default function EstimateDetail() {
   const deleteQuote = useStore((state) => state.deleteQuote)
   const updateLead = useStore((state) => state.updateLead)
   const settings = useStore((state) => state.settings)
+  const businessUnits = useStore((state) => state.businessUnits)
 
   const [estimate, setEstimate] = useState(null)
   const [lineItems, setLineItems] = useState([])
@@ -365,8 +366,8 @@ export default function EstimateDetail() {
 
   const updateEstimateField = async (field, value) => {
     setSaving(true)
+    setEstimate(prev => ({ ...prev, [field]: value }))
     await updateQuote(id, { [field]: value, updated_at: new Date().toISOString() })
-    await fetchEstimateData()
     setSaving(false)
   }
 
@@ -592,17 +593,33 @@ export default function EstimateDetail() {
     setCreatingLead(false)
   }
 
+  // Look up the full business unit object by name
+  const getBusinessUnitObject = () => {
+    if (!estimate?.business_unit) return null
+    const bu = (businessUnits || []).find(b => {
+      const name = typeof b === 'string' ? b : b.name
+      return name === estimate.business_unit
+    })
+    return bu && typeof bu === 'object' ? bu : null
+  }
+
   // PDF Generation
   const handleGeneratePdf = async () => {
+    if (!estimate.business_unit) {
+      toast.error('Please select a Business Unit before generating a PDF.')
+      return
+    }
     setGeneratingPdf(true)
     try {
       const effectiveSettings = getEffectiveSettings()
+      const buObject = getBusinessUnitObject()
       const pdfBlob = await generateEstimatePdf({
         estimate,
         lineItems,
         company,
         settings: effectiveSettings,
-        layout: effectiveSettings.pdf_layout || 'email'
+        layout: effectiveSettings.pdf_layout || 'email',
+        businessUnit: buObject
       })
 
       // Upload to Supabase Storage
@@ -677,8 +694,13 @@ export default function EstimateDetail() {
       toast.error('Please enter a recipient email.')
       return
     }
+    if (!estimate.business_unit) {
+      toast.error('Please select a Business Unit before sending.')
+      return
+    }
     setSendingEmail(true)
     try {
+      const buObject = getBusinessUnitObject()
       // Auto-generate PDF if none exists
       if (!estimate.pdf_url) {
         const effectiveSettings = getEffectiveSettings()
@@ -687,7 +709,8 @@ export default function EstimateDetail() {
           lineItems,
           company,
           settings: effectiveSettings,
-          layout: effectiveSettings.pdf_layout || 'email'
+          layout: effectiveSettings.pdf_layout || 'email',
+          businessUnit: buObject
         })
         const fileName = `estimates/${companyId}/${estimate.quote_id || estimate.id}_${Date.now()}.pdf`
         await supabase.storage
@@ -697,6 +720,23 @@ export default function EstimateDetail() {
         estimate.pdf_url = fileName
       }
 
+      // Create portal token
+      const { data: portalToken, error: tokenErr } = await supabase
+        .from('customer_portal_tokens')
+        .insert({
+          document_type: 'estimate',
+          document_id: estimate.id,
+          company_id: companyId,
+          customer_id: estimate.customer_id || null,
+          expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
+        })
+        .select('token')
+        .single()
+
+      const portalUrl = portalToken?.token
+        ? `${window.location.origin}/portal/${portalToken.token}`
+        : null
+
       // Call edge function
       const { error: fnError } = await supabase.functions.invoke('send-estimate', {
         body: {
@@ -705,7 +745,12 @@ export default function EstimateDetail() {
           recipient_email: sendEmail,
           pdf_storage_path: estimate.pdf_url,
           company_name: company?.company_name || '',
-          estimate_number: estimate.quote_id || `EST-${estimate.id}`
+          estimate_number: estimate.quote_id || `EST-${estimate.id}`,
+          portal_url: portalUrl,
+          business_unit_name: buObject?.name || estimate.business_unit || '',
+          business_unit_phone: buObject?.phone || company?.phone || '',
+          business_unit_email: buObject?.email || company?.owner_email || '',
+          business_unit_address: buObject?.address || company?.address || ''
         }
       })
 
@@ -717,6 +762,7 @@ export default function EstimateDetail() {
         last_sent_at: new Date().toISOString(),
         sent_to_email: sendEmail,
         sent_date: estimate.sent_date || new Date().toISOString(),
+        portal_token: portalToken?.token || null,
         updated_at: new Date().toISOString()
       })
 
@@ -1076,6 +1122,26 @@ export default function EstimateDetail() {
               gridTemplateColumns: '1fr 1fr',
               gap: '16px'
             }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={labelStyle}>Business Unit *</label>
+                <select
+                  value={estimate.business_unit || ''}
+                  onChange={(e) => updateEstimateField('business_unit', e.target.value || null)}
+                  style={{
+                    ...inputStyle,
+                    borderColor: !estimate.business_unit ? '#c25a5a' : theme.border
+                  }}
+                >
+                  <option value="">-- Select Business Unit --</option>
+                  {(businessUnits || []).map((bu, i) => {
+                    const name = typeof bu === 'string' ? bu : bu.name
+                    return <option key={i} value={name}>{name}</option>
+                  })}
+                </select>
+                {!estimate.business_unit && (
+                  <p style={{ fontSize: '11px', color: '#c25a5a', marginTop: '4px' }}>Required for generating PDF and sending</p>
+                )}
+              </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelStyle}>Estimate Name</label>
                 <input
@@ -1548,6 +1614,42 @@ export default function EstimateDetail() {
                 <Mail size={18} />
                 Send Estimate
               </button>
+
+              {/* Portal Link */}
+              {estimate.portal_token && (
+                <div style={{
+                  padding: '10px 12px',
+                  backgroundColor: theme.accentBg,
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: '13px', color: theme.textSecondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Portal link available
+                  </span>
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}/portal/${estimate.portal_token}`
+                      navigator.clipboard.writeText(url)
+                      toast.success('Portal link copied!')
+                    }}
+                    style={{
+                      padding: '4px 10px',
+                      backgroundColor: theme.accent,
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Copy Link
+                  </button>
+                </div>
+              )}
 
               {/* Status Actions */}
               {estimate.status === 'Draft' && (
@@ -2023,6 +2125,7 @@ export default function EstimateDetail() {
           estimate={estimate}
           lineItems={lineItems}
           company={company}
+          businessUnit={getBusinessUnitObject()}
           settings={getEffectiveSettings()}
           sendEmail={sendEmail}
           setSendEmail={setSendEmail}
@@ -2331,11 +2434,22 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
 }
 
 // Live HTML preview of the estimate (mirrors PDF content)
-function EstimatePreview({ estimate, lineItems, company, settings }) {
+function EstimatePreview({ estimate, lineItems, company, businessUnit, settings }) {
   const formatCurrency = (amount) => {
     if (!amount) return '$0.00'
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
   }
+  const fmtDate = (d) => {
+    if (!d) return ''
+    try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) } catch { return '' }
+  }
+
+  // Resolve branding — BU with company fallback
+  const brandName = businessUnit?.name || company?.company_name || 'Company'
+  const brandAddress = businessUnit?.address || company?.address || ''
+  const brandPhone = businessUnit?.phone || company?.phone || ''
+  const brandEmail = businessUnit?.email || company?.owner_email || ''
+  const brandLogo = businessUnit?.logo_url || company?.logo_url || ''
 
   const customer = estimate.customer || estimate.lead
   const subtotal = lineItems.reduce((sum, l) => sum + (parseFloat(l.line_total) || 0), 0)
@@ -2345,6 +2459,8 @@ function EstimatePreview({ estimate, lineItems, company, settings }) {
   const outOfPocket = total - incentive
   const message = estimate.estimate_message || settings.estimate_message || settings.default_message
 
+  const thStyle = { textAlign: 'left', padding: '7px 10px', fontWeight: '600', color: '#fff', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }
+
   return (
     <div style={{
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -2352,93 +2468,96 @@ function EstimatePreview({ estimate, lineItems, company, settings }) {
       fontSize: '13px',
       lineHeight: 1.5
     }}>
-      {/* Company header */}
-      <div style={{ marginBottom: '16px' }}>
-        <div style={{ fontSize: '18px', fontWeight: '700', color: '#5a6349' }}>
-          {company?.company_name || 'Company'}
-        </div>
-        {settings.show_company_address && company?.address && (
-          <div style={{ fontSize: '11px', color: '#7d8a7f' }}>{company.address}</div>
-        )}
-        {settings.show_company_phone && company?.phone && (
-          <div style={{ fontSize: '11px', color: '#7d8a7f' }}>{company.phone}</div>
-        )}
-        {settings.show_company_email && company?.owner_email && (
-          <div style={{ fontSize: '11px', color: '#7d8a7f' }}>{company.owner_email}</div>
-        )}
-      </div>
+      {/* Top accent bar */}
+      <div style={{ height: '3px', background: '#5a6349', borderRadius: '3px 3px 0 0', marginBottom: '20px' }} />
 
-      <div style={{ borderTop: '1px solid #d6cdb8', paddingTop: '12px', marginBottom: '12px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <span style={{ fontSize: '20px', fontWeight: '700', color: '#2c3530' }}>ESTIMATE</span>
-          <span style={{ fontSize: '13px', fontWeight: '600', color: '#5a6349' }}>
-            {estimate.quote_id || `EST-${estimate.id}`}
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: '24px', fontSize: '11px', color: '#7d8a7f', marginTop: '4px' }}>
-          <span>Date: {estimate.created_at ? new Date(estimate.created_at).toLocaleDateString() : '-'}</span>
-          {estimate.expiration_date && (
-            <span>Expires: {new Date(estimate.expiration_date).toLocaleDateString()}</span>
+      {/* Header: Logo + Name (left)  |  Contact (right) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {brandLogo && settings.show_logo && (
+            <img src={brandLogo} alt="" style={{ height: '40px', maxWidth: '80px', objectFit: 'contain' }} />
           )}
-          {settings.show_service_date && estimate.service_date && (
-            <span>Service: {new Date(estimate.service_date).toLocaleDateString()}</span>
+          <div>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: '#3e4532' }}>{brandName}</div>
+          </div>
+        </div>
+        <div style={{ textAlign: 'right', fontSize: '11px', color: '#7d8a7f', lineHeight: 1.6 }}>
+          {settings.show_company_address && brandAddress && <div>{brandAddress}</div>}
+          {settings.show_company_phone && brandPhone && <div>{brandPhone}</div>}
+          {settings.show_company_email && brandEmail && <div>{brandEmail}</div>}
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div style={{ borderTop: '1px solid #d6cdb8', marginBottom: '14px' }} />
+
+      {/* ESTIMATE title + number */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '12px' }}>
+        <span style={{ fontSize: '22px', fontWeight: '700', color: '#3e4532', letterSpacing: '1px' }}>ESTIMATE</span>
+        <span style={{ fontSize: '13px', fontWeight: '600', color: '#5a6349' }}>
+          {estimate.quote_id || `EST-${estimate.id}`}
+        </span>
+      </div>
+
+      {/* Two-column: Bill To (left) | Details (right) */}
+      <div style={{ display: 'flex', gap: '24px', marginBottom: '14px' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '9px', fontWeight: '700', color: '#7d8a7f', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '4px' }}>Bill To</div>
+          <div style={{ fontWeight: '600', fontSize: '13px' }}>{customer?.name || customer?.customer_name || '—'}</div>
+          {settings.show_customer_company && customer?.business_name && (
+            <div style={{ color: '#7d8a7f', fontSize: '12px' }}>{customer.business_name}</div>
           )}
+          {customer?.address && <div style={{ color: '#7d8a7f', fontSize: '12px' }}>{customer.address}</div>}
+          {customer?.phone && <div style={{ color: '#7d8a7f', fontSize: '12px' }}>{customer.phone}</div>}
+          {customer?.email && <div style={{ color: '#7d8a7f', fontSize: '12px' }}>{customer.email}</div>}
+        </div>
+        <div style={{ minWidth: '180px' }}>
+          <div style={{ fontSize: '9px', fontWeight: '700', color: '#7d8a7f', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '4px' }}>Details</div>
+          <table style={{ fontSize: '12px', borderCollapse: 'collapse' }}>
+            <tbody>
+              <tr><td style={{ color: '#7d8a7f', padding: '2px 8px 2px 0' }}>Date</td><td style={{ fontWeight: '500' }}>{fmtDate(estimate.created_at) || '—'}</td></tr>
+              {estimate.expiration_date && <tr><td style={{ color: '#7d8a7f', padding: '2px 8px 2px 0' }}>Expires</td><td style={{ fontWeight: '500' }}>{fmtDate(estimate.expiration_date)}</td></tr>}
+              {settings.show_service_date && estimate.service_date && <tr><td style={{ color: '#7d8a7f', padding: '2px 8px 2px 0' }}>Service</td><td style={{ fontWeight: '500' }}>{fmtDate(estimate.service_date)}</td></tr>}
+              {settings.show_technician && estimate.technician?.name && <tr><td style={{ color: '#7d8a7f', padding: '2px 8px 2px 0' }}>Technician</td><td style={{ fontWeight: '500' }}>{estimate.technician.name}</td></tr>}
+              {estimate.status && <tr><td style={{ color: '#7d8a7f', padding: '2px 8px 2px 0' }}>Status</td><td style={{ fontWeight: '500' }}>{estimate.status}</td></tr>}
+            </tbody>
+          </table>
         </div>
       </div>
-
-      {/* Customer */}
-      <div style={{ marginBottom: '12px' }}>
-        <div style={{ fontSize: '11px', fontWeight: '600', color: '#7d8a7f', marginBottom: '2px' }}>Bill To:</div>
-        <div style={{ fontWeight: '500' }}>{customer?.name || customer?.customer_name || '-'}</div>
-        {settings.show_customer_company && customer?.business_name && (
-          <div style={{ color: '#7d8a7f', fontSize: '12px' }}>{customer.business_name}</div>
-        )}
-        {customer?.address && <div style={{ color: '#7d8a7f', fontSize: '12px' }}>{customer.address}</div>}
-        {customer?.email && <div style={{ color: '#7d8a7f', fontSize: '12px' }}>{customer.email}</div>}
-      </div>
-
-      {/* Technician */}
-      {settings.show_technician && estimate.technician?.name && (
-        <div style={{ fontSize: '12px', marginBottom: '8px' }}>
-          <span style={{ fontWeight: '600' }}>Technician: </span>{estimate.technician.name}
-        </div>
-      )}
 
       {/* Estimate name & message */}
       {estimate.estimate_name && (
-        <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{estimate.estimate_name}</div>
+        <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '4px', color: '#2c3530' }}>{estimate.estimate_name}</div>
       )}
       {message && (
-        <div style={{ fontSize: '12px', color: '#7d8a7f', marginBottom: '12px', whiteSpace: 'pre-wrap' }}>{message}</div>
+        <div style={{ fontSize: '12px', color: '#7d8a7f', marginBottom: '14px', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>{message}</div>
       )}
 
       {/* Line items table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '12px', fontSize: '12px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '14px', fontSize: '12px' }}>
         <thead>
-          <tr style={{ backgroundColor: '#f7f5ef' }}>
-            <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '600', color: '#7d8a7f', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Item</th>
-            {settings.show_line_descriptions && (
-              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '600', color: '#7d8a7f', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</th>
-            )}
-            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '600', color: '#7d8a7f', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Qty</th>
-            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '600', color: '#7d8a7f', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Price</th>
-            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '600', color: '#7d8a7f', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Amount</th>
+          <tr style={{ backgroundColor: '#5a6349', borderRadius: '4px' }}>
+            <th style={thStyle}>Item</th>
+            {settings.show_line_descriptions && <th style={thStyle}>Description</th>}
+            <th style={{ ...thStyle, textAlign: 'right' }}>Qty</th>
+            <th style={{ ...thStyle, textAlign: 'right' }}>Price</th>
+            <th style={{ ...thStyle, textAlign: 'right' }}>Amount</th>
           </tr>
         </thead>
         <tbody>
-          {lineItems.map((line) => (
-            <tr key={line.id} style={{ borderBottom: '1px solid #eee' }}>
-              <td style={{ padding: '6px 8px', fontWeight: '500' }}>{line.item?.name || 'Item'}</td>
+          {lineItems.map((line, idx) => (
+            <tr key={line.id} style={{ backgroundColor: idx % 2 === 0 ? '#f7f5ef' : '#fff', borderBottom: '1px solid #eee' }}>
+              <td style={{ padding: '7px 10px', fontWeight: '500' }}>{line.item_name || line.item?.name || 'Item'}</td>
               {settings.show_line_descriptions && (
-                <td style={{ padding: '6px 8px', color: '#7d8a7f' }}>{line.description || line.item?.description || '-'}</td>
+                <td style={{ padding: '7px 10px', color: '#7d8a7f' }}>{line.description || line.item?.description || '—'}</td>
               )}
-              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{line.quantity || 0}</td>
-              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatCurrency(line.price)}</td>
-              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '500' }}>{formatCurrency(line.line_total)}</td>
+              <td style={{ padding: '7px 10px', textAlign: 'right' }}>{line.quantity || 0}</td>
+              <td style={{ padding: '7px 10px', textAlign: 'right', color: '#7d8a7f' }}>{formatCurrency(line.price)}</td>
+              <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: '600' }}>{formatCurrency(line.line_total)}</td>
             </tr>
           ))}
           {lineItems.length === 0 && (
-            <tr><td colSpan={settings.show_line_descriptions ? 5 : 4} style={{ padding: '16px 8px', textAlign: 'center', color: '#7d8a7f' }}>No line items</td></tr>
+            <tr><td colSpan={settings.show_line_descriptions ? 5 : 4} style={{ padding: '20px 10px', textAlign: 'center', color: '#7d8a7f' }}>No line items</td></tr>
           )}
         </tbody>
       </table>
@@ -2452,7 +2571,7 @@ function EstimatePreview({ estimate, lineItems, company, settings }) {
         {discount > 0 && (
           <div style={{ display: 'flex', gap: '24px' }}>
             <span style={{ color: '#7d8a7f' }}>Discount</span>
-            <span style={{ fontWeight: '500', minWidth: '80px', textAlign: 'right' }}>-{formatCurrency(discount)}</span>
+            <span style={{ fontWeight: '500', minWidth: '80px', textAlign: 'right', color: '#4a7c59' }}>-{formatCurrency(discount)}</span>
           </div>
         )}
         {incentive > 0 && (
@@ -2461,28 +2580,43 @@ function EstimatePreview({ estimate, lineItems, company, settings }) {
             <span style={{ fontWeight: '500', minWidth: '80px', textAlign: 'right', color: '#4a7c59' }}>-{formatCurrency(incentive)}</span>
           </div>
         )}
-        <div style={{ borderTop: '1px solid #d6cdb8', paddingTop: '6px', marginTop: '4px', display: 'flex', gap: '24px' }}>
-          <span style={{ fontWeight: '700', fontSize: '14px' }}>Total</span>
-          <span style={{ fontWeight: '700', fontSize: '14px', minWidth: '80px', textAlign: 'right' }}>{formatCurrency(total)}</span>
+        {/* Total pill */}
+        <div style={{
+          marginTop: '6px',
+          padding: '8px 16px',
+          backgroundColor: '#5a6349',
+          borderRadius: '6px',
+          display: 'flex',
+          gap: '24px',
+          alignItems: 'center'
+        }}>
+          <span style={{ fontWeight: '700', fontSize: '14px', color: '#fff' }}>TOTAL</span>
+          <span style={{ fontWeight: '700', fontSize: '14px', minWidth: '80px', textAlign: 'right', color: '#fff' }}>{formatCurrency(total)}</span>
         </div>
         {incentive > 0 && (
-          <div style={{ display: 'flex', gap: '24px', color: '#4a7c59' }}>
-            <span>Out of Pocket</span>
-            <span style={{ fontWeight: '500', minWidth: '80px', textAlign: 'right' }}>{formatCurrency(outOfPocket)}</span>
+          <div style={{ display: 'flex', gap: '24px', color: '#4a7c59', marginTop: '4px' }}>
+            <span style={{ fontWeight: '600' }}>Your Cost After Incentive</span>
+            <span style={{ fontWeight: '600', minWidth: '80px', textAlign: 'right' }}>{formatCurrency(outOfPocket)}</span>
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '11px', color: '#7d8a7f' }}>
-        Thank you for your business!
+      <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #d6cdb8', textAlign: 'center' }}>
+        <div style={{ fontSize: '12px', color: '#5a6349', fontWeight: '600' }}>Thank you for your business!</div>
+        <div style={{ fontSize: '10px', color: '#7d8a7f', marginTop: '4px' }}>
+          {[brandName, brandPhone, brandEmail].filter(Boolean).join('  |  ')}
+        </div>
       </div>
+
+      {/* Bottom accent bar */}
+      <div style={{ height: '3px', background: '#5a6349', borderRadius: '0 0 3px 3px', marginTop: '16px' }} />
     </div>
   )
 }
 
 // Preview + Send modal with two steps
-function EstimatePreviewModal({ theme, estimate, lineItems, company, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle }) {
+function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle }) {
   const [step, setStep] = useState('preview') // 'preview' | 'send'
 
   return (
@@ -2554,6 +2688,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, settings, s
                   estimate={estimate}
                   lineItems={lineItems}
                   company={company}
+                  businessUnit={businessUnit}
                   settings={settings}
                 />
               </div>

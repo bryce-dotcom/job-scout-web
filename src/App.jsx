@@ -63,6 +63,7 @@ import ConradTemplates from './pages/agents/conrad/ConradTemplates'
 import ConradContacts from './pages/agents/conrad/ConradContacts'
 import ConradAutomations from './pages/agents/conrad/ConradAutomations'
 import ConradSettings from './pages/agents/conrad/ConradSettings'
+import CustomerPortal from './pages/CustomerPortal'
 import LenardAZSRP from './pages/agents/LenardAZSRP'
 import LenardUTRMP from './pages/agents/LenardUTRMP'
 import DataConsole from './pages/admin/DataConsole'
@@ -242,6 +243,9 @@ function App() {
         {/* Public agent routes - NO auth required */}
         <Route path="/agent/lenard-az-srp" element={<LenardAZSRP />} />
         <Route path="/agent/lenard-ut-rmp" element={<LenardUTRMP />} />
+
+        {/* Customer Portal - public, no auth */}
+        <Route path="/portal/:token" element={<CustomerPortal />} />
 
         {/* Public routes */}
         <Route path="/login" element={<Login />} />

@@ -90,6 +90,10 @@ export const TABLES = {
   agents: 'agents',
   company_agents: 'company_agents',
 
+  // Customer Portal
+  customer_portal_tokens: 'customer_portal_tokens',
+  document_approvals: 'document_approvals',
+
   // Conrad Connect (Email Marketing)
   cc_integrations: 'cc_integrations',
   email_templates: 'email_templates',
