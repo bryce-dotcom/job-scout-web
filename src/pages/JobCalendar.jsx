@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ChevronLeft, ChevronRight, ArrowLeft, Calendar } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ArrowLeft, Calendar, Loader } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 // Light theme fallback
 const defaultTheme = {
@@ -28,9 +29,9 @@ const statusColors = {
 export default function JobCalendar() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
-  const jobs = useStore((state) => state.jobs)
-  const fetchJobs = useStore((state) => state.fetchJobs)
 
+  const [jobs, setJobs] = useState([])
+  const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [buFilter, setBuFilter] = useState('all')
 
@@ -46,8 +47,35 @@ export default function JobCalendar() {
       navigate('/')
       return
     }
-    fetchJobs()
-  }, [companyId, navigate, fetchJobs])
+    // Lightweight direct fetch — only fields needed for calendar
+    const fetchCalendarJobs = async () => {
+      setLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('id, job_title, status, start_date, business_unit, customer_name, customer:customers!customer_id(id, name)')
+          .eq('company_id', companyId)
+          .not('start_date', 'is', null)
+          .order('start_date', { ascending: false })
+        if (!error && data) {
+          setJobs(data)
+        } else if (error) {
+          console.warn('[JobCalendar] Join failed, falling back:', error.message)
+          const { data: d2 } = await supabase
+            .from('jobs')
+            .select('id, job_title, status, start_date, business_unit, customer_name')
+            .eq('company_id', companyId)
+            .not('start_date', 'is', null)
+            .order('start_date', { ascending: false })
+          if (d2) setJobs(d2)
+        }
+      } catch (e) {
+        console.error('[JobCalendar] fetch error:', e)
+      }
+      setLoading(false)
+    }
+    fetchCalendarJobs()
+  }, [companyId, navigate])
 
   // Auto-navigate to the latest month that has jobs (only once on load)
   useEffect(() => {
@@ -316,6 +344,14 @@ export default function JobCalendar() {
         ))}
       </div>
 
+      {/* Loading indicator */}
+      {loading && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: theme.textMuted }}>
+          <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
+          <span style={{ fontSize: '13px' }}>Loading jobs...</span>
+        </div>
+      )}
+
       {/* Calendar Grid */}
       <div style={{
         backgroundColor: theme.bgCard,
@@ -388,9 +424,9 @@ export default function JobCalendar() {
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
                           }}
-                          title={job.job_title || job.customer?.name || 'Untitled'}
+                          title={job.job_title || job.customer?.name || job.customer_name || 'Untitled'}
                         >
-                          {job.job_title || job.customer?.name || 'Untitled'}
+                          {job.job_title || job.customer?.name || job.customer_name || 'Untitled'}
                         </div>
                       ))}
                       {dayJobs.length > 3 && (
