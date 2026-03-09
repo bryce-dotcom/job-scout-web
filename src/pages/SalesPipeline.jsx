@@ -132,7 +132,7 @@ export default function SalesPipeline() {
   const [buFilter, setBuFilter] = useState('all')
 
   // Date range filter for delivery stages
-  const [dateRange, setDateRange] = useState('ytd')
+  const [dateRange, setDateRange] = useState('all')
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -304,15 +304,16 @@ export default function SalesPipeline() {
       const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)'
       const rangeCutoff = getDateCutoff(dateRange)
 
-      // Active jobs: always fetch (small count), apply date filter only to Completed
+      // Active jobs: always fetch ALL regardless of date range (they're current work)
       let activeQuery = supabase.from('jobs').select(jobSelect)
         .eq('company_id', companyId)
         .in('status', ['Scheduled', 'Needs scheduling', 'In Progress'])
-      if (rangeCutoff) activeQuery = activeQuery.gte('start_date', rangeCutoff)
+        .limit(5000)
 
       let completedQuery = supabase.from('jobs').select(jobSelect)
         .eq('company_id', companyId)
         .eq('status', 'Completed')
+        .limit(5000)
       if (rangeCutoff) completedQuery = completedQuery.gte('start_date', rangeCutoff)
 
       const [activeRes, completedRes] = await Promise.all([activeQuery, completedQuery])
