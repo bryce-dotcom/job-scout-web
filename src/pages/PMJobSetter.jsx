@@ -60,11 +60,15 @@ export default function PMJobSetter() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
+  const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
   const businessUnits = useStore((state) => state.businessUnits)
   const fetchSettings = useStore((state) => state.fetchSettings)
   const createJobSection = useStore((state) => state.createJobSection)
   const updateJobSection = useStore((state) => state.updateJobSection)
+
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Manager' || user?.is_admin ||
+    user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin'
 
   // Data-driven statuses from store
   const storeJobStatuses = useStore((state) => state.jobStatuses)
@@ -120,6 +124,7 @@ export default function PMJobSetter() {
 
   // Filters
   const [filterPM, setFilterPM] = useState('')
+  const [pmFilterLocked, setPmFilterLocked] = useState(false)
   const [filterBusinessUnit, setFilterBusinessUnit] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [dateRange, setDateRange] = useState('all')
@@ -180,6 +185,14 @@ export default function PMJobSetter() {
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
+
+  // Non-admins: lock PM filter to their own ID
+  useEffect(() => {
+    if (!isAdmin && user?.id && !pmFilterLocked) {
+      setFilterPM(String(user.id))
+      setPmFilterLocked(true)
+    }
+  }, [isAdmin, user?.id, pmFilterLocked])
 
   // Fetch data
   const fetchData = async () => {
@@ -420,8 +433,10 @@ export default function PMJobSetter() {
       }
     }
 
-    if (filterPM) {
-      filtered = filtered.filter(j => j.pm_id === parseInt(filterPM))
+    // Non-admins always filter to their own jobs
+    const effectivePM = !isAdmin && user?.id ? String(user.id) : filterPM
+    if (effectivePM) {
+      filtered = filtered.filter(j => j.pm_id === parseInt(effectivePM))
     }
     if (filterBusinessUnit) {
       filtered = filtered.filter(j => j.business_unit === filterBusinessUnit)
@@ -1478,17 +1493,19 @@ export default function PMJobSetter() {
             </div>
           )}
 
-          {/* PM Filter */}
-          <select
-            value={filterPM}
-            onChange={(e) => setFilterPM(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
-          >
-            <option value="">All PMs</option>
-            {projectManagers.map(pm => (
-              <option key={pm.id} value={pm.id}>{pm.name}</option>
-            ))}
-          </select>
+          {/* PM Filter (admin can change, non-admin locked to self) */}
+          {isAdmin && (
+            <select
+              value={filterPM}
+              onChange={(e) => setFilterPM(e.target.value)}
+              style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
+            >
+              <option value="">All PMs</option>
+              {projectManagers.map(pm => (
+                <option key={pm.id} value={pm.id}>{pm.name}</option>
+              ))}
+            </select>
+          )}
 
           {/* Business Unit Filter */}
           <select
@@ -1574,24 +1591,26 @@ export default function PMJobSetter() {
             <RefreshCw size={16} />
           </button>
 
-          <button
-            onClick={openSettingsModal}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '10px',
-              minWidth: '44px',
-              minHeight: '44px',
-              backgroundColor: 'transparent',
-              border: `1px solid ${theme.border}`,
-              color: theme.textSecondary,
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
-            <Settings size={16} />
-          </button>
+          {isAdmin && (
+            <button
+              onClick={openSettingsModal}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '10px',
+                minWidth: '44px',
+                minHeight: '44px',
+                backgroundColor: 'transparent',
+                border: `1px solid ${theme.border}`,
+                color: theme.textSecondary,
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              <Settings size={16} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1650,21 +1669,23 @@ export default function PMJobSetter() {
               <p style={{ fontSize: '14px', color: theme.textSecondary, margin: '0 0 12px' }}>
                 No job statuses configured
               </p>
-              <button
-                onClick={openSettingsModal}
-                style={{
-                  padding: '10px 16px',
-                  backgroundColor: theme.accent,
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  minHeight: '44px'
-                }}
-              >
-                Configure Statuses
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={openSettingsModal}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    minHeight: '44px'
+                  }}
+                >
+                  Configure Statuses
+                </button>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
