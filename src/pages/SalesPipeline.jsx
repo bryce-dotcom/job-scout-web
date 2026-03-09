@@ -132,7 +132,7 @@ export default function SalesPipeline() {
   const [buFilter, setBuFilter] = useState('all')
 
   // Date range filter for delivery stages
-  const [dateRange, setDateRange] = useState('all')
+  const [dateRange, setDateRange] = useState('mtd')
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -234,6 +234,23 @@ export default function SalesPipeline() {
     })
   }
 
+  // Attach quotes data to leads (best quote_amount wins)
+  const attachQuotes = (normalized, quotesData) => {
+    if (!quotesData?.length) return
+    const quotesByLeadId = {}
+    quotesData.forEach(q => {
+      const amt = parseFloat(q.quote_amount) || 0
+      if (!quotesByLeadId[q.lead_id] || amt > quotesByLeadId[q.lead_id]) {
+        quotesByLeadId[q.lead_id] = amt
+      }
+    })
+    normalized.forEach(lead => {
+      if (quotesByLeadId[lead.id]) {
+        lead._quoteTotal = quotesByLeadId[lead.id]
+      }
+    })
+  }
+
   // Fetch pipeline leads — cache-first, then refresh from network
   const fetchPipelineLeads = async (background = false) => {
     if (!companyId) return
@@ -293,9 +310,28 @@ export default function SalesPipeline() {
       try {
         const { data: jobsData } = await supabase
           .from('jobs')
-          .select('id, lead_id, job_id, status, contract_amount, assigned_team, invoice_status')
+          .select('id, lead_id, job_id, status, job_total, assigned_team, invoice_status')
           .in('lead_id', deliveryLeadIds)
         attachJobs(normalized, jobsData)
+      } catch (e) { /* non-critical */ }
+    }
+
+    // Fetch quote totals for all leads
+    const allLeadIds = normalized.map(l => l.id).filter(id => typeof id === 'number' || (typeof id === 'string' && !id.startsWith('job-')))
+    if (allLeadIds.length > 0) {
+      try {
+        // Fetch in batches if needed (PostgREST IN limit)
+        const batchSize = 200
+        const allQuotes = []
+        for (let i = 0; i < allLeadIds.length; i += batchSize) {
+          const batch = allLeadIds.slice(i, i + batchSize)
+          const { data: quotesData } = await supabase
+            .from('quotes')
+            .select('lead_id, quote_amount')
+            .in('lead_id', batch)
+          if (quotesData) allQuotes.push(...quotesData)
+        }
+        attachQuotes(normalized, allQuotes)
       } catch (e) { /* non-critical */ }
     }
 
@@ -402,9 +438,17 @@ export default function SalesPipeline() {
     return filteredPipelineLeads.filter(l => l.status === stageId)
   }
 
+  // Get effective dollar amount for a lead (prefer quote total > job total > lead quote_amount)
+  const getLeadAmount = (l) => {
+    if (l._quoteTotal > 0) return l._quoteTotal
+    const jobAmount = parseFloat(l.jobs?.[0]?.job_total) || 0
+    if (jobAmount > 0) return jobAmount
+    return parseFloat(l.quote_amount) || 0
+  }
+
   // Get stage value
   const getStageValue = (stageId) => {
-    return getLeadsForStage(stageId).reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)
+    return getLeadsForStage(stageId).reduce((sum, l) => sum + getLeadAmount(l), 0)
   }
 
   // Check if appointment is today
@@ -638,33 +682,35 @@ export default function SalesPipeline() {
   }
 
   // Calculate all stats (memoized — must be before any early returns)
+  // Uses filteredPipelineLeads so stats match what's visible on screen (owner/BU filters apply)
   const statsData = useMemo(() => {
     const stageMap = new Map(stages.map(s => [s.id, s]))
-    const activeLeads = pipelineLeads.filter(l => { const s = stageMap.get(l.status); return s && !s.isWon && !s.isLost && !s.isDelivery && !s.isClosed })
-    const wonLeadsList = pipelineLeads.filter(l => l.status === 'Won')
-    const lostLeadsList = pipelineLeads.filter(l => l.status === 'Lost')
-    const deliveryLeads = pipelineLeads.filter(l => stageMap.get(l.status)?.isDelivery)
+    const leads = filteredPipelineLeads
+    const activeLeads = leads.filter(l => { const s = stageMap.get(l.status); return s && !s.isWon && !s.isLost && !s.isDelivery && !s.isClosed })
+    const wonLeadsList = leads.filter(l => l.status === 'Won')
+    const lostLeadsList = leads.filter(l => l.status === 'Lost')
+    const deliveryLeads = leads.filter(l => stageMap.get(l.status)?.isDelivery)
     const today = new Date().toDateString()
-    const leadsWithAppointments = pipelineLeads.filter(l => l.appointment_time)
+    const leadsWithAppointments = leads.filter(l => l.appointment_time)
     const todayAppointments = leadsWithAppointments.filter(l => new Date(l.appointment_time).toDateString() === today)
-    const sumAmount = (arr) => arr.reduce((sum, l) => sum + (parseFloat(l.quote_amount) || 0), 0)
+    const sumAmount = (arr) => arr.reduce((sum, l) => sum + getLeadAmount(l), 0)
 
     return {
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
       lost: { value: lostLeadsList.length, label: 'Lost', color: '#64748b' },
-      totalValue: { value: formatCurrency(sumAmount(pipelineLeads)), label: 'Value', color: null, isFormatted: true },
+      totalValue: { value: formatCurrency(sumAmount(leads)), label: 'Pipeline Value', color: null, isFormatted: true },
       wonValue: { value: formatCurrency(sumAmount(wonLeadsList)), label: 'Won Value', color: '#22c55e', isFormatted: true },
       appointments: { value: leadsWithAppointments.length, label: 'Appts', color: '#3b82f6' },
       todayAppointments: { value: todayAppointments.length, label: 'Today', color: '#16a34a' },
-      quoteSent: { value: pipelineLeads.filter(l => l.status === 'Quote Sent').length, label: 'Quotes', color: '#8b5cf6' },
-      jobScheduled: { value: pipelineLeads.filter(l => l.status === 'Job Scheduled').length, label: 'Scheduled', color: '#0ea5e9' },
-      inProgress: { value: pipelineLeads.filter(l => l.status === 'In Progress').length, label: 'In Progress', color: '#f97316' },
-      completed: { value: pipelineLeads.filter(l => l.status === 'Job Complete').length, label: 'Complete', color: '#22c55e' },
-      invoiced: { value: pipelineLeads.filter(l => l.status === 'Invoiced').length, label: 'Invoiced', color: '#8b5cf6' },
+      quoteSent: { value: leads.filter(l => l.status === 'Quote Sent').length, label: 'Quotes', color: '#8b5cf6' },
+      jobScheduled: { value: leads.filter(l => l.status === 'Job Scheduled').length, label: 'Scheduled', color: '#0ea5e9' },
+      inProgress: { value: leads.filter(l => l.status === 'In Progress').length, label: 'In Progress', color: '#f97316' },
+      completed: { value: leads.filter(l => l.status === 'Job Complete').length, label: 'Complete', color: '#22c55e' },
+      invoiced: { value: leads.filter(l => l.status === 'Invoiced').length, label: 'Invoiced', color: '#8b5cf6' },
       deliveryValue: { value: formatCurrency(sumAmount(deliveryLeads)), label: 'Delivery $', color: '#0ea5e9', isFormatted: true }
     }
-  }, [pipelineLeads, stages])
+  }, [filteredPipelineLeads, stages])
 
   if (loading && pipelineLeads.length === 0) {
     return (
@@ -1108,9 +1154,9 @@ export default function SalesPipeline() {
                               <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', backgroundColor: sc + '26', color: sc, fontWeight: '500' }}>
                                 {lead.status}
                               </span>
-                              {parseFloat(lead.quote_amount) > 0 && (
+                              {getLeadAmount(lead) > 0 && (
                                 <span style={{ fontSize: '14px', fontWeight: '700', color: '#22c55e' }}>
-                                  {formatCurrency(lead.quote_amount)}
+                                  {formatCurrency(getLeadAmount(lead))}
                                 </span>
                               )}
                             </div>
@@ -1179,9 +1225,9 @@ export default function SalesPipeline() {
                                         <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: '#f97316' + '20', color: '#f97316', fontWeight: '600', flexShrink: 0 }}>Job</span>
                                       )}
                                     </div>
-                                    {(job ? parseFloat(job.contract_amount) > 0 : parseFloat(lead.quote_amount) > 0) && (
+                                    {getLeadAmount(lead) > 0 && (
                                       <span style={{ fontSize: '14px', fontWeight: '700', color: '#22c55e' }}>
-                                        {formatCurrency(job?.contract_amount || lead.quote_amount)}
+                                        {formatCurrency(getLeadAmount(lead))}
                                       </span>
                                     )}
                                   </div>
@@ -1221,7 +1267,14 @@ export default function SalesPipeline() {
               </div>
               <span style={{ fontSize: '12px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
               <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
-              <span style={{ fontSize: '11px', color: theme.textMuted }}>{pipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed }).length} leads</span>
+              {(() => {
+                const salesLeads = filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed })
+                const salesTotal = salesLeads.reduce((sum, l) => sum + getLeadAmount(l), 0)
+                return <>
+                  <span style={{ fontSize: '12px', fontWeight: '700', color: '#16a34a' }}>{formatCurrency(salesTotal)}</span>
+                  <span style={{ fontSize: '11px', color: theme.textMuted }}>{salesLeads.length} leads</span>
+                </>
+              })()}
             </div>
 
             {/* Stage Headers Strip - always visible */}
@@ -1253,9 +1306,9 @@ export default function SalesPipeline() {
                         {stageLeads.length}
                       </span>
                     </div>
-                    {stageValue > 0 && (
-                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '1px' }}>{formatCurrency(stageValue)}</div>
-                    )}
+                    <div style={{ fontSize: '12px', color: stageValue > 0 ? '#16a34a' : theme.textMuted, fontWeight: stageValue > 0 ? '600' : '400', marginTop: '2px' }}>
+                      {formatCurrency(stageValue)}
+                    </div>
                   </div>
                 )
               })}
@@ -1314,8 +1367,8 @@ export default function SalesPipeline() {
                                 {lead.phone && <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted }}><Phone size={10} /><span>{lead.phone}</span></div>}
                                 {lead.email && <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: theme.textMuted, overflow: 'hidden' }}><Mail size={10} /></div>}
                               </div>
-                              {parseFloat(lead.quote_amount) > 0 && (
-                                <div style={{ color: '#16a34a', fontSize: '12px', fontWeight: '600' }}>{formatCurrency(lead.quote_amount)}</div>
+                              {getLeadAmount(lead) > 0 && (
+                                <div style={{ color: '#16a34a', fontSize: '12px', fontWeight: '600' }}>{formatCurrency(getLeadAmount(lead))}</div>
                               )}
                               {lead.appointment_time && (
                                 <div style={{ marginTop: '3px', padding: '2px 5px', backgroundColor: isToday(lead.appointment_time) ? '#dcfce7' : '#f0fdf4', borderRadius: '4px', fontSize: '10px', color: isToday(lead.appointment_time) ? '#166534' : '#15803d', display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -1375,7 +1428,14 @@ export default function SalesPipeline() {
               <span style={{ fontSize: '12px', fontWeight: '700', color: '#0ea5e9', textTransform: 'uppercase', letterSpacing: '1px' }}>Delivery Pipeline</span>
               <span style={{ fontSize: '10px', color: theme.textMuted }}>Auto-synced from jobs</span>
               <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
-              <span style={{ fontSize: '11px', color: theme.textMuted }}>{pipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) }).length} deals</span>
+              {(() => {
+                const deliveryDeals = filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) })
+                const deliveryTotal = deliveryDeals.reduce((sum, l) => sum + getLeadAmount(l), 0)
+                return <>
+                  <span style={{ fontSize: '12px', fontWeight: '700', color: '#16a34a' }}>{formatCurrency(deliveryTotal)}</span>
+                  <span style={{ fontSize: '11px', color: theme.textMuted }}>{deliveryDeals.length} deals</span>
+                </>
+              })()}
             </div>
 
             {/* Stage Headers Strip - always visible */}
@@ -1402,9 +1462,9 @@ export default function SalesPipeline() {
                         {stageLeads.length}
                       </span>
                     </div>
-                    {stageValue > 0 && (
-                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '1px' }}>{formatCurrency(stageValue)}</div>
-                    )}
+                    <div style={{ fontSize: '12px', color: stageValue > 0 ? '#16a34a' : theme.textMuted, fontWeight: stageValue > 0 ? '600' : '400', marginTop: '2px' }}>
+                      {formatCurrency(stageValue)}
+                    </div>
                   </div>
                 )
               })}
@@ -1449,8 +1509,8 @@ export default function SalesPipeline() {
                               </div>
                               {job ? (
                                 <div style={{ fontSize: '10px', color: theme.textSecondary, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '3px' }}>
-                                  {parseFloat(job.contract_amount) > 0 && (
-                                    <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '12px' }}>{formatCurrency(job.contract_amount)}</div>
+                                  {parseFloat(job.job_total) > 0 && (
+                                    <div style={{ color: '#16a34a', fontWeight: '600', fontSize: '12px' }}>{formatCurrency(job.job_total)}</div>
                                   )}
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                                     <Briefcase size={9} /><span>{job.job_id}</span>
@@ -1473,8 +1533,8 @@ export default function SalesPipeline() {
                                   )}
                                 </div>
                               ) : (
-                                parseFloat(lead.quote_amount) > 0 && (
-                                  <div style={{ color: '#16a34a', fontSize: '12px', fontWeight: '600', marginTop: '3px' }}>{formatCurrency(lead.quote_amount)}</div>
+                                getLeadAmount(lead) > 0 && (
+                                  <div style={{ color: '#16a34a', fontSize: '12px', fontWeight: '600', marginTop: '3px' }}>{formatCurrency(getLeadAmount(lead))}</div>
                                 )
                               )}
                               {lead.lead_owner && (
@@ -1654,11 +1714,11 @@ export default function SalesPipeline() {
                   <div style={{ fontSize: '13px', color: theme.text }}>{selectedLead.source_employee.name}</div>
                 </div>
               )}
-              {parseFloat(selectedLead.quote_amount) > 0 && (
+              {getLeadAmount(selectedLead) > 0 && (
                 <div>
                   <div style={{ fontSize: '11px', color: theme.textMuted }}>Value</div>
                   <div style={{ fontSize: '13px', color: '#16a34a', fontWeight: '600' }}>
-                    {formatCurrency(selectedLead.quote_amount)}
+                    {formatCurrency(getLeadAmount(selectedLead))}
                   </div>
                 </div>
               )}
@@ -1790,6 +1850,49 @@ export default function SalesPipeline() {
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+              {/* Stats Configuration - moved to top since it's what users want to change most */}
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '0 0 4px' }}>
+                  Summary Stats
+                </h3>
+                <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px' }}>
+                  Toggle which summary numbers show in the top-right bar. Column totals always show on each stage.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {availableStats.map(stat => {
+                    const isSelected = statsForm.includes(stat.id)
+                    return (
+                      <button
+                        key={stat.id}
+                        onClick={() => toggleStat(stat.id)}
+                        style={{
+                          padding: '6px 12px',
+                          backgroundColor: isSelected ? (stat.color || theme.accent) + '20' : theme.bg,
+                          border: `1px solid ${isSelected ? (stat.color || theme.accent) : theme.border}`,
+                          borderRadius: '16px',
+                          color: isSelected ? (stat.color || theme.accent) : theme.textSecondary,
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: isSelected ? '600' : '400',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        {stat.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Stage Management */}
+              <div style={{ paddingTop: '16px', borderTop: `1px solid ${theme.border}` }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '0 0 4px' }}>
+                  Pipeline Stages
+                </h3>
+                <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px' }}>
+                  Rename, reorder, or add custom sales stages. System stages (Won, Lost, Delivery) cannot be changed.
+                </p>
+              </div>
               {stageForm.map((stage, index) => {
                 const lastActiveIndex = stageForm.findIndex(s => s.isWon || s.isLost) - 1
                 const canMoveUp = index > 0 && !stage.isWon && !stage.isLost
@@ -1909,40 +2012,6 @@ export default function SalesPipeline() {
                 <Plus size={16} />
                 Add Stage
               </button>
-
-              {/* Stats Configuration */}
-              <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${theme.border}` }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '0 0 12px' }}>
-                  Header Stats
-                </h3>
-                <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px' }}>
-                  Choose which stats to display at the top of the pipeline
-                </p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {availableStats.map(stat => {
-                    const isSelected = statsForm.includes(stat.id)
-                    return (
-                      <button
-                        key={stat.id}
-                        onClick={() => toggleStat(stat.id)}
-                        style={{
-                          padding: '6px 12px',
-                          backgroundColor: isSelected ? (stat.color || theme.accent) + '20' : theme.bg,
-                          border: `1px solid ${isSelected ? (stat.color || theme.accent) : theme.border}`,
-                          borderRadius: '16px',
-                          color: isSelected ? (stat.color || theme.accent) : theme.textSecondary,
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          fontWeight: isSelected ? '600' : '400',
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        {stat.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
 
               <button
                 onClick={resetToDefaults}
