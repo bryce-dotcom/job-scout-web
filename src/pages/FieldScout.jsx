@@ -38,11 +38,15 @@ export default function FieldScout() {
 
   const currentEmployee = employees.find(e => e.email === user?.email)
 
-  // Today's jobs
+  // Today's jobs — only show jobs assigned to this user (or unassigned)
   const todayStr = new Date().toDateString()
+  const employeeName = currentEmployee?.name || ''
   const todaysJobs = jobs.filter(j => {
     if (!j.start_date) return false
-    return new Date(j.start_date).toDateString() === todayStr
+    if (new Date(j.start_date).toDateString() !== todayStr) return false
+    // Show if assigned to this employee, or unassigned
+    if (!j.assigned_team) return true
+    return j.assigned_team.toLowerCase().includes(employeeName.toLowerCase())
   })
 
   // Sort: working first, then upcoming (Scheduled/In Progress), then completed
