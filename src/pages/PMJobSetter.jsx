@@ -9,7 +9,7 @@ import {
   RefreshCw, Filter, Search, Settings, Plus, Briefcase, CheckCircle2,
   AlertCircle, PauseCircle, PlayCircle, ClipboardList, CalendarPlus, Trash2,
   LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2,
-  Palette, Edit2, Layers, ChevronUp, MessageSquare, Mail, Phone
+  Palette, Edit2, Layers, ChevronUp, MessageSquare, Mail, Phone, ExternalLink
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 
@@ -122,9 +122,13 @@ export default function PMJobSetter() {
   const [filterPM, setFilterPM] = useState('')
   const [filterBusinessUnit, setFilterBusinessUnit] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [dateRange, setDateRange] = useState('all')
+  const [customDateFrom, setCustomDateFrom] = useState('')
+  const [customDateTo, setCustomDateTo] = useState('')
 
   // View Mode
   const [viewMode, setViewMode] = useState('kanban')
+  const [calendarViewMode, setCalendarViewMode] = useState('month') // 'week' or 'month'
   const [ganttGroupBy, setGanttGroupBy] = useState('pm')
   const [zoomLevel, setZoomLevel] = useState('week')
   const [ganttStartDate, setGanttStartDate] = useState(new Date())
@@ -150,6 +154,9 @@ export default function PMJobSetter() {
   })
   const [scheduleError, setScheduleError] = useState(null)
   const [scheduleSaving, setScheduleSaving] = useState(false)
+
+  // Job detail panel
+  const [detailJob, setDetailJob] = useState(null)
 
   // Section form
   const [sectionForm, setSectionForm] = useState({
@@ -369,7 +376,34 @@ export default function PMJobSetter() {
 
   const projectManagers = getProjectManagers()
 
-  // Filter jobs
+  // Compute date range cutoff
+  const getDateCutoff = () => {
+    const now = new Date()
+    switch (dateRange) {
+      case 'mtd': return new Date(now.getFullYear(), now.getMonth(), 1)
+      case 'qtd': {
+        const qMonth = Math.floor(now.getMonth() / 3) * 3
+        return new Date(now.getFullYear(), qMonth, 1)
+      }
+      case 'ytd': return new Date(now.getFullYear(), 0, 1)
+      case 'last30': { const d = new Date(); d.setDate(d.getDate() - 30); return d }
+      case 'last90': { const d = new Date(); d.setDate(d.getDate() - 90); return d }
+      case 'custom': return customDateFrom ? new Date(customDateFrom) : null
+      case 'all': return null
+      default: return null
+    }
+  }
+
+  const getDateCutoffEnd = () => {
+    if (dateRange === 'custom' && customDateTo) {
+      const d = new Date(customDateTo)
+      d.setHours(23, 59, 59, 999)
+      return d
+    }
+    return null
+  }
+
+  // Filter jobs for kanban (no date filtering — kanban always shows all jobs)
   const getFilteredJobs = () => {
     let filtered = jobs
 
@@ -403,9 +437,32 @@ export default function PMJobSetter() {
   }
 
   // Get jobs by status, sorted by start_date (soonest first, unscheduled last)
+  // Jobs with start_date today+ that aren't in a terminal status get placed in "Scheduled"
   const getJobsByStatus = (statusId) => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    // Find the Scheduled column (case-insensitive)
+    const scheduledStatus = jobStatuses.find(s => s.name.toLowerCase() === 'scheduled')
+    const scheduledStatusId = scheduledStatus?.id
+
     return getFilteredJobs()
-      .filter(j => j.status === statusId)
+      .filter(j => {
+        // Only reroute jobs if we have a Scheduled column configured
+        if (!scheduledStatusId) return j.status === statusId
+
+        const hasScheduledDate = j.start_date && j.start_date.split('T')[0] >= todayStr
+        const isTerminal = ['Complete', 'Completed', 'Verified', 'Cancelled'].includes(j.status)
+
+        if (statusId === scheduledStatusId) {
+          // Scheduled column: jobs with status=Scheduled + jobs with future dates (not terminal)
+          if (j.status === statusId) return true
+          return hasScheduledDate && !isTerminal
+        } else {
+          // Other columns: show jobs with this status, but move future-dated ones to Scheduled
+          if (j.status !== statusId) return false
+          if (hasScheduledDate && !isTerminal) return false // this job goes to Scheduled instead
+          return true
+        }
+      })
       .sort((a, b) => {
         if (!a.start_date && !b.start_date) return 0
         if (!a.start_date) return 1
@@ -521,6 +578,84 @@ export default function PMJobSetter() {
       const jobHour = jobDt.getHours()
       return jobHour === hour || (jobHour === 0 && hour === 8)
     })
+  }
+
+  // Month calendar helpers
+  const getMonthDays = () => {
+    const year = currentDate.getFullYear()
+    const month = currentDate.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const startPad = firstDay.getDay()
+    const days = []
+    for (let i = 0; i < startPad; i++) days.push(null)
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      days.push(new Date(year, month, d))
+    }
+    return days
+  }
+
+  const prevMonth = () => {
+    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+  }
+
+  const nextMonth = () => {
+    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+  }
+
+  // Get jobs for a specific calendar date (applies date range filter for calendar)
+  const getJobsForDate = (date) => {
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    // Check if this date falls within the selected date range
+    const cutoff = getDateCutoff()
+    const cutoffEnd = getDateCutoffEnd()
+    if (cutoff && date < cutoff) return []
+    if (cutoffEnd && date > cutoffEnd) return []
+
+    return getFilteredJobs().filter(job => {
+      if (!job.start_date) return false
+      const jobDt = new Date(job.start_date)
+      const jobDateStr = `${jobDt.getFullYear()}-${String(jobDt.getMonth() + 1).padStart(2, '0')}-${String(jobDt.getDate()).padStart(2, '0')}`
+      return jobDateStr === dateStr
+    })
+  }
+
+  const handleMonthDayDrop = async (e, date) => {
+    e.preventDefault()
+    setDragOverSlot(null)
+
+    const startTime = new Date(date)
+    startTime.setHours(8, 0, 0, 0)
+
+    if (draggedJob) {
+      setScheduleJob(draggedJob)
+      setScheduleForm({
+        start_time: formatDateTimeLocal(startTime),
+        duration_hours: draggedJob.allotted_time_hours || 4,
+        pm_id: draggedJob.pm_id || '',
+        notes: draggedJob.notes || '',
+        sendText: false,
+        sendEmail: false,
+        phone: draggedJob.customer?.phone || '',
+        email: draggedJob.customer?.email || ''
+      })
+      setScheduleError(null)
+      setShowScheduleModal(true)
+      setDraggedJob(null)
+      return
+    }
+
+    if (!draggedSection) return
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    await supabase
+      .from('job_sections')
+      .update({
+        scheduled_date: dateStr,
+        start_time: startTime.toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', draggedSection.id)
+    await fetchData()
   }
 
   const isToday = (date) => {
@@ -1380,6 +1515,46 @@ export default function PMJobSetter() {
             />
           </div>
 
+          {/* Date Range Filter (controls calendar view) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: theme.bg, borderRadius: '8px', padding: '3px', border: `1px solid ${theme.border}` }}>
+            {[
+              { id: 'mtd', label: 'MTD' },
+              { id: 'qtd', label: 'QTD' },
+              { id: 'ytd', label: 'YTD' },
+              { id: 'last90', label: '90d' },
+              { id: 'all', label: 'All' },
+              { id: 'custom', label: 'Custom' }
+            ].map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setDateRange(opt.id)}
+                style={{
+                  padding: '5px 8px',
+                  fontSize: '11px',
+                  fontWeight: dateRange === opt.id ? '600' : '400',
+                  backgroundColor: dateRange === opt.id ? theme.bgCard : 'transparent',
+                  color: dateRange === opt.id ? theme.accent : theme.textMuted,
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  minHeight: '28px',
+                  boxShadow: dateRange === opt.id ? '0 1px 2px rgba(0,0,0,0.08)' : 'none'
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {dateRange === 'custom' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input type="date" value={customDateFrom} onChange={(e) => setCustomDateFrom(e.target.value)}
+                style={{ ...inputStyle, width: '130px', padding: '6px 8px', minHeight: '36px', fontSize: '12px' }} />
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>to</span>
+              <input type="date" value={customDateTo} onChange={(e) => setCustomDateTo(e.target.value)}
+                style={{ ...inputStyle, width: '130px', padding: '6px 8px', minHeight: '36px', fontSize: '12px' }} />
+            </div>
+          )}
+
           <button
             onClick={fetchData}
             style={{
@@ -1770,7 +1945,7 @@ export default function PMJobSetter() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
-                onClick={prevWeek}
+                onClick={calendarViewMode === 'month' ? prevMonth : prevWeek}
                 style={{
                   padding: '8px',
                   backgroundColor: 'transparent',
@@ -1804,7 +1979,7 @@ export default function PMJobSetter() {
                 Today
               </button>
               <button
-                onClick={nextWeek}
+                onClick={calendarViewMode === 'month' ? nextMonth : nextWeek}
                 style={{
                   padding: '8px',
                   backgroundColor: 'transparent',
@@ -1823,7 +1998,31 @@ export default function PMJobSetter() {
               </button>
             </div>
             <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
-              {weekDays[0].toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              {calendarViewMode === 'month'
+                ? currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                : weekDays[0].toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </div>
+            {/* Week/Month toggle */}
+            <div style={{ display: 'flex', backgroundColor: theme.bg, borderRadius: '6px', padding: '2px', border: `1px solid ${theme.border}` }}>
+              {[{ id: 'month', label: 'Month' }, { id: 'week', label: 'Week' }].map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => setCalendarViewMode(v.id)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: calendarViewMode === v.id ? '600' : '400',
+                    backgroundColor: calendarViewMode === v.id ? theme.bgCard : 'transparent',
+                    color: calendarViewMode === v.id ? theme.accent : theme.textMuted,
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    minHeight: '28px'
+                  }}
+                >
+                  {v.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -1867,166 +2066,249 @@ export default function PMJobSetter() {
 
           {/* Calendar Grid */}
           <div style={{ flex: 1, overflow: 'auto' }}>
-            <div style={{ display: 'flex', minWidth: '700px' }}>
-              {/* Time Column */}
-              <div style={{ width: '60px', flexShrink: 0 }}>
-                <div style={{ height: '40px', borderBottom: `1px solid ${theme.border}` }} />
-                {hourSlots.map(hour => (
-                  <div
-                    key={hour}
-                    style={{
-                      height: '60px',
-                      padding: '4px 8px',
-                      fontSize: '10px',
-                      color: theme.textMuted,
-                      borderBottom: `1px solid ${theme.border}`,
-                      textAlign: 'right'
-                    }}
-                  >
-                    {formatTime(hour)}
-                  </div>
-                ))}
-              </div>
-
-              {/* Day Columns */}
-              {weekDays.map(day => (
-                <div
-                  key={day.toISOString()}
-                  style={{
-                    flex: 1,
-                    minWidth: '100px',
-                    borderLeft: `1px solid ${theme.border}`
-                  }}
-                >
-                  {/* Day Header */}
-                  <div style={{
-                    height: '40px',
-                    padding: '8px',
-                    textAlign: 'center',
-                    borderBottom: `1px solid ${theme.border}`,
-                    backgroundColor: isToday(day) ? theme.accentBg : 'transparent'
-                  }}>
-                    <div style={{ fontSize: '10px', color: theme.textMuted }}>
-                      {day.toLocaleDateString('en-US', { weekday: 'short' })}
+            {calendarViewMode === 'month' ? (
+              /* ===== MONTH VIEW ===== */
+              <div>
+                {/* Day-of-week headers */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${theme.border}` }}>
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                    <div key={d} style={{ padding: '8px 4px', textAlign: 'center', fontSize: '11px', fontWeight: '600', color: theme.textMuted }}>
+                      {d}
                     </div>
-                    <div style={{
-                      fontSize: '14px',
-                      fontWeight: isToday(day) ? '700' : '500',
-                      color: isToday(day) ? theme.accent : theme.text
-                    }}>
-                      {day.getDate()}
-                    </div>
-                  </div>
-
-                  {/* Hour Slots */}
-                  {hourSlots.map(hour => {
-                    const slotSections = getSectionsForSlot(day, hour)
-                    const slotJobs = getJobsForSlot(day, hour)
-                    const isOver = dragOverSlot?.date?.toDateString() === day.toDateString() && dragOverSlot?.hour === hour
+                  ))}
+                </div>
+                {/* Day grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                  {getMonthDays().map((day, idx) => {
+                    const dayJobs = day ? getJobsForDate(day) : []
+                    const isDragOver = day && dragOverSlot?.date?.toDateString() === day.toDateString()
 
                     return (
                       <div
-                        key={hour}
-                        onDragOver={(e) => handleSlotDragOver(e, day, hour)}
-                        onDrop={(e) => handleSlotDrop(e, day, hour)}
+                        key={idx}
+                        onDragOver={day ? (e) => { e.preventDefault(); setDragOverSlot({ date: day, hour: 8 }) } : undefined}
+                        onDrop={day ? (e) => handleMonthDayDrop(e, day) : undefined}
                         style={{
-                          height: '60px',
+                          minHeight: '80px',
                           borderBottom: `1px solid ${theme.border}`,
-                          padding: '2px',
-                          backgroundColor: isOver ? theme.accentBg : 'transparent',
+                          borderRight: (idx + 1) % 7 !== 0 ? `1px solid ${theme.border}` : 'none',
+                          padding: '4px',
+                          backgroundColor: !day ? theme.bg : isDragOver ? theme.accentBg : (day && isToday(day) ? 'rgba(90,99,73,0.06)' : 'transparent'),
                           transition: 'background-color 0.15s'
                         }}
                       >
-                        {/* Render jobs (whole-job events) */}
-                        {slotJobs.map(job => {
-                          const calendar = getCalendarForJob(job)
-                          const calColor = calendar?.color || theme.accent
-                          const statusColor = defaultStatusColors[job.status] || theme.accent
-
-                          return (
-                            <div
-                              key={`job-${job.id}`}
-                              draggable
-                              onDragStart={(e) => handleJobDragStart(e, job)}
-                              onDragEnd={handleDragEnd}
-                              onClick={() => navigate(`/jobs/${job.id}`)}
-                              style={{
-                                backgroundColor: `${statusColor}18`,
-                                borderRadius: '4px',
-                                padding: '4px 6px',
-                                marginBottom: '2px',
-                                cursor: 'grab',
-                                fontSize: '10px',
-                                fontWeight: '600',
-                                color: theme.text,
-                                borderLeft: `3px solid ${statusColor}`,
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                position: 'relative'
-                              }}
-                              title={`${job.job_title || 'Untitled Job'} — ${job.customer?.name || ''}${calendar ? ` (${calendar.name})` : ''}`}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <Briefcase size={9} style={{ flexShrink: 0, opacity: 0.7 }} />
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {job.job_title || `Job #${job.id}`}
-                                </span>
-                              </div>
+                        {day && (
+                          <>
+                            <div style={{
+                              fontSize: '12px',
+                              fontWeight: isToday(day) ? '700' : '500',
+                              color: isToday(day) ? theme.accent : theme.text,
+                              marginBottom: '3px'
+                            }}>
+                              {day.getDate()}
                             </div>
-                          )
-                        })}
-                        {/* Render sections */}
-                        {slotSections.map(section => {
-                          const job = jobs.find(j => j.id === section.job_id)
-                          const calendar = job ? getCalendarForJob(job) : null
-                          const statusColor = getSectionStatusColor(section.status)
-                          const calColor = calendar?.color || theme.accent
-
-                          return (
-                            <div
-                              key={section.id}
-                              draggable
-                              onDragStart={(e) => handleSectionDragStart(e, section, job)}
-                              onDragEnd={handleDragEnd}
-                              style={{
-                                backgroundColor: calendar ? `${calColor}15` : statusColor.bg,
-                                borderRadius: '4px',
-                                padding: '4px 6px',
-                                marginBottom: '2px',
-                                cursor: 'grab',
-                                fontSize: '10px',
-                                color: calendar ? calColor : statusColor.text,
-                                fontWeight: '500',
-                                borderLeft: `3px solid ${calColor}`,
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                position: 'relative'
-                              }}
-                              title={`${section.name} - ${job?.job_title || 'Unknown Job'}${calendar ? ` (${calendar.name})` : ''}`}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                {calendar && (
-                                  <div style={{
-                                    width: '6px',
-                                    height: '6px',
-                                    borderRadius: '50%',
-                                    backgroundColor: calColor,
-                                    flexShrink: 0
-                                  }} />
-                                )}
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{section.name}</span>
-                              </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              {dayJobs.slice(0, 4).map(job => {
+                                const statusColor = defaultStatusColors[job.status] || theme.accent
+                                return (
+                                  <div
+                                    key={job.id}
+                                    draggable
+                                    onDragStart={(e) => handleJobDragStart(e, job)}
+                                    onDragEnd={handleDragEnd}
+                                    onClick={() => setDetailJob(job)}
+                                    style={{
+                                      backgroundColor: `${statusColor}18`,
+                                      borderLeft: `3px solid ${statusColor}`,
+                                      borderRadius: '3px',
+                                      padding: '2px 4px',
+                                      cursor: 'grab',
+                                      fontSize: '10px',
+                                      fontWeight: '500',
+                                      color: theme.text,
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis'
+                                    }}
+                                    title={`${job.job_title || 'Untitled'} — ${job.customer?.name || ''}`}
+                                  >
+                                    {job.job_title || `Job #${job.id}`}
+                                  </div>
+                                )
+                              })}
+                              {dayJobs.length > 4 && (
+                                <div style={{ fontSize: '10px', color: theme.textMuted, padding: '1px 4px' }}>
+                                  +{dayJobs.length - 4} more
+                                </div>
+                              )}
                             </div>
-                          )
-                        })}
+                          </>
+                        )}
                       </div>
                     )
                   })}
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              /* ===== WEEK VIEW (existing) ===== */
+              <div style={{ display: 'flex', minWidth: '700px' }}>
+                {/* Time Column */}
+                <div style={{ width: '60px', flexShrink: 0 }}>
+                  <div style={{ height: '40px', borderBottom: `1px solid ${theme.border}` }} />
+                  {hourSlots.map(hour => (
+                    <div
+                      key={hour}
+                      style={{
+                        height: '60px',
+                        padding: '4px 8px',
+                        fontSize: '10px',
+                        color: theme.textMuted,
+                        borderBottom: `1px solid ${theme.border}`,
+                        textAlign: 'right'
+                      }}
+                    >
+                      {formatTime(hour)}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Day Columns */}
+                {weekDays.map(day => (
+                  <div
+                    key={day.toISOString()}
+                    style={{
+                      flex: 1,
+                      minWidth: '100px',
+                      borderLeft: `1px solid ${theme.border}`
+                    }}
+                  >
+                    {/* Day Header */}
+                    <div style={{
+                      height: '40px',
+                      padding: '8px',
+                      textAlign: 'center',
+                      borderBottom: `1px solid ${theme.border}`,
+                      backgroundColor: isToday(day) ? theme.accentBg : 'transparent'
+                    }}>
+                      <div style={{ fontSize: '10px', color: theme.textMuted }}>
+                        {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                      </div>
+                      <div style={{
+                        fontSize: '14px',
+                        fontWeight: isToday(day) ? '700' : '500',
+                        color: isToday(day) ? theme.accent : theme.text
+                      }}>
+                        {day.getDate()}
+                      </div>
+                    </div>
+
+                    {/* Hour Slots */}
+                    {hourSlots.map(hour => {
+                      const slotSections = getSectionsForSlot(day, hour)
+                      const slotJobs = getJobsForSlot(day, hour)
+                      const isOver = dragOverSlot?.date?.toDateString() === day.toDateString() && dragOverSlot?.hour === hour
+
+                      return (
+                        <div
+                          key={hour}
+                          onDragOver={(e) => handleSlotDragOver(e, day, hour)}
+                          onDrop={(e) => handleSlotDrop(e, day, hour)}
+                          style={{
+                            height: '60px',
+                            borderBottom: `1px solid ${theme.border}`,
+                            padding: '2px',
+                            backgroundColor: isOver ? theme.accentBg : 'transparent',
+                            transition: 'background-color 0.15s'
+                          }}
+                        >
+                          {/* Render jobs */}
+                          {slotJobs.map(job => {
+                            const calendar = getCalendarForJob(job)
+                            const statusColor = defaultStatusColors[job.status] || theme.accent
+
+                            return (
+                              <div
+                                key={`job-${job.id}`}
+                                draggable
+                                onDragStart={(e) => handleJobDragStart(e, job)}
+                                onDragEnd={handleDragEnd}
+                                onClick={() => setDetailJob(job)}
+                                style={{
+                                  backgroundColor: `${statusColor}18`,
+                                  borderRadius: '4px',
+                                  padding: '4px 6px',
+                                  marginBottom: '2px',
+                                  cursor: 'grab',
+                                  fontSize: '10px',
+                                  fontWeight: '600',
+                                  color: theme.text,
+                                  borderLeft: `3px solid ${statusColor}`,
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis'
+                                }}
+                                title={`${job.job_title || 'Untitled Job'} — ${job.customer?.name || ''}${calendar ? ` (${calendar.name})` : ''}`}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Briefcase size={9} style={{ flexShrink: 0, opacity: 0.7 }} />
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {job.job_title || `Job #${job.id}`}
+                                  </span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                          {/* Render sections */}
+                          {slotSections.map(section => {
+                            const job = jobs.find(j => j.id === section.job_id)
+                            const calendar = job ? getCalendarForJob(job) : null
+                            const statusColor = getSectionStatusColor(section.status)
+                            const calColor = calendar?.color || theme.accent
+
+                            return (
+                              <div
+                                key={section.id}
+                                draggable
+                                onDragStart={(e) => handleSectionDragStart(e, section, job)}
+                                onDragEnd={handleDragEnd}
+                                style={{
+                                  backgroundColor: calendar ? `${calColor}15` : statusColor.bg,
+                                  borderRadius: '4px',
+                                  padding: '4px 6px',
+                                  marginBottom: '2px',
+                                  cursor: 'grab',
+                                  fontSize: '10px',
+                                  color: calendar ? calColor : statusColor.text,
+                                  fontWeight: '500',
+                                  borderLeft: `3px solid ${calColor}`,
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis'
+                                }}
+                                title={`${section.name} - ${job?.job_title || 'Unknown Job'}${calendar ? ` (${calendar.name})` : ''}`}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  {calendar && (
+                                    <div style={{
+                                      width: '6px',
+                                      height: '6px',
+                                      borderRadius: '50%',
+                                      backgroundColor: calColor,
+                                      flexShrink: 0
+                                    }} />
+                                  )}
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{section.name}</span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2403,6 +2685,230 @@ export default function PMJobSetter() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Job Detail Slide-out Panel */}
+      {detailJob && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }}>
+          {/* Backdrop */}
+          <div
+            onClick={() => setDetailJob(null)}
+            style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }}
+          />
+          {/* Panel */}
+          <div style={{
+            position: 'relative',
+            width: isMobile ? '100%' : '480px',
+            maxWidth: '100%',
+            backgroundColor: theme.bgCard,
+            boxShadow: '-4px 0 20px rgba(0,0,0,0.15)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            {/* Panel Header */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {detailJob.job_title || `Job #${detailJob.id}`}
+              </h2>
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                <button
+                  onClick={() => { setDetailJob(null); navigate(`/jobs/${detailJob.id}`) }}
+                  style={{
+                    padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                    backgroundColor: theme.accent, color: '#fff', border: 'none',
+                    borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                  }}
+                >
+                  <ExternalLink size={12} /> Full View
+                </button>
+                <button
+                  onClick={() => setDetailJob(null)}
+                  style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Panel Body */}
+            <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
+              {/* Status Badge */}
+              <div style={{ marginBottom: '16px' }}>
+                <span style={{
+                  display: 'inline-block',
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  backgroundColor: (defaultStatusColors[detailJob.status] || theme.accent) + '20',
+                  color: defaultStatusColors[detailJob.status] || theme.accent
+                }}>
+                  {detailJob.status}
+                </span>
+              </div>
+
+              {/* Customer */}
+              {(detailJob.customer?.name || detailJob.customer_name) && (
+                <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Customer</div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
+                    {detailJob.customer?.name || detailJob.customer_name}
+                  </div>
+                  {detailJob.customer?.business_name && (
+                    <div style={{ fontSize: '13px', color: theme.textSecondary }}>{detailJob.customer.business_name}</div>
+                  )}
+                  {detailJob.customer?.address && (
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <MapPin size={12} /> {detailJob.customer.address}
+                    </div>
+                  )}
+                  {detailJob.customer?.phone && (
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Phone size={12} /> <a href={`tel:${detailJob.customer.phone}`} style={{ color: theme.accent }}>{detailJob.customer.phone}</a>
+                    </div>
+                  )}
+                  {detailJob.customer?.email && (
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Mail size={12} /> <a href={`mailto:${detailJob.customer.email}`} style={{ color: theme.accent }}>{detailJob.customer.email}</a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Key Details Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                {detailJob.start_date && (
+                  <div style={{ padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Start Date</div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Calendar size={12} /> {new Date(detailJob.start_date).toLocaleDateString()}
+                    </div>
+                  </div>
+                )}
+                {detailJob.end_date && (
+                  <div style={{ padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>End Date</div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Calendar size={12} /> {new Date(detailJob.end_date).toLocaleDateString()}
+                    </div>
+                  </div>
+                )}
+                {detailJob.pm?.name && (
+                  <div style={{ padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Project Manager</div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <User size={12} /> {detailJob.pm.name}
+                    </div>
+                  </div>
+                )}
+                {detailJob.business_unit && (
+                  <div style={{ padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Business Unit</div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Building2 size={12} /> {detailJob.business_unit}
+                    </div>
+                  </div>
+                )}
+                {detailJob.total_amount != null && (
+                  <div style={{ padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Job Amount</div>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#16a34a' }}>
+                      ${parseFloat(detailJob.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                )}
+                {detailJob.allotted_time_hours != null && (
+                  <div style={{ padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Allotted Hours</div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Clock size={12} /> {detailJob.allotted_time_hours}h
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Description / Notes */}
+              {detailJob.notes && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Notes</div>
+                  <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5', whiteSpace: 'pre-wrap', padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    {detailJob.notes}
+                  </div>
+                </div>
+              )}
+              {detailJob.job_description && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</div>
+                  <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5', whiteSpace: 'pre-wrap', padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    {detailJob.job_description}
+                  </div>
+                </div>
+              )}
+
+              {/* Sections */}
+              {(() => {
+                const sections = getSectionsForJob(detailJob.id)
+                if (sections.length === 0) return null
+                return (
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Sections ({sections.length})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {sections.map(section => {
+                        const sc = getSectionStatusColor(section.status)
+                        return (
+                          <div key={section.id} style={{ padding: '10px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: `3px solid ${sc.text}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{section.name}</span>
+                              <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', backgroundColor: sc.bg, color: sc.text, fontWeight: '500' }}>
+                                {section.status}
+                              </span>
+                            </div>
+                            {section.assigned_employee?.name && (
+                              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                                Assigned: {section.assigned_employee.name}
+                              </div>
+                            )}
+                            {section.scheduled_date && (
+                              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                                Scheduled: {new Date(section.scheduled_date).toLocaleDateString()}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Progress */}
+              {(() => {
+                const progress = calculateJobProgress(detailJob.id)
+                return (
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Progress</span>
+                      <span style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>{Math.round(progress)}%</span>
+                    </div>
+                    <div style={{ height: '8px', backgroundColor: theme.border, borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${progress}%`, backgroundColor: progress === 100 ? '#22c55e' : '#3b82f6', borderRadius: '4px', transition: 'width 0.3s' }} />
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           </div>
         </div>

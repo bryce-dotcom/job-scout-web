@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
@@ -105,6 +105,8 @@ const defaultTheme = {
 
 export default function NewLightingAudit() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const urlLeadId = searchParams.get('lead_id')
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
   const customers = useStore((state) => state.customers)
@@ -119,6 +121,9 @@ export default function NewLightingAudit() {
   const createLightingAudit = useStore((state) => state.createLightingAudit)
   const createAuditArea = useStore((state) => state.createAuditArea)
   const createSalesPipeline = useStore((state) => state.createSalesPipeline)
+  const createQuote = useStore((state) => state.createQuote)
+  const createQuoteLine = useStore((state) => state.createQuoteLine)
+  const updateLead = useStore((state) => state.updateLead)
 
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
@@ -526,6 +531,7 @@ export default function NewLightingAudit() {
         audit_id: generateAuditId(),
         created_by: user?.email || null,
         customer_id: basicInfo.customer_id ? parseInt(basicInfo.customer_id) : null,
+        lead_id: urlLeadId || null,
         address: basicInfo.address,
         city: basicInfo.city,
         state: basicInfo.state,
@@ -575,7 +581,6 @@ export default function NewLightingAudit() {
 
       // Create sales pipeline entry for tracking
       if (basicInfo.customer_id) {
-        const customer = customers.find(c => c.id === parseInt(basicInfo.customer_id))
         await createSalesPipeline({
           company_id: companyId,
           customer_id: parseInt(basicInfo.customer_id),
@@ -583,6 +588,44 @@ export default function NewLightingAudit() {
           stage: 'Audit Created',
           quote_amount: calculations.est_project_cost,
           notes: `Auto-created from lighting audit ${auditData.audit_id}`
+        })
+      }
+
+      // Auto-create estimate from audit so value flows through pipeline
+      if (urlLeadId && areas.length > 0) {
+        const quoteAmount = Math.round(calculations.est_project_cost * 100) / 100 || 0
+        const quoteTempId = await createQuote({
+          company_id: companyId,
+          lead_id: urlLeadId,
+          audit_id: tempId,
+          audit_type: 'lighting',
+          quote_amount: quoteAmount,
+          utility_incentive: Math.round(calculations.estimated_rebate * 100) / 100 || 0,
+          status: 'Draft'
+        })
+
+        // Create quote lines from audit areas using actual cost-per-watt
+        const totalWR = areas.reduce((sum, a) =>
+          sum + ((parseInt(a.fixture_count) || 1) * ((parseInt(a.existing_wattage) || 0) - (parseInt(a.led_wattage) || 0))), 0)
+        const cpw = totalWR > 0 ? quoteAmount / totalWR : 5
+
+        for (const area of areas) {
+          const qty = parseInt(area.fixture_count) || 1
+          const unitPrice = ((parseInt(area.existing_wattage) || 0) - (parseInt(area.led_wattage) || 0)) * cpw
+          await createQuoteLine({
+            quote_id: quoteTempId,
+            item_name: `${area.area_name} - LED Retrofit`,
+            item_id: area.led_replacement_id ? parseInt(area.led_replacement_id) : null,
+            quantity: qty,
+            price: Math.round(unitPrice * 100) / 100,
+            line_total: Math.round(qty * unitPrice * 100) / 100
+          })
+        }
+
+        // Update lead with quote_id and quote_amount so pipeline shows the value
+        await updateLead(urlLeadId, {
+          quote_id: quoteTempId,
+          quote_amount: quoteAmount
         })
       }
 

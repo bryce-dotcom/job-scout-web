@@ -47,6 +47,7 @@ export default function LightingAuditDetail() {
   const createQuote = useStore((state) => state.createQuote)
   const createQuoteLine = useStore((state) => state.createQuoteLine)
   const updateLightingAudit = useStore((state) => state.updateLightingAudit)
+  const updateLead = useStore((state) => state.updateLead)
   const createAuditArea = useStore((state) => state.createAuditArea)
   const updateAuditArea = useStore((state) => state.updateAuditArea)
   const deleteAuditArea = useStore((state) => state.deleteAuditArea)
@@ -154,12 +155,13 @@ export default function LightingAuditDetail() {
   const handleCreateQuote = async () => {
     if (!audit) return
 
+    const quoteAmount = audit.est_project_cost || 0
     const quoteData = {
       company_id: companyId,
       lead_id: audit.lead_id || null,
       audit_id: audit.id,
       audit_type: 'lighting',
-      quote_amount: audit.est_project_cost || 0,
+      quote_amount: quoteAmount,
       utility_incentive: audit.estimated_rebate || 0,
       status: 'Draft'
     }
@@ -167,9 +169,15 @@ export default function LightingAuditDetail() {
 
     // Use areas from store instead of fetching from supabase
     if (areas.length > 0) {
+      // Use actual cost-per-watt from audit instead of hardcoded $5
+      const totalWattsReduced = areas.reduce((sum, a) =>
+        sum + ((a.fixture_count || 1) * ((a.existing_wattage || 0) - (a.led_wattage || 0))), 0)
+      const costPerWatt = totalWattsReduced > 0
+        ? (quoteAmount / totalWattsReduced) : 5
+
       for (const area of areas) {
         const qty = area.fixture_count || 1
-        const unitPrice = area.led_product?.price || (((area.existing_wattage || 0) - (area.led_wattage || 0)) * 5)
+        const unitPrice = area.led_product?.price || (((area.existing_wattage || 0) - (area.led_wattage || 0)) * costPerWatt)
         await createQuoteLine({
           quote_id: quoteTempId,
           item_name: `${area.area_name} - LED Retrofit`,
@@ -179,6 +187,14 @@ export default function LightingAuditDetail() {
           line_total: Math.round(qty * unitPrice * 100) / 100
         })
       }
+    }
+
+    // Update lead with quote_id and quote_amount so pipeline shows the value
+    if (audit.lead_id) {
+      await updateLead(audit.lead_id, {
+        quote_id: quoteTempId,
+        quote_amount: quoteAmount
+      })
     }
 
     navigate(`/estimates/${quoteTempId}`)

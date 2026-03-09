@@ -42,6 +42,12 @@ function getDb() {
             db.createObjectStore(name, { keyPath: 'id' })
           }
         }
+      },
+      blocked() {
+        console.warn('[offlineDb] DB upgrade blocked by another tab — close other tabs and reload')
+      },
+      blocking() {
+        console.warn('[offlineDb] This tab is blocking a DB upgrade — reloading')
       }
     })
   }

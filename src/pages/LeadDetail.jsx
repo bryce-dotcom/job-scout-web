@@ -197,17 +197,26 @@ export default function LeadDetail() {
       status: 'Draft'
     })
 
-    // Update lead with quote
-    await updateLead(lead.id, { quote_id: quoteTempId })
+    // Update lead with quote and amount so pipeline shows the value
+    await updateLead(lead.id, {
+      quote_id: quoteTempId,
+      quote_amount: audit.est_project_cost || 0
+    })
 
     // Use audit areas from store instead of fetching from supabase
     const storeAuditAreas = useStore.getState().auditAreas
     const areas = storeAuditAreas.filter(a => String(a.audit_id) === String(audit.id))
 
     if (areas.length > 0) {
+      // Use actual cost-per-watt from audit instead of hardcoded $5
+      const totalWattsReduced = areas.reduce((sum, a) =>
+        sum + ((a.fixture_count || 1) * ((a.existing_wattage || 0) - (a.led_wattage || 0))), 0)
+      const costPerWatt = totalWattsReduced > 0
+        ? (audit.est_project_cost || 0) / totalWattsReduced : 5
+
       for (const area of areas) {
         const qty = area.fixture_count || 1
-        const unitPrice = (((area.existing_wattage || 0) - (area.led_wattage || 0)) * 5)
+        const unitPrice = ((area.existing_wattage || 0) - (area.led_wattage || 0)) * costPerWatt
         await createQuoteLine({
           quote_id: quoteTempId,
           item_name: `${area.area_name} - LED Retrofit`,
@@ -312,9 +321,10 @@ export default function LeadDetail() {
       })
     }
 
-    // Update lead with quote_id and status
+    // Update lead with quote_id, amount, and status so pipeline shows the value
     await updateLead(lead.id, {
       quote_id: quoteTempId,
+      quote_amount: quoteTotal,
       status: 'Quote Sent',
       updated_at: new Date().toISOString()
     })

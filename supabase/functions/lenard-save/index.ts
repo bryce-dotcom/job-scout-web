@@ -318,7 +318,59 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ success: true, leadId, auditId: auditDbId, customerId }),
+    // =====================================================
+    // 6. Auto-create Estimate so value flows through pipeline
+    // =====================================================
+    let quoteDbId: number | null = null;
+    if (lines.length > 0 && projectCost > 0) {
+      // Check if estimate already exists for this audit
+      const existingQuotes = await querySupabase(
+        SUPABASE_URL!, 'quotes', key,
+        `audit_id=eq.${auditDbId}&limit=1`
+      );
+
+      if (existingQuotes.length === 0) {
+        const quoteAmount = Math.round(projectCost * 100) / 100;
+        const [newQuote] = await supabasePost(`${SUPABASE_URL}/rest/v1/quotes`, key, {
+          company_id: cid,
+          lead_id: leadId,
+          audit_id: auditDbId,
+          audit_type: 'lighting',
+          quote_amount: quoteAmount,
+          utility_incentive: Math.round(incentive * 100) / 100,
+          status: 'Draft',
+        });
+        quoteDbId = newQuote.id;
+
+        // Create quote lines from audit line items using actual cost-per-watt
+        const totalWR = lines.reduce((s: number, l: any) =>
+          s + ((l.qty || 1) * ((l.existW || 0) - (l.newW || 0))), 0);
+        const cpw = totalWR > 0 ? quoteAmount / totalWR : 5;
+
+        for (let i = 0; i < lines.length; i++) {
+          const l = lines[i];
+          const qty = l.qty || 1;
+          const unitPrice = ((l.existW || 0) - (l.newW || 0)) * cpw;
+          await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, {
+            company_id: cid,
+            quote_id: newQuote.id,
+            item_name: `${l.name || `Area ${i + 1}`} - LED Retrofit`,
+            item_id: l.productId ? parseInt(l.productId) : null,
+            quantity: qty,
+            price: Math.round(unitPrice * 100) / 100,
+            line_total: Math.round(qty * unitPrice * 100) / 100,
+          });
+        }
+
+        // Update lead with quote_id and quote_amount so pipeline shows the value
+        await supabasePatch(SUPABASE_URL!, 'leads', key, leadId, {
+          quote_id: newQuote.id,
+          quote_amount: quoteAmount,
+        });
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, leadId, auditId: auditDbId, customerId, quoteId: quoteDbId }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {

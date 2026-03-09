@@ -1861,46 +1861,68 @@ export const useStore = create(
         } = get();
 
         // Fetch core data in parallel — use allSettled so one failure doesn't block all
-        await Promise.allSettled([
-          fetchEmployees(),
-          fetchCustomers(),
-          fetchLeads(),
-          fetchSalesPipeline(),
-          fetchAppointments(),
-          fetchProducts(),
-          fetchQuotes(),
-          fetchJobs(),
-          fetchInvoices(),
-          fetchPayments(),
-          fetchTimeLogs(),
-          fetchExpenses(),
-          fetchInventory(),
-          fetchFleet(),
-          fetchFleetMaintenance(),
-          fetchFleetRentals(),
-          fetchLightingAudits(),
-          fetchAuditAreas(),
-          fetchFixtureTypes(),
-          fetchUtilityProviders(),
-          fetchUtilityPrograms(),
-          fetchRebateRates(),
-          fetchPrescriptiveMeasures(),
-          fetchSettings(),
-          fetchCommunications(),
-          fetchRoutes(),
-          fetchBookings(),
-          fetchLeadPayments(),
-          fetchUtilityInvoices(),
-          fetchIncentives(),
-          fetchAgents(),
-          fetchCompanyAgents(),
-          fetchLaborRates(),
-          fetchAiModules(),
-          fetchCcIntegration(),
-          fetchEmailTemplates(),
-          fetchEmailCampaigns(),
-          fetchCcContactMap(),
-          fetchEmailAutomations()
+        // Wrap each fetch with a label so we can log which ones are slow/hanging
+        const namedFetches = [
+          ['employees', fetchEmployees()],
+          ['customers', fetchCustomers()],
+          ['leads', fetchLeads()],
+          ['salesPipeline', fetchSalesPipeline()],
+          ['appointments', fetchAppointments()],
+          ['products', fetchProducts()],
+          ['quotes', fetchQuotes()],
+          ['jobs', fetchJobs()],
+          ['invoices', fetchInvoices()],
+          ['payments', fetchPayments()],
+          ['timeLogs', fetchTimeLogs()],
+          ['expenses', fetchExpenses()],
+          ['inventory', fetchInventory()],
+          ['fleet', fetchFleet()],
+          ['fleetMaintenance', fetchFleetMaintenance()],
+          ['fleetRentals', fetchFleetRentals()],
+          ['lightingAudits', fetchLightingAudits()],
+          ['auditAreas', fetchAuditAreas()],
+          ['fixtureTypes', fetchFixtureTypes()],
+          ['utilityProviders', fetchUtilityProviders()],
+          ['utilityPrograms', fetchUtilityPrograms()],
+          ['rebateRates', fetchRebateRates()],
+          ['prescriptiveMeasures', fetchPrescriptiveMeasures()],
+          ['settings', fetchSettings()],
+          ['communications', fetchCommunications()],
+          ['routes', fetchRoutes()],
+          ['bookings', fetchBookings()],
+          ['leadPayments', fetchLeadPayments()],
+          ['utilityInvoices', fetchUtilityInvoices()],
+          ['incentives', fetchIncentives()],
+          ['agents', fetchAgents()],
+          ['companyAgents', fetchCompanyAgents()],
+          ['laborRates', fetchLaborRates()],
+          ['aiModules', fetchAiModules()],
+          ['ccIntegration', fetchCcIntegration()],
+          ['emailTemplates', fetchEmailTemplates()],
+          ['emailCampaigns', fetchEmailCampaigns()],
+          ['ccContactMap', fetchCcContactMap()],
+          ['emailAutomations', fetchEmailAutomations()]
+        ];
+
+        const pending = new Set(namedFetches.map(([name]) => name));
+        const trackedPromises = namedFetches.map(([name, promise]) =>
+          promise.then(
+            (v) => { pending.delete(name); return v; },
+            (e) => { pending.delete(name); console.error(`[fetchAllData] ${name} rejected:`, e); }
+          )
+        );
+
+        // Safety timeout — log what's still pending and continue after 15s
+        const timeout = new Promise((resolve) => setTimeout(() => {
+          if (pending.size > 0) {
+            console.warn('[fetchAllData] Timed out after 15s. Still pending:', [...pending].join(', '));
+          }
+          resolve();
+        }, 15000));
+
+        await Promise.race([
+          Promise.allSettled(trackedPromises),
+          timeout
         ]);
 
         } catch (err) {

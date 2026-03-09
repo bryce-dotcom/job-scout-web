@@ -41,7 +41,8 @@ import {
   RefreshCw,
   Unlink,
   Phone,
-  Send
+  Send,
+  Zap
 } from 'lucide-react'
 import { seedSampleData, clearAllData } from '../lib/seedData'
 import { toast } from '../lib/toast'
@@ -192,6 +193,8 @@ export default function Settings() {
   const [seeding, setSeeding] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillResult, setBackfillResult] = useState(null)
   const [companyForm, setCompanyForm] = useState({
     company_name: '',
     owner_email: '',
@@ -382,6 +385,133 @@ export default function Settings() {
     saveSetting(key, updated)
   }
 
+  // Client-side audit data backfill (no edge function needed)
+  const runAuditBackfill = async (cid, dryRun) => {
+    const results = { dry_run: dryRun, leads_synced: 0, estimates_created: 0, estimates_fixed: 0, lines_created: 0, details: [] }
+
+    // Fix 1: Leads with quote_id but missing/zero quote_amount
+    const { data: leadsWithQuote } = await supabase
+      .from('leads')
+      .select('id, customer_name, quote_id, quote_amount')
+      .eq('company_id', cid)
+      .not('quote_id', 'is', null)
+
+    for (const lead of (leadsWithQuote || [])) {
+      if (lead.quote_amount && parseFloat(lead.quote_amount) > 0) continue
+      const { data: quote } = await supabase
+        .from('quotes').select('id, quote_amount').eq('id', lead.quote_id).single()
+
+      if (quote?.quote_amount && parseFloat(quote.quote_amount) > 0) {
+        if (!dryRun) {
+          await supabase.from('leads').update({ quote_amount: quote.quote_amount }).eq('id', lead.id)
+        }
+        results.leads_synced++
+        results.details.push(`Lead "${lead.customer_name}": set quote_amount = $${quote.quote_amount}`)
+      }
+    }
+
+    // Fix 2: Audits linked to leads — create missing estimates OR fix bad line items
+    const { data: auditsWithLeads } = await supabase
+      .from('lighting_audits')
+      .select('*')
+      .eq('company_id', cid)
+      .not('lead_id', 'is', null)
+
+    for (const audit of (auditsWithLeads || [])) {
+      const { data: areas } = await supabase
+        .from('audit_areas').select('*').eq('audit_id', audit.id)
+      if (!areas || areas.length === 0) continue
+
+      const quoteAmount = audit.est_project_cost || 0
+      const { data: leadData } = await supabase
+        .from('leads').select('customer_name').eq('id', audit.lead_id).single()
+      const leadName = leadData?.customer_name || audit.lead_id
+
+      // Calculate correct cost-per-watt from actual project cost
+      const totalWattsReduced = areas.reduce((sum, a) =>
+        sum + ((a.fixture_count || 1) * ((a.existing_wattage || 0) - (a.led_wattage || 0))), 0)
+      const costPerWatt = totalWattsReduced > 0 ? quoteAmount / totalWattsReduced : 5
+
+      const { data: existingQuotes } = await supabase
+        .from('quotes').select('id, quote_amount').eq('audit_id', audit.id).limit(1)
+
+      if (existingQuotes && existingQuotes.length > 0) {
+        // Estimate exists — check if line items sum matches quote_amount
+        const existingQuote = existingQuotes[0]
+        const { data: existingLines } = await supabase
+          .from('quote_lines').select('line_total').eq('quote_id', existingQuote.id)
+        const linesSum = (existingLines || []).reduce((sum, l) => sum + (parseFloat(l.line_total) || 0), 0)
+
+        // If line items sum is off by more than $1, fix them
+        if (Math.abs(linesSum - quoteAmount) > 1) {
+          if (!dryRun) {
+            // Delete old lines and recreate with correct pricing
+            await supabase.from('quote_lines').delete().eq('quote_id', existingQuote.id)
+            for (const area of areas) {
+              const qty = area.fixture_count || 1
+              const unitPrice = ((area.existing_wattage || 0) - (area.led_wattage || 0)) * costPerWatt
+              await supabase.from('quote_lines').insert({
+                company_id: cid, quote_id: existingQuote.id,
+                item_name: `${area.area_name} - LED Retrofit`,
+                item_id: area.led_replacement_id || null,
+                quantity: qty,
+                price: Math.round(unitPrice * 100) / 100,
+                line_total: Math.round(qty * unitPrice * 100) / 100
+              })
+              results.lines_created++
+            }
+            // Ensure quote_amount is correct
+            await supabase.from('quotes').update({ quote_amount: quoteAmount }).eq('id', existingQuote.id)
+            await supabase.from('leads').update({ quote_amount: quoteAmount }).eq('id', audit.lead_id)
+          }
+          results.estimates_fixed++
+          results.details.push(`"${leadName}" → fixed line items ($${linesSum.toFixed(0)} → $${quoteAmount})`)
+        }
+        continue
+      }
+
+      // No estimate exists — create one
+      if (!dryRun) {
+        const { data: newQuote, error: qErr } = await supabase
+          .from('quotes')
+          .insert({
+            company_id: cid, lead_id: audit.lead_id, audit_id: audit.id,
+            audit_type: 'lighting', quote_amount: quoteAmount,
+            utility_incentive: audit.estimated_rebate || 0, status: 'Draft'
+          })
+          .select().single()
+
+        if (qErr) {
+          results.details.push(`Audit ${audit.audit_id}: ERROR - ${qErr.message}`)
+          continue
+        }
+
+        for (const area of areas) {
+          const qty = area.fixture_count || 1
+          const unitPrice = ((area.existing_wattage || 0) - (area.led_wattage || 0)) * costPerWatt
+          await supabase.from('quote_lines').insert({
+            company_id: cid, quote_id: newQuote.id,
+            item_name: `${area.area_name} - LED Retrofit`,
+            item_id: area.led_replacement_id || null,
+            quantity: qty,
+            price: Math.round(unitPrice * 100) / 100,
+            line_total: Math.round(qty * unitPrice * 100) / 100
+          })
+          results.lines_created++
+        }
+
+        await supabase.from('leads').update({
+          quote_id: newQuote.id, quote_amount: quoteAmount
+        }).eq('id', audit.lead_id)
+      }
+
+      results.estimates_created++
+      results.details.push(`"${leadName}" → estimate created ($${quoteAmount}, ${areas.length} line items)`)
+    }
+
+    return results
+  }
+
   const renderContent = () => {
     switch (activeTab) {
       case 'company':
@@ -559,6 +689,109 @@ export default function Settings() {
                       <Database size={16} />
                       {seeding ? 'Seeding...' : 'Seed Sample Data'}
                     </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fix Audit → Estimate Data */}
+              <div style={{
+                padding: '20px',
+                backgroundColor: theme.bg,
+                borderRadius: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <Zap size={24} style={{ color: '#f59e0b', flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>
+                      Fix Audit Data
+                    </div>
+                    <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
+                      Finds audits that were linked to leads but never got an estimate created. Creates missing estimates with line items and syncs quote amounts so pipeline values display correctly.
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={async () => {
+                          setBackfilling(true)
+                          setBackfillResult(null)
+                          try {
+                            const result = await runAuditBackfill(companyId, true)
+                            setBackfillResult(result)
+                          } catch (err) {
+                            setBackfillResult({ error: err.message })
+                          }
+                          setBackfilling(false)
+                        }}
+                        disabled={backfilling}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '10px 20px', backgroundColor: theme.bgCard,
+                          border: `1px solid ${theme.border}`, borderRadius: '8px',
+                          color: theme.text, fontSize: '14px', fontWeight: '500',
+                          cursor: backfilling ? 'not-allowed' : 'pointer',
+                          opacity: backfilling ? 0.7 : 1
+                        }}
+                      >
+                        {backfilling ? 'Checking...' : 'Preview (Dry Run)'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm('This will create missing estimates and update lead amounts. Continue?')) return
+                          setBackfilling(true)
+                          setBackfillResult(null)
+                          try {
+                            const result = await runAuditBackfill(companyId, false)
+                            setBackfillResult(result)
+                            if (result.estimates_created > 0 || result.leads_synced > 0 || result.estimates_fixed > 0) {
+                              toast.success(`Created ${result.estimates_created}, fixed ${result.estimates_fixed} estimates, updated ${result.leads_synced} leads`)
+                            } else {
+                              toast.success('No data to fix — everything looks good!')
+                            }
+                          } catch (err) {
+                            setBackfillResult({ error: err.message })
+                            toast.error('Error: ' + err.message)
+                          }
+                          setBackfilling(false)
+                        }}
+                        disabled={backfilling}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '10px 20px', backgroundColor: '#f59e0b',
+                          color: '#fff', border: 'none', borderRadius: '8px',
+                          fontSize: '14px', fontWeight: '500',
+                          cursor: backfilling ? 'not-allowed' : 'pointer',
+                          opacity: backfilling ? 0.7 : 1
+                        }}
+                      >
+                        <Zap size={16} />
+                        {backfilling ? 'Fixing...' : 'Run Fix'}
+                      </button>
+                    </div>
+                    {backfillResult && (
+                      <div style={{
+                        marginTop: '12px', padding: '12px',
+                        backgroundColor: backfillResult.error ? 'rgba(194,90,90,0.1)' : 'rgba(34,197,94,0.1)',
+                        borderRadius: '8px', fontSize: '13px', color: theme.text
+                      }}>
+                        {backfillResult.error ? (
+                          <span style={{ color: '#c25a5a' }}>Error: {backfillResult.error}</span>
+                        ) : (
+                          <>
+                            <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                              {backfillResult.dry_run ? 'Preview Results:' : 'Completed:'}
+                            </div>
+                            <div>Leads with missing quote_amount: {backfillResult.leads_synced}</div>
+                            <div>Estimates created from audits: {backfillResult.estimates_created}</div>
+                            <div>Estimates with wrong line items fixed: {backfillResult.estimates_fixed || 0}</div>
+                            <div>Quote lines created: {backfillResult.lines_created}</div>
+                            {backfillResult.details?.length > 0 && (
+                              <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted }}>
+                                {backfillResult.details.map((d, i) => <div key={i}>{d}</div>)}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
