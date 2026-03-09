@@ -47,28 +47,35 @@ export default function JobCalendar() {
       navigate('/')
       return
     }
-    // Lightweight direct fetch — only fields needed for calendar
+    // Lightweight direct fetch with pagination — only fields needed for calendar
     const fetchCalendarJobs = async () => {
       setLoading(true)
       try {
-        const { data, error } = await supabase
-          .from('jobs')
-          .select('id, job_title, status, start_date, business_unit, customer_name, customer:customers!customer_id(id, name)')
-          .eq('company_id', companyId)
-          .not('start_date', 'is', null)
-          .order('start_date', { ascending: false })
-        if (!error && data) {
-          setJobs(data)
-        } else if (error) {
-          console.warn('[JobCalendar] Join failed, falling back:', error.message)
-          const { data: d2 } = await supabase
+        const allJobs = []
+        let offset = 0
+        const pageSize = 1000
+        const selectFields = 'id, job_title, status, start_date, business_unit, customer_name'
+
+        while (true) {
+          const { data, error } = await supabase
             .from('jobs')
-            .select('id, job_title, status, start_date, business_unit, customer_name')
+            .select(selectFields)
             .eq('company_id', companyId)
             .not('start_date', 'is', null)
             .order('start_date', { ascending: false })
-          if (d2) setJobs(d2)
+            .range(offset, offset + pageSize - 1)
+
+          if (error) {
+            console.error('[JobCalendar] Query error:', error.message)
+            break
+          }
+          if (data) allJobs.push(...data)
+          if (!data || data.length < pageSize) break
+          offset += pageSize
         }
+
+        console.log(`[JobCalendar] Loaded ${allJobs.length} jobs with start_date`)
+        setJobs(allJobs)
       } catch (e) {
         console.error('[JobCalendar] fetch error:', e)
       }
