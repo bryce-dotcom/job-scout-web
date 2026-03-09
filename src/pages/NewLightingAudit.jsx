@@ -5,7 +5,7 @@ import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
 import { photoQueue } from '../lib/photoQueue'
-import { ArrowLeft, ArrowRight, Check, Plus, Minus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse, Sparkles, Search, UserPlus, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Plus, Minus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse, Sparkles, Search, UserPlus, X, Copy } from 'lucide-react'
 
 const buildingSizes = [
   { value: 'small', label: 'Small', description: '<10,000 sq ft, <50kW demand' },
@@ -516,6 +516,11 @@ export default function NewLightingAudit() {
     setAreaForm(areas[index])
     setEditingAreaIndex(index)
     setShowAreaModal(true)
+  }
+
+  const handleDuplicateArea = (index) => {
+    const area = areas[index]
+    setAreas([...areas, { ...area, area_name: `${area.area_name} (Copy)`, confirmed: false }])
   }
 
   const handleDeleteArea = (index) => {
@@ -1576,6 +1581,20 @@ export default function NewLightingAudit() {
                     </div>
                     <div className="audit-area-actions" style={{ display: 'flex', gap: '8px' }}>
                       <button
+                        onClick={() => handleDuplicateArea(index)}
+                        title="Duplicate area"
+                        style={{
+                          padding: '6px 10px',
+                          backgroundColor: theme.bgCard,
+                          color: theme.textSecondary,
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Copy size={16} />
+                      </button>
+                      <button
                         onClick={() => handleEditArea(index)}
                         style={{
                           padding: '6px 12px',
@@ -1591,6 +1610,7 @@ export default function NewLightingAudit() {
                       </button>
                       <button
                         onClick={() => handleDeleteArea(index)}
+                        title="Delete area"
                         style={{
                           padding: '6px 10px',
                           backgroundColor: 'rgba(194,90,90,0.1)',

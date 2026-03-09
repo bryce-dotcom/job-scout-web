@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy } from 'lucide-react'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf } from '../lib/estimatePdf'
@@ -344,6 +344,21 @@ export default function EstimateDetail() {
       line_total: totalPrice
     })
 
+    await updateEstimateTotal()
+    await fetchEstimateData()
+    setSaving(false)
+  }
+
+  const duplicateLineItem = async (line) => {
+    setSaving(true)
+    await createQuoteLine({
+      company_id: companyId,
+      quote_id: id,
+      item_id: line.item_id,
+      quantity: line.quantity,
+      price: line.price,
+      line_total: line.line_total
+    })
     await updateEstimateTotal()
     await fetchEstimateData()
     setSaving(false)
@@ -1294,7 +1309,7 @@ export default function EstimateDetail() {
                     key={line.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '2fr 1.5fr 80px 100px 100px 40px',
+                      gridTemplateColumns: '2fr 1.5fr 80px 100px 100px 72px',
                       gap: '12px',
                       padding: '14px 20px',
                       borderBottom: `1px solid ${theme.border}`,
@@ -1326,9 +1341,32 @@ export default function EstimateDetail() {
                     <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>
                       {formatCurrency(line.line_total)}
                     </div>
-                    <div style={{ textAlign: 'right' }}>
+                    <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => duplicateLineItem(line)}
+                        title="Duplicate line"
+                        style={{
+                          padding: '6px',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          color: theme.textMuted
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = theme.accentBg
+                          e.currentTarget.style.color = theme.accent
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent'
+                          e.currentTarget.style.color = theme.textMuted
+                        }}
+                      >
+                        <Copy size={16} />
+                      </button>
                       <button
                         onClick={() => removeLineItem(line.id)}
+                        title="Delete line"
                         style={{
                           padding: '6px',
                           backgroundColor: 'transparent',

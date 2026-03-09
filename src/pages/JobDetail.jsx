@@ -9,7 +9,7 @@ import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
-  Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image
+  Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image, Copy
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 
@@ -326,6 +326,20 @@ export default function JobDetail() {
     await fetchJobData()
     setNewLine({ item_id: '', quantity: 1 })
     setShowAddLine(false)
+    setSaving(false)
+  }
+
+  const duplicateLineItem = async (line) => {
+    setSaving(true)
+    await supabase.from('job_lines').insert([{
+      company_id: companyId,
+      job_id: parseInt(id),
+      item_id: line.item_id,
+      quantity: line.quantity,
+      price: line.price,
+      total: line.total
+    }])
+    await fetchJobData()
     setSaving(false)
   }
 
@@ -1625,7 +1639,7 @@ export default function JobDetail() {
                       <div
                         onClick={() => setExpandedLineId(isExpanded ? null : line.id)}
                         style={{
-                          display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 100px 40px', gap: '12px',
+                          display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 100px 72px', gap: '12px',
                           padding: '14px 20px', borderBottom: `1px solid ${theme.border}`, alignItems: 'center', cursor: 'pointer'
                         }}
                       >
@@ -1643,8 +1657,11 @@ export default function JobDetail() {
                         <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{line.quantity}</div>
                         <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{formatCurrency(line.price)}</div>
                         <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatCurrency(line.total)}</div>
-                        <div style={{ textAlign: 'right' }}>
-                          <button onClick={(e) => { e.stopPropagation(); removeLineItem(line.id) }} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}>
+                        <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
+                          <button onClick={(e) => { e.stopPropagation(); duplicateLineItem(line) }} title="Duplicate line" style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}>
+                            <Copy size={16} />
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); removeLineItem(line.id) }} title="Delete line" style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}>
                             <Trash2 size={16} />
                           </button>
                         </div>

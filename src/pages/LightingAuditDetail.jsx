@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
 import { photoQueue } from '../lib/photoQueue'
-import { ArrowLeft, Plus, Minus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText } from 'lucide-react'
+import { ArrowLeft, Plus, Minus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText, Copy } from 'lucide-react'
 
 // Light theme fallback
 const defaultTheme = {
@@ -330,6 +330,30 @@ export default function LightingAuditDetail() {
       override_notes: area.override_notes || ''
     })
     setShowAreaModal(true)
+  }
+
+  const handleDuplicateArea = async (area) => {
+    const qty = parseInt(area.fixture_count) || 1
+    const existW = parseInt(area.existing_wattage) || 0
+    const newW = parseInt(area.led_wattage) || 0
+    await createAuditArea({
+      company_id: companyId,
+      audit_id: String(id).startsWith('temp_') ? id : parseInt(id),
+      area_name: `${area.area_name} (Copy)`,
+      ceiling_height: area.ceiling_height || null,
+      fixture_category: area.fixture_category,
+      lighting_type: area.lighting_type || null,
+      fixture_count: qty,
+      existing_wattage: existW,
+      led_replacement_id: area.led_replacement_id || null,
+      led_wattage: newW,
+      total_existing_watts: qty * existW,
+      total_led_watts: qty * newW,
+      area_watts_reduced: (qty * existW) - (qty * newW),
+      confirmed: false,
+      override_notes: area.override_notes || null
+    })
+    setTimeout(recalculateAudit, 500)
   }
 
   const handleDeleteArea = async (areaId) => {
@@ -908,7 +932,22 @@ export default function LightingAuditDetail() {
 
                   <div className="audit-area-actions" style={{ display: 'flex', gap: '6px' }}>
                     <button
+                      onClick={() => handleDuplicateArea(area)}
+                      title="Duplicate area"
+                      style={{
+                        padding: '6px 10px',
+                        backgroundColor: theme.bgCard,
+                        color: theme.textSecondary,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Copy size={14} />
+                    </button>
+                    <button
                       onClick={() => handleEditArea(area)}
+                      title="Edit area"
                       style={{
                         padding: '6px 10px',
                         backgroundColor: theme.bgCard,
@@ -922,6 +961,7 @@ export default function LightingAuditDetail() {
                     </button>
                     <button
                       onClick={() => handleDeleteArea(area.id)}
+                      title="Delete area"
                       style={{
                         padding: '6px 10px',
                         backgroundColor: 'rgba(194,90,90,0.1)',
