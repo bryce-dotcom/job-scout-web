@@ -106,28 +106,34 @@ export default function Login() {
     setError(null)
     setMessage(null)
 
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
-    if (authError) {
-      setError(authError.message)
+      if (authError) {
+        setError(authError.message)
+        setLoading(false)
+        return
+      }
+
+      const result = await lookupEmployeeAndCompany(data.user.email)
+
+      if (!result.success) {
+        setError(result.error)
+        setLoading(false)
+        return
+      }
+
+      setUser(result.employee)
+      setCompany(result.company)
+      // Don't await these — let them run in background so login isn't blocked
+      checkDeveloperStatus().catch(() => {})
+      supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
+      navigate(result.company.setup_complete === false ? '/onboarding' : '/')
+    } catch (err) {
+      console.error('[Login] Sign in error:', err)
+      setError('Sign in failed. Please try again.')
       setLoading(false)
-      return
     }
-
-    const result = await lookupEmployeeAndCompany(data.user.email)
-
-    if (!result.success) {
-      setError(result.error)
-      setLoading(false)
-      return
-    }
-
-    setUser(result.employee)
-    setCompany(result.company)
-    await checkDeveloperStatus()
-    // Stamp last_login
-    supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
-    navigate(result.company.setup_complete === false ? '/onboarding' : '/')
   }
 
   const handleBetaSignup = async (e) => {
