@@ -49,6 +49,7 @@ export default function JobCalendar() {
     }
     // Lightweight direct fetch with pagination — only fields needed for calendar
     const fetchCalendarJobs = async () => {
+      console.log('[JobCalendar] Starting fetch, companyId:', companyId)
       setLoading(true)
       try {
         const allJobs = []
@@ -57,6 +58,7 @@ export default function JobCalendar() {
         const selectFields = 'id, job_title, status, start_date, business_unit, customer_name'
 
         while (true) {
+          console.log(`[JobCalendar] Fetching page at offset ${offset}...`)
           const { data, error } = await supabase
             .from('jobs')
             .select(selectFields)
@@ -66,15 +68,20 @@ export default function JobCalendar() {
             .range(offset, offset + pageSize - 1)
 
           if (error) {
-            console.error('[JobCalendar] Query error:', error.message)
+            console.error('[JobCalendar] Query error:', error.message, error)
             break
           }
+          console.log(`[JobCalendar] Page returned ${data?.length || 0} rows`)
           if (data) allJobs.push(...data)
           if (!data || data.length < pageSize) break
           offset += pageSize
         }
 
-        console.log(`[JobCalendar] Loaded ${allJobs.length} jobs with start_date`)
+        console.log(`[JobCalendar] Total loaded: ${allJobs.length} jobs`)
+        if (allJobs.length > 0) {
+          console.log('[JobCalendar] First job:', allJobs[0].job_title, allJobs[0].start_date)
+          console.log('[JobCalendar] Last job:', allJobs[allJobs.length-1].job_title, allJobs[allJobs.length-1].start_date)
+        }
         setJobs(allJobs)
       } catch (e) {
         console.error('[JobCalendar] fetch error:', e)
@@ -234,6 +241,7 @@ export default function JobCalendar() {
           </button>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
             Job Calendar
+            {jobs.length > 0 && <span style={{ fontSize: '14px', fontWeight: '400', color: theme.textMuted, marginLeft: '8px' }}>({filteredJobs.length} jobs)</span>}
           </h1>
         </div>
 
