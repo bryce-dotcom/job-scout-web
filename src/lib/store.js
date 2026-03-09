@@ -1817,6 +1817,7 @@ export const useStore = create(
 
         set({ isLoading: true });
 
+        try {
         const {
           fetchEmployees,
           fetchCustomers,
@@ -1859,8 +1860,8 @@ export const useStore = create(
           fetchEmailAutomations
         } = get();
 
-        // Fetch core data in parallel
-        await Promise.all([
+        // Fetch core data in parallel — use allSettled so one failure doesn't block all
+        await Promise.allSettled([
           fetchEmployees(),
           fetchCustomers(),
           fetchLeads(),
@@ -1902,6 +1903,9 @@ export const useStore = create(
           fetchEmailAutomations()
         ]);
 
+        } catch (err) {
+          console.error('[fetchAllData] Error:', err);
+        }
         set({ isLoading: false });
       },
 
