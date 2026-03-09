@@ -511,8 +511,8 @@ export default function Payroll() {
 
   // ── Aggregate Data ───────────────────────────────────────
   const activeEmployees = useMemo(() =>
-    employees.filter(e => e.active),
-    [employees]
+    employees.filter(e => e.active && (isAdmin || e.id === user?.id)),
+    [employees, isAdmin, user]
   )
 
   const employeePayData = useMemo(() => {
@@ -849,29 +849,33 @@ export default function Payroll() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Payroll</h1>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {/* Role filter */}
-          <select
-            value={filterRole}
-            onChange={(e) => setFilterRole(e.target.value)}
-            style={{
-              padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
-              borderRadius: '10px', color: theme.textSecondary, fontSize: '14px', cursor: 'pointer'
-            }}
-          >
-            <option value="all">All Roles</option>
-            {uniqueRoles.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
+          {/* Role filter (admin only) */}
+          {isAdmin && (
+            <select
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+              style={{
+                padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+                borderRadius: '10px', color: theme.textSecondary, fontSize: '14px', cursor: 'pointer'
+              }}
+            >
+              <option value="all">All Roles</option>
+              {uniqueRoles.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          )}
 
-          <button
-            onClick={() => setShowSettingsModal(true)}
-            style={{
-              padding: '10px 16px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
-              borderRadius: '10px', color: theme.textMuted, fontSize: '14px', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '8px'
-            }}
-          >
-            <Settings size={18} /> Settings
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              style={{
+                padding: '10px 16px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+                borderRadius: '10px', color: theme.textMuted, fontSize: '14px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '8px'
+              }}
+            >
+              <Settings size={18} /> Settings
+            </button>
+          )}
           {isAdmin && (
             <button
               onClick={() => setShowRunPayrollModal(true)}
@@ -912,29 +916,33 @@ export default function Payroll() {
           <div style={{ fontSize: '12px', color: '#8b5cf6', fontWeight: '600', marginTop: '2px' }}>{daysUntil} days away</div>
         </div>
 
-        {/* Total Payroll */}
-        <div style={cardStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-            <DollarSign size={20} style={{ color: '#22c55e' }} />
-            <span style={{ color: theme.textMuted, fontSize: '13px' }}>Total Payroll</span>
+        {/* Total Payroll (admin only) */}
+        {isAdmin && (
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <DollarSign size={20} style={{ color: '#22c55e' }} />
+              <span style={{ color: theme.textMuted, fontSize: '13px' }}>Total Payroll</span>
+            </div>
+            <div style={{ fontSize: '22px', fontWeight: '700', color: '#22c55e' }}>{fmt(totalPayroll)}</div>
           </div>
-          <div style={{ fontSize: '22px', fontWeight: '700', color: '#22c55e' }}>{fmt(totalPayroll)}</div>
-        </div>
+        )}
 
-        {/* Commissions */}
-        <div style={cardStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-            <TrendingUp size={20} style={{ color: '#f59e0b' }} />
-            <span style={{ color: theme.textMuted, fontSize: '13px' }}>Commissions</span>
+        {/* Commissions (admin only) */}
+        {isAdmin && (
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <TrendingUp size={20} style={{ color: '#f59e0b' }} />
+              <span style={{ color: theme.textMuted, fontSize: '13px' }}>Commissions</span>
+            </div>
+            <div style={{ fontSize: '22px', fontWeight: '700', color: '#f59e0b' }}>{fmt(totalCommissions)}</div>
+            {totalPendingCommissions > 0 && (
+              <div style={{ fontSize: '12px', color: '#f97316', marginTop: '2px' }}>{fmt(totalPendingCommissions)} pending</div>
+            )}
           </div>
-          <div style={{ fontSize: '22px', fontWeight: '700', color: '#f59e0b' }}>{fmt(totalCommissions)}</div>
-          {totalPendingCommissions > 0 && (
-            <div style={{ fontSize: '12px', color: '#f97316', marginTop: '2px' }}>{fmt(totalPendingCommissions)} pending</div>
-          )}
-        </div>
+        )}
 
-        {/* Efficiency Bonuses */}
-        {payrollConfig.efficiency_bonus_enabled && (
+        {/* Efficiency Bonuses (admin only) */}
+        {isAdmin && payrollConfig.efficiency_bonus_enabled && (
           <div style={cardStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
               <Zap size={20} style={{ color: '#8b5cf6' }} />
@@ -1089,24 +1097,26 @@ export default function Payroll() {
         )}
 
         {/* Total Row */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr',
-          padding: '16px 20px',
-          backgroundColor: theme.bg,
-          alignItems: 'center'
-        }}>
-          <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
-          <span />
-          <div style={{ textAlign: 'center', fontWeight: '600', color: '#f59e0b' }}>{fmt(totalCommissions)}</div>
-          {payrollConfig.efficiency_bonus_enabled ? (
-            <div style={{ textAlign: 'center', fontWeight: '600', color: '#8b5cf6' }}>{fmt(totalBonuses)}</div>
-          ) : <span />}
-          <div style={{ textAlign: 'center', fontWeight: '600', color: '#f97316' }}>
-            {totalPendingCommissions > 0 ? fmt(totalPendingCommissions) : '-'}
+        {isAdmin && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr',
+            padding: '16px 20px',
+            backgroundColor: theme.bg,
+            alignItems: 'center'
+          }}>
+            <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
+            <span />
+            <div style={{ textAlign: 'center', fontWeight: '600', color: '#f59e0b' }}>{fmt(totalCommissions)}</div>
+            {payrollConfig.efficiency_bonus_enabled ? (
+              <div style={{ textAlign: 'center', fontWeight: '600', color: '#8b5cf6' }}>{fmt(totalBonuses)}</div>
+            ) : <span />}
+            <div style={{ textAlign: 'center', fontWeight: '600', color: '#f97316' }}>
+              {totalPendingCommissions > 0 ? fmt(totalPendingCommissions) : '-'}
+            </div>
+            <div style={{ textAlign: 'right', fontSize: '20px', fontWeight: '700', color: '#22c55e' }}>{fmt(totalPayroll)}</div>
           </div>
-          <div style={{ textAlign: 'right', fontSize: '20px', fontWeight: '700', color: '#22c55e' }}>{fmt(totalPayroll)}</div>
-        </div>
+        )}
       </div>
 
       {/* Pending Time Off Requests */}
