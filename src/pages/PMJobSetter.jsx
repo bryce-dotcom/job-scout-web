@@ -647,7 +647,7 @@ export default function PMJobSetter() {
       setScheduleForm({
         start_time: formatDateTimeLocal(startTime),
         duration_hours: draggedJob.allotted_time_hours || 4,
-        pm_id: draggedJob.pm_id || '',
+        pm_id: draggedJob.pm_id || (!isAdmin && user?.id ? String(user.id) : ''),
         notes: draggedJob.notes || '',
         sendText: false,
         sendEmail: false,
@@ -758,7 +758,7 @@ export default function PMJobSetter() {
       setScheduleForm({
         start_time: formatDateTimeLocal(startTime),
         duration_hours: draggedJob.allotted_time_hours || 4,
-        pm_id: draggedJob.pm_id || '',
+        pm_id: draggedJob.pm_id || (!isAdmin && user?.id ? String(user.id) : ''),
         notes: draggedJob.notes || '',
         sendText: false,
         sendEmail: false,
@@ -844,7 +844,9 @@ export default function PMJobSetter() {
       status: 'Scheduled',
       updated_at: new Date().toISOString()
     }
-    if (scheduleForm.pm_id) updateData.pm_id = parseInt(scheduleForm.pm_id)
+    // Set PM: use form value, or default to current user for non-admins
+    const pmId = scheduleForm.pm_id || (!isAdmin && user?.id ? String(user.id) : '')
+    if (pmId) updateData.pm_id = parseInt(pmId)
     if (scheduleForm.notes) updateData.notes = scheduleForm.notes
 
     const { error } = await supabase
