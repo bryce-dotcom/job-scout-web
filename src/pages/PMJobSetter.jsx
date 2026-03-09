@@ -244,6 +244,9 @@ export default function PMJobSetter() {
       }
     }
 
+    console.log('[fetchData] Jobs loaded:', (jobsData || []).length, 'validStatuses:', validStatuses)
+    const scheduledJobs = (jobsData || []).filter(j => j.start_date)
+    console.log('[fetchData] Jobs with start_date:', scheduledJobs.length, scheduledJobs.slice(0, 3).map(j => ({ id: j.id, status: j.status, start_date: j.start_date, pm_id: j.pm_id })))
     setJobs(jobsData || [])
     setJobSections(sectionsData || [])
     setLoading(false)
@@ -447,6 +450,11 @@ export default function PMJobSetter() {
         j.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         j.customer?.address?.toLowerCase().includes(searchTerm.toLowerCase())
       )
+    }
+    // Debug: log filter stages
+    const withDates = filtered.filter(j => j.start_date)
+    if (withDates.length > 0 || jobs.filter(j => j.start_date).length > 0) {
+      console.log('[getFilteredJobs] total:', jobs.length, '→ after filters:', filtered.length, '| with start_date:', withDates.length, '| PM filter:', effectivePM || 'none', '| calendar:', selectedCalendar)
     }
     return filtered
   }
@@ -846,10 +854,17 @@ export default function PMJobSetter() {
     if (pmId) updateData.pm_id = parseInt(pmId)
     if (scheduleForm.notes) updateData.notes = scheduleForm.notes
 
-    const { error } = await supabase
+    console.log('[Schedule] Job ID:', scheduleJob.id)
+    console.log('[Schedule] Update data:', JSON.stringify(updateData))
+    console.log('[Schedule] jobStatuses:', JSON.stringify(jobStatuses.map(s => s.id)))
+
+    const { error, data: updatedRows } = await supabase
       .from('jobs')
       .update(updateData)
       .eq('id', scheduleJob.id)
+      .select()
+
+    console.log('[Schedule] Supabase response - error:', error, 'updated:', updatedRows)
 
     if (error) {
       setScheduleError(error.message)
