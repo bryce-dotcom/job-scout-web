@@ -576,18 +576,12 @@ export default function PMJobSetter() {
   // Get jobs (not sections) scheduled for a calendar slot
   const getJobsForSlot = (date, hour) => {
     const slotDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-    return jobs.filter(job => {
+    return getFilteredJobs().filter(job => {
       if (!job.start_date) return false
       const jobDt = new Date(job.start_date)
       // Compare local date parts
       const jobDateStr = `${jobDt.getFullYear()}-${String(jobDt.getMonth() + 1).padStart(2, '0')}-${String(jobDt.getDate()).padStart(2, '0')}`
       if (jobDateStr !== slotDateStr) return false
-
-      // Filter by selected calendar
-      if (selectedCalendar !== 'all') {
-        const cal = jobCalendars.find(c => c.id === selectedCalendar)
-        if (cal?.business_unit && job.business_unit !== cal.business_unit) return false
-      }
 
       // Match by hour (default to 8 AM if no time component)
       const jobHour = jobDt.getHours()
@@ -838,12 +832,15 @@ export default function PMJobSetter() {
     const endTime = new Date(startTime)
     endTime.setHours(endTime.getHours() + (scheduleForm.duration_hours || 4))
 
+    // Use configured "Scheduled" status if it exists, otherwise keep current status
+    const scheduledStatus = jobStatuses.find(s => s.name === 'Scheduled' || s.id === 'Scheduled')?.id
     const updateData = {
       start_date: startTime.toISOString(),
       end_date: endTime.toISOString(),
-      status: 'Scheduled',
       updated_at: new Date().toISOString()
     }
+    // Only change status if we have a valid "Scheduled" status configured
+    if (scheduledStatus) updateData.status = scheduledStatus
     // Set PM: use form value, or default to current user for non-admins
     const pmId = scheduleForm.pm_id || (!isAdmin && user?.id ? String(user.id) : '')
     if (pmId) updateData.pm_id = parseInt(pmId)
