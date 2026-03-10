@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { toast } from '../lib/toast'
 import {
   Compass, Clock, MapPin, Play, Square, Coffee,
   ChevronDown, ChevronUp, ExternalLink, Navigation,
@@ -265,6 +266,10 @@ export default function FieldScout() {
 
   // Share Google review link
   const shareReviewLink = (job) => {
+    if (!googleReviewUrl) {
+      toast.error('Set your Google Review URL in Settings → My Money first')
+      return
+    }
     const msg = `Thank you for choosing us! We'd love your feedback. Please leave us a review: ${googleReviewUrl}`
     if (navigator.share) {
       navigator.share({ title: 'Leave us a review!', text: msg, url: googleReviewUrl }).catch(() => {})
@@ -858,30 +863,28 @@ export default function FieldScout() {
                           <DollarSign size={13} />
                           Collect Payment
                         </button>
-                        {googleReviewUrl && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); shareReviewLink(job) }}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '5px',
-                              padding: '6px 12px',
-                              background: reviewSent.has(job.id)
-                                ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                                : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                              border: 'none',
-                              borderRadius: '20px',
-                              color: '#fff',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            <Star size={13} />
-                            {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
-                          </button>
-                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); shareReviewLink(job) }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '6px 12px',
+                            background: reviewSent.has(job.id)
+                              ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                              : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                            border: 'none',
+                            borderRadius: '20px',
+                            color: '#fff',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <Star size={13} />
+                          {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
+                        </button>
                       </div>
                     )}
 
@@ -1070,32 +1073,30 @@ export default function FieldScout() {
                             <DollarSign size={16} />
                             Collect Payment
                           </button>
-                          {googleReviewUrl && (
-                            <button
-                              onClick={() => shareReviewLink(job)}
-                              style={{
-                                flex: 1,
-                                padding: '12px',
-                                background: reviewSent.has(job.id)
-                                  ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                                  : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                                border: 'none',
-                                borderRadius: '10px',
-                                color: '#fff',
-                                fontSize: '14px',
-                                fontWeight: '600',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px',
-                                minHeight: '44px'
-                              }}
-                            >
-                              <Star size={16} />
-                              {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
-                            </button>
-                          )}
+                          <button
+                            onClick={() => shareReviewLink(job)}
+                            style={{
+                              flex: 1,
+                              padding: '12px',
+                              background: reviewSent.has(job.id)
+                                ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                                : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                              border: 'none',
+                              borderRadius: '10px',
+                              color: '#fff',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              minHeight: '44px'
+                            }}
+                          >
+                            <Star size={16} />
+                            {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1328,30 +1329,28 @@ export default function FieldScout() {
                 <div style={{ fontSize: '20px', fontWeight: '700', color: '#16a34a' }}>Payment Recorded!</div>
                 <div style={{ fontSize: '14px', color: theme.textMuted, marginTop: '4px' }}>{paymentJob.job_title || paymentJob.job_id}</div>
 
-                {googleReviewUrl && (
-                  <button
-                    onClick={() => { shareReviewLink(paymentJob); setPaymentJob(null) }}
-                    style={{
-                      marginTop: '24px',
-                      padding: '16px 28px',
-                      background: reviewSent.has(paymentJob.id)
-                        ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                        : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                      border: 'none',
-                      borderRadius: '14px',
-                      color: '#fff',
-                      fontSize: '16px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    <Star size={18} />
-                    {reviewSent.has(paymentJob.id) ? 'Review Sent!' : 'Ask for a Google Review'}
-                  </button>
-                )}
+                <button
+                  onClick={() => { shareReviewLink(paymentJob); if (googleReviewUrl) setPaymentJob(null) }}
+                  style={{
+                    marginTop: '24px',
+                    padding: '16px 28px',
+                    background: reviewSent.has(paymentJob.id)
+                      ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                      : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                    border: 'none',
+                    borderRadius: '14px',
+                    color: '#fff',
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <Star size={18} />
+                  {reviewSent.has(paymentJob.id) ? 'Review Sent!' : 'Ask for a Google Review'}
+                </button>
 
                 <button
                   onClick={() => setPaymentJob(null)}
