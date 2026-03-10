@@ -63,6 +63,12 @@ import ConradTemplates from './pages/agents/conrad/ConradTemplates'
 import ConradContacts from './pages/agents/conrad/ConradContacts'
 import ConradAutomations from './pages/agents/conrad/ConradAutomations'
 import ConradSettings from './pages/agents/conrad/ConradSettings'
+import VictorWorkspace from './pages/agents/victor/VictorWorkspace'
+import VictorDashboard from './pages/agents/victor/VictorDashboard'
+import VictorVerify from './pages/agents/victor/VictorVerify'
+import VictorReport from './pages/agents/victor/VictorReport'
+import VictorHistory from './pages/agents/victor/VictorHistory'
+import VictorSettings from './pages/agents/victor/VictorSettings'
 import CustomerPortal from './pages/CustomerPortal'
 import LenardAZSRP from './pages/agents/LenardAZSRP'
 import LenardUTRMP from './pages/agents/LenardUTRMP'
@@ -347,6 +353,15 @@ function App() {
             <Route path="contacts" element={<ConradContacts />} />
             <Route path="automations" element={<ConradAutomations />} />
             <Route path="settings" element={<ConradSettings />} />
+          </Route>
+
+          {/* Victor Workspace (Verification) */}
+          <Route path="/agents/victor" element={<VictorWorkspace />}>
+            <Route index element={<VictorDashboard />} />
+            <Route path="verify" element={<VictorVerify />} />
+            <Route path="history" element={<VictorHistory />} />
+            <Route path="report/:id" element={<VictorReport />} />
+            <Route path="settings" element={<VictorSettings />} />
           </Route>
 
           {/* Admin Data Console (Developer Only) */}

@@ -1694,4 +1694,43 @@
 
 ---
 
-*73 tables total. Fixture reference data added February 20, 2026. Updated February 20, 2026.*
+## verification_reports
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | uuid | PK (gen_random_uuid()) |
+| company_id | integer | FK companies.id |
+| job_id | integer | FK jobs.id |
+| verified_by | integer | FK employees.id |
+| verification_type | text | 'completion' |
+| industry | text | 'general' |
+| checklist_items | jsonb | '[]' |
+| status | text | 'pending' |
+| ai_analysis | jsonb | |
+| score | integer | |
+| grade | text | |
+| summary | text | |
+| issues_found | jsonb | '[]' |
+| created_at | timestamptz | now() |
+| updated_at | timestamptz | now() |
+
+---
+
+## verification_photos
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | uuid | PK (gen_random_uuid()) |
+| company_id | integer | FK companies.id |
+| verification_id | uuid | FK verification_reports.id |
+| job_id | integer | FK jobs.id |
+| file_path | text | NOT NULL |
+| storage_bucket | text | 'project-documents' |
+| photo_type | text | 'general' |
+| ai_analysis | jsonb | |
+| ai_score | integer | |
+| created_at | timestamptz | now() |
+
+---
+
+*75 tables total. Victor verification tables added March 10, 2026. Updated March 10, 2026.*
