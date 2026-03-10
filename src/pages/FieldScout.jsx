@@ -831,6 +831,56 @@ export default function FieldScout() {
                       )}
                     </div>
 
+                    {/* Quick action row — always visible */}
+                    {!isExpanded && (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setPaymentJob(job); setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' }); setPaymentSuccess(false) }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '6px 12px',
+                            background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                            border: 'none',
+                            borderRadius: '20px',
+                            color: '#fff',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <DollarSign size={13} />
+                          Collect Payment
+                        </button>
+                        {googleReviewUrl && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); shareReviewLink(job) }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 12px',
+                              background: reviewSent.has(job.id)
+                                ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                                : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                              border: 'none',
+                              borderRadius: '20px',
+                              color: '#fff',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            <Star size={13} />
+                            {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     {/* Notes preview */}
                     {job.notes && !isExpanded && (
                       <div style={{
