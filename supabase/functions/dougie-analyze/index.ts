@@ -77,42 +77,52 @@ serve(async (req) => {
       },
     ])).flat();
 
-    const prompt = `You are Dougie, an expert at reading handwritten "Energy Scout" lighting takeoff sheets for HHH Building Services.
+    const prompt = `You are Dougie, an expert at reading handwritten lighting takeoff sheets and audit forms.
 
-THE EXACT FORM LAYOUT (you MUST know this):
-This is the "Energy Scout" takeoff form. It is a printed form filled in by hand. Each page has:
+STEP 1 — IDENTIFY THE FORM
+Look at the page(s) and determine the form structure. Do NOT assume a fixed layout. Instead:
+  a) Read every column header printed on the form (left to right).
+  b) Read every header/info field at the top of the form (project name, address, meter #, contact, etc.).
+  c) Count how many data rows exist per page (often 8, but could be any number).
+  d) Note if the form has an EXISTING side and a NEW/PROPOSED side, or just one side.
 
-HEADER (top of every page — 3 rows):
-  Row 1: "Project Name" (left side)  |  "Meter #" (right side)  |  "SBE, MID, Large=" (far right — circle one)
-  Row 2: "Address" (left side)       |  "Contact" (right side)  |  "Hours" (far right)
-  Row 3: "City" (left side)          |  "Phone" (right side)
+KNOWN FORM: "Energy Scout" takeoff (common but not guaranteed):
+  Header: Project Name | Meter # | SBE/MID/Large | Address | Contact | Hours | City | Phone
+  Columns: ROW # | TICK MARK | AREA NAME | TOTAL FIX | FIXTURE TYPE | LAMP TYPE | WATTAGE || TOTAL FIX | FIXTURE TYPE | WATTAGE | CONTROLS Y/N | HT | NOTES
+  Footer legend: MH, INC, Hal, CFL, T8, T12, T5, BB
 
-FIXTURE TABLE (below header, numbered rows 1-8 per page):
-  Left side = EXISTING fixtures | Right side = NEW (replacement) fixtures
+If the form does NOT match this layout, adapt. Read whatever columns ARE present. Some forms may be missing columns like Area Name, Controls, Height, or Notes — that's fine, leave those fields empty in the output.
 
-  Columns left to right:
-  ROW # | TICK MARK | AREA NAME | TOTAL FIX (qty) | FIXTURE TYPE | LAMP TYPE | WATTAGE  ||  TOTAL FIX (qty) | FIXTURE TYPE | WATTAGE | CONTROLS Y/N | HT (height) | NOTES
+STEP 2 — RAW TRANSCRIPTION (MANDATORY)
+Before structuring anything, write out EVERY piece of text you see on ALL pages, row by row:
+  'Page 1 Header: [all header text] | Row 1: [all text in row] | Row 2: [all text in row] ...'
+This is your working draft. Be thorough. Include faint or unclear text with your best guess.
 
-  The form has 8 numbered rows per page. Some rows may be blank. But if ANY text appears in a row, read ALL columns for that row.
+STEP 3 — READ THE HEADER
+Look for any of these fields in the top/header area of the form. Different forms use different labels:
+  - Customer/Project Name (may say "Project Name", "Customer", "Company", "Name")
+  - Address, City, State, ZIP
+  - Contact name, Phone, Email
+  - Meter # or Meter Number (often on the RIGHT side of the header — look carefully)
+  - Account # or Account Number
+  - EIN or Tax ID
+  - Program type (SBE, MID, Large — whichever is circled/checked)
+  - Operating Hours (may say "Hours", "Hrs", "Operating Hours")
+  - Date
+If a field isn't on the form, leave it as empty string.
 
-FOOTER:
-  Abbreviation legend: "Metal Halide - MH, Incandescent - INC, Halogen - Hal, Compact Fluorescent - CFL, T8 4', T8 U, T12 8', T5 4', Battery Backup - BB"
+STEP 4 — READ EVERY ROW
+Go through EVERY row on EVERY page. For each row that has ANY writing:
+  - Read ALL columns that exist on THIS form (don't force columns that aren't there)
+  - If the form has an "Area Name" or "Location" column, read it. If not, use "" for areaName.
+  - If the form has existing AND new fixture sides, read both. If only one side, fill what you can.
+  - Each row with writing = one entry in "areas". NEVER combine rows. NEVER skip rows.
 
-CRITICAL INSTRUCTIONS:
-
-1. FIRST: Read the header on EVERY page. The first page's header is the primary one. Later pages may repeat it or have different info.
-
-2. SECOND: Go through EVERY numbered row (1-8) on EVERY page. For each row that has ANY writing:
-   - Read the Area Name
-   - Read the existing fixture info (Total Fix count, Fixture Type, Lamp Type, Wattage)
-   - Read the new fixture info (Total Fix count, Fixture Type, Wattage)
-   - Read Controls Y/N, Height (HT), and Notes
-
-3. COUNT the total rows you found. The user said there are 11 lines. If you found fewer, GO BACK and look again. Check for:
-   - Rows that span across the page boundary (page 1 row 8 → page 2 row 1)
-   - Rows with very faint or light handwriting
-   - Rows where only a few columns are filled in
-   - Second page rows — the form repeats with rows 1-8 on page 2
+After reading all pages, COUNT your rows. If you found fewer than expected, re-examine:
+  - Page boundaries (last row of page 1, first rows of page 2)
+  - Faint or light handwriting
+  - Rows with only 1-2 columns filled in
+  - Continuation pages
 
 Common abbreviations:
   MH = Metal Halide | HPS = High Pressure Sodium | MV = Mercury Vapor | INC = Incandescent
@@ -135,44 +145,45 @@ If LED wattage is not written, estimate from: T8 troffer → 32W, T12 → 30W, H
 
 RETURN THIS EXACT JSON (no markdown, no backticks):
 {
-  "rawTranscription": "<REQUIRED: Write out EVERY piece of text from ALL pages, row by row. Format: 'Page 1 Header: [text] | Row 1: [text] | Row 2: [text]...' This is your working draft — be thorough.>",
+  "rawTranscription": "<MANDATORY — every piece of text from all pages>",
+  "formType": "<what form this appears to be, e.g. 'Energy Scout takeoff', 'custom audit form', 'lined notebook', etc.>",
   "header": {
-    "customerName": "<from 'Project Name' field>",
-    "contact": "<from 'Contact' field>",
-    "phone": "<from 'Phone' field>",
-    "email": "",
-    "meterNumber": "<from 'Meter #' field — CRITICAL, look to the RIGHT of 'Project Name'>",
-    "accountNumber": "",
-    "address": "<from 'Address' field>",
-    "city": "<from 'City' field>",
-    "state": "",
-    "zip": "",
-    "ein": "",
-    "utilityCompany": "",
-    "programType": "<from 'SBE, MID, Large=' — whichever is circled>",
-    "date": "",
-    "operatingHours": "<from 'Hours' field — integer, daily operating hours>",
+    "customerName": "<from project/customer name field, or ''>",
+    "contact": "<from contact field, or ''>",
+    "phone": "<from phone field, or ''>",
+    "email": "<from email field, or ''>",
+    "meterNumber": "<from meter # field — look RIGHT side of header, or ''>",
+    "accountNumber": "<from account # field, or ''>",
+    "address": "<from address field, or ''>",
+    "city": "<from city field, or ''>",
+    "state": "<from state field, or ''>",
+    "zip": "<from zip field, or ''>",
+    "ein": "<from EIN/tax ID field, or ''>",
+    "utilityCompany": "<from utility field, or ''>",
+    "programType": "<from program type field — whichever is circled/checked, or ''>",
+    "date": "<from date field, or ''>",
+    "operatingHours": "<from hours field — integer, or ''>",
     "notes": ""
   },
   "areas": [
     {
-      "areaName": "<from 'Area Name' column>",
-      "rowNumber": "<which row number on the form, e.g. 'P1-R3' = page 1 row 3>",
-      "notes": "<from 'Notes' column>",
+      "areaName": "<from area/location column if it exists, otherwise ''>",
+      "rowNumber": "<page and row, e.g. 'P1-R3' = page 1 row 3>",
+      "notes": "<from notes column if it exists, otherwise ''>",
       "fixtures": [
         {
           "name": "<full description: e.g. '4-Lamp T8 4ft Troffer'>",
-          "qty": "<from 'Total Fix' column on the EXISTING side>",
-          "existW": "<from 'Wattage' column on existing side>",
-          "newW": "<from 'Wattage' column on NEW side>",
-          "newQty": "<from 'Total Fix' column on the NEW side — may differ from existing qty>",
-          "newFixtureType": "<from 'Fixture Type' column on NEW side>",
+          "qty": "<existing fixture count>",
+          "existW": "<existing wattage>",
+          "newW": "<new/proposed wattage>",
+          "newQty": "<new fixture count — may differ from existing, or same if not specified>",
+          "newFixtureType": "<new fixture type if specified>",
           "ledProduct": "",
-          "location": "<'interior' or 'exterior' — infer from area name>",
-          "height": "<from 'HT' column — integer feet>",
+          "location": "<'interior' or 'exterior' — infer from area name or context>",
+          "height": "<mounting height in feet if on form, or ''>",
           "fixtureCategory": "<one of: Linear, High Bay, Low Bay, Recessed, Surface Mount, Wall Pack, Flood, Area Light, Canopy, Outdoor, Other>",
-          "lightingType": "<from 'Lamp Type' column: T12, T8, T5, T5HO, Metal Halide, HPS, Mercury Vapor, Halogen, Incandescent, CFL, LED, Other>",
-          "controls": "<from 'Controls Y/N' column: true or false>"
+          "lightingType": "<lamp type: T12, T8, T5, T5HO, Metal Halide, HPS, Mercury Vapor, Halogen, Incandescent, CFL, LED, Other>",
+          "controls": "<true/false if controls column exists, or false>"
         }
       ]
     }
@@ -180,11 +191,12 @@ RETURN THIS EXACT JSON (no markdown, no backticks):
 }
 
 ABSOLUTE RULES:
-- Every numbered row with ANY writing = one entry in "areas". Do NOT combine rows. Do NOT skip rows.
-- The form has 8 rows per page. With 2 pages that's up to 16 possible rows. Read ALL of them.
-- "rawTranscription" is MANDATORY. Write every single thing you see before structuring.
+- Every row with ANY writing = one entry in "areas". Do NOT combine rows. Do NOT skip rows.
+- Read ALL pages. Forms may have 8, 10, 15+ rows per page. Count what's actually there.
+- "rawTranscription" is MANDATORY. Write everything you see before structuring.
 - If handwriting is unclear, GUESS rather than skip. A wrong guess is better than a missing row.
-- "meterNumber" is on the RIGHT side of the header next to "Meter #". Look CAREFULLY.`;
+- If a column doesn't exist on this form, use empty string — don't make up data.
+- "meterNumber" is often on the RIGHT side of the header. Look CAREFULLY.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
