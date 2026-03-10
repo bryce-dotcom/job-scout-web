@@ -9,7 +9,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { images } = await req.json();
+    const { images, referenceFormUrl } = await req.json();
 
     if (!images || !Array.isArray(images) || images.length === 0) {
       return new Response(JSON.stringify({ error: 'At least one image is required' }),
@@ -26,6 +26,41 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Fetch reference form template if available (stored in Supabase Storage)
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    let referenceBlocks: any[] = [];
+
+    // Try to fetch reference form from storage
+    const refUrl = referenceFormUrl || `${SUPABASE_URL}/storage/v1/object/public/audit-photos/dougie/takeoff-template.jpg`;
+    try {
+      const refResp = await fetch(refUrl);
+      if (refResp.ok) {
+        const refBuffer = await refResp.arrayBuffer();
+        const refBase64 = btoa(String.fromCharCode(...new Uint8Array(refBuffer)));
+        const contentType = refResp.headers.get('content-type') || 'image/jpeg';
+        referenceBlocks = [
+          {
+            type: 'text',
+            text: 'REFERENCE: This is the BLANK takeoff form template. Study its layout — every column header, every row slot, every field in the header. The filled-in pages that follow use this EXACT form. You MUST find and read EVERY row and field that exists on this template.',
+          },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: contentType.startsWith('image/') ? contentType : 'image/jpeg',
+              data: refBase64,
+            },
+          },
+        ];
+        console.log('[Dougie] Reference form loaded successfully');
+      } else {
+        console.log('[Dougie] No reference form found at', refUrl, '- proceeding without');
+      }
+    } catch (refErr) {
+      console.log('[Dougie] Could not fetch reference form:', refErr.message);
+    }
+
     // Build image content blocks
     const imageBlocks = images.map((img: any, idx: number) => ([
       {
@@ -38,7 +73,7 @@ serve(async (req) => {
       },
       {
         type: 'text',
-        text: `Page ${idx + 1} of ${images.length}`,
+        text: `FILLED-IN PAGE ${idx + 1} of ${images.length} — read EVERY line on this page`,
       },
     ])).flat();
 
@@ -164,12 +199,13 @@ IMPORTANT: Do NOT skip rows. Do NOT skip header fields. Transcribe EVERYTHING fi
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 8192,
+        model: 'claude-opus-4-20250514',
+        max_tokens: 16384,
         messages: [
           {
             role: 'user',
             content: [
+              ...referenceBlocks,
               ...imageBlocks,
               { type: 'text', text: prompt },
             ],
