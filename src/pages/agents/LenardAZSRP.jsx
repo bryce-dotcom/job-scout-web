@@ -125,6 +125,19 @@ function getEffectivePrice(line) {
   return disc > 0 ? base * (1 - disc / 100) : base;
 }
 
+// Product order quantity: lamp retrofit = fixtures × lamps per fixture, fixture = just fixtures
+function getProductQty(line) {
+  const qty = line.qty || 0;
+  if (line.retrofitType === 'lamp' && (line.lampsPerFixture || 0) > 1) return qty * line.lampsPerFixture;
+  return qty;
+}
+
+// Parse lamp count from fixture name (e.g., "4-Lamp T8" → 4, "2 Lamp T12" → 2)
+function parseLampCount(name) {
+  const m = (name || '').match(/(\d+)[\s-]*lamp/i);
+  return m ? parseInt(m[1]) : 1;
+}
+
 // Auto-pick best SBC subtype based on category + wattage
 function autoPickSBCSub(cat, existW, newW, name) {
   if (cat === 'exterior') return 'ext';
@@ -358,6 +371,12 @@ export default function LenardAZSRP() {
   // SBC fixture type info popup
   const [showSbcInfo, setShowSbcInfo] = useState(false);
 
+  // Pull-to-refresh
+  const [pullStartY, setPullStartY] = useState(0);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
   // Signature capture
   const [signatureData, setSignatureData] = useState(null);
   const [contractAccepted, setContractAccepted] = useState(false);
@@ -370,6 +389,28 @@ export default function LenardAZSRP() {
     setToast({ message, icon });
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   }, []);
+
+  const handlePullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+    const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    try {
+      const [prodResp, empResp] = await Promise.all([
+        fetch(`${SUPABASE_URL}/functions/v1/lenard-products`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: '{}' }),
+        fetch(`${SUPABASE_URL}/functions/v1/lenard-employees`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: '{}' }),
+      ]);
+      const [prodData, empData] = await Promise.all([prodResp.json(), empResp.json()]);
+      if (prodData.products) setSbeProducts(prodData.products);
+      if (empData.employees) setEmployees(empData.employees);
+      if (leadOwnerId) {
+        const projResp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId, leadSource: 'Lenard AZ SRP' }) });
+        const projData = await projResp.json();
+        if (projData.projects) setProjects(projData.projects);
+      }
+      showToast('Refreshed', '↻');
+    } catch (_) { showToast('Refresh failed', '✕'); }
+    setRefreshing(false);
+  }, [leadOwnerId, showToast]);
 
   // Reset lines when switching programs
   useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('AZ'); setSaveZip(''); setSaveMeterNumber(''); setSaveEIN(''); }, [program]);
@@ -476,6 +517,8 @@ export default function LenardAZSRP() {
       }
     }
 
+    const lampCount = parseLampCount(preset?.name || '');
+    const isLampRetrofit = preset?.retrofitType === 'lamp' || (lampCount > 1 && ['T12', 'T8', 'T5'].includes(inferLampType(preset?.name || '')));
     const base = {
       id,
       qty: preset?.qty || 1,
@@ -486,11 +529,12 @@ export default function LenardAZSRP() {
       productId: autoProductId,
       productName: autoProductName,
       productPrice: autoProductPrice,
-      priceOverride: null, // manual price override (null = use product price)
-      discount: 0,         // discount percentage (0-100)
-      // Audit-matching fields
+      priceOverride: null,
+      discount: 0,
       fixtureCategory: fixtureCat,
       lightingType: preset?.lightingType || inferLampType(preset?.name || ''),
+      retrofitType: isLampRetrofit ? 'lamp' : 'fixture',
+      lampsPerFixture: preset?.lampsPerFixture || lampCount,
       confirmed: false,
       overrideNotes: '',
     };
@@ -631,7 +675,7 @@ export default function LenardAZSRP() {
     const annualEnergySavings = annualKwhSaved * energyRate;
     const existAnnualCost = existKwh * energyRate;
     const proposedAnnualCost = proposedKwh * energyRate;
-    const projectCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * (l.qty || 0)), 0);
+    const projectCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * getProductQty(l)), 0);
     const netProjectCost = Math.max(0, projectCost - totals.totalIncentive);
     const simplePayback = annualEnergySavings > 0 ? netProjectCost / annualEnergySavings : 0;
     const roi = netProjectCost > 0 ? (annualEnergySavings / netProjectCost) * 100 : 0;
@@ -691,7 +735,9 @@ export default function LenardAZSRP() {
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
       const projectData = {
         lines: lines.map(l => ({
-          name: l.name, qty: l.qty, existW: l.existW, newW: l.newW,
+          name: l.name, qty: l.qty, productQty: getProductQty(l),
+          retrofitType: l.retrofitType || 'fixture', lampsPerFixture: l.lampsPerFixture || 1,
+          existW: l.existW, newW: l.newW,
           height: l.height, productId: l.productId, productName: l.productName, productPrice: l.productPrice,
           category: l.category, subtype: l.subtype, fixtureType: l.fixtureType,
           fixtureCategory: l.fixtureCategory, lightingType: l.lightingType,
@@ -1401,7 +1447,29 @@ export default function LenardAZSRP() {
 
   // ==================== RENDER ====================
   return (
-    <div style={{ maxWidth: '480px', margin: '0 auto', background: T.bg, minHeight: '100vh', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: T.text, paddingBottom: '20px' }}>
+    <div
+      style={{ maxWidth: '480px', margin: '0 auto', background: T.bg, minHeight: '100vh', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: T.text, paddingBottom: '20px' }}
+      onTouchStart={e => setPullStartY(e.touches[0].clientY)}
+      onTouchMove={e => {
+        if (e.currentTarget.scrollTop > 0) return;
+        const diff = e.touches[0].clientY - pullStartY;
+        if (diff > 0) { setPullDistance(Math.min(diff, 100)); setIsPulling(true); }
+      }}
+      onTouchEnd={() => {
+        if (pullDistance > 70) handlePullRefresh();
+        setPullDistance(0); setIsPulling(false);
+      }}
+    >
+
+      {/* ===== PULL TO REFRESH ===== */}
+      {isPulling && (
+        <div style={{ textAlign: 'center', padding: '8px 0', color: T.textMuted, fontSize: '12px', transition: 'opacity 0.2s', opacity: pullDistance > 20 ? 1 : 0 }}>
+          {pullDistance > 70 ? '↑ Release to refresh' : '↓ Pull to refresh'}
+        </div>
+      )}
+      {refreshing && (
+        <div style={{ textAlign: 'center', padding: '8px 0', color: T.accent, fontSize: '12px' }}>Refreshing...</div>
+      )}
 
       {/* ===== TOAST ===== */}
       {toast && (
@@ -1670,6 +1738,32 @@ export default function LenardAZSRP() {
                     </div>
                   </div>
 
+                  {/* Retrofit Type + Lamps Per Fixture */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={S.label}>Retrofit Type</label>
+                    <div style={{ display: 'flex', gap: '0', maxWidth: '240px', marginBottom: r.retrofitType === 'lamp' ? '10px' : 0 }}>
+                      {['fixture', 'lamp'].map(type => (
+                        <button key={type} type="button" onClick={() => { updateLine(r.id, 'retrofitType', type); if (type === 'fixture') updateLine(r.id, 'lampsPerFixture', 1); }}
+                          style={{ flex: 1, padding: '10px', border: `2px solid ${r.retrofitType === type ? T.accent : T.border}`, background: r.retrofitType === type ? T.accentDim : T.bgInput, color: r.retrofitType === type ? T.accent : T.textSec, fontSize: '13px', fontWeight: '600', cursor: 'pointer', borderRadius: type === 'fixture' ? '8px 0 0 8px' : '0 8px 8px 0', borderLeft: type === 'lamp' ? 'none' : undefined }}>
+                          {type === 'fixture' ? 'New Fixture' : 'Lamp Retrofit'}
+                        </button>
+                      ))}
+                    </div>
+                    {r.retrofitType === 'lamp' && (
+                      <div>
+                        <label style={{ ...S.label, marginTop: '6px' }}>Lamps Per Fixture</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0', maxWidth: '180px' }}>
+                          <button type="button" onClick={() => { playClick(); updateLine(r.id, 'lampsPerFixture', Math.max(1, (r.lampsPerFixture || 1) - 1)); }} style={{ width: '44px', height: '40px', borderRadius: '8px 0 0 8px', border: `2px solid ${T.blue}`, borderRight: 'none', background: T.blueDim, color: T.blue, fontSize: '20px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0 }}>{'\u2212'}</button>
+                          <input type="number" min="1" max="12" inputMode="numeric" value={r.lampsPerFixture || ''} onChange={e => updateLine(r.id, 'lampsPerFixture', Math.max(1, parseInt(e.target.value) || 1))} style={{ flex: 1, minWidth: 0, height: '40px', border: `2px solid ${T.border}`, borderLeft: 'none', borderRight: 'none', background: T.bgInput, color: T.text, fontSize: '18px', fontWeight: '700', textAlign: 'center', MozAppearance: 'textfield', WebkitAppearance: 'none', outline: 'none', boxSizing: 'border-box' }} />
+                          <button type="button" onClick={() => { playClick(); updateLine(r.id, 'lampsPerFixture', Math.min(12, (r.lampsPerFixture || 1) + 1)); }} style={{ width: '44px', height: '40px', borderRadius: '0 8px 8px 0', border: `2px solid ${T.blue}`, borderLeft: 'none', background: T.blue, color: '#fff', fontSize: '20px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0 }}>{'\uFF0B'}</button>
+                        </div>
+                        <div style={{ fontSize: '11px', color: T.blue, marginTop: '6px', fontWeight: '500' }}>
+                          Product qty: {r.qty || 0} fixtures {'\u00D7'} {r.lampsPerFixture || 1} lamps = {getProductQty(r)} units to order
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {/* 2-column: Existing Watts / New Watts — matches audit area modal */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
                     <div>
@@ -1801,13 +1895,14 @@ export default function LenardAZSRP() {
                     {(() => {
                       const eff = getEffectivePrice(r);
                       const basePrice = r.priceOverride != null ? r.priceOverride : (r.productPrice || 0);
-                      const lineTotal = eff * (r.qty || 0);
+                      const pQty = getProductQty(r);
+                      const lineTotal = eff * pQty;
                       if (basePrice <= 0 && eff <= 0) return null;
                       return (
                         <div style={{ fontSize: '11px', marginTop: '4px', color: T.textSec }}>
                           {r.discount > 0 && <span style={{ color: T.green }}>{r.discount}% off: </span>}
                           <span style={{ color: T.accent, fontWeight: '600' }}>${eff.toFixed(2)}/unit</span>
-                          <span> {'\u00D7'} {r.qty} = </span>
+                          <span> {'\u00D7'} {pQty}{r.retrofitType === 'lamp' && (r.lampsPerFixture || 0) > 1 ? ` (${r.qty}{'\u00D7'}${r.lampsPerFixture})` : ''} = </span>
                           <span style={{ fontWeight: '700', color: T.accent }}>${lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           {r.priceOverride != null && r.productPrice > 0 && <span style={{ color: T.textMuted }}> (catalog: ${r.productPrice})</span>}
                         </div>

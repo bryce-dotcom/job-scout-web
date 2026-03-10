@@ -106,6 +106,19 @@ function getEffectivePrice(line) {
   return disc > 0 ? base * (1 - disc / 100) : base;
 }
 
+// Product order quantity: lamp retrofit = fixtures × lamps per fixture, fixture = just fixtures
+function getProductQty(line) {
+  const qty = line.qty || 0;
+  if (line.retrofitType === 'lamp' && (line.lampsPerFixture || 0) > 1) return qty * line.lampsPerFixture;
+  return qty;
+}
+
+// Parse lamp count from fixture name (e.g., "4-Lamp T8" → 4, "2 Lamp T12" → 2)
+function parseLampCount(name) {
+  const m = (name || '').match(/(\d+)[\s-]*lamp/i);
+  return m ? parseInt(m[1]) : 1;
+}
+
 // Infer lamp type from fixture name
 function inferLampType(name) {
   if (!name) return '';
@@ -326,6 +339,34 @@ export default function LenardUTRMP() {
   });
   const [attachingFiles, setAttachingFiles] = useState(false);
 
+  // Pull-to-refresh
+  const [pullStartY, setPullStartY] = useState(0);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handlePullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+    const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    try {
+      const [prodResp, empResp] = await Promise.all([
+        fetch(`${SUPABASE_URL}/functions/v1/lenard-products`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: '{}' }),
+        fetch(`${SUPABASE_URL}/functions/v1/lenard-employees`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: '{}' }),
+      ]);
+      const [prodData, empData] = await Promise.all([prodResp.json(), empResp.json()]);
+      if (prodData.products) setSbeProducts(prodData.products);
+      if (empData.employees) setEmployees(empData.employees);
+      if (leadOwnerId) {
+        const projResp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId, leadSource: 'Lenard UT RMP' }) });
+        const projData = await projResp.json();
+        if (projData.projects) setProjects(projData.projects);
+      }
+      showToast('Refreshed', '↻');
+    } catch (_) { showToast('Refresh failed', '✕'); }
+    setRefreshing(false);
+  }, [leadOwnerId, showToast]);
+
   // Rep-only state (Give-Me Engine) — only visible when authenticated
   const [isRep, setIsRep] = useState(false);
   const [showGiveMe, setShowGiveMe] = useState(false);
@@ -410,6 +451,8 @@ export default function LenardUTRMP() {
       const best = findBestProduct(sbeProducts, fixCat, targetNewW);
       if (best) { autoProductId = best.id; autoProductName = best.name; autoProductPrice = best.unit_price || 0; if (!autoNewW) { const wm = (best.description || best.name || '').match(/(\d+)\s*[wW]/); if (wm) autoNewW = parseInt(wm[1]); } }
     }
+    const lampCount = parseLampCount(preset?.name || '');
+    const isLampRetrofit = preset?.retrofitType === 'lamp' || (lampCount > 1 && ['T12', 'T8', 'T5'].includes(inferLampType(preset?.name || '')));
     const base = {
       id, qty: preset?.qty || 1, existW: preset?.existW || 0, newW: autoNewW,
       name: preset?.name || '', height: preset?.height || DEFAULT_HEIGHTS[loc] || 9,
@@ -418,6 +461,8 @@ export default function LenardUTRMP() {
       productId: autoProductId, productName: autoProductName, productPrice: autoProductPrice,
       priceOverride: null, discount: 0,
       fixtureCategory: fixCat, lightingType: inferLampType(preset?.name || ''),
+      retrofitType: isLampRetrofit ? 'lamp' : 'fixture',
+      lampsPerFixture: preset?.lampsPerFixture || lampCount,
       confirmed: false, overrideNotes: '',
     };
     setLines(prev => [...prev, base]);
@@ -511,7 +556,7 @@ export default function LenardUTRMP() {
 
   const rawIncentive = totals.totalIncentive;
   const capPct = program === 'smbe' ? SMBE.cap : program === 'express' ? EXPRESS.cap : LARGE.cap;
-  const linesCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * (l.qty || 0)), 0);
+  const linesCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * getProductQty(l)), 0);
   const giveMeQuoteTotal = giveMeQuoteItems.reduce((s, item) => s + (item.amount || 0), 0);
   const baselineProjectCost = linesCost;
   const effectiveProjectCost = baselineProjectCost + giveMeQuoteTotal;
@@ -585,7 +630,7 @@ export default function LenardUTRMP() {
       const lampType = l.lightingType || inferLampType(l.name) || 'Other';
       const existLife = LAMP_LIFE[lampType] || 20000;
       const ledLife = LAMP_LIFE.LED;
-      const qty = l.qty || 0;
+      const qty = getProductQty(l); // lamps for lamp retrofit, fixtures for fixture retrofit
       const height = l.height || 9;
       const labor = relampLabor(height);
       const existRelampsPerYear = annualHours > 0 ? qty * (annualHours / existLife) : 0;
@@ -633,12 +678,12 @@ export default function LenardUTRMP() {
         if (selected) {
           const family = getProductFamily(selected, sbeProducts);
           const highestPrice = Math.max(...family.map(p => p.unit_price || 0));
-          maxTotal += highestPrice * (l.qty || 0);
+          maxTotal += highestPrice * getProductQty(l);
         } else {
-          maxTotal += getEffectivePrice(l) * (l.qty || 0);
+          maxTotal += getEffectivePrice(l) * getProductQty(l);
         }
       } else {
-        maxTotal += getEffectivePrice(l) * (l.qty || 0);
+        maxTotal += getEffectivePrice(l) * getProductQty(l);
       }
     });
     return maxTotal;
@@ -2018,7 +2063,9 @@ export default function LenardUTRMP() {
       },
       lines: results.map(r => ({
         item_name: r.name || r.fixtureCategory || 'Fixture',
-        quantity: r.qty, exist_watts: r.existW, new_watts: r.newW,
+        quantity: r.qty, product_qty: getProductQty(r),
+        retrofit_type: r.retrofitType || 'fixture', lamps_per_fixture: r.lampsPerFixture || 1,
+        exist_watts: r.existW, new_watts: r.newW,
         watts_reduced: r.calc.wattsReduced, incentive: r.calc.totalIncentive,
         line_total: r.calc.totalIncentive,
       })),
@@ -2101,7 +2148,29 @@ export default function LenardUTRMP() {
   // ==================== RENDER ====================
   // ==================== RENDER ====================
   return (
-    <div style={{ maxWidth: '480px', margin: '0 auto', background: T.bg, minHeight: '100vh', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: T.text, paddingBottom: '20px' }}>
+    <div
+      style={{ maxWidth: '480px', margin: '0 auto', background: T.bg, minHeight: '100vh', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: T.text, paddingBottom: '20px' }}
+      onTouchStart={e => setPullStartY(e.touches[0].clientY)}
+      onTouchMove={e => {
+        if (e.currentTarget.scrollTop > 0) return;
+        const diff = e.touches[0].clientY - pullStartY;
+        if (diff > 0) { setPullDistance(Math.min(diff, 100)); setIsPulling(true); }
+      }}
+      onTouchEnd={() => {
+        if (pullDistance > 70) handlePullRefresh();
+        setPullDistance(0); setIsPulling(false);
+      }}
+    >
+
+      {/* ===== PULL TO REFRESH ===== */}
+      {isPulling && (
+        <div style={{ textAlign: 'center', padding: '8px 0', color: T.textMuted, fontSize: '12px', transition: 'opacity 0.2s', opacity: pullDistance > 20 ? 1 : 0 }}>
+          {pullDistance > 70 ? '↑ Release to refresh' : '↓ Pull to refresh'}
+        </div>
+      )}
+      {refreshing && (
+        <div style={{ textAlign: 'center', padding: '8px 0', color: T.accent, fontSize: '12px' }}>Refreshing...</div>
+      )}
 
       {/* ===== TOAST ===== */}
       {toast && (
@@ -2403,6 +2472,32 @@ export default function LenardUTRMP() {
                     </div>
                   </div>
 
+                  {/* Retrofit Type + Lamps Per Fixture */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={S.label}>Retrofit Type</label>
+                    <div style={{ display: 'flex', gap: '0', maxWidth: '240px', marginBottom: r.retrofitType === 'lamp' ? '10px' : 0 }}>
+                      {['fixture', 'lamp'].map(type => (
+                        <button key={type} type="button" onClick={() => { updateLine(r.id, 'retrofitType', type); if (type === 'fixture') updateLine(r.id, 'lampsPerFixture', 1); }}
+                          style={{ flex: 1, padding: '10px', border: `2px solid ${r.retrofitType === type ? T.accent : T.border}`, background: r.retrofitType === type ? T.accentDim : T.bgInput, color: r.retrofitType === type ? T.accent : T.textSec, fontSize: '13px', fontWeight: '600', cursor: 'pointer', borderRadius: type === 'fixture' ? '8px 0 0 8px' : '0 8px 8px 0', borderLeft: type === 'lamp' ? 'none' : undefined }}>
+                          {type === 'fixture' ? 'New Fixture' : 'Lamp Retrofit'}
+                        </button>
+                      ))}
+                    </div>
+                    {r.retrofitType === 'lamp' && (
+                      <div>
+                        <label style={{ ...S.label, marginTop: '6px' }}>Lamps Per Fixture</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0', maxWidth: '180px' }}>
+                          <button type="button" onClick={() => { playClick(); updateLine(r.id, 'lampsPerFixture', Math.max(1, (r.lampsPerFixture || 1) - 1)); }} style={{ width: '44px', height: '40px', borderRadius: '8px 0 0 8px', border: `2px solid ${T.blue}`, borderRight: 'none', background: T.blueDim, color: T.blue, fontSize: '20px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0 }}>{'\u2212'}</button>
+                          <input type="number" min="1" max="12" inputMode="numeric" value={r.lampsPerFixture || ''} onChange={e => updateLine(r.id, 'lampsPerFixture', Math.max(1, parseInt(e.target.value) || 1))} style={{ flex: 1, minWidth: 0, height: '40px', border: `2px solid ${T.border}`, borderLeft: 'none', borderRight: 'none', background: T.bgInput, color: T.text, fontSize: '18px', fontWeight: '700', textAlign: 'center', MozAppearance: 'textfield', WebkitAppearance: 'none', outline: 'none', boxSizing: 'border-box' }} />
+                          <button type="button" onClick={() => { playClick(); updateLine(r.id, 'lampsPerFixture', Math.min(12, (r.lampsPerFixture || 1) + 1)); }} style={{ width: '44px', height: '40px', borderRadius: '0 8px 8px 0', border: `2px solid ${T.blue}`, borderLeft: 'none', background: T.blue, color: '#fff', fontSize: '20px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0 }}>{'\uFF0B'}</button>
+                        </div>
+                        <div style={{ fontSize: '11px', color: T.blue, marginTop: '6px', fontWeight: '500' }}>
+                          Product qty: {r.qty || 0} fixtures {'\u00D7'} {r.lampsPerFixture || 1} lamps = {getProductQty(r)} units to order
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {/* 2-column: Existing Watts / New Watts — matches AZ audit UI */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
                     <div>
@@ -2549,13 +2644,14 @@ export default function LenardUTRMP() {
                     </div>
                     {(() => {
                       const eff = getEffectivePrice(r);
-                      const lineTotal = eff * (r.qty || 0);
+                      const pQty = getProductQty(r);
+                      const lineTotal = eff * pQty;
                       if (eff <= 0) return null;
                       return (
                         <div style={{ fontSize: '11px', marginTop: '4px', color: T.textSec }}>
                           {r.discount > 0 && <span style={{ color: T.green }}>{r.discount}% off: </span>}
                           <span style={{ color: T.accent, fontWeight: '600' }}>${eff.toFixed(2)}/unit</span>
-                          <span> {'\u00D7'} {r.qty} = </span>
+                          <span> {'\u00D7'} {pQty}{r.retrofitType === 'lamp' && (r.lampsPerFixture || 0) > 1 ? ` (${r.qty}{'\u00D7'}${r.lampsPerFixture})` : ''} = </span>
                           <span style={{ fontWeight: '700', color: T.accent }}>${lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                       );
@@ -2579,7 +2675,7 @@ export default function LenardUTRMP() {
                     {(() => { const actualLineRebate = rawIncentive > 0 ? +(r.calc.totalIncentive / rawIncentive * estimatedRebate).toFixed(2) : r.calc.totalIncentive; return (
                       <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: `1px solid ${T.border}`, marginBottom: '4px' }}><span style={{ fontWeight: '600', color: T.green }}>Line Rebate</span><span style={{ color: T.green, fontWeight: '700', fontSize: '14px' }}>${actualLineRebate.toLocaleString()}</span></div>
                     ); })()}
-                    {(() => { const ep = getEffectivePrice(r); const lt = ep * (r.qty || 0); return lt > 0 ? (
+                    {(() => { const ep = getEffectivePrice(r); const lt = ep * getProductQty(r); return lt > 0 ? (
                       <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: `1px solid ${T.border}` }}><span style={{ fontWeight: '600', color: T.text }}>Line Total</span><span style={{ ...S.money, fontSize: '14px' }}>${lt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                     ) : null; })()}
                   </div>
@@ -2611,7 +2707,7 @@ export default function LenardUTRMP() {
           {/* Line items */}
           {results.map((r, i) => {
             const unitPrice = getEffectivePrice(r);
-            const lineTotal = unitPrice * (r.qty || 0);
+            const lineTotal = unitPrice * getProductQty(r);
             const lineRaw = r.calc.totalIncentive;
             const lineRebate = rawIncentive > 0 ? +(lineRaw / rawIncentive * estimatedRebate).toFixed(2) : lineRaw;
             const lineCapped = lineRebate < lineRaw - 0.01;
@@ -2620,7 +2716,7 @@ export default function LenardUTRMP() {
             return (
               <div key={r.id} style={{ padding: '3px 0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12px', color: T.text }}>
-                  <span style={{ flex: 1, color: T.textSec }}>{r.location || `Line ${i + 1}`} <span style={{ color: T.textMuted, fontSize: '10px' }}>({r.qty || 0} {'\u00D7'} ${unitPrice.toFixed(2)})</span></span>
+                  <span style={{ flex: 1, color: T.textSec }}>{r.location || `Line ${i + 1}`} <span style={{ color: T.textMuted, fontSize: '10px' }}>({getProductQty(r)} {'\u00D7'} ${unitPrice.toFixed(2)})</span></span>
                   <span style={{ fontWeight: '600', fontVariantNumeric: 'tabular-nums' }}>${Math.round(lineTotal).toLocaleString()}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '10px', color: T.textMuted, paddingLeft: '4px' }}>
