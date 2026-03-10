@@ -371,6 +371,12 @@ export default function LenardAZSRP() {
   // SBC fixture type info popup
   const [showSbcInfo, setShowSbcInfo] = useState(false);
 
+  // Dougie (handwritten takeoff sheet scanner)
+  const [showScanOptions, setShowScanOptions] = useState(false);
+  const [dougieStep, setDougieStep] = useState(null);
+  const [dougiePhotos, setDougiePhotos] = useState([]);
+  const [dougieResult, setDougieResult] = useState(null);
+
   // Pull-to-refresh
   const [pullStartY, setPullStartY] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
@@ -651,10 +657,111 @@ export default function LenardAZSRP() {
   };
 
   const openCamera = () => {
+    setShowScanOptions(false);
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment';
     input.onchange = (e) => { const f = e.target.files?.[0]; if (f) analyzePhoto(f); };
     input.click();
+  };
+
+  // ---- DOUGIE: Handwritten Takeoff Sheet Scanner ----
+  const openDougie = () => {
+    setShowScanOptions(false);
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*'; input.multiple = true;
+    input.onchange = (e) => {
+      const files = Array.from(e.target.files || []).slice(0, 3);
+      if (files.length === 0) return;
+      Promise.all(files.map(f => new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res({ base64: r.result.split(',')[1], preview: r.result });
+        r.onerror = () => rej(new Error('Read failed'));
+        r.readAsDataURL(f);
+      }))).then(photos => { setDougiePhotos(photos); setDougieStep('preview'); });
+    };
+    input.click();
+  };
+
+  const analyzeDougie = async () => {
+    setDougieStep('loading');
+    try {
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/dougie-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+        body: JSON.stringify({ images: dougiePhotos.map(p => ({ base64: p.base64, mediaType: 'image/jpeg' })) }),
+      });
+      const data = await resp.json();
+      if (data.success && data.header && data.areas) {
+        dougiePhotos.forEach(p => setCapturedPhotos(prev => [...prev, p.base64]));
+        setDougieResult({ header: data.header, areas: data.areas });
+        setDougieStep('review');
+      } else {
+        showToast(data.error || 'Could not read takeoff sheet', '\u26A0\uFE0F');
+        setDougieStep(null);
+      }
+    } catch (err) {
+      console.error('Dougie error:', err);
+      showToast('Could not analyze takeoff sheet', '\u26A0\uFE0F');
+      setDougieStep(null);
+    }
+  };
+
+  const importDougieToProject = () => {
+    if (!dougieResult) return;
+    const { header, areas } = dougieResult;
+    if (header.customerName && !projectName) setProjectName(header.customerName);
+    if (header.phone && !savePhone) setSavePhone(header.phone);
+    if (header.meterNumber && !saveMeterNumber) setSaveMeterNumber(header.meterNumber);
+    if (header.address && !saveAddress) setSaveAddress(header.address);
+    let count = 0;
+    areas.forEach(area => {
+      (area.fixtures || []).forEach(f => {
+        addLine({
+          name: f.name || `${area.areaName} fixture`,
+          existW: f.existW || 0,
+          newW: f.newW || 0,
+          qty: f.qty || 1,
+          cat: f.location === 'exterior' ? 'exterior' : 'panel',
+          sbsType: f.location === 'exterior' ? 'Exterior LED' : 'Interior LED Fixture',
+          height: f.height || 9,
+          fixtureCategory: f.fixtureCategory || 'Linear',
+          lightingType: f.lightingType || inferLampType(f.name || ''),
+        });
+        count++;
+      });
+    });
+    showToast(`Imported ${count} fixtures from ${areas.length} area${areas.length > 1 ? 's' : ''}`, '\u2713');
+    setDougieStep(null); setDougiePhotos([]); setDougieResult(null);
+    markDirty();
+  };
+
+  const updateDougieHeader = (field, value) => {
+    setDougieResult(prev => ({ ...prev, header: { ...prev.header, [field]: value } }));
+  };
+  const updateDougieFixture = (areaIdx, fixIdx, field, value) => {
+    setDougieResult(prev => {
+      const areas = [...prev.areas];
+      const fixtures = [...areas[areaIdx].fixtures];
+      fixtures[fixIdx] = { ...fixtures[fixIdx], [field]: value };
+      areas[areaIdx] = { ...areas[areaIdx], fixtures };
+      return { ...prev, areas };
+    });
+  };
+  const removeDougieFixture = (areaIdx, fixIdx) => {
+    setDougieResult(prev => {
+      const areas = [...prev.areas];
+      areas[areaIdx] = { ...areas[areaIdx], fixtures: areas[areaIdx].fixtures.filter((_, i) => i !== fixIdx) };
+      return { ...prev, areas: areas.filter(a => a.fixtures.length > 0) };
+    });
+  };
+  const addDougieFixture = (areaIdx) => {
+    setDougieResult(prev => {
+      const areas = [...prev.areas];
+      areas[areaIdx] = { ...areas[areaIdx], fixtures: [...areas[areaIdx].fixtures, { name: '', qty: 1, existW: 0, newW: 0, location: 'interior', height: 9, fixtureCategory: 'Linear', lightingType: '' }] };
+      return { ...prev, areas };
+    });
   };
 
   // ---- INCENTIVE CALCULATIONS ----
@@ -1579,9 +1686,26 @@ export default function LenardAZSRP() {
 
       {/* ===== ACTION BUTTONS ===== */}
       <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <button onClick={openCamera} disabled={cameraLoading} style={{ width: '100%', padding: '14px 16px', background: cameraLoading ? T.bgInput : T.blue, color: cameraLoading ? T.textMuted : '#fff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: cameraLoading ? 'none' : '0 2px 8px rgba(59,130,246,0.35)' }}>
-          {cameraLoading ? '\u23F3 Analyzing...' : '\uD83D\uDCF7 Scan Fixtures with Camera'}
-        </button>
+        <div style={{ position: 'relative' }}>
+          <button onClick={() => setShowScanOptions(!showScanOptions)} disabled={cameraLoading} style={{ width: '100%', padding: '14px 16px', background: cameraLoading ? T.bgInput : T.blue, color: cameraLoading ? T.textMuted : '#fff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: cameraLoading ? 'none' : '0 2px 8px rgba(59,130,246,0.35)' }}>
+            {cameraLoading ? '\u23F3 Analyzing...' : '\uD83D\uDCF7 Scan Fixtures \u2014 or Do the Dougie'}
+          </button>
+          {showScanOptions && (
+            <>
+              <div onClick={() => setShowScanOptions(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }} />
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', zIndex: 999, overflow: 'hidden' }}>
+                <button onClick={openCamera} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${T.border}`, color: T.text, fontSize: '14px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left' }}>
+                  <span style={{ fontSize: '20px' }}>{'\uD83D\uDCF7'}</span>
+                  <div><div>Scan Fixtures with Camera</div><div style={{ fontSize: '11px', fontWeight: '400', color: T.textMuted, marginTop: '2px' }}>Point at ceiling, Lenard AI identifies fixtures</div></div>
+                </button>
+                <button onClick={openDougie} style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', color: T.text, fontSize: '14px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left' }}>
+                  <span style={{ fontSize: '20px' }}>{'\uD83D\uDCCB'}</span>
+                  <div><div>Do the Dougie</div><div style={{ fontSize: '11px', fontWeight: '400', color: T.textMuted, marginTop: '2px' }}>Photograph a handwritten takeoff sheet (1-3 pages)</div></div>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button onClick={() => setShowQuickAdd(true)} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>{'\u26A1'} Quick Add</button>
           <button onClick={() => addLine()} style={{ ...S.btnGhost, flex: 1, fontSize: '13px' }}>{'\uFF0B'} Add Line</button>
@@ -2300,6 +2424,119 @@ export default function LenardAZSRP() {
         <div onClick={() => setViewingPhoto(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', color: '#fff', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{'\u2715'}</button>
           <img src={`data:image/jpeg;base64,${capturedPhotos[viewingPhoto]}`} alt="Full size" style={{ maxWidth: '95vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
+        </div>
+      )}
+
+      {/* ===== DOUGIE: Photo Preview ===== */}
+      {dougieStep === 'preview' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ width: '100%', maxWidth: '500px', maxHeight: '85vh', background: T.bgCard, borderRadius: '16px 16px 0 0', overflow: 'auto', padding: '20px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: T.text }}>{'\uD83D\uDCCB'} Do the Dougie</h3>
+              <button onClick={() => { setDougieStep(null); setDougiePhotos([]); }} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: '22px', cursor: 'pointer' }}>{'\u2715'}</button>
+            </div>
+            <p style={{ fontSize: '13px', color: T.textSec, margin: '0 0 12px' }}>{dougiePhotos.length} page{dougiePhotos.length !== 1 ? 's' : ''} captured. Review and analyze.</p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+              {dougiePhotos.map((p, i) => (
+                <div key={i} style={{ position: 'relative', width: '100px', height: '130px', borderRadius: '8px', overflow: 'hidden', border: `2px solid ${T.border}` }}>
+                  <img src={p.preview} alt={`Page ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '10px', textAlign: 'center', padding: '2px' }}>Page {i + 1}</div>
+                </div>
+              ))}
+              {dougiePhotos.length < 3 && (
+                <button onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file'; input.accept = 'image/*';
+                  input.onchange = (e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    const r = new FileReader();
+                    r.onload = () => setDougiePhotos(prev => [...prev.slice(0, 2), { base64: r.result.split(',')[1], preview: r.result }]);
+                    r.readAsDataURL(f);
+                  };
+                  input.click();
+                }} style={{ width: '100px', height: '130px', borderRadius: '8px', border: `2px dashed ${T.border}`, background: 'none', color: T.textMuted, fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{'\uFF0B'}</button>
+              )}
+            </div>
+            <button onClick={analyzeDougie} style={{ width: '100%', padding: '14px', background: T.accent, color: '#fff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}>{'\uD83D\uDCCB'} Analyze Takeoff Sheet</button>
+          </div>
+        </div>
+      )}
+
+      {/* ===== DOUGIE: Loading ===== */}
+      {dougieStep === 'loading' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: T.bgCard, borderRadius: '16px', padding: '40px 32px', textAlign: 'center', maxWidth: '320px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px', animation: 'spin 2s linear infinite' }}>{'\uD83D\uDD7A'}</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: '17px', fontWeight: '700', color: T.text }}>Dougie is reading...</h3>
+            <p style={{ margin: 0, fontSize: '13px', color: T.textMuted }}>Analyzing {dougiePhotos.length} page{dougiePhotos.length !== 1 ? 's' : ''} of your takeoff sheet</p>
+          </div>
+        </div>
+      )}
+
+      {/* ===== DOUGIE: Review & Edit ===== */}
+      {dougieStep === 'review' && dougieResult && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ width: '100%', maxWidth: '500px', maxHeight: '92vh', background: T.bgCard, borderRadius: '16px 16px 0 0', overflow: 'auto', padding: '20px 16px 100px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: T.text }}>{'\uD83D\uDCCB'} Review Takeoff</h3>
+              <button onClick={() => { setDougieStep(null); setDougiePhotos([]); setDougieResult(null); }} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: '22px', cursor: 'pointer' }}>{'\u2715'}</button>
+            </div>
+
+            {/* Header */}
+            <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: T.textSec, marginBottom: '8px' }}>PROJECT INFO</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div><label style={{ fontSize: '11px', color: T.textMuted }}>Customer</label><input value={dougieResult.header.customerName || ''} onChange={e => updateDougieHeader('customerName', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div><label style={{ fontSize: '11px', color: T.textMuted }}>Phone</label><input value={dougieResult.header.phone || ''} onChange={e => updateDougieHeader('phone', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div><label style={{ fontSize: '11px', color: T.textMuted }}>Meter #</label><input value={dougieResult.header.meterNumber || ''} onChange={e => updateDougieHeader('meterNumber', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div><label style={{ fontSize: '11px', color: T.textMuted }}>Address</label><input value={dougieResult.header.address || ''} onChange={e => updateDougieHeader('address', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+              </div>
+            </div>
+
+            {/* Areas */}
+            {dougieResult.areas.map((area, aIdx) => (
+              <div key={aIdx} style={{ background: T.bgInput, borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
+                <input value={area.areaName || ''} onChange={e => {
+                  setDougieResult(prev => {
+                    const areas = [...prev.areas];
+                    areas[aIdx] = { ...areas[aIdx], areaName: e.target.value };
+                    return { ...prev, areas };
+                  });
+                }} style={{ background: 'none', border: 'none', fontSize: '14px', fontWeight: '700', color: T.accent, padding: '0 0 8px', width: '100%', outline: 'none' }} />
+                {(area.fixtures || []).map((fix, fIdx) => (
+                  <div key={fIdx} style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '6px', padding: '6px 0', borderBottom: fIdx < area.fixtures.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <input value={fix.name || ''} onChange={e => updateDougieFixture(aIdx, fIdx, 'name', e.target.value)} placeholder="Fixture name" style={{ width: '100%', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '6px', fontSize: '12px', padding: '5px 6px', color: T.text, marginBottom: '4px' }} />
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <input type="text" inputMode="numeric" value={fix.qty || ''} onChange={e => updateDougieFixture(aIdx, fIdx, 'qty', parseInt(e.target.value.replace(/\D/g, '')) || 0)} style={{ width: '38px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '6px', fontSize: '11px', padding: '4px', color: T.text, textAlign: 'center' }} placeholder="Qty" />
+                        <input type="text" inputMode="numeric" value={fix.existW || ''} onChange={e => updateDougieFixture(aIdx, fIdx, 'existW', parseInt(e.target.value.replace(/\D/g, '')) || 0)} style={{ width: '48px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '6px', fontSize: '11px', padding: '4px', color: T.text, textAlign: 'center' }} placeholder="Old W" />
+                        <span style={{ fontSize: '12px', color: T.textMuted, alignSelf: 'center' }}>{'\u2192'}</span>
+                        <input type="text" inputMode="numeric" value={fix.newW || ''} onChange={e => updateDougieFixture(aIdx, fIdx, 'newW', parseInt(e.target.value.replace(/\D/g, '')) || 0)} style={{ width: '48px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '6px', fontSize: '11px', padding: '4px', color: T.text, textAlign: 'center' }} placeholder="LED W" />
+                        <select value={fix.location || 'interior'} onChange={e => updateDougieFixture(aIdx, fIdx, 'location', e.target.value)} style={{ flex: 1, minWidth: '60px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '6px', fontSize: '11px', padding: '4px', color: T.text }}>
+                          <option value="interior">Int</option>
+                          <option value="exterior">Ext</option>
+                        </select>
+                      </div>
+                    </div>
+                    <button onClick={() => removeDougieFixture(aIdx, fIdx)} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '16px', cursor: 'pointer', padding: '4px', flexShrink: 0 }}>{'\u2715'}</button>
+                  </div>
+                ))}
+                <button onClick={() => addDougieFixture(aIdx)} style={{ width: '100%', padding: '6px', background: 'none', border: `1px dashed ${T.border}`, borderRadius: '6px', color: T.textMuted, fontSize: '12px', cursor: 'pointer', marginTop: '4px' }}>{'\uFF0B'} Add Row</button>
+              </div>
+            ))}
+
+            {/* Summary */}
+            <div style={{ fontSize: '13px', color: T.textSec, textAlign: 'center', margin: '8px 0' }}>
+              {dougieResult.areas.reduce((s, a) => s + (a.fixtures || []).length, 0)} fixtures in {dougieResult.areas.length} area{dougieResult.areas.length !== 1 ? 's' : ''}
+            </div>
+
+            {/* Fixed bottom actions */}
+            <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: T.bgCard, borderTop: `1px solid ${T.border}`, padding: '12px 16px', display: 'flex', gap: '10px', zIndex: 9001, maxWidth: '500px', margin: '0 auto' }}>
+              <button onClick={() => { setDougieStep(null); setDougiePhotos([]); setDougieResult(null); }} style={{ flex: 1, padding: '12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '10px', color: T.textSec, fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={importDougieToProject} style={{ flex: 2, padding: '12px', background: T.accent, border: 'none', borderRadius: '10px', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>{'\u2713'} Import to Project</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
