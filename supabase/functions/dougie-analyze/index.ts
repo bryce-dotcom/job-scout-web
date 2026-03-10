@@ -89,14 +89,21 @@ Look at the page(s) and determine the form structure. Do NOT assume a fixed layo
 KNOWN FORM: "Energy Scout" takeoff (common but not guaranteed):
   Header: Project Name | Meter # | SBE/MID/Large | Address | Contact | Hours | City | Phone
   Columns: ROW # | TICK MARK | AREA NAME | TOTAL FIX | FIXTURE TYPE | LAMP TYPE | WATTAGE || TOTAL FIX | FIXTURE TYPE | WATTAGE | CONTROLS Y/N | HT | NOTES
+  The LEFT side columns (up to the ||) describe the EXISTING fixtures. The RIGHT side columns describe the NEW/PROPOSED replacement fixtures.
   Footer legend: MH, INC, Hal, CFL, T8, T12, T5, BB
 
 If the form does NOT match this layout, adapt. Read whatever columns ARE present. Some forms may be missing columns like Area Name, Controls, Height, or Notes — that's fine, leave those fields empty in the output.
 
+CRITICAL — ONE ROW = ONE AREA ENTRY:
+Many takeoff forms have TWO sides: EXISTING (left) and NEW/PROPOSED (right). These are NOT separate rows.
+They are the LEFT half and RIGHT half of the SAME physical row. Each physical printed row on the form = exactly ONE entry in the "areas" array. The existing side gives you the current fixture info (qty, type, wattage). The new side gives you what's proposed to replace it. Both sides belong to the SAME area entry.
+If a form has 8 printed rows per page and 2 pages, that's at most 16 area entries — NOT 32.
+
 STEP 2 — RAW TRANSCRIPTION (MANDATORY)
 Before structuring anything, write out EVERY piece of text you see on ALL pages, row by row:
-  'Page 1 Header: [all header text] | Row 1: [all text in row] | Row 2: [all text in row] ...'
+  'Page 1 Header: [all header text] | Row 1: [LEFT side text] → [RIGHT side text] | Row 2: ...'
 This is your working draft. Be thorough. Include faint or unclear text with your best guess.
+Note: each "Row N" should include BOTH the left (existing) AND right (new) sides of that row.
 
 STEP 3 — READ THE HEADER
 Look for any of these fields in the top/header area of the form. Different forms use different labels:
@@ -112,17 +119,14 @@ Look for any of these fields in the top/header area of the form. Different forms
 If a field isn't on the form, leave it as empty string.
 
 STEP 4 — READ EVERY ROW
-Go through EVERY row on EVERY page. For each row that has ANY writing:
-  - Read ALL columns that exist on THIS form (don't force columns that aren't there)
+Go through EVERY physical printed row on EVERY page. For each row that has ANY writing:
+  - The EXISTING (left) side is the PRIMARY data — this tells us what fixture is currently installed.
+  - The NEW/PROPOSED (right) side is supplemental — it tells us the proposed LED replacement.
+  - Both sides go into ONE area entry. Do NOT create separate entries for left and right sides.
   - If the form has an "Area Name" or "Location" column, read it. If not, use "" for areaName.
-  - If the form has existing AND new fixture sides, read both. If only one side, fill what you can.
-  - Each row with writing = one entry in "areas". NEVER combine rows. NEVER skip rows.
+  - Each physical row with writing = exactly one entry in "areas". NEVER split a row into two entries.
 
-After reading all pages, COUNT your rows. If you found fewer than expected, re-examine:
-  - Page boundaries (last row of page 1, first rows of page 2)
-  - Faint or light handwriting
-  - Rows with only 1-2 columns filled in
-  - Continuation pages
+After reading all pages, COUNT your physical rows. If the number seems too high, you probably split left/right sides into separate entries — go back and merge them.
 
 Common abbreviations:
   MH = Metal Halide | HPS = High Pressure Sodium | MV = Mercury Vapor | INC = Incandescent
