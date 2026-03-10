@@ -102,7 +102,11 @@ export default function FieldScout() {
   useEffect(() => {
     if (!companyId) return
     supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'google_review_url').single()
-      .then(({ data }) => { if (data?.value) setGoogleReviewUrl(data.value) })
+      .then(({ data }) => {
+        if (data?.value) {
+          try { setGoogleReviewUrl(JSON.parse(data.value)) } catch { setGoogleReviewUrl(data.value) }
+        }
+      })
   }, [companyId])
 
   // Fetch job sections for expanded jobs
@@ -1323,6 +1327,49 @@ export default function FieldScout() {
                 <div style={{ fontSize: '48px', marginBottom: '12px' }}>&#10003;</div>
                 <div style={{ fontSize: '20px', fontWeight: '700', color: '#16a34a' }}>Payment Recorded!</div>
                 <div style={{ fontSize: '14px', color: theme.textMuted, marginTop: '4px' }}>{paymentJob.job_title || paymentJob.job_id}</div>
+
+                {googleReviewUrl && (
+                  <button
+                    onClick={() => { shareReviewLink(paymentJob); setPaymentJob(null) }}
+                    style={{
+                      marginTop: '24px',
+                      padding: '16px 28px',
+                      background: reviewSent.has(paymentJob.id)
+                        ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                        : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      border: 'none',
+                      borderRadius: '14px',
+                      color: '#fff',
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <Star size={18} />
+                    {reviewSent.has(paymentJob.id) ? 'Review Sent!' : 'Ask for a Google Review'}
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setPaymentJob(null)}
+                  style={{
+                    display: 'block',
+                    margin: '16px auto 0',
+                    padding: '12px 24px',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '10px',
+                    color: theme.textSecondary,
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Done
+                </button>
               </div>
             ) : (
               <>
