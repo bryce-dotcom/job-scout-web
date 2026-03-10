@@ -15,8 +15,8 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'At least one image is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    if (images.length > 3) {
-      return new Response(JSON.stringify({ error: 'Maximum 3 images allowed' }),
+    if (images.length > 5) {
+      return new Response(JSON.stringify({ error: 'Maximum 5 images allowed' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -42,66 +42,119 @@ serve(async (req) => {
       },
     ])).flat();
 
-    const prompt = `You are Dougie, an expert at reading handwritten commercial lighting takeoff sheets for HHH Building Services.
+    const prompt = `You are Dougie, an expert at reading handwritten commercial lighting takeoff sheets.
 
-These ${images.length} photo(s) show a handwritten lighting audit / takeoff sheet filled out by a field technician. The sheet typically has:
-- A header section with project info (customer name, contact person, phone, meter number, address)
-- Rows organized by AREA (e.g., "Warehouse", "Office", "Parking Lot", "Break Room")
-- Each area has fixture rows showing: existing fixture type, quantity, wattage, and the proposed LED replacement fixture, quantity, wattage
+CRITICAL INSTRUCTIONS — READ CAREFULLY:
 
-Read EVERY row carefully. Handwriting may be messy — do your best to interpret it.
+1. FIRST, transcribe EVERY piece of text you can see on ALL pages. Read every word, number, abbreviation, note, and scribble. Do not skip anything. Look in corners, margins, headers, footers, column headers, and between rows.
 
-For each fixture row, determine:
-- "name": the existing fixture description (e.g., "4-Lamp T8 4ft Troffer", "400W Metal Halide High Bay")
-- "qty": number of fixtures (integer)
-- "existW": existing system wattage per fixture INCLUDING ballast loss. Common wattages:
-  4L T8 4ft: 112W | 3L T8 4ft: 84W | 2L T8 4ft: 56W
-  4L T12 4ft: 172W | 2L T12 4ft: 86W
-  6L T5HO HB: 351W | 4L T5HO HB: 234W
-  400W MH: 458W | 250W MH: 288W | 1000W MH: 1080W
-  400W HPS: 465W | 250W HPS: 295W | 150W HPS: 188W
-  175W MH WP: 210W | 100W MH WP: 120W
-- "newW": proposed LED replacement wattage per fixture (integer)
-- "ledProduct": the LED replacement product name if written (e.g., "LED 2x4 Troffer 32W")
-- "location": "interior" or "exterior" based on area name / context
-- "height": estimated mounting height in feet:
-  Office/drop ceiling: 9 | Retail/open ceiling: 10-12 | Warehouse/high bay: 18-30
-  Exterior wall pack: 12-15 | Exterior pole: 20-35
-- "fixtureCategory": one of "Linear", "High Bay", "Low Bay", "Recessed", "Surface Mount", "Wall Pack", "Flood", "Area Light", "Canopy", "Outdoor", "Other"
-- "lightingType": one of "T12", "T8", "T5", "T5HO", "Metal Halide", "HPS", "Mercury Vapor", "Halogen", "Incandescent", "CFL", "LED", "Other"
+2. THEN, structure what you transcribed into JSON.
 
-Return ONLY valid JSON (no markdown, no backticks):
+WHAT TO LOOK FOR IN THE HEADER / TOP SECTION:
+These sheets are filled out by lighting auditors in the field. The header area typically contains some or all of:
+- Customer / Business / Project name (might say "Customer:", "Project:", "Business:", "Name:", or just be the biggest text at the top)
+- Contact person name (might say "Contact:", "Attn:", "PM:", or be next to the business name)
+- Phone number (any 7 or 10 digit number, might have dashes or dots — look for patterns like 801-555-1234, (801) 555-1234, 8015551234)
+- Meter number / Account number (electric utility meter — might say "Meter:", "Meter #:", "Acct:", "Acct #:", "Account:", or just be a long number near the top. Often 8-12 digits. VERY IMPORTANT — look hard for this)
+- Address (street address, might include city/state/zip)
+- City, State, ZIP (might be separate from street address)
+- Email address (look for @ symbol)
+- EIN / Tax ID (might say "EIN:", "Tax ID:", "TIN:")
+- Date
+- Utility company name (e.g., "Rocky Mountain Power", "SRP", "APS")
+- Any other header info (building type, square footage, operating hours)
+
+WHAT TO LOOK FOR IN THE FIXTURE ROWS:
+The main body is a table or list of fixtures organized by area/room. Look for:
+
+Common abbreviations technicians use:
+  T8, T12, T5, T5HO = fluorescent tube types
+  MH = Metal Halide | HPS = High Pressure Sodium | MV = Mercury Vapor
+  HB = High Bay | LB = Low Bay | WP = Wall Pack
+  2x4, 2x2, 1x4 = troffer/panel sizes
+  4L, 3L, 2L, 1L = number of lamps (4-lamp, 3-lamp, etc.)
+  LED = Light Emitting Diode replacement
+  W = Watts
+  "→" or arrow = "replaced by" / "to"
+  Qty, # = quantity
+  Ext = Exterior | Int = Interior
+  Ht = Height | Clg = Ceiling
+
+Common existing fixture wattages (including ballast):
+  4-Lamp T8 4ft: 112W | 3-Lamp T8 4ft: 84W | 2-Lamp T8 4ft: 56W
+  4-Lamp T12 4ft: 172W | 2-Lamp T12 4ft: 86W | 1-Lamp T12 4ft: 46W
+  6-Lamp T5HO High Bay: 351W | 4-Lamp T5HO High Bay: 234W
+  400W Metal Halide: 458W | 250W Metal Halide: 288W | 175W Metal Halide: 210W | 1000W Metal Halide: 1080W
+  400W HPS: 465W | 250W HPS: 295W | 150W HPS: 188W | 100W HPS: 120W
+  100W MH Wall Pack: 120W | 175W MH Wall Pack: 210W | 250W MH Shoebox: 295W
+
+If you see a fixture type but no wattage written, USE the wattage from the table above.
+If you see a wattage but no fixture type, describe the fixture as best you can.
+
+For LED replacement wattage: if written on the sheet use that value. If not written, estimate:
+  T8 troffer → 32W LED | T12 troffer → 30W LED
+  T8 strip 4ft → 22W LED | High bay MH 400W → 150W LED
+  High bay MH 250W → 100W LED | Wall pack → 25-40W LED
+  Shoebox/area light → 70-150W LED
+
+RETURN THIS EXACT JSON STRUCTURE (no markdown, no backticks, no explanation):
 {
+  "rawTranscription": "<Write out EVERYTHING you can read from ALL pages, line by line, preserving the layout as closely as possible. Include crossed-out text in [brackets]. This is your working notes.>",
   "header": {
-    "customerName": "<project/customer name or empty string>",
-    "contact": "<contact person or empty string>",
-    "phone": "<phone number or empty string>",
-    "meterNumber": "<meter number or empty string>",
-    "address": "<address or empty string>"
+    "customerName": "",
+    "contact": "",
+    "phone": "",
+    "email": "",
+    "meterNumber": "",
+    "accountNumber": "",
+    "address": "",
+    "city": "",
+    "state": "",
+    "zip": "",
+    "ein": "",
+    "utilityCompany": "",
+    "date": "",
+    "operatingHours": 0,
+    "notes": ""
   },
   "areas": [
     {
-      "areaName": "<area name>",
+      "areaName": "Area Name",
+      "notes": "",
       "fixtures": [
         {
-          "name": "<existing fixture description>",
-          "qty": <integer>,
-          "existW": <integer>,
-          "newW": <integer>,
-          "ledProduct": "<LED product name or empty string>",
-          "location": "<interior|exterior>",
-          "height": <integer>,
-          "fixtureCategory": "<category>",
-          "lightingType": "<lamp type>"
+          "name": "4-Lamp T8 4ft Troffer",
+          "qty": 10,
+          "existW": 112,
+          "newW": 32,
+          "ledProduct": "",
+          "location": "interior",
+          "height": 9,
+          "fixtureCategory": "Recessed",
+          "lightingType": "T8"
         }
       ]
     }
   ]
 }
 
-If you cannot read a value, use your best guess based on context. If a field is truly unreadable, use 0 for numbers and empty string for text.
-Group fixtures under the correct area. If no area names are written, use "Area 1", "Area 2", etc.
-Return ONLY the JSON object, nothing else.`;
+FIELD RULES:
+- "rawTranscription": REQUIRED. Write out everything you see. This ensures you don't miss anything.
+- "header" fields: Fill in everything you can find. Use empty string "" for text fields you can't find, 0 for numbers.
+- "meterNumber": Look VERY hard for this. It might be labeled "Meter", "Meter #", "Mtr", "M#", "Acct", or just be a prominent number in the header. Utility meter numbers are typically 8-12 digits.
+- "accountNumber": If there's a separate account number from meter number, put it here.
+- "operatingHours": Daily operating hours if written (e.g., "12 hrs", "24/7" = 24, "8-5" = 9)
+- "areas[].areaName": Use what's written. If none, use "Area 1", "Area 2", etc.
+- "fixtures[].name": Full descriptive name including lamp count, type, and size
+- "fixtures[].qty": The count of this fixture type in this area
+- "fixtures[].existW": System wattage INCLUDING ballast. Use the reference table above if only lamp type is written.
+- "fixtures[].newW": LED replacement wattage. Estimate if not written.
+- "fixtures[].location": "interior" or "exterior" — infer from area name (parking lot, exterior, outside = exterior)
+- "fixtures[].height": Mounting height in feet. Estimate from area type if not written.
+- "fixtures[].fixtureCategory": One of "Linear", "High Bay", "Low Bay", "Recessed", "Surface Mount", "Wall Pack", "Flood", "Area Light", "Canopy", "Outdoor", "Other"
+- "fixtures[].lightingType": One of "T12", "T8", "T5", "T5HO", "Metal Halide", "HPS", "Mercury Vapor", "Halogen", "Incandescent", "CFL", "LED", "Other"
+
+IMPORTANT: Do NOT skip rows. Do NOT skip header fields. Transcribe EVERYTHING first, then structure it. If handwriting is unclear, give your best guess rather than skipping.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -112,14 +165,16 @@ Return ONLY the JSON object, nothing else.`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        messages: [{
-          role: 'user',
-          content: [
-            ...imageBlocks,
-            { type: 'text', text: prompt },
-          ],
-        }],
+        max_tokens: 8192,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              ...imageBlocks,
+              { type: 'text', text: prompt },
+            ],
+          },
+        ],
       }),
     });
 
@@ -137,14 +192,24 @@ Return ONLY the JSON object, nothing else.`;
         { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (!parsed.header || !parsed.areas) {
-      return new Response(JSON.stringify({ error: 'Invalid response structure', raw: content }),
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!parsed.header || !parsed.areas) {
+        return new Response(JSON.stringify({ error: 'Invalid response structure', raw: content }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        header: parsed.header,
+        areas: parsed.areas,
+        rawTranscription: parsed.rawTranscription || '',
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    } catch (parseErr) {
+      console.error('[Dougie] JSON parse error:', parseErr);
+      return new Response(JSON.stringify({ error: 'Failed to parse AI response', raw: content }),
         { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-
-    return new Response(JSON.stringify({ success: true, header: parsed.header, areas: parsed.areas }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
     console.error('[Dougie] Error:', error);

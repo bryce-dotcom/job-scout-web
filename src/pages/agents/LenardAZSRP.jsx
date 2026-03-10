@@ -713,8 +713,13 @@ export default function LenardAZSRP() {
     const { header, areas } = dougieResult;
     if (header.customerName && !projectName) setProjectName(header.customerName);
     if (header.phone && !savePhone) setSavePhone(header.phone);
+    if (header.email && !saveEmail) setSaveEmail(header.email);
     if (header.meterNumber && !saveMeterNumber) setSaveMeterNumber(header.meterNumber);
     if (header.address && !saveAddress) setSaveAddress(header.address);
+    if (header.city && !saveCity) setSaveCity(header.city);
+    if (header.state) setSaveState(header.state);
+    if (header.zip && !saveZip) setSaveZip(header.zip);
+    if (header.ein && !saveEIN) setSaveEIN(header.ein);
     let count = 0;
     areas.forEach(area => {
       (area.fixtures || []).forEach(f => {
@@ -2487,11 +2492,21 @@ export default function LenardAZSRP() {
             <div style={{ background: T.bgInput, borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
               <div style={{ fontSize: '12px', fontWeight: '600', color: T.textSec, marginBottom: '8px' }}>PROJECT INFO</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <div><label style={{ fontSize: '11px', color: T.textMuted }}>Customer</label><input value={dougieResult.header.customerName || ''} onChange={e => updateDougieHeader('customerName', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={{ fontSize: '11px', color: T.textMuted }}>Customer / Business Name</label><input value={dougieResult.header.customerName || ''} onChange={e => updateDougieHeader('customerName', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div><label style={{ fontSize: '11px', color: T.textMuted }}>Contact</label><input value={dougieResult.header.contact || ''} onChange={e => updateDougieHeader('contact', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
                 <div><label style={{ fontSize: '11px', color: T.textMuted }}>Phone</label><input value={dougieResult.header.phone || ''} onChange={e => updateDougieHeader('phone', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div><label style={{ fontSize: '11px', color: T.textMuted }}>Email</label><input value={dougieResult.header.email || ''} onChange={e => updateDougieHeader('email', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
                 <div><label style={{ fontSize: '11px', color: T.textMuted }}>Meter #</label><input value={dougieResult.header.meterNumber || ''} onChange={e => updateDougieHeader('meterNumber', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
-                <div><label style={{ fontSize: '11px', color: T.textMuted }}>Address</label><input value={dougieResult.header.address || ''} onChange={e => updateDougieHeader('address', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={{ fontSize: '11px', color: T.textMuted }}>Address</label><input value={dougieResult.header.address || ''} onChange={e => updateDougieHeader('address', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div><label style={{ fontSize: '11px', color: T.textMuted }}>City</label><input value={dougieResult.header.city || ''} onChange={e => updateDougieHeader('city', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <div style={{ flex: 1 }}><label style={{ fontSize: '11px', color: T.textMuted }}>State</label><input value={dougieResult.header.state || ''} onChange={e => updateDougieHeader('state', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                  <div style={{ flex: 1 }}><label style={{ fontSize: '11px', color: T.textMuted }}>ZIP</label><input value={dougieResult.header.zip || ''} onChange={e => updateDougieHeader('zip', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                </div>
+                <div><label style={{ fontSize: '11px', color: T.textMuted }}>EIN</label><input value={dougieResult.header.ein || ''} onChange={e => updateDougieHeader('ein', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
+                <div><label style={{ fontSize: '11px', color: T.textMuted }}>Acct #</label><input value={dougieResult.header.accountNumber || ''} onChange={e => updateDougieHeader('accountNumber', e.target.value)} style={{ ...S.input, fontSize: '13px', padding: '6px 8px' }} /></div>
               </div>
+              {dougieResult.header.notes && <div style={{ marginTop: '8px', fontSize: '11px', color: T.textMuted, fontStyle: 'italic' }}>Notes: {dougieResult.header.notes}</div>}
             </div>
 
             {/* Areas */}
