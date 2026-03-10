@@ -1761,10 +1761,10 @@ export default function LenardAZSRP() {
                     )}
                   </div>
 
-                  {/* Pricing — override + discount */}
+                  {/* Pricing & Quantity — override + qty + discount */}
                   <div style={{ marginBottom: '12px' }}>
-                    <label style={S.label}>Pricing</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <label style={S.label}>Pricing & Quantity</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                       <div>
                         <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '2px' }}>Unit Price {r.priceOverride != null ? '(override)' : ''}</div>
                         <input
@@ -1776,6 +1776,16 @@ export default function LenardAZSRP() {
                             updateLine(r.id, 'priceOverride', v === '' ? null : parseFloat(v) || 0);
                           }}
                           style={{ ...S.input, borderColor: r.priceOverride != null ? T.accent : T.border }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '2px' }}>New Qty</div>
+                        <input
+                          type="number" inputMode="numeric" min="1"
+                          placeholder={String(r.qty || 1)}
+                          value={r.qty || ''}
+                          onChange={e => updateLine(r.id, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
+                          style={{ ...S.input, borderColor: T.border }}
                         />
                       </div>
                       <div>

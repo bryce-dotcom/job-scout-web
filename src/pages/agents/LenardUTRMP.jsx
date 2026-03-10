@@ -2530,13 +2530,17 @@ export default function LenardUTRMP() {
                     ) : null}
                   </div>
 
-                  {/* Pricing */}
+                  {/* Pricing & Quantity */}
                   <div style={{ marginBottom: '12px' }}>
-                    <label style={S.label}>Pricing</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <label style={S.label}>Pricing & Quantity</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                       <div>
                         <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '2px' }}>Unit Price {r.priceOverride != null ? '(override)' : ''}</div>
                         <input type="number" inputMode="decimal" step="0.01" placeholder={r.productPrice ? `${r.productPrice} catalog` : 'Unit price'} value={r.priceOverride != null ? r.priceOverride : ''} onChange={e => updateLine(r.id, 'priceOverride', e.target.value === '' ? null : parseFloat(e.target.value) || 0)} style={{ ...S.input, borderColor: r.priceOverride != null ? T.accent : T.border }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '2px' }}>New Qty</div>
+                        <input type="number" inputMode="numeric" min="1" placeholder={String(r.qty || 1)} value={r.qty || ''} onChange={e => updateLine(r.id, 'qty', Math.max(1, parseInt(e.target.value) || 1))} style={{ ...S.input, borderColor: T.border }} />
                       </div>
                       <div>
                         <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '2px' }}>Discount %</div>
