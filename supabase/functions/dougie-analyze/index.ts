@@ -171,7 +171,7 @@ RETURN THIS EXACT JSON (no markdown, no backticks):
   },
   "areas": [
     {
-      "areaName": "<from area/location column if it exists, otherwise ''>",
+      "areaName": "<from area/location column if it exists, otherwise use the row number e.g. 'Line 1', 'Line 2', etc.>",
       "rowNumber": "<page and row, e.g. 'P1-R3' = page 1 row 3>",
       "notes": "<from notes column if it exists, otherwise ''>",
       "fixtures": [
