@@ -77,119 +77,114 @@ serve(async (req) => {
       },
     ])).flat();
 
-    const prompt = `You are Dougie, an expert at reading handwritten commercial lighting takeoff sheets.
+    const prompt = `You are Dougie, an expert at reading handwritten "Energy Scout" lighting takeoff sheets for HHH Building Services.
 
-CRITICAL INSTRUCTIONS — READ CAREFULLY:
+THE EXACT FORM LAYOUT (you MUST know this):
+This is the "Energy Scout" takeoff form. It is a printed form filled in by hand. Each page has:
 
-1. FIRST, transcribe EVERY piece of text you can see on ALL pages. Read every word, number, abbreviation, note, and scribble. Do not skip anything. Look in corners, margins, headers, footers, column headers, and between rows.
+HEADER (top of every page — 3 rows):
+  Row 1: "Project Name" (left side)  |  "Meter #" (right side)  |  "SBE, MID, Large=" (far right — circle one)
+  Row 2: "Address" (left side)       |  "Contact" (right side)  |  "Hours" (far right)
+  Row 3: "City" (left side)          |  "Phone" (right side)
 
-2. THEN, structure what you transcribed into JSON.
+FIXTURE TABLE (below header, numbered rows 1-8 per page):
+  Left side = EXISTING fixtures | Right side = NEW (replacement) fixtures
 
-WHAT TO LOOK FOR IN THE HEADER / TOP SECTION:
-These sheets are filled out by lighting auditors in the field. The header area typically contains some or all of:
-- Customer / Business / Project name (might say "Customer:", "Project:", "Business:", "Name:", or just be the biggest text at the top)
-- Contact person name (might say "Contact:", "Attn:", "PM:", or be next to the business name)
-- Phone number (any 7 or 10 digit number, might have dashes or dots — look for patterns like 801-555-1234, (801) 555-1234, 8015551234)
-- Meter number / Account number (electric utility meter — might say "Meter:", "Meter #:", "Acct:", "Acct #:", "Account:", or just be a long number near the top. Often 8-12 digits. VERY IMPORTANT — look hard for this)
-- Address (street address, might include city/state/zip)
-- City, State, ZIP (might be separate from street address)
-- Email address (look for @ symbol)
-- EIN / Tax ID (might say "EIN:", "Tax ID:", "TIN:")
-- Date
-- Utility company name (e.g., "Rocky Mountain Power", "SRP", "APS")
-- Any other header info (building type, square footage, operating hours)
+  Columns left to right:
+  ROW # | TICK MARK | AREA NAME | TOTAL FIX (qty) | FIXTURE TYPE | LAMP TYPE | WATTAGE  ||  TOTAL FIX (qty) | FIXTURE TYPE | WATTAGE | CONTROLS Y/N | HT (height) | NOTES
 
-WHAT TO LOOK FOR IN THE FIXTURE ROWS:
-The main body is a table or list of fixtures organized by area/room. Look for:
+  The form has 8 numbered rows per page. Some rows may be blank. But if ANY text appears in a row, read ALL columns for that row.
 
-Common abbreviations technicians use:
+FOOTER:
+  Abbreviation legend: "Metal Halide - MH, Incandescent - INC, Halogen - Hal, Compact Fluorescent - CFL, T8 4', T8 U, T12 8', T5 4', Battery Backup - BB"
+
+CRITICAL INSTRUCTIONS:
+
+1. FIRST: Read the header on EVERY page. The first page's header is the primary one. Later pages may repeat it or have different info.
+
+2. SECOND: Go through EVERY numbered row (1-8) on EVERY page. For each row that has ANY writing:
+   - Read the Area Name
+   - Read the existing fixture info (Total Fix count, Fixture Type, Lamp Type, Wattage)
+   - Read the new fixture info (Total Fix count, Fixture Type, Wattage)
+   - Read Controls Y/N, Height (HT), and Notes
+
+3. COUNT the total rows you found. The user said there are 11 lines. If you found fewer, GO BACK and look again. Check for:
+   - Rows that span across the page boundary (page 1 row 8 → page 2 row 1)
+   - Rows with very faint or light handwriting
+   - Rows where only a few columns are filled in
+   - Second page rows — the form repeats with rows 1-8 on page 2
+
+Common abbreviations:
+  MH = Metal Halide | HPS = High Pressure Sodium | MV = Mercury Vapor | INC = Incandescent
+  Hal = Halogen | CFL = Compact Fluorescent | BB = Battery Backup
   T8, T12, T5, T5HO = fluorescent tube types
-  MH = Metal Halide | HPS = High Pressure Sodium | MV = Mercury Vapor
   HB = High Bay | LB = Low Bay | WP = Wall Pack
-  2x4, 2x2, 1x4 = troffer/panel sizes
-  4L, 3L, 2L, 1L = number of lamps (4-lamp, 3-lamp, etc.)
-  LED = Light Emitting Diode replacement
-  W = Watts
-  "→" or arrow = "replaced by" / "to"
-  Qty, # = quantity
-  Ext = Exterior | Int = Interior
-  Ht = Height | Clg = Ceiling
+  2x4, 2x2, 1x4 = troffer/panel sizes (e.g., "2x4 troffer")
+  4L, 3L, 2L = number of lamps (4-lamp, 3-lamp, etc.)
 
-Common existing fixture wattages (including ballast):
-  4-Lamp T8 4ft: 112W | 3-Lamp T8 4ft: 84W | 2-Lamp T8 4ft: 56W
+Common wattages (system watts INCLUDING ballast):
+  4-Lamp T8 4ft: 112W | 3-Lamp T8 4ft: 84W | 2-Lamp T8 4ft: 56W | 1-Lamp T8 4ft: 32W
   4-Lamp T12 4ft: 172W | 2-Lamp T12 4ft: 86W | 1-Lamp T12 4ft: 46W
-  6-Lamp T5HO High Bay: 351W | 4-Lamp T5HO High Bay: 234W
-  400W Metal Halide: 458W | 250W Metal Halide: 288W | 175W Metal Halide: 210W | 1000W Metal Halide: 1080W
+  6-Lamp T5HO HB: 351W | 4-Lamp T5HO HB: 234W | 2-Lamp T5HO: 118W
+  400W MH: 458W | 250W MH: 288W | 175W MH: 210W | 1000W MH: 1080W
   400W HPS: 465W | 250W HPS: 295W | 150W HPS: 188W | 100W HPS: 120W
-  100W MH Wall Pack: 120W | 175W MH Wall Pack: 210W | 250W MH Shoebox: 295W
+  100W MH WP: 120W | 175W MH WP: 210W
 
-If you see a fixture type but no wattage written, USE the wattage from the table above.
-If you see a wattage but no fixture type, describe the fixture as best you can.
+If only lamp type is written (no wattage), use the wattages above.
+If LED wattage is not written, estimate from: T8 troffer → 32W, T12 → 30W, HB 400W → 150W, HB 250W → 100W, WP → 30W
 
-For LED replacement wattage: if written on the sheet use that value. If not written, estimate:
-  T8 troffer → 32W LED | T12 troffer → 30W LED
-  T8 strip 4ft → 22W LED | High bay MH 400W → 150W LED
-  High bay MH 250W → 100W LED | Wall pack → 25-40W LED
-  Shoebox/area light → 70-150W LED
-
-RETURN THIS EXACT JSON STRUCTURE (no markdown, no backticks, no explanation):
+RETURN THIS EXACT JSON (no markdown, no backticks):
 {
-  "rawTranscription": "<Write out EVERYTHING you can read from ALL pages, line by line, preserving the layout as closely as possible. Include crossed-out text in [brackets]. This is your working notes.>",
+  "rawTranscription": "<REQUIRED: Write out EVERY piece of text from ALL pages, row by row. Format: 'Page 1 Header: [text] | Row 1: [text] | Row 2: [text]...' This is your working draft — be thorough.>",
   "header": {
-    "customerName": "",
-    "contact": "",
-    "phone": "",
+    "customerName": "<from 'Project Name' field>",
+    "contact": "<from 'Contact' field>",
+    "phone": "<from 'Phone' field>",
     "email": "",
-    "meterNumber": "",
+    "meterNumber": "<from 'Meter #' field — CRITICAL, look to the RIGHT of 'Project Name'>",
     "accountNumber": "",
-    "address": "",
-    "city": "",
+    "address": "<from 'Address' field>",
+    "city": "<from 'City' field>",
     "state": "",
     "zip": "",
     "ein": "",
     "utilityCompany": "",
+    "programType": "<from 'SBE, MID, Large=' — whichever is circled>",
     "date": "",
-    "operatingHours": 0,
+    "operatingHours": "<from 'Hours' field — integer, daily operating hours>",
     "notes": ""
   },
   "areas": [
     {
-      "areaName": "Area Name",
-      "notes": "",
+      "areaName": "<from 'Area Name' column>",
+      "rowNumber": "<which row number on the form, e.g. 'P1-R3' = page 1 row 3>",
+      "notes": "<from 'Notes' column>",
       "fixtures": [
         {
-          "name": "4-Lamp T8 4ft Troffer",
-          "qty": 10,
-          "existW": 112,
-          "newW": 32,
+          "name": "<full description: e.g. '4-Lamp T8 4ft Troffer'>",
+          "qty": "<from 'Total Fix' column on the EXISTING side>",
+          "existW": "<from 'Wattage' column on existing side>",
+          "newW": "<from 'Wattage' column on NEW side>",
+          "newQty": "<from 'Total Fix' column on the NEW side — may differ from existing qty>",
+          "newFixtureType": "<from 'Fixture Type' column on NEW side>",
           "ledProduct": "",
-          "location": "interior",
-          "height": 9,
-          "fixtureCategory": "Recessed",
-          "lightingType": "T8"
+          "location": "<'interior' or 'exterior' — infer from area name>",
+          "height": "<from 'HT' column — integer feet>",
+          "fixtureCategory": "<one of: Linear, High Bay, Low Bay, Recessed, Surface Mount, Wall Pack, Flood, Area Light, Canopy, Outdoor, Other>",
+          "lightingType": "<from 'Lamp Type' column: T12, T8, T5, T5HO, Metal Halide, HPS, Mercury Vapor, Halogen, Incandescent, CFL, LED, Other>",
+          "controls": "<from 'Controls Y/N' column: true or false>"
         }
       ]
     }
   ]
 }
 
-FIELD RULES:
-- "rawTranscription": REQUIRED. Write out everything you see. This ensures you don't miss anything.
-- "header" fields: Fill in everything you can find. Use empty string "" for text fields you can't find, 0 for numbers.
-- "meterNumber": Look VERY hard for this. It might be labeled "Meter", "Meter #", "Mtr", "M#", "Acct", or just be a prominent number in the header. Utility meter numbers are typically 8-12 digits.
-- "accountNumber": If there's a separate account number from meter number, put it here.
-- "operatingHours": Daily operating hours if written (e.g., "12 hrs", "24/7" = 24, "8-5" = 9)
-- "areas[].areaName": Use what's written. If none, use "Area 1", "Area 2", etc.
-- "fixtures[].name": Full descriptive name including lamp count, type, and size
-- "fixtures[].qty": The count of this fixture type in this area
-- "fixtures[].existW": System wattage INCLUDING ballast. Use the reference table above if only lamp type is written.
-- "fixtures[].newW": LED replacement wattage. Estimate if not written.
-- "fixtures[].location": "interior" or "exterior" — infer from area name (parking lot, exterior, outside = exterior)
-- "fixtures[].height": Mounting height in feet. Estimate from area type if not written.
-- "fixtures[].fixtureCategory": One of "Linear", "High Bay", "Low Bay", "Recessed", "Surface Mount", "Wall Pack", "Flood", "Area Light", "Canopy", "Outdoor", "Other"
-- "fixtures[].lightingType": One of "T12", "T8", "T5", "T5HO", "Metal Halide", "HPS", "Mercury Vapor", "Halogen", "Incandescent", "CFL", "LED", "Other"
-
-IMPORTANT: Do NOT skip rows. Do NOT skip header fields. Transcribe EVERYTHING first, then structure it. If handwriting is unclear, give your best guess rather than skipping.`;
+ABSOLUTE RULES:
+- Every numbered row with ANY writing = one entry in "areas". Do NOT combine rows. Do NOT skip rows.
+- The form has 8 rows per page. With 2 pages that's up to 16 possible rows. Read ALL of them.
+- "rawTranscription" is MANDATORY. Write every single thing you see before structuring.
+- If handwriting is unclear, GUESS rather than skip. A wrong guess is better than a missing row.
+- "meterNumber" is on the RIGHT side of the header next to "Meter #". Look CAREFULLY.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
