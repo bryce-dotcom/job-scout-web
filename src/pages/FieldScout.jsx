@@ -6,7 +6,8 @@ import { useTheme } from '../components/Layout'
 import {
   Compass, Clock, MapPin, Play, Square, Coffee,
   ChevronDown, ChevronUp, ExternalLink, Navigation,
-  CheckCircle, Timer, Briefcase
+  CheckCircle, Timer, Briefcase, DollarSign, Star,
+  AlertTriangle, Send, X, CreditCard, Banknote, Smartphone
 } from 'lucide-react'
 
 export default function FieldScout() {
@@ -30,6 +31,16 @@ export default function FieldScout() {
   const [mapError, setMapError] = useState(false)
   const [jobCoords, setJobCoords] = useState({})
   const [userLocation, setUserLocation] = useState(null)
+
+  // Payment collection
+  const [paymentJob, setPaymentJob] = useState(null)
+  const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', reference: '', notes: '' })
+  const [paymentSaving, setPaymentSaving] = useState(false)
+  const [paymentSuccess, setPaymentSuccess] = useState(false)
+
+  // Google review & settings
+  const [googleReviewUrl, setGoogleReviewUrl] = useState('')
+  const [reviewSent, setReviewSent] = useState(new Set())
 
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
@@ -86,6 +97,13 @@ export default function FieldScout() {
   }, [companyId, currentEmployee])
 
   useEffect(() => { fetchEntries() }, [fetchEntries])
+
+  // Load google review URL from settings
+  useEffect(() => {
+    if (!companyId) return
+    supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'google_review_url').single()
+      .then(({ data }) => { if (data?.value) setGoogleReviewUrl(data.value) })
+  }, [companyId])
 
   // Fetch job sections for expanded jobs
   const fetchJobSections = async (jobId) => {
@@ -211,6 +229,47 @@ export default function FieldScout() {
     if (!activeEntry) return
     await supabase.from('time_clock').update({ lunch_end: new Date().toISOString() }).eq('id', activeEntry.id)
     await fetchEntries()
+  }
+
+  // Record payment
+  const handleRecordPayment = async () => {
+    if (!paymentJob || !paymentForm.amount) return
+    setPaymentSaving(true)
+    try {
+      await supabase.from('payments').insert({
+        company_id: companyId,
+        job_id: paymentJob.id,
+        customer_id: paymentJob.customer_id,
+        amount: parseFloat(paymentForm.amount),
+        method: paymentForm.method,
+        status: 'Completed',
+        date: new Date().toISOString(),
+        notes: paymentForm.notes || `Collected on-site by ${firstName}${paymentForm.reference ? ` — Ref: ${paymentForm.reference}` : ''}`
+      })
+      setPaymentSuccess(true)
+      setTimeout(() => {
+        setPaymentJob(null)
+        setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
+        setPaymentSuccess(false)
+      }, 1500)
+    } catch (err) {
+      alert('Error recording payment: ' + err.message)
+    } finally {
+      setPaymentSaving(false)
+    }
+  }
+
+  // Share Google review link
+  const shareReviewLink = (job) => {
+    const msg = `Thank you for choosing us! We'd love your feedback. Please leave us a review: ${googleReviewUrl}`
+    if (navigator.share) {
+      navigator.share({ title: 'Leave us a review!', text: msg, url: googleReviewUrl }).catch(() => {})
+    } else if (job.customer?.phone) {
+      window.open(`sms:${job.customer.phone}?body=${encodeURIComponent(msg)}`, '_blank')
+    } else {
+      window.open(googleReviewUrl, '_blank')
+    }
+    setReviewSent(prev => new Set(prev).add(job.id))
   }
 
   // Timer formatting
@@ -588,6 +647,30 @@ export default function FieldScout() {
         </div>
       )}
 
+      {/* ===== NO-JOB WARNING ===== */}
+      {activeEntry && !activeEntry.job_id && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '12px 16px',
+          marginBottom: '16px',
+          backgroundColor: 'rgba(234,179,8,0.12)',
+          border: '1px solid rgba(234,179,8,0.4)',
+          borderRadius: '12px'
+        }}>
+          <AlertTriangle size={20} style={{ color: '#ca8a04', flexShrink: 0 }} />
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e' }}>
+              You're clocked in without a job
+            </div>
+            <div style={{ fontSize: '12px', color: '#a16207', marginTop: '2px' }}>
+              Select a job below and clock in to it for accurate time tracking.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== SECTION 3: QUICK STATS ===== */}
       <div style={{
         display: 'flex',
@@ -908,6 +991,58 @@ export default function FieldScout() {
                             View Job
                           </button>
                         </div>
+
+                        {/* Collect Payment & Google Review */}
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                          <button
+                            onClick={() => { setPaymentJob(job); setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' }); setPaymentSuccess(false) }}
+                            style={{
+                              flex: 1,
+                              padding: '12px',
+                              background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                              border: 'none',
+                              borderRadius: '10px',
+                              color: '#fff',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              minHeight: '44px'
+                            }}
+                          >
+                            <DollarSign size={16} />
+                            Collect Payment
+                          </button>
+                          {googleReviewUrl && (
+                            <button
+                              onClick={() => shareReviewLink(job)}
+                              style={{
+                                flex: 1,
+                                padding: '12px',
+                                background: reviewSent.has(job.id)
+                                  ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                                  : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                border: 'none',
+                                borderRadius: '10px',
+                                color: '#fff',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                                minHeight: '44px'
+                              }}
+                            >
+                              <Star size={16} />
+                              {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1097,11 +1232,210 @@ export default function FieldScout() {
         </div>
       )}
 
-      {/* Pulse animation */}
+      {/* ===== PAYMENT MODAL ===== */}
+      {paymentJob && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'center'
+        }}>
+          {/* Backdrop */}
+          <div
+            onClick={() => !paymentSaving && setPaymentJob(null)}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              backdropFilter: 'blur(4px)'
+            }}
+          />
+
+          {/* Sheet */}
+          <div style={{
+            position: 'relative',
+            width: '100%',
+            maxWidth: '500px',
+            backgroundColor: theme.bgCard,
+            borderRadius: '20px 20px 0 0',
+            padding: '24px 20px',
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            animation: 'slideUp 0.3s ease'
+          }}>
+            {/* Handle */}
+            <div style={{ width: '40px', height: '4px', borderRadius: '2px', backgroundColor: theme.border, margin: '0 auto 16px' }} />
+
+            {paymentSuccess ? (
+              <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                <div style={{ fontSize: '48px', marginBottom: '12px' }}>&#10003;</div>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#16a34a' }}>Payment Recorded!</div>
+                <div style={{ fontSize: '14px', color: theme.textMuted, marginTop: '4px' }}>{paymentJob.job_title || paymentJob.job_id}</div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: theme.text, margin: 0 }}>Collect Payment</h3>
+                  <button onClick={() => setPaymentJob(null)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px', padding: '10px 14px', backgroundColor: theme.bg, borderRadius: '10px' }}>
+                  <div style={{ fontWeight: '600', color: theme.text }}>{paymentJob.job_title || paymentJob.job_id}</div>
+                  <div style={{ fontSize: '13px' }}>{paymentJob.customer?.name}</div>
+                  {paymentJob.job_total && <div style={{ fontSize: '13px', color: '#16a34a', fontWeight: '600', marginTop: '4px' }}>Job Total: ${parseFloat(paymentJob.job_total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>}
+                </div>
+
+                {/* Amount */}
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>Amount</label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '20px', fontWeight: '700', color: theme.textMuted }}>$</span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
+                      placeholder="0.00"
+                      autoFocus
+                      style={{
+                        width: '100%',
+                        padding: '16px 16px 16px 32px',
+                        fontSize: '24px',
+                        fontWeight: '700',
+                        backgroundColor: theme.bg,
+                        border: `2px solid ${theme.border}`,
+                        borderRadius: '12px',
+                        color: theme.text,
+                        textAlign: 'left',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Payment method pills */}
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>Method</label>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'Cash', icon: Banknote, label: 'Cash' },
+                      { id: 'Check', icon: CreditCard, label: 'Check' },
+                      { id: 'Card', icon: CreditCard, label: 'Card' },
+                      { id: 'Venmo', icon: Smartphone, label: 'Venmo' },
+                      { id: 'Zelle', icon: Smartphone, label: 'Zelle' },
+                      { id: 'Other', icon: DollarSign, label: 'Other' }
+                    ].map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => setPaymentForm(f => ({ ...f, method: m.id }))}
+                        style={{
+                          padding: '10px 16px',
+                          backgroundColor: paymentForm.method === m.id ? theme.accent : theme.bg,
+                          color: paymentForm.method === m.id ? '#fff' : theme.textSecondary,
+                          border: `1px solid ${paymentForm.method === m.id ? theme.accent : theme.border}`,
+                          borderRadius: '10px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          minHeight: '44px'
+                        }}
+                      >
+                        <m.icon size={14} />
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Reference (check number, etc.) */}
+                {['Check', 'Other'].includes(paymentForm.method) && (
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>
+                      {paymentForm.method === 'Check' ? 'Check #' : 'Reference'}
+                    </label>
+                    <input
+                      value={paymentForm.reference}
+                      onChange={(e) => setPaymentForm(f => ({ ...f, reference: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        backgroundColor: theme.bg,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: '10px',
+                        color: theme.text,
+                        fontSize: '14px',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Notes */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>Notes (optional)</label>
+                  <input
+                    value={paymentForm.notes}
+                    onChange={(e) => setPaymentForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="e.g., Partial payment, tip included"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      backgroundColor: theme.bg,
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '10px',
+                      color: theme.text,
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                {/* Submit */}
+                <button
+                  onClick={handleRecordPayment}
+                  disabled={!paymentForm.amount || paymentSaving}
+                  style={{
+                    width: '100%',
+                    padding: '18px',
+                    background: paymentForm.amount ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : theme.bg,
+                    border: 'none',
+                    borderRadius: '14px',
+                    color: paymentForm.amount ? '#fff' : theme.textMuted,
+                    fontSize: '17px',
+                    fontWeight: '700',
+                    cursor: paymentForm.amount ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    minHeight: '56px'
+                  }}
+                >
+                  <DollarSign size={20} />
+                  {paymentSaving ? 'Recording...' : `Record ${paymentForm.method} Payment`}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Animations */}
       <style>{`
         @keyframes fieldScoutPulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
         }
       `}</style>
     </div>

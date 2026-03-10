@@ -45,6 +45,7 @@ const defaultStages = [
   { id: 'Negotiation', name: 'Negotiation', color: '#f59e0b' },
   { id: 'Won', name: 'Won', color: '#10b981', isWon: true },
   // Delivery funnel
+  { id: 'Chillin', name: 'Chillin', color: '#94a3b8', isDelivery: true },
   { id: 'Job Scheduled', name: 'Job Scheduled', color: '#0ea5e9', isDelivery: true },
   { id: 'In Progress', name: 'In Progress', color: '#f97316', isDelivery: true },
   { id: 'Job Complete', name: 'Job Complete', color: '#22c55e', isDelivery: true },
@@ -219,7 +220,8 @@ export default function SalesPipeline() {
     if (job.invoice_status === 'Invoiced') return 'Invoiced'
     if (job.status === 'Completed') return 'Job Complete'
     if (job.status === 'In Progress') return 'In Progress'
-    return 'Job Scheduled'
+    if (job.status === 'Scheduled' && job.start_date) return 'Job Scheduled'
+    return 'Chillin'
   }
 
   // Attach jobs data to leads
@@ -699,7 +701,7 @@ export default function SalesPipeline() {
     // "Sales Won" — all leads that were converted (won) within the date range,
     // regardless of current status (so deals in delivery still count as sales wins)
     const rangeCutoff = getDateCutoff(dateRange)
-    const wonOrDeliveryStatuses = new Set(['Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed'])
+    const wonOrDeliveryStatuses = new Set(['Won', 'Chillin', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed'])
     const salesWonLeads = leads.filter(l => {
       // Must be in a won or delivery stage
       if (!wonOrDeliveryStatuses.has(l.status)) return false
@@ -933,7 +935,7 @@ export default function SalesPipeline() {
       {/* Mobile View — dark theme, full PWA experience */}
       {isMobile ? (() => {
         const m = { bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8', text: '#2c3530', textMuted: '#7d8a7f', accent: '#5a6349' }
-        const statusColors = { 'New': '#3b82f6', 'Contacted': '#a855f7', 'Appointment Set': '#22c55e', 'Qualified': '#f97316', 'Quote Sent': '#eab308', 'Negotiation': '#f97316', 'Won': '#22c55e', 'Lost': '#ef4444', 'Job Scheduled': '#0ea5e9', 'In Progress': '#f97316', 'Job Complete': '#22c55e', 'Invoiced': '#8b5cf6', 'Closed': '#6b7280' }
+        const statusColors = { 'New': '#3b82f6', 'Contacted': '#a855f7', 'Appointment Set': '#22c55e', 'Qualified': '#f97316', 'Quote Sent': '#eab308', 'Negotiation': '#f97316', 'Won': '#22c55e', 'Lost': '#ef4444', 'Chillin': '#94a3b8', 'Job Scheduled': '#0ea5e9', 'In Progress': '#f97316', 'Job Complete': '#22c55e', 'Invoiced': '#8b5cf6', 'Closed': '#6b7280' }
         const getStatusColor = (status) => statusColors[status] || '#71717a'
         const salesStages = stages.filter(s => !s.isDelivery && !s.isClosed)
         const deliveryStages = stages.filter(s => s.isDelivery || s.isClosed)

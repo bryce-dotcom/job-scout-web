@@ -94,6 +94,7 @@ export default function PMJobSetter() {
   // Data
   const [jobs, setJobs] = useState([])
   const [jobSections, setJobSections] = useState([])
+  const [appointments, setAppointments] = useState([])
   const [loading, setLoading] = useState(true)
   const [jobCalendars, setJobCalendars] = useState([])
 
@@ -122,20 +123,37 @@ export default function PMJobSetter() {
   const [selectedSection, setSelectedSection] = useState(null)
   const [selectedJob, setSelectedJob] = useState(null)
 
+  // Persist filters & view preferences in localStorage
+  const loadPref = (key, fallback) => {
+    try { const v = localStorage.getItem(`jobBoard_${key}`); return v !== null ? JSON.parse(v) : fallback }
+    catch { return fallback }
+  }
+  const savePref = (key, value) => { try { localStorage.setItem(`jobBoard_${key}`, JSON.stringify(value)) } catch {} }
+
   // Filters
-  const [filterPM, setFilterPM] = useState('')
+  const [filterPM, _setFilterPM] = useState(() => loadPref('filterPM', ''))
   const [pmFilterLocked, setPmFilterLocked] = useState(false)
-  const [filterBusinessUnit, setFilterBusinessUnit] = useState('')
+  const [filterBusinessUnit, _setFilterBusinessUnit] = useState(() => loadPref('filterBusinessUnit', ''))
   const [searchTerm, setSearchTerm] = useState('')
-  const [dateRange, setDateRange] = useState('all')
+  const [dateRange, _setDateRange] = useState(() => loadPref('dateRange', 'all'))
   const [customDateFrom, setCustomDateFrom] = useState('')
   const [customDateTo, setCustomDateTo] = useState('')
 
+  // Wrapped setters that also persist
+  const setFilterPM = (v) => { _setFilterPM(v); savePref('filterPM', v) }
+  const setFilterBusinessUnit = (v) => { _setFilterBusinessUnit(v); savePref('filterBusinessUnit', v) }
+  const setDateRange = (v) => { _setDateRange(v); savePref('dateRange', v) }
+
   // View Mode
-  const [viewMode, setViewMode] = useState('kanban')
-  const [calendarViewMode, setCalendarViewMode] = useState('month') // 'week' or 'month'
-  const [ganttGroupBy, setGanttGroupBy] = useState('pm')
-  const [zoomLevel, setZoomLevel] = useState('week')
+  const [viewMode, _setViewMode] = useState(() => loadPref('viewMode', 'kanban'))
+  const [calendarViewMode, _setCalendarViewMode] = useState(() => loadPref('calendarViewMode', 'month'))
+  const [ganttGroupBy, _setGanttGroupBy] = useState(() => loadPref('ganttGroupBy', 'pm'))
+  const [zoomLevel, _setZoomLevel] = useState(() => loadPref('zoomLevel', 'week'))
+
+  const setViewMode = (v) => { _setViewMode(v); savePref('viewMode', v) }
+  const setCalendarViewMode = (v) => { _setCalendarViewMode(v); savePref('calendarViewMode', v) }
+  const setGanttGroupBy = (v) => { _setGanttGroupBy(v); savePref('ganttGroupBy', v) }
+  const setZoomLevel = (v) => { _setZoomLevel(v); savePref('zoomLevel', v) }
   const [ganttStartDate, setGanttStartDate] = useState(new Date())
   const ganttRef = useRef(null)
 
@@ -151,7 +169,12 @@ export default function PMJobSetter() {
     start_time: '',
     duration_hours: 4,
     pm_id: '',
+    assigned_employee_ids: [],
+    assigned_team: '',
     notes: '',
+    recurrence: 'None',
+    recurrence_end: '',
+    createAppointment: true,
     sendText: false,
     sendEmail: false,
     phone: '',
@@ -162,6 +185,18 @@ export default function PMJobSetter() {
 
   // Job detail panel
   const [detailJob, setDetailJob] = useState(null)
+
+  // Appointment edit modal
+  const [editingAppointment, setEditingAppointment] = useState(null)
+  const [appointmentForm, setAppointmentForm] = useState({
+    title: '', start_time: '', duration_hours: 4, employee_id: '',
+    assigned_employee_ids: [], status: '', location: '', notes: '',
+    appointment_type: 'Job', recurrence: 'None', recurrence_end: ''
+  })
+  const [appointmentSaving, setAppointmentSaving] = useState(false)
+
+  // Dragged appointment
+  const [draggedAppointment, setDraggedAppointment] = useState(null)
 
   // Section form
   const [sectionForm, setSectionForm] = useState({
@@ -244,11 +279,19 @@ export default function PMJobSetter() {
       }
     }
 
+    // Fetch appointments (for calendar overlay)
+    const { data: appointmentsData } = await supabase
+      .from('appointments')
+      .select('*, employee:employees!employee_id(id, name), customer:customers!customer_id(id, name)')
+      .eq('company_id', companyId)
+      .order('start_time', { ascending: true })
+
     console.log('[fetchData] Jobs loaded:', (jobsData || []).length, 'validStatuses:', validStatuses)
     const scheduledJobs = (jobsData || []).filter(j => j.start_date)
     console.log('[fetchData] Jobs with start_date:', scheduledJobs.length, scheduledJobs.slice(0, 3).map(j => ({ id: j.id, status: j.status, start_date: j.start_date, pm_id: j.pm_id })))
     setJobs(jobsData || [])
     setJobSections(sectionsData || [])
+    setAppointments(appointmentsData || [])
     setLoading(false)
   }
 
@@ -597,6 +640,39 @@ export default function PMJobSetter() {
     })
   }
 
+  // Appointment helpers for calendar
+  const getAppointmentsForDate = (date) => {
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    return appointments.filter(apt => {
+      if (!apt.start_time) return false
+      const aptDt = new Date(apt.start_time)
+      const aptDateStr = `${aptDt.getFullYear()}-${String(aptDt.getMonth() + 1).padStart(2, '0')}-${String(aptDt.getDate()).padStart(2, '0')}`
+      return aptDateStr === dateStr
+    })
+  }
+
+  const getAppointmentsForSlot = (date, hour) => {
+    const slotDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    return appointments.filter(apt => {
+      if (!apt.start_time) return false
+      const aptDt = new Date(apt.start_time)
+      const aptDateStr = `${aptDt.getFullYear()}-${String(aptDt.getMonth() + 1).padStart(2, '0')}-${String(aptDt.getDate()).padStart(2, '0')}`
+      if (aptDateStr !== slotDateStr) return false
+      const aptHour = aptDt.getHours()
+      return aptHour === hour || (aptHour === 0 && hour === 8)
+    })
+  }
+
+  const appointmentStatusColors = {
+    'Scheduled': '#0ea5e9',
+    'Confirmed': '#8b5cf6',
+    'Completed': '#22c55e',
+    'Cancelled': '#ef4444',
+    'No Show': '#6b7280'
+  }
+
+  const isRecurringAppointment = (apt) => apt.appointment_type === 'Recurring Job'
+
   // Month calendar helpers
   const getMonthDays = () => {
     const year = currentDate.getFullYear()
@@ -644,13 +720,38 @@ export default function PMJobSetter() {
     const startTime = new Date(date)
     startTime.setHours(8, 0, 0, 0)
 
+    if (draggedAppointment) {
+      // Move appointment to new date, keep original duration
+      const origStart = new Date(draggedAppointment.start_time)
+      const origEnd = new Date(draggedAppointment.end_time || origStart)
+      const durationMs = origEnd - origStart
+      const newStart = new Date(date)
+      newStart.setHours(origStart.getHours(), origStart.getMinutes(), 0, 0)
+      const newEnd = new Date(newStart.getTime() + durationMs)
+
+      await supabase.from('appointments').update({
+        start_time: newStart.toISOString(),
+        end_time: newEnd.toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq('id', draggedAppointment.id)
+
+      setDraggedAppointment(null)
+      await fetchData()
+      return
+    }
+
     if (draggedJob) {
       setScheduleJob(draggedJob)
       setScheduleForm({
         start_time: formatDateTimeLocal(startTime),
         duration_hours: draggedJob.allotted_time_hours || 4,
         pm_id: draggedJob.pm_id || (!isAdmin && user?.id ? String(user.id) : ''),
+        assigned_employee_ids: [],
+        assigned_team: draggedJob.assigned_team || '',
         notes: draggedJob.notes || '',
+        recurrence: draggedJob.recurrence || 'None',
+        recurrence_end: '',
+        createAppointment: true,
         sendText: false,
         sendEmail: false,
         phone: draggedJob.customer?.phone || '',
@@ -724,9 +825,127 @@ export default function PMJobSetter() {
     e.dataTransfer.setData('text/plain', `job-${job.id}`)
   }
 
+  const handleAppointmentDragStart = (e, apt) => {
+    setDraggedAppointment(apt)
+    setDraggedJob(null)
+    setDraggedSection(null)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', `apt-${apt.id}`)
+  }
+
+  const handleAppointmentClick = (apt) => {
+    setEditingAppointment(apt)
+    // Calculate duration from start/end
+    const start = apt.start_time ? new Date(apt.start_time) : null
+    const end = apt.end_time ? new Date(apt.end_time) : null
+    const durationMs = start && end ? end - start : 0
+    const durationHours = durationMs > 0 ? durationMs / (1000 * 60 * 60) : 4
+
+    // Parse recurrence from notes if present
+    let recurrence = 'None'
+    if (apt.appointment_type === 'Recurring Job') {
+      const match = apt.notes?.match(/Recurring:\s*(\w[\w-]*)/)
+      recurrence = match ? match[1] : 'Monthly'
+    }
+
+    setAppointmentForm({
+      title: apt.title || '',
+      start_time: start ? formatDateTimeLocal(start) : '',
+      duration_hours: durationHours,
+      employee_id: apt.employee_id ? String(apt.employee_id) : '',
+      assigned_employee_ids: apt.employee_id ? [String(apt.employee_id)] : [],
+      status: apt.status || 'Scheduled',
+      location: apt.location || '',
+      notes: apt.notes || '',
+      appointment_type: apt.appointment_type || 'Job',
+      recurrence: recurrence,
+      recurrence_end: ''
+    })
+  }
+
+  const handleAppointmentSave = async (e) => {
+    e.preventDefault()
+    if (!editingAppointment) return
+    setAppointmentSaving(true)
+
+    const startTime = new Date(appointmentForm.start_time)
+    const endTime = new Date(startTime)
+    endTime.setHours(endTime.getHours() + (appointmentForm.duration_hours || 4))
+
+    const isRecurring = appointmentForm.recurrence && appointmentForm.recurrence !== 'None'
+    const appointmentType = isRecurring ? 'Recurring Job' : (appointmentForm.appointment_type === 'Recurring Job' && !isRecurring ? 'Job' : appointmentForm.appointment_type)
+
+    const updateData = {
+      title: appointmentForm.title,
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString(),
+      employee_id: appointmentForm.assigned_employee_ids.length > 0
+        ? parseInt(appointmentForm.assigned_employee_ids[0])
+        : (appointmentForm.employee_id ? parseInt(appointmentForm.employee_id) : null),
+      status: appointmentForm.status,
+      location: appointmentForm.location || null,
+      appointment_type: appointmentType,
+      notes: appointmentForm.notes || null,
+      updated_at: new Date().toISOString()
+    }
+
+    await supabase.from('appointments').update(updateData).eq('id', editingAppointment.id)
+
+    // If recurrence changed to recurring and end date set, create future appointments
+    if (isRecurring && appointmentForm.recurrence_end && !isRecurringAppointment(editingAppointment)) {
+      const recurEnd = new Date(appointmentForm.recurrence_end)
+      const futureAppts = []
+      let nextStart = new Date(startTime)
+
+      while (true) {
+        if (appointmentForm.recurrence === 'Monthly') nextStart = new Date(new Date(nextStart).setMonth(nextStart.getMonth() + 1))
+        else if (appointmentForm.recurrence === 'Quarterly') nextStart = new Date(new Date(nextStart).setMonth(nextStart.getMonth() + 3))
+        else if (appointmentForm.recurrence === 'Bi-Weekly') nextStart = new Date(nextStart.getTime() + 14 * 86400000)
+        else if (appointmentForm.recurrence === 'Weekly') nextStart = new Date(nextStart.getTime() + 7 * 86400000)
+        else nextStart = new Date(nextStart.getTime() + 86400000)
+        if (nextStart > recurEnd) break
+
+        const nextEnd = new Date(nextStart)
+        nextEnd.setHours(nextEnd.getHours() + (appointmentForm.duration_hours || 4))
+
+        appointmentForm.assigned_employee_ids.forEach(empId => {
+          futureAppts.push({
+            company_id: companyId,
+            title: appointmentForm.title,
+            start_time: nextStart.toISOString(),
+            end_time: nextEnd.toISOString(),
+            location: appointmentForm.location || '',
+            status: 'Scheduled',
+            employee_id: parseInt(empId),
+            customer_id: editingAppointment.customer_id || null,
+            appointment_type: 'Recurring Job',
+            notes: `Recurring: ${appointmentForm.recurrence}`,
+            created_at: new Date().toISOString()
+          })
+        })
+      }
+
+      if (futureAppts.length > 0) {
+        await supabase.from('appointments').insert(futureAppts)
+      }
+    }
+
+    setAppointmentSaving(false)
+    setEditingAppointment(null)
+    await fetchData()
+  }
+
+  const handleAppointmentDelete = async () => {
+    if (!editingAppointment || !confirm('Delete this appointment?')) return
+    await supabase.from('appointments').delete().eq('id', editingAppointment.id)
+    setEditingAppointment(null)
+    await fetchData()
+  }
+
   const handleDragEnd = () => {
     setDraggedSection(null)
     setDraggedJob(null)
+    setDraggedAppointment(null)
     setDragOverSlot(null)
     setDragOverStatus(null)
   }
@@ -754,6 +973,26 @@ export default function PMJobSetter() {
     // Use local date parts to avoid UTC shift (toISOString converts to UTC, off by a day in US timezones)
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
+    if (draggedAppointment) {
+      // Move appointment to new time slot, keep duration
+      const origStart = new Date(draggedAppointment.start_time)
+      const origEnd = new Date(draggedAppointment.end_time || origStart)
+      const durationMs = origEnd - origStart
+      const newStart = new Date(date)
+      newStart.setHours(hour, 0, 0, 0)
+      const newEnd = new Date(newStart.getTime() + durationMs)
+
+      await supabase.from('appointments').update({
+        start_time: newStart.toISOString(),
+        end_time: newEnd.toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq('id', draggedAppointment.id)
+
+      setDraggedAppointment(null)
+      await fetchData()
+      return
+    }
+
     if (draggedJob) {
       // Open schedule modal with pre-filled time
       setScheduleJob(draggedJob)
@@ -761,7 +1000,12 @@ export default function PMJobSetter() {
         start_time: formatDateTimeLocal(startTime),
         duration_hours: draggedJob.allotted_time_hours || 4,
         pm_id: draggedJob.pm_id || (!isAdmin && user?.id ? String(user.id) : ''),
+        assigned_employee_ids: [],
+        assigned_team: draggedJob.assigned_team || '',
         notes: draggedJob.notes || '',
+        recurrence: draggedJob.recurrence || 'None',
+        recurrence_end: '',
+        createAppointment: true,
         sendText: false,
         sendEmail: false,
         phone: draggedJob.customer?.phone || '',
@@ -812,6 +1056,42 @@ export default function PMJobSetter() {
         .update(updateData)
         .eq('id', draggedJob.id)
 
+      // Auto-create invoice when job is marked Completed
+      if (statusId === 'Complete' || statusId === 'Completed') {
+        const jobForInvoice = draggedJob
+        // Fetch job_lines to calculate total
+        const { data: jobLines } = await supabase
+          .from('job_lines')
+          .select('item_id, quantity, price, total, description')
+          .eq('job_id', jobForInvoice.id)
+
+        const jobTotal = jobLines?.reduce((sum, l) => sum + (l.total || l.quantity * l.price || 0), 0) || jobForInvoice.job_total || 0
+        const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+
+        const { data: newInvoice, error: invError } = await supabase
+          .from('invoices')
+          .insert([{
+            company_id: companyId,
+            invoice_id: invoiceNumber,
+            customer_id: jobForInvoice.customer?.id || jobForInvoice.customer_id || null,
+            job_id: jobForInvoice.id,
+            amount: jobTotal,
+            payment_status: 'Pending',
+            job_description: jobForInvoice.job_title || jobForInvoice.job_id || null,
+            updated_at: new Date().toISOString()
+          }])
+          .select()
+          .single()
+
+        if (invError) {
+          console.error('[AutoInvoice] Error creating invoice:', invError)
+        } else {
+          console.log('[AutoInvoice] Created invoice', invoiceNumber, 'for $' + jobTotal)
+          // Update job's invoice_status
+          await supabase.from('jobs').update({ invoice_status: 'Invoiced' }).eq('id', jobForInvoice.id)
+        }
+      }
+
       setDraggedJob(null)
       await fetchData()
       return
@@ -853,6 +1133,16 @@ export default function PMJobSetter() {
     const pmId = scheduleForm.pm_id || (!isAdmin && user?.id ? String(user.id) : '')
     if (pmId) updateData.pm_id = parseInt(pmId)
     if (scheduleForm.notes) updateData.notes = scheduleForm.notes
+    // Build assigned_team from selected employees
+    if (scheduleForm.assigned_employee_ids.length > 0) {
+      const teamNames = scheduleForm.assigned_employee_ids.map(id => {
+        const emp = employees.find(e => String(e.id) === String(id))
+        return emp?.name || ''
+      }).filter(Boolean).join(', ')
+      updateData.assigned_team = teamNames
+    } else if (scheduleForm.assigned_team) {
+      updateData.assigned_team = scheduleForm.assigned_team
+    }
 
     console.log('[Schedule] Job ID:', scheduleJob.id)
     console.log('[Schedule] Update data:', JSON.stringify(updateData))
@@ -870,6 +1160,163 @@ export default function PMJobSetter() {
       setScheduleError(error.message)
       setScheduleSaving(false)
       return
+    }
+
+    // Also save recurrence on the job record
+    if (scheduleForm.recurrence && scheduleForm.recurrence !== 'None') {
+      await supabase.from('jobs').update({ recurrence: scheduleForm.recurrence }).eq('id', scheduleJob.id)
+    }
+
+    // Create recurring future jobs
+    if (scheduleForm.recurrence && scheduleForm.recurrence !== 'None' && scheduleForm.recurrence_end) {
+      const recurEnd = new Date(scheduleForm.recurrence_end)
+      const intervalMap = {
+        'Daily': 1, 'Weekly': 7, 'Bi-Weekly': 14, 'Monthly': null, 'Quarterly': null
+      }
+      const futureJobs = []
+      let nextStart = new Date(startTime)
+
+      while (true) {
+        if (scheduleForm.recurrence === 'Monthly') {
+          nextStart = new Date(nextStart)
+          nextStart.setMonth(nextStart.getMonth() + 1)
+        } else if (scheduleForm.recurrence === 'Quarterly') {
+          nextStart = new Date(nextStart)
+          nextStart.setMonth(nextStart.getMonth() + 3)
+        } else {
+          const days = intervalMap[scheduleForm.recurrence] || 7
+          nextStart = new Date(nextStart)
+          nextStart.setDate(nextStart.getDate() + days)
+        }
+
+        if (nextStart > recurEnd) break
+
+        const nextEnd = new Date(nextStart)
+        nextEnd.setHours(nextEnd.getHours() + (scheduleForm.duration_hours || 4))
+
+        futureJobs.push({
+          company_id: companyId,
+          job_id: `JOB-${Date.now().toString(36).toUpperCase()}${futureJobs.length}`,
+          job_title: scheduleJob.job_title || scheduleJob.job_id,
+          job_address: scheduleJob.job_address || null,
+          customer_id: scheduleJob.customer?.id || null,
+          salesperson_id: scheduleJob.salesperson_id || null,
+          status: scheduledStatus || 'Scheduled',
+          assigned_team: updateData.assigned_team || scheduleJob.assigned_team || null,
+          business_unit: scheduleJob.business_unit || null,
+          pm_id: pmId ? parseInt(pmId) : null,
+          start_date: nextStart.toISOString(),
+          end_date: nextEnd.toISOString(),
+          allotted_time_hours: scheduleJob.allotted_time_hours || null,
+          recurrence: scheduleForm.recurrence,
+          notes: scheduleForm.notes || scheduleJob.notes || null,
+          details: scheduleJob.details || null,
+          job_total: scheduleJob.job_total || null,
+          updated_at: new Date().toISOString()
+        })
+      }
+
+      if (futureJobs.length > 0) {
+        const { data: createdJobs, error: recurError } = await supabase
+          .from('jobs')
+          .insert(futureJobs)
+          .select('id')
+
+        if (recurError) {
+          console.error('[Schedule] Recurring job creation error:', recurError)
+        } else {
+          console.log('[Schedule] Created', futureJobs.length, 'recurring jobs')
+
+          // Copy job_lines from original job to each recurring job
+          const { data: origLines } = await supabase
+            .from('job_lines')
+            .select('item_id, quantity, price, total, description, notes')
+            .eq('job_id', scheduleJob.id)
+
+          if (origLines?.length > 0 && createdJobs?.length > 0) {
+            const allLines = createdJobs.flatMap(cj =>
+              origLines.map(line => ({
+                company_id: companyId,
+                job_id: cj.id,
+                item_id: line.item_id,
+                quantity: line.quantity,
+                price: line.price,
+                total: line.total,
+                description: line.description,
+                notes: line.notes
+              }))
+            )
+            await supabase.from('job_lines').insert(allLines)
+          }
+
+          // Create appointments for each recurring job
+          if (scheduleForm.createAppointment) {
+            const assignedIds = scheduleForm.assigned_employee_ids.length > 0
+              ? scheduleForm.assigned_employee_ids
+              : (pmId ? [pmId] : [])
+
+            if (assignedIds.length > 0 && createdJobs?.length > 0) {
+              const recurAppts = []
+              createdJobs.forEach((cj, idx) => {
+                const fjob = futureJobs[idx]
+                assignedIds.forEach(empId => {
+                  const emp = employees.find(e => String(e.id) === String(empId))
+                  recurAppts.push({
+                    company_id: companyId,
+                    title: fjob.job_title,
+                    start_time: fjob.start_date,
+                    end_time: fjob.end_date,
+                    location: fjob.job_address || '',
+                    status: 'Scheduled',
+                    employee_id: parseInt(empId),
+                    customer_id: fjob.customer_id,
+                    appointment_type: 'Recurring Job',
+                    notes: `Recurring: ${scheduleForm.recurrence}${emp ? ` | ${emp.name}` : ''}`,
+                    created_at: new Date().toISOString()
+                  })
+                })
+              })
+              await supabase.from('appointments').insert(recurAppts)
+            }
+          }
+        }
+      }
+    }
+
+    // Create appointment(s) for each assigned employee — insert directly to ensure they exist before calendar refetch
+    if (scheduleForm.createAppointment) {
+      const assignedIds = scheduleForm.assigned_employee_ids.length > 0
+        ? scheduleForm.assigned_employee_ids
+        : (pmId ? [pmId] : [])
+
+      const appointmentRows = assignedIds.map(empId => {
+        const emp = employees.find(e => String(e.id) === String(empId))
+        return {
+          company_id: companyId,
+          title: scheduleJob.job_title || `Job #${scheduleJob.job_id || scheduleJob.id}`,
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          location: scheduleJob.job_address || '',
+          status: 'Scheduled',
+          employee_id: parseInt(empId),
+          customer_id: scheduleJob.customer?.id || null,
+          appointment_type: (scheduleForm.recurrence && scheduleForm.recurrence !== 'None') ? 'Recurring Job' : 'Job',
+          notes: `${scheduleForm.recurrence && scheduleForm.recurrence !== 'None' ? `Recurring: ${scheduleForm.recurrence}\n` : ''}${scheduleForm.notes || ''}${scheduleForm.notes ? '\n' : ''}Job: ${scheduleJob.job_title || scheduleJob.job_id || scheduleJob.id}${emp ? ` | Assigned: ${emp.name}` : ''}`,
+          created_at: new Date().toISOString()
+        }
+      })
+
+      if (appointmentRows.length > 0) {
+        const { error: apptError } = await supabase
+          .from('appointments')
+          .insert(appointmentRows)
+
+        if (apptError) {
+          console.error('[Schedule] Appointment creation error:', apptError)
+        } else {
+          console.log('[Schedule] Created', appointmentRows.length, 'appointment(s)')
+        }
+      }
     }
 
     // Send notifications
@@ -2116,6 +2563,7 @@ export default function PMJobSetter() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
                   {getMonthDays().map((day, idx) => {
                     const dayJobs = day ? getJobsForDate(day) : []
+                    const dayAppointments = day ? getAppointmentsForDate(day) : []
                     const isDragOver = day && dragOverSlot?.date?.toDateString() === day.toDateString()
 
                     return (
@@ -2174,6 +2622,48 @@ export default function PMJobSetter() {
                               {dayJobs.length > 4 && (
                                 <div style={{ fontSize: '10px', color: theme.textMuted, padding: '1px 4px' }}>
                                   +{dayJobs.length - 4} more
+                                </div>
+                              )}
+                              {/* Appointments */}
+                              {dayAppointments.slice(0, Math.max(0, 4 - dayJobs.length)).map(apt => {
+                                const aptColor = appointmentStatusColors[apt.status] || '#0ea5e9'
+                                const isRecurring = isRecurringAppointment(apt)
+                                return (
+                                  <div
+                                    key={`apt-${apt.id}`}
+                                    draggable
+                                    onDragStart={(e) => handleAppointmentDragStart(e, apt)}
+                                    onDragEnd={handleDragEnd}
+                                    onClick={(e) => { e.stopPropagation(); handleAppointmentClick(apt) }}
+                                    style={{
+                                      backgroundColor: isRecurring ? '#dbeafe' : `${aptColor}15`,
+                                      borderLeft: `3px solid ${isRecurring ? '#0ea5e9' : aptColor}`,
+                                      borderRadius: '3px',
+                                      padding: '2px 4px',
+                                      fontSize: '10px',
+                                      fontWeight: isRecurring ? '600' : '500',
+                                      color: isRecurring ? '#0369a1' : aptColor,
+                                      cursor: 'grab',
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      border: isRecurring ? '1px solid #93c5fd' : 'none',
+                                      borderLeftWidth: '3px'
+                                    }}
+                                    title={`${isRecurring ? '↻ Recurring — ' : ''}${apt.title}${apt.employee?.name ? ` — ${apt.employee.name}` : ''}${apt.location ? ` @ ${apt.location}` : ''}`}
+                                  >
+                                    {isRecurring && <RefreshCw size={8} style={{ flexShrink: 0 }} />}
+                                    {!isRecurring && <Clock size={8} style={{ flexShrink: 0 }} />}
+                                    {apt.title || 'Appointment'}
+                                  </div>
+                                )
+                              })}
+                              {(dayJobs.length + dayAppointments.length) > 4 && dayJobs.length <= 4 && dayAppointments.length > (4 - dayJobs.length) && (
+                                <div style={{ fontSize: '10px', color: theme.textMuted, padding: '1px 4px' }}>
+                                  +{(dayJobs.length + dayAppointments.length) - 4} more
                                 </div>
                               )}
                             </div>
@@ -2241,6 +2731,7 @@ export default function PMJobSetter() {
                     {hourSlots.map(hour => {
                       const slotSections = getSectionsForSlot(day, hour)
                       const slotJobs = getJobsForSlot(day, hour)
+                      const slotAppointments = getAppointmentsForSlot(day, hour)
                       const isOver = dragOverSlot?.date?.toDateString() === day.toDateString() && dragOverSlot?.hour === hour
 
                       return (
@@ -2333,6 +2824,50 @@ export default function PMJobSetter() {
                                     }} />
                                   )}
                                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{section.name}</span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                          {/* Render appointments */}
+                          {slotAppointments.map(apt => {
+                            const aptColor = appointmentStatusColors[apt.status] || '#0ea5e9'
+                            const isRecurring = isRecurringAppointment(apt)
+                            return (
+                              <div
+                                key={`apt-${apt.id}`}
+                                draggable
+                                onDragStart={(e) => handleAppointmentDragStart(e, apt)}
+                                onDragEnd={handleDragEnd}
+                                onClick={(e) => { e.stopPropagation(); handleAppointmentClick(apt) }}
+                                style={{
+                                  backgroundColor: isRecurring ? '#dbeafe' : `${aptColor}15`,
+                                  borderRadius: '4px',
+                                  padding: '4px 6px',
+                                  marginBottom: '2px',
+                                  fontSize: '10px',
+                                  fontWeight: isRecurring ? '600' : '500',
+                                  color: isRecurring ? '#0369a1' : aptColor,
+                                  borderLeft: `3px solid ${isRecurring ? '#0ea5e9' : aptColor}`,
+                                  border: isRecurring ? '1px solid #93c5fd' : 'none',
+                                  borderLeftWidth: '3px',
+                                  cursor: 'grab',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis'
+                                }}
+                                title={`${isRecurring ? '↻ Recurring — ' : ''}${apt.title}${apt.employee?.name ? ` — ${apt.employee.name}` : ''}${apt.location ? ` @ ${apt.location}` : ''}`}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  {isRecurring && <RefreshCw size={9} style={{ flexShrink: 0 }} />}
+                                  {!isRecurring && <Clock size={9} style={{ flexShrink: 0 }} />}
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {apt.title || 'Appointment'}
+                                  </span>
+                                  {apt.employee?.name && (
+                                    <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: 'auto', flexShrink: 0 }}>
+                                      {apt.employee.name}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             )
@@ -3183,6 +3718,148 @@ export default function PMJobSetter() {
                 </div>
 
                 <div>
+                  <label style={labelStyle}>Assign Employees / Crew</label>
+                  <div style={{
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    maxHeight: '140px',
+                    overflowY: 'auto',
+                    backgroundColor: theme.bgCard
+                  }}>
+                    {employees.filter(e => e.active !== false).map(emp => (
+                      <label
+                        key={emp.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          color: theme.text,
+                          borderBottom: `1px solid ${theme.border}`,
+                          backgroundColor: scheduleForm.assigned_employee_ids.includes(String(emp.id))
+                            ? theme.accentBg : 'transparent'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={scheduleForm.assigned_employee_ids.includes(String(emp.id))}
+                          onChange={(e) => {
+                            setScheduleForm(prev => ({
+                              ...prev,
+                              assigned_employee_ids: e.target.checked
+                                ? [...prev.assigned_employee_ids, String(emp.id)]
+                                : prev.assigned_employee_ids.filter(id => id !== String(emp.id))
+                            }))
+                          }}
+                          style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                        />
+                        <Users size={14} style={{ color: theme.textMuted, flexShrink: 0 }} />
+                        <span>{emp.name}</span>
+                        {emp.role && (
+                          <span style={{ marginLeft: 'auto', fontSize: '11px', color: theme.textMuted }}>
+                            {emp.role}
+                          </span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                  {scheduleForm.assigned_employee_ids.length > 0 && (
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: theme.textMuted }}>
+                      {scheduleForm.assigned_employee_ids.length} employee{scheduleForm.assigned_employee_ids.length !== 1 ? 's' : ''} selected
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: theme.text
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={scheduleForm.createAppointment}
+                      onChange={(e) => setScheduleForm(prev => ({ ...prev, createAppointment: e.target.checked }))}
+                      style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                    />
+                    <CalendarPlus size={15} style={{ color: theme.accent }} />
+                    Create appointment on calendar
+                  </label>
+                  <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px', marginLeft: '26px' }}>
+                    Adds this job to the Appointments calendar for each assigned employee
+                  </p>
+                </div>
+
+                {/* Recurrence */}
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: theme.accentBg,
+                  borderRadius: '10px',
+                  border: `1px solid ${theme.border}`
+                }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <RefreshCw size={14} style={{ color: theme.accent }} />
+                    Recurring Job
+                  </div>
+
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ ...labelStyle, marginBottom: '4px' }}>Frequency</label>
+                    <select
+                      value={scheduleForm.recurrence}
+                      onChange={(e) => setScheduleForm(prev => ({ ...prev, recurrence: e.target.value }))}
+                      style={inputStyle}
+                    >
+                      <option value="None">Does not repeat</option>
+                      <option value="Daily">Daily</option>
+                      <option value="Weekly">Weekly</option>
+                      <option value="Bi-Weekly">Every 2 weeks</option>
+                      <option value="Monthly">Monthly</option>
+                      <option value="Quarterly">Every 3 months</option>
+                    </select>
+                  </div>
+
+                  {scheduleForm.recurrence !== 'None' && (
+                    <div>
+                      <label style={{ ...labelStyle, marginBottom: '4px' }}>Repeat until</label>
+                      <input
+                        type="date"
+                        value={scheduleForm.recurrence_end}
+                        onChange={(e) => setScheduleForm(prev => ({ ...prev, recurrence_end: e.target.value }))}
+                        style={inputStyle}
+                      />
+                      {scheduleForm.recurrence_end && scheduleForm.start_time && (
+                        <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px' }}>
+                          {(() => {
+                            const start = new Date(scheduleForm.start_time)
+                            const end = new Date(scheduleForm.recurrence_end)
+                            let count = 0
+                            let next = new Date(start)
+                            while (true) {
+                              if (scheduleForm.recurrence === 'Monthly') next.setMonth(next.getMonth() + 1)
+                              else if (scheduleForm.recurrence === 'Quarterly') next.setMonth(next.getMonth() + 3)
+                              else if (scheduleForm.recurrence === 'Bi-Weekly') next.setDate(next.getDate() + 14)
+                              else if (scheduleForm.recurrence === 'Weekly') next.setDate(next.getDate() + 7)
+                              else next.setDate(next.getDate() + 1)
+                              if (next > end) break
+                              count++
+                            }
+                            return count > 0
+                              ? `Will create ${count} additional job${count !== 1 ? 's' : ''} (${count + 1} total including this one)`
+                              : 'End date is too soon — no recurring jobs will be created'
+                          })()}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div>
                   <label style={labelStyle}>Notes</label>
                   <textarea
                     value={scheduleForm.notes}
@@ -3334,6 +4011,339 @@ export default function PMJobSetter() {
                   }}
                 >
                   {scheduleSaving ? 'Scheduling...' : 'Schedule Job'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Appointment Edit Modal */}
+      {editingAppointment && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 60
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '440px',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Edit Appointment
+                </h2>
+                <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '2px' }}>
+                  {editingAppointment.title}
+                  {editingAppointment.employee?.name && ` — ${editingAppointment.employee.name}`}
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingAppointment(null)}
+                style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAppointmentSave} style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                {/* Title */}
+                <div>
+                  <label style={labelStyle}>Title</label>
+                  <input
+                    type="text"
+                    value={appointmentForm.title}
+                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, title: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Start Date & Time */}
+                <div>
+                  <label style={labelStyle}>Start Date & Time *</label>
+                  <input
+                    type="datetime-local"
+                    value={appointmentForm.start_time}
+                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, start_time: e.target.value }))}
+                    required
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Duration */}
+                <div>
+                  <label style={labelStyle}>Duration</label>
+                  <select
+                    value={appointmentForm.duration_hours}
+                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, duration_hours: parseFloat(e.target.value) }))}
+                    style={inputStyle}
+                  >
+                    <option value={1}>1 hour</option>
+                    <option value={2}>2 hours</option>
+                    <option value={4}>4 hours (half day)</option>
+                    <option value={8}>8 hours (full day)</option>
+                    <option value={16}>2 days</option>
+                    <option value={24}>3 days</option>
+                    <option value={40}>1 week</option>
+                  </select>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label style={labelStyle}>Status</label>
+                  <select
+                    value={appointmentForm.status}
+                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, status: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    {['Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'No Show'].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Assign Employees / Crew */}
+                <div>
+                  <label style={labelStyle}>Assign Employees / Crew</label>
+                  <div style={{
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    maxHeight: '140px',
+                    overflowY: 'auto',
+                    backgroundColor: theme.bgCard
+                  }}>
+                    {employees.filter(e => e.active !== false).map(emp => (
+                      <label
+                        key={emp.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          color: theme.text,
+                          borderBottom: `1px solid ${theme.border}`,
+                          backgroundColor: appointmentForm.assigned_employee_ids.includes(String(emp.id))
+                            ? theme.accentBg : 'transparent'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={appointmentForm.assigned_employee_ids.includes(String(emp.id))}
+                          onChange={(e) => {
+                            setAppointmentForm(prev => ({
+                              ...prev,
+                              assigned_employee_ids: e.target.checked
+                                ? [...prev.assigned_employee_ids, String(emp.id)]
+                                : prev.assigned_employee_ids.filter(id => id !== String(emp.id))
+                            }))
+                          }}
+                          style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                        />
+                        <Users size={14} style={{ color: theme.textMuted, flexShrink: 0 }} />
+                        <span>{emp.name}</span>
+                        {emp.role && (
+                          <span style={{ marginLeft: 'auto', fontSize: '11px', color: theme.textMuted }}>
+                            {emp.role}
+                          </span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                  {appointmentForm.assigned_employee_ids.length > 0 && (
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: theme.textMuted }}>
+                      {appointmentForm.assigned_employee_ids.length} employee{appointmentForm.assigned_employee_ids.length !== 1 ? 's' : ''} selected
+                    </div>
+                  )}
+                </div>
+
+                {/* Recurring Job Section */}
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: isRecurringAppointment(editingAppointment) ? '#eff6ff' : theme.accentBg,
+                  borderRadius: '10px',
+                  border: `1px solid ${isRecurringAppointment(editingAppointment) ? '#bfdbfe' : theme.border}`
+                }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: isRecurringAppointment(editingAppointment) ? '#0ea5e9' : theme.text, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <RefreshCw size={14} />
+                    Recurring Job
+                    {isRecurringAppointment(editingAppointment) && (
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: '600',
+                        backgroundColor: '#0ea5e9',
+                        color: '#fff',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        marginLeft: '4px'
+                      }}>
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ ...labelStyle, marginBottom: '4px' }}>Frequency</label>
+                    <select
+                      value={appointmentForm.recurrence}
+                      onChange={(e) => setAppointmentForm(prev => ({ ...prev, recurrence: e.target.value }))}
+                      style={inputStyle}
+                    >
+                      <option value="None">Does not repeat</option>
+                      <option value="Daily">Daily</option>
+                      <option value="Weekly">Weekly</option>
+                      <option value="Bi-Weekly">Every 2 weeks</option>
+                      <option value="Monthly">Monthly</option>
+                      <option value="Quarterly">Every 3 months</option>
+                    </select>
+                  </div>
+
+                  {appointmentForm.recurrence !== 'None' && !isRecurringAppointment(editingAppointment) && (
+                    <div>
+                      <label style={{ ...labelStyle, marginBottom: '4px' }}>Repeat until</label>
+                      <input
+                        type="date"
+                        value={appointmentForm.recurrence_end}
+                        onChange={(e) => setAppointmentForm(prev => ({ ...prev, recurrence_end: e.target.value }))}
+                        style={inputStyle}
+                      />
+                      {appointmentForm.recurrence_end && appointmentForm.start_time && (
+                        <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px' }}>
+                          {(() => {
+                            const start = new Date(appointmentForm.start_time)
+                            const end = new Date(appointmentForm.recurrence_end)
+                            let count = 0, next = new Date(start)
+                            while (true) {
+                              if (appointmentForm.recurrence === 'Monthly') next.setMonth(next.getMonth() + 1)
+                              else if (appointmentForm.recurrence === 'Quarterly') next.setMonth(next.getMonth() + 3)
+                              else if (appointmentForm.recurrence === 'Bi-Weekly') next.setDate(next.getDate() + 14)
+                              else if (appointmentForm.recurrence === 'Weekly') next.setDate(next.getDate() + 7)
+                              else next.setDate(next.getDate() + 1)
+                              if (next > end) break
+                              count++
+                            }
+                            return count > 0
+                              ? `Will create ${count} additional appointment${count !== 1 ? 's' : ''}`
+                              : 'End date is too soon'
+                          })()}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Location */}
+                {(appointmentForm.location || editingAppointment.location) && (
+                  <div style={{
+                    padding: '12px',
+                    backgroundColor: theme.accentBg,
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    color: theme.textSecondary,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <MapPin size={14} style={{ flexShrink: 0 }} />
+                    <input
+                      type="text"
+                      value={appointmentForm.location}
+                      onChange={(e) => setAppointmentForm(prev => ({ ...prev, location: e.target.value }))}
+                      placeholder="Location"
+                      style={{ ...inputStyle, backgroundColor: 'transparent', border: 'none', padding: 0 }}
+                    />
+                  </div>
+                )}
+
+                {/* Notes */}
+                <div>
+                  <label style={labelStyle}>Notes</label>
+                  <textarea
+                    value={appointmentForm.notes}
+                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, notes: e.target.value }))}
+                    rows={3}
+                    placeholder="Appointment notes..."
+                    style={{ ...inputStyle, resize: 'vertical' }}
+                  />
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  onClick={handleAppointmentDelete}
+                  style={{
+                    padding: '12px',
+                    border: `1px solid #fecaca`,
+                    backgroundColor: '#fef2f2',
+                    color: '#dc2626',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    minHeight: '44px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingAppointment(null)}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    minHeight: '44px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={appointmentSaving}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    minHeight: '44px',
+                    opacity: appointmentSaving ? 0.6 : 1
+                  }}
+                >
+                  {appointmentSaving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </form>

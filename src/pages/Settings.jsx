@@ -1909,6 +1909,9 @@ function PaymentSettingsTab({ theme, settings, saveSetting }) {
   const [saving, setSaving] = useState(false)
   const [expandedSection, setExpandedSection] = useState(null)
 
+  const existingReviewUrl = settings.find(s => s.key === 'google_review_url')
+  const [googleReviewUrl, setGoogleReviewUrl] = useState(existingReviewUrl ? existingReviewUrl.value : '')
+
   const handleSave = async () => {
     setSaving(true)
     await saveSetting('payment_config', form)
@@ -2085,6 +2088,36 @@ function PaymentSettingsTab({ theme, settings, saveSetting }) {
           <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0' }}>
             Your app's URL, used for building portal payment links. This is also set as PORTAL_BASE_URL in your edge function secrets.
           </p>
+        </div>
+
+        {/* ---- GOOGLE REVIEW URL ---- */}
+        <div style={{
+          padding: '16px',
+          borderRadius: '10px',
+          backgroundColor: theme.bgCard,
+          border: `1px solid ${theme.border}`,
+          marginBottom: '12px'
+        }}>
+          <label style={labelStyle}>Google Review URL</label>
+          <input
+            type="url"
+            value={googleReviewUrl}
+            onChange={(e) => setGoogleReviewUrl(e.target.value)}
+            placeholder="https://g.page/r/YOUR_ID/review"
+            style={inputStyle}
+          />
+          <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0' }}>
+            Your Google Business review link. Field Scout will show a "Get Review" button so techs can request reviews on-site.
+          </p>
+          <button
+            onClick={async () => {
+              await saveSetting('google_review_url', googleReviewUrl)
+              toast.success('Google Review URL saved!')
+            }}
+            style={{ marginTop: '8px', padding: '8px 16px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            Save
+          </button>
         </div>
 
         {/* ---- STRIPE ---- */}
