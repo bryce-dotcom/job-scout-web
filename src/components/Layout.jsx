@@ -222,6 +222,7 @@ export default function Layout() {
     ],
     OPERATIONS: [
       { value: '', label: '(Section level)' },
+      { value: 'Field Scout', label: 'Under Field Scout' },
       { value: 'Job Board', label: 'Under Job Board' },
       { value: 'Products & Services', label: 'Under Products & Services' },
       { value: 'Inventory', label: 'Under Inventory' }
