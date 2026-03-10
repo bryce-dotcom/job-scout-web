@@ -81,10 +81,11 @@ export default function Dashboard() {
   const checkActiveTimeLog = async () => {
     if (!currentEmployee?.id) return
     const { data } = await supabase
-      .from('time_log')
+      .from('time_clock')
       .select('*')
       .eq('employee_id', currentEmployee.id)
-      .is('clock_out_time', null)
+      .eq('company_id', companyId)
+      .is('clock_out', null)
       .single()
 
     if (data) {
@@ -97,19 +98,19 @@ export default function Dashboard() {
     if (clockedIn && activeTimeLog) {
       // Clock out
       await supabase
-        .from('time_log')
-        .update({ clock_out_time: new Date().toISOString() })
+        .from('time_clock')
+        .update({ clock_out: new Date().toISOString() })
         .eq('id', activeTimeLog.id)
       setClockedIn(false)
       setActiveTimeLog(null)
     } else {
       // Clock in
       const { data } = await supabase
-        .from('time_log')
+        .from('time_clock')
         .insert({
           company_id: companyId,
           employee_id: currentEmployee?.id,
-          clock_in_time: new Date().toISOString()
+          clock_in: new Date().toISOString()
         })
         .select()
         .single()
