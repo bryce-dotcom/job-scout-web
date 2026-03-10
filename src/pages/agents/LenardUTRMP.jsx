@@ -345,6 +345,12 @@ export default function LenardUTRMP() {
   const [isPulling, setIsPulling] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  const showToast = useCallback((message, icon = '\u2713') => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, icon });
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
+  }, []);
+
   const handlePullRefresh = useCallback(async () => {
     setRefreshing(true);
     const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -377,12 +383,6 @@ export default function LenardUTRMP() {
   const [repTargetDown, setRepTargetDown] = useState(0);
   const [repAdditionalOOP, setRepAdditionalOOP] = useState(0);
   const [giveMeQuoteItems, setGiveMeQuoteItems] = useState([]);
-
-  const showToast = useCallback((message, icon = '\u2713') => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ message, icon });
-    toastTimer.current = setTimeout(() => setToast(null), 2500);
-  }, []);
 
   useEffect(() => { if (keepLinesOnSwitch.current) { keepLinesOnSwitch.current = false; return; } setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('UT'); setSaveZip(''); setSaveMeterNumber(''); setSaveEIN(''); }, [program]);
 
