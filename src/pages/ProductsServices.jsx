@@ -340,32 +340,55 @@ export default function ProductsServices() {
     setLoading(false)
   }
 
-  // Build dynamic sections from actual data (service types from settings + any types used in groups/products)
+  // Build sections from settings service types + group service_types (broad categories only)
   const allSections = (() => {
     const sectionSet = new Set()
-    // Add service types from settings
     serviceTypes.forEach(t => sectionSet.add(t))
-    // Add any group service_types not already covered
+    // Include any group service_types not in settings
     productGroups.forEach(g => { if (g.service_type) sectionSet.add(g.service_type) })
-    // Add any product types not already covered
-    products.forEach(p => { if (p.type) sectionSet.add(p.type) })
-    return [...sectionSet].sort()
+    const sections = [...sectionSet].sort()
+    // Add "Other" if any products don't fuzzy-match any section
+    const hasOrphans = products.some(p => {
+      if (!p.type) return true
+      return !sections.some(s => productMatchesSection(p.type, s))
+    })
+    if (hasOrphans && products.length > 0) sections.push('Other')
+    return sections
   })()
+
+  // Fuzzy match: product type belongs to section if it contains the section name or vice versa
+  function productMatchesSection(productType, section) {
+    if (!productType || !section) return false
+    if (section === 'Other') return false
+    const pt = productType.toLowerCase()
+    const st = section.toLowerCase()
+    return pt === st || pt.includes(st) || st.includes(pt)
+  }
+
+  // Check if product belongs to a section (via group or fuzzy type match)
+  function productInSection(p, section, grpIds) {
+    if (p.group_id && grpIds.has(p.group_id)) return true
+    if (section === 'Other') {
+      // "Other" catches products whose type doesn't match any real section
+      const realSections = allSections.filter(s => s !== 'Other')
+      return !realSections.some(s => {
+        const sGrpIds = new Set(productGroups.filter(g => g.service_type === s).map(g => g.id))
+        if (p.group_id && sGrpIds.has(p.group_id)) return true
+        return productMatchesSection(p.type, s)
+      })
+    }
+    return productMatchesSection(p.type, section)
+  }
 
   // Derived data
   const sectionGroups = activeSection
     ? productGroups.filter(g => g.active && g.service_type === activeSection)
     : []
 
+  const sectionGroupIds = new Set(sectionGroups.map(g => g.id))
+
   const sectionProducts = activeSection
-    ? products.filter(p => {
-        // Products in this section's groups
-        const grpIds = new Set(sectionGroups.map(g => g.id))
-        if (p.group_id && grpIds.has(p.group_id)) return true
-        // Ungrouped products with matching type
-        if (!p.group_id && p.type === activeSection) return true
-        return false
-      })
+    ? products.filter(p => productInSection(p, activeSection, sectionGroupIds))
     : products
 
   const filteredProducts = sectionProducts.filter(p => {
@@ -387,17 +410,12 @@ export default function ProductsServices() {
       })
     : []
 
-  const currentSectionGroupIds = new Set(sectionGroups.map(g => g.id))
-  const ungroupedProducts = filteredProducts.filter(p => !p.group_id || !currentSectionGroupIds.has(p.group_id))
+  const ungroupedProducts = filteredProducts.filter(p => !p.group_id || !sectionGroupIds.has(p.group_id))
 
   const getProductCount = (groupId) => products.filter(p => p.group_id === groupId).length
   const getSectionCount = (section) => {
     const grpIds = new Set(productGroups.filter(g => g.service_type === section).map(g => g.id))
-    return products.filter(p => {
-      if (p.group_id && grpIds.has(p.group_id)) return true
-      if (!p.group_id && p.type === section) return true
-      return false
-    }).length
+    return products.filter(p => productInSection(p, section, grpIds)).length
   }
 
   // ============ GROUP CRUD ============
