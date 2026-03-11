@@ -9,7 +9,7 @@ import {
   Upload, Download, Clock, DollarSign, Pencil, ChevronRight, Archive, Search,
   FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, Loader,
   ExternalLink, FileText, ShieldCheck, Award, PlusCircle, MinusCircle,
-  Wrench, GripHorizontal
+  Wrench, GripHorizontal, GripVertical
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
@@ -100,15 +100,25 @@ function DraggableModal({ children, theme, isMobile, maxWidth = '600px', onClose
 }
 
 // ============ PRODUCT CARD ============
-function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost }) {
+function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost, draggable }) {
   return (
-    <div style={{
-      backgroundColor: theme.bgCard,
-      borderRadius: '12px',
-      border: `1px solid ${theme.border}`,
-      overflow: 'hidden',
-      opacity: product.active ? 1 : 0.6
-    }}>
+    <div
+      draggable={!!draggable}
+      onDragStart={draggable ? (e) => {
+        e.dataTransfer.setData('application/product-id', product.id.toString())
+        e.dataTransfer.effectAllowed = 'move'
+        e.currentTarget.style.opacity = '0.5'
+      } : undefined}
+      onDragEnd={draggable ? (e) => { e.currentTarget.style.opacity = product.active ? '1' : '0.6' } : undefined}
+      style={{
+        backgroundColor: theme.bgCard,
+        borderRadius: '12px',
+        border: `1px solid ${theme.border}`,
+        overflow: 'hidden',
+        opacity: product.active ? 1 : 0.6,
+        cursor: draggable ? 'grab' : undefined
+      }}
+    >
       <div style={{
         height: '100px',
         backgroundColor: theme.bg,
@@ -132,6 +142,15 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
           }}>
             <Archive size={10} />
             {inventoryCount}
+          </div>
+        )}
+        {draggable && (
+          <div style={{
+            position: 'absolute', bottom: '6px', right: '6px',
+            backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: '4px',
+            padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <GripVertical size={12} style={{ color: theme.textMuted }} />
           </div>
         )}
         {product.dlc_listed && (
@@ -655,6 +674,36 @@ export default function ProductsServices() {
     await fetchProducts()
   }
 
+  // Drag & drop product to group
+  const [dragOverGroupId, setDragOverGroupId] = useState(null)
+
+  const handleDropProduct = async (e, targetGroupId) => {
+    e.preventDefault()
+    setDragOverGroupId(null)
+    const productId = parseInt(e.dataTransfer.getData('application/product-id'))
+    if (!productId) return
+    const product = products.find(p => p.id === productId)
+    if (!product || product.group_id === targetGroupId) return
+    await supabase.from('products_services')
+      .update({ group_id: targetGroupId, updated_at: new Date().toISOString() })
+      .eq('id', productId)
+      .eq('company_id', companyId)
+    await fetchProducts()
+  }
+
+  const onDragOver = (e, groupId) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverGroupId !== groupId) setDragOverGroupId(groupId)
+  }
+
+  const onDragLeave = (e, groupId) => {
+    // Only clear if leaving the container, not entering a child
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      if (dragOverGroupId === groupId) setDragOverGroupId(null)
+    }
+  }
+
   // Image upload
   const handleImageUpload = async (e, isGroup = false) => {
     const file = e.target.files?.[0]
@@ -1056,30 +1105,75 @@ export default function ProductsServices() {
             </div>
           ) : selectedGroup ? (
             // ============ DRILL-DOWN: Items in selected group ============
-            groupProducts.length === 0 ? (
+            <div>
+              {/* Drop targets bar: move products to other groups or ungrouped */}
               <div style={{
-                textAlign: 'center', padding: '48px', backgroundColor: theme.bgCard,
-                borderRadius: '12px', border: `1px solid ${theme.border}`
+                display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap',
+                padding: '10px 14px', backgroundColor: theme.bg, borderRadius: '10px',
+                border: `1px solid ${theme.border}`, alignItems: 'center'
               }}>
-                <Package size={48} style={{ color: theme.textMuted, opacity: 0.5, marginBottom: '16px' }} />
-                <p style={{ color: theme.textSecondary, margin: 0 }}>
-                  No items in this group yet. Add your first {activeSection === 'Services' ? 'service' : 'product'}.
-                </p>
-              </div>
-            ) : (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))',
-                gap: '16px'
-              }}>
-                {groupProducts.map(product => (
-                  <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile}
-                    formatCurrency={formatCurrency} openProductForm={openProductForm}
-                    handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
-                    inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)} />
+                <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '600', marginRight: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <GripVertical size={12} /> Drop to move:
+                </span>
+                <div
+                  onDragOver={(e) => onDragOver(e, 'ungrouped')}
+                  onDragLeave={(e) => onDragLeave(e, 'ungrouped')}
+                  onDrop={(e) => handleDropProduct(e, null)}
+                  style={{
+                    padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '500',
+                    border: `2px solid ${dragOverGroupId === 'ungrouped' ? theme.accent : theme.border}`,
+                    backgroundColor: dragOverGroupId === 'ungrouped' ? theme.accentBg : theme.bgCard,
+                    color: dragOverGroupId === 'ungrouped' ? theme.accent : theme.textSecondary,
+                    transition: 'all 0.15s ease', transform: dragOverGroupId === 'ungrouped' ? 'scale(1.05)' : 'none'
+                  }}
+                >
+                  Ungrouped
+                </div>
+                {sectionGroups.filter(g => g.id !== selectedGroup.id).map(g => (
+                  <div
+                    key={g.id}
+                    onDragOver={(e) => onDragOver(e, g.id)}
+                    onDragLeave={(e) => onDragLeave(e, g.id)}
+                    onDrop={(e) => handleDropProduct(e, g.id)}
+                    style={{
+                      padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '500',
+                      border: `2px solid ${dragOverGroupId === g.id ? theme.accent : theme.border}`,
+                      backgroundColor: dragOverGroupId === g.id ? theme.accentBg : theme.bgCard,
+                      color: dragOverGroupId === g.id ? theme.accent : theme.textSecondary,
+                      transition: 'all 0.15s ease', transform: dragOverGroupId === g.id ? 'scale(1.05)' : 'none'
+                    }}
+                  >
+                    {g.name}
+                  </div>
                 ))}
               </div>
-            )
+
+              {groupProducts.length === 0 ? (
+                <div style={{
+                  textAlign: 'center', padding: '48px', backgroundColor: theme.bgCard,
+                  borderRadius: '12px', border: `1px solid ${theme.border}`
+                }}>
+                  <Package size={48} style={{ color: theme.textMuted, opacity: 0.5, marginBottom: '16px' }} />
+                  <p style={{ color: theme.textSecondary, margin: 0 }}>
+                    No items in this group yet. Add your first {activeSection === 'Services' ? 'service' : 'product'}.
+                  </p>
+                </div>
+              ) : (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))',
+                  gap: '16px'
+                }}>
+                  {groupProducts.map(product => (
+                    <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile}
+                      formatCurrency={formatCurrency} openProductForm={openProductForm}
+                      handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
+                      inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
+                      draggable />
+                  ))}
+                </div>
+              )}
+            </div>
           ) : (
             // ============ SECTION VIEW: Groups + Ungrouped items ============
             <div>
@@ -1097,18 +1191,28 @@ export default function ProductsServices() {
                     {sectionGroups.map(group => (
                       <div
                         key={group.id}
+                        onDragOver={(e) => onDragOver(e, group.id)}
+                        onDragLeave={(e) => onDragLeave(e, group.id)}
+                        onDrop={(e) => handleDropProduct(e, group.id)}
                         style={{
                           backgroundColor: theme.bgCard, borderRadius: '16px',
-                          border: `1px solid ${theme.border}`, overflow: 'hidden',
-                          cursor: 'pointer', transition: 'all 0.15s ease', position: 'relative'
+                          border: `2px solid ${dragOverGroupId === group.id ? theme.accent : theme.border}`,
+                          overflow: 'hidden',
+                          cursor: 'pointer', transition: 'all 0.15s ease', position: 'relative',
+                          boxShadow: dragOverGroupId === group.id ? `0 0 0 3px ${theme.accentBg}` : 'none',
+                          transform: dragOverGroupId === group.id ? 'scale(1.03)' : 'none'
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)'
-                          e.currentTarget.style.borderColor = theme.accent
+                          if (dragOverGroupId !== group.id) {
+                            e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)'
+                            e.currentTarget.style.borderColor = theme.accent
+                          }
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.boxShadow = 'none'
-                          e.currentTarget.style.borderColor = theme.border
+                          if (dragOverGroupId !== group.id) {
+                            e.currentTarget.style.boxShadow = 'none'
+                            e.currentTarget.style.borderColor = theme.border
+                          }
                         }}
                       >
                         <div onClick={() => setSelectedGroup(group)} style={{ cursor: 'pointer' }}>
@@ -1163,26 +1267,47 @@ export default function ProductsServices() {
                 </div>
               )}
 
-              {/* Ungrouped Items */}
-              {ungroupedProducts.length > 0 && (
-                <div>
+              {/* Ungrouped Items — also a drop target */}
+              {(ungroupedProducts.length > 0 || sectionGroups.length > 0) && (
+                <div
+                  onDragOver={(e) => onDragOver(e, 'ungrouped')}
+                  onDragLeave={(e) => onDragLeave(e, 'ungrouped')}
+                  onDrop={(e) => handleDropProduct(e, null)}
+                  style={{
+                    borderRadius: '12px',
+                    border: dragOverGroupId === 'ungrouped' ? `2px dashed ${theme.accent}` : '2px dashed transparent',
+                    backgroundColor: dragOverGroupId === 'ungrouped' ? theme.accentBg : 'transparent',
+                    padding: dragOverGroupId === 'ungrouped' ? '12px' : '0',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
                   {sectionGroups.length > 0 && (
                     <h2 style={{ fontSize: '14px', fontWeight: '600', color: theme.textMuted, marginBottom: '16px', textTransform: 'uppercase' }}>
-                      Ungrouped
+                      Ungrouped {dragOverGroupId === 'ungrouped' && '— Drop here'}
                     </h2>
                   )}
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))',
-                    gap: '16px'
-                  }}>
-                    {ungroupedProducts.map(product => (
-                      <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile}
-                        formatCurrency={formatCurrency} openProductForm={openProductForm}
-                        handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
-                        inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)} />
-                    ))}
-                  </div>
+                  {ungroupedProducts.length > 0 ? (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))',
+                      gap: '16px'
+                    }}>
+                      {ungroupedProducts.map(product => (
+                        <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile}
+                          formatCurrency={formatCurrency} openProductForm={openProductForm}
+                          handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
+                          inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
+                          draggable />
+                      ))}
+                    </div>
+                  ) : sectionGroups.length > 0 ? (
+                    <div style={{
+                      textAlign: 'center', padding: '20px', color: theme.textMuted,
+                      fontSize: '13px', border: `1px dashed ${theme.border}`, borderRadius: '8px'
+                    }}>
+                      Drag items here to ungroup them
+                    </div>
+                  ) : null}
                 </div>
               )}
 
