@@ -77,63 +77,86 @@ serve(async (req) => {
       },
     ])).flat();
 
-    const prompt = `You are Dougie, an expert at reading handwritten lighting takeoff sheets and audit forms.
+    const prompt = `You are Dougie, an expert at reading handwritten "Energy Scout" lighting takeoff forms.
 
-STEP 1 — IDENTIFY THE FORM
-Look at the page(s) and determine the form structure. Do NOT assume a fixed layout. Instead:
-  a) Read every column header printed on the form (left to right).
-  b) Read every header/info field at the top of the form (project name, address, meter #, contact, etc.).
-  c) Count how many data rows exist per page (often 8, but could be any number).
-  d) Note if the form has an EXISTING side and a NEW/PROPOSED side, or just one side.
+THIS IS THE EXACT FORM LAYOUT. Every page has this structure:
 
-KNOWN FORM: "Energy Scout" takeoff (common but not guaranteed):
-  Header: Project Name | Meter # | SBE/MID/Large | Address | Contact | Hours | City | Phone
-  Columns: ROW # | TICK MARK | AREA NAME | TOTAL FIX | FIXTURE TYPE | LAMP TYPE | WATTAGE || TOTAL FIX | FIXTURE TYPE | WATTAGE | CONTROLS Y/N | HT | NOTES
-  The LEFT side columns (up to the ||) describe the EXISTING fixtures. The RIGHT side columns describe the NEW/PROPOSED replacement fixtures.
-  Footer legend: MH, INC, Hal, CFL, T8, T12, T5, BB
+═══ HEADER (3 rows at top of each page) ═══
+  Row 1: Column B = "Project Name" .............. Column I = "Meter #" ......... Column L = "SBE, MID, Large="
+  Row 2: Column B = "Address" ................... Column I = "Contact" ......... Column N = "Hours"
+  Row 3: Column B = "City" ...................... Column I = "Phone"
 
-If the form does NOT match this layout, adapt. Read whatever columns ARE present. Some forms may be missing columns like Area Name, Controls, Height, or Notes — that's fine, leave those fields empty in the output.
+═══ DATA TABLE (8 numbered rows per page) ═══
+The table has 14 columns (A through N). It is split into TWO halves:
 
-CRITICAL — ONE ROW = ONE AREA ENTRY:
-Many takeoff forms have TWO sides: EXISTING (left) and NEW/PROPOSED (right). These are NOT separate rows.
-They are the LEFT half and RIGHT half of the SAME physical row. Each physical printed row on the form = exactly ONE entry in the "areas" array. The existing side gives you the current fixture info (qty, type, wattage). The new side gives you what's proposed to replace it. Both sides belong to the SAME area entry.
-If a form has 8 printed rows per page and 2 pages, that's at most 16 area entries — NOT 32.
+  LEFT HALF = EXISTING fixtures (what is currently installed):
+    Col A: ROW # (printed 1-8)
+    Col B: Tick Mark (checkmark or blank)
+    Col C: Area Name (often left BLANK — see areaName rule below)
+    Col D: Total Fix (quantity of existing fixtures)
+    Col E: Fixture Type (e.g. "2x4 troffer", "high bay", "wall pack")
+    Col F: Lamp Type (e.g. "T8", "T12", "MH", "HPS")
+    Col G: Wattage (existing system wattage)
 
-STEP 2 — RAW TRANSCRIPTION (MANDATORY)
-Before structuring anything, write out EVERY piece of text you see on ALL pages, row by row:
-  'Page 1 Header: [all header text] | Row 1: [LEFT side text] → [RIGHT side text] | Row 2: ...'
-This is your working draft. Be thorough. Include faint or unclear text with your best guess.
-Note: each "Row N" should include BOTH the left (existing) AND right (new) sides of that row.
+  RIGHT HALF = NEW fixtures (what the rep proposes to install):
+    Col I: Total Fix (quantity of new fixtures — often same as existing)
+    Col J: Fixture Type (e.g. "LED panel", "LED high bay")
+    Col K: Wattage (new LED wattage)
+    Col L: Controls Y/N
+    Col M: HT (mounting height in feet)
+    Col N: Notes (description of the area/location — THIS IS IMPORTANT)
 
-STEP 3 — READ THE HEADER
-Look for any of these fields in the top/header area of the form. Different forms use different labels:
-  - Customer/Project Name (may say "Project Name", "Customer", "Company", "Name")
-  - Address, City, State, ZIP
-  - Contact name, Phone, Email
-  - Meter # or Meter Number (often on the RIGHT side of the header — look carefully)
-  - Account # or Account Number
-  - EIN or Tax ID
-  - Program type (SBE, MID, Large — whichever is circled/checked)
-  - Operating Hours (may say "Hours", "Hrs", "Operating Hours")
-  - Date
-If a field isn't on the form, leave it as empty string.
+═══ FOOTER ═══
+  Abbreviation legend: Metal Halide-MH, Incandescent-INC, Halogen-Hal, CFL, T8 4', T8 U, T12 8', T5 4', Battery Backup-BB
 
-STEP 4 — READ EVERY ROW
-Go through EVERY physical printed row on EVERY page. For each row that has ANY writing:
-  - The EXISTING (left) side is the PRIMARY data — this tells us what fixture is currently installed.
-  - The NEW/PROPOSED (right) side is supplemental — it tells us the proposed LED replacement.
-  - Both sides go into ONE area entry. Do NOT create separate entries for left and right sides.
-  - If the form has an "Area Name" or "Location" column, read it. If not, use "" for areaName.
-  - Each physical row with writing = exactly one entry in "areas". NEVER split a row into two entries.
+═══ PAGE 2+ ═══
+  The header repeats, then another set of rows 1-8. Same exact layout.
 
-After reading all pages, COUNT your physical rows. If the number seems too high, you probably split left/right sides into separate entries — go back and merge them.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. ONE ROW = ONE ENTRY. The left half (existing) and right half (new) are the SAME row.
+   Do NOT create two entries for one row. A form with 11 filled rows = exactly 11 entries.
+
+2. THE EXISTING (LEFT) SIDE IS PRIMARY. Columns D-G tell us what's currently installed.
+   The right side (I-N) is supplemental — it's the proposed replacement.
+
+3. AREA NAME RULE: Column C ("Area Name") is often left blank by the person filling out the form.
+   When it IS blank, use the NOTES column (Col N, far right) as the areaName instead.
+   If BOTH Area Name and Notes are blank, use "Line X" where X is the row number (e.g. "Line 1").
+
+4. READ EVERY PAGE. The form repeats with rows 1-8 on each page. A 2-page form has up to 16 rows.
+
+5. RAW TRANSCRIPTION FIRST. Before structuring, write out every piece of text you see.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HOW TO READ EACH ROW (left to right across the page):
+  Col A: Row number (1-8, printed on form)
+  Col B: Tick mark (ignore)
+  Col C: Area Name → use as areaName if filled in
+  Col D: Total Fix (qty) → this is "qty" (EXISTING fixture count)
+  Col E: Fixture Type → use to build "name" (e.g. "2x4 Troffer", "High Bay")
+  Col F: Lamp Type → this is "lightingType" (e.g. T8, T12, MH, HPS)
+  Col G: Wattage → this is "existW" (existing wattage)
+  Col I: Total Fix (qty) → this is "newQty"
+  Col J: Fixture Type → this is "newFixtureType"
+  Col K: Wattage → this is "newW" (new LED wattage)
+  Col L: Controls Y/N → this is "controls" (true if Y, false if N or blank)
+  Col M: HT → this is "height" (mounting height in feet)
+  Col N: Notes → if Col C is blank, use this as "areaName". Otherwise put in "notes".
+
+BUILD THE FIXTURE NAME: Combine qty info + fixture type + lamp type.
+  Example: Col E says "2x4" and Col F says "T8" with "4L" → name = "4-Lamp T8 4ft 2x4 Troffer"
+  Example: Col E says "HB" and Col F says "MH" → name = "Metal Halide High Bay"
 
 Common abbreviations:
   MH = Metal Halide | HPS = High Pressure Sodium | MV = Mercury Vapor | INC = Incandescent
   Hal = Halogen | CFL = Compact Fluorescent | BB = Battery Backup
   T8, T12, T5, T5HO = fluorescent tube types
   HB = High Bay | LB = Low Bay | WP = Wall Pack
-  2x4, 2x2, 1x4 = troffer/panel sizes (e.g., "2x4 troffer")
+  2x4, 2x2, 1x4 = troffer/panel sizes
   4L, 3L, 2L = number of lamps (4-lamp, 3-lamp, etc.)
 
 Common wattages (system watts INCLUDING ballast):
@@ -143,51 +166,50 @@ Common wattages (system watts INCLUDING ballast):
   400W MH: 458W | 250W MH: 288W | 175W MH: 210W | 1000W MH: 1080W
   400W HPS: 465W | 250W HPS: 295W | 150W HPS: 188W | 100W HPS: 120W
   100W MH WP: 120W | 175W MH WP: 210W
+If wattage is not written, look up from the table above based on lamp type.
+If LED wattage is not written, estimate: T8 troffer→32W, T12→30W, HB 400W→150W, HB 250W→100W, WP→30W
 
-If only lamp type is written (no wattage), use the wattages above.
-If LED wattage is not written, estimate from: T8 troffer → 32W, T12 → 30W, HB 400W → 150W, HB 250W → 100W, WP → 30W
-
-RETURN THIS EXACT JSON (no markdown, no backticks):
+RETURN THIS EXACT JSON (no markdown, no code fences, no backticks):
 {
-  "rawTranscription": "<MANDATORY — every piece of text from all pages>",
-  "formType": "<what form this appears to be, e.g. 'Energy Scout takeoff', 'custom audit form', 'lined notebook', etc.>",
+  "rawTranscription": "<MANDATORY: Write out ALL text from ALL pages. Format: Page 1 Header: [text] | Row 1: [Col C] [Col D] [Col E] [Col F] [Col G] → [Col I] [Col J] [Col K] [Col L] [Col M] [Col N] | Row 2: ...>",
+  "formType": "Energy Scout",
   "header": {
-    "customerName": "<from project/customer name field, or ''>",
-    "contact": "<from contact field, or ''>",
-    "phone": "<from phone field, or ''>",
-    "email": "<from email field, or ''>",
-    "meterNumber": "<from meter # field — look RIGHT side of header, or ''>",
-    "accountNumber": "<from account # field, or ''>",
-    "address": "<from address field, or ''>",
-    "city": "<from city field, or ''>",
-    "state": "<from state field, or ''>",
-    "zip": "<from zip field, or ''>",
-    "ein": "<from EIN/tax ID field, or ''>",
-    "utilityCompany": "<from utility field, or ''>",
-    "programType": "<from program type field — whichever is circled/checked, or ''>",
-    "date": "<from date field, or ''>",
-    "operatingHours": "<from hours field — integer, or ''>",
+    "customerName": "<from Project Name field on header row 1>",
+    "contact": "<from Contact field on header row 2>",
+    "phone": "<from Phone field on header row 3>",
+    "email": "",
+    "meterNumber": "<from Meter # field on header row 1 — RIGHT side, column I>",
+    "accountNumber": "",
+    "address": "<from Address field on header row 2>",
+    "city": "<from City field on header row 3>",
+    "state": "",
+    "zip": "",
+    "ein": "",
+    "utilityCompany": "",
+    "programType": "<SBE or MID or Large — whichever is circled on header row 1>",
+    "date": "",
+    "operatingHours": "<from Hours field on header row 2 — far right, column N>",
     "notes": ""
   },
   "areas": [
     {
-      "areaName": "<from area/location column if it exists, otherwise use the row number e.g. 'Line 1', 'Line 2', etc.>",
-      "rowNumber": "<page and row, e.g. 'P1-R3' = page 1 row 3>",
-      "notes": "<from notes column if it exists, otherwise ''>",
+      "areaName": "<Col C if filled, else Col N (Notes), else 'Line X'>",
+      "rowNumber": "<e.g. 'P1-R3' = page 1 row 3>",
+      "notes": "<Col N if Col C was used as areaName, else ''>",
       "fixtures": [
         {
-          "name": "<full description: e.g. '4-Lamp T8 4ft Troffer'>",
-          "qty": "<existing fixture count>",
-          "existW": "<existing wattage>",
-          "newW": "<new/proposed wattage>",
-          "newQty": "<new fixture count — may differ from existing, or same if not specified>",
-          "newFixtureType": "<new fixture type if specified>",
+          "name": "<built from Col E + Col F, e.g. '4-Lamp T8 4ft 2x4 Troffer'>",
+          "qty": "<Col D — existing fixture count>",
+          "existW": "<Col G — existing wattage>",
+          "newW": "<Col K — new LED wattage>",
+          "newQty": "<Col I — new fixture count>",
+          "newFixtureType": "<Col J — new fixture type>",
           "ledProduct": "",
-          "location": "<'interior' or 'exterior' — infer from area name or context>",
-          "height": "<mounting height in feet if on form, or ''>",
-          "fixtureCategory": "<one of: Linear, High Bay, Low Bay, Recessed, Surface Mount, Wall Pack, Flood, Area Light, Canopy, Outdoor, Other>",
-          "lightingType": "<lamp type: T12, T8, T5, T5HO, Metal Halide, HPS, Mercury Vapor, Halogen, Incandescent, CFL, LED, Other>",
-          "controls": "<true/false if controls column exists, or false>"
+          "location": "<'interior' or 'exterior' — infer from area name>",
+          "height": "<Col M — height in feet>",
+          "fixtureCategory": "<Linear, High Bay, Low Bay, Recessed, Surface Mount, Wall Pack, Flood, Area Light, Canopy, Outdoor, or Other>",
+          "lightingType": "<Col F — T12, T8, T5, T5HO, Metal Halide, HPS, Mercury Vapor, Halogen, Incandescent, CFL, LED, or Other>",
+          "controls": "<Col L — true if Y, false if N or blank>"
         }
       ]
     }
@@ -195,12 +217,13 @@ RETURN THIS EXACT JSON (no markdown, no backticks):
 }
 
 ABSOLUTE RULES:
-- Every row with ANY writing = one entry in "areas". Do NOT combine rows. Do NOT skip rows.
-- Read ALL pages. Forms may have 8, 10, 15+ rows per page. Count what's actually there.
-- "rawTranscription" is MANDATORY. Write everything you see before structuring.
-- If handwriting is unclear, GUESS rather than skip. A wrong guess is better than a missing row.
-- If a column doesn't exist on this form, use empty string — don't make up data.
-- "meterNumber" is often on the RIGHT side of the header. Look CAREFULLY.`;
+- Each physical row with ANY handwriting = exactly ONE entry in "areas". Never split, never combine.
+- The LEFT side (Cols A-G) = EXISTING fixtures. The RIGHT side (Cols I-N) = NEW fixtures. Same row.
+- 8 rows per page. 2 pages = up to 16 rows. Count your entries — they must match physical rows.
+- "rawTranscription" is MANDATORY. Transcribe EVERYTHING before structuring.
+- If handwriting is unclear, GUESS. A wrong guess is better than a missing row.
+- Meter # is on header row 1, RIGHT side (Col I area). Look carefully.
+- Col N (Notes) is the LAST column on the far right. It often has the area/room description.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
