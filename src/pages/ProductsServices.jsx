@@ -1,5 +1,5 @@
 // ALWAYS READ JOBSCOUT_PROJECT_RULES.md BEFORE MAKING CHANGES
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -8,7 +8,8 @@ import {
   Plus, ArrowLeft, Settings, X, Save, Trash2, Package, Boxes,
   Upload, Download, Clock, DollarSign, Pencil, ChevronRight, Archive, Search,
   FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, Loader,
-  ExternalLink, FileText, ShieldCheck, Award, PlusCircle, MinusCircle
+  ExternalLink, FileText, ShieldCheck, Award, PlusCircle, MinusCircle,
+  Wrench, GripHorizontal
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
@@ -31,19 +32,85 @@ const PRODUCT_CATEGORIES = [
   'Controls', 'Dimmer', 'Sensor', 'Emergency', 'Retrofit Kit', 'Other'
 ]
 
-// Reusable Product Card component
+const SECTIONS = ['Products', 'Services']
+
+// ============ DRAGGABLE MODAL WRAPPER ============
+function DraggableModal({ children, theme, isMobile, maxWidth = '600px', onClose }) {
+  const [pos, setPos] = useState({ x: 0, y: 0 })
+  const [dragging, setDragging] = useState(false)
+  const dragStart = useRef({ x: 0, y: 0 })
+
+  const onMouseDown = useCallback((e) => {
+    if (isMobile) return
+    setDragging(true)
+    dragStart.current = { x: e.clientX - pos.x, y: e.clientY - pos.y }
+  }, [pos, isMobile])
+
+  useEffect(() => {
+    if (!dragging) return
+    const onMouseMove = (e) => {
+      setPos({ x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y })
+    }
+    const onMouseUp = () => setDragging(false)
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [dragging])
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50 }} />
+      <div style={{
+        position: 'fixed',
+        top: `calc(50% + ${pos.y}px)`,
+        left: `calc(50% + ${pos.x}px)`,
+        transform: 'translate(-50%, -50%)',
+        backgroundColor: theme.bgCard,
+        borderRadius: '16px',
+        border: `1px solid ${theme.border}`,
+        width: '100%',
+        maxWidth: isMobile ? '95%' : maxWidth,
+        maxHeight: '90vh',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 51,
+        boxShadow: '0 25px 50px rgba(0,0,0,0.15)'
+      }}>
+        {/* Drag handle bar */}
+        {!isMobile && (
+          <div
+            onMouseDown={onMouseDown}
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              padding: '6px 0 0',
+              cursor: dragging ? 'grabbing' : 'grab',
+              userSelect: 'none'
+            }}
+          >
+            <GripHorizontal size={16} style={{ color: theme.textMuted, opacity: 0.4 }} />
+          </div>
+        )}
+        {children}
+      </div>
+    </>
+  )
+}
+
+// ============ PRODUCT CARD ============
 function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost }) {
   return (
-    <div
-      style={{
-        backgroundColor: theme.bgCard,
-        borderRadius: '12px',
-        border: `1px solid ${theme.border}`,
-        overflow: 'hidden',
-        opacity: product.active ? 1 : 0.6
-      }}
-    >
-      {/* Product Image */}
+    <div style={{
+      backgroundColor: theme.bgCard,
+      borderRadius: '12px',
+      border: `1px solid ${theme.border}`,
+      overflow: 'hidden',
+      opacity: product.active ? 1 : 0.6
+    }}>
       <div style={{
         height: '100px',
         backgroundColor: theme.bg,
@@ -58,74 +125,45 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
         ) : (
           <Package size={32} style={{ color: theme.textMuted, opacity: 0.4 }} />
         )}
-        {/* Inventory badge */}
         {inventoryCount !== undefined && (
           <div style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
+            position: 'absolute', top: '8px', right: '8px',
             backgroundColor: inventoryCount > 0 ? '#22c55e' : '#ef4444',
-            color: '#fff',
-            padding: '3px 8px',
-            borderRadius: '10px',
-            fontSize: '11px',
-            fontWeight: '600',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
+            color: '#fff', padding: '3px 8px', borderRadius: '10px',
+            fontSize: '11px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px'
           }}>
             <Archive size={10} />
             {inventoryCount}
           </div>
         )}
-        {/* DLC Listed badge */}
         {product.dlc_listed && (
           <div style={{
-            position: 'absolute',
-            top: '8px',
-            left: '8px',
-            backgroundColor: '#22c55e',
-            color: '#fff',
-            padding: '3px 8px',
-            borderRadius: '10px',
-            fontSize: '10px',
-            fontWeight: '700',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '3px',
-            letterSpacing: '0.3px'
+            position: 'absolute', top: '8px', left: '8px',
+            backgroundColor: '#22c55e', color: '#fff', padding: '3px 8px',
+            borderRadius: '10px', fontSize: '10px', fontWeight: '700',
+            display: 'flex', alignItems: 'center', gap: '3px', letterSpacing: '0.3px'
           }}>
             <ShieldCheck size={10} />
             DLC Listed
           </div>
         )}
       </div>
-
-      {/* Product Info */}
       <div style={{ padding: '12px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: 0, lineHeight: '1.3' }}>
             {product.name}
           </h3>
           <span style={{
-            fontSize: '10px',
-            padding: '2px 6px',
-            borderRadius: '10px',
+            fontSize: '10px', padding: '2px 6px', borderRadius: '10px',
             backgroundColor: product.active ? 'rgba(74,124,89,0.12)' : 'rgba(0,0,0,0.06)',
-            color: product.active ? '#4a7c59' : theme.textMuted,
-            flexShrink: 0,
-            marginLeft: '8px'
+            color: product.active ? '#4a7c59' : theme.textMuted, flexShrink: 0, marginLeft: '8px'
           }}>
             {product.active ? 'Active' : 'Inactive'}
           </span>
         </div>
-
         {product.type && (
-          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>
-            {product.type}
-          </div>
+          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>{product.type}</div>
         )}
-
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
           <div style={{ fontSize: '16px', fontWeight: '600', color: theme.accent }}>
             {formatCurrency(product.unit_price)}
@@ -143,31 +181,16 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
             Labor: {formatCurrency(laborCost)}
           </div>
         )}
-
         <div style={{ display: 'flex', gap: '6px' }}>
-          <button
-            onClick={() => openProductForm(product)}
-            style={{
-              flex: 1,
-              ...buttonStyle,
-              backgroundColor: theme.accentBg,
-              color: theme.accent,
-              padding: '8px',
-              fontSize: '12px'
-            }}
-          >
-            <Pencil size={12} />
-            Edit
+          <button onClick={() => openProductForm(product)} style={{
+            flex: 1, ...buttonStyle, backgroundColor: theme.accentBg,
+            color: theme.accent, padding: '8px', fontSize: '12px'
+          }}>
+            <Pencil size={12} /> Edit
           </button>
-          <button
-            onClick={() => handleDeleteProduct(product)}
-            style={{
-              ...buttonStyle,
-              backgroundColor: '#fef2f2',
-              color: '#dc2626',
-              padding: '8px 10px'
-            }}
-          >
+          <button onClick={() => handleDeleteProduct(product)} style={{
+            ...buttonStyle, backgroundColor: '#fef2f2', color: '#dc2626', padding: '8px 10px'
+          }}>
             <Trash2 size={12} />
           </button>
         </div>
@@ -176,6 +199,7 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
   )
 }
 
+// ============ MAIN COMPONENT ============
 export default function ProductsServices() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -188,96 +212,10 @@ export default function ProductsServices() {
   const fetchLaborRates = useStore((state) => state.fetchLaborRates)
   const fetchInventory = useStore((state) => state.fetchInventory)
 
-  // Helper to get inventory count for a product
-  const getInventoryCount = (productId) => {
-    return inventory
-      .filter(item => item.product_id === productId)
-      .reduce((sum, item) => sum + (item.quantity || 0), 0)
-  }
-
-  // Get default labor rate
-  const defaultLaborRate = laborRates.find(r => r.is_default) || laborRates[0]
-
-  // Calculate labor cost for a product
-  const getLaborCost = (product) => {
-    if (!product.allotted_time_hours) return 0
-    // Use product's selected rate or fall back to default
-    const rate = product.labor_rate_id
-      ? laborRates.find(r => r.id === product.labor_rate_id)
-      : defaultLaborRate
-    if (!rate) return 0
-    return product.allotted_time_hours * rate.rate_per_hour * (rate.multiplier || 1)
-  }
-
-  // Sync a single product to inventory (create record if active and doesn't exist)
-  const syncProductToInventory = async (productId, productName, isActive) => {
-    if (!isActive) return // Don't create inventory for inactive products
-
-    // Check if inventory record exists
-    const { data: existing } = await supabase
-      .from('inventory')
-      .select('id')
-      .eq('company_id', companyId)
-      .eq('product_id', productId)
-      .single()
-
-    if (!existing) {
-      // Create inventory record
-      await supabase.from('inventory').insert({
-        company_id: companyId,
-        product_id: productId,
-        name: productName,
-        item_id: `PRD-${productId}`,
-        inventory_type: 'Material',
-        quantity: 0,
-        min_quantity: 0,
-        location: null,
-        last_updated: new Date().toISOString()
-      })
-    }
-  }
-
-  // Sync all active products to inventory on page load
-  const syncAllProductsToInventory = async () => {
-    if (!products.length) return
-
-    const activeProducts = products.filter(p => p.active)
-    const productIds = activeProducts.map(p => p.id)
-
-    // Get all inventory records for these products
-    const { data: existingInventory } = await supabase
-      .from('inventory')
-      .select('product_id')
-      .eq('company_id', companyId)
-      .in('product_id', productIds)
-
-    const existingProductIds = new Set((existingInventory || []).map(i => i.product_id))
-
-    // Find products without inventory
-    const productsNeedingInventory = activeProducts.filter(p => !existingProductIds.has(p.id))
-
-    if (productsNeedingInventory.length > 0) {
-      // Bulk insert inventory records
-      const inventoryRecords = productsNeedingInventory.map(p => ({
-        company_id: companyId,
-        product_id: p.id,
-        name: p.name,
-        item_id: `PRD-${p.id}`,
-        inventory_type: 'Material',
-        quantity: 0,
-        min_quantity: 0,
-        location: null,
-        last_updated: new Date().toISOString()
-      }))
-
-      await supabase.from('inventory').insert(inventoryRecords)
-      await fetchInventory()
-    }
-  }
-
-  const [activeServiceType, setActiveServiceType] = useState('all')
-  const [productGroups, setProductGroups] = useState([])
+  // Navigation state: null = section tiles, 'Products'/'Services' = inside section, group object = inside group
+  const [activeSection, setActiveSection] = useState(null)
   const [selectedGroup, setSelectedGroup] = useState(null)
+  const [productGroups, setProductGroups] = useState([])
   const [isMobile, setIsMobile] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -299,7 +237,7 @@ export default function ProductsServices() {
     dlc_listed: false, dlc_listing_number: '', warranty_years: '',
     spec_sheet_url: '', install_guide_url: '', datasheet_json: {}
   })
-  const [uploadingDoc, setUploadingDoc] = useState(null) // 'spec_sheet' | 'install_guide' | null
+  const [uploadingDoc, setUploadingDoc] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
 
   // Labor rates panel state
@@ -314,15 +252,61 @@ export default function ProductsServices() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
-
-  // Import/export state
   const [showImport, setShowImport] = useState(false)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
-  // Guard clause
   if (!companyId) return null
+
+  // Helpers
+  const getInventoryCount = (productId) => {
+    return inventory.filter(item => item.product_id === productId).reduce((sum, item) => sum + (item.quantity || 0), 0)
+  }
+
+  const defaultLaborRate = laborRates.find(r => r.is_default) || laborRates[0]
+
+  const getLaborCost = (product) => {
+    if (!product.allotted_time_hours) return 0
+    const rate = product.labor_rate_id ? laborRates.find(r => r.id === product.labor_rate_id) : defaultLaborRate
+    if (!rate) return 0
+    return product.allotted_time_hours * rate.rate_per_hour * (rate.multiplier || 1)
+  }
+
+  const syncProductToInventory = async (productId, productName, isActive) => {
+    if (!isActive) return
+    const { data: existing } = await supabase.from('inventory').select('id').eq('company_id', companyId).eq('product_id', productId).single()
+    if (!existing) {
+      await supabase.from('inventory').insert({
+        company_id: companyId, product_id: productId, name: productName,
+        item_id: `PRD-${productId}`, inventory_type: 'Material', quantity: 0,
+        min_quantity: 0, location: null, last_updated: new Date().toISOString()
+      })
+    }
+  }
+
+  const syncAllProductsToInventory = async () => {
+    if (!products.length) return
+    const activeProducts = products.filter(p => p.active)
+    const productIds = activeProducts.map(p => p.id)
+    const { data: existingInventory } = await supabase.from('inventory').select('product_id').eq('company_id', companyId).in('product_id', productIds)
+    const existingProductIds = new Set((existingInventory || []).map(i => i.product_id))
+    const productsNeedingInventory = activeProducts.filter(p => !existingProductIds.has(p.id))
+    if (productsNeedingInventory.length > 0) {
+      const inventoryRecords = productsNeedingInventory.map(p => ({
+        company_id: companyId, product_id: p.id, name: p.name, item_id: `PRD-${p.id}`,
+        inventory_type: 'Material', quantity: 0, min_quantity: 0, location: null,
+        last_updated: new Date().toISOString()
+      }))
+      await supabase.from('inventory').insert(inventoryRecords)
+      await fetchInventory()
+    }
+  }
+
+  const formatCurrency = (amount) => {
+    if (!amount) return '-'
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+  }
 
   // Mobile detection
   useEffect(() => {
@@ -332,7 +316,7 @@ export default function ProductsServices() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Fetch product groups and data
+  // Fetch data
   useEffect(() => {
     if (companyId) {
       fetchProductGroups()
@@ -341,7 +325,6 @@ export default function ProductsServices() {
     }
   }, [companyId])
 
-  // Sync active products to inventory after products are loaded
   useEffect(() => {
     if (companyId && products.length > 0 && inventory.length >= 0) {
       syncAllProductsToInventory()
@@ -355,28 +338,34 @@ export default function ProductsServices() {
       .select('*')
       .eq('company_id', companyId)
       .order('sort_order', { ascending: true })
-
     if (!error) setProductGroups(data || [])
     setLoading(false)
   }
 
-  // Filter products by service type + search query
-  const filteredProducts = products.filter(p => {
-    if (activeServiceType !== 'all' && p.type !== activeServiceType) return false
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      const haystack = `${p.name || ''} ${p.description || ''} ${p.type || ''} ${p.manufacturer || ''} ${p.model_number || ''}`.toLowerCase()
-      return haystack.includes(q)
-    }
-    return true
+  // Derived data
+  const sectionGroups = activeSection
+    ? productGroups.filter(g => g.active && g.service_type === activeSection)
+    : []
+
+  const sectionProducts = activeSection
+    ? products.filter(p => {
+        // Products in this section's groups, or ungrouped with matching type
+        const sectionGroupIds = new Set(sectionGroups.map(g => g.id))
+        if (p.group_id && sectionGroupIds.has(p.group_id)) return true
+        if (!p.group_id && p.type === activeSection) return true
+        // Legacy: items with old service_type values show in Products if no match
+        if (!p.group_id && !SECTIONS.includes(p.type) && activeSection === 'Products') return true
+        return false
+      })
+    : products
+
+  const filteredProducts = sectionProducts.filter(p => {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    const haystack = `${p.name || ''} ${p.description || ''} ${p.type || ''} ${p.manufacturer || ''} ${p.model_number || ''}`.toLowerCase()
+    return haystack.includes(q)
   })
 
-  // Filter groups by service type
-  const filteredGroups = productGroups.filter(g =>
-    g.active && (activeServiceType === 'all' || g.service_type === activeServiceType)
-  )
-
-  // Get products for selected group (with search filter)
   const groupProducts = selectedGroup
     ? products.filter(p => {
         if (p.group_id !== selectedGroup.id) return false
@@ -389,17 +378,18 @@ export default function ProductsServices() {
       })
     : []
 
-  // Get ungrouped products (products with no group_id or group_id not in current groups)
-  const groupIds = new Set(productGroups.map(g => g.id))
-  const ungroupedProducts = filteredProducts.filter(p => !p.group_id || !groupIds.has(p.group_id))
+  const sectionGroupIds = new Set(sectionGroups.map(g => g.id))
+  const ungroupedProducts = filteredProducts.filter(p => !p.group_id || !sectionGroupIds.has(p.group_id))
 
-  // Count products per group
   const getProductCount = (groupId) => products.filter(p => p.group_id === groupId).length
-
-  // Format currency
-  const formatCurrency = (amount) => {
-    if (!amount) return '-'
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+  const getSectionCount = (section) => {
+    const grpIds = new Set(productGroups.filter(g => g.service_type === section).map(g => g.id))
+    return products.filter(p => {
+      if (p.group_id && grpIds.has(p.group_id)) return true
+      if (!p.group_id && p.type === section) return true
+      if (!p.group_id && !SECTIONS.includes(p.type) && section === 'Products') return true
+      return false
+    }).length
   }
 
   // ============ GROUP CRUD ============
@@ -407,70 +397,54 @@ export default function ProductsServices() {
     if (group) {
       setEditingGroup(group)
       setGroupForm({
-        name: group.name || '',
-        service_type: group.service_type || '',
-        description: group.description || '',
-        image_url: group.image_url || '',
-        icon: group.icon || 'Package',
-        sort_order: group.sort_order || 0,
-        active: group.active ?? true
+        name: group.name || '', service_type: group.service_type || activeSection || 'Products',
+        description: group.description || '', image_url: group.image_url || '',
+        icon: group.icon || 'Package', sort_order: group.sort_order || 0, active: group.active ?? true
       })
     } else {
       setEditingGroup(null)
       setGroupForm({
-        name: '', service_type: serviceTypes[0] || '', description: '', image_url: '', icon: 'Package', sort_order: 0, active: true
+        name: '', service_type: activeSection || 'Products', description: '',
+        image_url: '', icon: 'Package', sort_order: 0, active: true
       })
     }
+    setShowSettings(true)
   }
 
   const handleGroupChange = (e) => {
     const { name, value, type, checked } = e.target
-    setGroupForm(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }))
+    setGroupForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
   }
 
   const handleSaveGroup = async () => {
     if (!groupForm.name || !groupForm.service_type) {
-      alert('Name and Service Type are required')
+      alert('Name and Section are required')
       return
     }
-
     setSaving(true)
     const payload = {
-      company_id: companyId,
-      ...groupForm,
+      company_id: companyId, ...groupForm,
       sort_order: parseInt(groupForm.sort_order) || 0,
       updated_at: new Date().toISOString()
     }
-
     let result
     if (editingGroup) {
-      result = await supabase
-        .from('product_groups')
-        .update(payload)
-        .eq('id', editingGroup.id)
-        .eq('company_id', companyId)
+      result = await supabase.from('product_groups').update(payload).eq('id', editingGroup.id).eq('company_id', companyId)
     } else {
-      result = await supabase
-        .from('product_groups')
-        .insert([payload])
+      result = await supabase.from('product_groups').insert([payload])
     }
-
     if (result.error) {
       alert('Error saving group: ' + result.error.message)
     } else {
       await fetchProductGroups()
       setEditingGroup(null)
-      setGroupForm({ name: '', service_type: '', description: '', image_url: '', icon: 'Package', sort_order: 0, active: true })
+      setGroupForm({ name: '', service_type: activeSection || 'Products', description: '', image_url: '', icon: 'Package', sort_order: 0, active: true })
     }
     setSaving(false)
   }
 
   const handleDeleteGroup = async (group) => {
-    if (!confirm(`Delete group "${group.name}"? Products in this group will be ungrouped.`)) return
-
+    if (!confirm(`Delete group "${group.name}"? Items in this group will be ungrouped.`)) return
     await supabase.from('product_groups').delete().eq('id', group.id).eq('company_id', companyId)
     await fetchProductGroups()
     if (selectedGroup?.id === group.id) setSelectedGroup(null)
@@ -481,26 +455,16 @@ export default function ProductsServices() {
     if (product) {
       setEditingProduct(product)
       setProductForm({
-        name: product.name || '',
-        description: product.description || '',
-        unit_price: product.unit_price || '',
-        cost: product.cost || '',
-        markup_percent: product.markup_percent || '',
-        taxable: product.taxable ?? true,
-        active: product.active ?? true,
-        image_url: product.image_url || '',
-        allotted_time_hours: product.allotted_time_hours || '',
-        group_id: product.group_id,
-        type: product.type || '',
-        labor_rate_id: product.labor_rate_id || '',
-        manufacturer: product.manufacturer || '',
-        model_number: product.model_number || '',
-        product_category: product.product_category || '',
-        dlc_listed: product.dlc_listed ?? false,
-        dlc_listing_number: product.dlc_listing_number || '',
-        warranty_years: product.warranty_years || '',
-        spec_sheet_url: product.spec_sheet_url || '',
-        install_guide_url: product.install_guide_url || '',
+        name: product.name || '', description: product.description || '',
+        unit_price: product.unit_price || '', cost: product.cost || '',
+        markup_percent: product.markup_percent || '', taxable: product.taxable ?? true,
+        active: product.active ?? true, image_url: product.image_url || '',
+        allotted_time_hours: product.allotted_time_hours || '', group_id: product.group_id,
+        type: product.type || activeSection || 'Products', labor_rate_id: product.labor_rate_id || '',
+        manufacturer: product.manufacturer || '', model_number: product.model_number || '',
+        product_category: product.product_category || '', dlc_listed: product.dlc_listed ?? false,
+        dlc_listing_number: product.dlc_listing_number || '', warranty_years: product.warranty_years || '',
+        spec_sheet_url: product.spec_sheet_url || '', install_guide_url: product.install_guide_url || '',
         datasheet_json: product.datasheet_json || {}
       })
     } else {
@@ -509,7 +473,7 @@ export default function ProductsServices() {
         name: '', description: '', unit_price: '', cost: '', markup_percent: '',
         taxable: true, active: true, image_url: '', allotted_time_hours: '',
         group_id: selectedGroup?.id || null,
-        type: selectedGroup?.service_type || (activeServiceType !== 'all' ? activeServiceType : (serviceTypes[0] || '')),
+        type: activeSection || 'Products',
         labor_rate_id: '',
         manufacturer: '', model_number: '', product_category: '',
         dlc_listed: false, dlc_listing_number: '', warranty_years: '',
@@ -522,68 +486,36 @@ export default function ProductsServices() {
 
   const handleProductChange = (e) => {
     const { name, value, type, checked } = e.target
-    setProductForm(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }))
+    setProductForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
   }
 
   const handleSaveProduct = async () => {
-    if (!productForm.name) {
-      alert('Product name is required')
-      return
-    }
-
+    if (!productForm.name) { alert('Product name is required'); return }
     setSaving(true)
     const payload = {
-      company_id: companyId,
-      name: productForm.name,
-      description: productForm.description || null,
-      type: productForm.type || null,
-      unit_price: productForm.unit_price || null,
-      cost: productForm.cost || null,
-      markup_percent: productForm.markup_percent || null,
-      taxable: productForm.taxable,
-      active: productForm.active,
-      image_url: productForm.image_url || null,
+      company_id: companyId, name: productForm.name,
+      description: productForm.description || null, type: productForm.type || null,
+      unit_price: productForm.unit_price || null, cost: productForm.cost || null,
+      markup_percent: productForm.markup_percent || null, taxable: productForm.taxable,
+      active: productForm.active, image_url: productForm.image_url || null,
       allotted_time_hours: productForm.allotted_time_hours || null,
-      group_id: productForm.group_id,
-      labor_rate_id: productForm.labor_rate_id || null,
-      manufacturer: productForm.manufacturer || null,
-      model_number: productForm.model_number || null,
-      product_category: productForm.product_category || null,
-      dlc_listed: productForm.dlc_listed,
-      dlc_listing_number: productForm.dlc_listing_number || null,
-      warranty_years: productForm.warranty_years || null,
-      spec_sheet_url: productForm.spec_sheet_url || null,
-      install_guide_url: productForm.install_guide_url || null,
-      datasheet_json: productForm.datasheet_json || {},
-      updated_at: new Date().toISOString()
+      group_id: productForm.group_id, labor_rate_id: productForm.labor_rate_id || null,
+      manufacturer: productForm.manufacturer || null, model_number: productForm.model_number || null,
+      product_category: productForm.product_category || null, dlc_listed: productForm.dlc_listed,
+      dlc_listing_number: productForm.dlc_listing_number || null, warranty_years: productForm.warranty_years || null,
+      spec_sheet_url: productForm.spec_sheet_url || null, install_guide_url: productForm.install_guide_url || null,
+      datasheet_json: productForm.datasheet_json || {}, updated_at: new Date().toISOString()
     }
-
-    let result
-    let productId = editingProduct?.id
+    let result, productId = editingProduct?.id
     if (editingProduct) {
-      result = await supabase
-        .from('products_services')
-        .update(payload)
-        .eq('id', editingProduct.id)
-        .eq('company_id', companyId)
+      result = await supabase.from('products_services').update(payload).eq('id', editingProduct.id).eq('company_id', companyId)
     } else {
-      result = await supabase
-        .from('products_services')
-        .insert([payload])
-        .select('id')
-        .single()
-      if (result.data) {
-        productId = result.data.id
-      }
+      result = await supabase.from('products_services').insert([payload]).select('id').single()
+      if (result.data) productId = result.data.id
     }
-
     if (result.error) {
       alert('Error saving product: ' + result.error.message)
     } else {
-      // Auto-sync to inventory if product is active
       if (productForm.active && productId) {
         await syncProductToInventory(productId, productForm.name, true)
         await fetchInventory()
@@ -605,103 +537,51 @@ export default function ProductsServices() {
   const handleImageUpload = async (e, isGroup = false) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     setUploading(true)
     const fileExt = file.name.split('.').pop()
     const fileName = `${companyId}/${Date.now()}.${fileExt}`
-
-    const { error: uploadError } = await supabase.storage
-      .from('product-images')
-      .upload(fileName, file)
-
-    if (uploadError) {
-      console.error('Upload error:', uploadError)
-      setUploading(false)
-      return
-    }
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('product-images')
-      .getPublicUrl(fileName)
-
-    if (isGroup) {
-      setGroupForm(prev => ({ ...prev, image_url: publicUrl }))
-    } else {
-      setProductForm(prev => ({ ...prev, image_url: publicUrl }))
-    }
+    const { error: uploadError } = await supabase.storage.from('product-images').upload(fileName, file)
+    if (uploadError) { console.error('Upload error:', uploadError); setUploading(false); return }
+    const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(fileName)
+    if (isGroup) { setGroupForm(prev => ({ ...prev, image_url: publicUrl })) }
+    else { setProductForm(prev => ({ ...prev, image_url: publicUrl })) }
     setUploading(false)
   }
 
-  // Document upload (spec sheet / install guide)
+  // Document upload
   const handleDocUpload = async (e, field) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     setUploadingDoc(field)
     setUploadProgress(0)
-
-    const fileExt = file.name.split('.').pop()
     const itemId = editingProduct?.id || 'new'
     const fileName = `${companyId}/${itemId}/${Date.now()}-${file.name}`
-
-    // Simulate progress (Supabase doesn't expose upload progress)
     const progressInterval = setInterval(() => {
       setUploadProgress(prev => Math.min(prev + 15, 85))
     }, 200)
-
-    const { error: uploadError } = await supabase.storage
-      .from('product-documents')
-      .upload(fileName, file, { upsert: true })
-
+    const { error: uploadError } = await supabase.storage.from('product-documents').upload(fileName, file, { upsert: true })
     clearInterval(progressInterval)
-
-    if (uploadError) {
-      console.error('Doc upload error:', uploadError)
-      setUploadingDoc(null)
-      setUploadProgress(0)
-      return
-    }
-
+    if (uploadError) { console.error('Doc upload error:', uploadError); setUploadingDoc(null); setUploadProgress(0); return }
     setUploadProgress(100)
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('product-documents')
-      .getPublicUrl(fileName)
-
+    const { data: { publicUrl } } = supabase.storage.from('product-documents').getPublicUrl(fileName)
     setProductForm(prev => ({ ...prev, [field]: publicUrl }))
-
-    setTimeout(() => {
-      setUploadingDoc(null)
-      setUploadProgress(0)
-    }, 500)
+    setTimeout(() => { setUploadingDoc(null); setUploadProgress(0) }, 500)
   }
 
   // Datasheet JSON helpers
   const addDatasheetEntry = () => {
-    setProductForm(prev => ({
-      ...prev,
-      datasheet_json: { ...prev.datasheet_json, '': '' }
-    }))
+    setProductForm(prev => ({ ...prev, datasheet_json: { ...prev.datasheet_json, '': '' } }))
   }
-
   const updateDatasheetKey = (oldKey, newKey) => {
     setProductForm(prev => {
-      const entries = Object.entries(prev.datasheet_json)
       const updated = {}
-      entries.forEach(([k, v]) => {
-        updated[k === oldKey ? newKey : k] = v
-      })
+      Object.entries(prev.datasheet_json).forEach(([k, v]) => { updated[k === oldKey ? newKey : k] = v })
       return { ...prev, datasheet_json: updated }
     })
   }
-
   const updateDatasheetValue = (key, newValue) => {
-    setProductForm(prev => ({
-      ...prev,
-      datasheet_json: { ...prev.datasheet_json, [key]: newValue }
-    }))
+    setProductForm(prev => ({ ...prev, datasheet_json: { ...prev.datasheet_json, [key]: newValue } }))
   }
-
   const removeDatasheetEntry = (key) => {
     setProductForm(prev => {
       const copy = { ...prev.datasheet_json }
@@ -715,78 +595,41 @@ export default function ProductsServices() {
     if (rate) {
       setEditingRate(rate)
       setRateForm({
-        name: rate.name || '',
-        rate_per_hour: rate.rate_per_hour || '',
-        description: rate.description || '',
-        multiplier: rate.multiplier || '1.0',
-        active: rate.active ?? true,
-        is_default: rate.is_default ?? false
+        name: rate.name || '', rate_per_hour: rate.rate_per_hour || '',
+        description: rate.description || '', multiplier: rate.multiplier || '1.0',
+        active: rate.active ?? true, is_default: rate.is_default ?? false
       })
     } else {
       setEditingRate(null)
-      setRateForm({
-        name: '',
-        rate_per_hour: '',
-        description: '',
-        multiplier: '1.0',
-        active: true,
-        is_default: laborRates.length === 0 // First rate is default
-      })
+      setRateForm({ name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: laborRates.length === 0 })
     }
   }
 
   const handleRateChange = (e) => {
     const { name, value, type, checked } = e.target
-    setRateForm(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }))
+    setRateForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
   }
 
   const handleSaveRate = async () => {
-    if (!rateForm.name || !rateForm.rate_per_hour) {
-      alert('Name and Rate per Hour are required')
-      return
-    }
-
+    if (!rateForm.name || !rateForm.rate_per_hour) { alert('Name and Rate per Hour are required'); return }
     setSaving(true)
-
-    // If setting this as default, unset existing default first
     if (rateForm.is_default && !editingRate?.is_default) {
-      await supabase
-        .from('labor_rates')
-        .update({ is_default: false, updated_at: new Date().toISOString() })
-        .eq('company_id', companyId)
-        .eq('is_default', true)
+      await supabase.from('labor_rates').update({ is_default: false, updated_at: new Date().toISOString() }).eq('company_id', companyId).eq('is_default', true)
     }
-
     const payload = {
-      company_id: companyId,
-      name: rateForm.name,
-      rate_per_hour: parseFloat(rateForm.rate_per_hour),
-      description: rateForm.description || null,
-      multiplier: parseFloat(rateForm.multiplier) || 1.0,
-      active: rateForm.active,
-      is_default: rateForm.is_default,
-      updated_at: new Date().toISOString()
+      company_id: companyId, name: rateForm.name,
+      rate_per_hour: parseFloat(rateForm.rate_per_hour), description: rateForm.description || null,
+      multiplier: parseFloat(rateForm.multiplier) || 1.0, active: rateForm.active,
+      is_default: rateForm.is_default, updated_at: new Date().toISOString()
     }
-
     let result
     if (editingRate) {
-      result = await supabase
-        .from('labor_rates')
-        .update(payload)
-        .eq('id', editingRate.id)
-        .eq('company_id', companyId)
+      result = await supabase.from('labor_rates').update(payload).eq('id', editingRate.id).eq('company_id', companyId)
     } else {
-      result = await supabase
-        .from('labor_rates')
-        .insert([payload])
+      result = await supabase.from('labor_rates').insert([payload])
     }
-
-    if (result.error) {
-      alert('Error saving rate: ' + result.error.message)
-    } else {
+    if (result.error) { alert('Error saving rate: ' + result.error.message) }
+    else {
       await fetchLaborRates()
       setEditingRate(null)
       setRateForm({ name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false })
@@ -795,100 +638,55 @@ export default function ProductsServices() {
   }
 
   const handleDeleteRate = async (rate) => {
-    // Don't allow deleting the only rate or the default rate without setting another
-    if (laborRates.length === 1) {
-      alert('Cannot delete the only labor rate. Create another rate first.')
-      return
-    }
-    if (rate.is_default) {
-      alert('Cannot delete the default rate. Set another rate as default first.')
-      return
-    }
+    if (laborRates.length === 1) { alert('Cannot delete the only labor rate.'); return }
+    if (rate.is_default) { alert('Cannot delete the default rate. Set another as default first.'); return }
     if (!confirm(`Delete rate "${rate.name}"?`)) return
-
     await supabase.from('labor_rates').delete().eq('id', rate.id).eq('company_id', companyId)
     await fetchLaborRates()
   }
 
   const handleSetDefault = async (rate) => {
     if (rate.is_default) return
-
     setSaving(true)
-    // Unset existing default
-    await supabase
-      .from('labor_rates')
-      .update({ is_default: false, updated_at: new Date().toISOString() })
-      .eq('company_id', companyId)
-      .eq('is_default', true)
-
-    // Set new default
-    await supabase
-      .from('labor_rates')
-      .update({ is_default: true, updated_at: new Date().toISOString() })
-      .eq('id', rate.id)
-      .eq('company_id', companyId)
-
+    await supabase.from('labor_rates').update({ is_default: false, updated_at: new Date().toISOString() }).eq('company_id', companyId).eq('is_default', true)
+    await supabase.from('labor_rates').update({ is_default: true, updated_at: new Date().toISOString() }).eq('id', rate.id).eq('company_id', companyId)
     await fetchLaborRates()
     setSaving(false)
   }
 
-  // ============ DELETE ALL PRODUCTS (super admin only) ============
   const handleDeleteAllProducts = async () => {
     setDeletingAll(true)
-    // Delete linked inventory records first (foreign key constraint)
-    await supabase
-      .from('inventory')
-      .delete()
-      .eq('company_id', companyId)
-      .in('product_id', products.map(p => p.id))
-    // Now delete all products
-    const { error } = await supabase
-      .from('products_services')
-      .delete()
-      .eq('company_id', companyId)
-    if (error) {
-      alert('Error deleting products: ' + error.message)
-    } else {
-      await fetchProducts()
-      await fetchInventory()
-      setShowDeleteAll(false)
-    }
+    await supabase.from('inventory').delete().eq('company_id', companyId).in('product_id', products.map(p => p.id))
+    const { error } = await supabase.from('products_services').delete().eq('company_id', companyId)
+    if (error) { alert('Error deleting products: ' + error.message) }
+    else { await fetchProducts(); await fetchInventory(); setShowDeleteAll(false) }
     setDeletingAll(false)
   }
 
+  // Navigation helpers
+  const goBack = () => {
+    if (selectedGroup) { setSelectedGroup(null) }
+    else if (activeSection) { setActiveSection(null); setSearchQuery('') }
+  }
+
+  const breadcrumb = () => {
+    const parts = ['Products & Services']
+    if (activeSection) parts.push(activeSection)
+    if (selectedGroup) parts.push(selectedGroup.name)
+    return parts
+  }
 
   // Styles
   const inputStyle = {
-    width: '100%',
-    padding: isMobile ? '12px' : '10px 12px',
-    minHeight: isMobile ? '44px' : 'auto',
-    border: `1px solid ${theme.border}`,
-    borderRadius: '8px',
-    fontSize: '14px',
-    color: theme.text,
-    backgroundColor: theme.bgCard
+    width: '100%', padding: isMobile ? '12px' : '10px 12px',
+    minHeight: isMobile ? '44px' : 'auto', border: `1px solid ${theme.border}`,
+    borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard
   }
-
-  const labelStyle = {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: '500',
-    color: theme.textSecondary,
-    marginBottom: '6px'
-  }
-
+  const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }
   const buttonStyle = {
-    padding: isMobile ? '12px 16px' : '10px 16px',
-    minHeight: isMobile ? '44px' : 'auto',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px'
+    padding: isMobile ? '12px 16px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto',
+    border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',
+    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
   }
 
   // ============ RENDER ============
@@ -896,238 +694,217 @@ export default function ProductsServices() {
     <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
-        display: 'flex',
-        flexDirection: isMobile ? 'column' : 'row',
-        alignItems: isMobile ? 'stretch' : 'center',
-        justifyContent: 'space-between',
-        gap: '16px',
-        marginBottom: '24px'
+        display: 'flex', flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between',
+        gap: '16px', marginBottom: '24px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {selectedGroup && (
-            <button
-              onClick={() => setSelectedGroup(null)}
-              style={{
-                ...buttonStyle,
-                backgroundColor: 'transparent',
-                border: `1px solid ${theme.border}`,
-                color: theme.textSecondary,
-                padding: isMobile ? '12px' : '8px'
-              }}
-            >
+          {(activeSection || selectedGroup) && (
+            <button onClick={goBack} style={{
+              ...buttonStyle, backgroundColor: 'transparent',
+              border: `1px solid ${theme.border}`, color: theme.textSecondary,
+              padding: isMobile ? '12px' : '8px'
+            }}>
               <ArrowLeft size={20} />
             </button>
           )}
           <div>
-            <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
-              {selectedGroup ? selectedGroup.name : 'Products & Services'}
-            </h1>
+            {/* Breadcrumb */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              {breadcrumb().map((part, i) => (
+                <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {i > 0 && <ChevronRight size={14} style={{ color: theme.textMuted }} />}
+                  <span
+                    style={{
+                      fontSize: i === breadcrumb().length - 1 ? (isMobile ? '20px' : '24px') : '14px',
+                      fontWeight: i === breadcrumb().length - 1 ? '700' : '500',
+                      color: i === breadcrumb().length - 1 ? theme.text : theme.textMuted,
+                      cursor: i < breadcrumb().length - 1 ? 'pointer' : 'default'
+                    }}
+                    onClick={() => {
+                      if (i === 0) { setActiveSection(null); setSelectedGroup(null); setSearchQuery('') }
+                      else if (i === 1 && selectedGroup) { setSelectedGroup(null) }
+                    }}
+                  >
+                    {part}
+                  </span>
+                </span>
+              ))}
+            </div>
             {selectedGroup && (
               <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
-                {selectedGroup.service_type} • {groupProducts.length} products
+                {groupProducts.length} item{groupProducts.length !== 1 ? 's' : ''}
               </p>
             )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => openProductForm()}
-            style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}
-          >
-            <Plus size={18} />
-            Add Product
-          </button>
-          <Tooltip text="Import from CSV or Excel">
-            <button
-              onClick={() => setShowImport(true)}
-              style={{ ...buttonStyle, backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}
-            >
-              <FileSpreadsheet size={18} />
-              {!isMobile && 'Import'}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {activeSection && (
+            <button onClick={() => openProductForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
+              <Plus size={18} />
+              Add {activeSection === 'Services' ? 'Service' : 'Product'}
             </button>
-          </Tooltip>
-          <Tooltip text="Export to CSV">
-            <button
-              onClick={() => exportToCSV(filteredProducts, productsServicesFields, 'products_services_export')}
-              style={{ ...buttonStyle, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}
-            >
-              <Download size={18} />
-              {!isMobile && 'Export'}
-            </button>
-          </Tooltip>
-          {isDeveloper && (
-            <Tooltip text="Delete all products">
-              <button
-                onClick={() => setShowDeleteAll(true)}
-                style={{ ...buttonStyle, backgroundColor: '#fef2f2', color: '#dc2626' }}
-              >
-                <Trash2 size={18} />
-                {!isMobile && 'Delete All'}
-              </button>
-            </Tooltip>
           )}
-          {!selectedGroup && (
+          {activeSection && !selectedGroup && (
+            <button onClick={() => openGroupForm()} style={{ ...buttonStyle, backgroundColor: theme.accentBg, color: theme.accent }}>
+              <Plus size={18} />
+              Add Group
+            </button>
+          )}
+          {activeSection && (
             <>
-              <Tooltip text="Manage labor rates">
-                <button
-                  onClick={() => { setShowLaborRates(!showLaborRates); setShowSettings(false) }}
-                  style={{
-                    ...buttonStyle,
-                    backgroundColor: showLaborRates ? '#8b5cf6' : 'rgba(139,92,246,0.12)',
-                    color: showLaborRates ? '#fff' : '#8b5cf6'
-                  }}
-                >
-                  <DollarSign size={18} />
-                  {!isMobile && 'Rates'}
+              <Tooltip text="Import from CSV or Excel">
+                <button onClick={() => setShowImport(true)} style={{ ...buttonStyle, backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                  <FileSpreadsheet size={18} />
+                  {!isMobile && 'Import'}
                 </button>
               </Tooltip>
-              <Tooltip text="Manage product groups">
-                <button
-                  onClick={() => { setShowSettings(!showSettings); setShowLaborRates(false) }}
-                  style={{
-                    ...buttonStyle,
-                    backgroundColor: showSettings ? theme.accent : theme.accentBg,
-                    color: showSettings ? '#fff' : theme.accent
-                  }}
-                >
-                  <Settings size={18} />
-                  {!isMobile && 'Groups'}
+              <Tooltip text="Export to CSV">
+                <button onClick={() => exportToCSV(filteredProducts, productsServicesFields, 'products_services_export')} style={{ ...buttonStyle, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+                  <Download size={18} />
+                  {!isMobile && 'Export'}
                 </button>
               </Tooltip>
             </>
           )}
+          {isDeveloper && activeSection && (
+            <Tooltip text="Delete all products">
+              <button onClick={() => setShowDeleteAll(true)} style={{ ...buttonStyle, backgroundColor: '#fef2f2', color: '#dc2626' }}>
+                <Trash2 size={18} />
+              </button>
+            </Tooltip>
+          )}
+          {activeSection && !selectedGroup && (
+            <Tooltip text="Manage labor rates">
+              <button onClick={() => { setShowLaborRates(!showLaborRates); setShowSettings(false) }} style={{
+                ...buttonStyle,
+                backgroundColor: showLaborRates ? '#8b5cf6' : 'rgba(139,92,246,0.12)',
+                color: showLaborRates ? '#fff' : '#8b5cf6'
+              }}>
+                <DollarSign size={18} />
+                {!isMobile && 'Rates'}
+              </button>
+            </Tooltip>
+          )}
         </div>
       </div>
 
-      {/* Service Type Tabs (only when viewing groups) */}
-      {!selectedGroup && (
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          marginBottom: '24px',
-          overflowX: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          paddingBottom: '8px'
-        }}>
-          <button
-            onClick={() => setActiveServiceType('all')}
+      {/* Search Bar (only when inside a section) */}
+      {activeSection && (
+        <div style={{ position: 'relative', marginBottom: '20px' }}>
+          <Search size={18} style={{
+            position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)',
+            color: searchQuery ? theme.accent : theme.textMuted, pointerEvents: 'none'
+          }} />
+          <input
+            type="text"
+            placeholder={`Search ${activeSection.toLowerCase()}...`}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
             style={{
-              ...buttonStyle,
-              backgroundColor: activeServiceType === 'all' ? theme.accent : 'transparent',
-              color: activeServiceType === 'all' ? '#fff' : theme.textSecondary,
-              border: activeServiceType === 'all' ? 'none' : `1px solid ${theme.border}`,
-              whiteSpace: 'nowrap'
+              width: '100%', padding: isMobile ? '14px 42px' : '12px 42px',
+              fontSize: '15px', border: `1px solid ${searchQuery ? theme.accent : theme.border}`,
+              borderRadius: '12px', backgroundColor: theme.bgCard, color: theme.text,
+              outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.2s'
             }}
-          >
-            All
-          </button>
-          {serviceTypes.map(type => (
-            <button
-              key={type}
-              onClick={() => setActiveServiceType(type)}
-              style={{
-                ...buttonStyle,
-                backgroundColor: activeServiceType === type ? theme.accent : 'transparent',
-                color: activeServiceType === type ? '#fff' : theme.textSecondary,
-                border: activeServiceType === type ? 'none' : `1px solid ${theme.border}`,
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {type}
+            onFocus={e => e.target.style.borderColor = theme.accent}
+            onBlur={e => { if (!searchQuery) e.target.style.borderColor = theme.border }}
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} style={{
+              position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px',
+              display: 'flex', alignItems: 'center'
+            }}>
+              <X size={16} />
             </button>
-          ))}
+          )}
         </div>
       )}
 
-      {/* Search Bar */}
-      <div style={{
-        position: 'relative',
-        marginBottom: '20px'
-      }}>
-        <Search size={18} style={{
-          position: 'absolute',
-          left: '14px',
-          top: '50%',
-          transform: 'translateY(-50%)',
-          color: searchQuery ? theme.accent : theme.textMuted,
-          pointerEvents: 'none'
-        }} />
-        <input
-          type="text"
-          placeholder="Search products by name, description, or type..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          style={{
-            width: '100%',
-            padding: isMobile ? '14px 42px 14px 42px' : '12px 42px 12px 42px',
-            fontSize: '15px',
-            border: `1px solid ${searchQuery ? theme.accent : theme.border}`,
-            borderRadius: '12px',
-            backgroundColor: theme.bgCard,
-            color: theme.text,
-            outline: 'none',
-            boxSizing: 'border-box',
-            transition: 'border-color 0.2s'
-          }}
-          onFocus={e => e.target.style.borderColor = theme.accent}
-          onBlur={e => { if (!searchQuery) e.target.style.borderColor = theme.border }}
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            style={{
-              position: 'absolute',
-              right: '10px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: theme.textMuted,
-              padding: '4px',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-          >
-            <X size={16} />
-          </button>
-        )}
-        {searchQuery && (
-          <div style={{
-            position: 'absolute',
-            right: '36px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: '12px',
-            color: theme.textMuted
-          }}>
-            {filteredProducts.length} result{filteredProducts.length !== 1 ? 's' : ''}
-          </div>
-        )}
-      </div>
-
-      {/* Main Content Area */}
+      {/* ============ MAIN CONTENT ============ */}
       <div style={{ display: 'flex', gap: '24px' }}>
-        {/* Groups/Products Grid */}
         <div style={{ flex: 1 }}>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '48px', color: theme.textMuted }}>
-              Loading...
+            <div style={{ textAlign: 'center', padding: '48px', color: theme.textMuted }}>Loading...</div>
+          ) : !activeSection ? (
+            // ============ SECTION TILES: Products & Services ============
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+              gap: '24px',
+              maxWidth: '800px'
+            }}>
+              {SECTIONS.map(section => {
+                const isProducts = section === 'Products'
+                const Icon = isProducts ? Package : Wrench
+                const count = getSectionCount(section)
+                const groupCount = productGroups.filter(g => g.service_type === section && g.active).length
+                return (
+                  <div
+                    key={section}
+                    onClick={() => setActiveSection(section)}
+                    style={{
+                      backgroundColor: theme.bgCard,
+                      borderRadius: '20px',
+                      border: `1px solid ${theme.border}`,
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.boxShadow = '0 12px 32px rgba(0,0,0,0.1)'
+                      e.currentTarget.style.borderColor = theme.accent
+                      e.currentTarget.style.transform = 'translateY(-2px)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.boxShadow = 'none'
+                      e.currentTarget.style.borderColor = theme.border
+                      e.currentTarget.style.transform = 'translateY(0)'
+                    }}
+                  >
+                    <div style={{
+                      height: '140px',
+                      backgroundColor: isProducts ? theme.accentBg : 'rgba(59,130,246,0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <Icon size={56} style={{ color: isProducts ? theme.accent : '#3b82f6', opacity: 0.6 }} />
+                    </div>
+                    <div style={{ padding: '20px' }}>
+                      <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, margin: '0 0 8px' }}>
+                        {section}
+                      </h2>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <span style={{ fontSize: '14px', color: theme.textSecondary }}>
+                            {count} item{count !== 1 ? 's' : ''}
+                          </span>
+                          {groupCount > 0 && (
+                            <span style={{ fontSize: '13px', color: theme.textMuted, marginLeft: '8px' }}>
+                              • {groupCount} group{groupCount !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        <ChevronRight size={20} style={{ color: theme.textMuted }} />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           ) : selectedGroup ? (
-            // ============ DRILL-DOWN: PRODUCTS IN SELECTED GROUP ============
+            // ============ DRILL-DOWN: Items in selected group ============
             groupProducts.length === 0 ? (
               <div style={{
-                textAlign: 'center',
-                padding: '48px',
-                backgroundColor: theme.bgCard,
-                borderRadius: '12px',
-                border: `1px solid ${theme.border}`
+                textAlign: 'center', padding: '48px', backgroundColor: theme.bgCard,
+                borderRadius: '12px', border: `1px solid ${theme.border}`
               }}>
                 <Package size={48} style={{ color: theme.textMuted, opacity: 0.5, marginBottom: '16px' }} />
                 <p style={{ color: theme.textSecondary, margin: 0 }}>
-                  No products in this group. Add your first product.
+                  No items in this group yet. Add your first {activeSection === 'Services' ? 'service' : 'product'}.
                 </p>
               </div>
             ) : (
@@ -1137,35 +914,34 @@ export default function ProductsServices() {
                 gap: '16px'
               }}>
                 {groupProducts.map(product => (
-                  <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)} />
+                  <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile}
+                    formatCurrency={formatCurrency} openProductForm={openProductForm}
+                    handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
+                    inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)} />
                 ))}
               </div>
             )
           ) : (
-            // ============ MAIN VIEW: GROUPS + UNGROUPED PRODUCTS ============
+            // ============ SECTION VIEW: Groups + Ungrouped items ============
             <div>
-              {/* Product Groups (if any exist for this service type) */}
-              {filteredGroups.length > 0 && (
+              {/* Groups */}
+              {sectionGroups.length > 0 && (
                 <div style={{ marginBottom: '32px' }}>
                   <h2 style={{ fontSize: '14px', fontWeight: '600', color: theme.textMuted, marginBottom: '16px', textTransform: 'uppercase' }}>
-                    Product Groups
+                    Groups
                   </h2>
                   <div style={{
                     display: 'grid',
                     gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
                     gap: '16px'
                   }}>
-                    {filteredGroups.map(group => (
+                    {sectionGroups.map(group => (
                       <div
                         key={group.id}
-                        onClick={() => setSelectedGroup(group)}
                         style={{
-                          backgroundColor: theme.bgCard,
-                          borderRadius: '16px',
-                          border: `1px solid ${theme.border}`,
-                          overflow: 'hidden',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease'
+                          backgroundColor: theme.bgCard, borderRadius: '16px',
+                          border: `1px solid ${theme.border}`, overflow: 'hidden',
+                          cursor: 'pointer', transition: 'all 0.15s ease', position: 'relative'
                         }}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)'
@@ -1176,41 +952,51 @@ export default function ProductsServices() {
                           e.currentTarget.style.borderColor = theme.border
                         }}
                       >
-                        {/* Group Image/Icon */}
-                        <div style={{
-                          height: isMobile ? '80px' : '100px',
-                          backgroundColor: theme.accentBg,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}>
-                          {group.image_url ? (
-                            <img src={group.image_url} alt={group.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            <Boxes size={isMobile ? 32 : 40} style={{ color: theme.accent, opacity: 0.6 }} />
-                          )}
-                        </div>
-
-                        {/* Group Info */}
-                        <div style={{ padding: isMobile ? '10px' : '12px' }}>
-                          <h3 style={{
-                            fontSize: isMobile ? '13px' : '14px',
-                            fontWeight: '600',
-                            color: theme.text,
-                            margin: '0 0 4px 0'
-                          }}>
-                            {group.name}
-                          </h3>
+                        <div onClick={() => setSelectedGroup(group)} style={{ cursor: 'pointer' }}>
                           <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between'
+                            height: isMobile ? '80px' : '100px',
+                            backgroundColor: theme.accentBg,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
                           }}>
-                            <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                              {getProductCount(group.id)} items
-                            </span>
-                            <ChevronRight size={14} style={{ color: theme.textMuted }} />
+                            {group.image_url ? (
+                              <img src={group.image_url} alt={group.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <Boxes size={isMobile ? 32 : 40} style={{ color: theme.accent, opacity: 0.6 }} />
+                            )}
                           </div>
+                          <div style={{ padding: isMobile ? '10px' : '12px' }}>
+                            <h3 style={{ fontSize: isMobile ? '13px' : '14px', fontWeight: '600', color: theme.text, margin: '0 0 4px 0' }}>
+                              {group.name}
+                            </h3>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                                {getProductCount(group.id)} items
+                              </span>
+                              <ChevronRight size={14} style={{ color: theme.textMuted }} />
+                            </div>
+                          </div>
+                        </div>
+                        {/* Edit/Delete buttons on group card */}
+                        <div style={{
+                          position: 'absolute', top: '6px', right: '6px',
+                          display: 'flex', gap: '4px'
+                        }}>
+                          <button onClick={(e) => { e.stopPropagation(); openGroupForm(group) }} style={{
+                            width: '28px', height: '28px', borderRadius: '6px',
+                            backgroundColor: 'rgba(255,255,255,0.9)', border: 'none',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', color: theme.textMuted
+                          }}>
+                            <Pencil size={12} />
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group) }} style={{
+                            width: '28px', height: '28px', borderRadius: '6px',
+                            backgroundColor: 'rgba(255,255,255,0.9)', border: 'none',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', color: '#dc2626'
+                          }}>
+                            <Trash2 size={12} />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -1218,12 +1004,12 @@ export default function ProductsServices() {
                 </div>
               )}
 
-              {/* Ungrouped Products (always show if there are any) */}
+              {/* Ungrouped Items */}
               {ungroupedProducts.length > 0 && (
                 <div>
-                  {filteredGroups.length > 0 && (
+                  {sectionGroups.length > 0 && (
                     <h2 style={{ fontSize: '14px', fontWeight: '600', color: theme.textMuted, marginBottom: '16px', textTransform: 'uppercase' }}>
-                      {activeServiceType === 'all' ? 'All Products' : `${activeServiceType} Products`}
+                      Ungrouped
                     </h2>
                   )}
                   <div style={{
@@ -1232,103 +1018,178 @@ export default function ProductsServices() {
                     gap: '16px'
                   }}>
                     {ungroupedProducts.map(product => (
-                      <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile} formatCurrency={formatCurrency} openProductForm={openProductForm} handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle} inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)} />
+                      <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile}
+                        formatCurrency={formatCurrency} openProductForm={openProductForm}
+                        handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
+                        inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)} />
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Empty state - only show when NO groups AND NO ungrouped products */}
-              {filteredGroups.length === 0 && ungroupedProducts.length === 0 && (
+              {/* Empty state */}
+              {sectionGroups.length === 0 && ungroupedProducts.length === 0 && (
                 <div style={{
-                  textAlign: 'center',
-                  padding: '48px',
-                  backgroundColor: theme.bgCard,
-                  borderRadius: '12px',
-                  border: `1px solid ${theme.border}`
+                  textAlign: 'center', padding: '48px', backgroundColor: theme.bgCard,
+                  borderRadius: '12px', border: `1px solid ${theme.border}`
                 }}>
                   <Package size={48} style={{ color: theme.textMuted, opacity: 0.5, marginBottom: '16px' }} />
-                  <p style={{ color: theme.textSecondary, margin: 0 }}>
-                    No products yet. Click "Add Product" to create your first product.
+                  <p style={{ color: theme.textSecondary, margin: '0 0 16px' }}>
+                    No {activeSection.toLowerCase()} yet. Start by creating a group or adding items directly.
                   </p>
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <button onClick={() => openGroupForm()} style={{ ...buttonStyle, backgroundColor: theme.accentBg, color: theme.accent }}>
+                      <Plus size={16} /> Create Group
+                    </button>
+                    <button onClick={() => openProductForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
+                      <Plus size={16} /> Add {activeSection === 'Services' ? 'Service' : 'Product'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* Settings Panel (inline) */}
-        {showSettings && !selectedGroup && (
+        {/* Labor Rates Panel (inline) */}
+        {showLaborRates && activeSection && !selectedGroup && (
           <div style={{
-            width: isMobile ? '100%' : '360px',
-            backgroundColor: theme.bgCard,
-            borderRadius: '12px',
-            border: `1px solid ${theme.border}`,
-            padding: '20px',
-            position: isMobile ? 'fixed' : 'relative',
-            inset: isMobile ? '0' : 'auto',
-            zIndex: isMobile ? 50 : 'auto',
-            overflow: 'auto'
+            width: isMobile ? '100%' : '360px', backgroundColor: theme.bgCard,
+            borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px',
+            position: isMobile ? 'fixed' : 'relative', inset: isMobile ? '0' : 'auto',
+            zIndex: isMobile ? 50 : 'auto', overflow: 'auto'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                {editingGroup ? 'Edit Group' : 'Product Groups'}
+                {editingRate ? 'Edit Rate' : 'Labor Rates'}
               </h2>
               {isMobile && (
-                <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+                <button onClick={() => setShowLaborRates(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
                   <X size={20} />
                 </button>
               )}
             </div>
-
-            {/* Group Form */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
               <div>
                 <label style={labelStyle}>Name *</label>
-                <input
-                  type="text"
-                  name="name"
-                  value={groupForm.name}
-                  onChange={handleGroupChange}
-                  style={inputStyle}
-                  placeholder="e.g., Window Cleaning Services"
-                />
+                <input type="text" name="name" value={rateForm.name} onChange={handleRateChange} style={inputStyle} placeholder="e.g., Standard Rate" />
               </div>
-
-              <div>
-                <label style={labelStyle}>Service Type *</label>
-                <select name="service_type" value={groupForm.service_type} onChange={handleGroupChange} style={inputStyle}>
-                  <option value="">-- Select --</option>
-                  {serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={labelStyle}>Rate/Hour *</label>
+                  <input type="number" name="rate_per_hour" value={rateForm.rate_per_hour} onChange={handleRateChange} step="0.01" style={inputStyle} placeholder="75.00" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Multiplier</label>
+                  <input type="number" name="multiplier" value={rateForm.multiplier} onChange={handleRateChange} step="0.1" style={inputStyle} placeholder="1.0" />
+                </div>
               </div>
-
               <div>
                 <label style={labelStyle}>Description</label>
-                <textarea
-                  name="description"
-                  value={groupForm.description}
-                  onChange={handleGroupChange}
-                  rows={2}
-                  style={{ ...inputStyle, resize: 'vertical' }}
-                />
+                <input type="text" name="description" value={rateForm.description} onChange={handleRateChange} style={inputStyle} />
               </div>
+              <div style={{ display: 'flex', gap: '24px', padding: '8px 0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input type="checkbox" name="active" checked={rateForm.active} onChange={handleRateChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
+                  <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input type="checkbox" name="is_default" checked={rateForm.is_default} onChange={handleRateChange} style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }} />
+                  <span style={{ fontSize: '14px', color: theme.text }}>Default</span>
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {editingRate && (
+                  <button onClick={() => { setEditingRate(null); setRateForm({ name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false }) }} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+                    Cancel
+                  </button>
+                )}
+                <button onClick={handleSaveRate} disabled={saving} style={{ ...buttonStyle, flex: 1, backgroundColor: '#8b5cf6', color: '#fff', opacity: saving ? 0.7 : 1 }}>
+                  <Save size={16} /> {saving ? 'Saving...' : (editingRate ? 'Update' : 'Add Rate')}
+                </button>
+              </div>
+            </div>
+            <div>
+              <h3 style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, marginBottom: '12px', textTransform: 'uppercase' }}>Existing Rates</h3>
+              {laborRates.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>No rates yet.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {laborRates.map(rate => (
+                    <div key={rate.id} style={{
+                      padding: '12px', backgroundColor: theme.bg, borderRadius: '8px',
+                      border: rate.is_default ? '2px solid #8b5cf6' : 'none', opacity: rate.active ? 1 : 0.6
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{rate.name}</span>
+                        {rate.is_default && (
+                          <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '8px', backgroundColor: '#8b5cf6', color: '#fff', fontWeight: '600' }}>DEFAULT</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '16px', fontWeight: '700', color: '#8b5cf6' }}>
+                        ${parseFloat(rate.rate_per_hour).toFixed(2)}/hr
+                        {rate.multiplier && rate.multiplier !== 1 && <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: '6px' }}>x{rate.multiplier}</span>}
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                        {!rate.is_default && (
+                          <button onClick={() => handleSetDefault(rate)} style={{ flex: 1, ...buttonStyle, backgroundColor: 'rgba(139,92,246,0.12)', color: '#8b5cf6', padding: '6px', fontSize: '11px' }}>
+                            Set Default
+                          </button>
+                        )}
+                        <button onClick={() => openRateForm(rate)} style={{ ...buttonStyle, backgroundColor: theme.accentBg, color: theme.accent, padding: '6px 10px' }}>
+                          <Pencil size={12} />
+                        </button>
+                        <button onClick={() => handleDeleteRate(rate)} style={{ ...buttonStyle, backgroundColor: '#fef2f2', color: '#dc2626', padding: '6px 10px' }}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
+      {/* ============ GROUP MODAL (draggable) ============ */}
+      {showSettings && (
+        <DraggableModal theme={theme} isMobile={isMobile} maxWidth="480px" onClose={() => { setShowSettings(false); setEditingGroup(null) }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderBottom: `1px solid ${theme.border}` }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+              {editingGroup ? 'Edit Group' : 'New Group'}
+            </h2>
+            <button onClick={() => { setShowSettings(false); setEditingGroup(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+              <X size={20} />
+            </button>
+          </div>
+          <div style={{ padding: '20px', overflow: 'auto', maxHeight: '60vh' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={labelStyle}>Name *</label>
+                <input type="text" name="name" value={groupForm.name} onChange={handleGroupChange} style={inputStyle} placeholder="e.g., LED Panels" />
+              </div>
+              <div>
+                <label style={labelStyle}>Section *</label>
+                <select name="service_type" value={groupForm.service_type} onChange={handleGroupChange} style={inputStyle}>
+                  {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Description</label>
+                <textarea name="description" value={groupForm.description} onChange={handleGroupChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+              </div>
               <div>
                 <label style={labelStyle}>Image</label>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {groupForm.image_url ? (
                     <div style={{ position: 'relative' }}>
                       <img src={groupForm.image_url} alt="" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} />
-                      <button
-                        type="button"
-                        onClick={() => setGroupForm(prev => ({ ...prev, image_url: '' }))}
-                        style={{
-                          position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px',
-                          borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}
-                      >
+                      <button type="button" onClick={() => setGroupForm(prev => ({ ...prev, image_url: '' }))} style={{
+                        position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px',
+                        borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
                         <X size={10} />
                       </button>
                     </div>
@@ -1342,17 +1203,9 @@ export default function ProductsServices() {
                       <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} style={{ display: 'none' }} />
                     </label>
                   )}
-                  <input
-                    type="url"
-                    name="image_url"
-                    value={groupForm.image_url}
-                    onChange={handleGroupChange}
-                    placeholder="Or paste URL..."
-                    style={{ ...inputStyle, flex: 1 }}
-                  />
+                  <input type="url" name="image_url" value={groupForm.image_url} onChange={handleGroupChange} placeholder="Or paste URL..." style={{ ...inputStyle, flex: 1 }} />
                 </div>
               </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={labelStyle}>Sort Order</label>
@@ -1360,901 +1213,334 @@ export default function ProductsServices() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '10px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      name="active"
-                      checked={groupForm.active}
-                      onChange={handleGroupChange}
-                      style={{ width: '18px', height: '18px', accentColor: theme.accent }}
-                    />
+                    <input type="checkbox" name="active" checked={groupForm.active} onChange={handleGroupChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
                     <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
                   </label>
                 </div>
               </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {editingGroup && (
-                  <button
-                    onClick={() => { setEditingGroup(null); setGroupForm({ name: '', service_type: '', description: '', image_url: '', icon: 'Package', sort_order: 0, active: true }) }}
-                    style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button
-                  onClick={handleSaveGroup}
-                  disabled={saving}
-                  style={{ ...buttonStyle, flex: 1, backgroundColor: theme.accent, color: '#fff', opacity: saving ? 0.7 : 1 }}
-                >
-                  <Save size={16} />
-                  {saving ? 'Saving...' : (editingGroup ? 'Update' : 'Create Group')}
-                </button>
-              </div>
-            </div>
-
-            {/* Existing Groups List */}
-            <div>
-              <h3 style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, marginBottom: '12px', textTransform: 'uppercase' }}>
-                Existing Groups
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {productGroups.map(group => (
-                  <div
-                    key={group.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 12px',
-                      backgroundColor: theme.bg,
-                      borderRadius: '8px',
-                      opacity: group.active ? 1 : 0.6
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{group.name}</div>
-                      <div style={{ fontSize: '12px', color: theme.textMuted }}>{group.service_type}</div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <button
-                        onClick={() => openGroupForm(group)}
-                        style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, borderRadius: '4px' }}
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteGroup(group)}
-                        style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', borderRadius: '4px' }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
-        )}
-
-        {/* Labor Rates Panel (inline) */}
-        {showLaborRates && !selectedGroup && (
-          <div style={{
-            width: isMobile ? '100%' : '360px',
-            backgroundColor: theme.bgCard,
-            borderRadius: '12px',
-            border: `1px solid ${theme.border}`,
-            padding: '20px',
-            position: isMobile ? 'fixed' : 'relative',
-            inset: isMobile ? '0' : 'auto',
-            zIndex: isMobile ? 50 : 'auto',
-            overflow: 'auto'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                {editingRate ? 'Edit Rate' : 'Labor Rates'}
-              </h2>
-              {isMobile && (
-                <button onClick={() => setShowLaborRates(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
-                  <X size={20} />
-                </button>
-              )}
-            </div>
-
-            {/* Rate Form */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
-              <div>
-                <label style={labelStyle}>Name *</label>
-                <input
-                  type="text"
-                  name="name"
-                  value={rateForm.name}
-                  onChange={handleRateChange}
-                  style={inputStyle}
-                  placeholder="e.g., Standard Rate"
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={labelStyle}>Rate/Hour *</label>
-                  <input
-                    type="number"
-                    name="rate_per_hour"
-                    value={rateForm.rate_per_hour}
-                    onChange={handleRateChange}
-                    step="0.01"
-                    style={inputStyle}
-                    placeholder="75.00"
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>Multiplier</label>
-                  <input
-                    type="number"
-                    name="multiplier"
-                    value={rateForm.multiplier}
-                    onChange={handleRateChange}
-                    step="0.1"
-                    style={inputStyle}
-                    placeholder="1.0"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={labelStyle}>Description</label>
-                <input
-                  type="text"
-                  name="description"
-                  value={rateForm.description}
-                  onChange={handleRateChange}
-                  style={inputStyle}
-                  placeholder="e.g., Standard labor rate"
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '24px', padding: '8px 0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    name="active"
-                    checked={rateForm.active}
-                    onChange={handleRateChange}
-                    style={{ width: '18px', height: '18px', accentColor: theme.accent }}
-                  />
-                  <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    name="is_default"
-                    checked={rateForm.is_default}
-                    onChange={handleRateChange}
-                    style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
-                  />
-                  <span style={{ fontSize: '14px', color: theme.text }}>Default</span>
-                </label>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {editingRate && (
-                  <button
-                    onClick={() => { setEditingRate(null); setRateForm({ name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false }) }}
-                    style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button
-                  onClick={handleSaveRate}
-                  disabled={saving}
-                  style={{ ...buttonStyle, flex: 1, backgroundColor: '#8b5cf6', color: '#fff', opacity: saving ? 0.7 : 1 }}
-                >
-                  <Save size={16} />
-                  {saving ? 'Saving...' : (editingRate ? 'Update' : 'Add Rate')}
-                </button>
-              </div>
-            </div>
-
-            {/* Existing Rates List */}
-            <div>
-              <h3 style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, marginBottom: '12px', textTransform: 'uppercase' }}>
-                Existing Rates
-              </h3>
-              {laborRates.length === 0 ? (
-                <div style={{ padding: '20px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
-                  No labor rates yet. Add your first rate above.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {laborRates.map(rate => (
-                    <div
-                      key={rate.id}
-                      style={{
-                        padding: '12px',
-                        backgroundColor: theme.bg,
-                        borderRadius: '8px',
-                        border: rate.is_default ? '2px solid #8b5cf6' : 'none',
-                        opacity: rate.active ? 1 : 0.6
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{rate.name}</span>
-                            {rate.is_default && (
-                              <span style={{
-                                fontSize: '10px',
-                                padding: '2px 6px',
-                                borderRadius: '8px',
-                                backgroundColor: '#8b5cf6',
-                                color: '#fff',
-                                fontWeight: '600'
-                              }}>
-                                DEFAULT
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '16px', fontWeight: '700', color: '#8b5cf6', marginTop: '4px' }}>
-                            ${parseFloat(rate.rate_per_hour).toFixed(2)}/hr
-                            {rate.multiplier && rate.multiplier !== 1 && (
-                              <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: '6px' }}>
-                                x{rate.multiplier}
-                              </span>
-                            )}
-                          </div>
-                          {rate.description && (
-                            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>{rate.description}</div>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                        {!rate.is_default && (
-                          <button
-                            onClick={() => handleSetDefault(rate)}
-                            style={{
-                              flex: 1,
-                              ...buttonStyle,
-                              backgroundColor: 'rgba(139,92,246,0.12)',
-                              color: '#8b5cf6',
-                              padding: '6px',
-                              fontSize: '11px'
-                            }}
-                          >
-                            Set Default
-                          </button>
-                        )}
-                        <button
-                          onClick={() => openRateForm(rate)}
-                          style={{ ...buttonStyle, backgroundColor: theme.accentBg, color: theme.accent, padding: '6px 10px' }}
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteRate(rate)}
-                          style={{ ...buttonStyle, backgroundColor: '#fef2f2', color: '#dc2626', padding: '6px 10px' }}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div style={{ display: 'flex', gap: '12px', padding: '16px 20px', borderTop: `1px solid ${theme.border}` }}>
+            <button onClick={() => { setShowSettings(false); setEditingGroup(null) }} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+              Cancel
+            </button>
+            <button onClick={handleSaveGroup} disabled={saving} style={{ ...buttonStyle, flex: 1, backgroundColor: theme.accent, color: '#fff', opacity: saving ? 0.7 : 1 }}>
+              <Save size={16} /> {saving ? 'Saving...' : (editingGroup ? 'Update' : 'Create Group')}
+            </button>
           </div>
-        )}
-      </div>
-
-      {/* Product Modal */}
-      {showProductModal && (
-        <>
-          <div
-            onClick={() => setShowProductModal(false)}
-            style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50 }}
-          />
-          <div style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            backgroundColor: theme.bgCard,
-            borderRadius: '16px',
-            border: `1px solid ${theme.border}`,
-            width: '100%',
-            maxWidth: isMobile ? '95%' : '600px',
-            maxHeight: '90vh',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-            zIndex: 51
-          }}>
-            {/* Modal Header */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '16px 20px',
-              borderBottom: `1px solid ${theme.border}`
-            }}>
-              <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                {editingProduct ? 'Edit Product' : 'Add Product'}
-              </h2>
-              <button onClick={() => setShowProductModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Tabs */}
-            <div style={{
-              display: 'flex',
-              gap: '0',
-              borderBottom: `1px solid ${theme.border}`,
-              padding: '0 20px'
-            }}>
-              {[
-                { key: 'overview', label: 'Overview', icon: Package },
-                { key: 'specs', label: 'Specs', icon: FileText },
-                { key: 'documents', label: 'Documents', icon: FileSpreadsheet }
-              ].map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setProductModalTab(tab.key)}
-                  style={{
-                    padding: '10px 16px',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: productModalTab === tab.key ? theme.accent : theme.textMuted,
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderBottom: productModalTab === tab.key ? `2px solid ${theme.accent}` : '2px solid transparent',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    marginBottom: '-1px'
-                  }}
-                >
-                  <tab.icon size={14} />
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Modal Body */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
-
-              {/* ---- OVERVIEW TAB ---- */}
-              {productModalTab === 'overview' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Name *</label>
-                    <input type="text" name="name" value={productForm.name} onChange={handleProductChange} style={inputStyle} />
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div>
-                      <label style={labelStyle}>Service Type</label>
-                      <select name="type" value={productForm.type || ''} onChange={handleProductChange} style={inputStyle}>
-                        <option value="">-- Select --</option>
-                        {serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Product Group</label>
-                      <select
-                        name="group_id"
-                        value={productForm.group_id || ''}
-                        onChange={(e) => setProductForm(prev => ({ ...prev, group_id: e.target.value ? parseInt(e.target.value) : null }))}
-                        style={inputStyle}
-                      >
-                        <option value="">None (Ungrouped)</option>
-                        {productGroups.filter(g => g.active).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={labelStyle}>Description</label>
-                    <textarea name="description" value={productForm.description} onChange={handleProductChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                    <div>
-                      <label style={labelStyle}>Price</label>
-                      <input type="number" name="unit_price" value={productForm.unit_price} onChange={handleProductChange} step="0.01" style={inputStyle} />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Cost</label>
-                      <input type="number" name="cost" value={productForm.cost} onChange={handleProductChange} step="0.01" style={inputStyle} />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Markup %</label>
-                      <input type="number" name="markup_percent" value={productForm.markup_percent} onChange={handleProductChange} style={inputStyle} />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div>
-                      <label style={labelStyle}>Allotted Time (hours)</label>
-                      <input type="number" name="allotted_time_hours" value={productForm.allotted_time_hours} onChange={handleProductChange} step="0.25" style={inputStyle} />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Labor Rate</label>
-                      <select
-                        name="labor_rate_id"
-                        value={productForm.labor_rate_id || ''}
-                        onChange={(e) => setProductForm(prev => ({ ...prev, labor_rate_id: e.target.value ? parseInt(e.target.value) : null }))}
-                        style={inputStyle}
-                      >
-                        <option value="">Use Default Rate</option>
-                        {laborRates.filter(r => r.active).map(rate => (
-                          <option key={rate.id} value={rate.id}>
-                            {rate.name} (${parseFloat(rate.rate_per_hour).toFixed(2)}/hr){rate.is_default ? ' - Default' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={labelStyle}>Image</label>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      {productForm.image_url ? (
-                        <div style={{ position: 'relative' }}>
-                          <img src={productForm.image_url} alt="" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} />
-                          <button
-                            type="button"
-                            onClick={() => setProductForm(prev => ({ ...prev, image_url: '' }))}
-                            style={{
-                              position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px',
-                              borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center'
-                            }}
-                          >
-                            <X size={10} />
-                          </button>
-                        </div>
-                      ) : (
-                        <label style={{
-                          width: '60px', height: '60px', borderRadius: '8px', border: `2px dashed ${theme.border}`,
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                          cursor: 'pointer', color: theme.textMuted, backgroundColor: theme.bg
-                        }}>
-                          <Upload size={16} />
-                          <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} style={{ display: 'none' }} />
-                        </label>
-                      )}
-                      <input
-                        type="url"
-                        name="image_url"
-                        value={productForm.image_url}
-                        onChange={handleProductChange}
-                        placeholder="Or paste URL..."
-                        style={{ ...inputStyle, flex: 1 }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '24px', padding: '8px 0' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                      <input type="checkbox" name="taxable" checked={productForm.taxable} onChange={handleProductChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
-                      <span style={{ fontSize: '14px', color: theme.text }}>Taxable</span>
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                      <input type="checkbox" name="active" checked={productForm.active} onChange={handleProductChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
-                      <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* ---- SPECS TAB ---- */}
-              {productModalTab === 'specs' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Product Info Section */}
-                  <div style={{
-                    padding: '12px 16px',
-                    backgroundColor: theme.bg,
-                    borderRadius: '8px',
-                    borderLeft: `3px solid ${theme.accent}`
-                  }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', marginBottom: '12px' }}>
-                      Product Info
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div>
-                        <label style={labelStyle}>Manufacturer</label>
-                        <input type="text" name="manufacturer" value={productForm.manufacturer} onChange={handleProductChange} style={inputStyle} placeholder="e.g., Philips" />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Model Number</label>
-                        <input type="text" name="model_number" value={productForm.model_number} onChange={handleProductChange} style={inputStyle} placeholder="e.g., PL-LED-4x2" />
-                      </div>
-                    </div>
-                    <div style={{ marginTop: '12px' }}>
-                      <label style={labelStyle}>Product Category</label>
-                      <select name="product_category" value={productForm.product_category || ''} onChange={handleProductChange} style={inputStyle}>
-                        <option value="">-- Select --</option>
-                        {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Certifications Section */}
-                  <div style={{
-                    padding: '12px 16px',
-                    backgroundColor: theme.bg,
-                    borderRadius: '8px',
-                    borderLeft: '3px solid #22c55e'
-                  }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e', textTransform: 'uppercase', marginBottom: '12px' }}>
-                      Certifications
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          name="dlc_listed"
-                          checked={productForm.dlc_listed}
-                          onChange={handleProductChange}
-                          style={{ width: '18px', height: '18px', accentColor: '#22c55e' }}
-                        />
-                        <span style={{ fontSize: '14px', color: theme.text, fontWeight: '500' }}>DLC Listed</span>
-                      </label>
-                      {productForm.dlc_listed && (
-                        <ShieldCheck size={18} style={{ color: '#22c55e' }} />
-                      )}
-                    </div>
-                    {productForm.dlc_listed && (
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={labelStyle}>DLC Listing Number</label>
-                        <input type="text" name="dlc_listing_number" value={productForm.dlc_listing_number} onChange={handleProductChange} style={inputStyle} placeholder="e.g., QUQH-43D4LBU4" />
-                      </div>
-                    )}
-                    <div>
-                      <label style={labelStyle}>Warranty (years)</label>
-                      <input type="number" name="warranty_years" value={productForm.warranty_years} onChange={handleProductChange} step="1" min="0" style={{ ...inputStyle, maxWidth: '120px' }} placeholder="e.g., 5" />
-                    </div>
-                  </div>
-
-                  {/* Datasheet Key/Value Pairs */}
-                  <div style={{
-                    padding: '12px 16px',
-                    backgroundColor: theme.bg,
-                    borderRadius: '8px',
-                    borderLeft: '3px solid #3b82f6'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6', textTransform: 'uppercase' }}>
-                        Datasheet Specs
-                      </div>
-                      <button
-                        onClick={addDatasheetEntry}
-                        style={{
-                          ...buttonStyle,
-                          padding: '4px 10px',
-                          fontSize: '12px',
-                          backgroundColor: 'rgba(59,130,246,0.12)',
-                          color: '#3b82f6'
-                        }}
-                      >
-                        <PlusCircle size={14} />
-                        Add
-                      </button>
-                    </div>
-                    {Object.keys(productForm.datasheet_json || {}).length === 0 ? (
-                      <div style={{ padding: '16px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
-                        No datasheet specs yet. Click "Add" to add key/value pairs.
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {Object.entries(productForm.datasheet_json || {}).map(([key, value], idx) => (
-                          <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <input
-                              type="text"
-                              value={key}
-                              onChange={(e) => updateDatasheetKey(key, e.target.value)}
-                              placeholder="Key (e.g., Lumens)"
-                              style={{ ...inputStyle, flex: 1, fontSize: '13px', padding: '8px 10px' }}
-                            />
-                            <input
-                              type="text"
-                              value={value}
-                              onChange={(e) => updateDatasheetValue(key, e.target.value)}
-                              placeholder="Value (e.g., 4000)"
-                              style={{ ...inputStyle, flex: 1, fontSize: '13px', padding: '8px 10px' }}
-                            />
-                            <button
-                              onClick={() => removeDatasheetEntry(key)}
-                              style={{
-                                background: 'none', border: 'none', cursor: 'pointer',
-                                color: '#dc2626', padding: '4px', flexShrink: 0
-                              }}
-                            >
-                              <MinusCircle size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* ---- DOCUMENTS TAB ---- */}
-              {productModalTab === 'documents' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {/* Spec Sheet */}
-                  <div style={{
-                    padding: '16px',
-                    backgroundColor: theme.bg,
-                    borderRadius: '8px',
-                    border: `1px solid ${theme.border}`
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                      <FileText size={16} style={{ color: theme.accent }} />
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Spec Sheet</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-                      <label style={{
-                        ...buttonStyle,
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        backgroundColor: uploadingDoc === 'spec_sheet_url' ? theme.accentBg : theme.accent,
-                        color: uploadingDoc === 'spec_sheet_url' ? theme.accent : '#fff',
-                        cursor: uploadingDoc ? 'wait' : 'pointer',
-                        opacity: uploadingDoc && uploadingDoc !== 'spec_sheet_url' ? 0.5 : 1
-                      }}>
-                        <Upload size={14} />
-                        {uploadingDoc === 'spec_sheet_url' ? 'Uploading...' : 'Upload File'}
-                        <input
-                          type="file"
-                          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-                          onChange={(e) => handleDocUpload(e, 'spec_sheet_url')}
-                          disabled={!!uploadingDoc}
-                          style={{ display: 'none' }}
-                        />
-                      </label>
-                      <span style={{ fontSize: '12px', color: theme.textMuted }}>or</span>
-                      <input
-                        type="url"
-                        name="spec_sheet_url"
-                        value={productForm.spec_sheet_url}
-                        onChange={handleProductChange}
-                        placeholder="Paste URL..."
-                        style={{ ...inputStyle, flex: 1, fontSize: '13px' }}
-                      />
-                    </div>
-                    {/* Upload progress */}
-                    {uploadingDoc === 'spec_sheet_url' && (
-                      <div style={{
-                        height: '4px',
-                        backgroundColor: theme.border,
-                        borderRadius: '2px',
-                        overflow: 'hidden',
-                        marginBottom: '8px'
-                      }}>
-                        <div style={{
-                          height: '100%',
-                          width: `${uploadProgress}%`,
-                          backgroundColor: theme.accent,
-                          borderRadius: '2px',
-                          transition: 'width 0.3s ease'
-                        }} />
-                      </div>
-                    )}
-                    {/* Preview link */}
-                    {productForm.spec_sheet_url && (
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '8px 12px',
-                        backgroundColor: theme.bgCard,
-                        borderRadius: '6px',
-                        border: `1px solid ${theme.border}`
-                      }}>
-                        <FileText size={14} style={{ color: theme.accent, flexShrink: 0 }} />
-                        <span style={{
-                          fontSize: '12px',
-                          color: theme.textSecondary,
-                          flex: 1,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          {productForm.spec_sheet_url.split('/').pop()}
-                        </span>
-                        <a
-                          href={productForm.spec_sheet_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            ...buttonStyle,
-                            padding: '4px 10px',
-                            fontSize: '12px',
-                            backgroundColor: theme.accentBg,
-                            color: theme.accent,
-                            textDecoration: 'none'
-                          }}
-                        >
-                          <ExternalLink size={12} />
-                          Open
-                        </a>
-                        <button
-                          onClick={() => setProductForm(prev => ({ ...prev, spec_sheet_url: '' }))}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Install Guide */}
-                  <div style={{
-                    padding: '16px',
-                    backgroundColor: theme.bg,
-                    borderRadius: '8px',
-                    border: `1px solid ${theme.border}`
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                      <FileSpreadsheet size={16} style={{ color: '#3b82f6' }} />
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Install Guide</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-                      <label style={{
-                        ...buttonStyle,
-                        padding: '8px 14px',
-                        fontSize: '13px',
-                        backgroundColor: uploadingDoc === 'install_guide_url' ? 'rgba(59,130,246,0.12)' : '#3b82f6',
-                        color: uploadingDoc === 'install_guide_url' ? '#3b82f6' : '#fff',
-                        cursor: uploadingDoc ? 'wait' : 'pointer',
-                        opacity: uploadingDoc && uploadingDoc !== 'install_guide_url' ? 0.5 : 1
-                      }}>
-                        <Upload size={14} />
-                        {uploadingDoc === 'install_guide_url' ? 'Uploading...' : 'Upload File'}
-                        <input
-                          type="file"
-                          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-                          onChange={(e) => handleDocUpload(e, 'install_guide_url')}
-                          disabled={!!uploadingDoc}
-                          style={{ display: 'none' }}
-                        />
-                      </label>
-                      <span style={{ fontSize: '12px', color: theme.textMuted }}>or</span>
-                      <input
-                        type="url"
-                        name="install_guide_url"
-                        value={productForm.install_guide_url}
-                        onChange={handleProductChange}
-                        placeholder="Paste URL..."
-                        style={{ ...inputStyle, flex: 1, fontSize: '13px' }}
-                      />
-                    </div>
-                    {/* Upload progress */}
-                    {uploadingDoc === 'install_guide_url' && (
-                      <div style={{
-                        height: '4px',
-                        backgroundColor: theme.border,
-                        borderRadius: '2px',
-                        overflow: 'hidden',
-                        marginBottom: '8px'
-                      }}>
-                        <div style={{
-                          height: '100%',
-                          width: `${uploadProgress}%`,
-                          backgroundColor: '#3b82f6',
-                          borderRadius: '2px',
-                          transition: 'width 0.3s ease'
-                        }} />
-                      </div>
-                    )}
-                    {/* Preview link */}
-                    {productForm.install_guide_url && (
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '8px 12px',
-                        backgroundColor: theme.bgCard,
-                        borderRadius: '6px',
-                        border: `1px solid ${theme.border}`
-                      }}>
-                        <FileSpreadsheet size={14} style={{ color: '#3b82f6', flexShrink: 0 }} />
-                        <span style={{
-                          fontSize: '12px',
-                          color: theme.textSecondary,
-                          flex: 1,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          {productForm.install_guide_url.split('/').pop()}
-                        </span>
-                        <a
-                          href={productForm.install_guide_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            ...buttonStyle,
-                            padding: '4px 10px',
-                            fontSize: '12px',
-                            backgroundColor: 'rgba(59,130,246,0.12)',
-                            color: '#3b82f6',
-                            textDecoration: 'none'
-                          }}
-                        >
-                          <ExternalLink size={12} />
-                          Open
-                        </a>
-                        <button
-                          onClick={() => setProductForm(prev => ({ ...prev, install_guide_url: '' }))}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div style={{ display: 'flex', gap: '12px', padding: '16px 20px', borderTop: `1px solid ${theme.border}` }}>
-              <button
-                onClick={() => setShowProductModal(false)}
-                style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveProduct}
-                disabled={saving}
-                style={{ ...buttonStyle, flex: 1, backgroundColor: theme.accent, color: '#fff', opacity: saving ? 0.7 : 1 }}
-              >
-                <Save size={16} />
-                {saving ? 'Saving...' : (editingProduct ? 'Update' : 'Add Product')}
-              </button>
-            </div>
-          </div>
-        </>
+        </DraggableModal>
       )}
 
-      {/* ============ DELETE ALL CONFIRMATION ============ */}
-      {showDeleteAll && (
-        <>
-          <div onClick={() => setShowDeleteAll(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50 }} />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`,
-            width: '100%', maxWidth: '400px', padding: '24px', zIndex: 51, textAlign: 'center'
-          }}>
-            <Trash2 size={36} style={{ color: '#dc2626', marginBottom: '12px' }} />
-            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: '700', color: theme.text }}>Delete All Products?</h3>
-            <p style={{ margin: '0 0 6px', fontSize: '14px', color: theme.textSecondary }}>
-              This will permanently delete <strong>{products.length}</strong> product{products.length !== 1 ? 's' : ''} from your company.
-            </p>
-            <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#dc2626', fontWeight: '500' }}>
-              This action cannot be undone.
-            </p>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => setShowDeleteAll(false)} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
-                Cancel
+      {/* ============ PRODUCT MODAL (draggable, tabbed) ============ */}
+      {showProductModal && (
+        <DraggableModal theme={theme} isMobile={isMobile} maxWidth="600px" onClose={() => setShowProductModal(false)}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderBottom: `1px solid ${theme.border}` }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+              {editingProduct ? 'Edit Product' : `Add ${activeSection === 'Services' ? 'Service' : 'Product'}`}
+            </h2>
+            <button onClick={() => setShowProductModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: '0', borderBottom: `1px solid ${theme.border}`, padding: '0 20px' }}>
+            {[
+              { key: 'overview', label: 'Overview', icon: Package },
+              { key: 'specs', label: 'Specs', icon: FileText },
+              { key: 'documents', label: 'Documents', icon: FileSpreadsheet }
+            ].map(tab => (
+              <button key={tab.key} onClick={() => setProductModalTab(tab.key)} style={{
+                padding: '10px 16px', fontSize: '13px', fontWeight: '500',
+                color: productModalTab === tab.key ? theme.accent : theme.textMuted,
+                backgroundColor: 'transparent', border: 'none',
+                borderBottom: productModalTab === tab.key ? `2px solid ${theme.accent}` : '2px solid transparent',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '-1px'
+              }}>
+                <tab.icon size={14} /> {tab.label}
               </button>
-              <button
-                onClick={handleDeleteAllProducts}
-                disabled={deletingAll}
-                style={{ ...buttonStyle, flex: 1, backgroundColor: '#dc2626', color: '#fff', opacity: deletingAll ? 0.7 : 1 }}
-              >
-                <Trash2 size={16} />
-                {deletingAll ? 'Deleting...' : `Delete All ${products.length}`}
+            ))}
+          </div>
+
+          <div style={{ flex: 1, overflow: 'auto', padding: '20px', maxHeight: '55vh' }}>
+            {/* OVERVIEW TAB */}
+            {productModalTab === 'overview' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={labelStyle}>Name *</label>
+                  <input type="text" name="name" value={productForm.name} onChange={handleProductChange} style={inputStyle} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>Section</label>
+                    <select name="type" value={productForm.type || ''} onChange={handleProductChange} style={inputStyle}>
+                      {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Group</label>
+                    <select name="group_id" value={productForm.group_id || ''} onChange={(e) => setProductForm(prev => ({ ...prev, group_id: e.target.value ? parseInt(e.target.value) : null }))} style={inputStyle}>
+                      <option value="">None (Ungrouped)</option>
+                      {productGroups.filter(g => g.active && g.service_type === productForm.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Description</label>
+                  <textarea name="description" value={productForm.description} onChange={handleProductChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>Price</label>
+                    <input type="number" name="unit_price" value={productForm.unit_price} onChange={handleProductChange} step="0.01" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Cost</label>
+                    <input type="number" name="cost" value={productForm.cost} onChange={handleProductChange} step="0.01" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Markup %</label>
+                    <input type="number" name="markup_percent" value={productForm.markup_percent} onChange={handleProductChange} style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={labelStyle}>Allotted Time (hours)</label>
+                    <input type="number" name="allotted_time_hours" value={productForm.allotted_time_hours} onChange={handleProductChange} step="0.25" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Labor Rate</label>
+                    <select name="labor_rate_id" value={productForm.labor_rate_id || ''} onChange={(e) => setProductForm(prev => ({ ...prev, labor_rate_id: e.target.value ? parseInt(e.target.value) : null }))} style={inputStyle}>
+                      <option value="">Use Default Rate</option>
+                      {laborRates.filter(r => r.active).map(rate => (
+                        <option key={rate.id} value={rate.id}>{rate.name} (${parseFloat(rate.rate_per_hour).toFixed(2)}/hr){rate.is_default ? ' - Default' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Image</label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {productForm.image_url ? (
+                      <div style={{ position: 'relative' }}>
+                        <img src={productForm.image_url} alt="" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} />
+                        <button type="button" onClick={() => setProductForm(prev => ({ ...prev, image_url: '' }))} style={{
+                          position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px',
+                          borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label style={{
+                        width: '60px', height: '60px', borderRadius: '8px', border: `2px dashed ${theme.border}`,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', color: theme.textMuted, backgroundColor: theme.bg
+                      }}>
+                        <Upload size={16} />
+                        <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} style={{ display: 'none' }} />
+                      </label>
+                    )}
+                    <input type="url" name="image_url" value={productForm.image_url} onChange={handleProductChange} placeholder="Or paste URL..." style={{ ...inputStyle, flex: 1 }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '24px', padding: '8px 0' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input type="checkbox" name="taxable" checked={productForm.taxable} onChange={handleProductChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
+                    <span style={{ fontSize: '14px', color: theme.text }}>Taxable</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input type="checkbox" name="active" checked={productForm.active} onChange={handleProductChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
+                    <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* SPECS TAB */}
+            {productModalTab === 'specs' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ padding: '12px 16px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: `3px solid ${theme.accent}` }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', marginBottom: '12px' }}>Product Info</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={labelStyle}>Manufacturer</label>
+                      <input type="text" name="manufacturer" value={productForm.manufacturer} onChange={handleProductChange} style={inputStyle} placeholder="e.g., Philips" />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Model Number</label>
+                      <input type="text" name="model_number" value={productForm.model_number} onChange={handleProductChange} style={inputStyle} placeholder="e.g., PL-LED-4x2" />
+                    </div>
+                  </div>
+                  <div style={{ marginTop: '12px' }}>
+                    <label style={labelStyle}>Product Category</label>
+                    <select name="product_category" value={productForm.product_category || ''} onChange={handleProductChange} style={inputStyle}>
+                      <option value="">-- Select --</option>
+                      {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: '3px solid #22c55e' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e', textTransform: 'uppercase', marginBottom: '12px' }}>Certifications</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                      <input type="checkbox" name="dlc_listed" checked={productForm.dlc_listed} onChange={handleProductChange} style={{ width: '18px', height: '18px', accentColor: '#22c55e' }} />
+                      <span style={{ fontSize: '14px', color: theme.text, fontWeight: '500' }}>DLC Listed</span>
+                    </label>
+                    {productForm.dlc_listed && <ShieldCheck size={18} style={{ color: '#22c55e' }} />}
+                  </div>
+                  {productForm.dlc_listed && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={labelStyle}>DLC Listing Number</label>
+                      <input type="text" name="dlc_listing_number" value={productForm.dlc_listing_number} onChange={handleProductChange} style={inputStyle} placeholder="e.g., QUQH-43D4LBU4" />
+                    </div>
+                  )}
+                  <div>
+                    <label style={labelStyle}>Warranty (years)</label>
+                    <input type="number" name="warranty_years" value={productForm.warranty_years} onChange={handleProductChange} step="1" min="0" style={{ ...inputStyle, maxWidth: '120px' }} placeholder="e.g., 5" />
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: '3px solid #3b82f6' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6', textTransform: 'uppercase' }}>Datasheet Specs</div>
+                    <button onClick={addDatasheetEntry} style={{ ...buttonStyle, padding: '4px 10px', fontSize: '12px', backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                      <PlusCircle size={14} /> Add
+                    </button>
+                  </div>
+                  {Object.keys(productForm.datasheet_json || {}).length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>No datasheet specs yet.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {Object.entries(productForm.datasheet_json || {}).map(([key, value], idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input type="text" value={key} onChange={(e) => updateDatasheetKey(key, e.target.value)} placeholder="Key" style={{ ...inputStyle, flex: 1, fontSize: '13px', padding: '8px 10px' }} />
+                          <input type="text" value={value} onChange={(e) => updateDatasheetValue(key, e.target.value)} placeholder="Value" style={{ ...inputStyle, flex: 1, fontSize: '13px', padding: '8px 10px' }} />
+                          <button onClick={() => removeDatasheetEntry(key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px', flexShrink: 0 }}>
+                            <MinusCircle size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* DOCUMENTS TAB */}
+            {productModalTab === 'documents' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Spec Sheet */}
+                <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                    <FileText size={16} style={{ color: theme.accent }} />
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Spec Sheet</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{
+                      ...buttonStyle, padding: '8px 14px', fontSize: '13px',
+                      backgroundColor: uploadingDoc === 'spec_sheet_url' ? theme.accentBg : theme.accent,
+                      color: uploadingDoc === 'spec_sheet_url' ? theme.accent : '#fff',
+                      cursor: uploadingDoc ? 'wait' : 'pointer'
+                    }}>
+                      <Upload size={14} /> {uploadingDoc === 'spec_sheet_url' ? 'Uploading...' : 'Upload'}
+                      <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={(e) => handleDocUpload(e, 'spec_sheet_url')} disabled={!!uploadingDoc} style={{ display: 'none' }} />
+                    </label>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>or</span>
+                    <input type="url" name="spec_sheet_url" value={productForm.spec_sheet_url} onChange={handleProductChange} placeholder="Paste URL..." style={{ ...inputStyle, flex: 1, fontSize: '13px' }} />
+                  </div>
+                  {uploadingDoc === 'spec_sheet_url' && (
+                    <div style={{ height: '4px', backgroundColor: theme.border, borderRadius: '2px', overflow: 'hidden', marginBottom: '8px' }}>
+                      <div style={{ height: '100%', width: `${uploadProgress}%`, backgroundColor: theme.accent, borderRadius: '2px', transition: 'width 0.3s ease' }} />
+                    </div>
+                  )}
+                  {productForm.spec_sheet_url && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: theme.bgCard, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
+                      <FileText size={14} style={{ color: theme.accent, flexShrink: 0 }} />
+                      <span style={{ fontSize: '12px', color: theme.textSecondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {productForm.spec_sheet_url.split('/').pop()}
+                      </span>
+                      <a href={productForm.spec_sheet_url} target="_blank" rel="noopener noreferrer" style={{ ...buttonStyle, padding: '4px 10px', fontSize: '12px', backgroundColor: theme.accentBg, color: theme.accent, textDecoration: 'none' }}>
+                        <ExternalLink size={12} /> Open
+                      </a>
+                      <button onClick={() => setProductForm(prev => ({ ...prev, spec_sheet_url: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {/* Install Guide */}
+                <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                    <FileSpreadsheet size={16} style={{ color: '#3b82f6' }} />
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Install Guide</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{
+                      ...buttonStyle, padding: '8px 14px', fontSize: '13px',
+                      backgroundColor: uploadingDoc === 'install_guide_url' ? 'rgba(59,130,246,0.12)' : '#3b82f6',
+                      color: uploadingDoc === 'install_guide_url' ? '#3b82f6' : '#fff',
+                      cursor: uploadingDoc ? 'wait' : 'pointer'
+                    }}>
+                      <Upload size={14} /> {uploadingDoc === 'install_guide_url' ? 'Uploading...' : 'Upload'}
+                      <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={(e) => handleDocUpload(e, 'install_guide_url')} disabled={!!uploadingDoc} style={{ display: 'none' }} />
+                    </label>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>or</span>
+                    <input type="url" name="install_guide_url" value={productForm.install_guide_url} onChange={handleProductChange} placeholder="Paste URL..." style={{ ...inputStyle, flex: 1, fontSize: '13px' }} />
+                  </div>
+                  {uploadingDoc === 'install_guide_url' && (
+                    <div style={{ height: '4px', backgroundColor: theme.border, borderRadius: '2px', overflow: 'hidden', marginBottom: '8px' }}>
+                      <div style={{ height: '100%', width: `${uploadProgress}%`, backgroundColor: '#3b82f6', borderRadius: '2px', transition: 'width 0.3s ease' }} />
+                    </div>
+                  )}
+                  {productForm.install_guide_url && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: theme.bgCard, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
+                      <FileSpreadsheet size={14} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                      <span style={{ fontSize: '12px', color: theme.textSecondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {productForm.install_guide_url.split('/').pop()}
+                      </span>
+                      <a href={productForm.install_guide_url} target="_blank" rel="noopener noreferrer" style={{ ...buttonStyle, padding: '4px 10px', fontSize: '12px', backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6', textDecoration: 'none' }}>
+                        <ExternalLink size={12} /> Open
+                      </a>
+                      <button onClick={() => setProductForm(prev => ({ ...prev, install_guide_url: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', padding: '16px 20px', borderTop: `1px solid ${theme.border}` }}>
+            <button onClick={() => setShowProductModal(false)} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+              Cancel
+            </button>
+            <button onClick={handleSaveProduct} disabled={saving} style={{ ...buttonStyle, flex: 1, backgroundColor: theme.accent, color: '#fff', opacity: saving ? 0.7 : 1 }}>
+              <Save size={16} /> {saving ? 'Saving...' : (editingProduct ? 'Update' : 'Add')}
+            </button>
+          </div>
+        </DraggableModal>
+      )}
+
+      {/* Delete All Confirmation */}
+      {showDeleteAll && (
+        <DraggableModal theme={theme} isMobile={isMobile} maxWidth="400px" onClose={() => setShowDeleteAll(false)}>
+          <div style={{ padding: '24px', textAlign: 'center' }}>
+            <Trash2 size={36} style={{ color: '#dc2626', marginBottom: '12px' }} />
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: '700', color: theme.text }}>Delete All?</h3>
+            <p style={{ margin: '0 0 6px', fontSize: '14px', color: theme.textSecondary }}>
+              This will permanently delete <strong>{products.length}</strong> item{products.length !== 1 ? 's' : ''}.
+            </p>
+            <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#dc2626', fontWeight: '500' }}>This cannot be undone.</p>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => setShowDeleteAll(false)} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>Cancel</button>
+              <button onClick={handleDeleteAllProducts} disabled={deletingAll} style={{ ...buttonStyle, flex: 1, backgroundColor: '#dc2626', color: '#fff', opacity: deletingAll ? 0.7 : 1 }}>
+                <Trash2 size={16} /> {deletingAll ? 'Deleting...' : `Delete All ${products.length}`}
               </button>
             </div>
           </div>
-        </>
+        </DraggableModal>
       )}
 
       {/* Import Modal */}
