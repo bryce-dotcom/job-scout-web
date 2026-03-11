@@ -77,113 +77,87 @@ serve(async (req) => {
       },
     ])).flat();
 
-    const prompt = `You are Dougie. You read photos of handwritten "Energy Scout" lighting takeoff forms and return structured JSON.
+    const prompt = `You are Dougie. You read photos of handwritten lighting takeoff forms and return structured JSON.
 
-THE FORM has two sections: a HEADER at the top and a DATA TABLE below it.
+THE FORM has a HEADER at top and a DATA TABLE below.
 
-HEADER (top of each page, 3 rows):
-  Left side: "Project Name" / "Address" / "City"
-  Right side: "Meter #" / "Contact" / "Phone"
-  Far right: "SBE, MID, Large=" (one is circled) / "Hours"
+HEADER (top of each page):
+  Left: "Project Name" / "Address" / "City"
+  Right: "Meter #" / "Contact" / "Phone"
+  Far right: "SBE, MID, Large=" (one circled) / "Hours"
 
-DATA TABLE — each page has 8 numbered rows (1-8). Each row spans the full width of the page and contains BOTH existing AND new fixture data side by side. The row is ONE line item, not two.
+DATA TABLE — each page has exactly 8 printed row numbers (1–8). The rows are pre-printed. Only rows where the rep wrote something count. Each row is ONE line item spanning the full width:
 
-Reading left to right across ONE row:
-  1. Line # — printed number (1-8)
-  2. Tick marks — tally marks the rep uses to count fixtures (ignore these)
-  3. Total Fixtures — the count of EXISTING fixtures (this is "qty")
-  4. Fixture Type — what the existing fixture is (e.g. "2x4", "HB", "WP", "1x4")
-  5. Lamp Type — the existing lamp (e.g. "T8", "T12", "MH", "HPS", "CFL")
-  6. Wattage — existing system wattage (this is "existW")
-  [gap/divider]
-  7. Total Fixtures (new) — count of replacement fixtures (this is "newQty")
-  8. Fixture Type (new) — the proposed replacement (e.g. "LED panel", "LED HB")
-  9. Wattage (new) — the new LED wattage (this is "newW")
-  10. Controls — Y or N
-  11. HT — mounting height in feet (applies to both existing and new)
-  12. Notes — this is the AREA NAME (e.g. "Warehouse", "Office", "Parking lot", "Shop floor")
+  LEFT SIDE (existing fixture):
+    Line # | Tick marks (ignore) | Total Fixtures (qty) | Fixture Type | Lamp Type | Wattage
+  RIGHT SIDE (proposed new fixture, same row):
+    Total Fixtures (new) | Fixture Type (new) | Wattage (new) | Controls | HT | Notes
 
-IMPORTANT: The "Notes" column (last column, far right) is where the rep writes the location/area name. Use this as the areaName. If Notes is also blank, use "Line X" (e.g. "Line 1", "Line 2").
+The LAST column "Notes" is where the rep writes the area/room name (e.g. "Warehouse", "Office", "Parking Lot"). Use Notes as areaName. If Notes is blank, use "Line X" (the row number).
 
-The printed column header "Area Name" exists on the form between Tick Marks and Total Fixtures but reps almost NEVER fill it in. Ignore it. The area name is in Notes.
+ROW COUNTING: Each page has EXACTLY 8 pre-printed rows. Do NOT create more entries than there are filled rows. If the form has 2 pages with 8 rows each, the maximum is 16 entries. Count the filled rows carefully — blank rows don't count.
 
-INSTRUCTIONS:
-1. Read the header on page 1. Extract Project Name, Meter #, Address, City, Contact, Phone, Hours, and which of SBE/MID/Large is circled.
-2. Go through every row on every page. Each row with ANY handwriting = one entry. The left side (columns 3-6) is the EXISTING fixture. The right side (columns 7-12) is the NEW fixture and notes. They are the SAME row, the SAME entry.
-3. READ EXACTLY WHAT IS WRITTEN. Do not guess or assume fixture types. Common handwriting patterns:
-   - "2L-T12-8'" means 2-Lamp T12 8ft — NOT a T8, NOT 4ft, NOT a troffer
-   - "4L-T8-4'" means 4-Lamp T8 4ft
-   - "2L-T8-4'" means 2-Lamp T8 4ft
-   - "3L-T12-4'" means 3-Lamp T12 4ft
-   - "MH-400" or "400MH" means 400W Metal Halide
-   - "HPS-250" means 250W HPS
-   - The number before "L" is the LAMP COUNT. "2L" = 2-Lamp, "3L" = 3-Lamp, "4L" = 4-Lamp.
-   - The number before the apostrophe (') is the LENGTH in feet. "8'" = 8 foot, "4'" = 4 foot.
-   - T12 and T8 look similar in handwriting. T12 has a "12", T8 has an "8". Read carefully.
+HOW TO READ THE FIXTURE TYPE AND LAMP TYPE:
+Reps write shorthand. Read EXACTLY what is written. Do NOT assume or default.
 
-4. Build the fixture name from EXACTLY what you read:
-   - "2L-T12-8'" → "2-Lamp T12 8ft Strip"
-   - "4L-T8-4'" or "2x4-4L-T8" → "4-Lamp T8 4ft 2x4 Troffer"
-   - "2L-T8-4'" or "1x4-2L-T8" → "2-Lamp T8 4ft 1x4 Strip"
-   - "HB" + "MH" → "Metal Halide High Bay"
-   - "WP" + "HPS" → "HPS Wall Pack"
-   - Do NOT default to "T8 Troffer" unless the handwriting clearly says T8.
+  "T12" means T12 fluorescent. "T8" means T8 fluorescent. These are DIFFERENT — T12 is older/fatter, T8 is newer/thinner. If the writing says "12" it is T12, not T8.
+  "8'" or "8ft" means 8-foot length. "4'" or "4ft" means 4-foot.
+  "2L" = 2-Lamp. "3L" = 3-Lamp. "4L" = 4-Lamp. The number BEFORE the L is the lamp count.
 
-Abbreviations: MH=Metal Halide, HPS=High Pressure Sodium, MV=Mercury Vapor, INC=Incandescent, Hal=Halogen, CFL=Compact Fluorescent, BB=Battery Backup, HB=High Bay, LB=Low Bay, WP=Wall Pack, 2x4/2x2/1x4=troffer sizes, 4L/3L/2L=lamp count
+  Common combos reps write:
+    "2L T12 8'" or "T12-8'-2L" → "2-Lamp T12 8ft Strip" (lightingType: T12, fixtureCategory: Linear)
+    "1L T12 8'" → "1-Lamp T12 8ft Strip" (lightingType: T12, fixtureCategory: Linear)
+    "4L T12 8'" → "4-Lamp T12 8ft Strip" (lightingType: T12, fixtureCategory: Linear)
+    "4L T8 4'" or "2x4 T8" → "4-Lamp T8 4ft Troffer" (lightingType: T8, fixtureCategory: Recessed)
+    "2L T8 4'" or "1x4 T8" → "2-Lamp T8 4ft Strip" (lightingType: T8, fixtureCategory: Linear)
+    "MH 400" or "400 MH" → "400W Metal Halide High Bay" (lightingType: Metal Halide, fixtureCategory: High Bay)
+    "HPS 250" → "250W HPS Wall Pack" (lightingType: HPS, fixtureCategory: Wall Pack)
+    "WP" = Wall Pack. "HB" = High Bay. "LB" = Low Bay.
 
-Wattages (system watts with ballast) — use these if wattage column is blank OR to cross-check:
+  T12 8ft fixtures are VERY COMMON on these forms. They are typically strip/linear fixtures in warehouses, shops, and storage areas. If you see "8'" with "T12" or just "12", it is a T12 8ft strip — NOT a T8, NOT a troffer, NOT 4ft.
+
+WATTAGES (system watts with ballast). Use to fill in blank wattage OR to cross-check:
   T12 8ft: 1-Lamp=110W, 2-Lamp=220W, 4-Lamp=440W
   T12 4ft: 1-Lamp=46W, 2-Lamp=86W, 3-Lamp=130W, 4-Lamp=172W
   T8 4ft: 1-Lamp=32W, 2-Lamp=56W, 3-Lamp=84W, 4-Lamp=112W
   T8 8ft: 1-Lamp=60W, 2-Lamp=120W
-  T5HO 4ft: 2-Lamp=118W, 4-Lamp=234W, 6-Lamp=351W
+  T5HO: 2-Lamp=118W, 4-Lamp=234W, 6-Lamp=351W
   Metal Halide: 175W=210W, 250W=288W, 400W=458W, 1000W=1080W
   HPS: 100W=120W, 150W=188W, 250W=295W, 400W=465W
 
-WATTAGE CROSS-CHECK: If the rep wrote a wattage that seems like a per-lamp value (not system watts), multiply by the lamp count. For example if "2L-T12-8'" shows "110W", the system wattage is actually 220W (110W × 2 lamps). Use the table above to validate.
+WATTAGE CHECK: If the written wattage looks like a per-lamp value, multiply by lamp count. Example: "2L T12 8'" with "110" written → system wattage = 220W (110 × 2). Always use system wattage for existW.
 
-LED estimates if not written: T8 troffer→32W, T12→30W, 400W HB→150W, 250W HB→100W, WP→30W, T12 8ft→40W
+LED wattage estimates (if not written): T12 8ft strip→44W, T12 4ft→25W, T8 4ft troffer→32W, 400W HB→150W, 250W HB→100W, WP→30W
 
-Return ONLY this JSON (no markdown, no backticks, no explanation):
+Return ONLY this JSON (no markdown, no backticks):
 {
-  "rawTranscription": "Write every piece of text from every page here first, row by row. Page 1 Header: ... | Line 1: [qty] [fixture type] [lamp type] [wattage] > [new qty] [new type] [new watt] [controls] [ht] [notes/area] | Line 2: ...",
+  "rawTranscription": "Write ALL text from ALL pages, row by row, BEFORE structuring. Page 1 Header: ... | Line 1: [qty] [type] [lamp] [watts] > [new qty] [new type] [new watts] [ctrl] [ht] [notes] | Line 2: ...",
   "header": {
-    "customerName": "",
-    "contact": "",
-    "phone": "",
-    "email": "",
-    "meterNumber": "",
-    "accountNumber": "",
-    "address": "",
-    "city": "",
-    "state": "",
-    "zip": "",
-    "ein": "",
-    "utilityCompany": "",
-    "programType": "",
-    "date": "",
-    "operatingHours": "",
-    "notes": ""
+    "customerName": "", "contact": "", "phone": "", "email": "",
+    "meterNumber": "", "accountNumber": "",
+    "address": "", "city": "", "state": "", "zip": "",
+    "ein": "", "utilityCompany": "", "programType": "",
+    "date": "", "operatingHours": "", "notes": ""
   },
   "areas": [
     {
-      "areaName": "from Notes column (last column). If blank use Line X",
+      "areaName": "from Notes (last column), or Line X if blank",
       "rowNumber": "P1-R1",
       "notes": "",
       "fixtures": [
         {
-          "name": "e.g. 4-Lamp T8 4ft 2x4 Troffer",
-          "qty": "from Total Fixtures (existing) column",
-          "existW": "from Wattage (existing) column",
-          "newW": "from Wattage (new) column",
-          "newQty": "from Total Fixtures (new) column",
-          "newFixtureType": "from Fixture Type (new) column",
+          "name": "e.g. 2-Lamp T12 8ft Strip",
+          "qty": 1,
+          "existW": 220,
+          "newW": 44,
+          "newQty": 1,
+          "newFixtureType": "",
           "ledProduct": "",
-          "location": "interior or exterior — infer from area name",
-          "height": "from HT column",
-          "fixtureCategory": "Linear or High Bay or Low Bay or Recessed or Surface Mount or Wall Pack or Flood or Area Light or Canopy or Outdoor or Other",
-          "lightingType": "from Lamp Type column: T12, T8, T5, T5HO, Metal Halide, HPS, Mercury Vapor, Halogen, Incandescent, CFL, LED, Other",
-          "controls": "true if Y, false if N or blank"
+          "location": "interior",
+          "height": 10,
+          "fixtureCategory": "Linear",
+          "lightingType": "T12",
+          "controls": false
         }
       ]
     }
@@ -191,13 +165,13 @@ Return ONLY this JSON (no markdown, no backticks, no explanation):
 }
 
 RULES:
-- One physical row = one entry in areas. Never split left/right into two entries. Never combine two rows.
-- Notes column = areaName. The printed "Area Name" column is always blank — ignore it.
-- rawTranscription is mandatory. Write everything you see before building the JSON.
-- Guess unclear handwriting. A wrong guess beats a missing row.
-- qty and existW come from the LEFT side (existing fixtures). newQty and newW come from the RIGHT side (new fixtures).
-- Each area has exactly one fixture entry (one row = one fixture type in one area).
-- Meter # is on the RIGHT side of the header row. Look carefully.`;
+- One physical row on the form = one entry in areas. The left side and right side of a row are the SAME entry.
+- Do NOT create more entries than filled rows. 8 rows per page max. Count carefully.
+- Notes (last column) = areaName. If blank, use "Line" + the row number (e.g. "Line 1").
+- rawTranscription is mandatory — transcribe everything BEFORE building JSON.
+- Read what is written. Do not assume T8 when it says T12. Do not assume 4ft when it says 8ft.
+- qty and existW are integers, not strings.
+- Meter # is on the RIGHT side of the header. Look carefully.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

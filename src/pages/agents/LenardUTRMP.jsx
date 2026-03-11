@@ -84,6 +84,10 @@ const PRESETS = {
       { name: 'T8 4ft 4-Lamp Troffer', existW: 112, newW: 32, location: 'interior', height: 9 },
       { name: 'T8 4ft 2-Lamp Strip', existW: 56, newW: 22, location: 'interior', height: 10 },
       { name: 'T12 4ft 4-Lamp Troffer', existW: 172, newW: 32, location: 'interior', height: 9 },
+      { name: '1-Lamp T12 8ft Strip', existW: 110, newW: 35, location: 'interior', height: 10 },
+      { name: '2-Lamp T12 8ft Strip', existW: 220, newW: 44, location: 'interior', height: 10 },
+      { name: '4-Lamp T12 8ft Strip', existW: 440, newW: 88, location: 'interior', height: 10 },
+      { name: '2-Lamp T8 8ft Strip', existW: 120, newW: 44, location: 'interior', height: 10 },
     ],
   },
   exterior: {
@@ -144,15 +148,15 @@ const FIXTURE_CATEGORIES = ['Linear', 'High Bay', 'Low Bay', 'Surface Mount', 'O
 const LAMP_TYPES = ['T12', 'T8', 'T5', 'T5HO', 'Metal Halide', 'HPS', 'Mercury Vapor', 'Halogen', 'Incandescent', 'CFL', 'LED', 'Other'];
 
 const COMMON_WATTAGES = {
-  'T12': [46, 72, 86, 128, 158, 172], 'T8': [32, 59, 85, 112, 118], 'T5': [28, 58, 84],
+  'T12': [46, 72, 86, 110, 128, 158, 172, 220, 440], 'T8': [32, 56, 59, 85, 112, 118, 120], 'T5': [28, 58, 84],
   'T5HO': [118, 234, 348, 464], 'Metal Halide': [85, 120, 185, 210, 290, 455, 1080],
   'HPS': [85, 120, 185, 240, 295, 465, 1100], 'Mercury Vapor': [200, 290, 455, 1075],
   'Halogen': [50, 75, 90, 150, 300, 500], 'Incandescent': [40, 60, 75, 100, 150],
   'CFL': [13, 18, 26, 32, 42], 'LED': [10, 20, 30, 50, 100, 150, 200, 300, 400], 'Other': [],
 };
 const LED_REPLACEMENT_MAP = {
-  'T12': { 46: 15, 72: 25, 86: 30, 128: 40, 158: 50, 172: 55 },
-  'T8': { 32: 12, 59: 25, 85: 35, 112: 45, 118: 48 },
+  'T12': { 46: 15, 72: 25, 86: 30, 110: 35, 128: 40, 158: 50, 172: 55, 220: 44, 440: 88 },
+  'T8': { 32: 12, 56: 22, 59: 25, 85: 35, 112: 45, 118: 48, 120: 44 },
   'T5': { 28: 12, 58: 25, 84: 35 },
   'T5HO': { 118: 50, 234: 95, 348: 140, 464: 180 },
   'Metal Halide': { 85: 30, 120: 45, 185: 70, 210: 80, 290: 100, 455: 150, 1080: 400 },
