@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { loadStripe } from '@stripe/stripe-js'
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -8,8 +10,92 @@ import {
   Compass, Clock, MapPin, Play, Square, Coffee,
   ChevronDown, ChevronUp, ExternalLink, Navigation,
   CheckCircle, Timer, Briefcase, DollarSign, Star,
-  AlertTriangle, Send, X, CreditCard, Banknote, Smartphone
+  AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
+  Loader2, ShieldCheck
 } from 'lucide-react'
+
+// Stripe card payment form (rendered inside Elements provider)
+function StripeCardForm({ theme, amount, onSuccess, onError }) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const [processing, setProcessing] = useState(false)
+  const [error, setError] = useState(null)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!stripe || !elements) return
+
+    setProcessing(true)
+    setError(null)
+
+    const { error: submitError } = await elements.submit()
+    if (submitError) {
+      setError(submitError.message)
+      setProcessing(false)
+      return
+    }
+
+    const { error: confirmError, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: window.location.href,
+      },
+      redirect: 'if_required',
+    })
+
+    if (confirmError) {
+      setError(confirmError.message)
+      onError?.(confirmError.message)
+      setProcessing(false)
+    } else if (paymentIntent?.status === 'succeeded') {
+      onSuccess?.(paymentIntent)
+    } else {
+      setError('Payment was not completed. Please try again.')
+      setProcessing(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <PaymentElement options={{
+        layout: 'tabs',
+        defaultValues: { billingDetails: { address: { country: 'US' } } }
+      }} />
+      {error && (
+        <div style={{
+          marginTop: '12px', padding: '10px 14px', backgroundColor: 'rgba(239,68,68,0.1)',
+          border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', color: '#ef4444',
+          fontSize: '13px', fontWeight: '500'
+        }}>
+          {error}
+        </div>
+      )}
+      <button
+        type="submit"
+        disabled={!stripe || processing}
+        style={{
+          width: '100%', marginTop: '16px', padding: '18px',
+          background: processing ? theme.bg : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+          border: 'none', borderRadius: '14px',
+          color: processing ? theme.textMuted : '#fff',
+          fontSize: '17px', fontWeight: '700',
+          cursor: processing ? 'not-allowed' : 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+          minHeight: '56px'
+        }}
+      >
+        {processing ? (
+          <><Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} /> Processing...</>
+        ) : (
+          <><ShieldCheck size={20} /> Pay ${parseFloat(amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</>
+        )}
+      </button>
+      <div style={{ textAlign: 'center', marginTop: '8px', fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+        <ShieldCheck size={12} /> Secure payment powered by Stripe
+      </div>
+    </form>
+  )
+}
 
 export default function FieldScout() {
   const { theme } = useTheme()
@@ -38,6 +124,13 @@ export default function FieldScout() {
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', reference: '', notes: '' })
   const [paymentSaving, setPaymentSaving] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
+
+  // Stripe card payment state
+  const [stripePromise, setStripePromise] = useState(null)
+  const [clientSecret, setClientSecret] = useState(null)
+  const [stripeLoading, setStripeLoading] = useState(false)
+  const [stripeError, setStripeError] = useState(null)
+  const [paymentIntentId, setPaymentIntentId] = useState(null)
 
   // Google review & settings
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
@@ -236,7 +329,72 @@ export default function FieldScout() {
     await fetchEntries()
   }
 
-  // Record payment
+  // Initialize Stripe when Card is selected and amount is entered
+  const initStripePayment = async () => {
+    if (!paymentJob || !paymentForm.amount || parseFloat(paymentForm.amount) <= 0) return
+    setStripeLoading(true)
+    setStripeError(null)
+    setClientSecret(null)
+
+    try {
+      const res = await supabase.functions.invoke('create-field-payment', {
+        body: {
+          companyId,
+          jobId: paymentJob.id,
+          customerId: paymentJob.customer_id,
+          amount_cents: Math.round(parseFloat(paymentForm.amount) * 100),
+          description: `${paymentJob.job_title || paymentJob.job_id} — Collected on-site by ${firstName}`
+        }
+      })
+
+      if (res.error || !res.data?.clientSecret) {
+        setStripeError(res.data?.error || res.error?.message || 'Failed to initialize payment')
+        setStripeLoading(false)
+        return
+      }
+
+      const { clientSecret: secret, publishableKey, paymentIntentId: piId } = res.data
+
+      if (!publishableKey) {
+        setStripeError('Stripe publishable key not configured. Go to Settings → Payments.')
+        setStripeLoading(false)
+        return
+      }
+
+      setClientSecret(secret)
+      setPaymentIntentId(piId)
+      setStripePromise(loadStripe(publishableKey))
+    } catch (err) {
+      setStripeError(err.message || 'Failed to connect to payment service')
+    }
+    setStripeLoading(false)
+  }
+
+  // Handle successful Stripe payment
+  const handleStripeSuccess = async (paymentIntent) => {
+    // Record in our payments table
+    try {
+      await supabase.from('payments').insert({
+        company_id: companyId,
+        job_id: paymentJob.id,
+        customer_id: paymentJob.customer_id,
+        amount: parseFloat(paymentForm.amount),
+        method: 'Card',
+        status: 'Completed',
+        date: new Date().toISOString(),
+        notes: `Collected on-site by ${firstName} — Stripe ${paymentIntent.id}`,
+        stripe_payment_intent_id: paymentIntent.id
+      })
+    } catch (err) {
+      // Non-fatal — the Stripe payment went through even if our record fails
+      console.error('Error recording payment in DB:', err)
+    }
+    setPaymentSuccess(true)
+    setClientSecret(null)
+    setPaymentIntentId(null)
+  }
+
+  // Record non-card payment (cash, check, venmo, zelle, etc.)
   const handleRecordPayment = async () => {
     if (!paymentJob || !paymentForm.amount) return
     setPaymentSaving(true)
@@ -256,12 +414,25 @@ export default function FieldScout() {
         setPaymentJob(null)
         setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
         setPaymentSuccess(false)
+        setClientSecret(null)
+        setPaymentIntentId(null)
       }, 1500)
     } catch (err) {
       alert('Error recording payment: ' + err.message)
     } finally {
       setPaymentSaving(false)
     }
+  }
+
+  // Clean up stripe state when modal closes
+  const closePaymentModal = () => {
+    setPaymentJob(null)
+    setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
+    setPaymentSuccess(false)
+    setClientSecret(null)
+    setStripePromise(null)
+    setStripeError(null)
+    setPaymentIntentId(null)
   }
 
   // Share Google review link
@@ -1299,7 +1470,7 @@ export default function FieldScout() {
         }}>
           {/* Backdrop */}
           <div
-            onClick={() => !paymentSaving && setPaymentJob(null)}
+            onClick={() => !paymentSaving && closePaymentModal()}
             style={{
               position: 'absolute',
               inset: 0,
@@ -1330,7 +1501,7 @@ export default function FieldScout() {
                 <div style={{ fontSize: '14px', color: theme.textMuted, marginTop: '4px' }}>{paymentJob.job_title || paymentJob.job_id}</div>
 
                 <button
-                  onClick={() => { shareReviewLink(paymentJob); if (googleReviewUrl) setPaymentJob(null) }}
+                  onClick={() => { shareReviewLink(paymentJob); if (googleReviewUrl) closePaymentModal() }}
                   style={{
                     marginTop: '24px',
                     padding: '16px 28px',
@@ -1353,7 +1524,7 @@ export default function FieldScout() {
                 </button>
 
                 <button
-                  onClick={() => setPaymentJob(null)}
+                  onClick={() => closePaymentModal()}
                   style={{
                     display: 'block',
                     margin: '16px auto 0',
@@ -1374,7 +1545,7 @@ export default function FieldScout() {
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: theme.text, margin: 0 }}>Collect Payment</h3>
-                  <button onClick={() => setPaymentJob(null)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+                  <button onClick={() => closePaymentModal()} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
                     <X size={20} />
                   </button>
                 </div>
@@ -1394,20 +1565,22 @@ export default function FieldScout() {
                       type="number"
                       inputMode="decimal"
                       value={paymentForm.amount}
-                      onChange={(e) => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
+                      onChange={(e) => { setPaymentForm(f => ({ ...f, amount: e.target.value })); setClientSecret(null); setStripeError(null) }}
                       placeholder="0.00"
                       autoFocus
+                      disabled={!!clientSecret}
                       style={{
                         width: '100%',
                         padding: '16px 16px 16px 32px',
                         fontSize: '24px',
                         fontWeight: '700',
-                        backgroundColor: theme.bg,
+                        backgroundColor: clientSecret ? theme.bgCard : theme.bg,
                         border: `2px solid ${theme.border}`,
                         borderRadius: '12px',
                         color: theme.text,
                         textAlign: 'left',
-                        boxSizing: 'border-box'
+                        boxSizing: 'border-box',
+                        opacity: clientSecret ? 0.7 : 1
                       }}
                     />
                   </div>
@@ -1427,20 +1600,22 @@ export default function FieldScout() {
                     ].map(m => (
                       <button
                         key={m.id}
-                        onClick={() => setPaymentForm(f => ({ ...f, method: m.id }))}
+                        onClick={() => { setPaymentForm(f => ({ ...f, method: m.id })); setClientSecret(null); setStripeError(null) }}
+                        disabled={!!clientSecret}
                         style={{
                           padding: '10px 16px',
                           backgroundColor: paymentForm.method === m.id ? theme.accent : theme.bg,
                           color: paymentForm.method === m.id ? '#fff' : theme.textSecondary,
                           border: `1px solid ${paymentForm.method === m.id ? theme.accent : theme.border}`,
                           borderRadius: '10px',
-                          cursor: 'pointer',
+                          cursor: clientSecret ? 'not-allowed' : 'pointer',
                           fontSize: '13px',
                           fontWeight: '600',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '6px',
-                          minHeight: '44px'
+                          minHeight: '44px',
+                          opacity: clientSecret && paymentForm.method !== m.id ? 0.5 : 1
                         }}
                       >
                         <m.icon size={14} />
@@ -1450,73 +1625,159 @@ export default function FieldScout() {
                   </div>
                 </div>
 
-                {/* Reference (check number, etc.) */}
-                {['Check', 'Other'].includes(paymentForm.method) && (
+                {/* === CARD PAYMENT (Stripe) === */}
+                {paymentForm.method === 'Card' && (
                   <div style={{ marginBottom: '14px' }}>
-                    <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>
-                      {paymentForm.method === 'Check' ? 'Check #' : 'Reference'}
-                    </label>
-                    <input
-                      value={paymentForm.reference}
-                      onChange={(e) => setPaymentForm(f => ({ ...f, reference: e.target.value }))}
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        backgroundColor: theme.bg,
-                        border: `1px solid ${theme.border}`,
-                        borderRadius: '10px',
-                        color: theme.text,
-                        fontSize: '14px',
-                        boxSizing: 'border-box'
-                      }}
-                    />
+                    {!clientSecret && !stripeLoading && (
+                      <>
+                        {stripeError && (
+                          <div style={{
+                            marginBottom: '12px', padding: '10px 14px', backgroundColor: 'rgba(239,68,68,0.1)',
+                            border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', color: '#ef4444',
+                            fontSize: '13px', fontWeight: '500'
+                          }}>
+                            {stripeError}
+                          </div>
+                        )}
+                        <button
+                          onClick={initStripePayment}
+                          disabled={!paymentForm.amount || parseFloat(paymentForm.amount) <= 0}
+                          style={{
+                            width: '100%', padding: '18px',
+                            background: paymentForm.amount && parseFloat(paymentForm.amount) > 0
+                              ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : theme.bg,
+                            border: 'none', borderRadius: '14px',
+                            color: paymentForm.amount && parseFloat(paymentForm.amount) > 0 ? '#fff' : theme.textMuted,
+                            fontSize: '17px', fontWeight: '700',
+                            cursor: paymentForm.amount && parseFloat(paymentForm.amount) > 0 ? 'pointer' : 'not-allowed',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                            minHeight: '56px'
+                          }}
+                        >
+                          <CreditCard size={20} />
+                          {paymentForm.amount ? `Charge $${parseFloat(paymentForm.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })} — Enter Card` : 'Enter amount first'}
+                        </button>
+                      </>
+                    )}
+
+                    {stripeLoading && (
+                      <div style={{ textAlign: 'center', padding: '24px', color: theme.textMuted }}>
+                        <Loader2 size={24} style={{ animation: 'spin 1s linear infinite', marginBottom: '8px' }} />
+                        <div style={{ fontSize: '14px' }}>Setting up secure payment...</div>
+                      </div>
+                    )}
+
+                    {clientSecret && stripePromise && (
+                      <Elements stripe={stripePromise} options={{
+                        clientSecret,
+                        appearance: {
+                          theme: 'flat',
+                          variables: {
+                            colorPrimary: '#16a34a',
+                            colorBackground: theme.bg,
+                            colorText: theme.text,
+                            colorDanger: '#ef4444',
+                            borderRadius: '10px',
+                            fontFamily: 'system-ui, -apple-system, sans-serif',
+                            spacingUnit: '4px'
+                          },
+                          rules: {
+                            '.Input': {
+                              border: `1px solid ${theme.border}`,
+                              padding: '12px',
+                              fontSize: '16px'
+                            },
+                            '.Label': {
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              color: theme.textMuted
+                            }
+                          }
+                        }
+                      }}>
+                        <StripeCardForm
+                          theme={theme}
+                          amount={paymentForm.amount}
+                          onSuccess={handleStripeSuccess}
+                          onError={(msg) => setStripeError(msg)}
+                        />
+                      </Elements>
+                    )}
                   </div>
                 )}
 
-                {/* Notes */}
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>Notes (optional)</label>
-                  <input
-                    value={paymentForm.notes}
-                    onChange={(e) => setPaymentForm(f => ({ ...f, notes: e.target.value }))}
-                    placeholder="e.g., Partial payment, tip included"
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      backgroundColor: theme.bg,
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '10px',
-                      color: theme.text,
-                      fontSize: '14px',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
+                {/* === NON-CARD PAYMENT === */}
+                {paymentForm.method !== 'Card' && (
+                  <>
+                    {/* Reference (check number, etc.) */}
+                    {['Check', 'Other'].includes(paymentForm.method) && (
+                      <div style={{ marginBottom: '14px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>
+                          {paymentForm.method === 'Check' ? 'Check #' : 'Reference'}
+                        </label>
+                        <input
+                          value={paymentForm.reference}
+                          onChange={(e) => setPaymentForm(f => ({ ...f, reference: e.target.value }))}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            backgroundColor: theme.bg,
+                            border: `1px solid ${theme.border}`,
+                            borderRadius: '10px',
+                            color: theme.text,
+                            fontSize: '14px',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                      </div>
+                    )}
 
-                {/* Submit */}
-                <button
-                  onClick={handleRecordPayment}
-                  disabled={!paymentForm.amount || paymentSaving}
-                  style={{
-                    width: '100%',
-                    padding: '18px',
-                    background: paymentForm.amount ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : theme.bg,
-                    border: 'none',
-                    borderRadius: '14px',
-                    color: paymentForm.amount ? '#fff' : theme.textMuted,
-                    fontSize: '17px',
-                    fontWeight: '700',
-                    cursor: paymentForm.amount ? 'pointer' : 'not-allowed',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    minHeight: '56px'
-                  }}
-                >
-                  <DollarSign size={20} />
-                  {paymentSaving ? 'Recording...' : `Record ${paymentForm.method} Payment`}
-                </button>
+                    {/* Notes */}
+                    <div style={{ marginBottom: '20px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>Notes (optional)</label>
+                      <input
+                        value={paymentForm.notes}
+                        onChange={(e) => setPaymentForm(f => ({ ...f, notes: e.target.value }))}
+                        placeholder="e.g., Partial payment, tip included"
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          backgroundColor: theme.bg,
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '10px',
+                          color: theme.text,
+                          fontSize: '14px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
+                    {/* Submit */}
+                    <button
+                      onClick={handleRecordPayment}
+                      disabled={!paymentForm.amount || paymentSaving}
+                      style={{
+                        width: '100%',
+                        padding: '18px',
+                        background: paymentForm.amount ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : theme.bg,
+                        border: 'none',
+                        borderRadius: '14px',
+                        color: paymentForm.amount ? '#fff' : theme.textMuted,
+                        fontSize: '17px',
+                        fontWeight: '700',
+                        cursor: paymentForm.amount ? 'pointer' : 'not-allowed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '10px',
+                        minHeight: '56px'
+                      }}
+                    >
+                      <DollarSign size={20} />
+                      {paymentSaving ? 'Recording...' : `Record ${paymentForm.method} Payment`}
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1532,6 +1793,10 @@ export default function FieldScout() {
         @keyframes slideUp {
           from { transform: translateY(100%); }
           to { transform: translateY(0); }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </div>
