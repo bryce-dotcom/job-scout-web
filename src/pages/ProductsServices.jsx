@@ -210,12 +210,18 @@ export default function ProductsServices() {
   const fetchLaborRates = useStore((state) => state.fetchLaborRates)
   const fetchInventory = useStore((state) => state.fetchInventory)
 
-  // Navigation state: null = section tiles, 'Products'/'Services' = inside section, group object = inside group
+  // Navigation state
   const [activeSection, setActiveSection] = useState(null)
   const [selectedGroup, setSelectedGroup] = useState(null)
   const [productGroups, setProductGroups] = useState([])
   const [isMobile, setIsMobile] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  // Sections (stored in settings as product_sections JSON)
+  const [sections, setSections] = useState([]) // [{name, image_url}]
+  const [showSectionModal, setShowSectionModal] = useState(false)
+  const [editingSectionIndex, setEditingSectionIndex] = useState(null)
+  const [sectionForm, setSectionForm] = useState({ name: '', image_url: '' })
 
   // Settings panel state
   const [showSettings, setShowSettings] = useState(false)
@@ -318,6 +324,7 @@ export default function ProductsServices() {
   useEffect(() => {
     if (companyId) {
       fetchProductGroups()
+      fetchSections()
       fetchProducts()
       fetchLaborRates()
     }
@@ -340,21 +347,110 @@ export default function ProductsServices() {
     setLoading(false)
   }
 
-  // Build sections from settings service types + group service_types (broad categories only)
-  const allSections = (() => {
-    const sectionSet = new Set()
-    serviceTypes.forEach(t => sectionSet.add(t))
-    // Include any group service_types not in settings
-    productGroups.forEach(g => { if (g.service_type) sectionSet.add(g.service_type) })
-    const sections = [...sectionSet].sort()
+  // ============ SECTION CRUD (stored in settings table) ============
+  const fetchSections = async () => {
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('company_id', companyId)
+      .eq('key', 'product_sections')
+      .single()
+    if (data?.value) {
+      try { setSections(JSON.parse(data.value)) } catch { setSections([]) }
+    } else {
+      // Bootstrap from existing service_types + group service_types
+      const initial = []
+      const seen = new Set()
+      serviceTypes.forEach(t => { if (!seen.has(t)) { initial.push({ name: t, image_url: '' }); seen.add(t) } })
+      productGroups.forEach(g => { if (g.service_type && !seen.has(g.service_type)) { initial.push({ name: g.service_type, image_url: '' }); seen.add(g.service_type) } })
+      if (initial.length > 0) {
+        await supabase.from('settings').insert({ company_id: companyId, key: 'product_sections', value: JSON.stringify(initial) })
+        setSections(initial)
+      }
+    }
+  }
+
+  const saveSections = async (newSections) => {
+    setSections(newSections)
+    const { data: existing } = await supabase.from('settings').select('id').eq('company_id', companyId).eq('key', 'product_sections').single()
+    if (existing) {
+      await supabase.from('settings').update({ value: JSON.stringify(newSections), updated_at: new Date().toISOString() }).eq('id', existing.id)
+    } else {
+      await supabase.from('settings').insert({ company_id: companyId, key: 'product_sections', value: JSON.stringify(newSections) })
+    }
+  }
+
+  const openSectionForm = (index = null) => {
+    if (index !== null && sections[index]) {
+      setEditingSectionIndex(index)
+      setSectionForm({ name: sections[index].name, image_url: sections[index].image_url || '' })
+    } else {
+      setEditingSectionIndex(null)
+      setSectionForm({ name: '', image_url: '' })
+    }
+    setShowSectionModal(true)
+  }
+
+  const handleSaveSection = async () => {
+    if (!sectionForm.name) { alert('Name is required'); return }
+    setSaving(true)
+    let updated
+    if (editingSectionIndex !== null) {
+      const oldName = sections[editingSectionIndex].name
+      updated = sections.map((s, i) => i === editingSectionIndex ? { ...sectionForm } : s)
+      // Update groups and products that referenced the old name
+      if (oldName !== sectionForm.name) {
+        await supabase.from('product_groups').update({ service_type: sectionForm.name }).eq('company_id', companyId).eq('service_type', oldName)
+        await fetchProductGroups()
+      }
+    } else {
+      updated = [...sections, { ...sectionForm }]
+    }
+    await saveSections(updated)
+    setShowSectionModal(false)
+    setEditingSectionIndex(null)
+    setSaving(false)
+  }
+
+  const handleDeleteSection = async (index) => {
+    const section = sections[index]
+    if (!confirm(`Delete section "${section.name}"? Groups and items in this section will still exist but won't be in a section.`)) return
+    const updated = sections.filter((_, i) => i !== index)
+    await saveSections(updated)
+    if (activeSection === section.name) { setActiveSection(null) }
+  }
+
+  const handleSectionImageUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${companyId}/sections/${Date.now()}.${fileExt}`
+    const { error } = await supabase.storage.from('product-images').upload(fileName, file)
+    if (!error) {
+      const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(fileName)
+      setSectionForm(prev => ({ ...prev, image_url: publicUrl }))
+    }
+    setUploading(false)
+  }
+
+  // Build section names list from stored sections + any orphan groups
+  const allSectionNames = (() => {
+    const names = sections.map(s => s.name)
+    const nameSet = new Set(names)
+    // Include orphan group service_types not in stored sections
+    productGroups.forEach(g => { if (g.service_type && !nameSet.has(g.service_type)) { names.push(g.service_type); nameSet.add(g.service_type) } })
     // Add "Other" if any products don't fuzzy-match any section
     const hasOrphans = products.some(p => {
       if (!p.type) return true
-      return !sections.some(s => productMatchesSection(p.type, s))
+      return !names.some(s => productMatchesSection(p.type, s))
     })
-    if (hasOrphans && products.length > 0) sections.push('Other')
-    return sections
+    if (hasOrphans && products.length > 0 && !nameSet.has('Other')) names.push('Other')
+    return names
   })()
+
+  // Get section metadata (image) by name
+  const getSectionMeta = (name) => sections.find(s => s.name === name) || { name, image_url: '' }
 
   // Fuzzy match: product type belongs to section if it contains the section name or vice versa
   function productMatchesSection(productType, section) {
@@ -370,7 +466,7 @@ export default function ProductsServices() {
     if (p.group_id && grpIds.has(p.group_id)) return true
     if (section === 'Other') {
       // "Other" catches products whose type doesn't match any real section
-      const realSections = allSections.filter(s => s !== 'Other')
+      const realSections = allSectionNames.filter(s => s !== 'Other')
       return !realSections.some(s => {
         const sGrpIds = new Set(productGroups.filter(g => g.service_type === s).map(g => g.id))
         if (p.group_id && sGrpIds.has(p.group_id)) return true
@@ -766,6 +862,12 @@ export default function ProductsServices() {
         </div>
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {!activeSection && (
+            <button onClick={() => openSectionForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
+              <Plus size={18} />
+              Add Section
+            </button>
+          )}
           {activeSection && (
             <button onClick={() => openProductForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
               <Plus size={18} />
@@ -861,21 +963,22 @@ export default function ProductsServices() {
               gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
               gap: '20px'
             }}>
-              {allSections.map(section => {
-                const Icon = Package
+              {allSectionNames.map((section, sIdx) => {
                 const count = getSectionCount(section)
                 const groupCount = productGroups.filter(g => g.service_type === section && g.active).length
+                const meta = getSectionMeta(section)
+                const storedIndex = sections.findIndex(s => s.name === section)
                 return (
                   <div
                     key={section}
-                    onClick={() => setActiveSection(section)}
                     style={{
                       backgroundColor: theme.bgCard,
                       borderRadius: '20px',
                       border: `1px solid ${theme.border}`,
                       overflow: 'hidden',
                       cursor: 'pointer',
-                      transition: 'all 0.2s ease'
+                      transition: 'all 0.15s ease',
+                      position: 'relative'
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.boxShadow = '0 12px 32px rgba(0,0,0,0.1)'
@@ -888,33 +991,65 @@ export default function ProductsServices() {
                       e.currentTarget.style.transform = 'translateY(0)'
                     }}
                   >
-                    <div style={{
-                      height: '140px',
-                      backgroundColor: theme.accentBg,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <Icon size={56} style={{ color: theme.accent, opacity: 0.6 }} />
-                    </div>
-                    <div style={{ padding: '20px' }}>
-                      <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, margin: '0 0 8px' }}>
-                        {section}
-                      </h2>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div>
-                          <span style={{ fontSize: '14px', color: theme.textSecondary }}>
-                            {count} item{count !== 1 ? 's' : ''}
-                          </span>
-                          {groupCount > 0 && (
-                            <span style={{ fontSize: '13px', color: theme.textMuted, marginLeft: '8px' }}>
-                              • {groupCount} group{groupCount !== 1 ? 's' : ''}
+                    <div onClick={() => setActiveSection(section)} style={{ cursor: 'pointer' }}>
+                      <div style={{
+                        height: '140px',
+                        backgroundColor: theme.accentBg,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        {meta.image_url ? (
+                          <img src={meta.image_url} alt={section} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <Package size={56} style={{ color: theme.accent, opacity: 0.6 }} />
+                        )}
+                      </div>
+                      <div style={{ padding: '20px' }}>
+                        <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, margin: '0 0 8px' }}>
+                          {section}
+                        </h2>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div>
+                            <span style={{ fontSize: '14px', color: theme.textSecondary }}>
+                              {count} item{count !== 1 ? 's' : ''}
                             </span>
-                          )}
+                            {groupCount > 0 && (
+                              <span style={{ fontSize: '13px', color: theme.textMuted, marginLeft: '8px' }}>
+                                • {groupCount} group{groupCount !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+                          <ChevronRight size={20} style={{ color: theme.textMuted }} />
                         </div>
-                        <ChevronRight size={20} style={{ color: theme.textMuted }} />
                       </div>
                     </div>
+                    {/* Edit/Delete buttons on section card */}
+                    {storedIndex !== -1 && (
+                      <div style={{
+                        position: 'absolute', top: '8px', right: '8px',
+                        display: 'flex', gap: '4px'
+                      }}>
+                        <button onClick={(e) => { e.stopPropagation(); openSectionForm(storedIndex) }} style={{
+                          width: '32px', height: '32px', borderRadius: '8px',
+                          backgroundColor: 'rgba(255,255,255,0.9)', border: 'none',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center',
+                          justifyContent: 'center', color: theme.textMuted,
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                        }}>
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(storedIndex) }} style={{
+                          width: '32px', height: '32px', borderRadius: '8px',
+                          backgroundColor: 'rgba(255,255,255,0.9)', border: 'none',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center',
+                          justifyContent: 'center', color: '#dc2626',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                        }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -1196,7 +1331,7 @@ export default function ProductsServices() {
               <div>
                 <label style={labelStyle}>Service Type *</label>
                 <select name="service_type" value={groupForm.service_type} onChange={handleGroupChange} style={inputStyle}>
-                  {allSections.map(s => <option key={s} value={s}>{s}</option>)}
+                  {allSectionNames.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div>
@@ -1255,6 +1390,75 @@ export default function ProductsServices() {
         </DraggableModal>
       )}
 
+      {/* ============ SECTION MODAL (draggable) ============ */}
+      {showSectionModal && (
+        <DraggableModal theme={theme} isMobile={isMobile} maxWidth="420px" onClose={() => { setShowSectionModal(false); setEditingSectionIndex(null) }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderBottom: `1px solid ${theme.border}` }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+              {editingSectionIndex !== null ? 'Edit Section' : 'New Section'}
+            </h2>
+            <button onClick={() => { setShowSectionModal(false); setEditingSectionIndex(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+              <X size={20} />
+            </button>
+          </div>
+          <div style={{ padding: '20px', overflow: 'auto', maxHeight: '60vh' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={labelStyle}>Name *</label>
+                <input
+                  type="text"
+                  value={sectionForm.name}
+                  onChange={e => setSectionForm(prev => ({ ...prev, name: e.target.value }))}
+                  style={inputStyle}
+                  placeholder="e.g., Electrical, Plumbing"
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Image</label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {sectionForm.image_url ? (
+                    <div style={{ position: 'relative' }}>
+                      <img src={sectionForm.image_url} alt="" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} />
+                      <button type="button" onClick={() => setSectionForm(prev => ({ ...prev, image_url: '' }))} style={{
+                        position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px',
+                        borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label style={{
+                      width: '60px', height: '60px', borderRadius: '8px', border: `2px dashed ${theme.border}`,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', color: theme.textMuted, backgroundColor: theme.bg
+                    }}>
+                      <Upload size={16} />
+                      <input type="file" accept="image/*" onChange={handleSectionImageUpload} style={{ display: 'none' }} />
+                    </label>
+                  )}
+                  <input
+                    type="url"
+                    value={sectionForm.image_url}
+                    onChange={e => setSectionForm(prev => ({ ...prev, image_url: e.target.value }))}
+                    placeholder="Or paste URL..."
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '12px', padding: '16px 20px', borderTop: `1px solid ${theme.border}` }}>
+            <button onClick={() => { setShowSectionModal(false); setEditingSectionIndex(null) }} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+              Cancel
+            </button>
+            <button onClick={handleSaveSection} disabled={saving} style={{ ...buttonStyle, flex: 1, backgroundColor: theme.accent, color: '#fff', opacity: saving ? 0.7 : 1 }}>
+              <Save size={16} /> {saving ? 'Saving...' : (editingSectionIndex !== null ? 'Update' : 'Create Section')}
+            </button>
+          </div>
+        </DraggableModal>
+      )}
+
       {/* ============ PRODUCT MODAL (draggable, tabbed) ============ */}
       {showProductModal && (
         <DraggableModal theme={theme} isMobile={isMobile} maxWidth="600px" onClose={() => setShowProductModal(false)}>
@@ -1298,7 +1502,7 @@ export default function ProductsServices() {
                   <div>
                     <label style={labelStyle}>Service Type</label>
                     <select name="type" value={productForm.type || ''} onChange={handleProductChange} style={inputStyle}>
-                      {allSections.map(s => <option key={s} value={s}>{s}</option>)}
+                      {allSectionNames.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
