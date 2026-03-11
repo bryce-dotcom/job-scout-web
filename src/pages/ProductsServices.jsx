@@ -32,8 +32,6 @@ const PRODUCT_CATEGORIES = [
   'Controls', 'Dimmer', 'Sensor', 'Emergency', 'Retrofit Kit', 'Other'
 ]
 
-const SECTIONS = ['Products', 'Services']
-
 // ============ DRAGGABLE MODAL WRAPPER ============
 function DraggableModal({ children, theme, isMobile, maxWidth = '600px', onClose }) {
   const [pos, setPos] = useState({ x: 0, y: 0 })
@@ -342,6 +340,18 @@ export default function ProductsServices() {
     setLoading(false)
   }
 
+  // Build dynamic sections from actual data (service types from settings + any types used in groups/products)
+  const allSections = (() => {
+    const sectionSet = new Set()
+    // Add service types from settings
+    serviceTypes.forEach(t => sectionSet.add(t))
+    // Add any group service_types not already covered
+    productGroups.forEach(g => { if (g.service_type) sectionSet.add(g.service_type) })
+    // Add any product types not already covered
+    products.forEach(p => { if (p.type) sectionSet.add(p.type) })
+    return [...sectionSet].sort()
+  })()
+
   // Derived data
   const sectionGroups = activeSection
     ? productGroups.filter(g => g.active && g.service_type === activeSection)
@@ -349,12 +359,11 @@ export default function ProductsServices() {
 
   const sectionProducts = activeSection
     ? products.filter(p => {
-        // Products in this section's groups, or ungrouped with matching type
-        const sectionGroupIds = new Set(sectionGroups.map(g => g.id))
-        if (p.group_id && sectionGroupIds.has(p.group_id)) return true
+        // Products in this section's groups
+        const grpIds = new Set(sectionGroups.map(g => g.id))
+        if (p.group_id && grpIds.has(p.group_id)) return true
+        // Ungrouped products with matching type
         if (!p.group_id && p.type === activeSection) return true
-        // Legacy: items with old service_type values show in Products if no match
-        if (!p.group_id && !SECTIONS.includes(p.type) && activeSection === 'Products') return true
         return false
       })
     : products
@@ -378,8 +387,8 @@ export default function ProductsServices() {
       })
     : []
 
-  const sectionGroupIds = new Set(sectionGroups.map(g => g.id))
-  const ungroupedProducts = filteredProducts.filter(p => !p.group_id || !sectionGroupIds.has(p.group_id))
+  const currentSectionGroupIds = new Set(sectionGroups.map(g => g.id))
+  const ungroupedProducts = filteredProducts.filter(p => !p.group_id || !currentSectionGroupIds.has(p.group_id))
 
   const getProductCount = (groupId) => products.filter(p => p.group_id === groupId).length
   const getSectionCount = (section) => {
@@ -387,7 +396,6 @@ export default function ProductsServices() {
     return products.filter(p => {
       if (p.group_id && grpIds.has(p.group_id)) return true
       if (!p.group_id && p.type === section) return true
-      if (!p.group_id && !SECTIONS.includes(p.type) && section === 'Products') return true
       return false
     }).length
   }
@@ -397,14 +405,14 @@ export default function ProductsServices() {
     if (group) {
       setEditingGroup(group)
       setGroupForm({
-        name: group.name || '', service_type: group.service_type || activeSection || 'Products',
+        name: group.name || '', service_type: group.service_type || activeSection || serviceTypes[0] || '',
         description: group.description || '', image_url: group.image_url || '',
         icon: group.icon || 'Package', sort_order: group.sort_order || 0, active: group.active ?? true
       })
     } else {
       setEditingGroup(null)
       setGroupForm({
-        name: '', service_type: activeSection || 'Products', description: '',
+        name: '', service_type: activeSection || serviceTypes[0] || '', description: '',
         image_url: '', icon: 'Package', sort_order: 0, active: true
       })
     }
@@ -418,7 +426,7 @@ export default function ProductsServices() {
 
   const handleSaveGroup = async () => {
     if (!groupForm.name || !groupForm.service_type) {
-      alert('Name and Section are required')
+      alert('Name and Service Type are required')
       return
     }
     setSaving(true)
@@ -438,7 +446,7 @@ export default function ProductsServices() {
     } else {
       await fetchProductGroups()
       setEditingGroup(null)
-      setGroupForm({ name: '', service_type: activeSection || 'Products', description: '', image_url: '', icon: 'Package', sort_order: 0, active: true })
+      setGroupForm({ name: '', service_type: activeSection || serviceTypes[0] || '', description: '', image_url: '', icon: 'Package', sort_order: 0, active: true })
     }
     setSaving(false)
   }
@@ -460,7 +468,7 @@ export default function ProductsServices() {
         markup_percent: product.markup_percent || '', taxable: product.taxable ?? true,
         active: product.active ?? true, image_url: product.image_url || '',
         allotted_time_hours: product.allotted_time_hours || '', group_id: product.group_id,
-        type: product.type || activeSection || 'Products', labor_rate_id: product.labor_rate_id || '',
+        type: product.type || activeSection || serviceTypes[0] || '', labor_rate_id: product.labor_rate_id || '',
         manufacturer: product.manufacturer || '', model_number: product.model_number || '',
         product_category: product.product_category || '', dlc_listed: product.dlc_listed ?? false,
         dlc_listing_number: product.dlc_listing_number || '', warranty_years: product.warranty_years || '',
@@ -473,7 +481,7 @@ export default function ProductsServices() {
         name: '', description: '', unit_price: '', cost: '', markup_percent: '',
         taxable: true, active: true, image_url: '', allotted_time_hours: '',
         group_id: selectedGroup?.id || null,
-        type: activeSection || 'Products',
+        type: activeSection || serviceTypes[0] || '',
         labor_rate_id: '',
         manufacturer: '', model_number: '', product_category: '',
         dlc_listed: false, dlc_listing_number: '', warranty_years: '',
@@ -743,7 +751,7 @@ export default function ProductsServices() {
           {activeSection && (
             <button onClick={() => openProductForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
               <Plus size={18} />
-              Add {activeSection === 'Services' ? 'Service' : 'Product'}
+              Add {'Item'}
             </button>
           )}
           {activeSection && !selectedGroup && (
@@ -832,13 +840,11 @@ export default function ProductsServices() {
             // ============ SECTION TILES: Products & Services ============
             <div style={{
               display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-              gap: '24px',
-              maxWidth: '800px'
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
+              gap: '20px'
             }}>
-              {SECTIONS.map(section => {
-                const isProducts = section === 'Products'
-                const Icon = isProducts ? Package : Wrench
+              {allSections.map(section => {
+                const Icon = Package
                 const count = getSectionCount(section)
                 const groupCount = productGroups.filter(g => g.service_type === section && g.active).length
                 return (
@@ -866,12 +872,12 @@ export default function ProductsServices() {
                   >
                     <div style={{
                       height: '140px',
-                      backgroundColor: isProducts ? theme.accentBg : 'rgba(59,130,246,0.08)',
+                      backgroundColor: theme.accentBg,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center'
                     }}>
-                      <Icon size={56} style={{ color: isProducts ? theme.accent : '#3b82f6', opacity: 0.6 }} />
+                      <Icon size={56} style={{ color: theme.accent, opacity: 0.6 }} />
                     </div>
                     <div style={{ padding: '20px' }}>
                       <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, margin: '0 0 8px' }}>
@@ -1042,7 +1048,7 @@ export default function ProductsServices() {
                       <Plus size={16} /> Create Group
                     </button>
                     <button onClick={() => openProductForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
-                      <Plus size={16} /> Add {activeSection === 'Services' ? 'Service' : 'Product'}
+                      <Plus size={16} /> Add {'Item'}
                     </button>
                   </div>
                 </div>
@@ -1170,9 +1176,9 @@ export default function ProductsServices() {
                 <input type="text" name="name" value={groupForm.name} onChange={handleGroupChange} style={inputStyle} placeholder="e.g., LED Panels" />
               </div>
               <div>
-                <label style={labelStyle}>Section *</label>
+                <label style={labelStyle}>Service Type *</label>
                 <select name="service_type" value={groupForm.service_type} onChange={handleGroupChange} style={inputStyle}>
-                  {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  {allSections.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div>
@@ -1236,7 +1242,7 @@ export default function ProductsServices() {
         <DraggableModal theme={theme} isMobile={isMobile} maxWidth="600px" onClose={() => setShowProductModal(false)}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderBottom: `1px solid ${theme.border}` }}>
             <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
-              {editingProduct ? 'Edit Product' : `Add ${activeSection === 'Services' ? 'Service' : 'Product'}`}
+              {editingProduct ? 'Edit Product' : `Add ${'Item'}`}
             </h2>
             <button onClick={() => setShowProductModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
               <X size={20} />
@@ -1272,9 +1278,9 @@ export default function ProductsServices() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div>
-                    <label style={labelStyle}>Section</label>
+                    <label style={labelStyle}>Service Type</label>
                     <select name="type" value={productForm.type || ''} onChange={handleProductChange} style={inputStyle}>
-                      {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      {allSections.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
