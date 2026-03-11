@@ -110,21 +110,39 @@ The printed column header "Area Name" exists on the form between Tick Marks and 
 INSTRUCTIONS:
 1. Read the header on page 1. Extract Project Name, Meter #, Address, City, Contact, Phone, Hours, and which of SBE/MID/Large is circled.
 2. Go through every row on every page. Each row with ANY handwriting = one entry. The left side (columns 3-6) is the EXISTING fixture. The right side (columns 7-12) is the NEW fixture and notes. They are the SAME row, the SAME entry.
-3. Build a fixture name from Fixture Type + Lamp Type. Examples:
-   - Fixture Type "2x4" + Lamp Type "T8" + "4L" written nearby = "4-Lamp T8 4ft 2x4 Troffer"
-   - Fixture Type "HB" + Lamp Type "MH" = "Metal Halide High Bay"
-   - Fixture Type "WP" + Lamp Type "HPS" = "HPS Wall Pack"
-   - Fixture Type "1x4" + Lamp Type "T8" + "2L" = "2-Lamp T8 4ft 1x4 Strip"
+3. READ EXACTLY WHAT IS WRITTEN. Do not guess or assume fixture types. Common handwriting patterns:
+   - "2L-T12-8'" means 2-Lamp T12 8ft — NOT a T8, NOT 4ft, NOT a troffer
+   - "4L-T8-4'" means 4-Lamp T8 4ft
+   - "2L-T8-4'" means 2-Lamp T8 4ft
+   - "3L-T12-4'" means 3-Lamp T12 4ft
+   - "MH-400" or "400MH" means 400W Metal Halide
+   - "HPS-250" means 250W HPS
+   - The number before "L" is the LAMP COUNT. "2L" = 2-Lamp, "3L" = 3-Lamp, "4L" = 4-Lamp.
+   - The number before the apostrophe (') is the LENGTH in feet. "8'" = 8 foot, "4'" = 4 foot.
+   - T12 and T8 look similar in handwriting. T12 has a "12", T8 has an "8". Read carefully.
+
+4. Build the fixture name from EXACTLY what you read:
+   - "2L-T12-8'" → "2-Lamp T12 8ft Strip"
+   - "4L-T8-4'" or "2x4-4L-T8" → "4-Lamp T8 4ft 2x4 Troffer"
+   - "2L-T8-4'" or "1x4-2L-T8" → "2-Lamp T8 4ft 1x4 Strip"
+   - "HB" + "MH" → "Metal Halide High Bay"
+   - "WP" + "HPS" → "HPS Wall Pack"
+   - Do NOT default to "T8 Troffer" unless the handwriting clearly says T8.
 
 Abbreviations: MH=Metal Halide, HPS=High Pressure Sodium, MV=Mercury Vapor, INC=Incandescent, Hal=Halogen, CFL=Compact Fluorescent, BB=Battery Backup, HB=High Bay, LB=Low Bay, WP=Wall Pack, 2x4/2x2/1x4=troffer sizes, 4L/3L/2L=lamp count
 
-Wattages (system watts with ballast) — use these if wattage is not written:
-  4-Lamp T8: 112W | 3-Lamp T8: 84W | 2-Lamp T8: 56W | 1-Lamp T8: 32W
-  4-Lamp T12: 172W | 2-Lamp T12: 86W | 1-Lamp T12: 46W
-  6-Lamp T5HO: 351W | 4-Lamp T5HO: 234W | 2-Lamp T5HO: 118W
-  400W MH: 458W | 250W MH: 288W | 175W MH: 210W | 1000W MH: 1080W
-  400W HPS: 465W | 250W HPS: 295W | 150W HPS: 188W | 100W HPS: 120W
-LED estimates if not written: T8 troffer→32W, T12→30W, 400W HB→150W, 250W HB→100W, WP→30W
+Wattages (system watts with ballast) — use these if wattage column is blank OR to cross-check:
+  T12 8ft: 1-Lamp=110W, 2-Lamp=220W, 4-Lamp=440W
+  T12 4ft: 1-Lamp=46W, 2-Lamp=86W, 3-Lamp=130W, 4-Lamp=172W
+  T8 4ft: 1-Lamp=32W, 2-Lamp=56W, 3-Lamp=84W, 4-Lamp=112W
+  T8 8ft: 1-Lamp=60W, 2-Lamp=120W
+  T5HO 4ft: 2-Lamp=118W, 4-Lamp=234W, 6-Lamp=351W
+  Metal Halide: 175W=210W, 250W=288W, 400W=458W, 1000W=1080W
+  HPS: 100W=120W, 150W=188W, 250W=295W, 400W=465W
+
+WATTAGE CROSS-CHECK: If the rep wrote a wattage that seems like a per-lamp value (not system watts), multiply by the lamp count. For example if "2L-T12-8'" shows "110W", the system wattage is actually 220W (110W × 2 lamps). Use the table above to validate.
+
+LED estimates if not written: T8 troffer→32W, T12→30W, 400W HB→150W, 250W HB→100W, WP→30W, T12 8ft→40W
 
 Return ONLY this JSON (no markdown, no backticks, no explanation):
 {
