@@ -1115,6 +1115,15 @@
 | image | text | |
 | group_id | integer | FK product_groups.id |
 | labor_rate_id | integer | FK labor_rates.id |
+| manufacturer | text | |
+| model_number | text | |
+| product_category | text | |
+| dlc_listed | boolean | false |
+| dlc_listing_number | text | |
+| warranty_years | numeric | |
+| spec_sheet_url | text | |
+| install_guide_url | text | |
+| datasheet_json | jsonb | {} |
 
 ---
 

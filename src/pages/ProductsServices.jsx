@@ -7,7 +7,8 @@ import { useTheme } from '../components/Layout'
 import {
   Plus, ArrowLeft, Settings, X, Save, Trash2, Package, Boxes,
   Upload, Download, Clock, DollarSign, Pencil, ChevronRight, Archive, Search,
-  FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, Loader
+  FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, Loader,
+  ExternalLink, FileText, ShieldCheck, Award, PlusCircle, MinusCircle
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
@@ -24,6 +25,11 @@ const defaultTheme = {
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
 }
+
+const PRODUCT_CATEGORIES = [
+  'LED Panel', 'High Bay', 'Exterior', 'Strip Light', 'Driver',
+  'Controls', 'Dimmer', 'Sensor', 'Emergency', 'Retrofit Kit', 'Other'
+]
 
 // Reusable Product Card component
 function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost }) {
@@ -70,6 +76,27 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
           }}>
             <Archive size={10} />
             {inventoryCount}
+          </div>
+        )}
+        {/* DLC Listed badge */}
+        {product.dlc_listed && (
+          <div style={{
+            position: 'absolute',
+            top: '8px',
+            left: '8px',
+            backgroundColor: '#22c55e',
+            color: '#fff',
+            padding: '3px 8px',
+            borderRadius: '10px',
+            fontSize: '10px',
+            fontWeight: '700',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            letterSpacing: '0.3px'
+          }}>
+            <ShieldCheck size={10} />
+            DLC Listed
           </div>
         )}
       </div>
@@ -264,10 +291,16 @@ export default function ProductsServices() {
   // Product modal state
   const [showProductModal, setShowProductModal] = useState(false)
   const [editingProduct, setEditingProduct] = useState(null)
+  const [productModalTab, setProductModalTab] = useState('overview')
   const [productForm, setProductForm] = useState({
     name: '', description: '', unit_price: '', cost: '', markup_percent: '',
-    taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: '', labor_rate_id: ''
+    taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: '', labor_rate_id: '',
+    manufacturer: '', model_number: '', product_category: '',
+    dlc_listed: false, dlc_listing_number: '', warranty_years: '',
+    spec_sheet_url: '', install_guide_url: '', datasheet_json: {}
   })
+  const [uploadingDoc, setUploadingDoc] = useState(null) // 'spec_sheet' | 'install_guide' | null
+  const [uploadProgress, setUploadProgress] = useState(0)
 
   // Labor rates panel state
   const [showLaborRates, setShowLaborRates] = useState(false)
@@ -332,7 +365,7 @@ export default function ProductsServices() {
     if (activeServiceType !== 'all' && p.type !== activeServiceType) return false
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
-      const haystack = `${p.name || ''} ${p.description || ''} ${p.type || ''}`.toLowerCase()
+      const haystack = `${p.name || ''} ${p.description || ''} ${p.type || ''} ${p.manufacturer || ''} ${p.model_number || ''}`.toLowerCase()
       return haystack.includes(q)
     }
     return true
@@ -349,7 +382,7 @@ export default function ProductsServices() {
         if (p.group_id !== selectedGroup.id) return false
         if (searchQuery) {
           const q = searchQuery.toLowerCase()
-          const haystack = `${p.name || ''} ${p.description || ''} ${p.type || ''}`.toLowerCase()
+          const haystack = `${p.name || ''} ${p.description || ''} ${p.type || ''} ${p.manufacturer || ''} ${p.model_number || ''}`.toLowerCase()
           return haystack.includes(q)
         }
         return true
@@ -459,7 +492,16 @@ export default function ProductsServices() {
         allotted_time_hours: product.allotted_time_hours || '',
         group_id: product.group_id,
         type: product.type || '',
-        labor_rate_id: product.labor_rate_id || ''
+        labor_rate_id: product.labor_rate_id || '',
+        manufacturer: product.manufacturer || '',
+        model_number: product.model_number || '',
+        product_category: product.product_category || '',
+        dlc_listed: product.dlc_listed ?? false,
+        dlc_listing_number: product.dlc_listing_number || '',
+        warranty_years: product.warranty_years || '',
+        spec_sheet_url: product.spec_sheet_url || '',
+        install_guide_url: product.install_guide_url || '',
+        datasheet_json: product.datasheet_json || {}
       })
     } else {
       setEditingProduct(null)
@@ -468,9 +510,13 @@ export default function ProductsServices() {
         taxable: true, active: true, image_url: '', allotted_time_hours: '',
         group_id: selectedGroup?.id || null,
         type: selectedGroup?.service_type || (activeServiceType !== 'all' ? activeServiceType : (serviceTypes[0] || '')),
-        labor_rate_id: ''
+        labor_rate_id: '',
+        manufacturer: '', model_number: '', product_category: '',
+        dlc_listed: false, dlc_listing_number: '', warranty_years: '',
+        spec_sheet_url: '', install_guide_url: '', datasheet_json: {}
       })
     }
+    setProductModalTab('overview')
     setShowProductModal(true)
   }
 
@@ -503,6 +549,15 @@ export default function ProductsServices() {
       allotted_time_hours: productForm.allotted_time_hours || null,
       group_id: productForm.group_id,
       labor_rate_id: productForm.labor_rate_id || null,
+      manufacturer: productForm.manufacturer || null,
+      model_number: productForm.model_number || null,
+      product_category: productForm.product_category || null,
+      dlc_listed: productForm.dlc_listed,
+      dlc_listing_number: productForm.dlc_listing_number || null,
+      warranty_years: productForm.warranty_years || null,
+      spec_sheet_url: productForm.spec_sheet_url || null,
+      install_guide_url: productForm.install_guide_url || null,
+      datasheet_json: productForm.datasheet_json || {},
       updated_at: new Date().toISOString()
     }
 
@@ -575,6 +630,84 @@ export default function ProductsServices() {
       setProductForm(prev => ({ ...prev, image_url: publicUrl }))
     }
     setUploading(false)
+  }
+
+  // Document upload (spec sheet / install guide)
+  const handleDocUpload = async (e, field) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingDoc(field)
+    setUploadProgress(0)
+
+    const fileExt = file.name.split('.').pop()
+    const itemId = editingProduct?.id || 'new'
+    const fileName = `${companyId}/${itemId}/${Date.now()}-${file.name}`
+
+    // Simulate progress (Supabase doesn't expose upload progress)
+    const progressInterval = setInterval(() => {
+      setUploadProgress(prev => Math.min(prev + 15, 85))
+    }, 200)
+
+    const { error: uploadError } = await supabase.storage
+      .from('product-documents')
+      .upload(fileName, file, { upsert: true })
+
+    clearInterval(progressInterval)
+
+    if (uploadError) {
+      console.error('Doc upload error:', uploadError)
+      setUploadingDoc(null)
+      setUploadProgress(0)
+      return
+    }
+
+    setUploadProgress(100)
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('product-documents')
+      .getPublicUrl(fileName)
+
+    setProductForm(prev => ({ ...prev, [field]: publicUrl }))
+
+    setTimeout(() => {
+      setUploadingDoc(null)
+      setUploadProgress(0)
+    }, 500)
+  }
+
+  // Datasheet JSON helpers
+  const addDatasheetEntry = () => {
+    setProductForm(prev => ({
+      ...prev,
+      datasheet_json: { ...prev.datasheet_json, '': '' }
+    }))
+  }
+
+  const updateDatasheetKey = (oldKey, newKey) => {
+    setProductForm(prev => {
+      const entries = Object.entries(prev.datasheet_json)
+      const updated = {}
+      entries.forEach(([k, v]) => {
+        updated[k === oldKey ? newKey : k] = v
+      })
+      return { ...prev, datasheet_json: updated }
+    })
+  }
+
+  const updateDatasheetValue = (key, newValue) => {
+    setProductForm(prev => ({
+      ...prev,
+      datasheet_json: { ...prev.datasheet_json, [key]: newValue }
+    }))
+  }
+
+  const removeDatasheetEntry = (key) => {
+    setProductForm(prev => {
+      const copy = { ...prev.datasheet_json }
+      delete copy[key]
+      return { ...prev, datasheet_json: copy }
+    })
   }
 
   // ============ LABOR RATE CRUD ============
@@ -1529,7 +1662,7 @@ export default function ProductsServices() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: isMobile ? '95%' : '480px',
+            maxWidth: isMobile ? '95%' : '600px',
             maxHeight: '90vh',
             overflow: 'hidden',
             display: 'flex',
@@ -1552,129 +1685,521 @@ export default function ProductsServices() {
               </button>
             </div>
 
+            {/* Tabs */}
+            <div style={{
+              display: 'flex',
+              gap: '0',
+              borderBottom: `1px solid ${theme.border}`,
+              padding: '0 20px'
+            }}>
+              {[
+                { key: 'overview', label: 'Overview', icon: Package },
+                { key: 'specs', label: 'Specs', icon: FileText },
+                { key: 'documents', label: 'Documents', icon: FileSpreadsheet }
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setProductModalTab(tab.key)}
+                  style={{
+                    padding: '10px 16px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: productModalTab === tab.key ? theme.accent : theme.textMuted,
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderBottom: productModalTab === tab.key ? `2px solid ${theme.accent}` : '2px solid transparent',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginBottom: '-1px'
+                  }}
+                >
+                  <tab.icon size={14} />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
             {/* Modal Body */}
             <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={labelStyle}>Name *</label>
-                  <input type="text" name="name" value={productForm.name} onChange={handleProductChange} style={inputStyle} />
-                </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {/* ---- OVERVIEW TAB ---- */}
+              {productModalTab === 'overview' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Service Type</label>
-                    <select name="type" value={productForm.type || ''} onChange={handleProductChange} style={inputStyle}>
-                      <option value="">-- Select --</option>
-                      {serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <label style={labelStyle}>Name *</label>
+                    <input type="text" name="name" value={productForm.name} onChange={handleProductChange} style={inputStyle} />
                   </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={labelStyle}>Service Type</label>
+                      <select name="type" value={productForm.type || ''} onChange={handleProductChange} style={inputStyle}>
+                        <option value="">-- Select --</option>
+                        {serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Product Group</label>
+                      <select
+                        name="group_id"
+                        value={productForm.group_id || ''}
+                        onChange={(e) => setProductForm(prev => ({ ...prev, group_id: e.target.value ? parseInt(e.target.value) : null }))}
+                        style={inputStyle}
+                      >
+                        <option value="">None (Ungrouped)</option>
+                        {productGroups.filter(g => g.active).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
                   <div>
-                    <label style={labelStyle}>Product Group</label>
-                    <select
-                      name="group_id"
-                      value={productForm.group_id || ''}
-                      onChange={(e) => setProductForm(prev => ({ ...prev, group_id: e.target.value ? parseInt(e.target.value) : null }))}
-                      style={inputStyle}
-                    >
-                      <option value="">None (Ungrouped)</option>
-                      {productGroups.filter(g => g.active).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                    </select>
+                    <label style={labelStyle}>Description</label>
+                    <textarea name="description" value={productForm.description} onChange={handleProductChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={labelStyle}>Price</label>
+                      <input type="number" name="unit_price" value={productForm.unit_price} onChange={handleProductChange} step="0.01" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Cost</label>
+                      <input type="number" name="cost" value={productForm.cost} onChange={handleProductChange} step="0.01" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Markup %</label>
+                      <input type="number" name="markup_percent" value={productForm.markup_percent} onChange={handleProductChange} style={inputStyle} />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={labelStyle}>Allotted Time (hours)</label>
+                      <input type="number" name="allotted_time_hours" value={productForm.allotted_time_hours} onChange={handleProductChange} step="0.25" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Labor Rate</label>
+                      <select
+                        name="labor_rate_id"
+                        value={productForm.labor_rate_id || ''}
+                        onChange={(e) => setProductForm(prev => ({ ...prev, labor_rate_id: e.target.value ? parseInt(e.target.value) : null }))}
+                        style={inputStyle}
+                      >
+                        <option value="">Use Default Rate</option>
+                        {laborRates.filter(r => r.active).map(rate => (
+                          <option key={rate.id} value={rate.id}>
+                            {rate.name} (${parseFloat(rate.rate_per_hour).toFixed(2)}/hr){rate.is_default ? ' - Default' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>Image</label>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {productForm.image_url ? (
+                        <div style={{ position: 'relative' }}>
+                          <img src={productForm.image_url} alt="" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} />
+                          <button
+                            type="button"
+                            onClick={() => setProductForm(prev => ({ ...prev, image_url: '' }))}
+                            style={{
+                              position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px',
+                              borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      ) : (
+                        <label style={{
+                          width: '60px', height: '60px', borderRadius: '8px', border: `2px dashed ${theme.border}`,
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer', color: theme.textMuted, backgroundColor: theme.bg
+                        }}>
+                          <Upload size={16} />
+                          <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} style={{ display: 'none' }} />
+                        </label>
+                      )}
+                      <input
+                        type="url"
+                        name="image_url"
+                        value={productForm.image_url}
+                        onChange={handleProductChange}
+                        placeholder="Or paste URL..."
+                        style={{ ...inputStyle, flex: 1 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '24px', padding: '8px 0' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                      <input type="checkbox" name="taxable" checked={productForm.taxable} onChange={handleProductChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
+                      <span style={{ fontSize: '14px', color: theme.text }}>Taxable</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                      <input type="checkbox" name="active" checked={productForm.active} onChange={handleProductChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
+                      <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
+                    </label>
                   </div>
                 </div>
+              )}
 
-                <div>
-                  <label style={labelStyle}>Description</label>
-                  <textarea name="description" value={productForm.description} onChange={handleProductChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
-                </div>
+              {/* ---- SPECS TAB ---- */}
+              {productModalTab === 'specs' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Product Info Section */}
+                  <div style={{
+                    padding: '12px 16px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '8px',
+                    borderLeft: `3px solid ${theme.accent}`
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', marginBottom: '12px' }}>
+                      Product Info
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label style={labelStyle}>Manufacturer</label>
+                        <input type="text" name="manufacturer" value={productForm.manufacturer} onChange={handleProductChange} style={inputStyle} placeholder="e.g., Philips" />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Model Number</label>
+                        <input type="text" name="model_number" value={productForm.model_number} onChange={handleProductChange} style={inputStyle} placeholder="e.g., PL-LED-4x2" />
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '12px' }}>
+                      <label style={labelStyle}>Product Category</label>
+                      <select name="product_category" value={productForm.product_category || ''} onChange={handleProductChange} style={inputStyle}>
+                        <option value="">-- Select --</option>
+                        {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>Price</label>
-                    <input type="number" name="unit_price" value={productForm.unit_price} onChange={handleProductChange} step="0.01" style={inputStyle} />
+                  {/* Certifications Section */}
+                  <div style={{
+                    padding: '12px 16px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '8px',
+                    borderLeft: '3px solid #22c55e'
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e', textTransform: 'uppercase', marginBottom: '12px' }}>
+                      Certifications
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          name="dlc_listed"
+                          checked={productForm.dlc_listed}
+                          onChange={handleProductChange}
+                          style={{ width: '18px', height: '18px', accentColor: '#22c55e' }}
+                        />
+                        <span style={{ fontSize: '14px', color: theme.text, fontWeight: '500' }}>DLC Listed</span>
+                      </label>
+                      {productForm.dlc_listed && (
+                        <ShieldCheck size={18} style={{ color: '#22c55e' }} />
+                      )}
+                    </div>
+                    {productForm.dlc_listed && (
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={labelStyle}>DLC Listing Number</label>
+                        <input type="text" name="dlc_listing_number" value={productForm.dlc_listing_number} onChange={handleProductChange} style={inputStyle} placeholder="e.g., QUQH-43D4LBU4" />
+                      </div>
+                    )}
+                    <div>
+                      <label style={labelStyle}>Warranty (years)</label>
+                      <input type="number" name="warranty_years" value={productForm.warranty_years} onChange={handleProductChange} step="1" min="0" style={{ ...inputStyle, maxWidth: '120px' }} placeholder="e.g., 5" />
+                    </div>
                   </div>
-                  <div>
-                    <label style={labelStyle}>Cost</label>
-                    <input type="number" name="cost" value={productForm.cost} onChange={handleProductChange} step="0.01" style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Markup %</label>
-                    <input type="number" name="markup_percent" value={productForm.markup_percent} onChange={handleProductChange} style={inputStyle} />
-                  </div>
-                </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>Allotted Time (hours)</label>
-                    <input type="number" name="allotted_time_hours" value={productForm.allotted_time_hours} onChange={handleProductChange} step="0.25" style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Labor Rate</label>
-                    <select
-                      name="labor_rate_id"
-                      value={productForm.labor_rate_id || ''}
-                      onChange={(e) => setProductForm(prev => ({ ...prev, labor_rate_id: e.target.value ? parseInt(e.target.value) : null }))}
-                      style={inputStyle}
-                    >
-                      <option value="">Use Default Rate</option>
-                      {laborRates.filter(r => r.active).map(rate => (
-                        <option key={rate.id} value={rate.id}>
-                          {rate.name} (${parseFloat(rate.rate_per_hour).toFixed(2)}/hr){rate.is_default ? ' - Default' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Image</label>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    {productForm.image_url ? (
-                      <div style={{ position: 'relative' }}>
-                        <img src={productForm.image_url} alt="" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} />
-                        <button
-                          type="button"
-                          onClick={() => setProductForm(prev => ({ ...prev, image_url: '' }))}
-                          style={{
-                            position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px',
-                            borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
-                          }}
-                        >
-                          <X size={10} />
-                        </button>
+                  {/* Datasheet Key/Value Pairs */}
+                  <div style={{
+                    padding: '12px 16px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '8px',
+                    borderLeft: '3px solid #3b82f6'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6', textTransform: 'uppercase' }}>
+                        Datasheet Specs
+                      </div>
+                      <button
+                        onClick={addDatasheetEntry}
+                        style={{
+                          ...buttonStyle,
+                          padding: '4px 10px',
+                          fontSize: '12px',
+                          backgroundColor: 'rgba(59,130,246,0.12)',
+                          color: '#3b82f6'
+                        }}
+                      >
+                        <PlusCircle size={14} />
+                        Add
+                      </button>
+                    </div>
+                    {Object.keys(productForm.datasheet_json || {}).length === 0 ? (
+                      <div style={{ padding: '16px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                        No datasheet specs yet. Click "Add" to add key/value pairs.
                       </div>
                     ) : (
-                      <label style={{
-                        width: '60px', height: '60px', borderRadius: '8px', border: `2px dashed ${theme.border}`,
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer', color: theme.textMuted, backgroundColor: theme.bg
-                      }}>
-                        <Upload size={16} />
-                        <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} style={{ display: 'none' }} />
-                      </label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {Object.entries(productForm.datasheet_json || {}).map(([key, value], idx) => (
+                          <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <input
+                              type="text"
+                              value={key}
+                              onChange={(e) => updateDatasheetKey(key, e.target.value)}
+                              placeholder="Key (e.g., Lumens)"
+                              style={{ ...inputStyle, flex: 1, fontSize: '13px', padding: '8px 10px' }}
+                            />
+                            <input
+                              type="text"
+                              value={value}
+                              onChange={(e) => updateDatasheetValue(key, e.target.value)}
+                              placeholder="Value (e.g., 4000)"
+                              style={{ ...inputStyle, flex: 1, fontSize: '13px', padding: '8px 10px' }}
+                            />
+                            <button
+                              onClick={() => removeDatasheetEntry(key)}
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                color: '#dc2626', padding: '4px', flexShrink: 0
+                              }}
+                            >
+                              <MinusCircle size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     )}
-                    <input
-                      type="url"
-                      name="image_url"
-                      value={productForm.image_url}
-                      onChange={handleProductChange}
-                      placeholder="Or paste URL..."
-                      style={{ ...inputStyle, flex: 1 }}
-                    />
                   </div>
                 </div>
+              )}
 
-                <div style={{ display: 'flex', gap: '24px', padding: '8px 0' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input type="checkbox" name="taxable" checked={productForm.taxable} onChange={handleProductChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
-                    <span style={{ fontSize: '14px', color: theme.text }}>Taxable</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input type="checkbox" name="active" checked={productForm.active} onChange={handleProductChange} style={{ width: '18px', height: '18px', accentColor: theme.accent }} />
-                    <span style={{ fontSize: '14px', color: theme.text }}>Active</span>
-                  </label>
+              {/* ---- DOCUMENTS TAB ---- */}
+              {productModalTab === 'documents' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {/* Spec Sheet */}
+                  <div style={{
+                    padding: '16px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '8px',
+                    border: `1px solid ${theme.border}`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                      <FileText size={16} style={{ color: theme.accent }} />
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Spec Sheet</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{
+                        ...buttonStyle,
+                        padding: '8px 14px',
+                        fontSize: '13px',
+                        backgroundColor: uploadingDoc === 'spec_sheet_url' ? theme.accentBg : theme.accent,
+                        color: uploadingDoc === 'spec_sheet_url' ? theme.accent : '#fff',
+                        cursor: uploadingDoc ? 'wait' : 'pointer',
+                        opacity: uploadingDoc && uploadingDoc !== 'spec_sheet_url' ? 0.5 : 1
+                      }}>
+                        <Upload size={14} />
+                        {uploadingDoc === 'spec_sheet_url' ? 'Uploading...' : 'Upload File'}
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                          onChange={(e) => handleDocUpload(e, 'spec_sheet_url')}
+                          disabled={!!uploadingDoc}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>or</span>
+                      <input
+                        type="url"
+                        name="spec_sheet_url"
+                        value={productForm.spec_sheet_url}
+                        onChange={handleProductChange}
+                        placeholder="Paste URL..."
+                        style={{ ...inputStyle, flex: 1, fontSize: '13px' }}
+                      />
+                    </div>
+                    {/* Upload progress */}
+                    {uploadingDoc === 'spec_sheet_url' && (
+                      <div style={{
+                        height: '4px',
+                        backgroundColor: theme.border,
+                        borderRadius: '2px',
+                        overflow: 'hidden',
+                        marginBottom: '8px'
+                      }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${uploadProgress}%`,
+                          backgroundColor: theme.accent,
+                          borderRadius: '2px',
+                          transition: 'width 0.3s ease'
+                        }} />
+                      </div>
+                    )}
+                    {/* Preview link */}
+                    {productForm.spec_sheet_url && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 12px',
+                        backgroundColor: theme.bgCard,
+                        borderRadius: '6px',
+                        border: `1px solid ${theme.border}`
+                      }}>
+                        <FileText size={14} style={{ color: theme.accent, flexShrink: 0 }} />
+                        <span style={{
+                          fontSize: '12px',
+                          color: theme.textSecondary,
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {productForm.spec_sheet_url.split('/').pop()}
+                        </span>
+                        <a
+                          href={productForm.spec_sheet_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            ...buttonStyle,
+                            padding: '4px 10px',
+                            fontSize: '12px',
+                            backgroundColor: theme.accentBg,
+                            color: theme.accent,
+                            textDecoration: 'none'
+                          }}
+                        >
+                          <ExternalLink size={12} />
+                          Open
+                        </a>
+                        <button
+                          onClick={() => setProductForm(prev => ({ ...prev, spec_sheet_url: '' }))}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Install Guide */}
+                  <div style={{
+                    padding: '16px',
+                    backgroundColor: theme.bg,
+                    borderRadius: '8px',
+                    border: `1px solid ${theme.border}`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                      <FileSpreadsheet size={16} style={{ color: '#3b82f6' }} />
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Install Guide</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{
+                        ...buttonStyle,
+                        padding: '8px 14px',
+                        fontSize: '13px',
+                        backgroundColor: uploadingDoc === 'install_guide_url' ? 'rgba(59,130,246,0.12)' : '#3b82f6',
+                        color: uploadingDoc === 'install_guide_url' ? '#3b82f6' : '#fff',
+                        cursor: uploadingDoc ? 'wait' : 'pointer',
+                        opacity: uploadingDoc && uploadingDoc !== 'install_guide_url' ? 0.5 : 1
+                      }}>
+                        <Upload size={14} />
+                        {uploadingDoc === 'install_guide_url' ? 'Uploading...' : 'Upload File'}
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                          onChange={(e) => handleDocUpload(e, 'install_guide_url')}
+                          disabled={!!uploadingDoc}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>or</span>
+                      <input
+                        type="url"
+                        name="install_guide_url"
+                        value={productForm.install_guide_url}
+                        onChange={handleProductChange}
+                        placeholder="Paste URL..."
+                        style={{ ...inputStyle, flex: 1, fontSize: '13px' }}
+                      />
+                    </div>
+                    {/* Upload progress */}
+                    {uploadingDoc === 'install_guide_url' && (
+                      <div style={{
+                        height: '4px',
+                        backgroundColor: theme.border,
+                        borderRadius: '2px',
+                        overflow: 'hidden',
+                        marginBottom: '8px'
+                      }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${uploadProgress}%`,
+                          backgroundColor: '#3b82f6',
+                          borderRadius: '2px',
+                          transition: 'width 0.3s ease'
+                        }} />
+                      </div>
+                    )}
+                    {/* Preview link */}
+                    {productForm.install_guide_url && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 12px',
+                        backgroundColor: theme.bgCard,
+                        borderRadius: '6px',
+                        border: `1px solid ${theme.border}`
+                      }}>
+                        <FileSpreadsheet size={14} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                        <span style={{
+                          fontSize: '12px',
+                          color: theme.textSecondary,
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {productForm.install_guide_url.split('/').pop()}
+                        </span>
+                        <a
+                          href={productForm.install_guide_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            ...buttonStyle,
+                            padding: '4px 10px',
+                            fontSize: '12px',
+                            backgroundColor: 'rgba(59,130,246,0.12)',
+                            color: '#3b82f6',
+                            textDecoration: 'none'
+                          }}
+                        >
+                          <ExternalLink size={12} />
+                          Open
+                        </a>
+                        <button
+                          onClick={() => setProductForm(prev => ({ ...prev, install_guide_url: '' }))}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Modal Footer */}
