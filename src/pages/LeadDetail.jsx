@@ -1578,7 +1578,8 @@ export default function LeadDetail() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {attachments.map(att => {
                   const ext = (att.file_name || '').split('.').pop()?.toLowerCase()
-                  const iconColor = ext === 'pdf' ? '#dc2626' : ext === 'xlsx' ? '#16a34a' : '#6366f1'
+                  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
+                  const iconColor = ext === 'pdf' ? '#dc2626' : ext === 'xlsx' ? '#16a34a' : isImage ? '#8b5cf6' : '#6366f1'
                   const sizeKB = att.file_size ? Math.round(att.file_size / 1024) : null
 
                   return (
@@ -1594,6 +1595,19 @@ export default function LeadDetail() {
                       justifyContent: 'space-between'
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                        {isImage && att.storage_bucket ? (
+                          <img
+                            src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${att.storage_bucket}/${att.file_path}`}
+                            alt={att.file_name}
+                            style={{
+                              width: '56px', height: '56px',
+                              objectFit: 'cover',
+                              borderRadius: '8px',
+                              flexShrink: 0,
+                              border: `1px solid ${theme.border}`
+                            }}
+                          />
+                        ) : (
                         <div style={{
                           width: '40px', height: '40px',
                           backgroundColor: iconColor + '18',
@@ -1603,6 +1617,7 @@ export default function LeadDetail() {
                         }}>
                           <FileText size={20} color={iconColor} />
                         </div>
+                        )}
                         <div style={{ minWidth: 0 }}>
                           <div style={{
                             fontWeight: '600', color: theme.text, fontSize: '14px',

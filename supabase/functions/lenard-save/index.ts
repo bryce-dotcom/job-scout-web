@@ -291,6 +291,48 @@ serve(async (req) => {
     }
 
     // =====================================================
+    // 4b. Create file_attachments for photos so they show on Lead & Job
+    // =====================================================
+    {
+      const photos = pd.photos || [];
+      if (photos.length > 0) {
+        // Check if existing lead already has a job linked
+        let jobId: number | null = null;
+        try {
+          const jobs = await querySupabase(
+            SUPABASE_URL!, 'jobs', key,
+            `lead_id=eq.${leadId}&limit=1`
+          );
+          if (jobs.length > 0) jobId = jobs[0].id;
+        } catch (_) { /* best-effort */ }
+
+        // Check how many file_attachments already exist for this audit's photos
+        const existingAtts = await querySupabase(
+          SUPABASE_URL!, 'file_attachments', key,
+          `company_id=eq.${cid}&lead_id=eq.${leadId}&storage_bucket=eq.audit-photos&order=created_at.asc`
+        );
+        const existingPaths = new Set(existingAtts.map((a: any) => a.file_path));
+
+        for (let i = 0; i < photos.length; i++) {
+          const filePath = `audits/${auditDbId}/photo_${i}.jpg`;
+          if (existingPaths.has(filePath)) continue; // already tracked
+
+          try {
+            await supabasePost(`${SUPABASE_URL}/rest/v1/file_attachments`, key, {
+              company_id: cid,
+              lead_id: leadId,
+              job_id: jobId,
+              file_name: `Audit Photo ${i + 1}.jpg`,
+              file_path: filePath,
+              file_type: 'image/jpeg',
+              storage_bucket: 'audit-photos',
+            });
+          } catch (_) { /* best-effort */ }
+        }
+      }
+    }
+
+    // =====================================================
     // 5. Store customer signature (best-effort)
     // =====================================================
     if (signatureData) {

@@ -2081,7 +2081,8 @@ export default function JobDetail() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {attachments.map(att => {
                   const ext = (att.file_name || '').split('.').pop()?.toLowerCase()
-                  const iconColor = ext === 'pdf' ? '#dc2626' : ext === 'xlsx' ? '#16a34a' : '#6366f1'
+                  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
+                  const iconColor = ext === 'pdf' ? '#dc2626' : ext === 'xlsx' ? '#16a34a' : isImage ? '#8b5cf6' : '#6366f1'
                   const sizeKB = att.file_size ? Math.round(att.file_size / 1024) : null
                   return (
                     <div key={att.id} style={{
@@ -2093,6 +2094,19 @@ export default function JobDetail() {
                       alignItems: 'center',
                       gap: '10px'
                     }}>
+                      {isImage && att.storage_bucket ? (
+                        <img
+                          src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${att.storage_bucket}/${att.file_path}`}
+                          alt={att.file_name}
+                          style={{
+                            width: '48px', height: '48px',
+                            objectFit: 'cover',
+                            borderRadius: '6px',
+                            flexShrink: 0,
+                            border: `1px solid ${theme.border}`
+                          }}
+                        />
+                      ) : (
                       <div style={{
                         width: '32px', height: '32px',
                         backgroundColor: iconColor + '18',
@@ -2102,6 +2116,7 @@ export default function JobDetail() {
                       }}>
                         <FileText size={16} color={iconColor} />
                       </div>
+                      )}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{
                           fontWeight: '500', color: theme.text, fontSize: '13px',
