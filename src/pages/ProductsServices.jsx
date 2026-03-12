@@ -100,7 +100,7 @@ function DraggableModal({ children, theme, isMobile, maxWidth = '600px', onClose
 }
 
 // ============ PRODUCT CARD ============
-function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost, draggable }) {
+function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost, draggable, isAdmin }) {
   return (
     <div
       draggable={!!draggable}
@@ -198,19 +198,21 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
             Labor: {formatCurrency(laborCost)}
           </div>
         )}
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button onClick={() => openProductForm(product)} style={{
-            flex: 1, ...buttonStyle, backgroundColor: theme.accentBg,
-            color: theme.accent, padding: '8px', fontSize: '12px'
-          }}>
-            <Pencil size={12} /> Edit
-          </button>
-          <button onClick={() => handleDeleteProduct(product)} style={{
-            ...buttonStyle, backgroundColor: '#fef2f2', color: '#dc2626', padding: '8px 10px'
-          }}>
-            <Trash2 size={12} />
-          </button>
-        </div>
+        {isAdmin && (
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button onClick={() => openProductForm(product)} style={{
+              flex: 1, ...buttonStyle, backgroundColor: theme.accentBg,
+              color: theme.accent, padding: '8px', fontSize: '12px'
+            }}>
+              <Pencil size={12} /> Edit
+            </button>
+            <button onClick={() => handleDeleteProduct(product)} style={{
+              ...buttonStyle, backgroundColor: '#fef2f2', color: '#dc2626', padding: '8px 10px'
+            }}>
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -221,6 +223,8 @@ export default function ProductsServices() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const isDeveloper = useStore((state) => state.isDeveloper)
+  const user = useStore((state) => state.user)
+  const storeIsAdmin = useStore((state) => state.isAdmin)
   const serviceTypes = useStore((state) => state.serviceTypes)
   const products = useStore((state) => state.products)
   const inventory = useStore((state) => state.inventory)
@@ -281,6 +285,10 @@ export default function ProductsServices() {
   const theme = themeContext?.theme || defaultTheme
 
   if (!companyId) return null
+
+  const isAdmin = storeIsAdmin || isDeveloper ||
+    user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin' ||
+    user?.role === 'Admin' || user?.role === 'Owner' || user?.role === 'Super Admin'
 
   // Helpers
   const getInventoryCount = (productId) => {
@@ -911,19 +919,19 @@ export default function ProductsServices() {
         </div>
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {!activeSection && (
+          {isAdmin && !activeSection && (
             <button onClick={() => openSectionForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
               <Plus size={18} />
               Add Section
             </button>
           )}
-          {activeSection && (
+          {isAdmin && activeSection && (
             <button onClick={() => openProductForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
               <Plus size={18} />
               Add {'Item'}
             </button>
           )}
-          {activeSection && !selectedGroup && (
+          {isAdmin && activeSection && !selectedGroup && (
             <button onClick={() => openGroupForm()} style={{ ...buttonStyle, backgroundColor: theme.accentBg, color: theme.accent }}>
               <Plus size={18} />
               Add Group
@@ -931,12 +939,14 @@ export default function ProductsServices() {
           )}
           {activeSection && (
             <>
-              <Tooltip text="Import from CSV or Excel">
-                <button onClick={() => setShowImport(true)} style={{ ...buttonStyle, backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
-                  <FileSpreadsheet size={18} />
-                  {!isMobile && 'Import'}
-                </button>
-              </Tooltip>
+              {isAdmin && (
+                <Tooltip text="Import from CSV or Excel">
+                  <button onClick={() => setShowImport(true)} style={{ ...buttonStyle, backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                    <FileSpreadsheet size={18} />
+                    {!isMobile && 'Import'}
+                  </button>
+                </Tooltip>
+              )}
               <Tooltip text="Export to CSV">
                 <button onClick={() => exportToCSV(filteredProducts, productsServicesFields, 'products_services_export')} style={{ ...buttonStyle, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
                   <Download size={18} />
@@ -952,7 +962,7 @@ export default function ProductsServices() {
               </button>
             </Tooltip>
           )}
-          {activeSection && !selectedGroup && (
+          {isAdmin && activeSection && !selectedGroup && (
             <Tooltip text="Manage labor rates">
               <button onClick={() => { setShowLaborRates(!showLaborRates); setShowSettings(false) }} style={{
                 ...buttonStyle,
@@ -1074,7 +1084,7 @@ export default function ProductsServices() {
                       </div>
                     </div>
                     {/* Edit/Delete buttons on section card */}
-                    {storedIndex !== -1 && (
+                    {isAdmin && storedIndex !== -1 && (
                       <div style={{
                         position: 'absolute', top: '8px', right: '8px',
                         display: 'flex', gap: '4px'
@@ -1107,7 +1117,7 @@ export default function ProductsServices() {
             // ============ DRILL-DOWN: Items in selected group ============
             <div>
               {/* Drop targets bar: move products to other groups or ungrouped */}
-              <div style={{
+              {isAdmin && <div style={{
                 display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap',
                 padding: '10px 14px', backgroundColor: theme.bg, borderRadius: '10px',
                 border: `1px solid ${theme.border}`, alignItems: 'center'
@@ -1146,7 +1156,7 @@ export default function ProductsServices() {
                     {g.name}
                   </div>
                 ))}
-              </div>
+              </div>}
 
               {groupProducts.length === 0 ? (
                 <div style={{
@@ -1169,7 +1179,7 @@ export default function ProductsServices() {
                       formatCurrency={formatCurrency} openProductForm={openProductForm}
                       handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
                       inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
-                      draggable />
+                      draggable={isAdmin} isAdmin={isAdmin} />
                   ))}
                 </div>
               )}
@@ -1240,7 +1250,7 @@ export default function ProductsServices() {
                           </div>
                         </div>
                         {/* Edit/Delete buttons on group card */}
-                        <div style={{
+                        {isAdmin && <div style={{
                           position: 'absolute', top: '6px', right: '6px',
                           display: 'flex', gap: '4px'
                         }}>
@@ -1260,7 +1270,7 @@ export default function ProductsServices() {
                           }}>
                             <Trash2 size={12} />
                           </button>
-                        </div>
+                        </div>}
                       </div>
                     ))}
                   </div>
@@ -1297,10 +1307,10 @@ export default function ProductsServices() {
                           formatCurrency={formatCurrency} openProductForm={openProductForm}
                           handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
                           inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
-                          draggable />
+                          draggable={isAdmin} isAdmin={isAdmin} />
                       ))}
                     </div>
-                  ) : sectionGroups.length > 0 ? (
+                  ) : isAdmin && sectionGroups.length > 0 ? (
                     <div style={{
                       textAlign: 'center', padding: '20px', color: theme.textMuted,
                       fontSize: '13px', border: `1px dashed ${theme.border}`, borderRadius: '8px'
@@ -1318,17 +1328,19 @@ export default function ProductsServices() {
                   borderRadius: '12px', border: `1px solid ${theme.border}`
                 }}>
                   <Package size={48} style={{ color: theme.textMuted, opacity: 0.5, marginBottom: '16px' }} />
-                  <p style={{ color: theme.textSecondary, margin: '0 0 16px' }}>
-                    No {activeSection.toLowerCase()} yet. Start by creating a group or adding items directly.
+                  <p style={{ color: theme.textSecondary, margin: isAdmin ? '0 0 16px' : 0 }}>
+                    No {activeSection.toLowerCase()} yet.{isAdmin ? ' Start by creating a group or adding items directly.' : ''}
                   </p>
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button onClick={() => openGroupForm()} style={{ ...buttonStyle, backgroundColor: theme.accentBg, color: theme.accent }}>
-                      <Plus size={16} /> Create Group
-                    </button>
-                    <button onClick={() => openProductForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
-                      <Plus size={16} /> Add {'Item'}
-                    </button>
-                  </div>
+                  {isAdmin && (
+                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                      <button onClick={() => openGroupForm()} style={{ ...buttonStyle, backgroundColor: theme.accentBg, color: theme.accent }}>
+                        <Plus size={16} /> Create Group
+                      </button>
+                      <button onClick={() => openProductForm()} style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}>
+                        <Plus size={16} /> Add {'Item'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
