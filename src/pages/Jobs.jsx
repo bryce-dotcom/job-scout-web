@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -6,7 +6,8 @@ import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
 import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin,
-  Play, CheckCircle, FileText, ChevronRight, User, Upload, Download
+  Play, CheckCircle, FileText, ChevronRight, User, Upload, Download,
+  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
@@ -60,6 +61,331 @@ const emptyJob = {
   discount_description: ''
 }
 
+const formatCurrency = (amount) => {
+  if (!amount) return null
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount)
+}
+
+// ============ RECENT WINS CAROUSEL ============
+function RecentWins({ wins, theme, isMobile, navigate, formatDate }) {
+  const scrollRef = useRef(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const checkScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 4)
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4)
+  }
+
+  useEffect(() => {
+    checkScroll()
+    const el = scrollRef.current
+    if (el) el.addEventListener('scroll', checkScroll)
+    return () => { if (el) el.removeEventListener('scroll', checkScroll) }
+  }, [wins.length])
+
+  const scroll = (dir) => {
+    const el = scrollRef.current
+    if (el) el.scrollBy({ left: dir * 300, behavior: 'smooth' })
+  }
+
+  if (wins.length === 0) return null
+
+  const totalRevenue = wins.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
+
+  return (
+    <div style={{
+      marginBottom: '24px',
+      backgroundColor: 'rgba(74,124,89,0.06)',
+      borderRadius: '16px',
+      border: '1px solid rgba(74,124,89,0.15)',
+      padding: isMobile ? '16px' : '20px',
+      position: 'relative'
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: '14px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '36px', height: '36px', borderRadius: '10px',
+            backgroundColor: 'rgba(74,124,89,0.15)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Trophy size={18} style={{ color: '#4a7c59' }} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#4a7c59', margin: 0 }}>
+              Recent Wins
+            </h3>
+            <p style={{ fontSize: '12px', color: '#6b8f73', margin: 0 }}>
+              {wins.length} job{wins.length !== 1 ? 's' : ''} completed
+              {totalRevenue > 0 && <span style={{ fontWeight: '600' }}> — {formatCurrency(totalRevenue)} revenue</span>}
+            </p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {canScrollLeft && (
+            <button onClick={() => scroll(-1)} style={{
+              width: '30px', height: '30px', borderRadius: '8px',
+              backgroundColor: 'rgba(74,124,89,0.12)', border: 'none',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#4a7c59'
+            }}>
+              <ChevronLeft size={16} />
+            </button>
+          )}
+          {canScrollRight && (
+            <button onClick={() => scroll(1)} style={{
+              width: '30px', height: '30px', borderRadius: '8px',
+              backgroundColor: 'rgba(74,124,89,0.12)', border: 'none',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#4a7c59'
+            }}>
+              <ChevronRight size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Scrollable cards */}
+      <div
+        ref={scrollRef}
+        style={{
+          display: 'flex', gap: '12px', overflowX: 'auto',
+          scrollSnapType: 'x mandatory', paddingBottom: '4px',
+          scrollbarWidth: 'none', msOverflowStyle: 'none'
+        }}
+      >
+        {wins.map(job => (
+          <div
+            key={job.id}
+            onClick={() => navigate(`/jobs/${job.id}`)}
+            style={{
+              minWidth: isMobile ? '260px' : '280px',
+              backgroundColor: '#ffffff',
+              borderRadius: '12px',
+              border: '1px solid rgba(74,124,89,0.2)',
+              padding: '14px 16px',
+              cursor: 'pointer',
+              scrollSnapAlign: 'start',
+              transition: 'all 0.15s ease',
+              flexShrink: 0
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = '#4a7c59'
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(74,124,89,0.12)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = 'rgba(74,124,89,0.2)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{
+                  fontSize: '14px', fontWeight: '600', color: theme.text,
+                  margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                }}>
+                  {job.job_title || 'Untitled Job'}
+                </p>
+                <p style={{ fontSize: '12px', color: theme.textMuted, margin: '2px 0 0' }}>
+                  {job.customer?.name || 'No customer'}
+                </p>
+              </div>
+              {job.job_total > 0 && (
+                <span style={{
+                  fontSize: '14px', fontWeight: '700', color: '#4a7c59',
+                  flexShrink: 0, marginLeft: '8px'
+                }}>
+                  {formatCurrency(job.job_total)}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', color: theme.textMuted }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <CheckCircle size={11} style={{ color: '#4a7c59' }} />
+                {formatDate(job.end_date || job.updated_at)}
+              </span>
+              {job.assigned_team && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <User size={11} />
+                  {job.assigned_team}
+                </span>
+              )}
+              {job.invoice_status && (
+                <span style={{
+                  padding: '1px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: '500',
+                  backgroundColor: invoiceStatusColors[job.invoice_status]?.bg || 'rgba(0,0,0,0.05)',
+                  color: invoiceStatusColors[job.invoice_status]?.text || theme.textMuted
+                }}>
+                  {job.invoice_status}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ============ KANBAN COLUMN ============
+function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigate, formatDate, startJob, completeJob, openMap }) {
+  return (
+    <div style={{
+      flex: 1,
+      minWidth: isMobile ? '100%' : '280px',
+      backgroundColor: theme.bg,
+      borderRadius: '14px',
+      border: `1px solid ${theme.border}`,
+      display: 'flex',
+      flexDirection: 'column',
+      maxHeight: isMobile ? 'none' : 'calc(100vh - 420px)',
+      overflow: 'hidden'
+    }}>
+      {/* Column header */}
+      <div style={{
+        padding: '14px 16px',
+        borderBottom: `1px solid ${theme.border}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        backgroundColor: theme.bgCard,
+        borderRadius: '14px 14px 0 0'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Icon size={16} style={{ color: color }} />
+          <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{title}</span>
+        </div>
+        <span style={{
+          padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600',
+          backgroundColor: `${color}18`, color: color
+        }}>
+          {jobs.length}
+        </span>
+      </div>
+
+      {/* Cards */}
+      <div style={{
+        padding: '10px',
+        overflowY: 'auto',
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px'
+      }}>
+        {jobs.length === 0 && (
+          <div style={{
+            textAlign: 'center', padding: '24px 12px', color: theme.textMuted,
+            fontSize: '13px', fontStyle: 'italic'
+          }}>
+            No {title.toLowerCase()} jobs
+          </div>
+        )}
+        {jobs.map(job => {
+          const invoiceStyle = invoiceStatusColors[job.invoice_status] || invoiceStatusColors['Not Invoiced']
+          return (
+            <div
+              key={job.id}
+              onClick={() => navigate(`/jobs/${job.id}`)}
+              style={{
+                backgroundColor: theme.bgCard,
+                borderRadius: '10px',
+                border: `1px solid ${theme.border}`,
+                padding: '12px 14px',
+                cursor: 'pointer',
+                transition: 'all 0.12s ease'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = color
+                e.currentTarget.style.boxShadow = `0 2px 8px ${color}15`
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = theme.border
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '600', color: color }}>{job.job_id}</span>
+                {job.job_total > 0 && (
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: theme.accent }}>
+                    {formatCurrency(job.job_total)}
+                  </span>
+                )}
+              </div>
+              <p style={{
+                fontSize: '13px', fontWeight: '600', color: theme.text, margin: '0 0 4px',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+              }}>
+                {job.job_title || 'Untitled Job'}
+              </p>
+              <p style={{ fontSize: '12px', color: theme.textSecondary, margin: '0 0 8px' }}>
+                {job.customer?.name || 'No customer'}
+              </p>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: '6px', flexWrap: 'wrap'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: theme.textMuted }}>
+                  {job.start_date && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <Calendar size={10} />
+                      {formatDate(job.start_date)}
+                    </span>
+                  )}
+                  {job.assigned_team && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <User size={10} />
+                      {job.assigned_team}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {job.invoice_status && (
+                    <span style={{
+                      padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: '500',
+                      backgroundColor: invoiceStyle.bg, color: invoiceStyle.text
+                    }}>
+                      {job.invoice_status}
+                    </span>
+                  )}
+                  {job.status === 'Scheduled' && (
+                    <button
+                      onClick={e => { e.stopPropagation(); startJob(job) }}
+                      style={{
+                        padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '600',
+                        backgroundColor: '#c28b38', color: '#fff', border: 'none', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: '3px'
+                      }}
+                    >
+                      <Play size={9} /> Start
+                    </button>
+                  )}
+                  {job.status === 'In Progress' && (
+                    <button
+                      onClick={e => { e.stopPropagation(); completeJob(job) }}
+                      style={{
+                        padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '600',
+                        backgroundColor: '#4a7c59', color: '#fff', border: 'none', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: '3px'
+                      }}
+                    >
+                      <CheckCircle size={9} /> Done
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ============ MAIN COMPONENT ============
 export default function Jobs() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -79,6 +405,8 @@ export default function Jobs() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [teamFilter, setTeamFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
+  const [viewMode, setViewMode] = useState('board')
+  const [isMobile, setIsMobile] = useState(false)
 
   const jobRelatedTables = [
     {
@@ -122,8 +450,23 @@ export default function Jobs() {
     fetchJobs()
   }, [companyId, navigate, fetchJobs])
 
+  // Mobile detection
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+
   // Get unique teams for filter
   const teams = [...new Set(jobs.map(j => j.assigned_team).filter(Boolean))]
+
+  // Recent wins: completed jobs from last 30 days, sorted most recent first
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const recentWins = jobs
+    .filter(j => j.status === 'Completed' && new Date(j.end_date || j.updated_at) >= thirtyDaysAgo)
+    .sort((a, b) => new Date(b.end_date || b.updated_at) - new Date(a.end_date || a.updated_at))
 
   const filteredJobs = jobs.filter(job => {
     const matchesSearch = searchTerm === '' ||
@@ -137,6 +480,14 @@ export default function Jobs() {
 
     return matchesSearch && matchesStatus && matchesTeam
   })
+
+  // Board view groups
+  const scheduledJobs = filteredJobs.filter(j => j.status === 'Scheduled')
+    .sort((a, b) => new Date(a.start_date || a.created_at) - new Date(b.start_date || b.created_at))
+  const inProgressJobs = filteredJobs.filter(j => j.status === 'In Progress')
+    .sort((a, b) => new Date(a.start_date || a.created_at) - new Date(b.start_date || b.created_at))
+  const onHoldJobs = filteredJobs.filter(j => j.status === 'On Hold')
+  const cancelledJobs = filteredJobs.filter(j => j.status === 'Cancelled')
 
   const openAddModal = () => {
     setEditingJob(null)
@@ -331,6 +682,7 @@ export default function Jobs() {
   const scheduledCount = jobs.filter(j => j.status === 'Scheduled').length
   const inProgressCount = jobs.filter(j => j.status === 'In Progress').length
   const completedCount = jobs.filter(j => j.status === 'Completed').length
+  const revenueWon = recentWins.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
 
   // Styles
   const inputStyle = {
@@ -353,7 +705,7 @@ export default function Jobs() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -366,89 +718,116 @@ export default function Jobs() {
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
           Jobs
         </h1>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
-            <Upload size={18} /> Import
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {/* View toggle */}
+          <div style={{
+            display: 'flex', borderRadius: '8px', overflow: 'hidden',
+            border: `1px solid ${theme.border}`
+          }}>
+            <button
+              onClick={() => setViewMode('board')}
+              style={{
+                padding: '8px 12px', border: 'none', cursor: 'pointer',
+                backgroundColor: viewMode === 'board' ? theme.accent : 'transparent',
+                color: viewMode === 'board' ? '#fff' : theme.textMuted,
+                display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px'
+              }}
+            >
+              <Columns3 size={15} />
+              {!isMobile && 'Board'}
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              style={{
+                padding: '8px 12px', border: 'none', cursor: 'pointer',
+                borderLeft: `1px solid ${theme.border}`,
+                backgroundColor: viewMode === 'list' ? theme.accent : 'transparent',
+                color: viewMode === 'list' ? '#fff' : theme.textMuted,
+                display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px'
+              }}
+            >
+              <List size={15} />
+              {!isMobile && 'List'}
+            </button>
+          </div>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={16} /> {!isMobile && 'Import'}
           </button>
-          <button onClick={() => exportToXLSX(filteredJobs, jobsFields, 'jobs_export', { relatedTables: jobRelatedTables, parentRefField: 'job_id', mainSheetName: 'Jobs', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
-            <Download size={18} /> Export
+          <button onClick={() => exportToXLSX(filteredJobs, jobsFields, 'jobs_export', { relatedTables: jobRelatedTables, parentRefField: 'job_id', mainSheetName: 'Jobs', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={16} /> {!isMobile && 'Export'}
           </button>
           <button
             onClick={() => navigate('/jobs/calendar')}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              backgroundColor: theme.bgCard,
-              color: theme.text,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              fontSize: '14px',
-              cursor: 'pointer'
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '8px 14px', backgroundColor: theme.bgCard, color: theme.text,
+              border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', cursor: 'pointer'
             }}
           >
-            <Calendar size={18} />
-            Calendar
+            <Calendar size={16} />
+            {!isMobile && 'Calendar'}
           </button>
           <button
             onClick={openAddModal}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              backgroundColor: theme.accent,
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '500',
-              cursor: 'pointer'
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '8px 14px', backgroundColor: theme.accent, color: '#ffffff',
+              border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
             }}
           >
-            <Plus size={18} />
+            <Plus size={16} />
             Add Job
           </button>
         </div>
       </div>
 
+      {/* Recent Wins Carousel */}
+      <RecentWins
+        wins={recentWins}
+        theme={theme}
+        isMobile={isMobile}
+        navigate={navigate}
+        formatDate={formatDate}
+      />
+
       {/* Stats */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+        gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
         gap: '12px',
         marginBottom: '24px'
       }}>
         <div style={{
-          backgroundColor: theme.bgCard,
-          borderRadius: '12px',
-          border: `1px solid ${theme.border}`,
-          padding: '16px',
-          textAlign: 'center'
+          backgroundColor: theme.bgCard, borderRadius: '12px',
+          border: `1px solid ${theme.border}`, padding: '14px', textAlign: 'center'
         }}>
-          <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Scheduled</p>
-          <p style={{ fontSize: '24px', fontWeight: '600', color: theme.text }}>{scheduledCount}</p>
+          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '2px' }}>Scheduled</p>
+          <p style={{ fontSize: '22px', fontWeight: '600', color: theme.text }}>{scheduledCount}</p>
         </div>
         <div style={{
-          backgroundColor: theme.bgCard,
-          borderRadius: '12px',
-          border: `1px solid ${theme.border}`,
-          padding: '16px',
-          textAlign: 'center'
+          backgroundColor: theme.bgCard, borderRadius: '12px',
+          border: `1px solid ${theme.border}`, padding: '14px', textAlign: 'center'
         }}>
-          <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>In Progress</p>
-          <p style={{ fontSize: '24px', fontWeight: '600', color: '#c28b38' }}>{inProgressCount}</p>
+          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '2px' }}>In Progress</p>
+          <p style={{ fontSize: '22px', fontWeight: '600', color: '#c28b38' }}>{inProgressCount}</p>
         </div>
         <div style={{
-          backgroundColor: theme.bgCard,
-          borderRadius: '12px',
-          border: `1px solid ${theme.border}`,
-          padding: '16px',
-          textAlign: 'center'
+          backgroundColor: theme.bgCard, borderRadius: '12px',
+          border: `1px solid ${theme.border}`, padding: '14px', textAlign: 'center'
         }}>
-          <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Completed</p>
-          <p style={{ fontSize: '24px', fontWeight: '600', color: '#4a7c59' }}>{completedCount}</p>
+          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '2px' }}>Completed</p>
+          <p style={{ fontSize: '22px', fontWeight: '600', color: '#4a7c59' }}>{completedCount}</p>
+        </div>
+        <div style={{
+          backgroundColor: theme.bgCard, borderRadius: '12px',
+          border: `1px solid ${theme.border}`, padding: '14px', textAlign: 'center'
+        }}>
+          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+            <Trophy size={11} /> Won (30d)
+          </p>
+          <p style={{ fontSize: '22px', fontWeight: '600', color: '#4a7c59' }}>
+            {revenueWon > 0 ? formatCurrency(revenueWon) : completedCount > 0 ? recentWins.length : '0'}
+          </p>
         </div>
       </div>
 
@@ -475,18 +854,20 @@ export default function Jobs() {
             style={{ ...inputStyle, paddingLeft: '40px' }}
           />
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
-        >
-          <option value="all">All Status</option>
-          <option value="Scheduled">Scheduled</option>
-          <option value="In Progress">In Progress</option>
-          <option value="Completed">Completed</option>
-          <option value="On Hold">On Hold</option>
-          <option value="Cancelled">Cancelled</option>
-        </select>
+        {viewMode === 'list' && (
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
+          >
+            <option value="all">All Status</option>
+            <option value="Scheduled">Scheduled</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+            <option value="On Hold">On Hold</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        )}
         {teams.length > 0 && (
           <select
             value={teamFilter}
@@ -501,174 +882,250 @@ export default function Jobs() {
         )}
       </div>
 
-      {/* Jobs List */}
-      {filteredJobs.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '48px 24px',
-          backgroundColor: theme.bgCard,
-          borderRadius: '12px',
-          border: `1px solid ${theme.border}`
-        }}>
-          <Briefcase size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
-          <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
-            {searchTerm || statusFilter !== 'all' ? 'No jobs match your search.' : 'No jobs yet.'}
-          </p>
+      {/* ============ BOARD VIEW ============ */}
+      {viewMode === 'board' ? (
+        <div>
+          {/* Kanban columns */}
+          <div style={{
+            display: 'flex',
+            gap: '16px',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: 'flex-start'
+          }}>
+            <KanbanColumn
+              title="Scheduled"
+              icon={Calendar}
+              jobs={scheduledJobs}
+              color="#5a6349"
+              theme={theme}
+              isMobile={isMobile}
+              navigate={navigate}
+              formatDate={formatDate}
+              startJob={startJob}
+              completeJob={completeJob}
+              openMap={openMap}
+            />
+            <KanbanColumn
+              title="In Progress"
+              icon={Play}
+              jobs={inProgressJobs}
+              color="#c28b38"
+              theme={theme}
+              isMobile={isMobile}
+              navigate={navigate}
+              formatDate={formatDate}
+              startJob={startJob}
+              completeJob={completeJob}
+              openMap={openMap}
+            />
+            <KanbanColumn
+              title="On Hold"
+              icon={Pause}
+              jobs={onHoldJobs}
+              color="#7d8a7f"
+              theme={theme}
+              isMobile={isMobile}
+              navigate={navigate}
+              formatDate={formatDate}
+              startJob={startJob}
+              completeJob={completeJob}
+              openMap={openMap}
+            />
+          </div>
+
+          {/* Cancelled jobs (collapsed section) */}
+          {cancelledJobs.length > 0 && (
+            <details style={{ marginTop: '20px' }}>
+              <summary style={{
+                fontSize: '13px', fontWeight: '600', color: theme.textMuted,
+                cursor: 'pointer', padding: '8px 0', userSelect: 'none'
+              }}>
+                Cancelled ({cancelledJobs.length})
+              </summary>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: '10px', marginTop: '10px'
+              }}>
+                {cancelledJobs.map(job => (
+                  <div
+                    key={job.id}
+                    onClick={() => navigate(`/jobs/${job.id}`)}
+                    style={{
+                      backgroundColor: theme.bgCard, borderRadius: '10px',
+                      border: `1px solid ${theme.border}`, padding: '12px 14px',
+                      cursor: 'pointer', opacity: 0.6
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: '#8b5a5a', fontWeight: '600' }}>{job.job_id}</span>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: theme.text, margin: '4px 0 0' }}>
+                      {job.job_title || 'Untitled'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {filteredJobs.map((job) => {
-            const statusStyle = statusColors[job.status] || statusColors['Scheduled']
-            const invoiceStyle = invoiceStatusColors[job.invoice_status] || invoiceStatusColors['Not Invoiced']
+        /* ============ LIST VIEW ============ */
+        filteredJobs.length === 0 ? (
+          <div style={{
+            textAlign: 'center',
+            padding: '48px 24px',
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`
+          }}>
+            <Briefcase size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
+            <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
+              {searchTerm || statusFilter !== 'all' ? 'No jobs match your search.' : 'No jobs yet.'}
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {filteredJobs.map((job) => {
+              const statusStyle = statusColors[job.status] || statusColors['Scheduled']
+              const invoiceStyle = invoiceStatusColors[job.invoice_status] || invoiceStatusColors['Not Invoiced']
 
-            return (
-              <EntityCard
-                key={job.id}
-                name={job.customer?.name}
-                businessName={job.customer?.business_name}
-                onClick={() => navigate(`/jobs/${job.id}`)}
-                style={{ padding: '16px 20px' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-                  {/* Main Info */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <span style={{ fontWeight: '600', color: theme.accent, fontSize: '13px' }}>
-                        {job.job_id}
-                      </span>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        fontSize: '11px',
-                        fontWeight: '500',
-                        backgroundColor: statusStyle.bg,
-                        color: statusStyle.text
-                      }}>
-                        {job.status}
-                      </span>
-                      {job.invoice_status && (
+              return (
+                <EntityCard
+                  key={job.id}
+                  name={job.customer?.name}
+                  businessName={job.customer?.business_name}
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                  style={{ padding: '16px 20px' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                    {/* Main Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: '600', color: theme.accent, fontSize: '13px' }}>
+                          {job.job_id}
+                        </span>
                         <span style={{
                           padding: '2px 8px',
                           borderRadius: '12px',
                           fontSize: '11px',
                           fontWeight: '500',
-                          backgroundColor: invoiceStyle.bg,
-                          color: invoiceStyle.text
+                          backgroundColor: statusStyle.bg,
+                          color: statusStyle.text
                         }}>
-                          {job.invoice_status}
+                          {job.status}
                         </span>
+                        {job.invoice_status && (
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            backgroundColor: invoiceStyle.bg,
+                            color: invoiceStyle.text
+                          }}>
+                            {job.invoice_status}
+                          </span>
+                        )}
+                        {job.job_total > 0 && (
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: theme.accent }}>
+                            {formatCurrency(job.job_total)}
+                          </span>
+                        )}
+                      </div>
+                      <p style={{
+                        fontWeight: '500',
+                        color: theme.text,
+                        fontSize: '15px',
+                        marginBottom: '4px'
+                      }}>
+                        {job.job_title || 'Untitled Job'}
+                      </p>
+                      <p style={{ fontSize: '14px', color: theme.textSecondary }}>
+                        {job.customer?.name || 'No customer'}
+                      </p>
+                      {job.job_address && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          marginTop: '6px',
+                          color: theme.textMuted,
+                          fontSize: '13px'
+                        }}>
+                          <MapPin size={14} />
+                          <span>{job.job_address}</span>
+                        </div>
                       )}
                     </div>
-                    <p style={{
-                      fontWeight: '500',
-                      color: theme.text,
-                      fontSize: '15px',
-                      marginBottom: '4px'
-                    }}>
-                      {job.job_title || 'Untitled Job'}
-                    </p>
-                    <p style={{ fontSize: '14px', color: theme.textSecondary }}>
-                      {job.customer?.name || 'No customer'}
-                    </p>
-                    {job.job_address && (
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        marginTop: '6px',
-                        color: theme.textMuted,
-                        fontSize: '13px'
-                      }}>
-                        <MapPin size={14} />
-                        <span>{job.job_address}</span>
+
+                    {/* Date & Time */}
+                    {!isMobile && (
+                      <div style={{ textAlign: 'right', minWidth: '120px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', color: theme.textSecondary, fontSize: '13px' }}>
+                          <Calendar size={14} />
+                          <span>{formatDate(job.start_date)}</span>
+                        </div>
+                        {job.allotted_time_hours && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '4px', color: theme.textMuted, fontSize: '12px' }}>
+                            <Clock size={12} />
+                            <span>{job.allotted_time_hours}h allotted</span>
+                          </div>
+                        )}
+                        {job.assigned_team && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '4px', color: theme.textMuted, fontSize: '12px' }}>
+                            <User size={12} />
+                            <span>{job.assigned_team}</span>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
 
-                  {/* Date & Time */}
-                  <div style={{ textAlign: 'right', minWidth: '120px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', color: theme.textSecondary, fontSize: '13px' }}>
-                      <Calendar size={14} />
-                      <span>{formatDate(job.start_date)}</span>
+                    {/* Quick Actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {job.status === 'Scheduled' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); startJob(job); }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                            padding: '6px 10px', backgroundColor: '#c28b38', color: '#ffffff',
+                            border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer'
+                          }}
+                        >
+                          <Play size={14} />
+                          Start
+                        </button>
+                      )}
+                      {job.status === 'In Progress' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); completeJob(job); }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                            padding: '6px 10px', backgroundColor: '#4a7c59', color: '#ffffff',
+                            border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer'
+                          }}
+                        >
+                          <CheckCircle size={14} />
+                          Complete
+                        </button>
+                      )}
+                      {job.job_address && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openMap(job.job_address); }}
+                          style={{
+                            padding: '6px', backgroundColor: theme.accentBg, color: theme.accent,
+                            border: 'none', borderRadius: '6px', cursor: 'pointer'
+                          }}
+                        >
+                          <MapPin size={16} />
+                        </button>
+                      )}
+                      <ChevronRight size={20} style={{ color: theme.textMuted }} />
                     </div>
-                    {job.allotted_time_hours && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '4px', color: theme.textMuted, fontSize: '12px' }}>
-                        <Clock size={12} />
-                        <span>{job.allotted_time_hours}h allotted</span>
-                      </div>
-                    )}
-                    {job.assigned_team && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '4px', color: theme.textMuted, fontSize: '12px' }}>
-                        <User size={12} />
-                        <span>{job.assigned_team}</span>
-                      </div>
-                    )}
                   </div>
-
-                  {/* Quick Actions */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {job.status === 'Scheduled' && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); startJob(job); }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '6px 10px',
-                          backgroundColor: '#c28b38',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <Play size={14} />
-                        Start
-                      </button>
-                    )}
-                    {job.status === 'In Progress' && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); completeJob(job); }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '6px 10px',
-                          backgroundColor: '#4a7c59',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <CheckCircle size={14} />
-                        Complete
-                      </button>
-                    )}
-                    {job.job_address && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); openMap(job.job_address); }}
-                        style={{
-                          padding: '6px',
-                          backgroundColor: theme.accentBg,
-                          color: theme.accent,
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <MapPin size={16} />
-                      </button>
-                    )}
-                    <ChevronRight size={20} style={{ color: theme.textMuted }} />
-                  </div>
-                </div>
-              </EntityCard>
-            )
-          })}
-        </div>
+                </EntityCard>
+              )
+            })}
+          </div>
+        )
       )}
 
       {/* Add/Edit Modal */}
