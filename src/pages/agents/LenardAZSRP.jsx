@@ -1951,7 +1951,7 @@ export default function LenardAZSRP() {
                           style={S.input}
                         />
                         {expandedLine === r.id && (
-                          <div style={{ maxHeight: '280px', overflow: 'auto', border: `1px solid ${T.border}`, borderRadius: '0 0 8px 8px', marginTop: '-1px' }}>
+                          <div style={{ maxHeight: '400px', overflow: 'auto', border: `1px solid ${T.border}`, borderRadius: '0 0 8px 8px', marginTop: '-1px' }}>
                             {(() => {
                               const q = productSearch.toLowerCase();
                               const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW);

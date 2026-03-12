@@ -2722,15 +2722,15 @@ export default function LenardUTRMP() {
                       <div>
                         <input type="text" placeholder={sbeProducts.length > 0 ? 'Search SMBE products...' : 'No SMBE products loaded'} value={expandedLine === r.id ? productSearch : ''} onChange={e => setProductSearch(e.target.value)} onFocus={() => setProductSearch('')} style={S.input} />
                         {expandedLine === r.id && (
-                          <div style={{ maxHeight: '200px', overflow: 'auto', border: `1px solid ${T.border}`, borderRadius: '0 0 8px 8px', marginTop: '-1px' }}>
+                          <div style={{ maxHeight: '400px', overflow: 'auto', border: `1px solid ${T.border}`, borderRadius: '0 0 8px 8px', marginTop: '-1px' }}>
                             {(() => {
                               const q = productSearch.toLowerCase();
                               const needsLift = (r.height || 0) > 16;
                               const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW);
                               const heightFiltered = needsLift ? ranked.filter(p => getProductTierInfo(p.name).tier !== 'installed') : ranked;
                               const filtered = q ? heightFiltered.filter(p => (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)) : heightFiltered;
-                              const matched = filtered.filter(p => p._score >= 100).slice(0, 8);
-                              const other = filtered.filter(p => p._score < 100).slice(0, 8);
+                              const matched = filtered.filter(p => p._score >= 100);
+                              const other = filtered.filter(p => p._score < 100);
                               if (filtered.length === 0) return <div style={{ padding: '10px', fontSize: '12px', color: T.textMuted, textAlign: 'center' }}>No products found</div>;
                               const PRow = ({ p, hl }) => (
                                 <button key={p.id} onClick={() => { selectProduct(r.id, p); setProductSearch(''); }}
