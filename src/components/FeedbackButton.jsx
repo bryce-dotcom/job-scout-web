@@ -30,8 +30,9 @@ export default function FeedbackButton() {
     try {
       const { error } = await supabase.from('feedback').insert({
         user_id: user?.id,
+        user_email: user?.email || null,
         company_id: activeCompany?.id,
-        type,
+        feedback_type: type,
         subject: subject.trim() || null,
         message: message.trim(),
         page_url: window.location.pathname,
