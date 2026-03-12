@@ -60,6 +60,7 @@ export default function InvoiceDetail() {
   // PDF state
   const [generatingPdf, setGeneratingPdf] = useState(false)
   const [pdfHistory, setPdfHistory] = useState([])
+  const [latestPdfSignedUrl, setLatestPdfSignedUrl] = useState(null)
 
   // Send modal state
   const [showSendModal, setShowSendModal] = useState(false)
@@ -110,6 +111,16 @@ export default function InvoiceDetail() {
         .order('created_at', { ascending: false })
 
       setPdfHistory(pdfDocs || [])
+
+      // Get signed URL for latest PDF to show inline
+      if (invoiceData.pdf_url) {
+        const { data: signedData } = await supabase.storage
+          .from('project-documents')
+          .createSignedUrl(invoiceData.pdf_url, 3600)
+        if (signedData?.signedUrl) setLatestPdfSignedUrl(signedData.signedUrl)
+      } else {
+        setLatestPdfSignedUrl(null)
+      }
     }
 
     setLoading(false)
@@ -438,20 +449,18 @@ export default function InvoiceDetail() {
         updated_at: new Date().toISOString()
       }).eq('id', id)
 
-      // Save as a file_attachment on the job so it shows in Documents
+      // Save as a file_attachment so it shows in PDF History and Documents
       const snapshotDate = new Date().toLocaleDateString()
-      if (invoice.job?.id) {
-        await supabase.from('file_attachments').insert({
-          company_id: companyId,
-          job_id: invoice.job.id,
-          lead_id: null,
-          file_name: `${invoice.invoice_id || 'Invoice'} - ${snapshotDate}.pdf`,
-          file_path: filePath,
-          file_type: 'application/pdf',
-          file_size: pdfBlob.size,
-          storage_bucket: 'project-documents'
-        })
-      }
+      await supabase.from('file_attachments').insert({
+        company_id: companyId,
+        job_id: invoice.job?.id || null,
+        lead_id: null,
+        file_name: `${invoice.invoice_id || 'Invoice'} - ${snapshotDate}.pdf`,
+        file_path: filePath,
+        file_type: 'application/pdf',
+        file_size: pdfBlob.size,
+        storage_bucket: 'project-documents'
+      })
 
       toast.success('PDF snapshot generated and saved')
       await fetchInvoiceData()
@@ -918,6 +927,117 @@ export default function InvoiceDetail() {
               </div>
             )}
           </div>
+
+          {/* PDF Snapshot Viewer */}
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>
+                PDF Snapshot {pdfHistory.length > 0 ? `(${pdfHistory.length})` : ''}
+              </h3>
+              <button
+                onClick={handleGenerateAndUploadPDF}
+                disabled={generatingPdf}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 12px',
+                  backgroundColor: 'rgba(59,130,246,0.12)',
+                  color: '#3b82f6',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  cursor: generatingPdf ? 'not-allowed' : 'pointer',
+                  opacity: generatingPdf ? 0.6 : 1
+                }}
+              >
+                <FileText size={16} />
+                {generatingPdf ? 'Generating...' : 'Generate New Snapshot'}
+              </button>
+            </div>
+
+            {latestPdfSignedUrl ? (
+              <div>
+                <iframe
+                  src={latestPdfSignedUrl}
+                  title="Invoice PDF"
+                  style={{
+                    width: '100%',
+                    height: '600px',
+                    border: 'none'
+                  }}
+                />
+                {pdfHistory.length > 1 && (
+                  <div style={{ padding: '12px 20px', borderTop: `1px solid ${theme.border}` }}>
+                    <p style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, marginBottom: '8px' }}>
+                      Previous Snapshots
+                    </p>
+                    {pdfHistory.slice(1).map((doc) => (
+                      <div key={doc.id} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 0',
+                        borderBottom: `1px solid ${theme.border}`
+                      }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontSize: '12px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {doc.file_name}
+                          </p>
+                          <p style={{ fontSize: '11px', color: theme.textMuted }}>
+                            {new Date(doc.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const { data } = await supabase.storage
+                              .from('project-documents')
+                              .createSignedUrl(doc.file_path, 300)
+                            if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 8px',
+                            backgroundColor: 'rgba(34,197,94,0.12)',
+                            color: '#22c55e',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            flexShrink: 0
+                          }}
+                        >
+                          <Download size={12} />
+                          View
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+                <FileText size={40} style={{ color: theme.textMuted, opacity: 0.4, marginBottom: '12px' }} />
+                <p style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '4px' }}>No PDF snapshot yet</p>
+                <p style={{ fontSize: '12px', color: theme.textMuted }}>Generate a snapshot to capture the current invoice state with payment balances</p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Sidebar */}
@@ -1065,24 +1185,6 @@ export default function InvoiceDetail() {
                 </button>
               )}
 
-              {/* PDF generation */}
-              <button
-                onClick={handleGenerateAndUploadPDF}
-                disabled={generatingPdf}
-                style={actionBtnStyle('rgba(59,130,246,0.12)', '#3b82f6')}
-              >
-                <FileText size={18} />
-                {generatingPdf ? 'Generating...' : 'Generate PDF Snapshot'}
-              </button>
-
-              {/* Download PDF — only if pdf_url exists */}
-              {invoice.pdf_url && (
-                <button onClick={handleDownloadPDF} style={actionBtnStyle('rgba(34,197,94,0.12)', '#22c55e')}>
-                  <Download size={18} />
-                  Download PDF
-                </button>
-              )}
-
               {/* Send Invoice */}
               <button
                 onClick={() => setShowSendModal(true)}
@@ -1143,69 +1245,6 @@ export default function InvoiceDetail() {
             </div>
           </div>
 
-          {/* PDF History */}
-          {pdfHistory.length > 0 && (
-            <div style={{
-              backgroundColor: theme.bgCard,
-              borderRadius: '12px',
-              border: `1px solid ${theme.border}`,
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                padding: '16px 20px',
-                borderBottom: `1px solid ${theme.border}`
-              }}>
-                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>
-                  PDF History ({pdfHistory.length})
-                </h3>
-              </div>
-              <div>
-                {pdfHistory.map((doc) => (
-                  <div key={doc.id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px 20px',
-                    borderBottom: `1px solid ${theme.border}`
-                  }}>
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {doc.file_name}
-                      </p>
-                      <p style={{ fontSize: '11px', color: theme.textMuted }}>
-                        {new Date(doc.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        const { data } = await supabase.storage
-                          .from('project-documents')
-                          .createSignedUrl(doc.file_path, 300)
-                        if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '6px 10px',
-                        backgroundColor: 'rgba(34,197,94,0.12)',
-                        color: '#22c55e',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        cursor: 'pointer',
-                        flexShrink: 0
-                      }}
-                    >
-                      <Download size={14} />
-                      View
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
