@@ -2,6 +2,7 @@ import { useState, createContext, useContext, useMemo } from 'react'
 import { useNavigate, NavLink, Outlet } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import FeedbackButton from './FeedbackButton'
+import ArnieFloatingPanel from './ArnieFloatingPanel'
 import GlobalSearch from './GlobalSearch'
 import {
   LayoutDashboard,
@@ -285,7 +286,7 @@ export default function Layout() {
       title: 'FINANCIAL',
       sectionIcon: DollarSign,
       baseItems: [
-        { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Customer invoices and utility rebate claims' },
+        { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Customer invoices and utility incentives' },
         { to: '/lead-payments', icon: CreditCard, label: 'Deposits', hint: 'Lead deposits and pre-job payments' },
         { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and costs' },
         { to: '/books', icon: BookOpen, label: 'Books', hint: 'Accounting and financial overview' }
@@ -1501,6 +1502,9 @@ export default function Layout() {
           </div>
         </>
       )}
+
+      {/* Arnie Floating Panel */}
+      <ArnieFloatingPanel />
 
       {/* Feedback Button */}
       <FeedbackButton />

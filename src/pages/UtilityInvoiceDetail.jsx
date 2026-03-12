@@ -115,7 +115,7 @@ export default function UtilityInvoiceDetail() {
     if (error) {
       toast.error('Failed to save: ' + error.message)
     } else {
-      toast.success('Utility rebate updated')
+      toast.success('Utility incentive updated')
       setIsEditing(false)
       await fetchInvoiceData()
       await fetchUtilityInvoices()
@@ -124,7 +124,7 @@ export default function UtilityInvoiceDetail() {
   }
 
   const handleDeleteInvoice = async () => {
-    if (!confirm('Are you sure you want to delete this utility rebate? This cannot be undone.')) return
+    if (!confirm('Are you sure you want to delete this utility incentive? This cannot be undone.')) return
 
     setSaving(true)
     const { toast } = await import('../lib/toast')
@@ -134,7 +134,7 @@ export default function UtilityInvoiceDetail() {
       toast.error('Failed to delete bill: ' + error.message)
       setSaving(false)
     } else {
-      toast.success('Utility rebate deleted')
+      toast.success('Utility incentive deleted')
       await fetchUtilityInvoices()
       navigate('/invoices?type=utility')
     }
@@ -188,7 +188,7 @@ export default function UtilityInvoiceDetail() {
   if (loading) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: theme.textMuted }}>Loading utility rebate...</p>
+        <p style={{ color: theme.textMuted }}>Loading utility incentive...</p>
       </div>
     )
   }
@@ -196,9 +196,9 @@ export default function UtilityInvoiceDetail() {
   if (!invoice) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: '#dc2626', marginBottom: '16px' }}>Utility rebate not found</p>
+        <p style={{ color: '#dc2626', marginBottom: '16px' }}>Utility incentive not found</p>
         <button onClick={() => navigate('/invoices?type=utility')} style={{ color: theme.accent, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
-          Back to Utility Rebates
+          Back to Utility Incentives
         </button>
       </div>
     )
@@ -228,7 +228,7 @@ export default function UtilityInvoiceDetail() {
             UTL-{invoice.id}
           </p>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
-            {invoice.customer_name || 'Utility Rebate'}
+            {invoice.customer_name || 'Utility Incentive'}
           </h1>
         </div>
         <span style={{

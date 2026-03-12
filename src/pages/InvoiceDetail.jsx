@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2 } from 'lucide-react'
+import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle } from 'lucide-react'
 import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
 
@@ -22,6 +22,7 @@ const defaultTheme = {
 
 const statusColors = {
   'Pending': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
+  'Partially Paid': { bg: 'rgba(59,130,246,0.12)', text: '#3b82f6' },
   'Paid': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
   'Overdue': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
   'Cancelled': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
@@ -129,11 +130,17 @@ export default function InvoiceDetail() {
       notes: paymentData.notes || null
     }])
 
-    // Check if invoice is fully paid
+    // Update payment status based on total paid
     const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) + parseFloat(paymentData.amount)
-    if (totalPaid >= parseFloat(invoice.amount)) {
+    const invoiceAmount = parseFloat(invoice.amount) || 0
+    if (totalPaid >= invoiceAmount) {
       await supabase.from('invoices').update({
         payment_status: 'Paid',
+        updated_at: new Date().toISOString()
+      }).eq('id', id)
+    } else if (totalPaid > 0) {
+      await supabase.from('invoices').update({
+        payment_status: 'Partially Paid',
         updated_at: new Date().toISOString()
       }).eq('id', id)
     }
@@ -157,6 +164,33 @@ export default function InvoiceDetail() {
       payment_status: 'Paid',
       updated_at: new Date().toISOString()
     }).eq('id', id)
+    await fetchInvoiceData()
+    await fetchInvoices()
+    setSaving(false)
+  }
+
+  const rescindPayment = async (payment) => {
+    if (!confirm(`Rescind ${formatCurrency(payment.amount)} payment from ${formatDate(payment.date)}? This will delete the payment record and update the invoice balance.`)) return
+
+    setSaving(true)
+    await supabase.from('payments').delete().eq('id', payment.id)
+
+    // Recalculate remaining total
+    const remainingPaid = payments
+      .filter(p => p.id !== payment.id)
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+    const invoiceAmount = parseFloat(invoice.amount) || 0
+
+    let newStatus = 'Pending'
+    if (remainingPaid >= invoiceAmount) newStatus = 'Paid'
+    else if (remainingPaid > 0) newStatus = 'Partially Paid'
+
+    await supabase.from('invoices').update({
+      payment_status: newStatus,
+      updated_at: new Date().toISOString()
+    }).eq('id', id)
+
+    toast.success('Payment rescinded')
     await fetchInvoiceData()
     await fetchInvoices()
     setSaving(false)
@@ -850,16 +884,35 @@ export default function InvoiceDetail() {
                         {formatDate(payment.date)} - {payment.method}
                       </p>
                     </div>
-                    <span style={{
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: '500',
-                      backgroundColor: payment.status === 'Completed' ? 'rgba(74,124,89,0.12)' : 'rgba(194,139,56,0.12)',
-                      color: payment.status === 'Completed' ? '#4a7c59' : '#c28b38'
-                    }}>
-                      {payment.status}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        backgroundColor: payment.status === 'Completed' ? 'rgba(74,124,89,0.12)' : 'rgba(194,139,56,0.12)',
+                        color: payment.status === 'Completed' ? '#4a7c59' : '#c28b38'
+                      }}>
+                        {payment.status}
+                      </span>
+                      <button
+                        onClick={() => rescindPayment(payment)}
+                        disabled={saving}
+                        title="Rescind payment"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: '4px',
+                          cursor: saving ? 'not-allowed' : 'pointer',
+                          color: theme.textMuted,
+                          opacity: saving ? 0.4 : 0.6,
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -938,6 +991,25 @@ export default function InvoiceDetail() {
                   {formatCurrency(balanceDue)}
                 </span>
               </div>
+
+              {/* Outstanding balance alert for partial payments */}
+              {balanceDue > 0 && totalPaid > 0 && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '10px 12px',
+                  backgroundColor: 'rgba(59,130,246,0.08)',
+                  border: '1px solid rgba(59,130,246,0.25)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px'
+                }}>
+                  <AlertTriangle size={16} style={{ color: '#3b82f6', flexShrink: 0, marginTop: '1px' }} />
+                  <div style={{ fontSize: '12px', color: '#3b82f6', lineHeight: '1.4' }}>
+                    <span style={{ fontWeight: '600' }}>Partially paid</span> — {formatCurrency(totalPaid)} received, {formatCurrency(balanceDue)} still outstanding. Generate a PDF snapshot to capture the current balance state.
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

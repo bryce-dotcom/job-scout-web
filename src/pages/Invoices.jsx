@@ -25,6 +25,7 @@ const defaultTheme = {
 const statusColors = {
   'Pending': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
   'Open': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
+  'Partially Paid': { bg: 'rgba(59,130,246,0.12)', text: '#3b82f6' },
   'Paid': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
   'Overdue': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
   'Cancelled': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
@@ -334,7 +335,7 @@ export default function Invoices() {
   }
 
   const handleUtilityDelete = async (invoice) => {
-    if (!confirm('Delete this utility rebate?')) return
+    if (!confirm('Delete this utility incentive?')) return
     await supabase.from('utility_invoices').delete().eq('id', invoice.id)
     await fetchUtilityInvoices()
   }
@@ -739,7 +740,7 @@ export default function Invoices() {
       }}>
         <button onClick={() => handleTypeFilter('all')} style={filterBtnStyle(typeFilter === 'all')}>All Invoices</button>
         <button onClick={() => handleTypeFilter('customer')} style={filterBtnStyle(typeFilter === 'customer')}>Customer</button>
-        <button onClick={() => handleTypeFilter('utility')} style={filterBtnStyle(typeFilter === 'utility')}>Utility Rebates</button>
+        <button onClick={() => handleTypeFilter('utility')} style={filterBtnStyle(typeFilter === 'utility')}>Utility Incentives</button>
       </div>
 
       {/* Stats */}
@@ -1091,7 +1092,7 @@ export default function Invoices() {
             }}>
               <FileText size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
               <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
-                No utility rebates found. Add your first rebate claim.
+                No utility incentives found. Add your first utility incentive.
               </p>
             </div>
           ) : (
@@ -1380,7 +1381,7 @@ export default function Invoices() {
         </div>
       )}
 
-      {/* Utility Rebate Modal */}
+      {/* Utility Incentive Modal */}
       {showUtilityModal && (
         <div style={{
           position: 'fixed',

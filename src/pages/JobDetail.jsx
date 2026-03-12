@@ -616,14 +616,14 @@ export default function JobDetail() {
 
       const { toast } = await import('../lib/toast')
       if (error) {
-        toast.error('Failed to create utility rebate: ' + error.message)
+        toast.error('Failed to create utility incentive: ' + error.message)
       } else {
-        toast.success('Utility rebate created')
+        toast.success('Utility incentive invoice created')
         await fetchJobData()
       }
     } catch (err) {
       const { toast } = await import('../lib/toast')
-      toast.error('Error creating utility rebate')
+      toast.error('Error creating utility incentive')
     }
 
     setSaving(false)
@@ -1849,7 +1849,7 @@ export default function JobDetail() {
                   border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
                 }}>
                   <DollarSign size={18} />
-                  Create Customer Invoice
+                  Customer Copayment
                 </button>
               )}
               {job.lead_id && jobUtilityInvoices.length === 0 && (
@@ -1859,7 +1859,7 @@ export default function JobDetail() {
                   border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
                 }}>
                   <Zap size={18} />
-                  Create Utility Rebate
+                  Utility Incentive Invoice
                 </button>
               )}
               {isAdmin && (
