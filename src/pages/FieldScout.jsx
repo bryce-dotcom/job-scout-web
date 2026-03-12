@@ -276,6 +276,17 @@ export default function FieldScout() {
         clock_in_address: location.address
       })
       if (error) throw error
+
+      // Auto-update job status to In Progress when clocking in
+      if (jobId) {
+        await supabase
+          .from('jobs')
+          .update({ status: 'In Progress', updated_at: new Date().toISOString() })
+          .eq('id', jobId)
+          .eq('company_id', companyId)
+          .in('status', ['Chillin', 'Scheduled'])
+      }
+
       await fetchEntries()
     } catch (err) {
       alert('Error clocking in: ' + err.message)

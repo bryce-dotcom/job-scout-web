@@ -7,7 +7,7 @@ import { toast } from '../lib/toast'
 import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin,
   Play, CheckCircle, FileText, ChevronRight, User, Upload, Download,
-  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight
+  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
@@ -27,6 +27,7 @@ const defaultTheme = {
 }
 
 const statusColors = {
+  'Chillin': { bg: 'rgba(99,130,191,0.12)', text: '#6382bf' },
   'Scheduled': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
   'In Progress': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
   'Completed': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
@@ -47,7 +48,7 @@ const emptyJob = {
   customer_id: '',
   salesperson_id: '',
   quote_id: '',
-  status: 'Scheduled',
+  status: 'Chillin',
   assigned_team: '',
   business_unit: '',
   start_date: '',
@@ -234,7 +235,7 @@ function RecentWins({ wins, theme, isMobile, navigate, formatDate }) {
 }
 
 // ============ KANBAN COLUMN ============
-function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigate, formatDate, startJob, completeJob, openMap }) {
+function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigate, formatDate, scheduleJob, startJob, completeJob, openMap }) {
   return (
     <div style={{
       flex: 1,
@@ -350,6 +351,18 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                     }}>
                       {job.invoice_status}
                     </span>
+                  )}
+                  {job.status === 'Chillin' && scheduleJob && (
+                    <button
+                      onClick={e => { e.stopPropagation(); scheduleJob(job) }}
+                      style={{
+                        padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '600',
+                        backgroundColor: '#5a6349', color: '#fff', border: 'none', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: '3px'
+                      }}
+                    >
+                      <ArrowRight size={9} /> Schedule
+                    </button>
                   )}
                   {job.status === 'Scheduled' && (
                     <button
@@ -482,12 +495,16 @@ export default function Jobs() {
   })
 
   // Board view groups
+  const chillinJobs = filteredJobs.filter(j => j.status === 'Chillin')
+    .sort((a, b) => new Date(b.created_at || b.updated_at) - new Date(a.created_at || a.updated_at))
   const scheduledJobs = filteredJobs.filter(j => j.status === 'Scheduled')
     .sort((a, b) => new Date(a.start_date || a.created_at) - new Date(b.start_date || b.created_at))
   const inProgressJobs = filteredJobs.filter(j => j.status === 'In Progress')
     .sort((a, b) => new Date(a.start_date || a.created_at) - new Date(b.start_date || b.created_at))
-  const onHoldJobs = filteredJobs.filter(j => j.status === 'On Hold')
+  const completedJobs = filteredJobs.filter(j => j.status === 'Completed')
+    .sort((a, b) => new Date(b.end_date || b.updated_at) - new Date(a.end_date || a.updated_at))
   const cancelledJobs = filteredJobs.filter(j => j.status === 'Cancelled')
+  const onHoldJobs = filteredJobs.filter(j => j.status === 'On Hold')
 
   const openAddModal = () => {
     setEditingJob(null)
@@ -595,8 +612,8 @@ export default function Jobs() {
     if (!editingJob && result.data?.[0]) {
       const newJob = result.data[0]
       const customer = formData.customer_id ? customers.find(c => c.id === parseInt(formData.customer_id)) : null
-      const jobStatus = newJob.status || 'Scheduled'
-      const leadStatusMap = { 'Scheduled': 'Job Scheduled', 'In Progress': 'In Progress', 'Completed': 'Job Complete' }
+      const jobStatus = newJob.status || 'Chillin'
+      const leadStatusMap = { 'Chillin': 'Job Scheduled', 'Scheduled': 'Job Scheduled', 'In Progress': 'In Progress', 'Completed': 'Job Complete' }
       const leadStatus = leadStatusMap[jobStatus] || 'Job Scheduled'
 
       const { data: trackingLead } = await supabase
@@ -629,6 +646,22 @@ export default function Jobs() {
     await fetchJobs()
     closeModal()
     setLoading(false)
+  }
+
+  const scheduleJob = async (job) => {
+    await supabase
+      .from('jobs')
+      .update({
+        status: 'Scheduled',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', job.id)
+
+    if (job.lead_id) {
+      await supabase.from('leads').update({ status: 'Job Scheduled', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
+    }
+
+    await fetchJobs()
   }
 
   const startJob = async (job) => {
@@ -679,6 +712,7 @@ export default function Jobs() {
   }
 
   // Stats
+  const chillinCount = jobs.filter(j => j.status === 'Chillin').length
   const scheduledCount = jobs.filter(j => j.status === 'Scheduled').length
   const inProgressCount = jobs.filter(j => j.status === 'In Progress').length
   const completedCount = jobs.filter(j => j.status === 'Completed').length
@@ -793,40 +827,49 @@ export default function Jobs() {
       {/* Stats */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-        gap: '12px',
+        gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(5, 1fr)',
+        gap: '10px',
         marginBottom: '24px'
       }}>
         <div style={{
           backgroundColor: theme.bgCard, borderRadius: '12px',
-          border: `1px solid ${theme.border}`, padding: '14px', textAlign: 'center'
+          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
         }}>
-          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '2px' }}>Scheduled</p>
-          <p style={{ fontSize: '22px', fontWeight: '600', color: theme.text }}>{scheduledCount}</p>
+          <p style={{ fontSize: '11px', color: '#6382bf', marginBottom: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+            <Coffee size={11} /> Chillin
+          </p>
+          <p style={{ fontSize: '20px', fontWeight: '600', color: '#6382bf' }}>{chillinCount}</p>
         </div>
         <div style={{
           backgroundColor: theme.bgCard, borderRadius: '12px',
-          border: `1px solid ${theme.border}`, padding: '14px', textAlign: 'center'
+          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
         }}>
-          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '2px' }}>In Progress</p>
-          <p style={{ fontSize: '22px', fontWeight: '600', color: '#c28b38' }}>{inProgressCount}</p>
+          <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Scheduled</p>
+          <p style={{ fontSize: '20px', fontWeight: '600', color: theme.text }}>{scheduledCount}</p>
         </div>
         <div style={{
           backgroundColor: theme.bgCard, borderRadius: '12px',
-          border: `1px solid ${theme.border}`, padding: '14px', textAlign: 'center'
+          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
         }}>
-          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '2px' }}>Completed</p>
-          <p style={{ fontSize: '22px', fontWeight: '600', color: '#4a7c59' }}>{completedCount}</p>
+          <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>In Progress</p>
+          <p style={{ fontSize: '20px', fontWeight: '600', color: '#c28b38' }}>{inProgressCount}</p>
         </div>
         <div style={{
           backgroundColor: theme.bgCard, borderRadius: '12px',
-          border: `1px solid ${theme.border}`, padding: '14px', textAlign: 'center'
+          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
         }}>
-          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+          <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Completed</p>
+          <p style={{ fontSize: '20px', fontWeight: '600', color: '#4a7c59' }}>{completedCount}</p>
+        </div>
+        <div style={{
+          backgroundColor: theme.bgCard, borderRadius: '12px',
+          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
+        }}>
+          <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
             <Trophy size={11} /> Won (30d)
           </p>
-          <p style={{ fontSize: '22px', fontWeight: '600', color: '#4a7c59' }}>
-            {revenueWon > 0 ? formatCurrency(revenueWon) : completedCount > 0 ? recentWins.length : '0'}
+          <p style={{ fontSize: '20px', fontWeight: '600', color: '#4a7c59' }}>
+            {revenueWon > 0 ? formatCurrency(revenueWon) : recentWins.length > 0 ? recentWins.length : '0'}
           </p>
         </div>
       </div>
@@ -861,6 +904,7 @@ export default function Jobs() {
             style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
           >
             <option value="all">All Status</option>
+            <option value="Chillin">Chillin</option>
             <option value="Scheduled">Scheduled</option>
             <option value="In Progress">In Progress</option>
             <option value="Completed">Completed</option>
@@ -888,10 +932,24 @@ export default function Jobs() {
           {/* Kanban columns */}
           <div style={{
             display: 'flex',
-            gap: '16px',
+            gap: '14px',
             flexDirection: isMobile ? 'column' : 'row',
             alignItems: 'flex-start'
           }}>
+            <KanbanColumn
+              title="Chillin"
+              icon={Coffee}
+              jobs={chillinJobs}
+              color="#6382bf"
+              theme={theme}
+              isMobile={isMobile}
+              navigate={navigate}
+              formatDate={formatDate}
+              scheduleJob={scheduleJob}
+              startJob={startJob}
+              completeJob={completeJob}
+              openMap={openMap}
+            />
             <KanbanColumn
               title="Scheduled"
               icon={Calendar}
@@ -901,6 +959,7 @@ export default function Jobs() {
               isMobile={isMobile}
               navigate={navigate}
               formatDate={formatDate}
+              scheduleJob={scheduleJob}
               startJob={startJob}
               completeJob={completeJob}
               openMap={openMap}
@@ -914,26 +973,60 @@ export default function Jobs() {
               isMobile={isMobile}
               navigate={navigate}
               formatDate={formatDate}
+              scheduleJob={scheduleJob}
               startJob={startJob}
               completeJob={completeJob}
               openMap={openMap}
             />
             <KanbanColumn
-              title="On Hold"
-              icon={Pause}
-              jobs={onHoldJobs}
-              color="#7d8a7f"
+              title="Completed"
+              icon={CheckCircle}
+              jobs={completedJobs}
+              color="#4a7c59"
               theme={theme}
               isMobile={isMobile}
               navigate={navigate}
               formatDate={formatDate}
+              scheduleJob={scheduleJob}
               startJob={startJob}
               completeJob={completeJob}
               openMap={openMap}
             />
           </div>
 
-          {/* Cancelled jobs (collapsed section) */}
+          {/* On Hold + Cancelled jobs (collapsed sections) */}
+          {onHoldJobs.length > 0 && (
+            <details style={{ marginTop: '20px' }}>
+              <summary style={{
+                fontSize: '13px', fontWeight: '600', color: theme.textMuted,
+                cursor: 'pointer', padding: '8px 0', userSelect: 'none'
+              }}>
+                On Hold ({onHoldJobs.length})
+              </summary>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: '10px', marginTop: '10px'
+              }}>
+                {onHoldJobs.map(job => (
+                  <div
+                    key={job.id}
+                    onClick={() => navigate(`/jobs/${job.id}`)}
+                    style={{
+                      backgroundColor: theme.bgCard, borderRadius: '10px',
+                      border: `1px solid ${theme.border}`, padding: '12px 14px',
+                      cursor: 'pointer', opacity: 0.7
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: '#7d8a7f', fontWeight: '600' }}>{job.job_id}</span>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: theme.text, margin: '4px 0 0' }}>
+                      {job.job_title || 'Untitled'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
           {cancelledJobs.length > 0 && (
             <details style={{ marginTop: '20px' }}>
               <summary style={{
@@ -1081,6 +1174,19 @@ export default function Jobs() {
 
                     {/* Quick Actions */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {job.status === 'Chillin' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); scheduleJob(job); }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                            padding: '6px 10px', backgroundColor: '#5a6349', color: '#ffffff',
+                            border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer'
+                          }}
+                        >
+                          <ArrowRight size={14} />
+                          Schedule
+                        </button>
+                      )}
                       {job.status === 'Scheduled' && (
                         <button
                           onClick={(e) => { e.stopPropagation(); startJob(job); }}
@@ -1215,6 +1321,7 @@ export default function Jobs() {
                   <div>
                     <label style={labelStyle}>Status</label>
                     <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
+                      <option value="Chillin">Chillin</option>
                       <option value="Scheduled">Scheduled</option>
                       <option value="In Progress">In Progress</option>
                       <option value="Completed">Completed</option>
@@ -1334,7 +1441,7 @@ export default function Jobs() {
           fields={jobsFields}
           companyId={companyId}
           requiredField="job_id"
-          defaultValues={{ company_id: companyId, status: 'Scheduled' }}
+          defaultValues={{ company_id: companyId, status: 'Chillin' }}
           relatedTables={jobRelatedTables}
           parentRefField="job_id"
           extraContext="Field service / construction job management data. Map as many columns as possible. IMPORTANT: 'Customer name' or 'Customer' columns must map to customer_name (NOT job_title). 'Job description' or 'Description' columns must map to job_title. 'Job amount' or 'Amount' or 'Revenue' or 'Price' must map to job_total. Common aliases: customer_name=Customer/Client/Client Name/Customer Name/Account Name, job_title=Job Name/Project Name/Work Order/Job Description/Description/Service Type, job_id=Job Number/Work Order #/Job #/Job No, job_address=Site Address/Service Address/Location/Address, status=Job Status/Stage, business_unit=Division/Department/Business Unit, start_date=Start/Begin Date/Job Created Date/Created/Date, end_date=End/Completion Date, assigned_team=Team/Crew Name/Assigned To, allotted_time_hours=Budgeted Hours/Estimated Hours, job_total=Job Amount/Amount/Revenue/Price/Contract Value/Total, expense_amount=Expense/Commission Cost/Labor Cost/Cost, details=Details/Job Details/Scope/SOW, notes=Notes/Comments"

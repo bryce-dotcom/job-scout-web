@@ -47,6 +47,7 @@ const defaultTheme = {
 }
 
 const statusColors = {
+  'Chillin': { bg: 'rgba(99,130,191,0.12)', text: '#6382bf' },
   'Scheduled': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
   'In Progress': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
   'Completed': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
@@ -418,6 +419,7 @@ export default function JobDetail() {
     // Sync job status → lead status through delivery pipeline
     if (job.lead_id) {
       const statusMap = {
+        'Chillin': 'Job Scheduled',
         'Scheduled': 'Job Scheduled',
         'In Progress': 'In Progress',
         'Completed': 'Job Complete',
@@ -1792,6 +1794,16 @@ export default function JobDetail() {
           }}>
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>Actions</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {job.status === 'Chillin' && (
+                <button onClick={() => updateJobStatus('Scheduled')} disabled={saving} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  padding: '12px 16px', backgroundColor: '#5a6349', color: '#ffffff',
+                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+                }}>
+                  <Calendar size={18} />
+                  Schedule Job
+                </button>
+              )}
               {job.status === 'Scheduled' && (
                 <button onClick={() => updateJobStatus('In Progress')} disabled={saving} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',

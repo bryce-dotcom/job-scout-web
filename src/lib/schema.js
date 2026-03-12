@@ -108,7 +108,7 @@ export const STATUS = {
   pipeline: ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost'],
   estimate: ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired'],
   quote: ['Draft', 'Sent', 'Approved', 'Rejected', 'Expired'],
-  job: ['Scheduled', 'In Progress', 'Completed', 'On Hold', 'Cancelled'],
+  job: ['Chillin', 'Scheduled', 'In Progress', 'Completed', 'On Hold', 'Cancelled'],
   invoice: ['Draft', 'Sent', 'Paid', 'Partial', 'Overdue', 'Void'],
   appointment: ['Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'No Show'],
   customer: ['Active', 'Inactive', 'Prospect'],
