@@ -54,9 +54,11 @@ serve(async (req) => {
       // Get expense categories for context
       const { data: categories } = await supabase
         .from('expense_categories')
-        .select('name')
+        .select('name, type')
         .order('sort_order');
 
+      const expenseNames = (categories || []).filter(c => c.type === 'expense').map(c => c.name);
+      const incomeNames = (categories || []).filter(c => c.type === 'income').map(c => c.name);
       const categoryNames = (categories || []).map(c => c.name);
 
       // Get active jobs for AI context
@@ -128,22 +130,36 @@ serve(async (req) => {
 
           const prompt = `You are a bookkeeping assistant for a field services company (lighting, fleet maintenance, etc.).
 
-Categorize each transaction and assign a tax category for IRS Form 1065 (partnership return).
+Categorize each transaction into EXACTLY one of these categories. Do NOT make up category names.
 
-Available expense categories: ${categoryNames.join(', ')}
-If none fit, use a reasonable category name.
+For money OUT (positive amounts) — Expense categories: ${expenseNames.join(', ')}
+Also allowed: Transfer, Owner Distribution, Loan Payment, Tax Payment
 
-Standard 1065 line items:
-- Line 10: Guaranteed payments
-- Line 12: Repairs and maintenance
-- Line 13: Bad debts
-- Line 14: Rent
-- Line 15: Taxes and licenses
-- Line 16a: Depreciation
-- Line 17: Depletion
-- Line 18: Retirement plans
-- Line 19: Employee benefit programs
-- Line 20: Other deductions (utilities, insurance, office supplies, advertising, etc.)
+For money IN (negative amounts) — Income categories: ${incomeNames.join(', ')}
+Also allowed: Transfer, Owner Contribution
+
+Assign a tax category for IRS Form 1065 (partnership return). Use EXACTLY one of these:
+- Line 9 - Salaries and wages
+- Line 10 - Guaranteed payments
+- Line 12 - Repairs and maintenance
+- Line 13 - Bad debts
+- Line 14 - Rent
+- Line 15 - Taxes and licenses
+- Line 16a - Depreciation
+- Line 18 - Retirement plans
+- Line 19 - Employee benefit programs
+- Line 20 - Advertising
+- Line 20 - Office expenses
+- Line 20 - Auto expenses
+- Line 20 - Utilities
+- Line 20 - Insurance
+- Line 20 - Travel
+- Line 20 - Meals
+- Line 20 - Contract labor
+- Line 20 - Equipment rental
+- Line 20 - Other deductions
+- Not deductible
+- Income
 
 For each transaction, determine if it's likely a transfer between accounts (e.g., "Transfer to Savings", "Zelle to self").
 

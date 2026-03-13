@@ -685,22 +685,112 @@ export default function Books() {
                     {/* Expanded inline edit */}
                     {isExpanded && (
                       <div style={{ padding: '0 16px 16px', backgroundColor: theme.bg, borderTop: `1px solid ${theme.border}` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '12px' }}>
+                        {/* AI summary bar */}
+                        {txn.ai_confidence != null && (
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', marginTop: '12px',
+                            backgroundColor: 'rgba(168,85,247,0.06)', borderRadius: '8px', border: '1px solid rgba(168,85,247,0.15)'
+                          }}>
+                            <Sparkles size={14} style={{ color: '#a855f7', flexShrink: 0 }} />
+                            <span style={{ fontSize: '12px', color: '#7c3aed', fontWeight: '500' }}>
+                              AI is {Math.round((txn.ai_confidence || 0) * 100)}% confident in this categorization
+                              {txn.ai_form_1065_line && <span> — maps to {txn.ai_form_1065_line}</span>}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Category + Tax Category */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
                           <div>
-                            <label style={{ ...labelStyle, fontSize: '12px' }}>Category</label>
-                            <input type="text" value={txnEditCategory} onChange={(e) => setTxnEditCategory(e.target.value)} placeholder="e.g., Office Supplies" style={inputStyle} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+                              <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Expense Category</label>
+                              <HelpBadge text="How you track this expense in your business. Groups similar spending together (e.g., all gas purchases go under Fuel). This helps you see where your money goes each month." size={13} />
+                            </div>
+                            <select
+                              value={txnEditCategory}
+                              onChange={(e) => setTxnEditCategory(e.target.value)}
+                              style={{ ...inputStyle, cursor: 'pointer' }}
+                            >
+                              <option value="">Select a category...</option>
+                              {amountNum > 0 && <optgroup label="Expense Categories">
+                                {expenseCategories.filter(c => c.type === 'expense').map(c => (
+                                  <option key={c.id} value={c.name}>{c.name}</option>
+                                ))}
+                              </optgroup>}
+                              {amountNum < 0 && <optgroup label="Income Categories">
+                                {expenseCategories.filter(c => c.type === 'income').map(c => (
+                                  <option key={c.id} value={c.name}>{c.name}</option>
+                                ))}
+                              </optgroup>}
+                              {amountNum > 0 && <optgroup label="Income Categories">
+                                {expenseCategories.filter(c => c.type === 'income').map(c => (
+                                  <option key={c.id} value={c.name}>{c.name}</option>
+                                ))}
+                              </optgroup>}
+                              {amountNum < 0 && <optgroup label="Expense Categories">
+                                {expenseCategories.filter(c => c.type === 'expense').map(c => (
+                                  <option key={c.id} value={c.name}>{c.name}</option>
+                                ))}
+                              </optgroup>}
+                              <optgroup label="Other">
+                                <option value="Transfer">Transfer (between accounts)</option>
+                                <option value="Owner Distribution">Owner Distribution</option>
+                                <option value="Owner Contribution">Owner Contribution</option>
+                                <option value="Loan Payment">Loan Payment</option>
+                                <option value="Tax Payment">Tax Payment</option>
+                              </optgroup>
+                            </select>
                           </div>
                           <div>
-                            <label style={{ ...labelStyle, fontSize: '12px' }}>Tax Category</label>
-                            <input type="text" value={txnEditTaxCategory} onChange={(e) => setTxnEditTaxCategory(e.target.value)} placeholder="e.g., Line 20 - Other deductions" style={inputStyle} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+                              <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Tax Category</label>
+                              <HelpBadge text="Where this goes on your tax return. Your accountant uses this to file taxes. If you're unsure, the AI suggestion is usually correct — just confirm it." size={13} />
+                            </div>
+                            <select
+                              value={txnEditTaxCategory}
+                              onChange={(e) => setTxnEditTaxCategory(e.target.value)}
+                              style={{ ...inputStyle, cursor: 'pointer' }}
+                            >
+                              <option value="">Select tax category...</option>
+                              <optgroup label="Common Deductions">
+                                <option value="Line 20 - Advertising">Advertising & Marketing</option>
+                                <option value="Line 20 - Office expenses">Office Expenses & Supplies</option>
+                                <option value="Line 20 - Auto expenses">Vehicle & Auto Expenses</option>
+                                <option value="Line 12 - Repairs and maintenance">Repairs & Maintenance</option>
+                                <option value="Line 14 - Rent">Rent</option>
+                                <option value="Line 20 - Utilities">Utilities</option>
+                                <option value="Line 20 - Insurance">Insurance</option>
+                                <option value="Line 15 - Taxes and licenses">Taxes & Licenses</option>
+                                <option value="Line 20 - Travel">Travel</option>
+                                <option value="Line 20 - Meals">Meals (50% deductible)</option>
+                              </optgroup>
+                              <optgroup label="Payroll & Contractors">
+                                <option value="Line 10 - Guaranteed payments">Guaranteed Payments (partners)</option>
+                                <option value="Line 9 - Salaries and wages">Salaries & Wages</option>
+                                <option value="Line 20 - Contract labor">Contract Labor / Subcontractors</option>
+                                <option value="Line 18 - Retirement plans">Retirement Plan Contributions</option>
+                                <option value="Line 19 - Employee benefit programs">Employee Benefits</option>
+                              </optgroup>
+                              <optgroup label="Assets & Depreciation">
+                                <option value="Line 16a - Depreciation">Depreciation (equipment, vehicles)</option>
+                                <option value="Line 20 - Equipment rental">Equipment Rental</option>
+                              </optgroup>
+                              <optgroup label="Other">
+                                <option value="Line 20 - Other deductions">Other Deductions</option>
+                                <option value="Line 13 - Bad debts">Bad Debts</option>
+                                <option value="Not deductible">Not Deductible (personal, distributions)</option>
+                                <option value="Income">Income (not a deduction)</option>
+                              </optgroup>
+                            </select>
                           </div>
                         </div>
+
+                        {/* Job Assignment */}
                         <div style={{ marginTop: '12px' }}>
-                          <label style={{ ...labelStyle, fontSize: '12px' }}>Notes</label>
-                          <input type="text" value={txnEditNotes} onChange={(e) => setTxnEditNotes(e.target.value)} placeholder="Optional notes..." style={inputStyle} />
-                        </div>
-                        <div style={{ marginTop: '12px' }}>
-                          <label style={{ ...labelStyle, fontSize: '12px' }}>Job</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Link to Job</label>
+                            <HelpBadge text="Connect this transaction to a specific job to track job profitability. If the AI matched it, you'll see the suggestion pre-filled. Only link it if this purchase was specifically for that job." size={13} />
+                          </div>
                           <div style={{ position: 'relative' }}>
                             <input
                               type="text"
@@ -709,7 +799,7 @@ export default function Books() {
                                 return j ? `${j.job_title || 'Job #' + j.id} — ${j.customer?.name || ''}` : ''
                               })()}
                               onChange={(e) => { setJobSearchText(e.target.value); if (!e.target.value) setTxnEditJobId(null) }}
-                              placeholder="Search jobs..."
+                              placeholder="Search by job name, customer, or address..."
                               style={inputStyle}
                             />
                             {jobSearchText && (() => {
@@ -751,24 +841,30 @@ export default function Books() {
                             )}
                           </div>
                           {txn.ai_job_id && txn.ai_job_confidence != null && (
-                            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                              AI job match: {Math.round(txn.ai_job_confidence * 100)}% confidence
+                            <div style={{ fontSize: '11px', color: '#3b82f6', marginTop: '4px' }}>
+                              <Sparkles size={10} style={{ verticalAlign: 'middle', marginRight: '3px' }} />
+                              AI matched to job with {Math.round(txn.ai_job_confidence * 100)}% confidence
                             </div>
                           )}
                         </div>
-                        {txn.ai_confidence != null && (
-                          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>
-                            AI confidence: {Math.round((txn.ai_confidence || 0) * 100)}%
-                            {txn.ai_form_1065_line && <span> | 1065: {txn.ai_form_1065_line}</span>}
+
+                        {/* Notes */}
+                        <div style={{ marginTop: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Notes</label>
+                            <HelpBadge text="Add a note to remember what this transaction was for. Optional, but helpful during tax time." size={13} />
                           </div>
-                        )}
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                          <input type="text" value={txnEditNotes} onChange={(e) => setTxnEditNotes(e.target.value)} placeholder="What was this purchase for?" style={inputStyle} />
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
                           <button onClick={() => handleConfirmTxn(txn.id)} style={{
                             display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 20px',
                             backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px',
                             fontSize: '13px', fontWeight: '500', cursor: 'pointer', minHeight: '44px'
                           }}>
-                            <Check size={14} /> Confirm
+                            <Check size={14} /> Confirm & Save
                           </button>
                           <button onClick={() => setExpandedTxn(null)} style={{
                             padding: '10px 16px', backgroundColor: 'transparent', color: theme.textMuted,
