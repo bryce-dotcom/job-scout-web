@@ -179,16 +179,18 @@ export default function Books() {
   // Only available when AI has predicted BOTH category and tax category
   const handleQuickAccept = async (e, txn) => {
     e.stopPropagation()
-    if (!txn.ai_category || !txn.ai_tax_category) {
-      toast.error('Missing AI prediction — expand to review manually')
+    const cat = txn.user_category || txn.ai_category
+    const tax = txn.user_tax_category || txn.ai_tax_category
+    if (!cat || !tax) {
+      toast.error('Set both Expense Category and Tax Category first')
       return
     }
     const updates = {
       confirmed: true,
-      user_category: txn.ai_category,
-      user_tax_category: txn.ai_tax_category,
+      user_category: cat,
+      user_tax_category: tax,
     }
-    if (txn.ai_job_id) updates.job_id = txn.ai_job_id
+    if (!txn.job_id && txn.ai_job_id) updates.job_id = txn.ai_job_id
 
     await supabase.from('plaid_transactions').update(updates).eq('id', txn.id)
     await fetchPlaidTransactions()
@@ -623,33 +625,37 @@ export default function Books() {
               {filteredTxns.map((txn, idx) => {
                 const isExpanded = expandedTxn === txn.id
                 const category = txn.user_category || txn.ai_category
+                const taxCat = txn.user_tax_category || txn.ai_tax_category
                 const isAI = !txn.user_category && !!txn.ai_category
                 const amountNum = parseFloat(txn.amount) || 0
-                // Plaid convention: positive = money out, negative = money in
                 const isIncome = amountNum < 0
+                const jId = txn.job_id || txn.ai_job_id
+                const isAIJob = !txn.job_id && !!txn.ai_job_id
+                const matchedJob = jId ? (jobs || []).find(j => j.id === jId) : null
 
                 return (
                   <div key={txn.id} style={{ borderTop: idx > 0 ? `1px solid ${theme.border}` : 'none' }}>
-                    <button
-                      onClick={() => {
-                        if (isExpanded) { setExpandedTxn(null) }
-                        else {
-                          setExpandedTxn(txn.id)
-                          setTxnEditCategory(txn.user_category || txn.ai_category || '')
-                          setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
-                          setTxnEditNotes(txn.notes || '')
-                          setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
-                          setJobSearchText('')
-                        }
-                      }}
-                      style={{
-                        width: '100%', display: 'flex', alignItems: 'center', gap: '12px',
-                        padding: '14px 16px', backgroundColor: txn.confirmed ? 'transparent' : 'rgba(234,179,8,0.03)',
-                        border: 'none', cursor: 'pointer', textAlign: 'left'
-                      }}
-                    >
-                      <div style={{ fontSize: '13px', color: theme.textMuted, minWidth: '80px' }}>{formatDate(txn.date)}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* Row: top line = date, merchant, amount, accept */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '12px 16px 4px',
+                      backgroundColor: txn.confirmed ? 'transparent' : 'rgba(234,179,8,0.03)',
+                    }}>
+                      <div style={{ fontSize: '12px', color: theme.textMuted, minWidth: '70px' }}>{formatDate(txn.date)}</div>
+                      <div
+                        onClick={() => {
+                          if (isExpanded) { setExpandedTxn(null) }
+                          else {
+                            setExpandedTxn(txn.id)
+                            setTxnEditCategory(txn.user_category || txn.ai_category || '')
+                            setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
+                            setTxnEditNotes(txn.notes || '')
+                            setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
+                            setJobSearchText('')
+                          }
+                        }}
+                        style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                      >
                         <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {txn.merchant_name || txn.name || 'Unknown'}
                         </div>
@@ -660,42 +666,11 @@ export default function Books() {
                       <div style={{ fontSize: '14px', fontWeight: '600', color: isIncome ? '#22c55e' : '#ef4444', minWidth: '80px', textAlign: 'right' }}>
                         {isIncome ? '+' : '-'}{formatCurrency(Math.abs(amountNum))}
                       </div>
-                      {(() => {
-                        const jId = txn.job_id || txn.ai_job_id
-                        const isAIJob = !txn.job_id && !!txn.ai_job_id
-                        const matchedJob = jId ? (jobs || []).find(j => j.id === jId) : null
-                        if (!matchedJob) return null
-                        return (
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: '4px',
-                            padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
-                            backgroundColor: isAIJob ? 'rgba(59,130,246,0.1)' : 'rgba(90,99,73,0.12)',
-                            color: isAIJob ? '#3b82f6' : theme.accent, flexShrink: 0, maxWidth: '120px',
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                          }}>
-                            {isAIJob && <Sparkles size={10} />}
-                            <Briefcase size={10} />
-                            {matchedJob.job_title || `Job #${matchedJob.id}`}
-                          </span>
-                        )
-                      })()}
-                      {category && (
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: '4px',
-                          padding: '3px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
-                          backgroundColor: isAI ? 'rgba(168,85,247,0.1)' : theme.accentBg,
-                          color: isAI ? '#a855f7' : theme.accent, flexShrink: 0
-                        }}>
-                          {isAI && <Sparkles size={10} />}
-                          {category}
-                        </span>
-                      )}
-                      {/* Quick accept or confirmed indicator */}
                       {txn.confirmed ? (
                         <CheckCircle size={14} style={{ color: '#22c55e', flexShrink: 0 }} />
-                      ) : (txn.ai_category && txn.ai_tax_category) ? (
+                      ) : (category && taxCat) ? (
                         <button
-                          onClick={(e) => handleQuickAccept(e, txn)}
+                          onClick={(e) => { e.stopPropagation(); handleQuickAccept(e, txn) }}
                           title="Accept AI prediction"
                           style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -707,8 +682,217 @@ export default function Books() {
                           <Check size={14} style={{ color: '#22c55e' }} />
                         </button>
                       ) : null}
-                      {isExpanded ? <ChevronDown size={14} style={{ color: theme.textMuted }} /> : <ChevronRight size={14} style={{ color: theme.textMuted }} />}
-                    </button>
+                      <div
+                        onClick={() => {
+                          if (isExpanded) { setExpandedTxn(null) }
+                          else {
+                            setExpandedTxn(txn.id)
+                            setTxnEditCategory(txn.user_category || txn.ai_category || '')
+                            setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
+                            setTxnEditNotes(txn.notes || '')
+                            setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
+                            setJobSearchText('')
+                          }
+                        }}
+                        style={{ cursor: 'pointer', flexShrink: 0, padding: '4px' }}
+                      >
+                        {isExpanded ? <ChevronDown size={14} style={{ color: theme.textMuted }} /> : <ChevronRight size={14} style={{ color: theme.textMuted }} />}
+                      </div>
+                    </div>
+                    {/* Row: bottom line = inline category dropdown, job selector */}
+                    {!txn.confirmed && (
+                      <div style={{
+                        display: 'flex', gap: '6px', padding: '2px 16px 10px', alignItems: 'center',
+                        backgroundColor: txn.confirmed ? 'transparent' : 'rgba(234,179,8,0.03)',
+                        flexWrap: 'wrap'
+                      }}>
+                        {/* Inline category select */}
+                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                          <select
+                            value={category || ''}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={async (e) => {
+                              e.stopPropagation()
+                              const val = e.target.value
+                              await supabase.from('plaid_transactions').update({ user_category: val }).eq('id', txn.id)
+                              await fetchPlaidTransactions()
+                            }}
+                            style={{
+                              padding: '3px 24px 3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
+                              border: 'none', cursor: 'pointer', appearance: 'none', outline: 'none',
+                              backgroundColor: isAI ? 'rgba(168,85,247,0.1)' : category ? theme.accentBg : 'rgba(239,68,68,0.08)',
+                              color: isAI ? '#a855f7' : category ? theme.accent : '#ef4444',
+                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237d8a7f' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                              backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center',
+                            }}
+                          >
+                            <option value="">{isIncome ? 'Category...' : 'Category...'}</option>
+                            {isIncome ? (
+                              <>
+                                <optgroup label="Income">
+                                  {expenseCategories.filter(c => c.type === 'income').map(c => (
+                                    <option key={c.id} value={c.name}>{c.name}</option>
+                                  ))}
+                                </optgroup>
+                                <optgroup label="Expense">
+                                  {expenseCategories.filter(c => c.type === 'expense').map(c => (
+                                    <option key={c.id} value={c.name}>{c.name}</option>
+                                  ))}
+                                </optgroup>
+                              </>
+                            ) : (
+                              <>
+                                <optgroup label="Expense">
+                                  {expenseCategories.filter(c => c.type === 'expense').map(c => (
+                                    <option key={c.id} value={c.name}>{c.name}</option>
+                                  ))}
+                                </optgroup>
+                                <optgroup label="Income">
+                                  {expenseCategories.filter(c => c.type === 'income').map(c => (
+                                    <option key={c.id} value={c.name}>{c.name}</option>
+                                  ))}
+                                </optgroup>
+                              </>
+                            )}
+                            <optgroup label="Other">
+                              <option value="Transfer">Transfer</option>
+                              <option value="Owner Distribution">Owner Distribution</option>
+                              <option value="Owner Contribution">Owner Contribution</option>
+                              <option value="Loan Payment">Loan Payment</option>
+                              <option value="Tax Payment">Tax Payment</option>
+                            </optgroup>
+                          </select>
+                          {isAI && category && <Sparkles size={8} style={{ position: 'absolute', left: '-2px', top: '-2px', color: '#a855f7' }} />}
+                        </div>
+                        {/* Inline tax category select */}
+                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                          <select
+                            value={taxCat || ''}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={async (e) => {
+                              e.stopPropagation()
+                              const val = e.target.value
+                              await supabase.from('plaid_transactions').update({ user_tax_category: val }).eq('id', txn.id)
+                              await fetchPlaidTransactions()
+                            }}
+                            style={{
+                              padding: '3px 24px 3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
+                              border: 'none', cursor: 'pointer', appearance: 'none', outline: 'none',
+                              backgroundColor: taxCat ? 'rgba(59,130,246,0.08)' : 'rgba(239,68,68,0.08)',
+                              color: taxCat ? '#3b82f6' : '#ef4444',
+                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237d8a7f' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                              backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center',
+                            }}
+                          >
+                            <option value="">Tax category... *</option>
+                            <optgroup label="Common Deductions">
+                              <option value="Line 20 - Advertising">Advertising</option>
+                              <option value="Line 20 - Office expenses">Office Expenses</option>
+                              <option value="Line 20 - Auto expenses">Vehicle/Auto</option>
+                              <option value="Line 12 - Repairs and maintenance">Repairs</option>
+                              <option value="Line 14 - Rent">Rent</option>
+                              <option value="Line 20 - Utilities">Utilities</option>
+                              <option value="Line 20 - Insurance">Insurance</option>
+                              <option value="Line 15 - Taxes and licenses">Taxes/Licenses</option>
+                              <option value="Line 20 - Travel">Travel</option>
+                              <option value="Line 20 - Meals">Meals</option>
+                            </optgroup>
+                            <optgroup label="Payroll & Labor">
+                              <option value="Line 10 - Guaranteed payments">Guaranteed Payments</option>
+                              <option value="Line 9 - Salaries and wages">Salaries/Wages</option>
+                              <option value="Line 20 - Contract labor">Contract Labor</option>
+                              <option value="Line 18 - Retirement plans">Retirement</option>
+                              <option value="Line 19 - Employee benefit programs">Benefits</option>
+                            </optgroup>
+                            <optgroup label="Other">
+                              <option value="Line 16a - Depreciation">Depreciation</option>
+                              <option value="Line 20 - Equipment rental">Equip Rental</option>
+                              <option value="Line 20 - Other deductions">Other Deductions</option>
+                              <option value="Not deductible">Not Deductible</option>
+                              <option value="Income">Income</option>
+                            </optgroup>
+                          </select>
+                        </div>
+                        {/* Job badge — clickable to expand and change */}
+                        {matchedJob ? (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setExpandedTxn(txn.id)
+                              setTxnEditCategory(txn.user_category || txn.ai_category || '')
+                              setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
+                              setTxnEditNotes(txn.notes || '')
+                              setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
+                              setJobSearchText('')
+                            }}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
+                              backgroundColor: isAIJob ? 'rgba(59,130,246,0.1)' : 'rgba(90,99,73,0.12)',
+                              color: isAIJob ? '#3b82f6' : theme.accent, cursor: 'pointer',
+                              maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                            }}
+                            title="Click to change job"
+                          >
+                            {isAIJob && <Sparkles size={8} />}
+                            <Briefcase size={9} />
+                            {matchedJob.job_title || `Job #${matchedJob.id}`}
+                          </span>
+                        ) : (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setExpandedTxn(txn.id)
+                              setTxnEditCategory(txn.user_category || txn.ai_category || '')
+                              setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
+                              setTxnEditNotes(txn.notes || '')
+                              setTxnEditJobId(null)
+                              setJobSearchText('')
+                            }}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
+                              backgroundColor: theme.bg, color: theme.textMuted, cursor: 'pointer',
+                              border: `1px dashed ${theme.border}`
+                            }}
+                            title="Link to a job"
+                          >
+                            <Briefcase size={9} />
+                            Job
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {/* Confirmed row: show badges read-only */}
+                    {txn.confirmed && (
+                      <div style={{
+                        display: 'flex', gap: '6px', padding: '0 16px 10px', alignItems: 'center',
+                        flexWrap: 'wrap'
+                      }}>
+                        {category && (
+                          <span style={{
+                            padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
+                            backgroundColor: theme.accentBg, color: theme.accent
+                          }}>{category}</span>
+                        )}
+                        {taxCat && (
+                          <span style={{
+                            padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
+                            backgroundColor: 'rgba(59,130,246,0.08)', color: '#3b82f6'
+                          }}>{taxCat.replace(/^Line \d+[a-z]? - /, '')}</span>
+                        )}
+                        {matchedJob && (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
+                            backgroundColor: 'rgba(90,99,73,0.12)', color: theme.accent
+                          }}>
+                            <Briefcase size={9} />
+                            {matchedJob.job_title || `Job #${matchedJob.id}`}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Expanded inline edit */}
                     {isExpanded && (
