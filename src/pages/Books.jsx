@@ -176,11 +176,18 @@ export default function Books() {
   }
 
   // Quick accept: confirm AI predictions directly from the row (no expand needed)
+  // Only available when AI has predicted BOTH category and tax category
   const handleQuickAccept = async (e, txn) => {
     e.stopPropagation()
-    const updates = { confirmed: true }
-    if (txn.ai_category) updates.user_category = txn.ai_category
-    if (txn.ai_tax_category) updates.user_tax_category = txn.ai_tax_category
+    if (!txn.ai_category || !txn.ai_tax_category) {
+      toast.error('Missing AI prediction — expand to review manually')
+      return
+    }
+    const updates = {
+      confirmed: true,
+      user_category: txn.ai_category,
+      user_tax_category: txn.ai_tax_category,
+    }
     if (txn.ai_job_id) updates.job_id = txn.ai_job_id
 
     await supabase.from('plaid_transactions').update(updates).eq('id', txn.id)
@@ -189,12 +196,20 @@ export default function Books() {
   }
 
   const handleConfirmTxn = async (txnId) => {
-    const category = txnEditCategory || undefined
-    const taxCategory = txnEditTaxCategory || undefined
+    const category = txnEditCategory
+    const taxCategory = txnEditTaxCategory
 
-    const updates = { confirmed: true }
-    if (category) updates.user_category = category
-    if (taxCategory) updates.user_tax_category = taxCategory
+    // Both category and tax category are required
+    if (!category || !taxCategory) {
+      toast.error('Expense Category and Tax Category are both required')
+      return
+    }
+
+    const updates = {
+      confirmed: true,
+      user_category: category,
+      user_tax_category: taxCategory,
+    }
     if (txnEditNotes) updates.notes = txnEditNotes
     if (txnEditJobId) updates.job_id = txnEditJobId
 
@@ -233,15 +248,28 @@ export default function Books() {
   }
 
   const handleConfirmAll = async () => {
-    const unreviewed = plaidTransactions.filter(t => !t.confirmed && (t.ai_category || t.user_category))
+    // Only confirm transactions that have BOTH category and tax category
+    const unreviewed = plaidTransactions.filter(t => {
+      if (t.confirmed) return false
+      const hasCat = t.user_category || t.ai_category
+      const hasTax = t.user_tax_category || t.ai_tax_category
+      return hasCat && hasTax
+    })
     if (unreviewed.length === 0) {
-      toast.error('No categorized transactions to confirm')
+      toast.error('No fully categorized transactions to confirm (need both expense & tax category)')
       return
     }
-    const ids = unreviewed.map(t => t.id)
-    await supabase.from('plaid_transactions').update({ confirmed: true }).in('id', ids)
+    // Set user_category/user_tax_category from AI if not already user-set
+    for (const t of unreviewed) {
+      const updates = { confirmed: true }
+      if (!t.user_category && t.ai_category) updates.user_category = t.ai_category
+      if (!t.user_tax_category && t.ai_tax_category) updates.user_tax_category = t.ai_tax_category
+      if (!t.job_id && t.ai_job_id) updates.job_id = t.ai_job_id
+      await supabase.from('plaid_transactions').update(updates).eq('id', t.id)
+    }
     await fetchPlaidTransactions()
-    toast.success(`Confirmed ${ids.length} transactions`)
+    const skipped = plaidTransactions.filter(t => !t.confirmed && !(t.user_category || t.ai_category) || !(t.user_tax_category || t.ai_tax_category)).length
+    toast.success(`Confirmed ${unreviewed.length} transactions${skipped > 0 ? ` (${skipped} skipped — missing categories)` : ''}`)
   }
 
   // ─── Expense handlers ───
@@ -665,7 +693,7 @@ export default function Books() {
                       {/* Quick accept or confirmed indicator */}
                       {txn.confirmed ? (
                         <CheckCircle size={14} style={{ color: '#22c55e', flexShrink: 0 }} />
-                      ) : (isAI || txn.ai_job_id) ? (
+                      ) : (txn.ai_category && txn.ai_tax_category) ? (
                         <button
                           onClick={(e) => handleQuickAccept(e, txn)}
                           title="Accept AI prediction"
