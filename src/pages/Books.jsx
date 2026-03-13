@@ -175,6 +175,19 @@ export default function Books() {
     setSyncing(false)
   }
 
+  // Quick accept: confirm AI predictions directly from the row (no expand needed)
+  const handleQuickAccept = async (e, txn) => {
+    e.stopPropagation()
+    const updates = { confirmed: true }
+    if (txn.ai_category) updates.user_category = txn.ai_category
+    if (txn.ai_tax_category) updates.user_tax_category = txn.ai_tax_category
+    if (txn.ai_job_id) updates.job_id = txn.ai_job_id
+
+    await supabase.from('plaid_transactions').update(updates).eq('id', txn.id)
+    await fetchPlaidTransactions()
+    toast.success('Accepted')
+  }
+
   const handleConfirmTxn = async (txnId) => {
     const category = txnEditCategory || undefined
     const taxCategory = txnEditTaxCategory || undefined
@@ -649,7 +662,23 @@ export default function Books() {
                           {category}
                         </span>
                       )}
-                      {txn.confirmed && <CheckCircle size={14} style={{ color: '#22c55e', flexShrink: 0 }} />}
+                      {/* Quick accept or confirmed indicator */}
+                      {txn.confirmed ? (
+                        <CheckCircle size={14} style={{ color: '#22c55e', flexShrink: 0 }} />
+                      ) : (isAI || txn.ai_job_id) ? (
+                        <button
+                          onClick={(e) => handleQuickAccept(e, txn)}
+                          title="Accept AI prediction"
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: '32px', height: '32px', borderRadius: '50%',
+                            backgroundColor: 'rgba(34,197,94,0.12)', border: '1.5px solid #22c55e',
+                            cursor: 'pointer', flexShrink: 0, padding: 0
+                          }}
+                        >
+                          <Check size={14} style={{ color: '#22c55e' }} />
+                        </button>
+                      ) : null}
                       {isExpanded ? <ChevronDown size={14} style={{ color: theme.textMuted }} /> : <ChevronRight size={14} style={{ color: theme.textMuted }} />}
                     </button>
 
