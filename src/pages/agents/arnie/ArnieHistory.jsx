@@ -21,10 +21,15 @@ export default function ArnieHistory() {
   const [deleting, setDeleting] = useState(null)
 
   useEffect(() => {
-    loadSessions().then(data => {
-      setSessions(data)
-      setLoading(false)
-    })
+    loadSessions()
+      .then(data => {
+        setSessions(data)
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error('[Arnie History] Failed to load sessions:', err)
+        setLoading(false)
+      })
   }, [])
 
   const handleDelete = async (e, sessionId) => {

@@ -10,9 +10,9 @@ const ARNIE_TABS = [
 export default function ArnieWorkspace() {
   return (
     <AgentRequired slug="arnie-og">
-      <div className="flex flex-col h-full">
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <AgentHeader slug="arnie-og" tabs={ARNIE_TABS} />
-        <div className="flex-1 overflow-auto">
+        <div style={{ flex: 1, overflow: 'auto' }}>
           <Outlet />
         </div>
       </div>

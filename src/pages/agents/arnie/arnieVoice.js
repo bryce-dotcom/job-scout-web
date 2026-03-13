@@ -1,5 +1,5 @@
 // ElevenLabs TTS for OG Arnie
-// Uses streaming audio for fast, natural-sounding speech
+// Reliability-first: AbortController timeout, guaranteed onEnd callback, safe currentAudio lifecycle.
 
 const API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY || ''
 const BASE_URL = 'https://api.elevenlabs.io/v1'
@@ -14,8 +14,8 @@ export const ARNIE_VOICES = [
   { id: 'bIHbv24MWmeRgasZH58o', name: 'Will', desc: 'Friendly, young American' },
 ]
 
-// Default voice — Bill (deep authoritative American, closest to a wise old man)
 const DEFAULT_VOICE = 'pqHfZKP75CvOlQylNhV4'
+const FETCH_TIMEOUT_MS = 10000
 
 // Strip markdown for cleaner speech
 function stripMarkdown(text) {
@@ -40,6 +40,7 @@ export function stopSpeaking() {
   if (currentAudio) {
     currentAudio.pause()
     currentAudio.currentTime = 0
+    if (currentAudio._blobUrl) URL.revokeObjectURL(currentAudio._blobUrl)
     currentAudio = null
   }
 }
@@ -49,8 +50,9 @@ export function isAvailable() {
 }
 
 export async function speak(text, voiceId, onStart, onEnd) {
+  // GUARANTEE: onEnd is called on every exit path
   if (!API_KEY) {
-    console.warn('ElevenLabs: No API key — check VITE_ELEVENLABS_API_KEY in .env')
+    console.warn('[Arnie Voice] No API key — skipping TTS')
     onEnd?.()
     return
   }
@@ -64,61 +66,91 @@ export async function speak(text, voiceId, onStart, onEnd) {
     return
   }
 
-  console.log('[Arnie Voice] Speaking:', clean.slice(0, 60) + '...')
+  // Truncate for speed
+  const truncated = clean.length > 4000 ? clean.slice(0, 4000) + '...' : clean
+
+  // Track whether onEnd has been called to prevent double-invocation
+  let ended = false
+  const callOnEnd = () => {
+    if (!ended) {
+      ended = true
+      onEnd?.()
+    }
+  }
 
   try {
-    const response = await fetch(`${BASE_URL}/text-to-speech/${voiceId || DEFAULT_VOICE}`, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'audio/mpeg',
-      },
-      body: JSON.stringify({
-        text: clean,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.78,
-          style: 0.3,
-          use_speaker_boost: true
+    // AbortController with 10s timeout — don't hang forever if ElevenLabs is down
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+    let response
+    try {
+      response = await fetch(
+        `${BASE_URL}/text-to-speech/${voiceId || DEFAULT_VOICE}?optimize_streaming_latency=3`,
+        {
+          method: 'POST',
+          headers: {
+            'xi-api-key': API_KEY,
+            'Content-Type': 'application/json',
+            'Accept': 'audio/mpeg',
+          },
+          body: JSON.stringify({
+            text: truncated,
+            model_id: 'eleven_flash_v2_5',
+            voice_settings: {
+              stability: 0.45,
+              similarity_boost: 0.78,
+              style: 0.3,
+              use_speaker_boost: true
+            }
+          }),
+          signal: controller.signal,
         }
-      })
-    })
+      )
+    } finally {
+      clearTimeout(timeoutId)
+    }
 
     if (!response.ok) {
-      const err = await response.text()
+      const err = await response.text().catch(() => 'unknown')
       console.error('[Arnie Voice] ElevenLabs error:', response.status, err)
-      onEnd?.()
+      callOnEnd()
       return
     }
 
-    console.log('[Arnie Voice] Audio received, playing...')
     const audioBlob = await response.blob()
     const audioUrl = URL.createObjectURL(audioBlob)
     const audio = new Audio(audioUrl)
-    currentAudio = audio
+    audio._blobUrl = audioUrl
 
-    audio.onplay = () => {
-      console.log('[Arnie Voice] Playing')
-      onStart?.()
-    }
     audio.onended = () => {
-      console.log('[Arnie Voice] Finished')
-      onEnd?.()
       URL.revokeObjectURL(audioUrl)
       currentAudio = null
+      callOnEnd()
     }
     audio.onerror = (e) => {
-      console.error('[Arnie Voice] Audio playback error:', e)
-      onEnd?.()
+      console.error('[Arnie Voice] Playback error:', e)
       URL.revokeObjectURL(audioUrl)
       currentAudio = null
+      callOnEnd()
     }
 
-    await audio.play()
+    // Only set currentAudio AFTER play() succeeds — avoids dangling ref on autoplay block
+    try {
+      await audio.play()
+      currentAudio = audio
+      onStart?.()
+    } catch (playErr) {
+      console.error('[Arnie Voice] Autoplay blocked or play failed:', playErr)
+      URL.revokeObjectURL(audioUrl)
+      callOnEnd()
+    }
   } catch (err) {
-    console.error('[Arnie Voice] Error:', err)
-    onEnd?.()
+    if (err.name === 'AbortError') {
+      console.error('[Arnie Voice] Fetch timed out after', FETCH_TIMEOUT_MS, 'ms')
+    } else {
+      console.error('[Arnie Voice] Error:', err)
+    }
+    callOnEnd()
   }
 }

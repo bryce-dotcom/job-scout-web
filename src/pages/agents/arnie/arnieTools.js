@@ -1,20 +1,60 @@
 import { useStore } from '../../../lib/store'
+import { getAccessLevel, ACCESS_LEVELS } from '../../../lib/accessControl'
 
-// Role helpers
-const isOwner = (role) => ['owner', 'super_admin'].includes(role)
-const isAdmin = (role) => ['admin', 'owner', 'super_admin'].includes(role)
+// Role helpers — accept role string from getUserRole()
+const isOwner = (role) => ['developer', 'super_admin'].includes(role)
+const isAdmin = (role) => ['developer', 'super_admin', 'admin'].includes(role)
 
 function getUserRole() {
-  const { user, employees, isAdmin: storeIsAdmin, isDeveloper } = useStore.getState()
+  const { user, employees } = useStore.getState()
   if (!user) return { role: 'user', userId: null, employee: null }
 
-  const employee = employees.find(e => e.email === user.email)
+  // Safe guard: if employees haven't loaded yet, fall back to user object directly
+  const empList = employees || []
+  const employee = empList.length > 0
+    ? empList.find(e => e.email === user.email)
+    : null
+
+  // If no employee record found, try user.user_role directly
+  if (!employee) {
+    const directRole = user.user_role || user.role || 'user'
+    const roleMap = { developer: 'developer', super_admin: 'super_admin', admin: 'admin', manager: 'manager', team_lead: 'team_lead' }
+    return { role: roleMap[directRole] || 'user', userId: null, employee: null }
+  }
+
+  const level = getAccessLevel(employee)
   let role = 'user'
-  if (isDeveloper || employee?.is_developer) role = 'super_admin'
-  else if (storeIsAdmin || employee?.is_admin) role = 'admin'
-  else if (employee?.role === 'owner' || employee?.role === 'admin') role = employee.role
+  if (level >= ACCESS_LEVELS.DEVELOPER) role = 'developer'
+  else if (level >= ACCESS_LEVELS.SUPER_ADMIN) role = 'super_admin'
+  else if (level >= ACCESS_LEVELS.ADMIN) role = 'admin'
+  else if (level >= ACCESS_LEVELS.MANAGER) role = 'manager'
+  else if (level >= ACCESS_LEVELS.TEAM_LEAD) role = 'team_lead'
 
   return { role, userId: employee?.id, employee }
+}
+
+// Returns counts of loaded records so Gemini knows what data it actually has
+export function getDataLoadStatus() {
+  const state = useStore.getState()
+  return {
+    employees: (state.employees || []).length,
+    jobs: (state.jobs || []).length,
+    leads: (state.leads || []).length,
+    customers: (state.customers || []).length,
+    products: (state.products || []).length,
+    invoices: (state.invoices || []).length,
+    expenses: (state.expenses || []).length,
+    payments: (state.payments || []).length,
+    leadPayments: (state.leadPayments || []).length,
+    inventory: (state.inventory || []).length,
+    quotes: (state.quotes || []).length,
+    fleet: (state.fleet || []).length,
+    lightingAudits: (state.lightingAudits || []).length,
+    routes: (state.routes || []).length,
+    timeLogs: (state.timeLogs || []).length,
+    appointments: (state.appointments || []).length,
+    communications: (state.communications || []).length,
+  }
 }
 
 export function getJobs(role, userId) {
@@ -121,8 +161,16 @@ export function getCustomers(role, userId) {
 export function getLeads(role) {
   if (!isAdmin(role)) return { restricted: true, message: 'Lead data requires admin access.' }
 
-  const { leads } = useStore.getState()
+  const { leads, employees } = useStore.getState()
   const items = leads || []
+  const empList = employees || []
+
+  // Helper to resolve employee name from id
+  const empName = (id) => {
+    if (!id) return 'Unassigned'
+    const emp = empList.find(e => e.id === id)
+    return emp?.name || 'Unknown'
+  }
 
   const byStatus = {}
   items.forEach(l => {
@@ -130,14 +178,51 @@ export function getLeads(role) {
     byStatus[s] = (byStatus[s] || 0) + 1
   })
 
+  // Per-salesperson breakdown (by salesperson_id or source_employee)
+  const bySalesperson = {}
+  items.forEach(l => {
+    const spId = l.salesperson_id || l.lead_source_employee_id
+    const name = l.source_employee?.name || empName(spId)
+    if (!bySalesperson[name]) bySalesperson[name] = { count: 0, value: 0, won: 0, wonValue: 0 }
+    bySalesperson[name].count++
+    bySalesperson[name].value += parseFloat(l.estimated_value || l.value || 0)
+    if (l.status === 'won' || l.status === 'closed_won' || l.status === 'sold') {
+      bySalesperson[name].won++
+      bySalesperson[name].wonValue += parseFloat(l.estimated_value || l.value || 0)
+    }
+  })
+
+  // This month's leads
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+  const thisMonth = items.filter(l => l.created_at >= monthStart)
+  const thisMonthBySalesperson = {}
+  thisMonth.forEach(l => {
+    const spId = l.salesperson_id || l.lead_source_employee_id
+    const name = l.source_employee?.name || empName(spId)
+    if (!thisMonthBySalesperson[name]) thisMonthBySalesperson[name] = { count: 0, value: 0, won: 0, wonValue: 0 }
+    thisMonthBySalesperson[name].count++
+    thisMonthBySalesperson[name].value += parseFloat(l.estimated_value || l.value || 0)
+    if (l.status === 'won' || l.status === 'closed_won' || l.status === 'sold') {
+      thisMonthBySalesperson[name].won++
+      thisMonthBySalesperson[name].wonValue += parseFloat(l.estimated_value || l.value || 0)
+    }
+  })
+
   const hot = items
     .filter(l => l.priority === 'hot' || l.temperature === 'hot' || l.status === 'qualified')
     .slice(0, 10)
 
+  const recent = items.slice(0, 15)
+
   return {
     total: items.length,
+    thisMonthCount: thisMonth.length,
     byStatus,
-    hot: hot.map(l => ({ id: l.id, name: l.name || l.company_name, status: l.status, value: l.estimated_value }))
+    bySalesperson,
+    thisMonthBySalesperson,
+    hot: hot.map(l => ({ id: l.id, name: l.name || l.company_name, status: l.status, value: l.estimated_value, salesperson: l.source_employee?.name || empName(l.salesperson_id || l.lead_source_employee_id) })),
+    recent: recent.map(l => ({ id: l.id, name: l.name || l.company_name, status: l.status, value: l.estimated_value, salesperson: l.source_employee?.name || empName(l.salesperson_id || l.lead_source_employee_id), date: l.created_at }))
   }
 }
 
@@ -551,69 +636,84 @@ function buildJobContext(job, jobId, jobLines, jobSections, customers, products,
 }
 
 // Main function to assemble data context based on detected intent
+// Each domain is wrapped in try-catch so one crash doesn't kill all data
 export function assembleDataContext(domains, role, userId) {
   const sections = []
 
+  // Always inject data load status first
+  try {
+    const status = getDataLoadStatus()
+    sections.push({ label: 'Data Load Status (record counts available)', data: status })
+  } catch (e) {
+    console.error('[Arnie Tools] getDataLoadStatus failed:', e)
+  }
+
   for (const domain of domains) {
-    switch (domain) {
-      case 'jobs':
-        sections.push({ label: 'Jobs', data: getJobs(role, userId) })
-        break
-      case 'products':
-        sections.push({ label: 'Products & Services', data: getProducts() })
-        break
-      case 'inventory':
-        sections.push({ label: 'Inventory', data: getInventory(role, userId) })
-        break
-      case 'customers':
-        sections.push({ label: 'Customers', data: getCustomers(role, userId) })
-        break
-      case 'leads':
-        sections.push({ label: 'Leads/Deals', data: getLeads(role) })
-        break
-      case 'employees':
-        sections.push({ label: 'Team/Employees', data: getEmployees(role) })
-        break
-      case 'financials':
-        sections.push({ label: 'Financials', data: getFinancials(role) })
-        break
-      case 'schedule':
-        sections.push({ label: 'Schedule', data: getSchedule(role, userId) })
-        break
-      case 'company':
-        sections.push({ label: 'Company Info', data: getCompanyContext() })
-        break
-      case 'agents':
-        sections.push({ label: 'AI Agents', data: getAgentKnowledge() })
-        break
-      case 'fleet':
-        sections.push({ label: 'Fleet', data: getFleet(role) })
-        break
-      case 'quotes':
-        sections.push({ label: 'Quotes', data: getQuotes(role) })
-        break
-      case 'appointments':
-        sections.push({ label: 'Appointments', data: getAppointments(role, userId) })
-        break
-      case 'audits':
-        sections.push({ label: 'Lighting Audits', data: getLightingAudits(role) })
-        break
-      case 'routes':
-        sections.push({ label: 'Routes', data: getRoutes(role) })
-        break
-      case 'communications':
-        sections.push({ label: 'Communications', data: getCommunications(role) })
-        break
-      case 'timeLogs':
-        sections.push({ label: 'Time Logs', data: getTimeLogs(role, userId) })
-        break
-      case 'currentPage':
-        sections.push({ label: 'Current Page Context', data: getCurrentPageContext(userId) })
-        break
-      case 'activeJob':
-        const active = getActiveJobContext(userId)
-        if (active) sections.push({ label: 'Job(s) You Are Clocked Into Right Now', data: active })
-        break
+    try {
+      switch (domain) {
+        case 'jobs':
+          sections.push({ label: 'Jobs', data: getJobs(role, userId) })
+          break
+        case 'products':
+          sections.push({ label: 'Products & Services', data: getProducts() })
+          break
+        case 'inventory':
+          sections.push({ label: 'Inventory', data: getInventory(role, userId) })
+          break
+        case 'customers':
+          sections.push({ label: 'Customers', data: getCustomers(role, userId) })
+          break
+        case 'leads':
+          sections.push({ label: 'Leads/Deals', data: getLeads(role) })
+          break
+        case 'employees':
+          sections.push({ label: 'Team/Employees', data: getEmployees(role) })
+          break
+        case 'financials':
+          sections.push({ label: 'Financials', data: getFinancials(role) })
+          break
+        case 'schedule':
+          sections.push({ label: 'Schedule', data: getSchedule(role, userId) })
+          break
+        case 'company':
+          sections.push({ label: 'Company Info', data: getCompanyContext() })
+          break
+        case 'agents':
+          sections.push({ label: 'AI Agents', data: getAgentKnowledge() })
+          break
+        case 'fleet':
+          sections.push({ label: 'Fleet', data: getFleet(role) })
+          break
+        case 'quotes':
+          sections.push({ label: 'Quotes', data: getQuotes(role) })
+          break
+        case 'appointments':
+          sections.push({ label: 'Appointments', data: getAppointments(role, userId) })
+          break
+        case 'audits':
+          sections.push({ label: 'Lighting Audits', data: getLightingAudits(role) })
+          break
+        case 'routes':
+          sections.push({ label: 'Routes', data: getRoutes(role) })
+          break
+        case 'communications':
+          sections.push({ label: 'Communications', data: getCommunications(role) })
+          break
+        case 'timeLogs':
+          sections.push({ label: 'Time Logs', data: getTimeLogs(role, userId) })
+          break
+        case 'currentPage':
+          sections.push({ label: 'Current Page Context', data: getCurrentPageContext(userId) })
+          break
+        case 'activeJob': {
+          const active = getActiveJobContext(userId)
+          if (active) sections.push({ label: 'Job(s) You Are Clocked Into Right Now', data: active })
+          break
+        }
+      }
+    } catch (e) {
+      console.error(`[Arnie Tools] Domain "${domain}" failed:`, e)
+      sections.push({ label: domain, data: { error: `Failed to load ${domain} data` } })
     }
   }
 

@@ -1,12 +1,14 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { getUserRole, assembleDataContext } from './arnieTools'
+import { getUserRole, assembleDataContext, getDataLoadStatus } from './arnieTools'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '')
+const GEMINI_TIMEOUT_MS = 30000
 
 function buildSystemPrompt(user, company, role) {
-  const roleName = role === 'super_admin' ? 'Owner/Super Admin' : role === 'admin' ? 'Admin' : 'Field Tech'
+  const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
+  const roleName = roleNames[role] || 'User'
 
   return `You are OG Arnie — the wise, funny, old-school AI assistant for JobScout.
 
@@ -50,15 +52,25 @@ function buildSystemPrompt(user, company, role) {
 - If they ask "what should I do next?" or "help me with this job", walk them through their sections in order.
 - If they ask about a specific product on the job, give them details from the line items.
 
+## CRITICAL: Data Accuracy Rules
+- **ONLY quote numbers, names, counts, and facts from the "Current Data Context" section below.** If data is provided, use it exactly.
+- **If data is NOT in the context, say so honestly.** Say something like "I don't have that data loaded right now, boss" or "That info ain't in my view right now, kid." NEVER guess or make up numbers, counts, names, or statuses.
+- Do NOT invent job counts, revenue figures, customer names, employee details, or any other specifics. If the data shows 3 jobs, say 3 — don't say "about 15" or guess.
+- When data shows zero results or an empty list, say "Looks like there's nothing there right now" — do NOT fabricate entries.
+- It's OK to give general business advice, explain features, or chat casually without data. But when answering data questions, stick to what's provided.
+- **Check the "Data Load Status" section first.** If a record count is 0, that data simply hasn't loaded — tell the user honestly.
+
 ## What You Cannot Do
 - You cannot modify data — you are read-only
 - You cannot access data outside the user's role permissions
 - You do not have real-time external data (weather, traffic, etc.)
+- You CANNOT guess or estimate data you don't have — always be honest about gaps
 
 ## Role Permissions (${roleName})
-${role === 'user' ? `- Can see: assigned jobs, products, assigned inventory, assigned customers, team names, your schedule
-- Cannot see: leads/deals, all jobs, financials, payroll, fleet. If they ask, say something like "Ah, that's above my pay grade for your login, kid. Talk to your admin."` : ''}${role === 'admin' ? `- Can see: all jobs, products, inventory, customers, leads, employees (no pay rates), fleet
-- Cannot see: payroll details, pay rates, expense reports. If they ask, say "That's owner-level stuff, boss. I can't peek behind that curtain."` : ''}${role === 'super_admin' || role === 'owner' ? `- Full access to all data including financials, payroll, and pay rates. You're talking to the big boss — give 'em everything.` : ''}
+${role === 'user' || role === 'team_lead' ? `- Can see: assigned jobs, products, assigned inventory, assigned customers, team names, your schedule
+- Cannot see: leads/deals, all jobs, financials, payroll, fleet. If they ask, say something like "Ah, that's above my pay grade for your login, kid. Talk to your admin."` : ''}${role === 'manager' ? `- Can see: all jobs, products, inventory, customers, employees, schedule
+- Cannot see: full financials, pay rates. If they ask, say "That's above your clearance, boss."` : ''}${role === 'admin' ? `- Can see: all jobs, products, inventory, customers, leads, employees (no pay rates), fleet
+- Cannot see: payroll details, pay rates, expense reports. If they ask, say "That's owner-level stuff, boss. I can't peek behind that curtain."` : ''}${role === 'super_admin' || role === 'developer' ? `- Full access to all data including financials, payroll, and pay rates. You're talking to the big boss — give 'em everything.` : ''}
 
 ## Formatting
 - Use markdown for formatting (tables, bold, lists, code blocks)
@@ -102,9 +114,10 @@ export function detectIntent(message) {
     domains.add('customers')
   }
 
-  // Leads
-  if (/\b(lead|leads|deal|deals|pipeline|prospect|opportunity|sales)\b/.test(lower)) {
+  // Leads / Sales — fixed regex: removed misplaced \b inside group for "rep"
+  if (/\b(lead|leads|deal|deals|pipeline|prospect|opportunity|sales|sell|sold|selling|make|made|commission|salesperson|rep)\b/.test(lower)) {
     domains.add('leads')
+    domains.add('employees')
   }
 
   // Employees
@@ -112,8 +125,8 @@ export function detectIntent(message) {
     domains.add('employees')
   }
 
-  // Financials
-  if (/\b(invoice|payment|expense|revenue|financial|money|profit|cost|billing|payroll|income|earnings)\b/.test(lower)) {
+  // Financials — added sell/sold/make/made/commission to also pull financials
+  if (/\b(invoice|payment|expense|revenue|financial|money|profit|cost|billing|payroll|income|earnings|sell|sold|make|made|commission)\b/.test(lower)) {
     domains.add('financials')
   }
 
@@ -157,6 +170,14 @@ export function detectIntent(message) {
     domains.add('company')
   }
 
+  // Person-specific questions — if asking about a person, pull employees + leads + jobs + financials
+  if (/\b(did|how much|how many)\b.*\b(he|she|they|sell|make|get|close|do)\b/.test(lower)) {
+    domains.add('employees')
+    domains.add('leads')
+    domains.add('jobs')
+    domains.add('financials')
+  }
+
   // General / overview — send everything relevant
   if (/\b(overview|summary|dashboard|how many|report|status|everything|total|count|all)\b/.test(lower)) {
     domains.add('jobs')
@@ -186,10 +207,11 @@ export function detectIntent(message) {
 }
 
 // Streaming Gemini call — calls onChunk with each text delta for instant UI updates
+// Wrapped in try-catch: if stream errors mid-way and we have partial text, return it instead of throwing
 export async function callGeminiStream(conversationHistory, systemPrompt, dataContext, onChunk) {
   const contextMessage = dataContext
-    ? `\n\n## Current Data Context\nHere is the relevant company data for answering the user's question:\n\n${dataContext}`
-    : ''
+    ? `\n\n## Current Data Context (REAL DATA — use ONLY these facts)\nBelow is the ACTUAL company data pulled from the database. Use ONLY these numbers and facts when answering data questions. If something is not listed here, you do NOT have it.\n\n${dataContext}`
+    : '\n\n## Current Data Context\nNo data was loaded for this query. If the user asks about specific numbers or records, let them know you don\'t have that data available right now.'
 
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.0-flash',
@@ -204,27 +226,85 @@ export async function callGeminiStream(conversationHistory, systemPrompt, dataCo
   })
 
   const lastMessage = conversationHistory[conversationHistory.length - 1]
-  const result = await chat.sendMessageStream(lastMessage.content)
+
+  // 30s timeout via Promise.race around the Gemini call
+  const streamPromise = chat.sendMessageStream(lastMessage.content)
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Gemini response timed out after 30s')), GEMINI_TIMEOUT_MS)
+  )
+  const result = await Promise.race([streamPromise, timeoutPromise])
 
   let fullText = ''
-  for await (const chunk of result.stream) {
-    const text = chunk.text()
-    if (text) {
-      fullText += text
-      onChunk(fullText)
+  try {
+    for await (const chunk of result.stream) {
+      const text = chunk.text()
+      if (text) {
+        fullText += text
+        onChunk(fullText)
+      }
     }
+  } catch (streamErr) {
+    console.error('[Arnie Engine] Stream error mid-response:', streamErr)
+    // If we got partial text, return it rather than losing everything
+    if (fullText.length > 0) {
+      console.warn('[Arnie Engine] Returning partial response (' + fullText.length + ' chars)')
+      return fullText
+    }
+    throw streamErr
   }
   return fullText
 }
 
 // Send a message through the full pipeline with streaming
 export async function sendMessageStream(message, history = [], onChunk) {
-  const { role, userId } = getUserRole()
+  let role, userId
+  try {
+    const ur = getUserRole()
+    role = ur.role
+    userId = ur.userId
+  } catch (e) {
+    console.error('[Arnie] getUserRole failed:', e)
+    throw new Error('Failed to get user role: ' + e.message)
+  }
+
   const { user, company } = useStore.getState()
 
-  const systemPrompt = buildSystemPrompt(user, company, role)
-  const domains = detectIntent(message)
-  const dataContext = assembleDataContext(domains, role, userId)
+  let systemPrompt
+  try {
+    systemPrompt = buildSystemPrompt(user, company, role)
+  } catch (e) {
+    console.error('[Arnie] buildSystemPrompt failed:', e)
+    throw new Error('Failed to build prompt: ' + e.message)
+  }
+
+  let dataContext
+  try {
+    const domains = detectIntent(message)
+
+    // Always include activeJob and currentPage for context awareness
+    if (!domains.includes('activeJob')) domains.push('activeJob')
+    if (!domains.includes('currentPage')) domains.push('currentPage')
+
+    // If no data domains detected, include basic context so Arnie has something
+    if (domains.length <= 2) {
+      domains.push('jobs', 'schedule', 'company')
+    }
+
+    dataContext = assembleDataContext(domains, role, userId)
+  } catch (e) {
+    console.error('[Arnie] Data assembly failed:', e)
+    // Don't crash — just proceed without data
+    dataContext = ''
+  }
+
+  // If data context is empty/minimal, tell Gemini explicitly
+  if (!dataContext || dataContext.trim().length < 50) {
+    const loadStatus = getDataLoadStatus()
+    const totalRecords = Object.values(loadStatus).reduce((a, b) => a + b, 0)
+    if (totalRecords === 0) {
+      dataContext = '### Data Load Status\nWARNING: No data has loaded yet. The store is still initializing. Tell the user their data is still loading and to try again in a moment.'
+    }
+  }
 
   const conversationHistory = [
     ...history,
