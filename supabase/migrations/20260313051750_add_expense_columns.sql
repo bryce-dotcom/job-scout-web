@@ -1,0 +1,9 @@
+-- Add missing columns to expenses for full expense tracking
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS tax_category text;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS form_1065_category text;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS account text;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS business text;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS client text;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS merchant text;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS source text;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt text;

@@ -97,6 +97,11 @@ export const useStore = create(
       // AI Modules (Dynamic menu agents)
       aiModules: [],
 
+      // Plaid / Books
+      connectedAccounts: [],
+      plaidTransactions: [],
+      categoryRules: [],
+
       // Conrad Connect (Email Marketing)
       ccIntegration: null,
       emailTemplates: [],
@@ -183,6 +188,9 @@ export const useStore = create(
           agents: [],
           companyAgents: [],
           aiModules: [],
+          connectedAccounts: [],
+          plaidTransactions: [],
+          categoryRules: [],
           ccIntegration: null,
           emailTemplates: [],
           emailCampaigns: [],
@@ -1331,6 +1339,93 @@ export const useStore = create(
         }
       },
 
+      // ========================================
+      // FETCH FUNCTIONS - Plaid / Books
+      // ========================================
+
+      fetchConnectedAccounts: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        try {
+          const { data, error } = await supabase
+            .from('connected_accounts')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('created_at', { ascending: false });
+
+          if (!error) {
+            set({ connectedAccounts: data || [] });
+          }
+        } catch (e) {
+          console.log('[fetchConnectedAccounts] Offline');
+        }
+      },
+
+      fetchPlaidTransactions: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        try {
+          const { data, error } = await supabase
+            .from('plaid_transactions')
+            .select('*, account:connected_accounts(id, account_name, mask, institution_name)')
+            .eq('company_id', companyId)
+            .order('date', { ascending: false })
+            .limit(500);
+
+          if (!error) {
+            set({ plaidTransactions: data || [] });
+          }
+        } catch (e) {
+          console.log('[fetchPlaidTransactions] Offline');
+        }
+      },
+
+      fetchCategoryRules: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+
+        try {
+          const { data, error } = await supabase
+            .from('category_rules')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('priority', { ascending: false });
+
+          if (!error) {
+            set({ categoryRules: data || [] });
+          }
+        } catch (e) {
+          console.log('[fetchCategoryRules] Offline');
+        }
+      },
+
+      syncPlaidTransactions: async () => {
+        const { companyId, fetchConnectedAccounts, fetchPlaidTransactions } = get();
+        if (!companyId) return;
+
+        // Sync all accounts
+        const { data: syncData, error: syncError } = await supabase.functions.invoke('plaid-link', {
+          body: { action: 'sync_all', company_id: companyId }
+        });
+
+        if (syncError || syncData?.error) {
+          console.error('[syncPlaidTransactions] Sync error:', syncData?.error || syncError);
+          return { error: syncData?.error || 'Sync failed' };
+        }
+
+        // Categorize new transactions
+        const { data: catData } = await supabase.functions.invoke('categorize-transactions', {
+          body: { action: 'categorize_batch', company_id: companyId }
+        });
+
+        // Refresh data
+        await Promise.all([fetchConnectedAccounts(), fetchPlaidTransactions()]);
+
+        return { sync: syncData, categorized: catData };
+      },
+
       fetchEmailAutomations: async () => {
         const { companyId, hasAgent } = get();
         if (!companyId || !hasAgent('conrad-connect')) return;
@@ -1857,7 +1952,10 @@ export const useStore = create(
           fetchEmailTemplates,
           fetchEmailCampaigns,
           fetchCcContactMap,
-          fetchEmailAutomations
+          fetchEmailAutomations,
+          fetchConnectedAccounts,
+          fetchPlaidTransactions,
+          fetchCategoryRules
         } = get();
 
         // Fetch core data in parallel — use allSettled so one failure doesn't block all
@@ -1901,7 +1999,10 @@ export const useStore = create(
           ['emailTemplates', fetchEmailTemplates()],
           ['emailCampaigns', fetchEmailCampaigns()],
           ['ccContactMap', fetchCcContactMap()],
-          ['emailAutomations', fetchEmailAutomations()]
+          ['emailAutomations', fetchEmailAutomations()],
+          ['connectedAccounts', fetchConnectedAccounts()],
+          ['plaidTransactions', fetchPlaidTransactions()],
+          ['categoryRules', fetchCategoryRules()]
         ];
 
         const pending = new Set(namedFetches.map(([name]) => name));

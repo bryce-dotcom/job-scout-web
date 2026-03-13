@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { images, jobContext, checklist } = await req.json();
+    const { images, jobContext, checklist, verificationType } = await req.json();
 
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (!ANTHROPIC_API_KEY) {
@@ -28,24 +28,7 @@ serve(async (req) => {
       });
     }
 
-    const ctx = jobContext || {};
-    const industry = ctx.industry || 'general';
-
-    // Build industry-specific instructions
-    let industryInstructions = '';
-    if (industry === 'lighting') {
-      industryInstructions = `
-LIGHTING-SPECIFIC CHECKS:
-- Are LED fixtures properly installed and seated flush?
-- Is the color temperature consistent across fixtures?
-- Are there any visible wiring issues, exposed conductors, or loose connections?
-- Have old ballasts been removed or properly disconnected?
-- Are fixture labels applied showing new wattage/model?
-- Are control systems, dimmers, or occupancy sensors working?
-- Is there evidence the customer was shown how to use any lighting control apps or systems?
-- Have ceiling tiles been properly replaced with no gaps?
-- Are all lights powered on and commissioned?`;
-    }
+    const isDaily = verificationType === 'daily';
 
     // Build checklist text
     const checklistText = (checklist || []).map((c: any) =>
@@ -68,7 +51,86 @@ LIGHTING-SPECIFIC CHECKS:
       }
     ])).flat();
 
-    const promptText = `You are Victor, an expert field verification agent for commercial construction and service work. Your job is to rigorously inspect completed work through photos and crew checklists to ensure quality, completeness, cleanliness, and customer readiness.
+    let promptText: string;
+
+    if (isDaily) {
+      // Daily end-of-day housekeeping prompt
+      promptText = `You are Victor, an expert field verification agent. Your job right now is to verify end-of-day jobsite housekeeping and vehicle readiness for a field crew that has finished their workday.
+
+CREW'S END-OF-DAY CHECKLIST (what they say they completed):
+${checklistText || 'No checklist provided'}
+
+ANALYZE ALL ${images.length} PHOTOS. Evaluate:
+1. CLEANLINESS: Is the work area / jobsite clean? Debris removed? Swept?
+2. TOOL MANAGEMENT: Are all tools gathered, organized, and accounted for? Nothing left on-site?
+3. VEHICLE CONDITION: Is the truck/vehicle tidied? Ladders secured? Equipment properly stowed?
+4. SITE CONDITION: Is customer property undamaged? No materials or trash left behind?
+
+VERIFY THE CREW'S CHECKLIST: For each item they checked, assess from the photos whether it appears to actually be done. Flag any discrepancies.
+
+Be fair but thorough. This is a quick end-of-day quality check, not a job completion inspection.
+
+Return ONLY this JSON:
+{
+  "overall_score": <1-100 integer>,
+  "grade": "<A|B|C|D|F>",
+  "summary": "<2-3 sentence assessment of end-of-day readiness>",
+  "cleanliness_score": <1-100 — site cleanliness and debris removal>,
+  "completeness_score": <1-100 — tools gathered and accounted for>,
+  "work_quality_score": <1-100 — vehicle condition, ladders secured, equipment stowed>,
+  "customer_readiness_score": <1-100 — nothing left behind, customer property intact>,
+  "photo_analyses": [
+    {
+      "photo_index": <0-based index>,
+      "photo_type": "<type>",
+      "score": <1-100>,
+      "observations": "<what Victor sees in this photo>",
+      "issues": ["<any concerns>"],
+      "positives": ["<things done well>"]
+    }
+  ],
+  "checklist_verification": [
+    {
+      "item": "<checklist item text>",
+      "crew_checked": <true|false>,
+      "ai_verified": <true|false — does the photo evidence support this?>,
+      "confidence": "<high|medium|low>",
+      "notes": "<explanation if discrepancy>"
+    }
+  ],
+  "issues_found": [
+    {
+      "issue": "<description>",
+      "severity": "<critical|major|minor>",
+      "recommendation": "<what to fix>"
+    }
+  ]
+}
+
+Score guide: A=90+ (excellent), B=80-89 (good, minor issues), C=70-79 (acceptable, needs attention), D=60-69 (below standard), F=below 60 (unacceptable).
+
+Only return valid JSON, no other text.`;
+    } else {
+      // Existing completion verification prompt
+      const ctx = jobContext || {};
+      const industry = ctx.industry || 'general';
+
+      let industryInstructions = '';
+      if (industry === 'lighting') {
+        industryInstructions = `
+LIGHTING-SPECIFIC CHECKS:
+- Are LED fixtures properly installed and seated flush?
+- Is the color temperature consistent across fixtures?
+- Are there any visible wiring issues, exposed conductors, or loose connections?
+- Have old ballasts been removed or properly disconnected?
+- Are fixture labels applied showing new wattage/model?
+- Are control systems, dimmers, or occupancy sensors working?
+- Is there evidence the customer was shown how to use any lighting control apps or systems?
+- Have ceiling tiles been properly replaced with no gaps?
+- Are all lights powered on and commissioned?`;
+      }
+
+      promptText = `You are Victor, an expert field verification agent for commercial construction and service work. Your job is to rigorously inspect completed work through photos and crew checklists to ensure quality, completeness, cleanliness, and customer readiness.
 
 JOB: ${ctx.jobTitle || 'Unknown'} | ${ctx.serviceType || 'General'} | ${ctx.address || 'No address'}
 TEAM: ${ctx.assignedTeam || 'Unknown'}
@@ -130,6 +192,7 @@ Return ONLY this JSON:
 Score guide: A=90+ (excellent), B=80-89 (good, minor issues), C=70-79 (acceptable, needs attention), D=60-69 (below standard), F=below 60 (unacceptable, redo needed).
 
 Only return valid JSON, no other text.`;
+    }
 
     // Call Claude Vision API
     const response = await fetch('https://api.anthropic.com/v1/messages', {

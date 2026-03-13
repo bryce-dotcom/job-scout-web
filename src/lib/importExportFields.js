@@ -192,6 +192,38 @@ export const fleetFields = [
   { field: 'mileage_hours', label: 'Mileage/Hours', type: 'number', desc: 'Current mileage or operating hours' },
 ]
 
+export const expensesFields = [
+  { field: 'category', label: 'Category', type: 'text', desc: 'Expense category (Fuel, Materials, Supplies, Tools, Meals, Travel, Office, Insurance, Utilities, Marketing, Payroll, Other)' },
+  { field: 'tax_category', label: 'Tax Category', type: 'text', desc: 'Tax category for reporting' },
+  { field: 'form_1065_category', label: 'Form 1065 Category', type: 'text', desc: 'IRS Form 1065 category for partnership returns' },
+  { field: 'account', label: 'Account', type: 'text', desc: 'Account name or category' },
+  { field: 'business', label: 'Business', type: 'text', desc: 'Business name or business unit' },
+  { field: 'client', label: 'Client', type: 'text', desc: 'Client or customer name' },
+  { field: 'merchant', label: 'Merchant', type: 'text', desc: 'Merchant or vendor name' },
+  { field: 'source', label: 'Source', type: 'text', desc: 'Payment source or origin' },
+  { field: 'description', label: 'Description', type: 'text', desc: 'Expense description or memo' },
+  { field: 'receipt', label: 'Receipt', type: 'text', desc: 'Receipt number or reference' },
+  { field: 'date', label: 'Date', type: 'date', required: true, desc: 'Expense date' },
+  { field: 'amount', label: 'Amount', type: 'number', required: true, desc: 'Expense amount in dollars' },
+  { field: 'expense_id', label: 'Expense ID', type: 'text', desc: 'Unique expense identifier' },
+  { field: 'status', label: 'Status', type: 'text', desc: 'Expense status (Pending, Approved, Denied, Paid)' },
+  { field: 'notes', label: 'Notes', type: 'text', desc: 'Additional notes' },
+]
+
+export const depositsFields = [
+  { field: 'business', label: 'Business', type: 'text', desc: 'Business name or business unit' },
+  { field: 'lead_customer_name', label: 'Customer / Client', type: 'text', desc: 'Customer or client name' },
+  { field: 'description', label: 'Description', type: 'text', desc: 'Payment description or memo' },
+  { field: 'account', label: 'Account', type: 'text', desc: 'Account name or category (e.g. Service Income)' },
+  { field: 'lead_source', label: 'Source', type: 'text', desc: 'Payment source or origin (e.g. Stripe, Check, ACH)' },
+  { field: 'receipt', label: 'Receipt', type: 'text', desc: 'Receipt number or reference' },
+  { field: 'date_created', label: 'Date', type: 'date', required: true, desc: 'Date the deposit or payment was received' },
+  { field: 'amount', label: 'Amount', type: 'number', required: true, desc: 'Deposit or payment amount in dollars' },
+  { field: 'payment_id', label: 'Payment ID', type: 'text', desc: 'Payment reference ID or transaction number' },
+  { field: 'payment_status', label: 'Status', type: 'text', desc: 'Payment status (Pending, Completed, Failed, Refunded)' },
+  { field: 'notes', label: 'Notes', type: 'text', desc: 'Additional notes' },
+]
+
 // --- Related / child table field definitions (for multi-sheet XLSX export/import) ---
 
 // Verified against production DB: job_lines has job_line_id, job_id, item_id, quantity, price, total, description, notes

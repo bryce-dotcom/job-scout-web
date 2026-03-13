@@ -9,7 +9,8 @@ import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
-  Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image, Copy
+  Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image, Copy,
+  Shield, Star
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 
@@ -142,6 +143,11 @@ export default function JobDetail() {
   const [viewingPhoto, setViewingPhoto] = useState(null) // { url, name }
   const photoInputRef = useRef(null)
   const [photoUploadTarget, setPhotoUploadTarget] = useState(null) // { lineId, context }
+
+  // Victor verifications
+  const [verificationReports, setVerificationReports] = useState([])
+  const [verificationPhotos, setVerificationPhotos] = useState({}) // { [reportId]: [{url, photoType, aiScore}] }
+  const [verificationsExpanded, setVerificationsExpanded] = useState(false)
 
   // Generate from Library state
   const [showGenerateModal, setShowGenerateModal] = useState(false)
@@ -300,6 +306,43 @@ export default function JobDetail() {
       } else {
         setAuditPhotos([])
       }
+    }
+
+    // Fetch Victor verification reports for this job
+    const { data: verReports } = await supabase
+      .from('verification_reports')
+      .select('id, verification_type, score, grade, summary, status, created_at, verified_by, ai_analysis')
+      .eq('job_id', id)
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: false })
+    setVerificationReports(verReports || [])
+
+    // Fetch verification photos for this job
+    if (verReports?.length) {
+      const { data: vPhotos } = await supabase
+        .from('verification_photos')
+        .select('id, verification_id, file_path, storage_bucket, photo_type, ai_score')
+        .eq('job_id', id)
+        .eq('company_id', companyId)
+      if (vPhotos?.length) {
+        const grouped = {}
+        for (const p of vPhotos) {
+          const bucket = p.storage_bucket || 'project-documents'
+          const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(p.file_path)
+          if (!grouped[p.verification_id]) grouped[p.verification_id] = []
+          grouped[p.verification_id].push({
+            id: p.id,
+            url: urlData.publicUrl,
+            photoType: p.photo_type,
+            aiScore: p.ai_score
+          })
+        }
+        setVerificationPhotos(grouped)
+      } else {
+        setVerificationPhotos({})
+      }
+    } else {
+      setVerificationPhotos({})
     }
 
     setLoading(false)
@@ -1997,6 +2040,197 @@ export default function JobDetail() {
               ))}
               <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(null, 'notes')} />
             </div>
+          </div>
+
+          {/* Victor Verifications */}
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <div
+              onClick={() => verificationReports.length > 0 && setVerificationsExpanded(!verificationsExpanded)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: verificationReports.length > 0 ? 'pointer' : 'default', marginBottom: (verificationsExpanded && verificationReports.length > 0) || verificationReports.length === 0 ? '12px' : 0 }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Shield size={16} style={{ color: '#a855f7' }} />
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Victor Verifications{verificationReports.length > 0 ? ` (${verificationReports.length})` : ''}
+                </h3>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {verificationReports[0]?.grade && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: '28px', height: '28px', borderRadius: '50%',
+                    fontWeight: '800', fontSize: '14px',
+                    backgroundColor: verificationReports[0].grade === 'A' ? 'rgba(34,197,94,0.15)' :
+                      verificationReports[0].grade === 'B' ? 'rgba(59,130,246,0.15)' :
+                      verificationReports[0].grade === 'C' ? 'rgba(245,158,11,0.15)' :
+                      verificationReports[0].grade === 'D' ? 'rgba(249,115,22,0.15)' : 'rgba(239,68,68,0.15)',
+                    color: verificationReports[0].grade === 'A' ? '#22c55e' :
+                      verificationReports[0].grade === 'B' ? '#3b82f6' :
+                      verificationReports[0].grade === 'C' ? '#f59e0b' :
+                      verificationReports[0].grade === 'D' ? '#f97316' : '#ef4444'
+                  }}>
+                    {verificationReports[0].grade}
+                  </span>
+                )}
+                {verificationReports.length > 0 && (
+                  verificationsExpanded ? <ChevronDown size={16} color={theme.textMuted} /> : <ChevronRight size={16} color={theme.textMuted} />
+                )}
+              </div>
+            </div>
+
+            {/* Empty state */}
+            {verificationReports.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
+                  No verifications yet. Run Victor to score this job's work quality.
+                </div>
+                <button
+                  onClick={() => navigate(`/agents/victor/verify/${id}`)}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    minHeight: '44px'
+                  }}
+                >
+                  <Shield size={16} />
+                  Run Verification
+                </button>
+              </div>
+            )}
+
+            {/* Reports list */}
+            {verificationsExpanded && verificationReports.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {verificationReports.map(report => {
+                  const gradeColor = report.grade === 'A' ? '#22c55e' :
+                    report.grade === 'B' ? '#3b82f6' :
+                    report.grade === 'C' ? '#f59e0b' :
+                    report.grade === 'D' ? '#f97316' : '#ef4444'
+                  const verifier = report.verified_by ? employees.find(e => e.id === report.verified_by) : null
+
+                  return (
+                    <div
+                      key={report.id}
+                      onClick={() => navigate(`/agents/victor/report/${report.id}`)}
+                      style={{
+                        padding: '12px',
+                        backgroundColor: theme.bg,
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        border: `1px solid ${theme.border}`,
+                        transition: 'border-color 0.2s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: '32px', height: '32px', borderRadius: '50%',
+                            backgroundColor: `${gradeColor}15`,
+                            border: `2px solid ${gradeColor}`,
+                            fontWeight: '800', fontSize: '16px', color: gradeColor
+                          }}>
+                            {report.grade || '—'}
+                          </span>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
+                              {report.score || 0}/100
+                            </div>
+                            <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                              {report.verification_type === 'daily' ? 'End-of-Day Check' : 'Job Verification'}
+                            </div>
+                          </div>
+                        </div>
+                        <ExternalLink size={14} color={theme.textMuted} />
+                      </div>
+
+                      {report.summary && (
+                        <div style={{
+                          fontSize: '12px', color: theme.textSecondary,
+                          lineHeight: '1.4', marginBottom: '6px',
+                          display: '-webkit-box', WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical', overflow: 'hidden'
+                        }}>
+                          {report.summary}
+                        </div>
+                      )}
+
+                      {report.ai_analysis && (
+                        <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+                          {[
+                            { label: 'Quality', val: report.ai_analysis.work_quality_score },
+                            { label: 'Clean', val: report.ai_analysis.cleanliness_score },
+                            { label: 'Complete', val: report.ai_analysis.completeness_score },
+                            { label: 'Ready', val: report.ai_analysis.customer_readiness_score },
+                          ].filter(s => s.val).map(s => (
+                            <div key={s.label} style={{
+                              flex: 1, textAlign: 'center', padding: '4px 2px',
+                              backgroundColor: s.val >= 80 ? 'rgba(34,197,94,0.1)' : s.val >= 60 ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
+                              borderRadius: '4px'
+                            }}>
+                              <div style={{ fontSize: '13px', fontWeight: '700', color: s.val >= 80 ? '#22c55e' : s.val >= 60 ? '#f59e0b' : '#ef4444' }}>
+                                {s.val}
+                              </div>
+                              <div style={{ fontSize: '9px', color: theme.textMuted, textTransform: 'uppercase' }}>{s.label}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Verification photos */}
+                      {verificationPhotos[report.id]?.length > 0 && (
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                          {verificationPhotos[report.id].map(photo => (
+                            <div key={photo.id} style={{ position: 'relative' }}>
+                              <img
+                                src={photo.url}
+                                alt={photo.photoType}
+                                onClick={(e) => { e.stopPropagation(); setViewingPhoto({ url: photo.url, name: photo.photoType }) }}
+                                style={{
+                                  width: '64px', height: '64px', objectFit: 'cover',
+                                  borderRadius: '8px', cursor: 'pointer',
+                                  border: `1px solid ${theme.border}`
+                                }}
+                              />
+                              {photo.aiScore != null && (
+                                <span style={{
+                                  position: 'absolute', bottom: '2px', right: '2px',
+                                  fontSize: '9px', fontWeight: '700',
+                                  padding: '1px 4px', borderRadius: '4px',
+                                  backgroundColor: photo.aiScore >= 80 ? 'rgba(34,197,94,0.9)' : photo.aiScore >= 60 ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.9)',
+                                  color: '#fff'
+                                }}>
+                                  {photo.aiScore}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: theme.textMuted }}>
+                        <span>{verifier?.name || 'Unknown'}</span>
+                        <span>{new Date(report.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* Audit Photos */}

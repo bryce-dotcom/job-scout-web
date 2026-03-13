@@ -4,7 +4,9 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { EXPENSE_CATEGORIES } from '../lib/schema'
-import { Plus, Pencil, Trash2, X, Receipt, Search, Calendar, DollarSign } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Receipt, Search, DollarSign, Upload, Download } from 'lucide-react'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { expensesFields } from '../lib/importExportFields'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -19,16 +21,20 @@ const defaultTheme = {
 }
 
 const emptyExpense = {
-  expense_date: new Date().toISOString().split('T')[0],
   category: '',
+  tax_category: '',
+  form_1065_category: '',
+  account: '',
+  business: '',
+  client: '',
+  merchant: '',
+  source: '',
   description: '',
+  receipt: '',
+  date: new Date().toISOString().split('T')[0],
   amount: '',
-  employee_id: '',
-  job_id: '',
-  vendor: '',
-  receipt_url: '',
-  reimbursable: true,
-  reimbursed: false,
+  expense_id: '',
+  status: 'Pending',
   notes: ''
 }
 
@@ -36,8 +42,6 @@ export default function Expenses() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const expenses = useStore((state) => state.expenses)
-  const employees = useStore((state) => state.employees)
-  const jobs = useStore((state) => state.jobs)
   const fetchExpenses = useStore((state) => state.fetchExpenses)
 
   const [showModal, setShowModal] = useState(false)
@@ -47,7 +51,7 @@ export default function Expenses() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [dateRange, setDateRange] = useState({ start: '', end: '' })
+  const [showImportExport, setShowImportExport] = useState(false)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -61,13 +65,20 @@ export default function Expenses() {
   }, [companyId, navigate, fetchExpenses])
 
   const filteredExpenses = expenses.filter(expense => {
-    const matchesSearch = searchTerm === '' ||
-      expense.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      expense.vendor?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory = categoryFilter === 'all' || expense.category === categoryFilter
-    const matchesDateStart = !dateRange.start || expense.date >= dateRange.start
-    const matchesDateEnd = !dateRange.end || expense.date <= dateRange.end
-    return matchesSearch && matchesCategory && matchesDateStart && matchesDateEnd
+    if (!matchesCategory) return false
+    if (!searchTerm) return true
+    const s = searchTerm.toLowerCase()
+    return (
+      expense.description?.toLowerCase().includes(s) ||
+      expense.merchant?.toLowerCase().includes(s) ||
+      expense.client?.toLowerCase().includes(s) ||
+      expense.business?.toLowerCase().includes(s) ||
+      expense.account?.toLowerCase().includes(s) ||
+      expense.source?.toLowerCase().includes(s) ||
+      expense.category?.toLowerCase().includes(s) ||
+      expense.expense_id?.toLowerCase().includes(s)
+    )
   })
 
   const totalExpenses = filteredExpenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
@@ -82,16 +93,20 @@ export default function Expenses() {
   const openEditModal = (expense) => {
     setEditingExpense(expense)
     setFormData({
-      expense_date: expense.date || '',
       category: expense.category || '',
+      tax_category: expense.tax_category || '',
+      form_1065_category: expense.form_1065_category || '',
+      account: expense.account || '',
+      business: expense.business || '',
+      client: expense.client || '',
+      merchant: expense.merchant || '',
+      source: expense.source || '',
       description: expense.description || '',
+      receipt: expense.receipt || '',
+      date: expense.date || '',
       amount: expense.amount || '',
-      employee_id: expense.employee_id || '',
-      job_id: expense.job_id || '',
-      vendor: expense.vendor || '',
-      receipt_url: expense.receipt_url || '',
-      reimbursable: expense.reimbursable ?? true,
-      reimbursed: expense.reimbursed ?? false,
+      expense_id: expense.expense_id || '',
+      status: expense.status || 'Pending',
       notes: expense.notes || ''
     })
     setError(null)
@@ -106,11 +121,8 @@ export default function Expenses() {
   }
 
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }))
+    const { name, value } = e.target
+    setFormData(prev => ({ ...prev, [name]: value }))
   }
 
   const handleSubmit = async (e) => {
@@ -120,25 +132,29 @@ export default function Expenses() {
 
     const payload = {
       company_id: companyId,
-      date: formData.expense_date,
-      category: formData.category,
-      description: formData.description,
+      category: formData.category || null,
+      tax_category: formData.tax_category || null,
+      form_1065_category: formData.form_1065_category || null,
+      account: formData.account || null,
+      business: formData.business || null,
+      client: formData.client || null,
+      merchant: formData.merchant || null,
+      source: formData.source || null,
+      description: formData.description || null,
+      receipt: formData.receipt || null,
+      date: formData.date || null,
       amount: parseFloat(formData.amount) || 0,
-      job_id: formData.job_id || null,
+      expense_id: formData.expense_id || null,
       status: formData.status || 'Pending',
+      notes: formData.notes || null,
       updated_at: new Date().toISOString()
     }
 
     let result
     if (editingExpense) {
-      result = await supabase
-        .from('expenses')
-        .update(payload)
-        .eq('id', editingExpense.id)
+      result = await supabase.from('expenses').update(payload).eq('id', editingExpense.id)
     } else {
-      result = await supabase
-        .from('expenses')
-        .insert([payload])
+      result = await supabase.from('expenses').insert([payload])
     }
 
     if (result.error) {
@@ -153,7 +169,7 @@ export default function Expenses() {
   }
 
   const handleDelete = async (expense) => {
-    if (!confirm(`Delete this expense?`)) return
+    if (!confirm('Delete this expense?')) return
     await supabase.from('expenses').delete().eq('id', expense.id)
     await fetchExpenses()
   }
@@ -201,25 +217,33 @@ export default function Expenses() {
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
           Expenses
         </h1>
-        <button
-          onClick={openAddModal}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 16px',
-            backgroundColor: theme.accent,
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-            cursor: 'pointer'
-          }}
-        >
-          <Plus size={18} />
-          Add Expense
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} /> Import
+          </button>
+          <button onClick={() => exportToCSV(filteredExpenses, expensesFields, 'expenses_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={18} /> Export
+          </button>
+          <button
+            onClick={openAddModal}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 16px',
+              backgroundColor: theme.accent,
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Plus size={18} />
+            Add Expense
+          </button>
+        </div>
       </div>
 
       {/* Summary Card */}
@@ -292,21 +316,6 @@ export default function Expenses() {
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
-
-        <input
-          type="date"
-          value={dateRange.start}
-          onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-          style={{ ...inputStyle, width: 'auto' }}
-          placeholder="Start Date"
-        />
-        <input
-          type="date"
-          value={dateRange.end}
-          onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-          style={{ ...inputStyle, width: 'auto' }}
-          placeholder="End Date"
-        />
       </div>
 
       {/* Table */}
@@ -320,7 +329,7 @@ export default function Expenses() {
         }}>
           <Receipt size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
           <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
-            No expenses found. Add your first expense.
+            No expenses found. Add your first expense or import from a file.
           </p>
         </div>
       ) : (
@@ -328,103 +337,99 @@ export default function Expenses() {
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          overflow: 'hidden'
+          overflow: 'auto'
         }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '100px 1fr 120px 120px 100px 80px',
-            gap: '16px',
-            padding: '14px 20px',
-            backgroundColor: theme.accentBg,
-            borderBottom: `1px solid ${theme.border}`,
-            fontSize: '12px',
-            fontWeight: '600',
-            color: theme.textMuted,
-            textTransform: 'uppercase'
-          }}>
-            <div>Date</div>
-            <div>Description</div>
-            <div>Category</div>
-            <div style={{ textAlign: 'right' }}>Amount</div>
-            <div>Employee</div>
-            <div style={{ textAlign: 'right' }}>Actions</div>
-          </div>
-
-          {filteredExpenses.map((expense) => (
-            <div
-              key={expense.id}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '100px 1fr 120px 120px 100px 80px',
-                gap: '16px',
-                padding: '16px 20px',
-                borderBottom: `1px solid ${theme.border}`,
-                alignItems: 'center'
-              }}
-            >
-              <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                {formatDate(expense.date)}
-              </div>
-              <div>
-                <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
-                  {expense.description || 'No description'}
-                </p>
-                {expense.vendor && (
-                  <p style={{ fontSize: '12px', color: theme.textMuted }}>{expense.vendor}</p>
-                )}
-              </div>
-              <div>
-                <span style={{
-                  display: 'inline-block',
-                  padding: '2px 8px',
-                  backgroundColor: theme.accentBg,
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  color: theme.accent
-                }}>
-                  {expense.category}
-                </span>
-              </div>
-              <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
-                {formatCurrency(expense.amount)}
-              </div>
-              <div style={{ fontSize: '13px', color: theme.textSecondary }}>
-                {'-'}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
-                <button
-                  onClick={() => openEditModal(expense)}
-                  style={{
-                    padding: '8px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    color: theme.textMuted
-                  }}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  onClick={() => handleDelete(expense)}
-                  style={{
-                    padding: '8px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    color: theme.textMuted
-                  }}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-          ))}
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
+            <thead>
+              <tr style={{ backgroundColor: theme.accentBg, borderBottom: `1px solid ${theme.border}` }}>
+                {['Category', 'Tax Category', '1065 Category', 'Account', 'Business', 'Client', 'Merchant', 'Source', 'Description', 'Receipt', 'Date', 'Amount', ''].map((col, i) => (
+                  <th key={i} style={{
+                    padding: '12px 10px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    color: theme.textMuted,
+                    textTransform: 'uppercase',
+                    textAlign: col === 'Amount' ? 'right' : 'left',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredExpenses.map((expense) => (
+                <tr key={expense.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '10px', fontSize: '13px' }}>
+                    {expense.category ? (
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        backgroundColor: theme.accentBg,
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        color: theme.accent,
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {expense.category}
+                      </span>
+                    ) : '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
+                    {expense.tax_category || '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
+                    {expense.form_1065_category || '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
+                    {expense.account || '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.text }}>
+                    {expense.business || '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.text, fontWeight: '500' }}>
+                    {expense.client || '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
+                    {expense.merchant || '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {expense.source || '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {expense.description || '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textMuted }}>
+                    {expense.receipt || '-'}
+                  </td>
+                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
+                    {formatDate(expense.date)}
+                  </td>
+                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: '600', color: theme.text, whiteSpace: 'nowrap' }}>
+                    {formatCurrency(expense.amount)}
+                  </td>
+                  <td style={{ padding: '10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button
+                      onClick={() => openEditModal(expense)}
+                      style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(expense)}
+                      style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Modal */}
+      {/* Add/Edit Modal */}
       {showModal && (
         <div style={{
           position: 'fixed',
@@ -441,7 +446,7 @@ export default function Expenses() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '550px',
+            maxWidth: '700px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -476,10 +481,72 @@ export default function Expenses() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Row 1: Category, Tax Category, 1065 Category */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Category</label>
+                    <select name="category" value={formData.category} onChange={handleChange} style={inputStyle}>
+                      <option value="">Select category</option>
+                      {EXPENSE_CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Tax Category</label>
+                    <input type="text" name="tax_category" value={formData.tax_category} onChange={handleChange} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Form 1065 Category</label>
+                    <input type="text" name="form_1065_category" value={formData.form_1065_category} onChange={handleChange} style={inputStyle} />
+                  </div>
+                </div>
+
+                {/* Row 2: Account, Business */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
+                    <label style={labelStyle}>Account</label>
+                    <input type="text" name="account" value={formData.account} onChange={handleChange} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Business</label>
+                    <input type="text" name="business" value={formData.business} onChange={handleChange} style={inputStyle} />
+                  </div>
+                </div>
+
+                {/* Row 3: Client, Merchant */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Client</label>
+                    <input type="text" name="client" value={formData.client} onChange={handleChange} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Merchant</label>
+                    <input type="text" name="merchant" value={formData.merchant} onChange={handleChange} style={inputStyle} />
+                  </div>
+                </div>
+
+                {/* Row 4: Source, Description */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Source</label>
+                    <input type="text" name="source" value={formData.source} onChange={handleChange} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Description</label>
+                    <input type="text" name="description" value={formData.description} onChange={handleChange} style={inputStyle} />
+                  </div>
+                </div>
+
+                {/* Row 5: Receipt, Date, Amount */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Receipt</label>
+                    <input type="text" name="receipt" value={formData.receipt} onChange={handleChange} style={inputStyle} />
+                  </div>
+                  <div>
                     <label style={labelStyle}>Date *</label>
-                    <input type="date" name="expense_date" value={formData.expense_date} onChange={handleChange} required style={inputStyle} />
+                    <input type="date" name="date" value={formData.date} onChange={handleChange} required style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>Amount *</label>
@@ -487,43 +554,19 @@ export default function Expenses() {
                   </div>
                 </div>
 
-                <div>
-                  <label style={labelStyle}>Category *</label>
-                  <select name="category" value={formData.category} onChange={handleChange} required style={inputStyle}>
-                    <option value="">Select category</option>
-                    {EXPENSE_CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Description</label>
-                  <input type="text" name="description" value={formData.description} onChange={handleChange} style={inputStyle} />
-                </div>
-
-                <div>
-                  <label style={labelStyle}>Vendor</label>
-                  <input type="text" name="vendor" value={formData.vendor} onChange={handleChange} style={inputStyle} />
-                </div>
-
+                {/* Row 6: Expense ID, Status */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Employee</label>
-                    <select name="employee_id" value={formData.employee_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select employee</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
-                    </select>
+                    <label style={labelStyle}>Expense ID</label>
+                    <input type="text" name="expense_id" value={formData.expense_id} onChange={handleChange} style={inputStyle} />
                   </div>
                   <div>
-                    <label style={labelStyle}>Job</label>
-                    <select name="job_id" value={formData.job_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select job</option>
-                      {jobs.map(job => (
-                        <option key={job.id} value={job.id}>{job.job_id} - {job.job_title}</option>
-                      ))}
+                    <label style={labelStyle}>Status</label>
+                    <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
+                      <option value="Pending">Pending</option>
+                      <option value="Approved">Approved</option>
+                      <option value="Denied">Denied</option>
+                      <option value="Paid">Paid</option>
                     </select>
                   </div>
                 </div>
@@ -531,17 +574,6 @@ export default function Expenses() {
                 <div>
                   <label style={labelStyle}>Notes</label>
                   <textarea name="notes" value={formData.notes} onChange={handleChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
-                </div>
-
-                <div style={{ display: 'flex', gap: '24px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input type="checkbox" name="reimbursable" checked={formData.reimbursable} onChange={handleChange} style={{ width: '16px', height: '16px', accentColor: theme.accent }} />
-                    <span style={{ fontSize: '14px', color: theme.text }}>Reimbursable</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input type="checkbox" name="reimbursed" checked={formData.reimbursed} onChange={handleChange} style={{ width: '16px', height: '16px', accentColor: theme.accent }} />
-                    <span style={{ fontSize: '14px', color: theme.text }}>Reimbursed</span>
-                  </label>
                 </div>
               </div>
 
@@ -563,6 +595,18 @@ export default function Expenses() {
             </form>
           </div>
         </div>
+      )}
+      {showImportExport && (
+        <ImportExportModal
+          tableName="expenses"
+          entityName="Expenses"
+          fields={expensesFields}
+          companyId={companyId}
+          requiredField="amount"
+          defaultValues={{ company_id: companyId, status: 'Pending' }}
+          onImportComplete={() => fetchExpenses()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )

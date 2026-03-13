@@ -32,7 +32,7 @@ export default function DataConsoleFeedback() {
     try {
       const { data, error } = await supabase
         .from('feedback')
-        .select('*, user:user_id(email), company:company_id(name)')
+        .select('*')
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -62,7 +62,7 @@ export default function DataConsoleFeedback() {
 
     try {
       await supabase.from('feedback').update({
-        admin_notes: adminNotes
+        notes: adminNotes
       }).eq('id', selected.id)
       await fetchFeedback()
       setSelected(null)
@@ -177,18 +177,18 @@ export default function DataConsoleFeedback() {
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = adminTheme.bgHover}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
-                  <td style={{ padding: '12px 16px' }}>{getTypeIcon(f.type)}</td>
+                  <td style={{ padding: '12px 16px' }}>{getTypeIcon(f.feedback_type)}</td>
                   <td
                     style={{ padding: '12px 16px', color: adminTheme.text, fontSize: '14px', cursor: 'pointer' }}
-                    onClick={() => { setSelected(f); setAdminNotes(f.admin_notes || ''); }}
+                    onClick={() => { setSelected(f); setAdminNotes(f.notes || ''); }}
                   >
                     {f.subject || 'No subject'}
                   </td>
                   <td style={{ padding: '12px 16px', color: adminTheme.textMuted, fontSize: '13px' }}>
-                    {f.user?.email || 'Unknown'}
+                    {f.user_email || 'Unknown'}
                   </td>
                   <td style={{ padding: '12px 16px', color: adminTheme.textMuted, fontSize: '13px' }}>
-                    {f.company?.name || '-'}
+                    {f.company_id || '-'}
                   </td>
                   <td style={{ padding: '12px 16px' }}>{getStatusBadge(f.status)}</td>
                   <td style={{ padding: '12px 16px', color: adminTheme.textMuted, fontSize: '13px' }}>
@@ -241,7 +241,7 @@ export default function DataConsoleFeedback() {
           <>
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                {getTypeIcon(selected.type)}
+                {getTypeIcon(selected.feedback_type)}
                 <span style={{ color: adminTheme.text, fontSize: '18px', fontWeight: '600' }}>
                   {selected.subject || 'No subject'}
                 </span>
@@ -249,8 +249,8 @@ export default function DataConsoleFeedback() {
               </div>
 
               <div style={{ display: 'flex', gap: '24px', color: adminTheme.textMuted, fontSize: '13px', marginBottom: '16px' }}>
-                <span>From: {selected.user?.email || 'Unknown'}</span>
-                <span>Company: {selected.company?.name || '-'}</span>
+                <span>From: {selected.user_email || 'Unknown'}</span>
+                <span>Company ID: {selected.company_id || '-'}</span>
                 <span>{new Date(selected.created_at).toLocaleString()}</span>
               </div>
 

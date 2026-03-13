@@ -11,8 +11,9 @@ import {
   ChevronDown, ChevronUp, ExternalLink, Navigation,
   CheckCircle, Timer, Briefcase, DollarSign, Star,
   AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
-  Loader2, ShieldCheck
+  Loader2, ShieldCheck, Shield, Search
 } from 'lucide-react'
+import VictorVerify from './agents/victor/VictorVerify'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -135,6 +136,13 @@ export default function FieldScout() {
   // Google review & settings
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [reviewSent, setReviewSent] = useState(new Set())
+
+  // Victor verification
+  const [victorModal, setVictorModal] = useState(null) // null | { type: 'daily' } | { type: 'completion', jobId }
+  const [showDailyCheckPrompt, setShowDailyCheckPrompt] = useState(false)
+
+  // Job search (for clock-in when no today's jobs)
+  const [jobSearchQuery, setJobSearchQuery] = useState('')
 
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
@@ -320,6 +328,7 @@ export default function FieldScout() {
         .eq('id', activeEntry.id)
       if (error) throw error
       await fetchEntries()
+      setShowDailyCheckPrompt(true)
     } catch (err) {
       alert('Error clocking out: ' + err.message)
     } finally {
@@ -892,6 +901,87 @@ export default function FieldScout() {
         ))}
       </div>
 
+      {/* ===== DAILY CHECK PROMPT (after clock-out) ===== */}
+      {showDailyCheckPrompt && (
+        <div style={{
+          backgroundColor: 'rgba(168,85,247,0.08)',
+          border: '1px solid rgba(168,85,247,0.3)',
+          borderRadius: '14px',
+          padding: '16px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px'
+        }}>
+          <div style={{
+            width: '44px', height: '44px', borderRadius: '12px',
+            background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+          }}>
+            <Shield size={22} color="#fff" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
+              Day complete — run end-of-day check?
+            </div>
+            <div style={{ fontSize: '12px', color: theme.textMuted }}>
+              Victor will verify your truck, tools, and site are good to go.
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0 }}>
+            <button
+              onClick={() => { setShowDailyCheckPrompt(false); setVictorModal({ type: 'daily', jobId: activeEntry?.job_id || null }) }}
+              style={{
+                padding: '8px 14px',
+                background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                border: 'none', borderRadius: '8px',
+                color: '#fff', fontSize: '12px', fontWeight: '600',
+                cursor: 'pointer', whiteSpace: 'nowrap'
+              }}
+            >
+              Run Check
+            </button>
+            <button
+              onClick={() => setShowDailyCheckPrompt(false)}
+              style={{
+                padding: '6px 14px',
+                background: 'transparent',
+                border: `1px solid ${theme.border}`, borderRadius: '8px',
+                color: theme.textMuted, fontSize: '12px', fontWeight: '500',
+                cursor: 'pointer'
+              }}
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ===== STANDALONE VICTOR BUTTON ===== */}
+      <button
+        onClick={() => setVictorModal({ type: 'completion', jobId: activeEntry?.job_id || null })}
+        style={{
+          width: '100%',
+          padding: '14px',
+          background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+          border: 'none',
+          borderRadius: '12px',
+          color: '#fff',
+          fontSize: '15px',
+          fontWeight: '600',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '10px',
+          marginBottom: '16px',
+          minHeight: '48px'
+        }}
+      >
+        <Shield size={20} />
+        Open Victor Verification
+      </button>
+
       {/* ===== SECTION 4: TODAY'S JOBS ===== */}
       <div style={{ marginBottom: '16px' }}>
         <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1066,6 +1156,26 @@ export default function FieldScout() {
                         >
                           <Star size={13} />
                           {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setVictorModal({ type: 'completion', jobId: job.id }) }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '6px 12px',
+                            background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                            border: 'none',
+                            borderRadius: '20px',
+                            color: '#fff',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <Shield size={13} />
+                          Verify
                         </button>
                       </div>
                     )}
@@ -1280,6 +1390,31 @@ export default function FieldScout() {
                             {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
                           </button>
                         </div>
+
+                        {/* Verify with Victor */}
+                        <button
+                          onClick={() => setVictorModal({ type: 'completion', jobId: job.id })}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                            border: 'none',
+                            borderRadius: '10px',
+                            color: '#fff',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            minHeight: '44px',
+                            marginTop: '4px'
+                          }}
+                        >
+                          <Shield size={16} />
+                          Verify with Victor
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1353,67 +1488,221 @@ export default function FieldScout() {
       )}
 
       {/* ===== SECTION 6: STANDALONE CLOCK-IN ===== */}
-      {!activeEntry && (
-        <div style={{
-          backgroundColor: theme.bgCard,
-          border: `1px solid ${theme.border}`,
-          borderRadius: '16px',
-          padding: '20px',
-          marginBottom: '16px'
-        }}>
-          <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Clock size={18} style={{ color: theme.accent }} />
-            Clock In
-          </h2>
+      {!activeEntry && (() => {
+        const hasTodaysJobs = todaysJobs.length > 0
+        const searchResults = !hasTodaysJobs && jobSearchQuery.trim().length >= 2
+          ? jobs.filter(j => {
+              const q = jobSearchQuery.toLowerCase()
+              return (
+                (j.status === 'Scheduled' || j.status === 'In Progress' || j.status === 'Completed' || j.status === 'Complete') &&
+                (
+                  (j.job_title || '').toLowerCase().includes(q) ||
+                  (j.job_id || '').toString().toLowerCase().includes(q) ||
+                  (j.customer?.name || j.customer_name || '').toLowerCase().includes(q) ||
+                  (j.job_address || '').toLowerCase().includes(q)
+                )
+              )
+            }).slice(0, 10)
+          : []
+        const selectedSearchJob = !hasTodaysJobs && selectedJobId
+          ? jobs.find(j => String(j.id) === String(selectedJobId))
+          : null
 
-          <select
-            value={selectedJobId}
-            onChange={(e) => setSelectedJobId(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '12px',
-              backgroundColor: theme.bg,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '10px',
-              color: theme.text,
-              fontSize: '15px',
-              marginBottom: '12px',
-              minHeight: '44px'
-            }}
-          >
-            <option value="">General — No specific job</option>
-            {todaysJobs.map(job => (
-              <option key={job.id} value={job.id}>
-                {job.job_title || job.job_id} — {job.customer?.name || 'No customer'}
-              </option>
-            ))}
-          </select>
+        return (
+          <div style={{
+            backgroundColor: theme.bgCard,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '16px'
+          }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Clock size={18} style={{ color: theme.accent }} />
+              Clock In
+            </h2>
 
-          <button
-            onClick={() => handleClockIn(selectedJobId ? parseInt(selectedJobId) : null)}
-            disabled={clockingIn}
-            style={{
-              width: '100%',
-              padding: '18px',
-              height: '54px',
-              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-              border: 'none',
-              borderRadius: '12px',
-              color: '#fff',
-              fontSize: '18px',
-              fontWeight: '700',
-              cursor: clockingIn ? 'wait' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px'
-            }}
-          >
-            <Play size={22} />
-            {clockingIn ? (gpsStatus === 'capturing' ? 'Capturing location...' : 'Starting...') : 'Clock In'}
-          </button>
-        </div>
-      )}
+            {hasTodaysJobs ? (
+              /* Dropdown for today's jobs */
+              <select
+                value={selectedJobId}
+                onChange={(e) => setSelectedJobId(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: theme.bg,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '10px',
+                  color: theme.text,
+                  fontSize: '15px',
+                  marginBottom: '12px',
+                  minHeight: '44px'
+                }}
+              >
+                <option value="">General — No specific job</option>
+                {todaysJobs.map(job => (
+                  <option key={job.id} value={job.id}>
+                    {job.job_title || job.job_id} — {job.customer?.name || 'No customer'}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              /* Search for any job when none scheduled today */
+              <div style={{ marginBottom: '12px' }}>
+                {selectedSearchJob ? (
+                  /* Selected job chip */
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '10px 14px',
+                    backgroundColor: theme.accentBg,
+                    border: `1px solid ${theme.accent}`,
+                    borderRadius: '10px',
+                    marginBottom: '0'
+                  }}>
+                    <Briefcase size={16} style={{ color: theme.accent, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {selectedSearchJob.job_title || selectedSearchJob.job_id}
+                      </div>
+                      <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+                        {selectedSearchJob.customer?.name || selectedSearchJob.customer_name || 'No customer'}
+                        {selectedSearchJob.job_address ? ` — ${selectedSearchJob.job_address}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setSelectedJobId(''); setJobSearchQuery('') }}
+                      style={{
+                        padding: '4px', backgroundColor: 'transparent', border: 'none',
+                        cursor: 'pointer', color: theme.textMuted, flexShrink: 0
+                      }}
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={16} style={{
+                        position: 'absolute', left: '12px', top: '50%',
+                        transform: 'translateY(-50%)', color: theme.textMuted
+                      }} />
+                      <input
+                        type="text"
+                        value={jobSearchQuery}
+                        onChange={(e) => { setJobSearchQuery(e.target.value); setSelectedJobId('') }}
+                        placeholder="Search jobs by name, customer, or address..."
+                        style={{
+                          width: '100%',
+                          padding: '12px 12px 12px 36px',
+                          backgroundColor: theme.bg,
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: searchResults.length > 0 ? '10px 10px 0 0' : '10px',
+                          color: theme.text,
+                          fontSize: '15px',
+                          minHeight: '44px',
+                          boxSizing: 'border-box',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+
+                    {/* Search results dropdown */}
+                    {searchResults.length > 0 && (
+                      <div style={{
+                        border: `1px solid ${theme.border}`,
+                        borderTop: 'none',
+                        borderRadius: '0 0 10px 10px',
+                        overflow: 'hidden',
+                        maxHeight: '240px',
+                        overflowY: 'auto'
+                      }}>
+                        {searchResults.map(job => (
+                          <button
+                            key={job.id}
+                            onClick={() => {
+                              setSelectedJobId(String(job.id))
+                              setJobSearchQuery('')
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '10px 14px',
+                              backgroundColor: theme.bgCard,
+                              border: 'none',
+                              borderBottom: `1px solid ${theme.border}`,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '2px',
+                              minHeight: '44px',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                              {job.job_title || job.job_id}
+                            </div>
+                            <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                              {job.customer?.name || job.customer_name || 'No customer'}
+                              {job.job_address ? ` — ${job.job_address}` : ''}
+                              {' '}({job.status})
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* No results message */}
+                    {jobSearchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                      <div style={{
+                        padding: '12px 14px',
+                        fontSize: '13px',
+                        color: theme.textMuted,
+                        border: `1px solid ${theme.border}`,
+                        borderTop: 'none',
+                        borderRadius: '0 0 10px 10px',
+                        backgroundColor: theme.bgCard
+                      }}>
+                        No jobs found matching "{jobSearchQuery}"
+                      </div>
+                    )}
+
+                    {jobSearchQuery.trim().length < 2 && (
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
+                        No jobs scheduled today. Search to find a job, or clock in general.
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={() => handleClockIn(selectedJobId ? parseInt(selectedJobId) : null)}
+              disabled={clockingIn}
+              style={{
+                width: '100%',
+                padding: '18px',
+                height: '54px',
+                background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                border: 'none',
+                borderRadius: '12px',
+                color: '#fff',
+                fontSize: '18px',
+                fontWeight: '700',
+                cursor: clockingIn ? 'wait' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px'
+              }}
+            >
+              <Play size={22} />
+              {clockingIn ? (gpsStatus === 'capturing' ? 'Capturing location...' : 'Starting...') : 'Clock In'}
+            </button>
+          </div>
+        )
+      })()}
 
       {/* ===== SECTION 7: TODAY'S WORK LOG ===== */}
       {todayEntries.filter(e => e.clock_out).length > 0 && (
@@ -1465,6 +1754,66 @@ export default function FieldScout() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ===== VICTOR VERIFICATION MODAL ===== */}
+      {victorModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'center'
+        }}>
+          {/* Backdrop */}
+          <div
+            onClick={() => setVictorModal(null)}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              backdropFilter: 'blur(4px)'
+            }}
+          />
+
+          {/* Sheet */}
+          <div style={{
+            position: 'relative',
+            width: '100%',
+            maxWidth: '500px',
+            backgroundColor: theme.bgCard,
+            borderRadius: '20px 20px 0 0',
+            padding: '24px 20px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            animation: 'slideUp 0.3s ease'
+          }}>
+            {/* Handle */}
+            <div style={{ width: '40px', height: '4px', borderRadius: '2px', backgroundColor: theme.border, margin: '0 auto 16px' }} />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Shield size={20} style={{ color: '#a855f7' }} />
+                {victorModal.type === 'daily' ? 'End-of-Day Check' : 'Victor Verification'}
+              </h3>
+              <button onClick={() => setVictorModal(null)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <VictorVerify
+              embeddedMode
+              verificationType={victorModal.type}
+              preselectedJobId={victorModal.jobId}
+              onComplete={(reportId) => {
+                setVictorModal(null)
+                navigate(`/agents/victor/report/${reportId}`)
+              }}
+              onClose={() => setVictorModal(null)}
+            />
           </div>
         </div>
       )}

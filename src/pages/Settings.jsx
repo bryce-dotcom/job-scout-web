@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { usePlaidLink } from 'react-plaid-link'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
@@ -2723,6 +2724,63 @@ function PaymentSettingsTab({ theme, settings, saveSetting }) {
 }
 
 // ─── Integrations Tab ───
+// Inline Plaid Link button — uses the usePlaidLink hook with a pre-fetched token
+function PlaidLinkInline({ token, companyId, onSuccess, onError, theme }) {
+  const onPlaidSuccess = useCallback(async (publicToken, metadata) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('plaid-link', {
+        body: {
+          action: 'exchange_public_token',
+          company_id: companyId,
+          public_token: publicToken,
+          institution: metadata?.institution || null,
+        }
+      })
+      if (error || data?.error) {
+        onError?.(data?.error || 'Failed to connect account')
+      } else {
+        onSuccess?.(data)
+      }
+    } catch (e) {
+      onError?.(e.message)
+    }
+  }, [companyId, onSuccess, onError])
+
+  const { open, ready } = usePlaidLink({
+    token,
+    onSuccess: onPlaidSuccess,
+    onExit: (err) => {
+      if (err) onError?.(err.display_message || err.error_message || 'Plaid Link closed')
+    },
+  })
+
+  useEffect(() => {
+    if (ready && token) open()
+  }, [ready, token])
+
+  return (
+    <button
+      onClick={() => open()}
+      disabled={!ready}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '6px',
+        padding: '8px 16px',
+        backgroundColor: '#2ca01c',
+        border: 'none',
+        borderRadius: '8px',
+        color: '#fff',
+        fontSize: '13px',
+        fontWeight: '500',
+        cursor: !ready ? 'not-allowed' : 'pointer',
+        opacity: !ready ? 0.6 : 1
+      }}
+    >
+      <Landmark size={14} />
+      {!ready ? 'Opening Plaid...' : 'Connect Bank Account'}
+    </button>
+  )
+}
+
 function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employees, setActiveTab }) {
   // ─── Google Calendar state ───
   const [gcalConnected, setGcalConnected] = useState(false)
@@ -2760,6 +2818,38 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
   const [twTesting, setTwTesting] = useState(false)
   const [twTestPhone, setTwTestPhone] = useState('')
   const [twExpanded, setTwExpanded] = useState(false)
+
+  // ─── Plaid state ───
+  const plaidSetting = settings.find(s => s.key === 'plaid_config')
+  const plaidDefaults = {
+    client_id: '', secret: '', environment: 'sandbox', items: {}
+  }
+  let plaidInitial = plaidDefaults
+  if (plaidSetting) {
+    try { plaidInitial = { ...plaidDefaults, ...JSON.parse(plaidSetting.value) } } catch {}
+  }
+  const [plaidForm, setPlaidForm] = useState(plaidInitial)
+  const [plaidSaving, setPlaidSaving] = useState(false)
+  const [plaidExpanded, setPlaidExpanded] = useState(false)
+  const [plaidAccounts, setPlaidAccounts] = useState([])
+  const [plaidSyncing, setPlaidSyncing] = useState(false)
+  const [plaidLinkReady, setPlaidLinkReady] = useState(false)
+  const [plaidLinkToken, setPlaidLinkToken] = useState(null)
+
+  // ─── Load Plaid connected accounts ───
+  useEffect(() => {
+    if (!companyId) return
+    const load = async () => {
+      const { data } = await supabase
+        .from('connected_accounts')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('status', 'active')
+        .order('created_at')
+      setPlaidAccounts(data || [])
+    }
+    load()
+  }, [companyId])
 
   // ─── Check Google Calendar connections ───
   useEffect(() => {
@@ -2950,6 +3040,94 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
       toast.error('Test failed: ' + e.message)
     }
     setTwTesting(false)
+  }
+
+  // ─── Plaid handlers ───
+  const handleSavePlaid = async () => {
+    setPlaidSaving(true)
+    await saveSetting('plaid_config', plaidForm)
+    setPlaidSaving(false)
+    toast.success('Plaid settings saved!')
+  }
+
+  const handlePlaidConnectBank = async () => {
+    setPlaidLinkReady(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('plaid-link', {
+        body: { action: 'create_link_token', company_id: companyId }
+      })
+      console.log('[Plaid] create_link_token response:', { data, error })
+      if (error) {
+        // supabase-js wraps non-2xx as error — try to parse message
+        const msg = typeof error === 'object' ? (error.message || JSON.stringify(error)) : String(error)
+        toast.error('Plaid error: ' + msg)
+        setPlaidLinkReady(false)
+      } else if (data?.error) {
+        toast.error(data.error)
+        setPlaidLinkReady(false)
+      } else if (data?.link_token) {
+        setPlaidLinkToken(data.link_token)
+      } else {
+        toast.error('Unexpected response from Plaid')
+        console.error('[Plaid] Unexpected:', data)
+        setPlaidLinkReady(false)
+      }
+    } catch (e) {
+      toast.error('Failed to initialize Plaid: ' + e.message)
+      setPlaidLinkReady(false)
+    }
+  }
+
+  const handlePlaidSuccess = async (result) => {
+    toast.success(`Connected ${result.accounts?.length || 0} account(s)!`)
+    // Refresh connected accounts
+    const { data } = await supabase
+      .from('connected_accounts')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('status', 'active')
+      .order('created_at')
+    setPlaidAccounts(data || [])
+    setPlaidLinkReady(false)
+    setPlaidLinkToken(null)
+  }
+
+  const handlePlaidDisconnect = async (itemId) => {
+    if (!confirm('Disconnect this bank? Transaction history will be preserved.')) return
+    try {
+      await supabase.functions.invoke('plaid-link', {
+        body: { action: 'disconnect', company_id: companyId, item_id: itemId }
+      })
+      setPlaidAccounts(prev => prev.filter(a => a.plaid_item_id !== itemId))
+      toast.success('Bank disconnected')
+    } catch (e) {
+      toast.error('Failed to disconnect: ' + e.message)
+    }
+  }
+
+  const handlePlaidSyncAll = async () => {
+    setPlaidSyncing(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('plaid-link', {
+        body: { action: 'sync_all', company_id: companyId }
+      })
+      if (error || data?.error) {
+        toast.error(data?.error || 'Sync failed')
+      } else {
+        toast.success(`Synced ${data.total_added} new transactions from ${data.accounts_synced} accounts`)
+        // Refresh balances
+        const { data: refreshed } = await supabase
+          .from('connected_accounts')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('status', 'active')
+          .order('created_at')
+        setPlaidAccounts(refreshed || [])
+      }
+    } catch (e) {
+      toast.error('Sync failed: ' + e.message)
+    }
+    setPlaidSyncing(false)
   }
 
   const inputStyle = {
@@ -3360,6 +3538,194 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
                         {qbForm.last_invoice_sync && <div>Last invoice sync: {new Date(qbForm.last_invoice_sync).toLocaleString()}</div>}
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ──── PLAID BANKING ──── */}
+        <div style={{
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${plaidAccounts.length > 0 ? 'rgba(74,124,89,0.3)' : theme.border}`,
+          overflow: 'hidden'
+        }}>
+          {/* Header */}
+          <button
+            onClick={() => setPlaidExpanded(!plaidExpanded)}
+            style={{
+              width: '100%',
+              padding: '18px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '14px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              backgroundColor: plaidAccounts.length > 0 ? 'rgba(74,124,89,0.12)' : theme.accentBg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <Landmark size={20} style={{ color: plaidAccounts.length > 0 ? '#4a7c59' : theme.accent }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Plaid Banking</span>
+                <span style={statusBadge(plaidAccounts.length > 0)}>
+                  {plaidAccounts.length > 0 ? `${plaidAccounts.length} Account${plaidAccounts.length > 1 ? 's' : ''}` : 'Not Connected'}
+                </span>
+              </div>
+              <p style={{ fontSize: '13px', color: theme.textMuted, margin: '2px 0 0' }}>
+                Connect bank accounts and credit cards for automatic transaction sync
+              </p>
+            </div>
+            {plaidExpanded ? <ChevronDown size={18} style={{ color: theme.textMuted }} /> : <ChevronRight size={18} style={{ color: theme.textMuted }} />}
+          </button>
+
+          {plaidExpanded && (
+            <div style={{ padding: '0 20px 20px', borderTop: `1px solid ${theme.border}` }}>
+              <div style={{ paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Connect button */}
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {plaidLinkReady && plaidLinkToken ? (
+                    <PlaidLinkInline
+                      token={plaidLinkToken}
+                      companyId={companyId}
+                      onSuccess={handlePlaidSuccess}
+                      onError={(msg) => { toast.error(msg); setPlaidLinkReady(false) }}
+                      theme={theme}
+                    />
+                  ) : (
+                    <button
+                      onClick={handlePlaidConnectBank}
+                      disabled={plaidLinkReady}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        padding: '10px 20px',
+                        backgroundColor: '#2ca01c',
+                        border: 'none',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        cursor: plaidLinkReady ? 'not-allowed' : 'pointer',
+                        opacity: plaidLinkReady ? 0.6 : 1,
+                        minHeight: '44px'
+                      }}
+                    >
+                      <Landmark size={14} />
+                      {plaidLinkReady ? 'Loading...' : plaidAccounts.length > 0 ? 'Connect Another Account' : 'Connect Bank Account'}
+                    </button>
+                  )}
+                  <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                    Securely link your bank or credit card via Plaid
+                  </span>
+                </div>
+
+                {/* Connected accounts */}
+                {plaidAccounts.length > 0 && (
+                  <div style={{
+                    padding: '16px',
+                    backgroundColor: 'rgba(74,124,89,0.06)',
+                    borderRadius: '10px',
+                    border: `1px solid rgba(74,124,89,0.15)`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                      <p style={{ fontSize: '13px', fontWeight: '600', color: theme.text, margin: 0 }}>Connected Accounts</p>
+                      <button
+                        onClick={handlePlaidSyncAll}
+                        disabled={plaidSyncing}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '6px',
+                          padding: '6px 12px',
+                          backgroundColor: theme.accent,
+                          border: 'none',
+                          borderRadius: '8px',
+                          color: '#fff',
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          cursor: plaidSyncing ? 'not-allowed' : 'pointer',
+                          opacity: plaidSyncing ? 0.6 : 1
+                        }}
+                      >
+                        <RefreshCw size={12} style={plaidSyncing ? { animation: 'spin 1s linear infinite' } : {}} />
+                        {plaidSyncing ? 'Syncing...' : 'Sync All'}
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {plaidAccounts.map(acct => (
+                        <div key={acct.id} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '10px 12px',
+                          backgroundColor: theme.bgCard,
+                          borderRadius: '8px',
+                          border: `1px solid ${theme.border}`
+                        }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>
+                                {acct.institution_name}
+                              </span>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '10px',
+                                fontSize: '10px',
+                                fontWeight: '600',
+                                backgroundColor: acct.account_type === 'credit' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)',
+                                color: acct.account_type === 'credit' ? '#ef4444' : '#3b82f6',
+                                textTransform: 'uppercase'
+                              }}>
+                                {acct.account_type}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                              {acct.account_name} {acct.mask ? `(****${acct.mask})` : ''}
+                              {acct.current_balance != null && (
+                                <span style={{ marginLeft: '8px', fontWeight: '600', color: theme.text }}>
+                                  ${parseFloat(acct.current_balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                </span>
+                              )}
+                            </div>
+                            {acct.last_synced && (
+                              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                                Last synced: {new Date(acct.last_synced).toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handlePlaidDisconnect(acct.plaid_item_id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '4px',
+                              padding: '6px 10px',
+                              backgroundColor: 'transparent',
+                              border: `1px solid rgba(194,90,90,0.3)`,
+                              borderRadius: '6px',
+                              color: '#c25a5a',
+                              fontSize: '11px',
+                              fontWeight: '500',
+                              cursor: 'pointer',
+                              flexShrink: 0
+                            }}
+                          >
+                            <Unlink size={12} /> Disconnect
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

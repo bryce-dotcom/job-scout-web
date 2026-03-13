@@ -81,6 +81,8 @@ export default function MyCrew() {
       navigate('/agents/lenard');
     } else if (agent.slug === 'freddy-fleet') {
       navigate('/agents/freddy');
+    } else if (agent.slug === 'arnie-og') {
+      navigate('/agents/arnie');
     }
   };
 

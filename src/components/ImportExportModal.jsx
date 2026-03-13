@@ -35,6 +35,15 @@ function parseValue(raw, fieldDef) {
       return true // default to true for boolean fields
     }
     case 'date': {
+      // Excel serial date number — a pure number between ~1 and ~60000
+      const num = Number(str)
+      if (!isNaN(num) && num > 1 && num < 100000 && String(str).match(/^[\d.]+$/)) {
+        // Excel epoch is Jan 1, 1900 (serial 1), but has a leap year bug (serial 60 = Feb 29, 1900 doesn't exist)
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30))
+        const ms = excelEpoch.getTime() + num * 86400000
+        const d = new Date(ms)
+        return isNaN(d.getTime()) ? null : d.toISOString()
+      }
       const d = new Date(str)
       return isNaN(d.getTime()) ? null : d.toISOString()
     }
@@ -221,8 +230,20 @@ export default function ImportExportModal({
       const hasMultipleSheets = workbook.SheetNames.length > 1 && relatedTables.length > 0
       setIsMultiSheet(hasMultipleSheets)
 
-      // Parse first (main) sheet
-      const mainSheetName = workbook.SheetNames[0]
+      // Pick the best sheet — if no relatedTables, choose the sheet with the most data rows
+      let mainSheetName = workbook.SheetNames[0]
+      if (workbook.SheetNames.length > 1 && relatedTables.length === 0) {
+        let bestCount = 0
+        for (const sn of workbook.SheetNames) {
+          const json = XLSX.utils.sheet_to_json(workbook.Sheets[sn], { header: 1, defval: '' })
+          const rowCount = json.filter(row => row.some(cell => cell !== '')).length
+          if (rowCount > bestCount) {
+            bestCount = rowCount
+            mainSheetName = sn
+          }
+        }
+      }
+
       const mainSheet = workbook.Sheets[mainSheetName]
       const mainJson = XLSX.utils.sheet_to_json(mainSheet, { header: 1, defval: '' })
 
@@ -231,8 +252,20 @@ export default function ImportExportModal({
         return
       }
 
-      const fileHeaders = mainJson[0].map(h => String(h).trim())
-      const fileRows = mainJson.slice(1).filter(row => row.some(cell => cell !== ''))
+      // Smart header detection — find the first row with 3+ non-empty string cells
+      // This skips title rows, date range rows, and other preamble
+      let headerRowIdx = 0
+      for (let i = 0; i < Math.min(mainJson.length, 10); i++) {
+        const row = mainJson[i]
+        const stringCells = row.filter(cell => typeof cell === 'string' && cell.trim().length > 0)
+        if (stringCells.length >= 3) {
+          headerRowIdx = i
+          break
+        }
+      }
+
+      const fileHeaders = mainJson[headerRowIdx].map(h => String(h).trim())
+      const fileRows = mainJson.slice(headerRowIdx + 1).filter(row => row.some(cell => cell !== ''))
       setHeaders(fileHeaders)
       setRows(fileRows)
 
@@ -250,8 +283,15 @@ export default function ImportExportModal({
             const sheet = workbook.Sheets[matchedSheet]
             const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
             if (json.length >= 1) {
-              const cHeaders = json[0].map(h => String(h).trim())
-              const cRows = json.slice(1).filter(row => row.some(cell => cell !== ''))
+              // Smart header detection for child sheets too
+              let cHeaderIdx = 0
+              for (let i = 0; i < Math.min(json.length, 10); i++) {
+                const row = json[i]
+                const stringCells = row.filter(cell => typeof cell === 'string' && cell.trim().length > 0)
+                if (stringCells.length >= 3) { cHeaderIdx = i; break }
+              }
+              const cHeaders = json[cHeaderIdx].map(h => String(h).trim())
+              const cRows = json.slice(cHeaderIdx + 1).filter(row => row.some(cell => cell !== ''))
               childData[rt.tableName] = { headers: cHeaders, rows: cRows, mapping: {}, sheetName: matchedSheet }
             }
           }
@@ -795,8 +835,15 @@ export default function ImportExportModal({
                           const sheet = wb.Sheets[wb.SheetNames[0]]
                           const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
                           if (json.length < 2) { alert('File must have a header row and at least one data row'); return }
-                          const cHeaders = json[0].map(h => String(h).trim())
-                          const cRows = json.slice(1).filter(row => row.some(cell => cell !== ''))
+                          // Smart header detection for child uploads
+                          let chIdx = 0
+                          for (let i = 0; i < Math.min(json.length, 10); i++) {
+                            const row = json[i]
+                            const sc = row.filter(cell => typeof cell === 'string' && cell.trim().length > 0)
+                            if (sc.length >= 3) { chIdx = i; break }
+                          }
+                          const cHeaders = json[chIdx].map(h => String(h).trim())
+                          const cRows = json.slice(chIdx + 1).filter(row => row.some(cell => cell !== ''))
                           const newChild = { headers: cHeaders, rows: cRows, mapping: {}, sheetName: file.name }
                           setChildSheets(prev => ({ ...prev, [rt.tableName]: newChild }))
                           // AI-map child columns

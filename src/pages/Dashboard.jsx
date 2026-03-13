@@ -15,7 +15,8 @@ import {
   Package,
   Truck,
   ChevronRight,
-  Plus
+  Plus,
+  CreditCard
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -61,6 +62,8 @@ export default function Dashboard() {
   const appointments = useStore((state) => state.appointments)
   const employees = useStore((state) => state.employees)
   const timeLogs = useStore((state) => state.timeLogs)
+  const expenses = useStore((state) => state.expenses)
+  const leadPayments = useStore((state) => state.leadPayments)
 
   const currentEmployee = employees.find(e => e.email === user?.email)
 
@@ -137,6 +140,14 @@ export default function Dashboard() {
   const thisMonthRevenue = payments
     .filter(p => new Date(p.date) >= firstOfMonth)
     .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+
+  const thisMonthExpenses = (expenses || [])
+    .filter(e => e.date && new Date(e.date) >= firstOfMonth)
+    .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
+
+  const thisMonthDeposits = (leadPayments || [])
+    .filter(d => d.date_created && new Date(d.date_created) >= firstOfMonth)
+    .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
 
   // MTD Sales Won — leads converted this month (in Won or delivery stages)
   const wonOrDeliveryStatuses = ['Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed']
@@ -275,9 +286,23 @@ export default function Dashboard() {
         />
         <MetricCard
           icon={DollarSign}
-          label="This Month Revenue"
+          label="MTD Revenue"
           value={formatCurrency(thisMonthRevenue)}
           color="#4a7c59"
+        />
+        <MetricCard
+          icon={TrendingUp}
+          label="MTD Deposits"
+          value={formatCurrency(thisMonthDeposits)}
+          color="#4a7c59"
+          onClick={() => navigate('/lead-payments')}
+        />
+        <MetricCard
+          icon={CreditCard}
+          label="MTD Expenses"
+          value={formatCurrency(thisMonthExpenses)}
+          color="#c25a5a"
+          onClick={() => navigate('/expenses')}
         />
       </div>
 

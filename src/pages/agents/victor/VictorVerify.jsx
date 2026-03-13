@@ -26,6 +26,13 @@ const PHOTO_TYPES = [
   { id: 'general', label: 'General' },
 ]
 
+const DAILY_PHOTO_TYPES = [
+  { id: 'vehicle', label: 'Truck / Vehicle' },
+  { id: 'jobsite', label: 'Jobsite Condition' },
+  { id: 'tools', label: 'Tools & Equipment' },
+  { id: 'general', label: 'General' },
+]
+
 const LIGHTING_CHECKLIST = [
   { item: 'Lights commissioned and powered on', category: 'Completion' },
   { item: 'Correct LED replacements installed (wattage verified)', category: 'Completion' },
@@ -51,7 +58,24 @@ const GENERAL_CHECKLIST = [
   { item: 'Final after photos taken', category: 'Completion' },
 ]
 
-export default function VictorVerify() {
+const DAILY_CHECKLIST = [
+  { item: 'Work area swept and clean', category: 'Cleanliness' },
+  { item: 'All tools gathered and accounted for', category: 'Tools' },
+  { item: 'Ladders secured on truck', category: 'Vehicle' },
+  { item: 'Trash and debris removed from site', category: 'Cleanliness' },
+  { item: 'Vehicle interior tidied', category: 'Vehicle' },
+  { item: 'PPE stored properly', category: 'Safety' },
+  { item: 'Customer property undamaged', category: 'Site' },
+  { item: 'No materials left behind on site', category: 'Site' },
+]
+
+export default function VictorVerify({
+  embeddedMode = false,
+  verificationType: verificationTypeProp,
+  preselectedJobId,
+  onComplete,
+  onClose
+} = {}) {
   const navigate = useNavigate()
   const { jobId: urlJobId } = useParams()
   const companyId = useStore(s => s.companyId)
@@ -63,7 +87,14 @@ export default function VictorVerify() {
   const theme = themeContext?.theme || defaultTheme
   const fileInputRef = useRef(null)
 
-  const [selectedJobId, setSelectedJobId] = useState(urlJobId || '')
+  const verificationType = verificationTypeProp || 'completion'
+  const isDaily = verificationType === 'daily'
+  const activePhotoTypes = isDaily ? DAILY_PHOTO_TYPES : PHOTO_TYPES
+
+  const initialJobId = preselectedJobId ? String(preselectedJobId) : (urlJobId || '')
+  const skipJobSelection = isDaily || !!preselectedJobId
+
+  const [selectedJobId, setSelectedJobId] = useState(initialJobId)
   const [selectedJob, setSelectedJob] = useState(null)
   const [industry, setIndustry] = useState('general')
   const [checklist, setChecklist] = useState([])
@@ -71,14 +102,22 @@ export default function VictorVerify() {
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
-  const [step, setStep] = useState(1) // 1: select job, 2: checklist + photos, 3: results
+  const [step, setStep] = useState(skipJobSelection ? 2 : 1) // 1: select job, 2: checklist + photos, 3: results
 
   const currentEmployee = employees.find(e => e.email === user?.email)
 
   useEffect(() => { if (companyId && jobs.length === 0) fetchJobs() }, [companyId])
 
-  // When job changes, detect industry and set checklist
+  // Initialize daily checklist when in daily mode
   useEffect(() => {
+    if (isDaily && checklist.length === 0) {
+      setChecklist(DAILY_CHECKLIST.map(c => ({ ...c, checked: false, notes: '' })))
+    }
+  }, [isDaily])
+
+  // When job changes, detect industry and set checklist (completion mode only)
+  useEffect(() => {
+    if (isDaily) return
     if (!selectedJobId) { setSelectedJob(null); return }
     const job = jobs.find(j => String(j.id) === String(selectedJobId))
     setSelectedJob(job)
@@ -96,7 +135,7 @@ export default function VictorVerify() {
       setIndustry('general')
       setChecklist(GENERAL_CHECKLIST.map(c => ({ ...c, checked: false, notes: '' })))
     }
-  }, [selectedJobId, jobs])
+  }, [selectedJobId, jobs, isDaily])
 
   const toggleChecklistItem = (idx) => {
     setChecklist(prev => prev.map((item, i) => i === idx ? { ...item, checked: !item.checked } : item))
@@ -104,6 +143,7 @@ export default function VictorVerify() {
 
   const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files || [])
+    const defaultType = isDaily ? 'vehicle' : 'completion'
     for (const file of files) {
       const preview = URL.createObjectURL(file)
       // Read base64
@@ -112,7 +152,7 @@ export default function VictorVerify() {
         reader.onload = () => resolve(reader.result.split(',')[1])
         reader.readAsDataURL(file)
       })
-      setPhotos(prev => [...prev, { file, preview, photoType: 'completion', base64 }])
+      setPhotos(prev => [...prev, { file, preview, photoType: defaultType, base64 }])
     }
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -128,27 +168,39 @@ export default function VictorVerify() {
     setPhotos(prev => prev.map((p, i) => i === idx ? { ...p, photoType: type } : p))
   }
 
+  const handleBack = () => {
+    if (embeddedMode && onClose) {
+      onClose()
+    } else {
+      navigate(-1)
+    }
+  }
+
   const runVerification = async () => {
     if (photos.length === 0) { setError('Please upload at least one photo'); return }
-    if (!selectedJob) { setError('Please select a job'); return }
+    if (!isDaily && !selectedJob) { setError('Please select a job'); return }
 
     setAnalyzing(true)
     setError(null)
 
     try {
       // 1. Create verification report record
+      const insertData = {
+        company_id: companyId,
+        verified_by: currentEmployee?.id || null,
+        verification_type: verificationType,
+        industry: isDaily ? 'daily' : industry,
+        checklist_items: checklist,
+        status: 'analyzing',
+        created_at: new Date().toISOString()
+      }
+      if (selectedJobId) {
+        insertData.job_id = parseInt(selectedJobId)
+      }
+
       const { data: report, error: insertError } = await supabase
         .from('verification_reports')
-        .insert({
-          company_id: companyId,
-          job_id: parseInt(selectedJobId),
-          verified_by: currentEmployee?.id || null,
-          verification_type: 'completion',
-          industry,
-          checklist_items: checklist,
-          status: 'analyzing',
-          created_at: new Date().toISOString()
-        })
+        .insert(insertData)
         .select()
         .single()
 
@@ -156,47 +208,58 @@ export default function VictorVerify() {
 
       // 2. Upload photos to storage
       const uploadedPhotos = []
+      const storagePath = selectedJobId
+        ? `jobs/${selectedJobId}/verification/${report.id}`
+        : `daily-verification/${report.id}`
+
       for (const photo of photos) {
         const safeName = photo.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-        const filePath = `jobs/${selectedJobId}/verification/${report.id}/${Date.now()}_${safeName}`
+        const filePath = `${storagePath}/${Date.now()}_${safeName}`
 
         const { error: uploadErr } = await supabase.storage
           .from('project-documents')
           .upload(filePath, photo.file)
 
         if (!uploadErr) {
-          await supabase.from('verification_photos').insert({
+          const photoInsert = {
             company_id: companyId,
             verification_id: report.id,
-            job_id: parseInt(selectedJobId),
             file_path: filePath,
             storage_bucket: 'project-documents',
             photo_type: photo.photoType,
             created_at: new Date().toISOString()
-          })
+          }
+          if (selectedJobId) {
+            photoInsert.job_id = parseInt(selectedJobId)
+          }
+          await supabase.from('verification_photos').insert(photoInsert)
           uploadedPhotos.push({ filePath, photoType: photo.photoType })
         }
       }
 
       // 3. Call Victor AI via edge function
-      const { data: aiResult, error: aiError } = await supabase.functions.invoke('victor-verify', {
-        body: {
-          images: photos.map(p => ({
-            base64: p.base64,
-            mediaType: p.file.type || 'image/jpeg',
-            photoType: p.photoType
-          })),
-          jobContext: {
-            jobTitle: selectedJob.job_title || '',
-            serviceType: selectedJob.business_unit || '',
-            industry,
-            address: selectedJob.job_address || '',
-            assignedTeam: selectedJob.assigned_team || '',
-            details: selectedJob.details || ''
-          },
-          checklist: checklist.map(c => ({ item: c.item, checked: c.checked, category: c.category }))
+      const body = {
+        images: photos.map(p => ({
+          base64: p.base64,
+          mediaType: p.file.type || 'image/jpeg',
+          photoType: p.photoType
+        })),
+        checklist: checklist.map(c => ({ item: c.item, checked: c.checked, category: c.category })),
+        verificationType
+      }
+
+      if (!isDaily && selectedJob) {
+        body.jobContext = {
+          jobTitle: selectedJob.job_title || '',
+          serviceType: selectedJob.business_unit || '',
+          industry,
+          address: selectedJob.job_address || '',
+          assignedTeam: selectedJob.assigned_team || '',
+          details: selectedJob.details || ''
         }
-      })
+      }
+
+      const { data: aiResult, error: aiError } = await supabase.functions.invoke('victor-verify', { body })
 
       if (aiError) throw new Error(aiError.message)
 
@@ -261,21 +324,38 @@ export default function VictorVerify() {
     j.status === 'In Progress' || j.status === 'Completed' || j.status === 'Complete' || j.status === 'Scheduled'
   )
 
-  return (
-    <div style={{ padding: '24px', maxWidth: '800px', margin: '0 auto' }}>
+  // Checklist categories depend on type
+  const checklistCategories = isDaily
+    ? ['Cleanliness', 'Tools', 'Vehicle', 'Safety', 'Site']
+    : ['Completion', 'Quality', 'Cleanliness', 'Handoff']
 
-      {/* Step 1: Select Job */}
+  const checklistTitle = isDaily
+    ? 'End-of-Day Housekeeping'
+    : (industry === 'lighting' ? 'Lighting' : 'General')
+
+  const photoUploadLabel = isDaily
+    ? 'Tap to take photos of your truck, site, and tools'
+    : 'Tap to select or take photos of completed work'
+
+  return (
+    <div style={{ padding: embeddedMode ? '0' : '24px', maxWidth: embeddedMode ? '100%' : '800px', margin: '0 auto' }}>
+
+      {/* Step 1: Select Job (skipped for daily and preselected) */}
       {step === 1 && (
         <div>
-          <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '8px' }}>
-            <Shield size={22} style={{ display: 'inline', marginRight: '8px', verticalAlign: 'text-bottom' }} />
-            Start Verification
-          </h2>
-          <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '24px' }}>
-            Select a job to verify. Victor will analyze photos and your checklist to score the work.
-          </p>
+          {!embeddedMode && (
+            <>
+              <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '8px' }}>
+                <Shield size={22} style={{ display: 'inline', marginRight: '8px', verticalAlign: 'text-bottom' }} />
+                Start Verification
+              </h2>
+              <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '24px' }}>
+                Select a job to verify. Victor will analyze photos and your checklist to score the work.
+              </p>
+            </>
+          )}
 
-          <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '24px' }}>
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: embeddedMode ? 'none' : `1px solid ${theme.border}`, padding: embeddedMode ? '0' : '24px' }}>
             <label style={labelStyle}>Select Job</label>
             <select
               value={selectedJobId}
@@ -347,25 +427,34 @@ export default function VictorVerify() {
       {/* Step 2: Checklist + Photos */}
       {step === 2 && (
         <div>
-          <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>
-            ← Back to Job Selection
-          </button>
+          {!skipJobSelection && (
+            <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>
+              ← Back to Job Selection
+            </button>
+          )}
+          {skipJobSelection && embeddedMode && onClose && (
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>
+              ← Cancel
+            </button>
+          )}
 
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
-            Verify: {selectedJob?.job_title || 'Job'}
+            {isDaily ? 'End-of-Day Check' : `Verify: ${selectedJob?.job_title || 'Job'}`}
           </h2>
           <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '20px' }}>
-            Complete the checklist and upload photos of the finished work.
+            {isDaily
+              ? 'Complete the housekeeping checklist and snap a few photos before heading out.'
+              : 'Complete the checklist and upload photos of the finished work.'}
           </p>
 
           {/* Checklist */}
           <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px', marginBottom: '20px' }}>
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <CheckCircle2 size={16} style={{ color: theme.accent }} />
-              Verification Checklist — {industry === 'lighting' ? 'Lighting' : 'General'}
+              Verification Checklist — {checklistTitle}
             </h3>
 
-            {['Completion', 'Quality', 'Cleanliness', 'Handoff'].map(cat => {
+            {checklistCategories.map(cat => {
               const items = checklist.filter(c => c.category === cat)
               if (items.length === 0) return null
               return (
@@ -388,7 +477,7 @@ export default function VictorVerify() {
                           onChange={() => toggleChecklistItem(globalIdx)}
                           style={{ width: '18px', height: '18px', accentColor: '#22c55e' }}
                         />
-                        <span style={{ flex: 1, textDecoration: item.checked ? 'none' : 'none' }}>{item.item}</span>
+                        <span style={{ flex: 1 }}>{item.item}</span>
                         {item.checked && <CheckCircle2 size={14} style={{ color: '#22c55e', flexShrink: 0 }} />}
                       </label>
                     )
@@ -421,7 +510,7 @@ export default function VictorVerify() {
             >
               <Upload size={28} style={{ color: theme.textMuted, margin: '0 auto 8px' }} />
               <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Upload Photos</div>
-              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>Tap to select or take photos of completed work</div>
+              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>{photoUploadLabel}</div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -464,7 +553,7 @@ export default function VictorVerify() {
                         onChange={e => setPhotoType(idx, e.target.value)}
                         style={{ width: '100%', fontSize: '11px', padding: '4px', border: `1px solid ${theme.border}`, borderRadius: '4px', color: theme.text, backgroundColor: theme.bgCard }}
                       >
-                        {PHOTO_TYPES.map(t => (
+                        {activePhotoTypes.map(t => (
                           <option key={t.id} value={t.id}>{t.label}</option>
                         ))}
                       </select>
@@ -498,7 +587,7 @@ export default function VictorVerify() {
             {analyzing ? (
               <><Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} /> Victor is Analyzing...</>
             ) : (
-              <><Sparkles size={20} /> Run Victor Verification</>
+              <><Sparkles size={20} /> {isDaily ? 'Run End-of-Day Check' : 'Run Victor Verification'}</>
             )}
           </button>
           <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
@@ -538,10 +627,10 @@ export default function VictorVerify() {
           {(result.work_quality_score || result.cleanliness_score || result.completeness_score || result.customer_readiness_score) && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
               {[
-                { label: 'Work Quality', score: result.work_quality_score, icon: Wrench },
+                { label: isDaily ? 'Vehicle/Site' : 'Work Quality', score: result.work_quality_score, icon: Wrench },
                 { label: 'Cleanliness', score: result.cleanliness_score, icon: Sparkles },
-                { label: 'Completeness', score: result.completeness_score, icon: CheckCircle2 },
-                { label: 'Customer Ready', score: result.customer_readiness_score, icon: Star },
+                { label: isDaily ? 'Tools Gathered' : 'Completeness', score: result.completeness_score, icon: CheckCircle2 },
+                { label: isDaily ? 'Nothing Left Behind' : 'Customer Ready', score: result.customer_readiness_score, icon: Star },
               ].filter(s => s.score).map(sub => (
                 <div key={sub.label} style={{
                   backgroundColor: theme.bgCard, borderRadius: '10px',
@@ -624,24 +713,39 @@ export default function VictorVerify() {
           {/* Actions */}
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
-              onClick={() => navigate(`/agents/victor/report/${result.reportId}`)}
+              onClick={() => {
+                if (embeddedMode && onComplete) {
+                  onComplete(result.reportId)
+                } else {
+                  navigate(`/agents/victor/report/${result.reportId}`)
+                }
+              }}
               style={{
                 flex: 1, padding: '12px', backgroundColor: theme.accent,
                 color: '#fff', border: 'none', borderRadius: '8px',
                 cursor: 'pointer', fontWeight: '600', fontSize: '14px'
               }}
             >
-              View Full Report
+              {embeddedMode ? 'Done' : 'View Full Report'}
             </button>
             <button
-              onClick={() => { setStep(1); setResult(null); setPhotos([]); setSelectedJobId('') }}
+              onClick={() => {
+                if (embeddedMode && onClose) {
+                  onClose()
+                } else {
+                  setStep(skipJobSelection ? 2 : 1)
+                  setResult(null)
+                  setPhotos([])
+                  if (!skipJobSelection) setSelectedJobId('')
+                }
+              }}
               style={{
                 flex: 1, padding: '12px', border: `1px solid ${theme.border}`,
                 backgroundColor: 'transparent', color: theme.text,
                 borderRadius: '8px', cursor: 'pointer', fontSize: '14px'
               }}
             >
-              New Verification
+              {embeddedMode ? 'Close' : 'New Verification'}
             </button>
           </div>
         </div>

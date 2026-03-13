@@ -64,6 +64,9 @@ import ConradContacts from './pages/agents/conrad/ConradContacts'
 import ConradAutomations from './pages/agents/conrad/ConradAutomations'
 import ConradSettings from './pages/agents/conrad/ConradSettings'
 import VictorWorkspace from './pages/agents/victor/VictorWorkspace'
+import ArnieWorkspace from './pages/agents/arnie/ArnieWorkspace'
+import ArnieChatPage from './pages/agents/arnie/ArnieChatPage'
+import ArnieHistory from './pages/agents/arnie/ArnieHistory'
 import VictorDashboard from './pages/agents/victor/VictorDashboard'
 import VictorVerify from './pages/agents/victor/VictorVerify'
 import VictorReport from './pages/agents/victor/VictorReport'
@@ -359,9 +362,16 @@ function App() {
           <Route path="/agents/victor" element={<VictorWorkspace />}>
             <Route index element={<VictorDashboard />} />
             <Route path="verify" element={<VictorVerify />} />
+            <Route path="verify/:jobId" element={<VictorVerify />} />
             <Route path="history" element={<VictorHistory />} />
             <Route path="report/:id" element={<VictorReport />} />
             <Route path="settings" element={<VictorSettings />} />
+          </Route>
+
+          {/* Arnie Workspace (AI Assistant) */}
+          <Route path="/agents/arnie" element={<ArnieWorkspace />}>
+            <Route index element={<ArnieChatPage />} />
+            <Route path="history" element={<ArnieHistory />} />
           </Route>
 
           {/* Admin Data Console (Developer Only) */}

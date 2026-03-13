@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Pencil, Trash2, X, CreditCard, Search, DollarSign } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, CreditCard, Search, DollarSign, Upload, Download } from 'lucide-react'
+import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import { depositsFields } from '../lib/importExportFields'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -17,12 +19,17 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-const emptyPayment = {
-  lead_id: '',
+const emptyDeposit = {
+  business: '',
+  lead_customer_name: '',
+  description: '',
+  account: '',
+  lead_source: '',
+  receipt: '',
   date_created: new Date().toISOString().split('T')[0],
   amount: '',
   payment_id: '',
-  payment_status: 'Pending',
+  payment_status: 'Completed',
   notes: ''
 }
 
@@ -30,15 +37,15 @@ export default function LeadPayments() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const leadPayments = useStore((state) => state.leadPayments)
-  const leads = useStore((state) => state.leads)
   const fetchLeadPayments = useStore((state) => state.fetchLeadPayments)
 
   const [showModal, setShowModal] = useState(false)
   const [editingPayment, setEditingPayment] = useState(null)
-  const [formData, setFormData] = useState(emptyPayment)
+  const [formData, setFormData] = useState(emptyDeposit)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [showImportExport, setShowImportExport] = useState(false)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -51,18 +58,25 @@ export default function LeadPayments() {
     fetchLeadPayments()
   }, [companyId, navigate, fetchLeadPayments])
 
-  const filteredPayments = leadPayments.filter(payment => {
-    const matchesSearch = searchTerm === '' ||
-      payment.lead_customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.payment_id?.toLowerCase().includes(searchTerm.toLowerCase())
-    return matchesSearch
+  const filteredPayments = leadPayments.filter(p => {
+    if (!searchTerm) return true
+    const s = searchTerm.toLowerCase()
+    return (
+      p.lead_customer_name?.toLowerCase().includes(s) ||
+      p.business?.toLowerCase().includes(s) ||
+      p.description?.toLowerCase().includes(s) ||
+      p.account?.toLowerCase().includes(s) ||
+      p.lead_source?.toLowerCase().includes(s) ||
+      p.payment_id?.toLowerCase().includes(s) ||
+      p.receipt?.toLowerCase().includes(s)
+    )
   })
 
-  const totalPayments = filteredPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+  const totalDeposits = filteredPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 
   const openAddModal = () => {
     setEditingPayment(null)
-    setFormData(emptyPayment)
+    setFormData(emptyDeposit)
     setError(null)
     setShowModal(true)
   }
@@ -70,11 +84,16 @@ export default function LeadPayments() {
   const openEditModal = (payment) => {
     setEditingPayment(payment)
     setFormData({
-      lead_id: payment.lead_id || '',
+      business: payment.business || '',
+      lead_customer_name: payment.lead_customer_name || '',
+      description: payment.description || '',
+      account: payment.account || '',
+      lead_source: payment.lead_source || '',
+      receipt: payment.receipt || '',
       date_created: payment.date_created || '',
       amount: payment.amount || '',
       payment_id: payment.payment_id || '',
-      payment_status: payment.payment_status || 'Pending',
+      payment_status: payment.payment_status || 'Completed',
       notes: payment.notes || ''
     })
     setError(null)
@@ -84,7 +103,7 @@ export default function LeadPayments() {
   const closeModal = () => {
     setShowModal(false)
     setEditingPayment(null)
-    setFormData(emptyPayment)
+    setFormData(emptyDeposit)
     setError(null)
   }
 
@@ -100,11 +119,16 @@ export default function LeadPayments() {
 
     const payload = {
       company_id: companyId,
-      lead_id: formData.lead_id || null,
-      date_created: formData.date_created,
+      business: formData.business || null,
+      lead_customer_name: formData.lead_customer_name || null,
+      description: formData.description || null,
+      account: formData.account || null,
+      lead_source: formData.lead_source || null,
+      receipt: formData.receipt || null,
+      date_created: formData.date_created || null,
       amount: parseFloat(formData.amount) || 0,
       payment_id: formData.payment_id || null,
-      payment_status: formData.payment_status || 'Pending',
+      payment_status: formData.payment_status || 'Completed',
       notes: formData.notes || null,
       updated_at: new Date().toISOString()
     }
@@ -128,7 +152,7 @@ export default function LeadPayments() {
   }
 
   const handleDelete = async (payment) => {
-    if (!confirm(`Delete this payment?`)) return
+    if (!confirm('Delete this deposit?')) return
     await supabase.from('lead_payments').delete().eq('id', payment.id)
     await fetchLeadPayments()
   }
@@ -176,25 +200,33 @@ export default function LeadPayments() {
         <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
           Deposits
         </h1>
-        <button
-          onClick={openAddModal}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 16px',
-            backgroundColor: theme.accent,
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-            cursor: 'pointer'
-          }}
-        >
-          <Plus size={18} />
-          Add Deposit
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} /> Import
+          </button>
+          <button onClick={() => exportToCSV(filteredPayments, depositsFields, 'deposits_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={18} /> Export
+          </button>
+          <button
+            onClick={openAddModal}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 16px',
+              backgroundColor: theme.accent,
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Plus size={18} />
+            Add Deposit
+          </button>
+        </div>
       </div>
 
       {/* Summary */}
@@ -225,7 +257,7 @@ export default function LeadPayments() {
             <div>
               <p style={{ fontSize: '13px', color: theme.textMuted }}>Total Collected</p>
               <p style={{ fontSize: '24px', fontWeight: '700', color: '#4a7c59' }}>
-                {formatCurrency(totalPayments)}
+                {formatCurrency(totalDeposits)}
               </p>
             </div>
           </div>
@@ -244,7 +276,7 @@ export default function LeadPayments() {
           }} />
           <input
             type="text"
-            placeholder="Search payments..."
+            placeholder="Search deposits..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ ...inputStyle, paddingLeft: '40px' }}
@@ -263,7 +295,7 @@ export default function LeadPayments() {
         }}>
           <CreditCard size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
           <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
-            No deposits found. Record your first deposit.
+            No deposits found. Record your first deposit or import from a file.
           </p>
         </div>
       ) : (
@@ -271,89 +303,75 @@ export default function LeadPayments() {
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          overflow: 'hidden'
+          overflow: 'auto'
         }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '100px 1fr 120px 120px 120px 80px',
-            gap: '16px',
-            padding: '14px 20px',
-            backgroundColor: theme.accentBg,
-            borderBottom: `1px solid ${theme.border}`,
-            fontSize: '12px',
-            fontWeight: '600',
-            color: theme.textMuted,
-            textTransform: 'uppercase'
-          }}>
-            <div>Date</div>
-            <div>Lead</div>
-            <div style={{ textAlign: 'right' }}>Amount</div>
-            <div>Status</div>
-            <div>Payment ID</div>
-            <div style={{ textAlign: 'right' }}>Actions</div>
-          </div>
-
-          {filteredPayments.map((payment) => (
-            <div
-              key={payment.id}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '100px 1fr 120px 120px 120px 80px',
-                gap: '16px',
-                padding: '16px 20px',
-                borderBottom: `1px solid ${theme.border}`,
-                alignItems: 'center'
-              }}
-            >
-              <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                {formatDate(payment.date_created)}
-              </div>
-              <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
-                {payment.lead_customer_name || 'Unknown Lead'}
-              </div>
-              <div style={{ textAlign: 'right', fontWeight: '600', color: '#4a7c59' }}>
-                {formatCurrency(payment.amount)}
-              </div>
-              <div style={{ fontSize: '13px', color: theme.textSecondary }}>
-                {payment.payment_status || '-'}
-              </div>
-              <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                {payment.payment_id || '-'}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
-                <button
-                  onClick={() => openEditModal(payment)}
-                  style={{
-                    padding: '8px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    color: theme.textMuted
-                  }}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  onClick={() => handleDelete(payment)}
-                  style={{
-                    padding: '8px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    color: theme.textMuted
-                  }}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-          ))}
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
+            <thead>
+              <tr style={{ backgroundColor: theme.accentBg, borderBottom: `1px solid ${theme.border}` }}>
+                {['Business', 'Customer', 'Description', 'Account', 'Source', 'Receipt', 'Date', 'Amount', ''].map((col, i) => (
+                  <th key={i} style={{
+                    padding: '12px 14px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: theme.textMuted,
+                    textTransform: 'uppercase',
+                    textAlign: col === 'Amount' ? 'right' : 'left',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPayments.map((p) => (
+                <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '12px 14px', fontSize: '14px', color: theme.text }}>
+                    {p.business || '-'}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                    {p.lead_customer_name || '-'}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '13px', color: theme.textSecondary, maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.description || p.notes || '-'}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '13px', color: theme.textSecondary }}>
+                    {p.account || '-'}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '13px', color: theme.textSecondary, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.lead_source || '-'}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '13px', color: theme.textMuted }}>
+                    {p.receipt || '-'}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '14px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
+                    {formatDate(p.date_created)}
+                  </td>
+                  <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '600', color: '#4a7c59', whiteSpace: 'nowrap' }}>
+                    {formatCurrency(p.amount)}
+                  </td>
+                  <td style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button
+                      onClick={() => openEditModal(p)}
+                      style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(p)}
+                      style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Modal */}
+      {/* Add/Edit Modal */}
       {showModal && (
         <div style={{
           position: 'fixed',
@@ -370,7 +388,7 @@ export default function LeadPayments() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '450px',
+            maxWidth: '600px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -397,19 +415,40 @@ export default function LeadPayments() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Business</label>
+                    <input type="text" name="business" value={formData.business} onChange={handleChange} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Customer / Client</label>
+                    <input type="text" name="lead_customer_name" value={formData.lead_customer_name} onChange={handleChange} style={inputStyle} />
+                  </div>
+                </div>
+
                 <div>
-                  <label style={labelStyle}>Lead *</label>
-                  <select name="lead_id" value={formData.lead_id} onChange={handleChange} required style={inputStyle}>
-                    <option value="">Select lead</option>
-                    {leads.map(lead => (
-                      <option key={lead.id} value={lead.id}>{lead.customer_name}</option>
-                    ))}
-                  </select>
+                  <label style={labelStyle}>Description</label>
+                  <input type="text" name="description" value={formData.description} onChange={handleChange} style={inputStyle} />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Date Created *</label>
+                    <label style={labelStyle}>Account</label>
+                    <input type="text" name="account" value={formData.account} onChange={handleChange} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Source</label>
+                    <input type="text" name="lead_source" value={formData.lead_source} onChange={handleChange} style={inputStyle} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Receipt</label>
+                    <input type="text" name="receipt" value={formData.receipt} onChange={handleChange} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Date *</label>
                     <input type="date" name="date_created" value={formData.date_created} onChange={handleChange} required style={inputStyle} />
                   </div>
                   <div>
@@ -420,17 +459,17 @@ export default function LeadPayments() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Payment Status</label>
+                    <label style={labelStyle}>Payment ID</label>
+                    <input type="text" name="payment_id" value={formData.payment_id} onChange={handleChange} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Status</label>
                     <select name="payment_status" value={formData.payment_status} onChange={handleChange} style={inputStyle}>
                       <option value="Pending">Pending</option>
                       <option value="Completed">Completed</option>
                       <option value="Failed">Failed</option>
                       <option value="Refunded">Refunded</option>
                     </select>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Payment ID</label>
-                    <input type="text" name="payment_id" value={formData.payment_id} onChange={handleChange} style={inputStyle} />
                   </div>
                 </div>
 
@@ -458,6 +497,18 @@ export default function LeadPayments() {
             </form>
           </div>
         </div>
+      )}
+      {showImportExport && (
+        <ImportExportModal
+          tableName="lead_payments"
+          entityName="Deposits"
+          fields={depositsFields}
+          companyId={companyId}
+          requiredField="amount"
+          defaultValues={{ company_id: companyId, payment_status: 'Completed' }}
+          onImportComplete={() => fetchLeadPayments()}
+          onClose={() => setShowImportExport(false)}
+        />
       )}
     </div>
   )

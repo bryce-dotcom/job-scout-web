@@ -51,6 +51,8 @@ export default function Reports() {
   const fleet = useStore((state) => state.fleet)
   const fleetMaintenance = useStore((state) => state.fleetMaintenance)
   const salesPipeline = useStore((state) => state.salesPipeline)
+  const expenses = useStore((state) => state.expenses)
+  const leadPayments = useStore((state) => state.leadPayments)
 
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
@@ -132,10 +134,15 @@ export default function Reports() {
   const financialReportData = useMemo(() => {
     const filteredInvoices = filterByDate(invoices, 'created_at')
     const filteredPayments = filterByDate(payments, 'date')
+    const filteredExpenses = filterByDate(expenses || [], 'date')
+    const filteredDeposits = filterByDate(leadPayments || [], 'date_created')
 
     const totalInvoiced = filteredInvoices.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
     const totalCollected = filteredPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
     const outstanding = totalInvoiced - totalCollected
+    const totalExpenses = filteredExpenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
+    const totalDeposits = filteredDeposits.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
+    const netIncome = totalDeposits - totalExpenses
 
     // Revenue by month
     const revenueByMonth = {}
@@ -144,6 +151,13 @@ export default function Reports() {
       if (month) {
         revenueByMonth[month] = (revenueByMonth[month] || 0) + (parseFloat(p.amount) || 0)
       }
+    })
+
+    // Expenses by category
+    const expensesByCategory = {}
+    filteredExpenses.forEach(e => {
+      const cat = e.category || 'Uncategorized'
+      expensesByCategory[cat] = (expensesByCategory[cat] || 0) + (parseFloat(e.amount) || 0)
     })
 
     // Top customers
@@ -157,8 +171,8 @@ export default function Reports() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
 
-    return { totalInvoiced, totalCollected, outstanding, revenueByMonth, topCustomers }
-  }, [invoices, payments, dateRange])
+    return { totalInvoiced, totalCollected, outstanding, totalExpenses, totalDeposits, netIncome, revenueByMonth, expensesByCategory, topCustomers }
+  }, [invoices, payments, expenses, leadPayments, dateRange])
 
   // Employee Report Data
   const employeeReportData = useMemo(() => {
@@ -331,17 +345,16 @@ export default function Reports() {
       case 'financial':
         return (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '24px' }}>
               <StatCard label="Total Invoiced" value={formatCurrency(financialReportData.totalInvoiced)} />
               <StatCard label="Total Collected" value={formatCurrency(financialReportData.totalCollected)} />
               <StatCard label="Outstanding" value={formatCurrency(financialReportData.outstanding)} />
-              <StatCard
-                label="Collection Rate"
-                value={financialReportData.totalInvoiced > 0 ? formatPercent(financialReportData.totalCollected / financialReportData.totalInvoiced) : '0%'}
-              />
+              <StatCard label="Total Deposits" value={formatCurrency(financialReportData.totalDeposits)} />
+              <StatCard label="Total Expenses" value={formatCurrency(financialReportData.totalExpenses)} />
+              <StatCard label="Net Income" value={formatCurrency(financialReportData.netIncome)} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
               <div>
                 <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Revenue by Month</h3>
                 <div style={{ backgroundColor: theme.bg, borderRadius: '8px', padding: '16px' }}>
@@ -355,6 +368,23 @@ export default function Reports() {
                     ))}
                   {Object.keys(financialReportData.revenueByMonth).length === 0 && (
                     <div style={{ padding: '12px', textAlign: 'center', color: theme.textMuted }}>No data for period</div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Expenses by Category</h3>
+                <div style={{ backgroundColor: theme.bg, borderRadius: '8px', padding: '16px' }}>
+                  {Object.entries(financialReportData.expensesByCategory)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([cat, amount]) => (
+                      <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${theme.border}` }}>
+                        <span style={{ fontSize: '14px', color: theme.textSecondary }}>{cat}</span>
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#c25a5a' }}>{formatCurrency(amount)}</span>
+                      </div>
+                    ))}
+                  {Object.keys(financialReportData.expensesByCategory).length === 0 && (
+                    <div style={{ padding: '12px', textAlign: 'center', color: theme.textMuted }}>No expenses for period</div>
                   )}
                 </div>
               </div>
