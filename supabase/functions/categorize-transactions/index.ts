@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 // AI Transaction Categorization via Gemini + merchant rules
-// Actions: categorize_batch, learn_rule
+// Actions: categorize_batch, learn_rule, reconcile
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -58,6 +58,23 @@ serve(async (req) => {
         .order('sort_order');
 
       const categoryNames = (categories || []).map(c => c.name);
+
+      // Get active jobs for AI context
+      const { data: jobs } = await supabase
+        .from('jobs')
+        .select('id, job_title, job_address, job_total, customer:customers!customer_id(id, name)')
+        .eq('company_id', company_id)
+        .in('status', ['Chillin', 'Scheduled', 'In Progress'])
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      const jobsList = (jobs || []).map(j => ({
+        id: j.id,
+        title: j.job_title,
+        customer: j.customer?.name || '',
+        address: j.job_address || '',
+        total: j.job_total
+      }));
 
       // Phase 1: Apply rules
       const ruleMatched: number[] = [];
@@ -130,11 +147,20 @@ Standard 1065 line items:
 
 For each transaction, determine if it's likely a transfer between accounts (e.g., "Transfer to Savings", "Zelle to self").
 
+Active jobs for this company:
+${JSON.stringify(jobsList)}
+
+For each transaction, try to match it to a job by:
+- Merchant name matching customer name
+- Transaction description mentioning job address or customer
+- Amount patterns matching job total or typical job expenses
+If you can match to a job, include job_id and job_confidence (0-1). If no match, set job_id to null.
+
 Transactions:
 ${JSON.stringify(txnList)}
 
 Return ONLY a JSON array with this structure for each transaction:
-[{"id": number, "category": "string", "tax_category": "string", "form_1065_line": "string", "confidence": number (0-1), "is_transfer": boolean}]`;
+[{"id": number, "category": "string", "tax_category": "string", "form_1065_line": "string", "confidence": number (0-1), "is_transfer": boolean, "job_id": number|null, "job_confidence": number|null}]`;
 
           try {
             const geminiRes = await fetch(
@@ -164,6 +190,8 @@ Return ONLY a JSON array with this structure for each transaction:
                   ai_form_1065_line: result.form_1065_line,
                   ai_confidence: result.confidence,
                   is_transfer: result.is_transfer || false,
+                  ai_job_id: result.job_id || null,
+                  ai_job_confidence: result.job_confidence || null,
                 }).eq('id', result.id);
                 aiCategorized++;
               }
@@ -225,6 +253,30 @@ Return ONLY a JSON array with this structure for each transaction:
         .eq('company_id', company_id)
         .ilike('merchant_name', `%${pattern}%`)
         .eq('confirmed', false);
+
+      return jsonResponse({ success: true });
+    }
+
+    // ─── RECONCILE ───
+    if (action === 'reconcile') {
+      const { transaction_id, expense_id } = body;
+      if (!transaction_id || !expense_id) {
+        return jsonResponse({ error: 'transaction_id and expense_id are required' }, 400);
+      }
+
+      // Link transaction to expense
+      const { error: txnErr } = await supabase.from('plaid_transactions').update({
+        expense_id: expense_id,
+      }).eq('id', transaction_id).eq('company_id', company_id);
+
+      if (txnErr) return jsonResponse({ error: txnErr.message }, 500);
+
+      // Link expense back to transaction
+      const { error: expErr } = await supabase.from('expenses').update({
+        plaid_transaction_id: transaction_id,
+      }).eq('id', expense_id);
+
+      if (expErr) return jsonResponse({ error: expErr.message }, 500);
 
       return jsonResponse({ success: true });
     }

@@ -178,7 +178,7 @@ export const QUERIES = {
   invoiceLines: '*, item:products_services(id, name)',
   payments: '*',
   timeLogs: '*, employee:employees!employee_id(id, name)',
-  expenses: '*',
+  expenses: '*, plaid_transaction:plaid_transactions(id, merchant_name, date, amount)',
   fleet: '*',
   fleetMaintenance: '*, asset:fleet!asset_id(id, name, asset_id)',
   lightingAudits: '*, customer:customers!customer_id(id, name), utility_provider:utility_providers!utility_provider_id(id, provider_name)',

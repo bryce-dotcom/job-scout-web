@@ -10,12 +10,15 @@ import {
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
   Calendar, FileText, Search, Zap, Landmark, RefreshCw,
   Sparkles, Check, CheckCircle, ChevronDown, ChevronRight,
-  Download, Filter, AlertCircle, Settings as SettingsIcon
+  Download, Filter, AlertCircle, Settings as SettingsIcon,
+  Link, Briefcase
 } from 'lucide-react'
 import { toast } from '../lib/toast'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 
 export default function Books() {
   const navigate = useNavigate()
+  const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const invoices = useStore((state) => state.invoices)
   const utilityInvoices = useStore((state) => state.utilityInvoices)
@@ -26,6 +29,7 @@ export default function Books() {
   const fetchConnectedAccounts = useStore((state) => state.fetchConnectedAccounts)
   const fetchPlaidTransactions = useStore((state) => state.fetchPlaidTransactions)
   const syncPlaidTransactions = useStore((state) => state.syncPlaidTransactions)
+  const jobs = useStore((state) => state.jobs)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || {
@@ -51,6 +55,8 @@ export default function Books() {
   const [txnEditCategory, setTxnEditCategory] = useState('')
   const [txnEditTaxCategory, setTxnEditTaxCategory] = useState('')
   const [txnEditNotes, setTxnEditNotes] = useState('')
+  const [txnEditJobId, setTxnEditJobId] = useState(null)
+  const [jobSearchText, setJobSearchText] = useState('')
 
   // Expense modal
   const [showExpenseModal, setShowExpenseModal] = useState(false)
@@ -177,6 +183,7 @@ export default function Books() {
     if (category) updates.user_category = category
     if (taxCategory) updates.user_tax_category = taxCategory
     if (txnEditNotes) updates.notes = txnEditNotes
+    if (txnEditJobId) updates.job_id = txnEditJobId
 
     await supabase.from('plaid_transactions').update(updates).eq('id', txnId)
 
@@ -190,6 +197,19 @@ export default function Books() {
           merchant_name: txn.merchant_name,
           category,
           tax_category: taxCategory,
+        }
+      })
+    }
+
+    // Learn job mapping if job was assigned
+    if (txnEditJobId && txn?.merchant_name) {
+      await supabase.functions.invoke('categorize-transactions', {
+        body: {
+          action: 'learn_rule',
+          company_id: companyId,
+          merchant_name: txn.merchant_name,
+          category: category || txn.ai_category,
+          tax_category: taxCategory || txn.ai_tax_category,
         }
       })
     }
@@ -338,6 +358,15 @@ export default function Books() {
     }
     return true
   })
+
+  if (!checkAdmin(user)) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '16px', fontWeight: '600', color: '#2c3530', marginBottom: '8px' }}>Access Restricted</div>
+        <div style={{ fontSize: '14px', color: '#7d8a7f' }}>You don't have permission to view this page. Contact your admin for access.</div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
@@ -568,6 +597,8 @@ export default function Books() {
                           setTxnEditCategory(txn.user_category || txn.ai_category || '')
                           setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
                           setTxnEditNotes(txn.notes || '')
+                          setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
+                          setJobSearchText('')
                         }
                       }}
                       style={{
@@ -588,6 +619,25 @@ export default function Books() {
                       <div style={{ fontSize: '14px', fontWeight: '600', color: isIncome ? '#22c55e' : '#ef4444', minWidth: '80px', textAlign: 'right' }}>
                         {isIncome ? '+' : '-'}{formatCurrency(Math.abs(amountNum))}
                       </div>
+                      {(() => {
+                        const jId = txn.job_id || txn.ai_job_id
+                        const isAIJob = !txn.job_id && !!txn.ai_job_id
+                        const matchedJob = jId ? (jobs || []).find(j => j.id === jId) : null
+                        if (!matchedJob) return null
+                        return (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
+                            backgroundColor: isAIJob ? 'rgba(59,130,246,0.1)' : 'rgba(90,99,73,0.12)',
+                            color: isAIJob ? '#3b82f6' : theme.accent, flexShrink: 0, maxWidth: '120px',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                          }}>
+                            {isAIJob && <Sparkles size={10} />}
+                            <Briefcase size={10} />
+                            {matchedJob.job_title || `Job #${matchedJob.id}`}
+                          </span>
+                        )
+                      })()}
                       {category && (
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', gap: '4px',
@@ -619,6 +669,63 @@ export default function Books() {
                         <div style={{ marginTop: '12px' }}>
                           <label style={{ ...labelStyle, fontSize: '12px' }}>Notes</label>
                           <input type="text" value={txnEditNotes} onChange={(e) => setTxnEditNotes(e.target.value)} placeholder="Optional notes..." style={inputStyle} />
+                        </div>
+                        <div style={{ marginTop: '12px' }}>
+                          <label style={{ ...labelStyle, fontSize: '12px' }}>Job</label>
+                          <div style={{ position: 'relative' }}>
+                            <input
+                              type="text"
+                              value={jobSearchText || (() => {
+                                const j = (jobs || []).find(j => j.id === txnEditJobId)
+                                return j ? `${j.job_title || 'Job #' + j.id} — ${j.customer?.name || ''}` : ''
+                              })()}
+                              onChange={(e) => { setJobSearchText(e.target.value); if (!e.target.value) setTxnEditJobId(null) }}
+                              placeholder="Search jobs..."
+                              style={inputStyle}
+                            />
+                            {jobSearchText && (() => {
+                              const filtered = (jobs || []).filter(j => {
+                                const s = jobSearchText.toLowerCase()
+                                return (j.job_title || '').toLowerCase().includes(s) ||
+                                  (j.customer?.name || '').toLowerCase().includes(s) ||
+                                  (j.job_address || '').toLowerCase().includes(s) ||
+                                  String(j.id).includes(s)
+                              }).slice(0, 8)
+                              if (!filtered.length) return null
+                              return (
+                                <div style={{
+                                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                                  backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                                  borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                  maxHeight: '200px', overflowY: 'auto'
+                                }}>
+                                  {filtered.map(j => (
+                                    <button key={j.id} onClick={() => { setTxnEditJobId(j.id); setJobSearchText('') }} style={{
+                                      width: '100%', padding: '10px 12px', border: 'none', backgroundColor: 'transparent',
+                                      cursor: 'pointer', textAlign: 'left', fontSize: '13px', color: theme.text,
+                                      borderBottom: `1px solid ${theme.border}`, minHeight: '44px'
+                                    }}>
+                                      <div style={{ fontWeight: '500' }}>{j.job_title || `Job #${j.id}`}</div>
+                                      <div style={{ fontSize: '11px', color: theme.textMuted }}>{j.customer?.name || ''} {j.job_address ? `— ${j.job_address}` : ''}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )
+                            })()}
+                            {txnEditJobId && !jobSearchText && (
+                              <button onClick={() => { setTxnEditJobId(null); setJobSearchText('') }} style={{
+                                position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                                background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px'
+                              }}>
+                                <X size={14} />
+                              </button>
+                            )}
+                          </div>
+                          {txn.ai_job_id && txn.ai_job_confidence != null && (
+                            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                              AI job match: {Math.round(txn.ai_job_confidence * 100)}% confidence
+                            </div>
+                          )}
                         </div>
                         {txn.ai_confidence != null && (
                           <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>

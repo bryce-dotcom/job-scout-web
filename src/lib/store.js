@@ -1369,7 +1369,7 @@ export const useStore = create(
         try {
           const { data, error } = await supabase
             .from('plaid_transactions')
-            .select('*, account:connected_accounts(id, account_name, mask, institution_name)')
+            .select('*, account:connected_accounts(id, account_name, mask, institution_name), job:jobs!plaid_transactions_job_id_fkey(id, job_title, customer:customers!customer_id(id, name)), ai_job:jobs!plaid_transactions_ai_job_id_fkey(id, job_title, customer:customers!customer_id(id, name))')
             .eq('company_id', companyId)
             .order('date', { ascending: false })
             .limit(500);
@@ -1424,6 +1424,49 @@ export const useStore = create(
         await Promise.all([fetchConnectedAccounts(), fetchPlaidTransactions()]);
 
         return { sync: syncData, categorized: catData };
+      },
+
+      // Job costing helpers
+      fetchJobExpenses: async (jobId) => {
+        const { companyId } = get();
+        if (!companyId || !jobId) return [];
+        const { data: expenses } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('job_id', jobId)
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+        const { data: txns } = await supabase
+          .from('plaid_transactions')
+          .select('*, account:connected_accounts(id, account_name, mask, institution_name)')
+          .eq('job_id', jobId)
+          .eq('company_id', companyId)
+          .order('date', { ascending: false });
+        return { expenses: expenses || [], plaidTransactions: txns || [] };
+      },
+
+      reconcileTransaction: async (transactionId, expenseId) => {
+        const { companyId, fetchPlaidTransactions } = get();
+        if (!companyId) return;
+        const { data, error } = await supabase.functions.invoke('categorize-transactions', {
+          body: { action: 'reconcile', company_id: companyId, transaction_id: transactionId, expense_id: expenseId }
+        });
+        if (!error && data?.success) {
+          await fetchPlaidTransactions();
+        }
+        return data;
+      },
+
+      createJobExpense: async (expense) => {
+        const { companyId } = get();
+        if (!companyId) return null;
+        const { data, error } = await supabase
+          .from('expenses')
+          .insert([{ ...expense, company_id: companyId }])
+          .select()
+          .single();
+        if (error) return null;
+        return data;
       },
 
       fetchEmailAutomations: async () => {
