@@ -1245,6 +1245,20 @@ export default function JobDetail() {
   const progressPercent = allottedHours > 0 ? Math.min(100, (totalHoursWorked / allottedHours) * 100) : 0
 
   const statusStyle = statusColors[job.status] || statusColors['Scheduled']
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false)
+  const statusDropdownRef = useRef(null)
+
+  // Close status dropdown on outside click
+  useEffect(() => {
+    if (!showStatusDropdown) return
+    const handleClick = (e) => {
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target)) {
+        setShowStatusDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showStatusDropdown])
 
   // Inline photo helpers
   const PhotoThumbnail = ({ att, theme: t, onView, onDelete }) => {
@@ -1307,16 +1321,84 @@ export default function JobDetail() {
             {job.job_title || 'Untitled Job'}
           </h1>
         </div>
-        <span style={{
-          padding: '6px 14px',
-          borderRadius: '20px',
-          fontSize: '13px',
-          fontWeight: '500',
-          backgroundColor: statusStyle.bg,
-          color: statusStyle.text
-        }}>
-          {job.status}
-        </span>
+        <div ref={statusDropdownRef} style={{ position: 'relative' }}>
+          <button
+            onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+            disabled={saving}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '20px',
+              fontSize: '13px',
+              fontWeight: '500',
+              backgroundColor: statusStyle.bg,
+              color: statusStyle.text,
+              border: `1px solid ${statusStyle.text}30`,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            {job.status}
+            <ChevronDown size={14} />
+          </button>
+          {showStatusDropdown && (
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              right: 0,
+              marginTop: '6px',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '10px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+              zIndex: 50,
+              minWidth: '160px',
+              overflow: 'hidden',
+            }}>
+              {['Chillin', 'Scheduled', 'In Progress', 'Completed', 'On Hold', 'Cancelled'].map(s => {
+                const sc = statusColors[s] || statusColors['Scheduled']
+                const isActive = s === job.status
+                return (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      if (s !== job.status) updateJobStatus(s)
+                      setShowStatusDropdown(false)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: 'none',
+                      backgroundColor: isActive ? sc.bg : 'transparent',
+                      color: isActive ? sc.text : theme.text,
+                      fontSize: '13px',
+                      fontWeight: isActive ? '600' : '400',
+                      cursor: isActive ? 'default' : 'pointer',
+                      textAlign: 'left',
+                      borderBottom: `1px solid ${theme.border}`,
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = sc.bg }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent' }}
+                  >
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: sc.text,
+                      flexShrink: 0,
+                    }} />
+                    {s}
+                    {isActive && <Check size={14} style={{ marginLeft: 'auto' }} />}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Deal Breadcrumb */}
