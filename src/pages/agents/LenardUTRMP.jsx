@@ -474,6 +474,7 @@ export default function LenardUTRMP() {
       retrofitType: isLampRetrofit ? 'lamp' : 'fixture',
       lampsPerFixture: preset?.lampsPerFixture || lampCount,
       confirmed: false, overrideNotes: '',
+      photoIndex: preset?.photoIndex ?? null,
     };
     setLines(prev => [...prev, base]);
     setNewlyAdded(prev => new Set(prev).add(id));
@@ -532,7 +533,8 @@ export default function LenardUTRMP() {
     setCameraLoading(true);
     try {
       const base64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.onerror = () => rej(new Error('Read failed')); r.readAsDataURL(file); });
-      setCapturedPhotos(prev => [...prev, base64]);
+      let photoIdx;
+      setCapturedPhotos(prev => { photoIdx = prev.length; return [...prev, base64]; });
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ imageBase64: base64, mediaType: 'image/jpeg' }) });
@@ -540,7 +542,7 @@ export default function LenardUTRMP() {
       if (data.fixtures && Array.isArray(data.fixtures)) {
         if (data.fixtures.length === 0) { showToast("Couldn't identify fixtures \u2014 try a clearer photo", '\uD83D\uDCF7'); }
         else {
-          data.fixtures.forEach(f => addLine({ name: f.name, existW: f.existW, newW: f.newW, qty: f.count || 1, location: f.category === 'exterior' ? 'exterior' : 'interior', height: f.height || 9, fixtureCategory: f.category === 'exterior' ? 'Outdoor' : 'Linear', lightingType: inferLampType(f.name) }));
+          data.fixtures.forEach(f => addLine({ name: f.name, existW: f.existW, newW: f.newW, qty: f.count || 1, location: f.category === 'exterior' ? 'exterior' : 'interior', height: f.height || 9, fixtureCategory: f.category === 'exterior' ? 'Outdoor' : 'Linear', lightingType: inferLampType(f.name), photoIndex: photoIdx }));
           showToast(`Lenard found ${data.fixtures.length} fixture${data.fixtures.length > 1 ? 's' : ''}`, '\uD83D\uDCF7');
         }
       } else { showToast("Couldn't identify fixtures \u2014 try a clearer photo", '\uD83D\uDCF7'); }
@@ -2513,6 +2515,9 @@ export default function LenardUTRMP() {
           return (
             <div key={r.id} style={{ ...S.card, borderColor: isExp ? T.accent : isNew ? T.green : T.border, borderLeft: `3px solid ${isExp ? T.accent : hasRebate ? T.green : T.border}`, transition: 'border-color 0.3s ease' }}>
               <div onClick={() => setExpandedLine(isExp ? null : r.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                {r.photoIndex != null && capturedPhotos[r.photoIndex] && (
+                  <img src={`data:image/jpeg;base64,${capturedPhotos[r.photoIndex]}`} alt="Fixture" style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, marginRight: '10px', border: `1px solid ${T.border}` }} />
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.name || `${r.location === 'interior' ? 'Interior' : 'Exterior'} Fixture`}

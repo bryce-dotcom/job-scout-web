@@ -222,6 +222,9 @@ serve(async (req) => {
       const existW = l.existW || 0;
       const newW = l.newW || 0;
 
+      // Build photo_path if this line has a photoIndex
+      const photoPath = (l.photoIndex != null && l.photoIndex >= 0) ? `audits/${auditDbId}/photo_${l.photoIndex}.jpg` : null;
+
       await supabasePost(`${SUPABASE_URL}/rest/v1/audit_areas`, key, {
         company_id: cid,
         audit_id: auditDbId,
@@ -238,6 +241,7 @@ serve(async (req) => {
         area_watts_reduced: (qty * existW) - (qty * newW),
         confirmed: l.confirmed || false,
         override_notes: l.overrideNotes || (l.productName ? `SBE Product: ${l.productName}` : null),
+        photo_path: photoPath,
       });
     }
 

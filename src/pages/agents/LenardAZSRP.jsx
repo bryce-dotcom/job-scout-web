@@ -543,6 +543,7 @@ export default function LenardAZSRP() {
       lampsPerFixture: preset?.lampsPerFixture || lampCount,
       confirmed: false,
       overrideNotes: '',
+      photoIndex: preset?.photoIndex ?? null,
     };
     if (program === 'sbs') {
       setLines(prev => [...prev, { ...base, fixtureType: preset?.sbsType || 'Interior LED Fixture', controlsType: 'none' }]);
@@ -620,8 +621,9 @@ export default function LenardAZSRP() {
         r.readAsDataURL(file);
       });
 
-      // Store photo for audit
-      setCapturedPhotos(prev => [...prev, base64]);
+      // Store photo for audit and track its index
+      let photoIdx;
+      setCapturedPhotos(prev => { photoIdx = prev.length; return [...prev, base64]; });
 
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -642,6 +644,7 @@ export default function LenardAZSRP() {
               height: f.height || DEFAULT_HEIGHTS[f.category] || 9,
               fixtureCategory: CATEGORY_TO_FIXTURE_CAT[f.category] || 'Linear',
               lightingType: inferLampType(f.name),
+              photoIndex: photoIdx,
             });
           });
           showToast(`Lenard found ${data.fixtures.length} fixture${data.fixtures.length > 1 ? 's' : ''}`, '\uD83D\uDCF7');
@@ -1790,6 +1793,9 @@ export default function LenardAZSRP() {
               transition: 'border-color 0.3s ease',
             }}>
               <div onClick={() => setExpandedLine(isExp ? null : r.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                {r.photoIndex != null && capturedPhotos[r.photoIndex] && (
+                  <img src={`data:image/jpeg;base64,${capturedPhotos[r.photoIndex]}`} alt="Fixture" style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, marginRight: '10px', border: `1px solid ${T.border}` }} />
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.name || (program === 'sbs' ? r.fixtureType : SBC_RATES.categories[r.category]?.subtypes.find(s => s.id === r.subtype)?.label || r.subtype)}
