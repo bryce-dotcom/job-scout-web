@@ -68,6 +68,7 @@ export default function JobDetail() {
   const fetchJobs = useStore((state) => state.fetchJobs)
   const fetchTimeLogs = useStore((state) => state.fetchTimeLogs)
   const isAdmin = checkAdmin(useStore((state) => state.user))
+  const storeJobStatuses = useStore((state) => state.jobStatuses)
   const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
 
   // Normalize section statuses from store
@@ -1244,7 +1245,24 @@ export default function JobDetail() {
   const allottedHours = parseFloat(job.allotted_time_hours) || 0
   const progressPercent = allottedHours > 0 ? Math.min(100, (totalHoursWorked / allottedHours) * 100) : 0
 
-  const statusStyle = statusColors[job.status] || statusColors['Scheduled']
+  // Build job statuses from store (DB-driven) with fallback to hardcoded
+  const effectiveJobStatuses = (() => {
+    if (storeJobStatuses && storeJobStatuses.length > 0) {
+      return storeJobStatuses.map(s => {
+        if (typeof s === 'string') return { id: s, name: s, color: statusColors[s]?.text || '#9ca3af' }
+        return { id: s.id || s.name, name: s.name, color: s.color || statusColors[s.name]?.text || '#9ca3af' }
+      })
+    }
+    return Object.entries(statusColors).map(([name, c]) => ({ id: name, name, color: c.text }))
+  })()
+
+  const getStatusStyle = (status) => {
+    const found = effectiveJobStatuses.find(s => s.id === status || s.name === status)
+    if (found) return { bg: found.color + '20', text: found.color }
+    return statusColors[status] || { bg: '#f3f4f6', text: '#6b7280' }
+  }
+
+  const statusStyle = getStatusStyle(job.status)
   const [showStatusDropdown, setShowStatusDropdown] = useState(false)
   const statusDropdownRef = useRef(null)
 
@@ -1356,8 +1374,9 @@ export default function JobDetail() {
               minWidth: '160px',
               overflow: 'hidden',
             }}>
-              {['Chillin', 'Scheduled', 'In Progress', 'Completed', 'On Hold', 'Cancelled'].map(s => {
-                const sc = statusColors[s] || statusColors['Scheduled']
+              {effectiveJobStatuses.map(statusObj => {
+                const s = statusObj.id
+                const sc = { bg: statusObj.color + '20', text: statusObj.color }
                 const isActive = s === job.status
                 return (
                   <button
@@ -2000,36 +2019,23 @@ export default function JobDetail() {
           }}>
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>Actions</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {job.status === 'Chillin' && (
-                <button onClick={() => updateJobStatus('Scheduled')} disabled={saving} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '12px 16px', backgroundColor: '#5a6349', color: '#ffffff',
-                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
-                }}>
-                  <Calendar size={18} />
-                  Schedule Job
-                </button>
-              )}
-              {job.status === 'Scheduled' && (
-                <button onClick={() => updateJobStatus('In Progress')} disabled={saving} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '12px 16px', backgroundColor: '#c28b38', color: '#ffffff',
-                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
-                }}>
-                  <Play size={18} />
-                  Start Job
-                </button>
-              )}
-              {job.status === 'In Progress' && (
-                <button onClick={() => updateJobStatus('Completed')} disabled={saving} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '12px 16px', backgroundColor: '#4a7c59', color: '#ffffff',
-                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
-                }}>
-                  <CheckCircle size={18} />
-                  Mark Completed
-                </button>
-              )}
+              {/* Advance to next status button */}
+              {(() => {
+                const currentIdx = effectiveJobStatuses.findIndex(s => s.id === job.status || s.name === job.status)
+                const nextStatus = currentIdx >= 0 && currentIdx < effectiveJobStatuses.length - 1
+                  ? effectiveJobStatuses[currentIdx + 1] : null
+                if (!nextStatus) return null
+                return (
+                  <button onClick={() => updateJobStatus(nextStatus.id)} disabled={saving} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px 16px', backgroundColor: nextStatus.color, color: '#ffffff',
+                    border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+                  }}>
+                    <ChevronRight size={18} />
+                    Move to {nextStatus.name}
+                  </button>
+                )
+              })()}
               {lineItems.length > 0 && job.invoice_status !== 'Invoiced' && job.invoice_status !== 'Paid' && jobInvoices.length === 0 && (
                 <button onClick={generateInvoice} disabled={saving} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
