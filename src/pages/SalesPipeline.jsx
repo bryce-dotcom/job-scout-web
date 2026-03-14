@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { offlineDb } from '../lib/offlineDb'
+import { canEditPipelineStages } from '../lib/accessControl'
 import {
   Plus, X, DollarSign, User, Calendar, Phone, Mail, Building2,
   Trophy, XCircle, ChevronRight, RefreshCw, MapPin, Settings, Trash2,
@@ -55,7 +56,7 @@ const defaultStages = [
   { id: 'Lost', name: 'Lost', color: '#64748b', isLost: true }
 ]
 
-const PIPELINE_VERSION = 3
+const PIPELINE_VERSION = 4
 
 // Available stats to show in header
 const availableStats = [
@@ -83,6 +84,7 @@ export default function SalesPipeline() {
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
   const updateLead = useStore((state) => state.updateLead)
+  const storeJobStatuses = useStore((state) => state.jobStatuses)
 
   // Pipeline state
   const [pipelineLeads, setPipelineLeads] = useState([])
@@ -155,8 +157,8 @@ export default function SalesPipeline() {
     }
   }
 
-  // Check if user can edit pipeline settings (Super Admin or Owner)
-  const isSuperAdmin = user?.user_role === 'Super Admin' || user?.user_role === 'Owner' || user?.role === 'Super Admin' || user?.role === 'Owner'
+  // Check if user can edit pipeline settings (Super Admin+)
+  const isSuperAdmin = canEditPipelineStages(user)
 
   // Handle window resize for mobile detection
   useEffect(() => {
@@ -206,6 +208,28 @@ export default function SalesPipeline() {
     }
   }, [companyId])
 
+  // Rebuild delivery stages from DB-driven job statuses
+  useEffect(() => {
+    if (!storeJobStatuses || storeJobStatuses.length === 0) return
+
+    setStages(prev => {
+      const salesStages = prev.filter(s => !s.isDelivery && !s.isClosed && !s.isLost)
+      const closedStage = prev.find(s => s.isClosed) || { id: 'Closed', name: 'Closed', color: '#6b7280', isClosed: true }
+      const lostStage = prev.find(s => s.isLost) || { id: 'Lost', name: 'Lost', color: '#64748b', isLost: true }
+
+      const deliveryStages = storeJobStatuses.map(s => {
+        const name = typeof s === 'string' ? s : s.name
+        const color = typeof s === 'string' ? '#94a3b8' : (s.color || '#94a3b8')
+        return { id: name, name, color, isDelivery: true }
+      })
+
+      // Add Invoiced after job statuses
+      deliveryStages.push({ id: 'Invoiced', name: 'Invoiced', color: '#8b5cf6', isDelivery: true })
+
+      return [...salesStages, ...deliveryStages, closedStage, lostStage]
+    })
+  }, [storeJobStatuses])
+
   // Lead query with owner join
   const LEAD_COLUMNS = '*, lead_owner:employees!leads_lead_owner_id_fkey(id, name), source_employee:employees!leads_lead_source_employee_id_fkey(id, name)'
 
@@ -218,10 +242,8 @@ export default function SalesPipeline() {
   // Map standalone job status to pipeline delivery stage
   const mapJobToStage = (job) => {
     if (job.invoice_status === 'Invoiced') return 'Invoiced'
-    if (job.status === 'Completed') return 'Job Complete'
-    if (job.status === 'In Progress') return 'In Progress'
-    if (job.status === 'Scheduled' && job.start_date) return 'Job Scheduled'
-    return 'Chillin'
+    // Use the actual job status directly — matches DB-driven job board statuses
+    return job.status || 'Chillin'
   }
 
   // Attach jobs data to leads
@@ -343,15 +365,20 @@ export default function SalesPipeline() {
       const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)'
       const rangeCutoff = getDateCutoff(dateRange)
 
+      // Determine which statuses are "terminal" (completed-like) vs active
+      const terminalStatuses = ['Completed', 'Verified Complete']
+      const allJobStatuses = (storeJobStatuses || []).map(s => typeof s === 'string' ? s : s.name)
+      const activeStatuses = allJobStatuses.filter(s => !terminalStatuses.includes(s))
+
       // Active jobs: always fetch ALL regardless of date range (they're current work)
       let activeQuery = supabase.from('jobs').select(jobSelect)
         .eq('company_id', companyId)
-        .in('status', ['Scheduled', 'Needs scheduling', 'In Progress'])
+        .in('status', activeStatuses.length > 0 ? activeStatuses : ['Chillin', 'Scheduled', 'Needs scheduling', 'In Progress', 'Pre Inspection (Req)', 'Waiting Product', 'Post Inspection (Req)'])
         .limit(5000)
 
       let completedQuery = supabase.from('jobs').select(jobSelect)
         .eq('company_id', companyId)
-        .eq('status', 'Completed')
+        .in('status', terminalStatuses)
         .limit(5000)
       if (rangeCutoff) completedQuery = completedQuery.gte('start_date', rangeCutoff)
 
@@ -367,8 +394,8 @@ export default function SalesPipeline() {
         orphanJobs.forEach(job => {
           const stage = mapJobToStage(job)
 
-          // For "Job Scheduled" + status "Scheduled", skip past-dated jobs
-          if (stage === 'Job Scheduled' && job.status === 'Scheduled') {
+          // For scheduled-type jobs, skip past-dated jobs
+          if (job.status === 'Scheduled' || job.status === 'Needs scheduling') {
             const jobDate = job.start_date ? new Date(job.start_date).toISOString().split('T')[0] : null
             if (jobDate && jobDate < todayStr) return
           }
@@ -701,7 +728,8 @@ export default function SalesPipeline() {
     // "Sales Won" — all leads that were converted (won) within the date range,
     // regardless of current status (so deals in delivery still count as sales wins)
     const rangeCutoff = getDateCutoff(dateRange)
-    const wonOrDeliveryStatuses = new Set(['Won', 'Chillin', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed'])
+    const deliveryStageIds = stages.filter(s => s.isDelivery || s.isClosed || s.isWon).map(s => s.id)
+    const wonOrDeliveryStatuses = new Set(['Won', ...deliveryStageIds])
     const salesWonLeads = leads.filter(l => {
       // Must be in a won or delivery stage
       if (!wonOrDeliveryStatuses.has(l.status)) return false
@@ -722,9 +750,9 @@ export default function SalesPipeline() {
       appointments: { value: leadsWithAppointments.length, label: 'Appts', color: '#3b82f6' },
       todayAppointments: { value: todayAppointments.length, label: 'Today', color: '#16a34a' },
       quoteSent: { value: leads.filter(l => l.status === 'Quote Sent').length, label: 'Quotes', color: '#8b5cf6' },
-      jobScheduled: { value: leads.filter(l => l.status === 'Job Scheduled').length, label: 'Scheduled', color: '#0ea5e9' },
-      inProgress: { value: leads.filter(l => l.status === 'In Progress').length, label: 'In Progress', color: '#f97316' },
-      completed: { value: leads.filter(l => l.status === 'Job Complete').length, label: 'Complete', color: '#22c55e' },
+      jobScheduled: { value: leads.filter(l => stages.find(s => s.id === l.status)?.isDelivery && l.status !== 'Invoiced').length, label: 'In Delivery', color: '#0ea5e9' },
+      inProgress: { value: leads.filter(l => l.status === 'In Progress' || l.status === 'Scheduled').length, label: 'In Progress', color: '#f97316' },
+      completed: { value: leads.filter(l => l.status === 'Completed' || l.status === 'Verified Complete').length, label: 'Complete', color: '#22c55e' },
       invoiced: { value: leads.filter(l => l.status === 'Invoiced').length, label: 'Invoiced', color: '#8b5cf6' },
       deliveryValue: { value: formatCurrency(sumAmount(deliveryLeads)), label: 'Delivery $', color: '#0ea5e9', isFormatted: true }
     }
@@ -935,8 +963,8 @@ export default function SalesPipeline() {
       {/* Mobile View — dark theme, full PWA experience */}
       {isMobile ? (() => {
         const m = { bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8', text: '#2c3530', textMuted: '#7d8a7f', accent: '#5a6349' }
-        const statusColors = { 'New': '#3b82f6', 'Contacted': '#a855f7', 'Appointment Set': '#22c55e', 'Qualified': '#f97316', 'Quote Sent': '#eab308', 'Negotiation': '#f97316', 'Won': '#22c55e', 'Lost': '#ef4444', 'Chillin': '#94a3b8', 'Job Scheduled': '#0ea5e9', 'In Progress': '#f97316', 'Job Complete': '#22c55e', 'Invoiced': '#8b5cf6', 'Closed': '#6b7280' }
-        const getStatusColor = (status) => statusColors[status] || '#71717a'
+        const stageColorMap = Object.fromEntries(stages.map(s => [s.id, s.color]))
+        const getStatusColor = (status) => stageColorMap[status] || '#71717a'
         const salesStages = stages.filter(s => !s.isDelivery && !s.isClosed)
         const deliveryStages = stages.filter(s => s.isDelivery || s.isClosed)
 
