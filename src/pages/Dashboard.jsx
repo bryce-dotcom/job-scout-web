@@ -248,12 +248,25 @@ export default function Dashboard() {
   return (
     <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
-          Welcome back, {user?.name || 'User'}
-        </h1>
-        <div style={{ fontSize: '14px', color: theme.textMuted }}>
-          {company?.company_name} &middot; {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+        <img
+          src="/Scout_LOGO_GUY.png"
+          alt="Job Scout"
+          style={{
+            width: '56px',
+            height: '56px',
+            objectFit: 'contain',
+            flexShrink: 0,
+            opacity: 0.85,
+          }}
+        />
+        <div>
+          <h1 style={{ fontSize: '28px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
+            Welcome back, {user?.name || 'User'}
+          </h1>
+          <div style={{ fontSize: '14px', color: theme.textMuted }}>
+            {company?.company_name} &middot; {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          </div>
         </div>
       </div>
 
