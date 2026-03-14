@@ -180,7 +180,7 @@ export default function CustomerPortal() {
 
   if (!data) return null
 
-  const { document_type, document: doc, line_items, company, customer, business_unit, approval, payments, payment_config, google_place_id } = data
+  const { document_type, document: doc, line_items, company, customer, business_unit, approval, payments, payment_config, google_place_id, invoice_settings } = data
   const isEstimate = document_type === 'estimate'
   const isInvoice = document_type === 'invoice'
 
@@ -196,8 +196,17 @@ export default function CustomerPortal() {
   // Invoice state
   const invoiceAmount = isInvoice ? parseFloat(doc.amount) || 0 : 0
   const totalPaid = isInvoice ? (payments || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) : 0
-  const balanceDue = invoiceAmount - totalPaid
+  const existingCcFee = isInvoice ? (parseFloat(doc.credit_card_fee) || 0) : 0
+  const balanceDue = invoiceAmount - totalPaid + existingCcFee
   const isFullyPaid = isInvoice && (doc.payment_status === 'Paid' || balanceDue <= 0)
+
+  // CC fee settings from invoice_settings (passed by edge function)
+  const ccFeeEnabled = invoice_settings?.cc_fee_enabled && invoice_settings?.accept_credit_card
+  const ccFeePercent = invoice_settings?.cc_fee_percent || 1.9
+  const ccFeeAmount = ccFeeEnabled ? Math.round(balanceDue * (ccFeePercent / 100) * 100) / 100 : 0
+  const cardTotal = balanceDue + ccFeeAmount
+  const preferredPaymentNote = invoice_settings?.preferred_payment_note || ''
+  const showPreferredNote = invoice_settings?.show_preferred_payment_note && preferredPaymentNote
 
   // Line items (estimates)
   const estimateTotal = line_items?.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0) || 0
@@ -353,6 +362,9 @@ export default function CustomerPortal() {
               {doc.discount_applied > 0 && (
                 <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '8px' }}>Discount applied: {formatCurrency(doc.discount_applied)}</p>
               )}
+              {existingCcFee > 0 && (
+                <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '4px' }}>CC processing fee: {formatCurrency(existingCcFee)}</p>
+              )}
             </div>
           </div>
         )}
@@ -410,30 +422,24 @@ export default function CustomerPortal() {
                   <div style={{ padding: '20px' }}>
                     <h3 style={styles.sectionTitle}>Payment Options</h3>
 
+                    {/* Preferred payment note */}
+                    {showPreferredNote && (
+                      <div style={{
+                        padding: '12px 16px',
+                        backgroundColor: 'rgba(74,124,89,0.08)',
+                        border: '1px solid rgba(74,124,89,0.25)',
+                        borderRadius: '10px',
+                        marginBottom: '14px',
+                        fontSize: '13px',
+                        color: '#4a7c59',
+                        lineHeight: '1.5'
+                      }}>
+                        {preferredPaymentNote.replace('{cc_fee_percent}', ccFeePercent)}
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {/* Stripe — card payments */}
-                      {payment_config.stripe_enabled && (
-                        <button
-                          onClick={() => handlePay(payType, payAmt, 'stripe')}
-                          disabled={paying}
-                          style={styles.primaryButton}
-                        >
-                          {paying ? 'Setting up payment...' : `Pay with Card (${formatCurrency(payAmt)})`}
-                        </button>
-                      )}
-
-                      {/* PayPal — real PayPal Orders API */}
-                      {payment_config.paypal_enabled && (
-                        <button
-                          onClick={() => handlePay(payType, payAmt, 'paypal')}
-                          disabled={paying}
-                          style={{ ...styles.primaryButton, backgroundColor: '#0070ba' }}
-                        >
-                          {paying ? 'Connecting to PayPal...' : 'Pay with PayPal'}
-                        </button>
-                      )}
-
-                      {/* Bank transfer info */}
+                      {/* Bank transfer — promoted first (no fee) */}
                       {payment_config.bank_enabled && (
                         <div style={{
                           padding: '16px',
@@ -441,9 +447,12 @@ export default function CustomerPortal() {
                           borderRadius: '10px',
                           border: `1px solid ${theme.border}`,
                         }}>
-                          <p style={{ fontWeight: '600', color: theme.text, fontSize: '14px', margin: '0 0 10px' }}>
-                            Bank Transfer / ACH
-                          </p>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                            <p style={{ fontWeight: '600', color: theme.text, fontSize: '14px', margin: 0 }}>
+                              Bank Transfer / ACH
+                            </p>
+                            <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', backgroundColor: 'rgba(74,124,89,0.12)', color: '#4a7c59' }}>No Fee</span>
+                          </div>
                           <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.7' }}>
                             <p style={{ margin: '0 0 4px' }}><strong>Bank:</strong> {payment_config.bank_name}</p>
                             {payment_config.bank_account_name && (
@@ -468,6 +477,37 @@ export default function CustomerPortal() {
                             </p>
                           )}
                         </div>
+                      )}
+
+                      {/* Stripe — card payments (with CC fee) */}
+                      {payment_config.stripe_enabled && (
+                        <div>
+                          <button
+                            onClick={() => handlePay(payType, ccFeeEnabled ? (payAmt + Math.round(payAmt * (ccFeePercent / 100) * 100) / 100) : payAmt, 'stripe')}
+                            disabled={paying}
+                            style={styles.primaryButton}
+                          >
+                            {paying ? 'Setting up payment...' : ccFeeEnabled
+                              ? `Pay with Card — ${formatCurrency(payAmt + Math.round(payAmt * (ccFeePercent / 100) * 100) / 100)}`
+                              : `Pay with Card (${formatCurrency(payAmt)})`}
+                          </button>
+                          {ccFeeEnabled && (
+                            <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0', textAlign: 'center' }}>
+                              Includes {ccFeePercent}% processing fee ({formatCurrency(Math.round(payAmt * (ccFeePercent / 100) * 100) / 100)})
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* PayPal */}
+                      {payment_config.paypal_enabled && (
+                        <button
+                          onClick={() => handlePay(payType, payAmt, 'paypal')}
+                          disabled={paying}
+                          style={{ ...styles.primaryButton, backgroundColor: '#0070ba' }}
+                        >
+                          {paying ? 'Connecting to PayPal...' : 'Pay with PayPal'}
+                        </button>
                       )}
 
                       {/* Financing / BNPL section */}

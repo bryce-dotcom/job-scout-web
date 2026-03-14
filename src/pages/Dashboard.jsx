@@ -16,7 +16,8 @@ import {
   Truck,
   ChevronRight,
   Plus,
-  CreditCard
+  CreditCard,
+  Settings
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -69,6 +70,8 @@ export default function Dashboard() {
 
   const [clockedIn, setClockedIn] = useState(false)
   const [activeTimeLog, setActiveTimeLog] = useState(null)
+  const [rollingDays, setRollingDays] = useState(90)
+  const [showRollingSettings, setShowRollingSettings] = useState(false)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -174,6 +177,18 @@ export default function Dashboard() {
     count: leads.filter(l => mapLeadToDisplay(l.status) === displayName).length
   }))
   const totalPipeline = pipelineCounts.reduce((sum, p) => sum + p.count, 0)
+
+  // Rolling average: won deals value over last N days
+  const rollingCutoff = new Date(today.getTime() - rollingDays * 24 * 60 * 60 * 1000)
+  const rollingWonLeads = leads.filter(l => {
+    if (!wonOrDeliveryStatuses.includes(l.status)) return false
+    const wonDate = l.converted_at || l.updated_at
+    return wonDate && new Date(wonDate) >= rollingCutoff
+  })
+  const rollingWonTotal = rollingWonLeads.reduce((sum, l) => sum + (quoteByLead[l.id] || 0), 0)
+  const rollingWonCount = rollingWonLeads.length
+  const rollingAvgPerDay = rollingDays > 0 ? rollingWonTotal / rollingDays : 0
+  const rollingAvgPerMonth = rollingAvgPerDay * 30
 
   // Today's jobs
   const todaysJobs = jobs.filter(j => j.start_date?.startsWith(todayStr))
@@ -395,6 +410,98 @@ export default function Dashboard() {
               <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{p.count}</span>
             </div>
           ))}
+        </div>
+
+        {/* Rolling Average */}
+        <div style={{
+          marginTop: '16px',
+          paddingTop: '16px',
+          borderTop: `1px solid ${theme.border}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>
+                {rollingDays}-Day Rolling Avg
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: '700', color: '#16a34a' }}>
+                {formatCurrency(rollingAvgPerMonth)}<span style={{ fontSize: '13px', fontWeight: '400', color: theme.textMuted }}>/mo</span>
+              </div>
+            </div>
+            <div style={{ borderLeft: `1px solid ${theme.border}`, paddingLeft: '16px' }}>
+              <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>
+                Won Deals ({rollingDays}d)
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>
+                {rollingWonCount}
+                <span style={{ fontSize: '13px', fontWeight: '400', color: theme.textMuted }}> &middot; {formatCurrency(rollingWonTotal)} total</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowRollingSettings(!showRollingSettings)}
+              style={{
+                padding: '6px',
+                backgroundColor: 'transparent',
+                border: `1px solid ${theme.border}`,
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              title="Change rolling window"
+            >
+              <Settings size={16} style={{ color: theme.textMuted }} />
+            </button>
+            {showRollingSettings && (
+              <div style={{
+                position: 'absolute',
+                right: 0,
+                top: '100%',
+                marginTop: '4px',
+                backgroundColor: theme.bgCard,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                padding: '8px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                zIndex: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                minWidth: '100px'
+              }}>
+                {[30, 60, 90, 120, 180, 365].map(d => (
+                  <button
+                    key={d}
+                    onClick={() => { setRollingDays(d); setShowRollingSettings(false) }}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: d === rollingDays ? theme.accentBg : 'transparent',
+                      color: d === rollingDays ? theme.accent : theme.text,
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      fontWeight: d === rollingDays ? '600' : '400',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      minHeight: '44px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                  >
+                    {d} days
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

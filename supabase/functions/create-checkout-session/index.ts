@@ -19,6 +19,27 @@ async function getPaymentConfig(supabase: ReturnType<typeof createClient>, compa
   try { return JSON.parse(data.value); } catch { return null; }
 }
 
+// Helper: read CC fee settings
+async function getCcFeeSettings(supabase: ReturnType<typeof createClient>, companyId: string) {
+  const keys = ['invoice_cc_fee_enabled', 'invoice_cc_fee_percent', 'invoice_accept_credit_card'];
+  const { data } = await supabase
+    .from('settings')
+    .select('key, value')
+    .eq('company_id', companyId)
+    .in('key', keys);
+
+  const parsed: Record<string, unknown> = {};
+  if (data) {
+    for (const s of data) {
+      try { parsed[s.key] = JSON.parse(s.value); } catch { parsed[s.key] = s.value; }
+    }
+  }
+  return {
+    enabled: (parsed.invoice_cc_fee_enabled ?? true) && (parsed.invoice_accept_credit_card ?? false),
+    percent: (parsed.invoice_cc_fee_percent as number) ?? 1.9,
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -117,6 +138,12 @@ serve(async (req) => {
       params.append('metadata[company_id]', tokenRow.company_id);
       params.append('metadata[portal_token]', token);
       params.append('metadata[payment_type]', payment_type);
+
+      // Check if CC fee is included and add to metadata
+      const ccFeeSettings = await getCcFeeSettings(supabase, tokenRow.company_id);
+      if (ccFeeSettings.enabled) {
+        params.append('metadata[cc_fee_percent]', String(ccFeeSettings.percent));
+      }
 
       const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
         method: 'POST',

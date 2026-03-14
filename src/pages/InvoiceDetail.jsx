@@ -34,6 +34,9 @@ export default function InvoiceDetail() {
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const fetchInvoices = useStore((state) => state.fetchInvoices)
+  const settings = useStore((state) => state.settings)
+  const getSettingValue = useStore((state) => state.getSettingValue)
+  const fetchSettings = useStore((state) => state.fetchSettings)
 
   const [invoice, setInvoice] = useState(null)
   const [payments, setPayments] = useState([])
@@ -71,12 +74,24 @@ export default function InvoiceDetail() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
+  // Invoice settings helpers
+  const getInvoiceSetting = (key, defaultVal) => {
+    const raw = getSettingValue(key)
+    if (raw === null || raw === undefined) return defaultVal
+    try { return JSON.parse(raw) } catch { return raw }
+  }
+  const ccFeeEnabled = getInvoiceSetting('invoice_cc_fee_enabled', true) && getInvoiceSetting('invoice_accept_credit_card', false)
+  const ccFeePercent = getInvoiceSetting('invoice_cc_fee_percent', 1.9)
+  const showPreferredNote = getInvoiceSetting('invoice_show_preferred_payment_note', true)
+  const preferredPaymentNote = (getInvoiceSetting('invoice_preferred_payment_note', 'We accept ACH transfers, checks, and cash at no additional fee. Credit card payments include a {cc_fee_percent}% processing fee.') || '').replace('{cc_fee_percent}', ccFeePercent)
+
   useEffect(() => {
     if (!companyId) {
       navigate('/')
       return
     }
     fetchInvoiceData()
+    fetchSettings()
   }, [companyId, id, navigate])
 
   const fetchInvoiceData = async () => {
@@ -131,18 +146,30 @@ export default function InvoiceDetail() {
 
     setSaving(true)
 
+    const paymentAmount = parseFloat(paymentData.amount)
+
+    // If paying by CC and fee is enabled, update the invoice credit_card_fee
+    let ccFeeAmount = 0
+    if (paymentData.method === 'Credit Card' && ccFeeEnabled) {
+      ccFeeAmount = Math.round(paymentAmount * (ccFeePercent / 100) * 100) / 100
+      await supabase.from('invoices').update({
+        credit_card_fee: (parseFloat(invoice.credit_card_fee) || 0) + ccFeeAmount,
+        updated_at: new Date().toISOString()
+      }).eq('id', id)
+    }
+
     await supabase.from('payments').insert([{
       company_id: companyId,
       invoice_id: parseInt(id),
-      amount: parseFloat(paymentData.amount),
+      amount: paymentAmount,
       date: paymentData.date,
       method: paymentData.method,
       status: paymentData.status,
-      notes: paymentData.notes || null
+      notes: paymentData.notes || (ccFeeAmount > 0 ? `Includes $${ccFeeAmount.toFixed(2)} CC processing fee` : null)
     }])
 
-    // Update payment status based on total paid
-    const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) + parseFloat(paymentData.amount)
+    // Update payment status based on total paid vs invoice amount + CC fees
+    const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) + paymentAmount
     const invoiceAmount = parseFloat(invoice.amount) || 0
     if (totalPaid >= invoiceAmount) {
       await supabase.from('invoices').update({
@@ -384,6 +411,12 @@ export default function InvoiceDetail() {
       y += 6
     }
 
+    if (parseFloat(invoice.credit_card_fee) > 0) {
+      doc.text('CC Processing Fee:', totalsX, y)
+      doc.text(formatCurrency(invoice.credit_card_fee), pageWidth - 20, y, { align: 'right' })
+      y += 6
+    }
+
     const totalPaidAmt = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
     if (totalPaidAmt > 0) {
       doc.text('Paid:', totalsX, y)
@@ -397,10 +430,21 @@ export default function InvoiceDetail() {
     y += 6
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(12)
-    const balDue = (parseFloat(invoice.amount) || 0) - (parseFloat(invoice.discount_applied) || 0) - totalPaidAmt
+    const balDue = (parseFloat(invoice.amount) || 0) - (parseFloat(invoice.discount_applied) || 0) + (parseFloat(invoice.credit_card_fee) || 0) - totalPaidAmt
     doc.text('Balance Due:', totalsX, y)
     doc.text(formatCurrency(Math.max(0, balDue)), pageWidth - 20, y, { align: 'right' })
     y += 15
+
+    // Payment preference note
+    if (showPreferredNote && preferredPaymentNote) {
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'italic')
+      doc.setTextColor(100)
+      const noteLines = doc.splitTextToSize(preferredPaymentNote, pageWidth - 40)
+      doc.text(noteLines, 20, y)
+      y += noteLines.length * 4 + 8
+      doc.setTextColor(0)
+    }
 
     // Notes
     if (invoice.notes) {
@@ -1112,6 +1156,22 @@ export default function InvoiceDetail() {
                 </span>
               </div>
 
+              {/* Payment preference note */}
+              {showPreferredNote && preferredPaymentNote && balanceDue > 0 && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '10px 12px',
+                  backgroundColor: 'rgba(74,124,89,0.08)',
+                  border: '1px solid rgba(74,124,89,0.25)',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  color: '#4a7c59',
+                  lineHeight: '1.5'
+                }}>
+                  {preferredPaymentNote}
+                </div>
+              )}
+
               {/* Outstanding balance alert for partial payments */}
               {balanceDue > 0 && totalPaid > 0 && (
                 <div style={{
@@ -1323,6 +1383,33 @@ export default function InvoiceDetail() {
                     </select>
                   </div>
                 </div>
+
+                {/* CC fee notice */}
+                {paymentData.method === 'Credit Card' && ccFeeEnabled && paymentData.amount && (
+                  <div style={{
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(234,179,8,0.08)',
+                    border: '1px solid rgba(234,179,8,0.25)',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    color: '#92700c'
+                  }}>
+                    <span style={{ fontWeight: '600' }}>{ccFeePercent}% CC fee:</span>{' '}
+                    {formatCurrency(Math.round(parseFloat(paymentData.amount) * (ccFeePercent / 100) * 100) / 100)} will be added to the invoice
+                  </div>
+                )}
+                {paymentData.method !== 'Credit Card' && (
+                  <div style={{
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(74,124,89,0.08)',
+                    border: '1px solid rgba(74,124,89,0.25)',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    color: '#4a7c59'
+                  }}>
+                    No processing fee for {paymentData.method} payments
+                  </div>
+                )}
 
                 <div>
                   <label style={labelStyle}>Notes</label>

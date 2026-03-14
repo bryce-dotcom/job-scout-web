@@ -54,6 +54,10 @@ const INVOICE_DEFAULTS = {
   invoice_accept_klarna: false,
   invoice_accept_tips: false,
   invoice_separate_tip_screen: false,
+  invoice_cc_fee_enabled: true,
+  invoice_cc_fee_percent: 1.9,
+  invoice_preferred_payment_note: 'We accept ACH transfers, checks, and cash at no additional fee. Credit card payments include a {cc_fee_percent}% processing fee.',
+  invoice_show_preferred_payment_note: true,
   invoice_reminders_enabled: true,
   invoice_reminder_frequency_days: 30,
   invoice_reminder_max_count: 2,
@@ -483,11 +487,49 @@ export default function Invoices() {
             {getSetting('invoice_accept_credit_card') && (
               <div style={{ paddingLeft: '24px' }}>
                 {renderToggle('Customer can save card on file', 'Allow customers to save their card for future payments', 'invoice_save_card_on_file')}
+                {renderToggle('Charge credit card processing fee to customer', 'Automatically add a processing fee when customer pays by credit card', 'invoice_cc_fee_enabled')}
+                {getSetting('invoice_cc_fee_enabled') && (
+                  <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+                    <label style={settingsLabelStyle}>Credit card fee percentage (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="10"
+                      defaultValue={getSetting('invoice_cc_fee_percent')}
+                      onBlur={(e) => saveInvoiceSetting('invoice_cc_fee_percent', parseFloat(e.target.value) || 1.9)}
+                      style={{ ...settingsInputStyle, width: '120px' }}
+                    />
+                    <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                      A {getSetting('invoice_cc_fee_percent')}% fee will be added to invoices paid by credit card
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             {renderToggle('Accept ACH', 'Allow customers to pay via bank transfer (ACH)', 'invoice_accept_ach')}
             {renderToggle('Accept Klarna', 'Allow customers to pay with Klarna buy-now-pay-later', 'invoice_accept_klarna')}
 
+            {/* Payment Preference Note */}
+            <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: `2px solid ${theme.border}` }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Payment Preference Note</h4>
+              <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>Show a note on invoices promoting preferred payment methods (ACH, check, cash).</p>
+              {renderToggle('Show payment preference note on invoices', 'Displayed on PDF, email, and customer portal invoices', 'invoice_show_preferred_payment_note')}
+              {getSetting('invoice_show_preferred_payment_note') && (
+                <div style={{ marginTop: '8px' }}>
+                  <label style={settingsLabelStyle}>Payment preference message</label>
+                  {renderMergeTags(['{cc_fee_percent}', '{company_name}'])}
+                  <textarea
+                    defaultValue={getSetting('invoice_preferred_payment_note')}
+                    onBlur={(e) => saveInvoiceSetting('invoice_preferred_payment_note', e.target.value)}
+                    rows={3}
+                    style={{ ...settingsInputStyle, resize: 'vertical' }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Tipping */}
             <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: `2px solid ${theme.border}` }}>
               <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Tipping</h4>
               <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>Configure tipping options for online payments.</p>

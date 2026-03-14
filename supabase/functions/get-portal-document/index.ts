@@ -192,6 +192,37 @@ serve(async (req) => {
       } catch { /* ignore */ }
     }
 
+    // Fetch invoice-specific settings (CC fee, payment preferences)
+    let invoiceSettings = null;
+    if (tokenRow.document_type === 'invoice') {
+      const settingKeys = [
+        'invoice_cc_fee_enabled',
+        'invoice_cc_fee_percent',
+        'invoice_accept_credit_card',
+        'invoice_show_preferred_payment_note',
+        'invoice_preferred_payment_note'
+      ];
+      const { data: invSettings } = await supabase
+        .from('settings')
+        .select('key, value')
+        .eq('company_id', tokenRow.company_id)
+        .in('key', settingKeys);
+
+      if (invSettings && invSettings.length > 0) {
+        const parsed: Record<string, unknown> = {};
+        for (const s of invSettings) {
+          try { parsed[s.key] = JSON.parse(s.value); } catch { parsed[s.key] = s.value; }
+        }
+        invoiceSettings = {
+          cc_fee_enabled: parsed.invoice_cc_fee_enabled ?? true,
+          cc_fee_percent: parsed.invoice_cc_fee_percent ?? 1.9,
+          accept_credit_card: parsed.invoice_accept_credit_card ?? false,
+          show_preferred_payment_note: parsed.invoice_show_preferred_payment_note ?? true,
+          preferred_payment_note: parsed.invoice_preferred_payment_note ?? 'We accept ACH transfers, checks, and cash at no additional fee. Credit card payments include a {cc_fee_percent}% processing fee.',
+        };
+      }
+    }
+
     return new Response(JSON.stringify({
       token_id: tokenRow.id,
       document_type: tokenRow.document_type,
@@ -203,7 +234,8 @@ serve(async (req) => {
       approval,
       payments: paymentsData,
       payment_config: paymentConfig,
-      google_place_id: company?.google_place_id || null
+      google_place_id: company?.google_place_id || null,
+      invoice_settings: invoiceSettings
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
