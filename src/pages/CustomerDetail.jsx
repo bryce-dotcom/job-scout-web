@@ -112,7 +112,7 @@ export default function CustomerDetail() {
     // Fetch leads linked to this customer
     const { data: leadData } = await supabase
       .from('leads')
-      .select('*, setter:employees!leads_setter_id_fkey(id, name), salesperson_rel:employees!leads_salesperson_id_fkey(id, name)')
+      .select('*')
       .or(`customer_id.eq.${id},converted_customer_id.eq.${id}`)
       .order('created_at', { ascending: false })
     setLeads(leadData || [])
@@ -1120,7 +1120,7 @@ export default function CustomerDetail() {
                           {lead.service_type && <span>{lead.service_type}</span>}
                           {lead.quote_amount && <span style={{ fontWeight: '600', color: theme.text }}>${parseFloat(lead.quote_amount).toFixed(2)}</span>}
                           {lead.lead_source && <span>Source: {lead.lead_source}</span>}
-                          {lead.salesperson_rel?.name && <span>Sales: {lead.salesperson_rel.name}</span>}
+                          {lead.salesperson && <span>Sales: {lead.salesperson}</span>}
                           {lead.created_at && <span>{new Date(lead.created_at).toLocaleDateString()}</span>}
                         </div>
                       </div>
