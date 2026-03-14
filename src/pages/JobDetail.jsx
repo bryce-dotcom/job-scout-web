@@ -11,7 +11,7 @@ import {
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
   Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image, Copy,
-  Shield, Star, Receipt, Link2, TrendingUp
+  Shield, Star, Receipt, Link2, TrendingUp, Search
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import JobCostingModal from '../components/JobCostingModal'
@@ -108,6 +108,10 @@ export default function JobDetail() {
   const [showAddLine, setShowAddLine] = useState(false)
   const [showAddTime, setShowAddTime] = useState(false)
   const [newLine, setNewLine] = useState({ item_id: '', quantity: 1 })
+  const [productGroups, setProductGroups] = useState([])
+  const [selectedServiceType, setSelectedServiceType] = useState(null)
+  const [selectedGroupId, setSelectedGroupId] = useState(null)
+  const [productSearch, setProductSearch] = useState('')
   const [newTime, setNewTime] = useState({ employee_id: '', hours: '', category: 'Regular', notes: '' })
   const [editMode, setEditMode] = useState(false)
   const [formData, setFormData] = useState({})
@@ -188,6 +192,9 @@ export default function JobDetail() {
     fetchJobData()
     fetchTimeLogs()
     fetchJobExpenses()
+    // Fetch product groups for line item picker
+    supabase.from('product_groups').select('*').eq('company_id', companyId).order('service_type, sort_order')
+      .then(({ data }) => setProductGroups(data || []))
   }, [companyId, id, navigate])
 
   useEffect(() => {
@@ -3045,43 +3052,218 @@ export default function JobDetail() {
       )}
 
       {/* Add Line Item Modal */}
-      {showAddLine && (
-        <div style={{
-          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 50
-        }}>
+      {showAddLine && (() => {
+        // Build service types and groups hierarchy
+        const serviceTypes = [...new Set(productGroups.map(g => g.service_type).filter(Boolean))]
+        const activeServiceType = selectedServiceType || serviceTypes[0] || null
+        const groupsForType = productGroups.filter(g => g.service_type === activeServiceType)
+
+        // Filter products based on selection
+        let visibleProducts = products.filter(p => p.active)
+        if (productSearch) {
+          const s = productSearch.toLowerCase()
+          visibleProducts = visibleProducts.filter(p =>
+            (p.name || '').toLowerCase().includes(s) ||
+            (p.description || '').toLowerCase().includes(s)
+          )
+        } else if (selectedGroupId) {
+          visibleProducts = visibleProducts.filter(p => p.group_id === selectedGroupId)
+        } else if (activeServiceType) {
+          const groupIds = new Set(groupsForType.map(g => g.id))
+          visibleProducts = visibleProducts.filter(p => groupIds.has(p.group_id))
+        }
+
+        const selectedProduct = newLine.item_id ? products.find(p => p.id === parseInt(newLine.item_id)) : null
+
+        return (
           <div style={{
-            backgroundColor: theme.bgCard, borderRadius: '16px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
-            width: '100%', maxWidth: '400px'
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 50
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Add Line Item</h2>
-              <button onClick={() => setShowAddLine(false)} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
-                <X size={20} />
-              </button>
-            </div>
-            <div style={{ padding: '20px' }}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={labelStyle}>Product/Service</label>
-                <select value={newLine.item_id} onChange={(e) => setNewLine(prev => ({ ...prev, item_id: e.target.value }))} style={inputStyle}>
-                  <option value="">-- Select --</option>
-                  {products.filter(p => p.active).map(product => (
-                    <option key={product.id} value={product.id}>{product.name} - {formatCurrency(product.unit_price)}</option>
-                  ))}
-                </select>
+            <div style={{
+              backgroundColor: theme.bgCard, borderRadius: '16px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+              width: '100%', maxWidth: isMobile ? '95%' : '700px', maxHeight: '90vh', display: 'flex', flexDirection: 'column'
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0 }}>
+                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>Add Line Item</h2>
+                <button onClick={() => { setShowAddLine(false); setSelectedServiceType(null); setSelectedGroupId(null); setProductSearch(''); setNewLine({ item_id: '', quantity: 1 }) }} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
+                  <X size={20} />
+                </button>
               </div>
-              <div style={{ marginBottom: '24px' }}>
-                <label style={labelStyle}>Quantity</label>
-                <input type="number" value={newLine.quantity} onChange={(e) => setNewLine(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))} min="1" style={inputStyle} />
+
+              {/* Search bar */}
+              <div style={{ padding: '12px 20px 0', flexShrink: 0 }}>
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
+                  <input
+                    type="text"
+                    value={productSearch}
+                    onChange={(e) => { setProductSearch(e.target.value); if (e.target.value) { setSelectedGroupId(null) } }}
+                    placeholder="Search products..."
+                    style={{ ...inputStyle, paddingLeft: '32px' }}
+                  />
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button onClick={() => setShowAddLine(false)} style={{ flex: 1, padding: '10px 16px', border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.text, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>Cancel</button>
-                <button onClick={addLineItem} disabled={saving || !newLine.item_id} style={{ flex: 1, padding: '10px 16px', backgroundColor: theme.accent, color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', opacity: saving || !newLine.item_id ? 0.6 : 1 }}>{saving ? 'Adding...' : 'Add Item'}</button>
+
+              {!productSearch && (
+                <>
+                  {/* Service type tabs */}
+                  {serviceTypes.length > 1 && (
+                    <div style={{ display: 'flex', gap: '4px', padding: '12px 20px 0', flexShrink: 0, overflowX: 'auto' }}>
+                      {serviceTypes.map(st => (
+                        <button
+                          key={st}
+                          onClick={() => { setSelectedServiceType(st); setSelectedGroupId(null) }}
+                          style={{
+                            padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: '500',
+                            border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', minHeight: '36px',
+                            backgroundColor: activeServiceType === st ? theme.accent : theme.bg,
+                            color: activeServiceType === st ? '#fff' : theme.textSecondary,
+                          }}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Product groups grid with images */}
+                  {groupsForType.length > 0 && (
+                    <div style={{ padding: '12px 20px', flexShrink: 0 }}>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '70px' : '90px'}, 1fr))`,
+                        gap: '8px'
+                      }}>
+                        {groupsForType.map(group => {
+                          const isActive = selectedGroupId === group.id
+                          const count = products.filter(p => p.active && p.group_id === group.id).length
+                          return (
+                            <button
+                              key={group.id}
+                              onClick={() => setSelectedGroupId(isActive ? null : group.id)}
+                              style={{
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                                padding: '6px', borderRadius: '10px', border: isActive ? `2px solid ${theme.accent}` : `1px solid ${theme.border}`,
+                                backgroundColor: isActive ? theme.accentBg : theme.bgCard,
+                                cursor: 'pointer', minHeight: '44px'
+                              }}
+                            >
+                              {group.image_url ? (
+                                <img
+                                  src={group.image_url}
+                                  alt={group.name}
+                                  style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px' }}
+                                />
+                              ) : (
+                                <div style={{ width: '48px', height: '48px', borderRadius: '6px', backgroundColor: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Package size={20} color={theme.textMuted} />
+                                </div>
+                              )}
+                              <div style={{ fontSize: '10px', fontWeight: '500', color: theme.text, textAlign: 'center', lineHeight: '1.2', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                                {group.name}
+                              </div>
+                              <div style={{ fontSize: '9px', color: theme.textMuted }}>{count}</div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Product list */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 12px', minHeight: 0 }}>
+                {visibleProducts.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '24px 0', color: theme.textMuted, fontSize: '13px' }}>
+                    {productSearch ? 'No products match your search.' : 'Select a group above to see products.'}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {visibleProducts.map(p => {
+                      const isSelected = newLine.item_id === String(p.id)
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => setNewLine(prev => ({ ...prev, item_id: String(p.id) }))}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            padding: '10px 12px', borderRadius: '8px', border: isSelected ? `2px solid ${theme.accent}` : `1px solid ${theme.border}`,
+                            backgroundColor: isSelected ? theme.accentBg : 'transparent',
+                            cursor: 'pointer', textAlign: 'left', width: '100%', minHeight: '44px'
+                          }}
+                        >
+                          {p.image_url ? (
+                            <img src={p.image_url} alt={p.name} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0 }} />
+                          ) : (
+                            <div style={{ width: '40px', height: '40px', borderRadius: '6px', backgroundColor: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <Package size={16} color={theme.textMuted} />
+                            </div>
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {p.name}
+                            </div>
+                            {p.description && (
+                              <div style={{ fontSize: '11px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.description}</div>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, flexShrink: 0 }}>
+                            {formatCurrency(p.unit_price)}
+                          </div>
+                          {isSelected && <CheckCircle size={16} style={{ color: theme.accent, flexShrink: 0 }} />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer: quantity + add */}
+              <div style={{
+                padding: '12px 20px 16px', borderTop: `1px solid ${theme.border}`, flexShrink: 0,
+                display: 'flex', gap: '12px', alignItems: 'center'
+              }}>
+                {selectedProduct && (
+                  <div style={{ flex: 1, minWidth: 0, fontSize: '13px', color: theme.text, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {selectedProduct.name}
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                  <label style={{ fontSize: '12px', fontWeight: '500', color: theme.textSecondary }}>Qty</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={newLine.quantity}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '')
+                      setNewLine(prev => ({ ...prev, quantity: val === '' ? '' : parseInt(val) }))
+                    }}
+                    onBlur={(e) => {
+                      if (!e.target.value || parseInt(e.target.value) < 1) setNewLine(prev => ({ ...prev, quantity: 1 }))
+                    }}
+                    style={{ ...inputStyle, width: '64px', textAlign: 'center' }}
+                  />
+                </div>
+                <button
+                  onClick={() => { addLineItem(); setSelectedServiceType(null); setSelectedGroupId(null); setProductSearch('') }}
+                  disabled={saving || !newLine.item_id}
+                  style={{
+                    padding: '10px 20px', backgroundColor: theme.accent, color: '#ffffff',
+                    border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',
+                    cursor: 'pointer', opacity: saving || !newLine.item_id ? 0.6 : 1,
+                    minHeight: '44px', flexShrink: 0
+                  }}
+                >
+                  {saving ? 'Adding...' : 'Add'}
+                </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Add Time Entry Modal */}
       {showAddTime && (
