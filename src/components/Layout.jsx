@@ -48,7 +48,8 @@ import {
   Settings as SettingsIcon,
   X as XIcon,
   Database,
-  Compass
+  Compass,
+  RefreshCw
 } from 'lucide-react'
 
 // Theme context
@@ -304,9 +305,46 @@ export default function Layout() {
     }
   ]
 
+  // Centralized access control (must be before filteredNavSections)
+  const userAccessLevel = (() => {
+    if (!user) return 0
+    if (user.is_developer || isDeveloper) return 5
+    const map = { 'User': 0, 'Team Lead': 1, 'Manager': 2, 'Admin': 3, 'Super Admin': 4, 'Developer': 5, 'Owner': 4 }
+    return map[user.user_role] ?? map[user.role] ?? 0
+  })()
+  const userIsFieldTech = (user?.role || '').toLowerCase() === 'field tech' && userAccessLevel <= 0
+  const userIsAdmin = userAccessLevel >= 3
+
+  // Filter base nav sections by access level
+  const filteredNavSections = useMemo(() => {
+    return baseNavSections.filter(section => {
+      // Field Techs: only OPERATIONS and TEAM
+      if (userIsFieldTech) {
+        return section.key === 'OPERATIONS' || section.key === 'TEAM'
+      }
+      // Financial: Admin+ only (level 3+)
+      if (section.key === 'FINANCIAL') return userAccessLevel >= 3
+      return true
+    }).map(section => {
+      // Field Tech: filter OPERATIONS to only Field Scout and Job Board
+      if (userIsFieldTech && section.key === 'OPERATIONS') {
+        return { ...section, baseItems: section.baseItems.filter(i => i.to === '/field-scout' || i.to === '/job-board') }
+      }
+      // Field Tech: filter TEAM to only Time Clock
+      if (userIsFieldTech && section.key === 'TEAM') {
+        return { ...section, baseItems: section.baseItems.filter(i => i.to === '/time-clock') }
+      }
+      // Team Lead (level 1) and below: hide Employees page
+      if (section.key === 'TEAM' && userAccessLevel < 1) {
+        return { ...section, baseItems: section.baseItems.filter(i => i.to !== '/employees') }
+      }
+      return section
+    })
+  }, [userAccessLevel, userIsFieldTech])
+
   // Build dynamic nav sections with agents injected
   const navSections = useMemo(() => {
-    return baseNavSections.map(section => {
+    return filteredNavSections.map(section => {
       const items = []
 
       // Add base items with any child agents
@@ -344,7 +382,7 @@ export default function Layout() {
         items
       }
     })
-  }, [aiModules])
+  }, [aiModules, filteredNavSections])
 
   // Agent icon mapping
   const agentIcons = {
@@ -361,12 +399,8 @@ export default function Layout() {
     })
   }
 
-  // Get current user's access level from store
-  const currentUserRole = user?.user_role || user?.role
-  const isAdminOrOwner = currentUserRole === 'Admin' || currentUserRole === 'Owner' || currentUserRole === 'Super Admin'
-
-  // Admin section - shown to Admin/Owner access levels
-  const adminSection = isAdminOrOwner ? {
+  // Admin section - shown to Admin+ (level 3+)
+  const adminSection = userIsAdmin ? {
     title: 'ADMIN',
     sectionIcon: Settings,
     items: [
@@ -376,8 +410,8 @@ export default function Layout() {
     ]
   } : null
 
-  // Dev section - only shown for super admins (isDeveloper flag)
-  const devSection = isDeveloper ? {
+  // Dev section - Developer only (level 5)
+  const devSection = userAccessLevel >= 5 ? {
     title: 'DEV & MAINT.',
     sectionIcon: Wrench,
     items: [
@@ -662,8 +696,8 @@ export default function Layout() {
               </NavLink>
             </div>
 
-            {/* Sales Flow - Numbered Steps */}
-            <div style={{ marginBottom: '16px' }}>
+            {/* Sales Flow - Numbered Steps (hidden for Field Techs) */}
+            {!userIsFieldTech && <div style={{ marginBottom: '16px' }}>
               <div style={{
                 fontSize: '10px',
                 fontWeight: '600',
@@ -744,7 +778,7 @@ export default function Layout() {
                   </div>
                 ))}
               </div>
-            </div>
+            </div>}
 
             {navSections.map((section) => (
               <NavSection key={section.title} section={section} />
@@ -879,37 +913,85 @@ export default function Layout() {
                 </div>
               </div>
             </div>
-            <button
-              onClick={handleLogout}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                width: '100%',
-                padding: '10px',
-                backgroundColor: 'transparent',
-                border: `1px solid ${theme.border}`,
-                borderRadius: '8px',
-                color: theme.textMuted,
-                fontSize: '14px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = theme.bgCardHover
-                e.currentTarget.style.color = theme.text
-                e.currentTarget.style.borderColor = theme.textMuted
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent'
-                e.currentTarget.style.color = theme.textMuted
-                e.currentTarget.style.borderColor = theme.border
-              }}
-            >
-              <LogOut size={18} />
-              Sign Out
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => {
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(regs => {
+                      regs.forEach(r => r.update())
+                    })
+                  }
+                  // Clear caches and reload
+                  if ('caches' in window) {
+                    caches.keys().then(names => {
+                      names.forEach(name => caches.delete(name))
+                    }).then(() => window.location.reload())
+                  } else {
+                    window.location.reload()
+                  }
+                }}
+                title="Refresh app and check for updates"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  color: theme.textMuted,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.accentBg
+                  e.currentTarget.style.color = theme.accent
+                  e.currentTarget.style.borderColor = theme.accent
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                  e.currentTarget.style.color = theme.textMuted
+                  e.currentTarget.style.borderColor = theme.border
+                }}
+              >
+                <RefreshCw size={18} />
+                Refresh
+              </button>
+              <button
+                onClick={handleLogout}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  color: theme.textMuted,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = theme.bgCardHover
+                  e.currentTarget.style.color = theme.text
+                  e.currentTarget.style.borderColor = theme.textMuted
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                  e.currentTarget.style.color = theme.textMuted
+                  e.currentTarget.style.borderColor = theme.border
+                }}
+              >
+                <LogOut size={18} />
+                Sign Out
+              </button>
+            </div>
           </div>
         </aside>
 
@@ -1041,8 +1123,8 @@ export default function Layout() {
                   </NavLink>
                 </div>
 
-                {/* Sales Flow - Mobile (Numbered Steps) */}
-                <div style={{ marginBottom: '16px' }}>
+                {/* Sales Flow - Mobile (Numbered Steps, hidden for Field Techs) */}
+                {!userIsFieldTech && <div style={{ marginBottom: '16px' }}>
                   <div style={{
                     fontSize: '10px',
                     fontWeight: '600',
@@ -1129,7 +1211,7 @@ export default function Layout() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </div>}
 
                 {navSections.map((section) => (
                   <NavSection key={section.title} section={section} mobile />
@@ -1249,26 +1331,61 @@ export default function Layout() {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={handleLogout}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    width: '100%',
-                    padding: '10px',
-                    backgroundColor: 'transparent',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '8px',
-                    color: theme.textMuted,
-                    fontSize: '14px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <LogOut size={18} />
-                  Sign Out
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => {
+                      if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.getRegistrations().then(regs => {
+                          regs.forEach(r => r.update())
+                        })
+                      }
+                      if ('caches' in window) {
+                        caches.keys().then(names => {
+                          names.forEach(name => caches.delete(name))
+                        }).then(() => window.location.reload())
+                      } else {
+                        window.location.reload()
+                      }
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      flex: 1,
+                      padding: '10px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '8px',
+                      color: theme.textMuted,
+                      fontSize: '14px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <RefreshCw size={18} />
+                    Refresh
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      flex: 1,
+                      padding: '10px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '8px',
+                      color: theme.textMuted,
+                      fontSize: '14px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <LogOut size={18} />
+                    Sign Out
+                  </button>
+                </div>
               </div>
             </aside>
           </>
