@@ -196,6 +196,8 @@ function JobDetailInner() {
   const [expenseForm, setExpenseForm] = useState({ amount: '', merchant: '', category: 'Materials', notes: '' })
   const [receiptUploading, setReceiptUploading] = useState(false)
   const receiptInputRef = useRef(null)
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false)
+  const statusDropdownRef = useRef(null)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -226,6 +228,18 @@ function JobDetailInner() {
     // Filter time logs for this job
     setJobTimeLogs(timeLogs.filter(t => t.job_id === parseInt(id)))
   }, [timeLogs, id])
+
+  // Close status dropdown on outside click
+  useEffect(() => {
+    if (!showStatusDropdown) return
+    const handleClick = (e) => {
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target)) {
+        setShowStatusDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showStatusDropdown])
 
   const fetchJobData = async () => {
     setLoading(true)
@@ -1295,20 +1309,6 @@ function JobDetailInner() {
   }
 
   const statusStyle = getStatusStyle(job.status)
-  const [showStatusDropdown, setShowStatusDropdown] = useState(false)
-  const statusDropdownRef = useRef(null)
-
-  // Close status dropdown on outside click
-  useEffect(() => {
-    if (!showStatusDropdown) return
-    const handleClick = (e) => {
-      if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target)) {
-        setShowStatusDropdown(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showStatusDropdown])
 
   // Inline photo helpers
   const PhotoThumbnail = ({ att, theme: t, onView, onDelete }) => {
