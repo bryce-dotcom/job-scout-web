@@ -418,6 +418,8 @@ export default function Jobs() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [teamFilter, setTeamFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
+  const [customerSearchText, setCustomerSearchText] = useState('')
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [viewMode, setViewMode] = useState('board')
   const [isMobile, setIsMobile] = useState(false)
 
@@ -510,6 +512,8 @@ export default function Jobs() {
     setEditingJob(null)
     setFormData(emptyJob)
     setError(null)
+    setCustomerSearchText('')
+    setShowCustomerDropdown(false)
     setShowModal(true)
   }
 
@@ -535,6 +539,9 @@ export default function Jobs() {
       discount: job.discount || '',
       discount_description: job.discount_description || ''
     })
+    const cust = customers.find(c => c.id === job.customer_id)
+    setCustomerSearchText(cust?.name || '')
+    setShowCustomerDropdown(false)
     setError(null)
     setShowModal(true)
   }
@@ -543,6 +550,7 @@ export default function Jobs() {
     setShowModal(false)
     setEditingJob(null)
     setError(null)
+    setShowCustomerDropdown(false)
   }
 
   const handleChange = (e) => {
@@ -571,7 +579,7 @@ export default function Jobs() {
       job_title: formData.job_title,
       job_address: formData.job_address || null,
       gps_location: formData.gps_location || null,
-      customer_id: formData.customer_id || null,
+      customer_id: formData.customer_id ? parseInt(formData.customer_id) : null,
       salesperson_id: formData.salesperson_id || null,
       quote_id: formData.quote_id || null,
       status: formData.status,
@@ -1301,12 +1309,79 @@ export default function Jobs() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
+                  <div style={{ position: 'relative' }}>
                     <label style={labelStyle}>Customer</label>
-                    <select name="customer_id" value={formData.customer_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">-- Select --</option>
-                      {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, pointerEvents: 'none' }} />
+                      <input
+                        type="text"
+                        value={customerSearchText}
+                        onChange={(e) => {
+                          setCustomerSearchText(e.target.value)
+                          setShowCustomerDropdown(true)
+                          if (!e.target.value) {
+                            setFormData(prev => ({ ...prev, customer_id: '' }))
+                          }
+                        }}
+                        onFocus={() => setShowCustomerDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                        placeholder="Type to search customers..."
+                        style={{ ...inputStyle, paddingLeft: '32px' }}
+                        autoComplete="off"
+                      />
+                      {customerSearchText && (
+                        <button
+                          type="button"
+                          onClick={() => { setCustomerSearchText(''); setFormData(prev => ({ ...prev, customer_id: '' })); setShowCustomerDropdown(false) }}
+                          style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: theme.textMuted }}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    {showCustomerDropdown && (() => {
+                      const filtered = customers.filter(c =>
+                        c.name?.toLowerCase().includes((customerSearchText || '').toLowerCase())
+                      )
+                      return filtered.length > 0 ? (
+                        <div style={{
+                          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
+                          backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                          borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                          maxHeight: '200px', overflowY: 'auto', marginTop: '2px'
+                        }}>
+                          {filtered.map(c => (
+                            <div
+                              key={c.id}
+                              onClick={() => {
+                                setFormData(prev => ({ ...prev, customer_id: c.id }))
+                                setCustomerSearchText(c.name)
+                                setShowCustomerDropdown(false)
+                              }}
+                              style={{
+                                padding: '10px 12px', cursor: 'pointer', fontSize: '14px',
+                                color: theme.text, borderBottom: `1px solid ${theme.border}`,
+                                backgroundColor: formData.customer_id === c.id ? theme.accentBg : 'transparent'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
+                              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = formData.customer_id === c.id ? theme.accentBg : 'transparent'}
+                            >
+                              {c.name}
+                              {c.business_name && <span style={{ color: theme.textMuted, fontSize: '12px', marginLeft: '8px' }}>{c.business_name}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : customerSearchText ? (
+                        <div style={{
+                          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
+                          backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                          borderRadius: '8px', padding: '12px', marginTop: '2px',
+                          fontSize: '13px', color: theme.textMuted, textAlign: 'center'
+                        }}>
+                          No customers found
+                        </div>
+                      ) : null
+                    })()}
                   </div>
                   <div>
                     <label style={labelStyle}>Salesperson</label>
