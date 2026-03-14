@@ -407,6 +407,7 @@ export default function Jobs() {
   const employees = useStore((state) => state.employees)
   const quotes = useStore((state) => state.quotes)
   const businessUnits = useStore((state) => state.businessUnits)
+  const storeJobStatuses = useStore((state) => state.jobStatuses)
   const fetchJobs = useStore((state) => state.fetchJobs)
 
   const [showModal, setShowModal] = useState(false)
@@ -422,6 +423,25 @@ export default function Jobs() {
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [viewMode, setViewMode] = useState('board')
   const [isMobile, setIsMobile] = useState(false)
+  const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); return d
+  })
+
+  // Build dynamic board columns from DB-driven job statuses
+  const boardColumns = (() => {
+    const defaultCols = [
+      { id: 'Chillin', name: 'Chillin', color: '#6382bf', icon: Coffee },
+      { id: 'Scheduled', name: 'Scheduled', color: '#5a6349', icon: Calendar },
+      { id: 'In Progress', name: 'In Progress', color: '#c28b38', icon: Play },
+      { id: 'Completed', name: 'Completed', color: '#4a7c59', icon: CheckCircle },
+    ]
+    if (!storeJobStatuses || storeJobStatuses.length === 0) return defaultCols
+    return storeJobStatuses.map(s => {
+      const name = typeof s === 'string' ? s : s.name
+      const color = typeof s === 'string' ? '#94a3b8' : (s.color || '#94a3b8')
+      return { id: name, name, color, icon: Briefcase }
+    })
+  })()
 
   const jobRelatedTables = [
     {
@@ -496,17 +516,15 @@ export default function Jobs() {
     return matchesSearch && matchesStatus && matchesTeam
   })
 
-  // Board view groups
-  const chillinJobs = filteredJobs.filter(j => j.status === 'Chillin')
-    .sort((a, b) => new Date(b.created_at || b.updated_at) - new Date(a.created_at || a.updated_at))
-  const scheduledJobs = filteredJobs.filter(j => j.status === 'Scheduled')
-    .sort((a, b) => new Date(a.start_date || a.created_at) - new Date(b.start_date || b.created_at))
-  const inProgressJobs = filteredJobs.filter(j => j.status === 'In Progress')
-    .sort((a, b) => new Date(a.start_date || a.created_at) - new Date(b.start_date || b.created_at))
-  const completedJobs = filteredJobs.filter(j => j.status === 'Completed')
-    .sort((a, b) => new Date(b.end_date || b.updated_at) - new Date(a.end_date || a.updated_at))
-  const cancelledJobs = filteredJobs.filter(j => j.status === 'Cancelled')
-  const onHoldJobs = filteredJobs.filter(j => j.status === 'On Hold')
+  // Board view groups — dynamic from boardColumns
+  const boardColumnIds = new Set(boardColumns.map(c => c.id))
+  const jobsByStatus = {}
+  boardColumns.forEach(col => {
+    jobsByStatus[col.id] = filteredJobs.filter(j => j.status === col.id)
+      .sort((a, b) => new Date(a.start_date || a.created_at || 0) - new Date(b.start_date || b.created_at || 0))
+  })
+  // Jobs not in any board column (e.g. Cancelled, On Hold, or statuses not in the board)
+  const otherJobs = filteredJobs.filter(j => !boardColumnIds.has(j.status))
 
   const openAddModal = () => {
     setEditingJob(null)
@@ -719,11 +737,8 @@ export default function Jobs() {
     return new Date(date).toLocaleDateString()
   }
 
-  // Stats
-  const chillinCount = jobs.filter(j => j.status === 'Chillin').length
-  const scheduledCount = jobs.filter(j => j.status === 'Scheduled').length
-  const inProgressCount = jobs.filter(j => j.status === 'In Progress').length
-  const completedCount = jobs.filter(j => j.status === 'Completed').length
+  // Stats — first 4 board columns get stat cards
+  const statColumns = boardColumns.slice(0, 4)
   const revenueWon = recentWins.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
 
   // Styles
@@ -835,40 +850,24 @@ export default function Jobs() {
       {/* Stats */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(5, 1fr)',
+        gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : `repeat(${Math.min(statColumns.length + 1, 6)}, 1fr)`,
         gap: '10px',
         marginBottom: '24px'
       }}>
-        <div style={{
-          backgroundColor: theme.bgCard, borderRadius: '12px',
-          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
-        }}>
-          <p style={{ fontSize: '11px', color: '#6382bf', marginBottom: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-            <Coffee size={11} /> Chillin
-          </p>
-          <p style={{ fontSize: '20px', fontWeight: '600', color: '#6382bf' }}>{chillinCount}</p>
-        </div>
-        <div style={{
-          backgroundColor: theme.bgCard, borderRadius: '12px',
-          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
-        }}>
-          <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Scheduled</p>
-          <p style={{ fontSize: '20px', fontWeight: '600', color: theme.text }}>{scheduledCount}</p>
-        </div>
-        <div style={{
-          backgroundColor: theme.bgCard, borderRadius: '12px',
-          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
-        }}>
-          <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>In Progress</p>
-          <p style={{ fontSize: '20px', fontWeight: '600', color: '#c28b38' }}>{inProgressCount}</p>
-        </div>
-        <div style={{
-          backgroundColor: theme.bgCard, borderRadius: '12px',
-          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
-        }}>
-          <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Completed</p>
-          <p style={{ fontSize: '20px', fontWeight: '600', color: '#4a7c59' }}>{completedCount}</p>
-        </div>
+        {statColumns.map(col => {
+          const count = jobs.filter(j => j.status === col.id).length
+          return (
+            <div key={col.id} style={{
+              backgroundColor: theme.bgCard, borderRadius: '12px',
+              border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
+            }}>
+              <p style={{ fontSize: '11px', color: col.color, marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {col.name}
+              </p>
+              <p style={{ fontSize: '20px', fontWeight: '600', color: col.color }}>{count}</p>
+            </div>
+          )
+        })}
         <div style={{
           backgroundColor: theme.bgCard, borderRadius: '12px',
           border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
@@ -937,86 +936,49 @@ export default function Jobs() {
       {/* ============ BOARD VIEW ============ */}
       {viewMode === 'board' ? (
         <div>
-          {/* Kanban columns */}
+          {/* Kanban columns — horizontally scrollable on desktop */}
           <div style={{
             display: 'flex',
-            gap: '14px',
+            gap: '12px',
             flexDirection: isMobile ? 'column' : 'row',
-            alignItems: 'flex-start'
+            alignItems: 'flex-start',
+            overflowX: isMobile ? 'visible' : 'auto',
+            paddingBottom: isMobile ? 0 : '8px'
           }}>
-            <KanbanColumn
-              title="Chillin"
-              icon={Coffee}
-              jobs={chillinJobs}
-              color="#6382bf"
-              theme={theme}
-              isMobile={isMobile}
-              navigate={navigate}
-              formatDate={formatDate}
-              scheduleJob={scheduleJob}
-              startJob={startJob}
-              completeJob={completeJob}
-              openMap={openMap}
-            />
-            <KanbanColumn
-              title="Scheduled"
-              icon={Calendar}
-              jobs={scheduledJobs}
-              color="#5a6349"
-              theme={theme}
-              isMobile={isMobile}
-              navigate={navigate}
-              formatDate={formatDate}
-              scheduleJob={scheduleJob}
-              startJob={startJob}
-              completeJob={completeJob}
-              openMap={openMap}
-            />
-            <KanbanColumn
-              title="In Progress"
-              icon={Play}
-              jobs={inProgressJobs}
-              color="#c28b38"
-              theme={theme}
-              isMobile={isMobile}
-              navigate={navigate}
-              formatDate={formatDate}
-              scheduleJob={scheduleJob}
-              startJob={startJob}
-              completeJob={completeJob}
-              openMap={openMap}
-            />
-            <KanbanColumn
-              title="Completed"
-              icon={CheckCircle}
-              jobs={completedJobs}
-              color="#4a7c59"
-              theme={theme}
-              isMobile={isMobile}
-              navigate={navigate}
-              formatDate={formatDate}
-              scheduleJob={scheduleJob}
-              startJob={startJob}
-              completeJob={completeJob}
-              openMap={openMap}
-            />
+            {boardColumns.map(col => (
+              <KanbanColumn
+                key={col.id}
+                title={col.name}
+                icon={col.icon}
+                jobs={jobsByStatus[col.id] || []}
+                color={col.color}
+                theme={theme}
+                isMobile={isMobile}
+                navigate={navigate}
+                formatDate={formatDate}
+                scheduleJob={scheduleJob}
+                startJob={startJob}
+                completeJob={completeJob}
+                openMap={openMap}
+              />
+            ))}
           </div>
 
-          {/* On Hold + Cancelled jobs (collapsed sections) */}
-          {onHoldJobs.length > 0 && (
+          {/* Other jobs not in board columns (On Hold, Cancelled, etc.) */}
+          {otherJobs.length > 0 && (
             <details style={{ marginTop: '20px' }}>
               <summary style={{
                 fontSize: '13px', fontWeight: '600', color: theme.textMuted,
                 cursor: 'pointer', padding: '8px 0', userSelect: 'none'
               }}>
-                On Hold ({onHoldJobs.length})
+                Other ({otherJobs.length})
               </summary>
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
                 gap: '10px', marginTop: '10px'
               }}>
-                {onHoldJobs.map(job => (
+                {otherJobs.map(job => (
                   <div
                     key={job.id}
                     onClick={() => navigate(`/jobs/${job.id}`)}
@@ -1026,47 +988,146 @@ export default function Jobs() {
                       cursor: 'pointer', opacity: 0.7
                     }}
                   >
-                    <span style={{ fontSize: '11px', color: '#7d8a7f', fontWeight: '600' }}>{job.job_id}</span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '600' }}>{job.job_id}</span>
                     <p style={{ fontSize: '13px', fontWeight: '500', color: theme.text, margin: '4px 0 0' }}>
                       {job.job_title || 'Untitled'}
                     </p>
+                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '8px', backgroundColor: theme.bg, color: theme.textMuted }}>
+                      {job.status}
+                    </span>
                   </div>
                 ))}
               </div>
             </details>
           )}
-          {cancelledJobs.length > 0 && (
-            <details style={{ marginTop: '20px' }}>
-              <summary style={{
-                fontSize: '13px', fontWeight: '600', color: theme.textMuted,
-                cursor: 'pointer', padding: '8px 0', userSelect: 'none'
-              }}>
-                Cancelled ({cancelledJobs.length})
-              </summary>
+
+          {/* Inline Week Calendar */}
+          {(() => {
+            const weekDays = Array.from({ length: 7 }, (_, i) => {
+              const d = new Date(calendarWeekStart)
+              d.setDate(d.getDate() + i)
+              return d
+            })
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+
+            const getJobsForDay = (day) => {
+              const dayStr = day.toISOString().split('T')[0]
+              return filteredJobs.filter(j => {
+                if (!j.start_date) return false
+                const jobDay = new Date(j.start_date).toISOString().split('T')[0]
+                return jobDay === dayStr
+              })
+            }
+
+            const shiftWeek = (dir) => {
+              setCalendarWeekStart(prev => {
+                const d = new Date(prev)
+                d.setDate(d.getDate() + (dir * 7))
+                return d
+              })
+            }
+
+            const weekLabel = `${weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+
+            return (
               <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '10px', marginTop: '10px'
+                marginTop: '24px',
+                backgroundColor: theme.bgCard,
+                borderRadius: '14px',
+                border: `1px solid ${theme.border}`,
+                overflow: 'hidden'
               }}>
-                {cancelledJobs.map(job => (
-                  <div
-                    key={job.id}
-                    onClick={() => navigate(`/jobs/${job.id}`)}
-                    style={{
-                      backgroundColor: theme.bgCard, borderRadius: '10px',
-                      border: `1px solid ${theme.border}`, padding: '12px 14px',
-                      cursor: 'pointer', opacity: 0.6
-                    }}
-                  >
-                    <span style={{ fontSize: '11px', color: '#8b5a5a', fontWeight: '600' }}>{job.job_id}</span>
-                    <p style={{ fontSize: '13px', fontWeight: '500', color: theme.text, margin: '4px 0 0' }}>
-                      {job.job_title || 'Untitled'}
-                    </p>
+                {/* Calendar header */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '14px 16px', borderBottom: `1px solid ${theme.border}`
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Calendar size={16} color={theme.accent} />
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Schedule</span>
                   </div>
-                ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button onClick={() => shiftWeek(-1)} style={{ padding: '6px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.textMuted, minHeight: '32px', minWidth: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <ChevronLeft size={14} />
+                    </button>
+                    <span style={{ fontSize: '13px', color: theme.textSecondary, fontWeight: '500', minWidth: '160px', textAlign: 'center' }}>
+                      {weekLabel}
+                    </span>
+                    <button onClick={() => shiftWeek(1)} style={{ padding: '6px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.textMuted, minHeight: '32px', minWidth: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => navigate('/jobs/calendar')}
+                    style={{ fontSize: '12px', color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '500', textDecoration: 'underline' }}
+                  >
+                    Full Calendar
+                  </button>
+                </div>
+
+                {/* Week grid */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(7, 1fr)',
+                  minHeight: isMobile ? 'auto' : '140px'
+                }}>
+                  {weekDays.map((day, idx) => {
+                    const dayJobs = getJobsForDay(day)
+                    const isToday = day.getTime() === today.getTime()
+                    const isPast = day < today
+                    return (
+                      <div key={idx} style={{
+                        borderRight: idx < 6 ? `1px solid ${theme.border}` : 'none',
+                        padding: '8px 6px',
+                        backgroundColor: isToday ? theme.accentBg : isPast ? `${theme.bg}80` : 'transparent',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px'
+                      }}>
+                        <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+                          <div style={{ fontSize: '10px', fontWeight: '600', color: isToday ? theme.accent : theme.textMuted, textTransform: 'uppercase' }}>
+                            {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                          </div>
+                          <div style={{
+                            fontSize: '16px', fontWeight: isToday ? '700' : '500',
+                            color: isToday ? theme.accent : theme.text
+                          }}>
+                            {day.getDate()}
+                          </div>
+                        </div>
+                        {dayJobs.slice(0, isMobile ? 2 : 4).map(job => {
+                          const col = boardColumns.find(c => c.id === job.status)
+                          return (
+                            <div
+                              key={job.id}
+                              onClick={() => navigate(`/jobs/${job.id}`)}
+                              style={{
+                                padding: '4px 6px', borderRadius: '6px', fontSize: '10px',
+                                backgroundColor: col ? `${col.color}18` : theme.bg,
+                                color: col?.color || theme.text,
+                                fontWeight: '500', cursor: 'pointer',
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                borderLeft: `3px solid ${col?.color || theme.textMuted}`
+                              }}
+                              title={`${job.job_title} — ${job.customer?.name || ''}`}
+                            >
+                              {job.job_title || job.customer?.name || 'Job'}
+                            </div>
+                          )
+                        })}
+                        {dayJobs.length > (isMobile ? 2 : 4) && (
+                          <div style={{ fontSize: '10px', color: theme.textMuted, textAlign: 'center' }}>
+                            +{dayJobs.length - (isMobile ? 2 : 4)} more
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-            </details>
-          )}
+            )
+          })()}
         </div>
       ) : (
         /* ============ LIST VIEW ============ */
