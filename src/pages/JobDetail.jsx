@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -58,7 +58,32 @@ const statusColors = {
   'On Hold': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
 }
 
-export default function JobDetail() {
+class JobDetailErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error) { return { error } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '24px', maxWidth: '600px', margin: '0 auto' }}>
+          <h2 style={{ color: '#dc2626', marginBottom: '12px' }}>JobDetail Error</h2>
+          <pre style={{ padding: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', whiteSpace: 'pre-wrap', fontSize: '13px', color: '#991b1b' }}>
+            {this.state.error.message}
+            {'\n\n'}
+            {this.state.error.stack}
+          </pre>
+          <button onClick={() => window.location.reload()} style={{ marginTop: '12px', padding: '8px 16px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Reload</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+export default function JobDetailWrapper() {
+  return <JobDetailErrorBoundary><JobDetailInner /></JobDetailErrorBoundary>
+}
+
+function JobDetailInner() {
   const { id } = useParams()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -193,7 +218,7 @@ export default function JobDetail() {
     fetchTimeLogs()
     fetchJobExpenses()
     // Fetch product groups for line item picker
-    supabase.from('product_groups').select('*').eq('company_id', companyId).order('service_type, sort_order')
+    supabase.from('product_groups').select('*').eq('company_id', companyId).order('sort_order')
       .then(({ data }) => setProductGroups(data || []))
   }, [companyId, id, navigate])
 
