@@ -423,9 +423,7 @@ export default function Jobs() {
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [viewMode, setViewMode] = useState('board')
   const [isMobile, setIsMobile] = useState(false)
-  const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); return d
-  })
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date())
 
   // Build dynamic board columns from DB-driven job statuses
   const boardColumns = (() => {
@@ -737,8 +735,6 @@ export default function Jobs() {
     return new Date(date).toLocaleDateString()
   }
 
-  // Stats — first 4 board columns get stat cards
-  const statColumns = boardColumns.slice(0, 4)
   const revenueWon = recentWins.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
 
   // Styles
@@ -847,38 +843,29 @@ export default function Jobs() {
         formatDate={formatDate}
       />
 
-      {/* Stats */}
+      {/* Stats — all board columns */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : `repeat(${Math.min(statColumns.length + 1, 6)}, 1fr)`,
-        gap: '10px',
-        marginBottom: '24px'
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '20px',
+        overflowX: 'auto',
+        paddingBottom: '4px'
       }}>
-        {statColumns.map(col => {
+        {boardColumns.map(col => {
           const count = jobs.filter(j => j.status === col.id).length
           return (
             <div key={col.id} style={{
-              backgroundColor: theme.bgCard, borderRadius: '12px',
-              border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
+              backgroundColor: theme.bgCard, borderRadius: '10px',
+              border: `1px solid ${theme.border}`, padding: '8px 14px', textAlign: 'center',
+              minWidth: '80px', flex: '0 0 auto'
             }}>
-              <p style={{ fontSize: '11px', color: col.color, marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <p style={{ fontSize: '18px', fontWeight: '700', color: col.color, margin: 0 }}>{count}</p>
+              <p style={{ fontSize: '10px', color: theme.textMuted, margin: '2px 0 0', whiteSpace: 'nowrap' }}>
                 {col.name}
               </p>
-              <p style={{ fontSize: '20px', fontWeight: '600', color: col.color }}>{count}</p>
             </div>
           )
         })}
-        <div style={{
-          backgroundColor: theme.bgCard, borderRadius: '12px',
-          border: `1px solid ${theme.border}`, padding: '12px', textAlign: 'center'
-        }}>
-          <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-            <Trophy size={11} /> Won (30d)
-          </p>
-          <p style={{ fontSize: '20px', fontWeight: '600', color: '#4a7c59' }}>
-            {revenueWon > 0 ? formatCurrency(revenueWon) : recentWins.length > 0 ? recentWins.length : '0'}
-          </p>
-        </div>
       </div>
 
       {/* Filters */}
@@ -936,32 +923,228 @@ export default function Jobs() {
       {/* ============ BOARD VIEW ============ */}
       {viewMode === 'board' ? (
         <div>
-          {/* Kanban columns — horizontally scrollable on desktop */}
+          {/* Colored status header bars — scrollable */}
           <div style={{
             display: 'flex',
-            gap: '12px',
-            flexDirection: isMobile ? 'column' : 'row',
-            alignItems: 'flex-start',
-            overflowX: isMobile ? 'visible' : 'auto',
-            paddingBottom: isMobile ? 0 : '8px'
+            gap: '6px',
+            marginBottom: '16px',
+            overflowX: 'auto',
+            paddingBottom: '4px'
           }}>
-            {boardColumns.map(col => (
-              <KanbanColumn
-                key={col.id}
-                title={col.name}
-                icon={col.icon}
-                jobs={jobsByStatus[col.id] || []}
-                color={col.color}
-                theme={theme}
-                isMobile={isMobile}
-                navigate={navigate}
-                formatDate={formatDate}
-                scheduleJob={scheduleJob}
-                startJob={startJob}
-                completeJob={completeJob}
-                openMap={openMap}
-              />
-            ))}
+            {boardColumns.map(col => {
+              const count = (jobsByStatus[col.id] || []).length
+              return (
+                <div key={col.id} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  backgroundColor: col.color,
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  flex: '0 0 auto',
+                  minWidth: '100px',
+                  justifyContent: 'center'
+                }}>
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: '#fff', whiteSpace: 'nowrap' }}>
+                    {col.name}
+                  </span>
+                  <span style={{
+                    padding: '1px 7px', borderRadius: '10px', fontSize: '11px', fontWeight: '700',
+                    backgroundColor: 'rgba(255,255,255,0.3)', color: '#fff'
+                  }}>
+                    {count}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Side-by-side: Kanban left, Calendar right */}
+          <div style={{
+            display: isMobile ? 'flex' : 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 380px',
+            flexDirection: 'column',
+            gap: '16px',
+            alignItems: 'flex-start'
+          }}>
+            {/* Left — Kanban columns */}
+            <div style={{
+              display: 'flex',
+              gap: '10px',
+              flexDirection: isMobile ? 'column' : 'row',
+              alignItems: 'flex-start',
+              overflowX: isMobile ? 'visible' : 'auto',
+              paddingBottom: isMobile ? 0 : '8px',
+              width: '100%'
+            }}>
+              {boardColumns.map(col => (
+                <KanbanColumn
+                  key={col.id}
+                  title={col.name}
+                  icon={col.icon}
+                  jobs={jobsByStatus[col.id] || []}
+                  color={col.color}
+                  theme={theme}
+                  isMobile={isMobile}
+                  navigate={navigate}
+                  formatDate={formatDate}
+                  scheduleJob={scheduleJob}
+                  startJob={startJob}
+                  completeJob={completeJob}
+                  openMap={openMap}
+                />
+              ))}
+            </div>
+
+            {/* Right — Month Calendar */}
+            {!isMobile && (() => {
+              const year = calendarMonth.getFullYear()
+              const month = calendarMonth.getMonth()
+              const firstDay = new Date(year, month, 1)
+              const lastDay = new Date(year, month + 1, 0)
+              const startOffset = firstDay.getDay() // 0=Sun
+              const daysInMonth = lastDay.getDate()
+              const today = new Date()
+              today.setHours(0, 0, 0, 0)
+
+              const calendarCells = []
+              // Empty cells before month starts
+              for (let i = 0; i < startOffset; i++) calendarCells.push(null)
+              for (let d = 1; d <= daysInMonth; d++) calendarCells.push(d)
+              // Fill remaining row
+              while (calendarCells.length % 7 !== 0) calendarCells.push(null)
+
+              const getJobsForDay = (dayNum) => {
+                const dayDate = new Date(year, month, dayNum)
+                const dayStr = dayDate.toISOString().split('T')[0]
+                return filteredJobs.filter(j => {
+                  if (!j.start_date) return false
+                  return new Date(j.start_date).toISOString().split('T')[0] === dayStr
+                })
+              }
+
+              const shiftMonth = (dir) => {
+                setCalendarMonth(prev => {
+                  const d = new Date(prev)
+                  d.setMonth(d.getMonth() + dir)
+                  return d
+                })
+              }
+
+              const goToday = () => setCalendarMonth(new Date())
+
+              const monthLabel = calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+              const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+              return (
+                <div style={{
+                  backgroundColor: theme.bgCard,
+                  borderRadius: '14px',
+                  border: `1px solid ${theme.border}`,
+                  overflow: 'hidden',
+                  position: 'sticky',
+                  top: '80px',
+                  alignSelf: 'flex-start',
+                  width: '100%'
+                }}>
+                  {/* Calendar header */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '12px 14px', borderBottom: `1px solid ${theme.border}`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <button onClick={() => shiftMonth(-1)} style={{ padding: '4px 8px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.textMuted, fontSize: '14px', minHeight: '30px', display: 'flex', alignItems: 'center' }}>
+                        <ChevronLeft size={14} />
+                      </button>
+                      <button onClick={goToday} style={{ padding: '4px 10px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.text, fontSize: '12px', fontWeight: '500', minHeight: '30px' }}>
+                        Today
+                      </button>
+                      <button onClick={() => shiftMonth(1)} style={{ padding: '4px 8px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.textMuted, fontSize: '14px', minHeight: '30px', display: 'flex', alignItems: 'center' }}>
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                    <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>
+                      {monthLabel}
+                    </span>
+                  </div>
+
+                  {/* Day names row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${theme.border}` }}>
+                    {dayNames.map(d => (
+                      <div key={d} style={{
+                        textAlign: 'center', padding: '6px 0', fontSize: '11px',
+                        fontWeight: '600', color: theme.textMuted
+                      }}>
+                        {d}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Calendar grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                    {calendarCells.map((dayNum, idx) => {
+                      if (dayNum === null) {
+                        return <div key={`empty-${idx}`} style={{ minHeight: '72px', borderBottom: `1px solid ${theme.border}`, borderRight: idx % 7 < 6 ? `1px solid ${theme.border}` : 'none' }} />
+                      }
+                      const isToday = dayNum === today.getDate() && month === today.getMonth() && year === today.getFullYear()
+                      const dayJobs = getJobsForDay(dayNum)
+                      return (
+                        <div key={dayNum} style={{
+                          minHeight: '72px',
+                          padding: '4px',
+                          borderBottom: `1px solid ${theme.border}`,
+                          borderRight: idx % 7 < 6 ? `1px solid ${theme.border}` : 'none',
+                          backgroundColor: isToday ? theme.accentBg : 'transparent'
+                        }}>
+                          <div style={{
+                            fontSize: '12px',
+                            fontWeight: isToday ? '700' : '400',
+                            color: isToday ? theme.accent : theme.text,
+                            marginBottom: '2px',
+                            textAlign: 'right',
+                            paddingRight: '2px'
+                          }}>
+                            {dayNum}
+                          </div>
+                          {dayJobs.slice(0, 3).map(job => {
+                            const col = boardColumns.find(c => c.id === job.status)
+                            return (
+                              <div
+                                key={job.id}
+                                onClick={() => navigate(`/jobs/${job.id}`)}
+                                style={{
+                                  padding: '1px 4px',
+                                  borderRadius: '3px',
+                                  fontSize: '9px',
+                                  backgroundColor: col ? `${col.color}20` : theme.bg,
+                                  color: col?.color || theme.textSecondary,
+                                  fontWeight: '500',
+                                  cursor: 'pointer',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  marginBottom: '1px',
+                                  lineHeight: '1.4'
+                                }}
+                                title={`${job.job_title} — ${job.customer?.name || ''}`}
+                              >
+                                {job.customer?.name || job.job_title || 'Job'}
+                              </div>
+                            )
+                          })}
+                          {dayJobs.length > 3 && (
+                            <div style={{ fontSize: '9px', color: theme.textMuted, textAlign: 'center' }}>
+                              +{dayJobs.length - 3} more
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
           </div>
 
           {/* Other jobs not in board columns (On Hold, Cancelled, etc.) */}
@@ -1000,134 +1183,6 @@ export default function Jobs() {
               </div>
             </details>
           )}
-
-          {/* Inline Week Calendar */}
-          {(() => {
-            const weekDays = Array.from({ length: 7 }, (_, i) => {
-              const d = new Date(calendarWeekStart)
-              d.setDate(d.getDate() + i)
-              return d
-            })
-            const today = new Date()
-            today.setHours(0, 0, 0, 0)
-
-            const getJobsForDay = (day) => {
-              const dayStr = day.toISOString().split('T')[0]
-              return filteredJobs.filter(j => {
-                if (!j.start_date) return false
-                const jobDay = new Date(j.start_date).toISOString().split('T')[0]
-                return jobDay === dayStr
-              })
-            }
-
-            const shiftWeek = (dir) => {
-              setCalendarWeekStart(prev => {
-                const d = new Date(prev)
-                d.setDate(d.getDate() + (dir * 7))
-                return d
-              })
-            }
-
-            const weekLabel = `${weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-
-            return (
-              <div style={{
-                marginTop: '24px',
-                backgroundColor: theme.bgCard,
-                borderRadius: '14px',
-                border: `1px solid ${theme.border}`,
-                overflow: 'hidden'
-              }}>
-                {/* Calendar header */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '14px 16px', borderBottom: `1px solid ${theme.border}`
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Calendar size={16} color={theme.accent} />
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Schedule</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button onClick={() => shiftWeek(-1)} style={{ padding: '6px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.textMuted, minHeight: '32px', minWidth: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <ChevronLeft size={14} />
-                    </button>
-                    <span style={{ fontSize: '13px', color: theme.textSecondary, fontWeight: '500', minWidth: '160px', textAlign: 'center' }}>
-                      {weekLabel}
-                    </span>
-                    <button onClick={() => shiftWeek(1)} style={{ padding: '6px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.textMuted, minHeight: '32px', minWidth: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => navigate('/jobs/calendar')}
-                    style={{ fontSize: '12px', color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '500', textDecoration: 'underline' }}
-                  >
-                    Full Calendar
-                  </button>
-                </div>
-
-                {/* Week grid */}
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(7, 1fr)',
-                  minHeight: isMobile ? 'auto' : '140px'
-                }}>
-                  {weekDays.map((day, idx) => {
-                    const dayJobs = getJobsForDay(day)
-                    const isToday = day.getTime() === today.getTime()
-                    const isPast = day < today
-                    return (
-                      <div key={idx} style={{
-                        borderRight: idx < 6 ? `1px solid ${theme.border}` : 'none',
-                        padding: '8px 6px',
-                        backgroundColor: isToday ? theme.accentBg : isPast ? `${theme.bg}80` : 'transparent',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px'
-                      }}>
-                        <div style={{ textAlign: 'center', marginBottom: '4px' }}>
-                          <div style={{ fontSize: '10px', fontWeight: '600', color: isToday ? theme.accent : theme.textMuted, textTransform: 'uppercase' }}>
-                            {day.toLocaleDateString('en-US', { weekday: 'short' })}
-                          </div>
-                          <div style={{
-                            fontSize: '16px', fontWeight: isToday ? '700' : '500',
-                            color: isToday ? theme.accent : theme.text
-                          }}>
-                            {day.getDate()}
-                          </div>
-                        </div>
-                        {dayJobs.slice(0, isMobile ? 2 : 4).map(job => {
-                          const col = boardColumns.find(c => c.id === job.status)
-                          return (
-                            <div
-                              key={job.id}
-                              onClick={() => navigate(`/jobs/${job.id}`)}
-                              style={{
-                                padding: '4px 6px', borderRadius: '6px', fontSize: '10px',
-                                backgroundColor: col ? `${col.color}18` : theme.bg,
-                                color: col?.color || theme.text,
-                                fontWeight: '500', cursor: 'pointer',
-                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                borderLeft: `3px solid ${col?.color || theme.textMuted}`
-                              }}
-                              title={`${job.job_title} — ${job.customer?.name || ''}`}
-                            >
-                              {job.job_title || job.customer?.name || 'Job'}
-                            </div>
-                          )
-                        })}
-                        {dayJobs.length > (isMobile ? 2 : 4) && (
-                          <div style={{ fontSize: '10px', color: theme.textMuted, textAlign: 'center' }}>
-                            +{dayJobs.length - (isMobile ? 2 : 4)} more
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })()}
         </div>
       ) : (
         /* ============ LIST VIEW ============ */
