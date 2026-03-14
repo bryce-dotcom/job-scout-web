@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useStore } from '../../lib/store'
 import { supabase } from '../../lib/supabase'
+import { canAccessDevTools } from '../../lib/accessControl'
 import {
   LayoutDashboard, MessageSquare, Building2, Users, Zap, Bot,
   Package, Database, Upload, Terminal, ScrollText, Settings, Sparkles,
@@ -67,7 +68,7 @@ export default function DataConsole() {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useStore((state) => state.user)
-  const isDeveloper = useStore((state) => state.isDeveloper)
+  const isDeveloper = canAccessDevTools(user)
   const checkDeveloperStatus = useStore((state) => state.checkDeveloperStatus)
 
   const [loading, setLoading] = useState(true)

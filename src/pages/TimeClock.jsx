@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { isAdmin as checkAdmin, isTeamLead as checkTeamLead } from '../lib/accessControl'
 import {
   Clock, Play, Square, Coffee, MapPin, Calendar, AlertTriangle,
   Plus, X, ChevronRight, DollarSign, TrendingUp, Award
@@ -47,8 +48,8 @@ export default function TimeClock() {
     overtime_multiplier: 1.5,
   })
 
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Manager' || user?.is_admin ||
-    user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin'
+  const isAdmin = checkAdmin(user)
+  const isTeamLeadPlus = checkTeamLead(user)
 
   // Update current time every second
   useEffect(() => {
@@ -505,7 +506,7 @@ export default function TimeClock() {
         gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
         gap: '20px'
       }}>
-        {employees.filter(e => e.active && (isAdmin || e.id === user?.id)).map(employee => {
+        {employees.filter(e => e.active && (isTeamLeadPlus || e.id === user?.id)).map(employee => {
           const activeEntry = getActiveEntry(employee.id)
           const weekTotal = getWeekTotal(employee.id)
           const recentSessions = getRecentSessions(employee.id)

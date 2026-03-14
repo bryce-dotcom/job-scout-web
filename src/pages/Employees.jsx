@@ -33,14 +33,14 @@ const roleColors = {
 const getRoleColor = (role) => roleColors[role] || '#6b7280'
 
 // Default values (used if settings not configured)
-const DEFAULT_JOB_TITLES = ['Field Tech', 'Installer', 'Sales', 'Setter', 'Office', 'Manager', 'Project Manager', 'Admin', 'Owner']
+const DEFAULT_JOB_TITLES = ['Field Tech', 'Installer', 'Sales', 'Setter', 'Office', 'Manager', 'Project Manager', 'Admin']
 const DEFAULT_ACCESS_LEVELS = [
   { name: 'User', description: 'View only, can edit own profile' },
-  { name: 'Team Lead', description: 'Can view team members and schedules' },
-  { name: 'Manager', description: 'Can edit team members, view reports' },
-  { name: 'Admin', description: 'Full access except system settings' },
-  { name: 'Owner', description: 'Full access to everything' },
-  { name: 'Super Admin', description: 'Owner + pipeline settings and system config' }
+  { name: 'Team Lead', description: 'View team members and schedules' },
+  { name: 'Manager', description: 'Edit team members, manage operations, view reports' },
+  { name: 'Admin', description: 'Full access except system settings and dev tools' },
+  { name: 'Super Admin', description: 'Full access + pipeline settings and system config' },
+  { name: 'Developer', description: 'Full access including Data Console and Advanced Tools' }
 ]
 
 const emptyEmployee = {

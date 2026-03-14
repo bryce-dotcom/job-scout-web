@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { usePlaidLink } from 'react-plaid-link'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { supabase } from '../lib/supabase'
 import {
   Settings as SettingsIcon,
@@ -183,7 +184,7 @@ export default function Settings() {
   const fetchAllData = useStore((state) => state.fetchAllData)
   const getSettingList = useStore((state) => state.getSettingList)
 
-  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin'
+  const isAdmin = checkAdmin(user)
   const tabs = isAdmin
     ? [...baseTabs, { id: 'developer_tools', label: 'Developer Tools', icon: Code }]
     : baseTabs
@@ -612,8 +613,8 @@ export default function Settings() {
                           borderRadius: '12px',
                           fontSize: '12px',
                           fontWeight: '500',
-                          backgroundColor: emp.user_role === 'Owner' ? 'rgba(74,124,89,0.15)' : theme.accentBg,
-                          color: emp.user_role === 'Owner' ? '#4a7c59' : theme.accent
+                          backgroundColor: emp.user_role === 'Super Admin' ? 'rgba(74,124,89,0.15)' : theme.accentBg,
+                          color: emp.user_role === 'Super Admin' ? '#4a7c59' : theme.accent
                         }}>
                           {emp.user_role || 'User'}
                         </span>

@@ -10,6 +10,7 @@ import {
   RefreshCw, Filter, Search, Settings, Trophy
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -89,7 +90,7 @@ export default function LeadSetter() {
   const theme = themeContext?.theme || defaultTheme
 
   // Check if user is admin
-  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin' || user?.role === 'Admin' || user?.role === 'Owner' || user?.role === 'Super Admin'
+  const isAdmin = checkAdmin(user)
 
   // Fetch data
   const fetchData = async () => {

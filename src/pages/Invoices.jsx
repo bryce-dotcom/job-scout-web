@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download, Settings as SettingsIcon, Sliders, CreditCard, Mail } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
@@ -79,6 +80,7 @@ const invoiceSettingsTabs = [
 export default function Invoices() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const invoices = useStore((state) => state.invoices)
   const utilityInvoices = useStore((state) => state.utilityInvoices)
@@ -657,6 +659,15 @@ export default function Invoices() {
       default:
         return null
     }
+  }
+
+  if (!checkAdmin(user)) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '16px', fontWeight: '600', color: '#2c3530', marginBottom: '8px' }}>Access Restricted</div>
+        <div style={{ fontSize: '14px', color: '#7d8a7f' }}>You don't have permission to view this page. Contact your admin for access.</div>
+      </div>
+    )
   }
 
   return (

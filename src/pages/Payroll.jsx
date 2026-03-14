@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { isAdmin as checkAdmin, isManager as checkManager } from '../lib/accessControl'
 import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
   ChevronRight, ChevronDown, AlertTriangle, TrendingUp, Zap,
@@ -53,8 +54,8 @@ export default function Payroll() {
     overtime_multiplier: 1.5,
   })
 
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Manager' || user?.is_admin ||
-    user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin'
+  const isAdmin = checkAdmin(user)
+  const isManagerPlus = checkManager(user)
 
   // Load payroll config from settings
   useEffect(() => {
@@ -511,8 +512,8 @@ export default function Payroll() {
 
   // ── Aggregate Data ───────────────────────────────────────
   const activeEmployees = useMemo(() =>
-    employees.filter(e => e.active && (isAdmin || e.id === user?.id)),
-    [employees, isAdmin, user]
+    employees.filter(e => e.active && (isManagerPlus || e.id === user?.id)),
+    [employees, isManagerPlus, user]
   )
 
   const employeePayData = useMemo(() => {

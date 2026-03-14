@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { EXPENSE_CATEGORIES } from '../lib/schema'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { Plus, Pencil, Trash2, X, Receipt, Search, DollarSign, Upload, Download } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { expensesFields } from '../lib/importExportFields'
@@ -40,6 +41,7 @@ const emptyExpense = {
 
 export default function Expenses() {
   const navigate = useNavigate()
+  const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const expenses = useStore((state) => state.expenses)
   const fetchExpenses = useStore((state) => state.fetchExpenses)
@@ -201,6 +203,15 @@ export default function Expenses() {
     fontWeight: '500',
     color: theme.textSecondary,
     marginBottom: '6px'
+  }
+
+  if (!checkAdmin(user)) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '16px', fontWeight: '600', color: '#2c3530', marginBottom: '8px' }}>Access Restricted</div>
+        <div style={{ fontSize: '14px', color: '#7d8a7f' }}>You don't have permission to view this page. Contact your admin for access.</div>
+      </div>
+    )
   }
 
   return (

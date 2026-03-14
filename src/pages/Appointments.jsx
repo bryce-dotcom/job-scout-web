@@ -8,6 +8,7 @@ import { SOURCE_COLORS, normalizeAppointment, normalizeJob, normalizeGoogleEvent
 import { Plus, X, Trash2, Upload, Download, ChevronLeft, ChevronRight, RefreshCw, Calendar, Unlink } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { appointmentsFields } from '../lib/importExportFields'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -109,7 +110,7 @@ export default function Appointments() {
   const [gcalToken, setGcalToken] = useState(null)
   const [connectedEmployees, setConnectedEmployees] = useState([]) // employees with connected Google Calendars
 
-  const isAdmin = user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin' || user?.role === 'Admin' || user?.role === 'Owner' || user?.role === 'Super Admin'
+  const isAdmin = checkAdmin(user)
 
   useEffect(() => {
     if (!companyId) navigate('/')

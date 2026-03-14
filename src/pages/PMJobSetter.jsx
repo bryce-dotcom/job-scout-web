@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
+import { isManager as checkManager } from '../lib/accessControl'
 import {
   ChevronDown, ChevronRight, ChevronLeft, X, Calendar, Clock, User, MapPin,
   RefreshCw, Filter, Search, Settings, Plus, Briefcase, CheckCircle2,
@@ -67,8 +68,7 @@ export default function PMJobSetter() {
   const createJobSection = useStore((state) => state.createJobSection)
   const updateJobSection = useStore((state) => state.updateJobSection)
 
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Manager' || user?.is_admin ||
-    user?.user_role === 'Admin' || user?.user_role === 'Owner' || user?.user_role === 'Super Admin'
+  const isAdmin = checkManager(user)
 
   // Data-driven statuses from store
   const storeJobStatuses = useStore((state) => state.jobStatuses)

@@ -6,6 +6,7 @@ import { useTheme } from '../components/Layout'
 import { Plus, Pencil, Trash2, X, CreditCard, Search, DollarSign, Upload, Download } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { depositsFields } from '../lib/importExportFields'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -35,6 +36,7 @@ const emptyDeposit = {
 
 export default function LeadPayments() {
   const navigate = useNavigate()
+  const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const leadPayments = useStore((state) => state.leadPayments)
   const fetchLeadPayments = useStore((state) => state.fetchLeadPayments)
@@ -184,6 +186,15 @@ export default function LeadPayments() {
     fontWeight: '500',
     color: theme.textSecondary,
     marginBottom: '6px'
+  }
+
+  if (!checkAdmin(user)) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '16px', fontWeight: '600', color: '#2c3530', marginBottom: '8px' }}>Access Restricted</div>
+        <div style={{ fontSize: '14px', color: '#7d8a7f' }}>You don't have permission to view this page. Contact your admin for access.</div>
+      </div>
+    )
   }
 
   return (
