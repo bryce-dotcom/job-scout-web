@@ -76,6 +76,7 @@ import CustomerPortal from './pages/CustomerPortal'
 import LenardAZSRP from './pages/agents/LenardAZSRP'
 import LenardUTRMP from './pages/agents/LenardUTRMP'
 import DataConsole from './pages/admin/DataConsole'
+import Help from './pages/admin/Help'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
 import OfflineBanner from './components/OfflineBanner'
@@ -374,7 +375,8 @@ function App() {
             <Route path="history" element={<ArnieHistory />} />
           </Route>
 
-          {/* Admin Data Console (Developer Only) */}
+          {/* Admin */}
+          <Route path="/admin/help" element={<Help />} />
           <Route path="/admin/data-console/*" element={<DataConsole />} />
         </Route>
       </Routes>

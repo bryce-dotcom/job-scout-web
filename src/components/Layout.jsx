@@ -49,7 +49,8 @@ import {
   X as XIcon,
   Database,
   Compass,
-  RefreshCw
+  RefreshCw,
+  HelpCircle
 } from 'lucide-react'
 
 // Theme context
@@ -406,7 +407,8 @@ export default function Layout() {
     items: [
       { to: '/settings', icon: Settings, label: 'Settings', hint: 'Company and app settings' },
       { to: '/document-rules', icon: FileText, label: 'Document Rules', hint: 'Manage form templates and doc packages' },
-      { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' }
+      { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' },
+      { to: '/admin/help', icon: HelpCircle, label: 'Help', hint: 'How the app works — guides and diagrams' }
     ]
   } : null
 
