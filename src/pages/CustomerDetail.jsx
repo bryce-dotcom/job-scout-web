@@ -6,7 +6,8 @@ import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
 import {
   ArrowLeft, FileText, Briefcase, Plus, Send, Phone, Mail,
-  MapPin, Building2, User, X, Save, Trash2, Package, UserPlus, Grid3X3
+  MapPin, Building2, User, X, Save, Trash2, Package, UserPlus, Grid3X3,
+  DollarSign, TrendingUp, MessageCircle, CreditCard, ExternalLink
 } from 'lucide-react'
 import ProductPickerModal from '../components/ProductPickerModal'
 import Tooltip from '../components/Tooltip'
@@ -33,6 +34,10 @@ export default function CustomerDetail() {
   const [customer, setCustomer] = useState(null)
   const [quotes, setQuotes] = useState([])
   const [jobs, setJobs] = useState([])
+  const [invoices, setInvoices] = useState([])
+  const [leads, setLeads] = useState([])
+  const [payments, setPayments] = useState([])
+  const [communications, setCommunications] = useState([])
   const [activeTab, setActiveTab] = useState('info')
   const [loading, setLoading] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
@@ -95,6 +100,44 @@ export default function CustomerDetail() {
       .eq('customer_id', id)
       .order('created_at', { ascending: false })
     setJobs(jobData || [])
+
+    // Fetch invoices linked to this customer
+    const { data: invoiceData } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('customer_id', id)
+      .order('created_at', { ascending: false })
+    setInvoices(invoiceData || [])
+
+    // Fetch leads linked to this customer
+    const { data: leadData } = await supabase
+      .from('leads')
+      .select('*, setter:employees!leads_setter_id_fkey(id, name), salesperson_rel:employees!leads_salesperson_id_fkey(id, name)')
+      .or(`customer_id.eq.${id},converted_customer_id.eq.${id}`)
+      .order('created_at', { ascending: false })
+    setLeads(leadData || [])
+
+    // Fetch payments via jobs linked to this customer
+    const jobIds = (jobData || []).map(j => j.id)
+    const leadIds = (leadData || []).map(l => l.id)
+    if (leadIds.length > 0) {
+      const { data: paymentData } = await supabase
+        .from('lead_payments')
+        .select('*')
+        .in('lead_id', leadIds)
+        .order('date_created', { ascending: false })
+      setPayments(paymentData || [])
+    } else {
+      setPayments([])
+    }
+
+    // Fetch communications for this customer
+    const { data: commData } = await supabase
+      .from('communications_log')
+      .select('*, employee:employees(id, name)')
+      .eq('customer_id', id)
+      .order('created_at', { ascending: false })
+    setCommunications(commData || [])
 
     setLoading(false)
   }
@@ -321,8 +364,12 @@ export default function CustomerDetail() {
 
   const tabs = [
     { id: 'info', label: 'Info', icon: FileText, hint: 'Customer contact information' },
+    { id: 'leads', label: `Leads (${leads.length})`, icon: TrendingUp, hint: 'Leads/deals for this customer' },
     { id: 'quotes', label: `Estimates (${quotes.length})`, icon: FileText, hint: 'Price estimates for this customer' },
-    { id: 'jobs', label: `Jobs (${jobs.length})`, icon: Briefcase, hint: 'Work orders for this customer' }
+    { id: 'jobs', label: `Jobs (${jobs.length})`, icon: Briefcase, hint: 'Work orders for this customer' },
+    { id: 'invoices', label: `Invoices (${invoices.length})`, icon: DollarSign, hint: 'Invoices for this customer' },
+    { id: 'payments', label: `Payments (${payments.length})`, icon: CreditCard, hint: 'Payments received from this customer' },
+    ...(communications.length > 0 ? [{ id: 'comms', label: `Comms (${communications.length})`, icon: MessageCircle, hint: 'Communication history' }] : []),
   ]
 
   return (
@@ -909,6 +956,334 @@ export default function CustomerDetail() {
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* INVOICES TAB */}
+        {activeTab === 'invoices' && (
+          <div>
+            <div style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
+              justifyContent: 'space-between',
+              alignItems: isMobile ? 'stretch' : 'center',
+              gap: isMobile ? '12px' : '16px',
+              marginBottom: '20px'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Invoices</h3>
+                <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
+                  Invoices issued to this customer
+                </p>
+              </div>
+            </div>
+
+            {invoices.length === 0 ? (
+              <EmptyState
+                icon={DollarSign}
+                iconColor="#3b82f6"
+                title="No invoices yet"
+                message="Invoices will appear here once they are generated for this customer's jobs."
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {invoices.map(inv => {
+                  const statusColor = inv.payment_status === 'Paid' ? '#16a34a' : inv.payment_status === 'Overdue' ? '#dc2626' : '#f59e0b'
+                  return (
+                    <div key={inv.id} style={{
+                      padding: isMobile ? '14px 16px' : '16px 20px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '10px',
+                      border: `1px solid ${theme.border}`,
+                      display: 'flex',
+                      flexDirection: isMobile ? 'column' : 'row',
+                      justifyContent: 'space-between',
+                      alignItems: isMobile ? 'stretch' : 'center',
+                      gap: isMobile ? '12px' : '16px'
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: isMobile ? '15px' : '16px', fontWeight: '600', color: theme.text }}>
+                            {inv.invoice_id || `Invoice #${inv.id}`}
+                          </div>
+                          <span style={{
+                            padding: '4px 10px',
+                            backgroundColor: statusColor + '20',
+                            color: statusColor,
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            {inv.payment_status || 'Pending'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
+                          {inv.job_description || ''}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '12px', color: theme.textMuted }}>
+                          <span style={{ fontWeight: '600', fontSize: '14px', color: theme.text }}>
+                            ${parseFloat(inv.amount || 0).toFixed(2)}
+                          </span>
+                          {inv.created_at && <span>{new Date(inv.created_at).toLocaleDateString()}</span>}
+                          {inv.business_unit && <span>{inv.business_unit}</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => navigate(`/invoices/${inv.id}`)}
+                        style={{
+                          padding: isMobile ? '10px 14px' : '8px 14px',
+                          minHeight: isMobile ? '44px' : 'auto',
+                          backgroundColor: 'transparent',
+                          color: theme.accent,
+                          border: `1px solid ${theme.accent}`,
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '500'
+                        }}
+                      >
+                        View
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* LEADS TAB */}
+        {activeTab === 'leads' && (
+          <div>
+            <div style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
+              justifyContent: 'space-between',
+              alignItems: isMobile ? 'stretch' : 'center',
+              gap: isMobile ? '12px' : '16px',
+              marginBottom: '20px'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Leads / Deals</h3>
+                <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
+                  Sales pipeline entries for this customer
+                </p>
+              </div>
+            </div>
+
+            {leads.length === 0 ? (
+              <EmptyState
+                icon={TrendingUp}
+                iconColor="#8b5cf6"
+                title="No leads yet"
+                message="Leads will appear here when created for this customer."
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {leads.map(lead => {
+                  const lsColor = lead.status === 'Won' || lead.status === 'Job Complete' || lead.status === 'sold' || lead.status === 'closed_won'
+                    ? '#16a34a'
+                    : lead.status === 'Lost' || lead.status === 'Cancelled'
+                      ? '#dc2626'
+                      : '#f59e0b'
+                  return (
+                    <div key={lead.id} style={{
+                      padding: isMobile ? '14px 16px' : '16px 20px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '10px',
+                      border: `1px solid ${theme.border}`,
+                      display: 'flex',
+                      flexDirection: isMobile ? 'column' : 'row',
+                      justifyContent: 'space-between',
+                      alignItems: isMobile ? 'stretch' : 'center',
+                      gap: isMobile ? '12px' : '16px'
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: isMobile ? '15px' : '16px', fontWeight: '600', color: theme.text }}>
+                            {lead.customer_name || lead.lead_id || 'Lead'}
+                          </div>
+                          <span style={{
+                            padding: '4px 10px',
+                            backgroundColor: lsColor + '20',
+                            color: lsColor,
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            {lead.status}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '12px', color: theme.textMuted, flexWrap: 'wrap' }}>
+                          {lead.service_type && <span>{lead.service_type}</span>}
+                          {lead.quote_amount && <span style={{ fontWeight: '600', color: theme.text }}>${parseFloat(lead.quote_amount).toFixed(2)}</span>}
+                          {lead.lead_source && <span>Source: {lead.lead_source}</span>}
+                          {lead.salesperson_rel?.name && <span>Sales: {lead.salesperson_rel.name}</span>}
+                          {lead.created_at && <span>{new Date(lead.created_at).toLocaleDateString()}</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => navigate(`/leads/${lead.id}`)}
+                        style={{
+                          padding: isMobile ? '10px 14px' : '8px 14px',
+                          minHeight: isMobile ? '44px' : 'auto',
+                          backgroundColor: 'transparent',
+                          color: theme.accent,
+                          border: `1px solid ${theme.accent}`,
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '500'
+                        }}
+                      >
+                        View
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* PAYMENTS TAB */}
+        {activeTab === 'payments' && (
+          <div>
+            <div style={{ marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Payments</h3>
+              <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
+                Payments received from this customer
+              </p>
+              {payments.length > 0 && (
+                <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: '600', color: '#16a34a' }}>
+                  Total: ${payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toFixed(2)}
+                </div>
+              )}
+            </div>
+
+            {payments.length === 0 ? (
+              <EmptyState
+                icon={CreditCard}
+                iconColor="#16a34a"
+                title="No payments yet"
+                message="Payments will appear here once received for this customer's deals."
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {payments.map(pmt => {
+                  const pColor = pmt.payment_status === 'Paid' || pmt.payment_status === 'Received' ? '#16a34a' : '#f59e0b'
+                  return (
+                    <div key={pmt.id} style={{
+                      padding: isMobile ? '14px 16px' : '16px 20px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '10px',
+                      border: `1px solid ${theme.border}`,
+                      display: 'flex',
+                      flexDirection: isMobile ? 'column' : 'row',
+                      justifyContent: 'space-between',
+                      alignItems: isMobile ? 'stretch' : 'center',
+                      gap: isMobile ? '8px' : '16px'
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: isMobile ? '15px' : '16px', fontWeight: '600', color: theme.text }}>
+                            ${parseFloat(pmt.amount || 0).toFixed(2)}
+                          </span>
+                          <span style={{
+                            padding: '4px 10px',
+                            backgroundColor: pColor + '20',
+                            color: pColor,
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            {pmt.payment_status || 'Pending'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '12px', color: theme.textMuted }}>
+                          {pmt.date_created && <span>{new Date(pmt.date_created).toLocaleDateString()}</span>}
+                          {pmt.notes && <span>{pmt.notes.length > 60 ? pmt.notes.substring(0, 60) + '...' : pmt.notes}</span>}
+                          {pmt.lead_source && <span>{pmt.lead_source}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* COMMUNICATIONS TAB */}
+        {activeTab === 'comms' && (
+          <div>
+            <div style={{ marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Communications</h3>
+              <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
+                Emails, calls, and messages with this customer
+              </p>
+            </div>
+
+            {communications.length === 0 ? (
+              <EmptyState
+                icon={MessageCircle}
+                iconColor="#6366f1"
+                title="No communications"
+                message="Communication logs will appear here."
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {communications.map(comm => {
+                  const typeIcon = comm.type === 'email' ? Mail : comm.type === 'phone' || comm.type === 'call' ? Phone : MessageCircle
+                  const TypeIcon = typeIcon
+                  return (
+                    <div key={comm.id} style={{
+                      padding: isMobile ? '14px 16px' : '16px 20px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '10px',
+                      border: `1px solid ${theme.border}`,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                        <TypeIcon size={16} color={theme.accent} />
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text, textTransform: 'capitalize' }}>
+                          {comm.type || 'Message'}
+                        </span>
+                        {comm.status && (
+                          <span style={{
+                            padding: '2px 8px',
+                            backgroundColor: theme.accentBg,
+                            color: theme.accent,
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '500'
+                          }}>
+                            {comm.status}
+                          </span>
+                        )}
+                        <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}>
+                          {comm.sent_date ? new Date(comm.sent_date).toLocaleDateString() : comm.created_at ? new Date(comm.created_at).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+                      {comm.recipient && (
+                        <div style={{ fontSize: '13px', color: theme.textSecondary }}>
+                          To: {comm.recipient}
+                        </div>
+                      )}
+                      {comm.response && (
+                        <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
+                          {comm.response.length > 120 ? comm.response.substring(0, 120) + '...' : comm.response}
+                        </div>
+                      )}
+                      {comm.employee?.name && (
+                        <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                          By: {comm.employee.name}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
