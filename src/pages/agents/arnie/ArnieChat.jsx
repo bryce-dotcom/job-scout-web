@@ -6,7 +6,7 @@ import { getUserRole } from './arnieTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download } from 'lucide-react'
-import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, ARNIE_VOICES } from './arnieVoice'
+import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, ARNIE_VOICES, unlockAudio } from './arnieVoice'
 
 // Dark Arnie theme
 const dark = {
@@ -186,6 +186,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       return
     }
 
+    unlockAudio() // Unlock audio on user gesture so TTS can play later
     if (speaking) handleStopSpeaking()
     if (recognitionRef.current) {
       try { recognitionRef.current.stop() } catch {}
@@ -255,6 +256,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     const msg = (text || input).trim()
     if (!msg || loading) return
 
+    unlockAudio() // Ensure audio is unlocked before we start the async chain
     pauseMic()
     setInput('')
     transcriptRef.current = ''

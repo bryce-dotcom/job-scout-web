@@ -15,7 +15,7 @@ export const ARNIE_VOICES = [
 ]
 
 const DEFAULT_VOICE = 'pqHfZKP75CvOlQylNhV4'
-const FETCH_TIMEOUT_MS = 10000
+const FETCH_TIMEOUT_MS = 20000
 
 // Strip markdown for cleaner speech
 function stripMarkdown(text) {
@@ -35,6 +35,33 @@ function stripMarkdown(text) {
 }
 
 let currentAudio = null
+let audioUnlocked = false
+let audioContext = null
+
+// Call this on any user gesture (button click, mic tap) to unlock audio playback on mobile.
+// Mobile browsers require audio.play() to originate from a user gesture — but by the time
+// Gemini responds and TTS audio is ready, the gesture is stale. Playing a silent buffer
+// on the initial gesture permanently unlocks audio for the session.
+export function unlockAudio() {
+  if (audioUnlocked) return
+  try {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    // Create a tiny silent buffer and play it — this satisfies the user-gesture requirement
+    const buf = audioContext.createBuffer(1, 1, 22050)
+    const src = audioContext.createBufferSource()
+    src.buffer = buf
+    src.connect(audioContext.destination)
+    src.start(0)
+    // Also play a silent Audio element to unlock HTMLAudioElement.play()
+    const silent = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=')
+    silent.volume = 0
+    silent.play().catch(() => {})
+    audioUnlocked = true
+    console.log('[Arnie Voice] Audio unlocked for this session')
+  } catch (e) {
+    console.warn('[Arnie Voice] Audio unlock failed:', e)
+  }
+}
 
 export function stopSpeaking() {
   if (currentAudio) {
