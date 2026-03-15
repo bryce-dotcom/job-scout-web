@@ -11,9 +11,10 @@ import {
   ChevronDown, ChevronUp, ExternalLink, Navigation,
   CheckCircle, Timer, Briefcase, DollarSign, Star,
   AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
-  Loader2, ShieldCheck, Shield, Search
+  Loader2, ShieldCheck, Shield, Search, FileText, Lock
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
+import ArnieFloatingPanel from '../components/ArnieFloatingPanel'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -140,6 +141,13 @@ export default function FieldScout() {
   // Victor verification
   const [victorModal, setVictorModal] = useState(null) // null | { type: 'daily' } | { type: 'completion', jobId }
   const [showDailyCheckPrompt, setShowDailyCheckPrompt] = useState(false)
+  const [verifiedJobs, setVerifiedJobs] = useState(new Set()) // job IDs with passing verification
+  const [clockOutBlocked, setClockOutBlocked] = useState(false)
+
+  // Invoice presentation
+  const [invoiceJob, setInvoiceJob] = useState(null) // job to show invoice for
+  const [invoiceData, setInvoiceData] = useState(null) // { invoice, lines }
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
 
   // Job search (for clock-in when no today's jobs)
   const [jobSearchQuery, setJobSearchQuery] = useState('')
@@ -199,6 +207,60 @@ export default function FieldScout() {
   }, [companyId, currentEmployee])
 
   useEffect(() => { fetchEntries() }, [fetchEntries])
+
+  // Fetch verification status for today's jobs
+  const fetchVerifiedJobs = useCallback(async () => {
+    if (!companyId || todaysJobs.length === 0) return
+    const jobIds = todaysJobs.map(j => j.id)
+    const { data } = await supabase
+      .from('verification_reports')
+      .select('job_id, score, grade')
+      .eq('company_id', companyId)
+      .eq('verification_type', 'completion')
+      .in('job_id', jobIds)
+      .gte('score', 60)
+    if (data) {
+      setVerifiedJobs(new Set(data.map(r => r.job_id)))
+    }
+  }, [companyId, todaysJobs.length])
+
+  useEffect(() => { fetchVerifiedJobs() }, [fetchVerifiedJobs])
+
+  // Fetch invoice for a job (for presentation)
+  const fetchInvoice = async (job) => {
+    setInvoiceJob(job)
+    setInvoiceLoading(true)
+    setInvoiceData(null)
+    try {
+      const { data: inv } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('job_id', job.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (inv) {
+        const { data: lines } = await supabase
+          .from('invoice_lines')
+          .select('*, item:products_services(id, name, description)')
+          .eq('invoice_id', inv.id)
+          .order('sort_order')
+        setInvoiceData({ invoice: inv, lines: lines || [] })
+      } else {
+        // No invoice — build from job lines
+        const { data: jobLines } = await supabase
+          .from('job_lines')
+          .select('*, item:products_services(id, name, description)')
+          .eq('job_id', job.id)
+          .order('sort_order')
+        setInvoiceData({ invoice: null, lines: jobLines || [], fromJob: true })
+      }
+    } catch (err) {
+      console.error('Error fetching invoice:', err)
+    }
+    setInvoiceLoading(false)
+  }
 
   // Load google review URL from settings
   useEffect(() => {
@@ -304,9 +366,19 @@ export default function FieldScout() {
     }
   }
 
+  // Mark job complete → requires Victor verification
+  const handleMarkComplete = (jobId) => {
+    setVictorModal({ type: 'completion', jobId, markComplete: true })
+  }
+
   // Clock out
   const handleClockOut = async () => {
     if (!activeEntry || clockingOut) return
+    // Block clock-out if clocked into a job that hasn't been verified
+    if (activeEntry.job_id && !verifiedJobs.has(activeEntry.job_id)) {
+      setClockOutBlocked(true)
+      return
+    }
     setClockingOut(true)
     const location = await getLocation()
     const clockIn = new Date(activeEntry.clock_in)
@@ -826,7 +898,8 @@ export default function FieldScout() {
               style={{
                 flex: 1,
                 padding: '14px',
-                backgroundColor: 'rgba(239,68,68,0.9)',
+                backgroundColor: (activeEntry?.job_id && !verifiedJobs.has(activeEntry.job_id))
+                  ? 'rgba(239,68,68,0.5)' : 'rgba(239,68,68,0.9)',
                 border: 'none',
                 borderRadius: '10px',
                 color: '#fff',
@@ -840,10 +913,60 @@ export default function FieldScout() {
                 minHeight: '48px'
               }}
             >
-              <Square size={18} />
-              {clockingOut ? 'Saving...' : 'Clock Out'}
+              {activeEntry?.job_id && !verifiedJobs.has(activeEntry.job_id) ? (
+                <><Lock size={18} /> Clock Out</>
+              ) : (
+                <><Square size={18} /> {clockingOut ? 'Saving...' : 'Clock Out'}</>
+              )}
             </button>
           </div>
+
+          {/* Clock-out blocked warning */}
+          {clockOutBlocked && (
+            <div style={{
+              marginTop: '12px',
+              padding: '14px',
+              backgroundColor: 'rgba(239,68,68,0.1)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '12px'
+            }}>
+              <Lock size={20} style={{ color: '#ef4444', flexShrink: 0, marginTop: '2px' }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#ef4444', marginBottom: '4px' }}>
+                  Verify before clocking out
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px' }}>
+                  Complete a Victor verification on your active job before clocking out.
+                </div>
+                <button
+                  onClick={() => {
+                    setClockOutBlocked(false)
+                    handleMarkComplete(activeEntry.job_id)
+                  }}
+                  style={{
+                    padding: '10px 16px',
+                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: '#fff',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    minHeight: '44px'
+                  }}
+                >
+                  <Shield size={16} />
+                  Verify Now
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1114,68 +1237,60 @@ export default function FieldScout() {
 
                     {/* Quick action row — always visible */}
                     {!isExpanded && (
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                        {job.status !== 'Completed' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleMarkComplete(job.id) }}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '5px',
+                              padding: '6px 12px',
+                              background: verifiedJobs.has(job.id)
+                                ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                                : 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                              border: 'none', borderRadius: '20px', color: '#fff',
+                              fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {verifiedJobs.has(job.id) ? <><CheckCircle size={13} /> Verified</> : <><Shield size={13} /> Complete Job</>}
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); fetchInvoice(job) }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '5px',
+                            padding: '6px 12px',
+                            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                            border: 'none', borderRadius: '20px', color: '#fff',
+                            fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <FileText size={13} /> Invoice
+                        </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setPaymentJob(job); setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' }); setPaymentSuccess(false) }}
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
+                            display: 'flex', alignItems: 'center', gap: '5px',
                             padding: '6px 12px',
                             background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                            border: 'none',
-                            borderRadius: '20px',
-                            color: '#fff',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap'
+                            border: 'none', borderRadius: '20px', color: '#fff',
+                            fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap'
                           }}
                         >
-                          <DollarSign size={13} />
-                          Collect Payment
+                          <DollarSign size={13} /> Payment
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); shareReviewLink(job) }}
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
+                            display: 'flex', alignItems: 'center', gap: '5px',
                             padding: '6px 12px',
                             background: reviewSent.has(job.id)
                               ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
                               : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                            border: 'none',
-                            borderRadius: '20px',
-                            color: '#fff',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap'
+                            border: 'none', borderRadius: '20px', color: '#fff',
+                            fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap'
                           }}
                         >
-                          <Star size={13} />
-                          {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setVictorModal({ type: 'completion', jobId: job.id }) }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            padding: '6px 12px',
-                            background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                            border: 'none',
-                            borderRadius: '20px',
-                            color: '#fff',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          <Shield size={13} />
-                          Verify
+                          <Star size={13} /> {reviewSent.has(job.id) ? 'Sent!' : 'Review'}
                         </button>
                       </div>
                     )}
@@ -1341,8 +1456,61 @@ export default function FieldScout() {
                           </button>
                         </div>
 
-                        {/* Collect Payment & Google Review */}
+                        {/* Mark Complete (requires Victor) */}
+                        {job.status !== 'Completed' && (
+                          <button
+                            onClick={() => handleMarkComplete(job.id)}
+                            style={{
+                              width: '100%',
+                              padding: '14px',
+                              background: verifiedJobs.has(job.id)
+                                ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                                : 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                              border: 'none',
+                              borderRadius: '10px',
+                              color: '#fff',
+                              fontSize: '15px',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                              minHeight: '48px'
+                            }}
+                          >
+                            {verifiedJobs.has(job.id) ? (
+                              <><CheckCircle size={18} /> Verified — Job Complete</>
+                            ) : (
+                              <><Shield size={18} /> Complete Job (Verify First)</>
+                            )}
+                          </button>
+                        )}
+
+                        {/* Show Invoice & Collect Payment */}
                         <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                          <button
+                            onClick={() => fetchInvoice(job)}
+                            style={{
+                              flex: 1,
+                              padding: '12px',
+                              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                              border: 'none',
+                              borderRadius: '10px',
+                              color: '#fff',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              minHeight: '44px'
+                            }}
+                          >
+                            <FileText size={16} />
+                            Show Invoice
+                          </button>
                           <button
                             onClick={() => { setPaymentJob(job); setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' }); setPaymentSuccess(false) }}
                             style={{
@@ -1365,39 +1533,17 @@ export default function FieldScout() {
                             <DollarSign size={16} />
                             Collect Payment
                           </button>
-                          <button
-                            onClick={() => shareReviewLink(job)}
-                            style={{
-                              flex: 1,
-                              padding: '12px',
-                              background: reviewSent.has(job.id)
-                                ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                                : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                              border: 'none',
-                              borderRadius: '10px',
-                              color: '#fff',
-                              fontSize: '14px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
-                              minHeight: '44px'
-                            }}
-                          >
-                            <Star size={16} />
-                            {reviewSent.has(job.id) ? 'Sent!' : 'Get Review'}
-                          </button>
                         </div>
 
-                        {/* Verify with Victor */}
+                        {/* Get Review */}
                         <button
-                          onClick={() => setVictorModal({ type: 'completion', jobId: job.id })}
+                          onClick={() => shareReviewLink(job)}
                           style={{
                             width: '100%',
                             padding: '12px',
-                            background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                            background: reviewSent.has(job.id)
+                              ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                              : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
                             border: 'none',
                             borderRadius: '10px',
                             color: '#fff',
@@ -1412,8 +1558,8 @@ export default function FieldScout() {
                             marginTop: '4px'
                           }}
                         >
-                          <Shield size={16} />
-                          Verify with Victor
+                          <Star size={16} />
+                          {reviewSent.has(job.id) ? 'Review Sent!' : 'Ask for a Review'}
                         </button>
                       </div>
                     </div>
@@ -1808,8 +1954,29 @@ export default function FieldScout() {
               embeddedMode
               verificationType={victorModal.type}
               preselectedJobId={victorModal.jobId}
-              onComplete={(reportId) => {
+              onComplete={async (reportId) => {
+                const jobId = victorModal.jobId
+                const shouldMarkComplete = victorModal.markComplete
                 setVictorModal(null)
+                // Check the report score
+                const { data: report } = await supabase
+                  .from('verification_reports')
+                  .select('score, grade')
+                  .eq('id', reportId)
+                  .single()
+                if (report?.score >= 60 && jobId) {
+                  setVerifiedJobs(prev => new Set(prev).add(jobId))
+                  setClockOutBlocked(false)
+                  if (shouldMarkComplete) {
+                    await supabase.from('jobs')
+                      .update({ status: 'Completed', updated_at: new Date().toISOString() })
+                      .eq('id', jobId).eq('company_id', companyId)
+                    toast.success('Job verified and marked complete!')
+                    // Refresh store
+                    const { fetchJobs } = useStore.getState()
+                    if (fetchJobs) fetchJobs(companyId)
+                  }
+                }
                 navigate(`/agents/victor/report/${reportId}`)
               }}
               onClose={() => setVictorModal(null)}
@@ -2143,6 +2310,169 @@ export default function FieldScout() {
           </div>
         </div>
       )}
+
+      {/* ===== INVOICE PRESENTATION MODAL ===== */}
+      {invoiceJob && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
+        }}>
+          <div
+            onClick={() => { setInvoiceJob(null); setInvoiceData(null) }}
+            style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+          />
+          <div style={{
+            position: 'relative', width: '100%', maxWidth: '500px',
+            backgroundColor: '#fff', borderRadius: '20px 20px 0 0',
+            padding: '24px 20px', maxHeight: '90vh', overflowY: 'auto',
+            animation: 'slideUp 0.3s ease'
+          }}>
+            <div style={{ width: '40px', height: '4px', borderRadius: '2px', backgroundColor: '#ddd', margin: '0 auto 16px' }} />
+
+            {invoiceLoading ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: theme.textMuted }}>
+                <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
+                <div style={{ fontSize: '15px' }}>Loading invoice...</div>
+              </div>
+            ) : invoiceData ? (
+              <div>
+                {/* Customer-facing invoice header */}
+                <div style={{ textAlign: 'center', marginBottom: '20px', paddingBottom: '16px', borderBottom: '2px solid #e5e7eb' }}>
+                  <div style={{ fontSize: '22px', fontWeight: '800', color: '#1f2937', marginBottom: '4px' }}>
+                    {company?.company_name || 'Invoice'}
+                  </div>
+                  {invoiceData.invoice && (
+                    <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                      Invoice #{invoiceData.invoice.invoice_number || invoiceData.invoice.id}
+                    </div>
+                  )}
+                  {!invoiceData.invoice && invoiceData.fromJob && (
+                    <div style={{ fontSize: '13px', color: '#6b7280' }}>Job Summary</div>
+                  )}
+                  <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>
+                    {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  </div>
+                </div>
+
+                {/* Customer info */}
+                <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '10px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                    {invoiceJob.customer?.name || 'Customer'}
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                    {invoiceJob.job_title || invoiceJob.job_id}
+                  </div>
+                </div>
+
+                {/* Line items */}
+                {invoiceData.lines.length > 0 && (
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', marginBottom: '8px' }}>
+                      Items
+                    </div>
+                    {invoiceData.lines.map((line, idx) => (
+                      <div key={line.id || idx} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                        padding: '10px 0', borderBottom: idx < invoiceData.lines.length - 1 ? '1px solid #f3f4f6' : 'none'
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '14px', fontWeight: '500', color: '#374151' }}>
+                            {line.item?.name || line.description || line.item_name || 'Item'}
+                          </div>
+                          {line.description && line.item?.name && (
+                            <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>{line.description}</div>
+                          )}
+                          {(line.quantity && line.quantity > 1) && (
+                            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                              Qty: {line.quantity} x ${parseFloat(line.unit_price || line.price || 0).toFixed(2)}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#374151', flexShrink: 0, marginLeft: '16px' }}>
+                          ${parseFloat(line.total || line.amount || (line.quantity || 1) * (line.unit_price || line.price || 0)).toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Total */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '16px', backgroundColor: '#f0fdf4', borderRadius: '12px',
+                  marginBottom: '20px'
+                }}>
+                  <span style={{ fontSize: '18px', fontWeight: '700', color: '#166534' }}>Total</span>
+                  <span style={{ fontSize: '24px', fontWeight: '800', color: '#166534' }}>
+                    ${parseFloat(
+                      invoiceData.invoice?.total_amount ||
+                      invoiceData.invoice?.amount ||
+                      invoiceJob.job_total ||
+                      invoiceData.lines.reduce((sum, l) => sum + parseFloat(l.total || l.amount || (l.quantity || 1) * (l.unit_price || l.price || 0)), 0)
+                    ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => {
+                      setInvoiceJob(null); setInvoiceData(null)
+                      setPaymentJob(invoiceJob)
+                      setPaymentForm({
+                        amount: String(invoiceData.invoice?.total_amount || invoiceData.invoice?.amount || invoiceJob.job_total || invoiceData.lines.reduce((sum, l) => sum + parseFloat(l.total || l.amount || (l.quantity || 1) * (l.unit_price || l.price || 0)), 0)),
+                        method: 'Card', reference: '', notes: ''
+                      })
+                      setPaymentSuccess(false)
+                    }}
+                    style={{
+                      flex: 1, padding: '16px',
+                      background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                      border: 'none', borderRadius: '12px', color: '#fff',
+                      fontSize: '16px', fontWeight: '700', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                      minHeight: '52px'
+                    }}
+                  >
+                    <CreditCard size={18} /> Pay Now
+                  </button>
+                  <button
+                    onClick={() => { setInvoiceJob(null); setInvoiceData(null) }}
+                    style={{
+                      padding: '16px 20px',
+                      backgroundColor: '#f3f4f6', border: 'none', borderRadius: '12px',
+                      color: '#6b7280', fontSize: '14px', fontWeight: '500', cursor: 'pointer',
+                      minHeight: '52px'
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: theme.textMuted }}>
+                <FileText size={32} style={{ marginBottom: '12px', opacity: 0.5 }} />
+                <div style={{ fontSize: '15px', fontWeight: '500' }}>No invoice found for this job</div>
+                <div style={{ fontSize: '13px', marginTop: '4px' }}>Create an invoice from the job detail page first.</div>
+                <button
+                  onClick={() => { setInvoiceJob(null); setInvoiceData(null) }}
+                  style={{
+                    marginTop: '16px', padding: '12px 24px',
+                    backgroundColor: theme.accentBg, border: `1px solid ${theme.accent}`,
+                    borderRadius: '10px', color: theme.accent, fontSize: '14px',
+                    fontWeight: '500', cursor: 'pointer'
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== ARNIE FLOATING PANEL ===== */}
+      <ArnieFloatingPanel />
 
       {/* Animations */}
       <style>{`
