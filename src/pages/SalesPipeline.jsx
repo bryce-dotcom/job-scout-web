@@ -335,7 +335,7 @@ export default function SalesPipeline() {
       try {
         const { data: jobsData } = await supabase
           .from('jobs')
-          .select('id, lead_id, job_id, status, job_total, assigned_team, invoice_status')
+          .select('id, lead_id, job_id, status, job_total, utility_incentive, assigned_team, invoice_status')
           .in('lead_id', deliveryLeadIds)
         attachJobs(normalized, jobsData)
       } catch (e) { /* non-critical */ }
@@ -362,7 +362,7 @@ export default function SalesPipeline() {
 
     // Fetch standalone jobs for delivery stages
     try {
-      const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)'
+      const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, utility_incentive, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)'
       const rangeCutoff = getDateCutoff(dateRange)
 
       // Determine which statuses are "terminal" (completed-like) vs active
@@ -408,7 +408,8 @@ export default function SalesPipeline() {
             business_name: null,
             business_unit: job.business_unit,
             status: stage,
-            quote_amount: job.job_total,
+            quote_amount: (parseFloat(job.job_total) || 0) + (parseFloat(job.utility_incentive) || 0),
+            created_at: job.start_date,
             lead_owner: null,
             lead_owner_id: null,
             salesperson_id: null,
@@ -468,11 +469,15 @@ export default function SalesPipeline() {
     return filteredPipelineLeads.filter(l => l.status === stageId)
   }
 
-  // Get effective dollar amount for a lead (prefer quote total > job total > lead quote_amount)
+  // Get effective dollar amount for a lead (project total = job_total + utility_incentive)
   const getLeadAmount = (l) => {
+    const job = l.jobs?.[0]
+    if (job) {
+      const jobTotal = parseFloat(job.job_total) || 0
+      const incentive = parseFloat(job.utility_incentive) || 0
+      if (jobTotal > 0 || incentive > 0) return jobTotal + incentive
+    }
     if (l._quoteTotal > 0) return l._quoteTotal
-    const jobAmount = parseFloat(l.jobs?.[0]?.job_total) || 0
-    if (jobAmount > 0) return jobAmount
     return parseFloat(l.quote_amount) || 0
   }
 
@@ -733,8 +738,8 @@ export default function SalesPipeline() {
     const salesWonLeads = leads.filter(l => {
       // Must be in a won or delivery stage
       if (!wonOrDeliveryStatuses.has(l.status)) return false
-      // Use converted_at if available, fall back to updated_at
-      const wonDate = l.converted_at || l.updated_at
+      // Use converted_at if available, fall back to updated_at, then job start_date
+      const wonDate = l.converted_at || l.updated_at || l.jobs?.[0]?.start_date || l.created_at
       if (!wonDate) return false
       if (rangeCutoff && wonDate < rangeCutoff) return false
       return true
