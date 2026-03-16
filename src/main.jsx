@@ -36,6 +36,17 @@ function ErrorFallback({ error }) {
   )
 }
 
+// Force service worker update check on every page load
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => r.update())
+  })
+  // Listen for new SW and reload when it takes over
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload()
+  })
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <Sentry.ErrorBoundary fallback={ErrorFallback}>

@@ -917,20 +917,23 @@ export default function Layout() {
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
-                onClick={() => {
-                  if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.getRegistrations().then(regs => {
-                      regs.forEach(r => r.update())
-                    })
+                onClick={async () => {
+                  try {
+                    // Unregister all service workers first
+                    if ('serviceWorker' in navigator) {
+                      const regs = await navigator.serviceWorker.getRegistrations()
+                      await Promise.all(regs.map(r => r.unregister()))
+                    }
+                    // Delete all caches
+                    if ('caches' in window) {
+                      const names = await caches.keys()
+                      await Promise.all(names.map(name => caches.delete(name)))
+                    }
+                  } catch (e) {
+                    console.warn('Cache clear error:', e)
                   }
-                  // Clear caches and reload
-                  if ('caches' in window) {
-                    caches.keys().then(names => {
-                      names.forEach(name => caches.delete(name))
-                    }).then(() => window.location.reload())
-                  } else {
-                    window.location.reload()
-                  }
+                  // Force reload from network
+                  window.location.reload()
                 }}
                 title="Refresh app and check for updates"
                 style={{
