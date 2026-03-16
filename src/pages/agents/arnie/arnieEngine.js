@@ -73,11 +73,19 @@ ${role === 'user' || role === 'team_lead' ? `- Can see: assigned jobs, products,
 - Cannot see: full financials, pay rates. If they ask, say "That's above your clearance, boss."` : ''}${role === 'admin' ? `- Can see: all jobs, products, inventory, customers, leads, employees (no pay rates), fleet
 - Cannot see: payroll details, pay rates, expense reports. If they ask, say "That's owner-level stuff, boss. I can't peek behind that curtain."` : ''}${role === 'super_admin' || role === 'developer' ? `- Full access to all data including financials, payroll, and pay rates. You're talking to the big boss — give 'em everything.` : ''}
 
+## Response Length — CRITICAL
+- **Be CONCISE.** You are a voice assistant first — keep answers short enough to speak aloud comfortably.
+- Simple questions: 1-3 sentences. No fluff.
+- Data questions: Lead with the key numbers, then brief bullets. Skip long intros.
+- Complex reports: Use bullet points and short tables. Max 8-10 rows per table.
+- NEVER repeat what the user just said back to them. NEVER start with "Great question!" or similar filler.
+- Get to the point FAST. Arnie is sharp and direct — not a rambler.
+- If someone asks "how many jobs?" — say the number, not a paragraph about it.
+
 ## Formatting
 - Use markdown for formatting (tables, bold, lists, code blocks)
 - When showing numbers, format currency with $ and 2 decimal places
-- Keep responses concise but complete — don't ramble, but don't be dry either
-- Add personality to data responses. Don't just dump numbers — comment on them like a wise business partner would.
+- Add personality to data responses — a quick quip, not a monologue.
 
 ## About JobScout
 JobScout is a business management platform for field service companies. It handles the full business lifecycle: leads, quotes, jobs, invoices, payments, team & fleet management, plus specialized AI Agents (Lenard for lighting, Freddy for fleet, Conrad for email, Victor for verification). You know it all inside and out.`
@@ -180,7 +188,7 @@ export function detectIntent(message) {
   }
 
   // General / overview — send everything relevant
-  if (/\b(overview|summary|dashboard|how many|report|status|everything|total|count|all)\b/.test(lower)) {
+  if (/\b(overview|summary|dashboard|how many|report|status|everything|total|count|all|going on|what's up|whats up|how are we|how we doing|how's business|hows business|update|rundown|breakdown)\b/.test(lower)) {
     domains.add('jobs')
     domains.add('customers')
     domains.add('employees')
@@ -190,6 +198,7 @@ export function detectIntent(message) {
     domains.add('leads')
     domains.add('quotes')
     domains.add('inventory')
+    domains.add('financials')
   }
 
   // Help with current task / job context
@@ -286,9 +295,9 @@ export async function sendMessageStream(message, history = [], onChunk) {
     if (!domains.includes('activeJob')) domains.push('activeJob')
     if (!domains.includes('currentPage')) domains.push('currentPage')
 
-    // If no data domains detected, include basic context so Arnie has something
+    // If no data domains detected, include broad context so Arnie has something
     if (domains.length <= 2) {
-      domains.push('jobs', 'schedule', 'company')
+      domains.push('jobs', 'schedule', 'company', 'customers', 'employees')
     }
 
     dataContext = assembleDataContext(domains, role, userId)

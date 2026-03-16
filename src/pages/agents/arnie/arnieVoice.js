@@ -56,6 +56,7 @@ let currentAudio = null
 let currentUtterance = null
 let audioUnlocked = false
 let edgeTTSBroken = false // sticky: if Edge TTS fails repeatedly, stop trying
+let currentSpeakId = 0 // used to cancel chunked playback
 
 export function unlockAudio() {
   if (audioUnlocked) return
@@ -74,6 +75,7 @@ export function unlockAudio() {
 }
 
 export function stopSpeaking() {
+  currentSpeakId = -1 // cancel any chunked playback in progress
   if (currentAudio) {
     currentAudio.pause()
     currentAudio.currentTime = 0
@@ -165,26 +167,32 @@ function edgeTTS(text, msVoice) {
   })
 }
 
-async function speakEdge(text, voiceDef, onStart, onEnd) {
-  stopSpeaking()
+// Speaks a single chunk and returns a promise that resolves when audio finishes playing
+// Returns { ok: true } on success or { ok: false } on failure
+async function speakEdgeChunk(text, voiceDef, onStart) {
   try {
     const blob = await edgeTTS(text, voiceDef.msVoice)
     const audioUrl = URL.createObjectURL(blob)
     const audio = new Audio(audioUrl)
     audio._blobUrl = audioUrl
 
-    let ended = false
-    const callOnEnd = () => {
-      if (!ended) { ended = true; URL.revokeObjectURL(audioUrl); currentAudio = null; onEnd?.() }
-    }
-    audio.onended = callOnEnd
-    audio.onerror = () => { console.error('[Arnie Voice] Edge playback error'); callOnEnd() }
+    return new Promise((resolve) => {
+      let ended = false
+      const finish = () => {
+        if (!ended) { ended = true; URL.revokeObjectURL(audioUrl); currentAudio = null; resolve({ ok: true }) }
+      }
+      audio.onended = finish
+      audio.onerror = () => { console.error('[Arnie Voice] Edge playback error'); finish() }
 
-    await audio.play()
-    currentAudio = audio
-    onStart?.()
-    edgeFailCount = 0
-    return true
+      audio.play().then(() => {
+        currentAudio = audio
+        onStart?.()
+        edgeFailCount = 0
+      }).catch(() => {
+        ended = true
+        resolve({ ok: false })
+      })
+    })
   } catch (err) {
     console.error('[Arnie Voice] Edge TTS failed:', err.message)
     edgeFailCount++
@@ -192,8 +200,19 @@ async function speakEdge(text, voiceDef, onStart, onEnd) {
       edgeTTSBroken = true
       console.warn('[Arnie Voice] Edge TTS disabled after 3 failures')
     }
-    return false // NO onEnd — caller handles fallback
+    return { ok: false }
   }
+}
+
+// Legacy wrapper for single-shot speak (used by browser fallback path)
+async function speakEdge(text, voiceDef, onStart, onEnd) {
+  stopSpeaking()
+  const result = await speakEdgeChunk(text, voiceDef, onStart)
+  if (result.ok) {
+    onEnd?.()
+    return true
+  }
+  return false
 }
 
 // ── Browser Speech Synthesis (fallback) ─────────────────────────────────
@@ -326,23 +345,105 @@ function speakChunked(text, voice, onStart, onEnd) {
 
 let speakCallId = 0
 
+// Split text into speakable chunks (sentences) for faster first-word playback
+function splitIntoChunks(text) {
+  // Split on sentence boundaries
+  const raw = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text]
+  // Merge tiny chunks together (aim for 50-200 char chunks)
+  const chunks = []
+  let cur = ''
+  for (const r of raw) {
+    if ((cur + r).length > 200 && cur) {
+      chunks.push(cur.trim())
+      cur = r
+    } else {
+      cur += r
+    }
+  }
+  if (cur.trim()) chunks.push(cur.trim())
+  return chunks.filter(c => c.length > 0)
+}
+
 export async function speak(text, voiceId, onStart, onEnd) {
   const callId = ++speakCallId
+  currentSpeakId = callId
   const clean = stripMarkdown(text)
   if (!clean) { onEnd?.(); return }
   const truncated = clean.length > 3000 ? clean.slice(0, 3000) + '...' : clean
   const voiceDef = ARNIE_VOICES.find(v => v.id === voiceId) || ARNIE_VOICES[0]
 
-  console.log(`[Arnie Voice] speak #${callId} engine=${voiceDef.engine} voice=${voiceDef.name}`)
+  console.log(`[Arnie Voice] speak #${callId} engine=${voiceDef.engine} voice=${voiceDef.name} len=${truncated.length}`)
 
-  // Try Edge TTS (neural voices via WebSocket)
+  // For Edge TTS: split into chunks, start playing first immediately
+  // While first chunk plays, pre-download next chunk for seamless handoff
   if (voiceDef.engine === 'edge' && !edgeTTSBroken) {
-    const ok = await speakEdge(truncated, voiceDef, onStart, onEnd)
-    if (ok) {
-      console.log(`[Arnie Voice] speak #${callId} → Edge TTS playing`)
+    stopSpeaking()
+    currentSpeakId = callId // restore after stopSpeaking clears it
+    const chunks = splitIntoChunks(truncated)
+    let started = false
+    let failed = false
+
+    // Pre-fetch next chunk's audio while current plays
+    let prefetchPromise = null
+
+    for (let i = 0; i < chunks.length; i++) {
+      if (currentSpeakId !== callId) return // cancelled
+
+      // Use prefetched blob if available, otherwise fetch now
+      let blob
+      if (prefetchPromise) {
+        blob = await prefetchPromise
+        prefetchPromise = null
+      } else {
+        try {
+          blob = await edgeTTS(chunks[i], voiceDef.msVoice)
+        } catch {
+          failed = true
+          break
+        }
+      }
+
+      if (!blob) { failed = true; break }
+
+      // Start prefetching next chunk while this one plays
+      if (i + 1 < chunks.length) {
+        prefetchPromise = edgeTTS(chunks[i + 1], voiceDef.msVoice).catch(() => null)
+      }
+
+      // Play this chunk
+      const audioUrl = URL.createObjectURL(blob)
+      const audio = new Audio(audioUrl)
+      audio._blobUrl = audioUrl
+
+      const playOk = await new Promise(resolve => {
+        let ended = false
+        const finish = () => {
+          if (!ended) { ended = true; URL.revokeObjectURL(audioUrl); currentAudio = null; resolve(true) }
+        }
+        audio.onended = finish
+        audio.onerror = () => { console.error('[Arnie Voice] Edge chunk error'); finish() }
+
+        audio.play().then(() => {
+          currentAudio = audio
+          edgeFailCount = 0
+          if (!started) { started = true; onStart?.() }
+        }).catch(() => { ended = true; resolve(false) })
+      })
+
+      if (!playOk || currentSpeakId !== callId) { failed = !playOk; break }
+    }
+
+    if (!failed && started) {
+      console.log(`[Arnie Voice] speak #${callId} → Edge TTS complete (${chunks.length} chunks)`)
+      onEnd?.()
       return
     }
-    console.warn(`[Arnie Voice] speak #${callId} → Edge TTS failed, using browser`)
+
+    if (failed) {
+      edgeFailCount++
+      if (edgeFailCount >= 3) edgeTTSBroken = true
+      console.warn(`[Arnie Voice] speak #${callId} → Edge TTS failed, using browser`)
+    }
   }
 
   // Browser fallback
