@@ -214,17 +214,31 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
     content: msg.content,
   }))
 
+  const fullSystemPrompt = systemPrompt + contextMessage
+
   const { data, error } = await supabase.functions.invoke('arnie-chat', {
     body: {
       messages,
-      systemPrompt: systemPrompt + contextMessage,
+      systemPrompt: fullSystemPrompt,
       sessionId: null,
     },
   })
 
   if (error) {
-    console.error('[Arnie Engine] Edge function error:', error)
-    throw new Error(error.message || 'Failed to call arnie-chat')
+    // supabase.functions.invoke returns error for non-2xx — try to parse the context
+    let detail = error.message || 'Failed to call arnie-chat'
+    // The error.context may contain the response body
+    if (error.context?.body) {
+      try {
+        const reader = error.context.body.getReader()
+        const { value } = await reader.read()
+        const text = new TextDecoder().decode(value)
+        const parsed = JSON.parse(text)
+        detail = parsed.error || parsed.details || text
+      } catch {}
+    }
+    console.error('[Arnie Engine] Edge function error:', detail)
+    throw new Error(detail)
   }
 
   if (data?.error) {

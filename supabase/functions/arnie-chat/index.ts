@@ -31,6 +31,30 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Claude requires alternating user/assistant roles, starting with user.
+    // Merge consecutive same-role messages and ensure it starts with user.
+    const cleaned: { role: string; content: string }[] = []
+    for (const msg of messages) {
+      const role = msg.role === 'user' ? 'user' : 'assistant'
+      const content = (msg.content || '').trim()
+      if (!content) continue
+      if (cleaned.length > 0 && cleaned[cleaned.length - 1].role === role) {
+        cleaned[cleaned.length - 1].content += '\n\n' + content
+      } else {
+        cleaned.push({ role, content })
+      }
+    }
+    // Must start with user
+    if (cleaned.length > 0 && cleaned[0].role !== 'user') {
+      cleaned.shift()
+    }
+    if (cleaned.length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'No valid messages after sanitization' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     const response = await fetch(ANTHROPIC_URL, {
       method: 'POST',
       headers: {
@@ -42,7 +66,7 @@ Deno.serve(async (req) => {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
         system: systemPrompt || '',
-        messages,
+        messages: cleaned,
       }),
     })
 
