@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
 import { isManager as checkManager } from '../lib/accessControl'
 import {
-  ChevronDown, ChevronRight, ChevronLeft, X, Calendar, Clock, User, MapPin,
+  ChevronDown, ChevronRight, ChevronLeft, X, Calendar, Clock, User, MapPin, Map,
   RefreshCw, Filter, Search, Settings, Plus, Briefcase, CheckCircle2,
   AlertCircle, PauseCircle, PlayCircle, ClipboardList, CalendarPlus, Trash2,
   LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2,
@@ -161,6 +161,14 @@ export default function PMJobSetter() {
   const [draggedSection, setDraggedSection] = useState(null)
   const [dragOverSlot, setDragOverSlot] = useState(null)
   const [dragOverStatus, setDragOverStatus] = useState(null)
+
+  // Job Map state
+  const [showJobMap, setShowJobMap] = useState(false)
+  const [jobMapLoaded, setJobMapLoaded] = useState(false)
+  const [jobMapCoords, setJobMapCoords] = useState({})
+  const jobMapRef = useRef(null)
+  const jobMapInstanceRef = useRef(null)
+  const geocodeCacheRef = useRef({})
 
   // Schedule modal (opened when dropping a job onto the calendar)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
@@ -493,6 +501,99 @@ export default function PMJobSetter() {
     }
     return filtered
   }
+
+  // Memoized filtered jobs list (for map + route suggestions)
+  const filteredJobList = useMemo(() => getFilteredJobs(), [jobs, jobStatuses, selectedCalendar, jobCalendars, filterPM, filterBusinessUnit, searchTerm, user, isAdmin])
+
+  // Load Leaflet CSS & JS when map is toggled on
+  useEffect(() => {
+    if (!showJobMap) return
+    if (document.getElementById('leaflet-css')) { setJobMapLoaded(true); return }
+    const link = document.createElement('link')
+    link.id = 'leaflet-css'; link.rel = 'stylesheet'
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    document.head.appendChild(link)
+    const script = document.createElement('script')
+    script.id = 'leaflet-js'; script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    script.onload = () => setJobMapLoaded(true)
+    document.head.appendChild(script)
+  }, [showJobMap])
+
+  // Geocode addresses for map pins
+  const geocodeAddress = useCallback(async (address) => {
+    if (!address) return null
+    if (geocodeCacheRef.current[address]) return geocodeCacheRef.current[address]
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`)
+      const data = await res.json()
+      if (data?.[0]) {
+        const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
+        geocodeCacheRef.current[address] = coords
+        return coords
+      }
+    } catch { /* ignore */ }
+    return null
+  }, [])
+
+  const parseGpsLocation = useCallback((gpsStr) => {
+    if (!gpsStr) return null
+    const parts = gpsStr.split(',').map(s => parseFloat(s.trim()))
+    return (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) ? { lat: parts[0], lng: parts[1] } : null
+  }, [])
+
+  useEffect(() => {
+    if (!showJobMap) return
+    let cancelled = false
+    const geocodeAll = async () => {
+      const newCoords = {}
+      for (const job of filteredJobList) {
+        if (cancelled) break
+        const gps = parseGpsLocation(job.gps_location)
+        if (gps) { newCoords[job.id] = gps; continue }
+        const addr = job.job_address || job.customer?.address
+        if (!addr) continue
+        if (geocodeCacheRef.current[addr]) { newCoords[job.id] = geocodeCacheRef.current[addr]; continue }
+        await new Promise(r => setTimeout(r, 1100))
+        if (cancelled) break
+        const coords = await geocodeAddress(addr)
+        if (coords) newCoords[job.id] = coords
+      }
+      if (!cancelled) setJobMapCoords(prev => ({ ...prev, ...newCoords }))
+    }
+    geocodeAll()
+    return () => { cancelled = true }
+  }, [showJobMap, filteredJobList.length])
+
+  // Initialize / update Leaflet map
+  useEffect(() => {
+    if (!showJobMap || !jobMapLoaded || !jobMapRef.current || typeof window.L === 'undefined') return
+    const coordEntries = Object.entries(jobMapCoords)
+    if (coordEntries.length === 0) return
+
+    if (jobMapInstanceRef.current) { jobMapInstanceRef.current.remove(); jobMapInstanceRef.current = null }
+
+    const L = window.L
+    const map = L.map(jobMapRef.current, { zoomControl: false, attributionControl: false })
+    L.control.zoom({ position: 'bottomright' }).addTo(map)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map)
+    jobMapInstanceRef.current = map
+
+    const bounds = []
+    coordEntries.forEach(([jobId, coords]) => {
+      const job = filteredJobList.find(j => j.id === parseInt(jobId))
+      if (!job) return
+      const status = jobStatuses.find(s => s.id === job.status || s.name === job.status)
+      const color = status?.color || '#5a6349'
+      const marker = L.circleMarker([coords.lat, coords.lng], { radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9 }).addTo(map)
+      marker.bindTooltip(`<b>${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`, { direction: 'top', offset: [0, -10] })
+      marker.on('click', () => setDetailJob(job))
+      bounds.push([coords.lat, coords.lng])
+    })
+
+    if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 })
+
+    return () => { if (jobMapInstanceRef.current) { jobMapInstanceRef.current.remove(); jobMapInstanceRef.current = null } }
+  }, [showJobMap, jobMapLoaded, jobMapCoords, filteredJobList, jobStatuses])
 
   // Get jobs by status, sorted by start_date (soonest first, unscheduled last)
   // Jobs with start_date today+ that aren't in a terminal status get placed in "Scheduled"
@@ -2026,6 +2127,28 @@ export default function PMJobSetter() {
           )}
 
           <button
+            onClick={() => setShowJobMap(prev => !prev)}
+            title="Toggle job map"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '8px 12px',
+              minHeight: '44px',
+              backgroundColor: showJobMap ? theme.accent : 'transparent',
+              border: `1px solid ${showJobMap ? theme.accent : theme.border}`,
+              color: showJobMap ? '#fff' : theme.textSecondary,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '13px'
+            }}
+          >
+            <Map size={16} />
+            {!isMobile && 'Map'}
+          </button>
+
+          <button
             onClick={fetchData}
             style={{
               display: 'flex',
@@ -2069,17 +2192,14 @@ export default function PMJobSetter() {
 
       {/* Main Content */}
       {viewMode === 'kanban' ? (
-      /* Kanban + Calendar Split View */
-      <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden', flexDirection: isMobile ? 'column' : 'row' }}>
-        {/* Left: Kanban Jobs */}
+      /* Kanban — FULL WIDTH, calendar below */
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '16px', overflow: 'auto' }}>
+        {/* Kanban Jobs — full width */}
         <div style={{
-          width: isMobile ? '100%' : '55%',
-          minWidth: isMobile ? undefined : '400px',
-          flexShrink: 0,
+          width: '100%',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
-          maxHeight: isMobile ? '50vh' : 'none'
+          overflow: 'hidden'
         }}>
           {/* Stats Row */}
           {jobStatuses.length > 0 && (
@@ -2399,9 +2519,169 @@ export default function PMJobSetter() {
           )}
         </div>
 
-        {/* Right: Calendar */}
+        {/* Job Map — interactive map with all job locations */}
+        {showJobMap && (
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '12px 16px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MapPin size={16} color={theme.accent} />
+                <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Job Map</span>
+                <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                  {Object.keys(jobMapCoords).length} of {filteredJobList.filter(j => j.job_address || j.customer?.address || j.gps_location).length} located
+                </span>
+              </div>
+              <button onClick={() => setShowJobMap(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}>
+                <X size={16} />
+              </button>
+            </div>
+            <div ref={jobMapRef} style={{ height: isMobile ? '300px' : '400px', width: '100%', backgroundColor: theme.bg }}>
+              {!jobMapLoaded && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: theme.textMuted, fontSize: '13px' }}>
+                  Loading map...
+                </div>
+              )}
+            </div>
+            {/* Map legend */}
+            <div style={{ padding: '8px 16px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {jobStatuses.map(status => {
+                const count = Object.entries(jobMapCoords).filter(([id]) => {
+                  const job = filteredJobList.find(j => j.id === parseInt(id))
+                  return job?.status === status.name
+                }).length
+                if (count === 0) return null
+                return (
+                  <div key={status.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: status.color }} />
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>{status.name} ({count})</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Route Suggestions — groups unscheduled jobs by area */}
+        {(() => {
+          const needsScheduling = filteredJobList.filter(j => {
+            const status = (j.status || '').toLowerCase()
+            return (status === 'not started' || status === 'scheduled') && (j.job_address || j.customer?.address)
+          })
+          if (needsScheduling.length < 2) return null
+
+          const getArea = (job) => {
+            const addr = job.job_address || job.customer?.address || ''
+            const parts = addr.split(',').map(s => s.trim())
+            if (parts.length >= 2) {
+              const cityPart = parts.length >= 3 ? parts[parts.length - 2] : parts[1]
+              return cityPart.replace(/\d{5}(-\d{4})?/, '').replace(/\b[A-Z]{2}\b/, '').trim() || 'Unknown Area'
+            }
+            return addr.slice(0, 20) || 'No Address'
+          }
+
+          const areaGroups = {}
+          needsScheduling.forEach(job => {
+            const area = getArea(job)
+            if (!areaGroups[area]) areaGroups[area] = []
+            areaGroups[area].push(job)
+          })
+
+          const routeAreas = Object.entries(areaGroups)
+            .filter(([, jobs]) => jobs.length >= 2)
+            .sort((a, b) => b[1].length - a[1].length)
+
+          if (routeAreas.length === 0) return null
+
+          return (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                padding: '12px 16px',
+                borderBottom: `1px solid ${theme.border}`,
+                display: 'flex', alignItems: 'center', gap: '8px'
+              }}>
+                <MapPin size={16} color={theme.accent} />
+                <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Route Suggestions</span>
+                <span style={{ fontSize: '12px', color: theme.textMuted }}>{needsScheduling.length} jobs need scheduling</span>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {routeAreas.map(([area, areaJobs]) => (
+                  <div key={area} style={{
+                    padding: '12px', backgroundColor: theme.bg, borderRadius: '10px',
+                    border: `1px solid ${theme.border}`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <MapPin size={13} color={theme.accent} />
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{area}</span>
+                        <span style={{ padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', backgroundColor: theme.accentBg, color: theme.accent }}>
+                          {areaJobs.length} jobs
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const addresses = areaJobs.map(j => j.job_address || j.customer?.address).filter(Boolean)
+                          if (addresses.length > 0) {
+                            const origin = encodeURIComponent(addresses[0])
+                            const dest = encodeURIComponent(addresses[addresses.length - 1])
+                            const waypoints = addresses.slice(1, -1).map(a => encodeURIComponent(a)).join('|')
+                            window.open(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}${waypoints ? `&waypoints=${waypoints}` : ''}`, '_blank')
+                          }
+                        }}
+                        style={{
+                          padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
+                          backgroundColor: theme.accent, color: '#fff', border: 'none', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: '4px', minHeight: '30px'
+                        }}
+                      >
+                        <MapPin size={11} /> View Route
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {areaJobs.map((job, idx) => (
+                        <div key={job.id} onClick={() => setDetailJob(job)} style={{
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '6px 8px', borderRadius: '6px', cursor: 'pointer',
+                          backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`
+                        }}>
+                          <span style={{
+                            width: '20px', height: '20px', borderRadius: '50%',
+                            backgroundColor: theme.accentBg, color: theme.accent,
+                            fontSize: '11px', fontWeight: '700',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                          }}>{idx + 1}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: '12px', fontWeight: '500', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {job.job_title || 'Untitled'} — {job.customer?.name || 'No customer'}
+                            </p>
+                            <p style={{ fontSize: '10px', color: theme.textMuted, margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {job.job_address || job.customer?.address || 'No address'}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Calendar — BELOW the kanban */}
         <div style={{
-          flex: 1,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
