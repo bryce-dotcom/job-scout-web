@@ -510,6 +510,7 @@ export default function EstimateDetail() {
           status: 'Scheduled',
           start_date: estimate.service_date || new Date().toISOString(),
           total_amount: subtotal - discount,
+          utility_incentive: parseFloat(estimate.utility_incentive) || 0,
           details: estimate.summary || null,
           updated_at: new Date().toISOString()
         }])

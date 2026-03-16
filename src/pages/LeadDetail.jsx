@@ -1300,6 +1300,12 @@ export default function LeadDetail() {
                           <> • ${(audit.est_project_cost || 0).toLocaleString()} estimated</>
                         )}
                       </div>
+                      {parseFloat(audit.estimated_rebate) > 0 && (
+                        <div style={{ fontSize: '13px', color: '#4a7c59', fontWeight: '500', marginTop: '2px' }}>
+                          Utility Incentive: ${parseFloat(audit.estimated_rebate).toLocaleString()}
+                          {audit.net_cost > 0 && <> • Net: ${parseFloat(audit.net_cost).toLocaleString()}</>}
+                        </div>
+                      )}
                       <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
                         Created {new Date(audit.created_at).toLocaleDateString()}
                       </div>
@@ -1441,6 +1447,12 @@ export default function LeadDetail() {
                             {quote.status}
                           </span>
                         </div>
+                        {parseFloat(quote.utility_incentive) > 0 && (
+                          <div style={{ fontSize: '13px', color: '#4a7c59', fontWeight: '500', marginTop: '4px' }}>
+                            Utility Incentive: ${parseFloat(quote.utility_incentive).toLocaleString()}
+                            {' '}• Out of Pocket: ${((quote.quote_amount || 0) - parseFloat(quote.utility_incentive)).toLocaleString()}
+                          </div>
+                        )}
                         <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
                           {quote.audit_id ? 'Generated from audit' : 'Manual quote'}
                           {quote.quote_lines?.length > 0 && ` • ${quote.quote_lines.length} line items`}

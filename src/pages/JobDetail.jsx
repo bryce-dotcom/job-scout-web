@@ -145,6 +145,7 @@ function JobDetailInner() {
   const [leadEin, setLeadEin] = useState(null)
   const [jobInvoices, setJobInvoices] = useState([])
   const [jobUtilityInvoices, setJobUtilityInvoices] = useState([])
+  const [localIncentive, setLocalIncentive] = useState('')
 
   // Section state
   const [sections, setSections] = useState([])
@@ -253,6 +254,7 @@ function JobDetailInner() {
     if (jobData) {
       setJob(jobData)
       setFormData(jobData)
+      setLocalIncentive(jobData.utility_incentive || '')
 
       // Fetch lead's meter_number and ein if linked
       if (jobData.lead_id) {
@@ -1963,14 +1965,47 @@ function JobDetailInner() {
                       <span style={{ color: '#dc2626' }}>-{formatCurrency(discount)}</span>
                     </div>
                   )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ color: '#4a7c59', fontSize: '13px' }}>Utility Incentive</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ color: '#4a7c59', fontSize: '13px' }}>$</span>
+                      <input
+                        type="number"
+                        value={localIncentive}
+                        onChange={(e) => setLocalIncentive(e.target.value)}
+                        onBlur={async () => {
+                          const val = parseFloat(localIncentive) || 0
+                          if (val !== (parseFloat(job.utility_incentive) || 0)) {
+                            await supabase.from('jobs').update({
+                              utility_incentive: val,
+                              updated_at: new Date().toISOString()
+                            }).eq('id', id)
+                            setJob(prev => ({ ...prev, utility_incentive: val }))
+                          }
+                        }}
+                        style={{
+                          width: '90px',
+                          padding: '4px 8px',
+                          textAlign: 'right',
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          color: '#4a7c59',
+                          backgroundColor: theme.bgCard
+                        }}
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: `1px solid ${theme.border}` }}>
                     <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
                     <span style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>{formatCurrency(total)}</span>
                   </div>
                   {incentive > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', color: '#4a7c59' }}>
-                      <span>Out of Pocket</span>
-                      <span style={{ fontWeight: '500' }}>{formatCurrency(outOfPocket)}</span>
+                      <span style={{ fontWeight: '500' }}>Customer Cost After Incentive</span>
+                      <span style={{ fontWeight: '600' }}>{formatCurrency(outOfPocket)}</span>
                     </div>
                   )}
                 </div>
