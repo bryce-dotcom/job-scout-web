@@ -95,7 +95,9 @@ function JobDetailInner() {
   const isAdmin = checkAdmin(useStore((state) => state.user))
   const customers = useStore((state) => state.customers)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
+  const businessUnits = useStore((state) => state.businessUnits)
   const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
+  const settings = useStore((state) => state.settings)
 
   // Normalize section statuses from store
   const sectionStatuses = (storeJobSectionStatuses || []).map((s, idx) => {
@@ -275,11 +277,53 @@ function JobDetailInner() {
 
       const { data: lines } = await supabase
         .from('job_lines')
-        .select('*, item:products_services(id, name, description)')
+        .select('*, item:products_services(id, name, description, allotted_time_hours, cost)')
         .eq('job_id', id)
         .order('id')
 
       setLineItems(lines || [])
+
+      // Auto-calculate allotted time: ALL product hours OR ALL from hourly rate (not mixed)
+      const loadedLines = lines || []
+      const allLinesHaveHours = loadedLines.length > 0 && loadedLines.every(l => parseFloat(l.item?.allotted_time_hours) > 0)
+      const productHoursSum = allLinesHaveHours
+        ? loadedLines.reduce((sum, l) => sum + (parseFloat(l.item?.allotted_time_hours) || 0) * (parseFloat(l.quantity) || 1), 0)
+        : 0
+
+      let calculatedHours = productHoursSum
+      if (calculatedHours === 0 && jobData.job_total) {
+        // Look up per-business-unit hourly rate
+        const storeSettings = useStore.getState().settings || []
+        const ratesSetting = storeSettings.find(s => s.key === 'default_hourly_rates')
+        let rate = 0
+        if (ratesSetting) {
+          try {
+            const ratesMap = JSON.parse(ratesSetting.value) || {}
+            rate = parseFloat(ratesMap[jobData.business_unit]) || 0
+          } catch {}
+        }
+        // Fallback to legacy single rate
+        if (rate === 0) {
+          const oldSetting = storeSettings.find(s => s.key === 'default_hourly_rate')
+          if (oldSetting) {
+            try { rate = parseFloat(JSON.parse(oldSetting.value)) || 0 } catch {}
+          }
+        }
+        if (rate > 0) calculatedHours = Math.round((parseFloat(jobData.job_total) / rate) * 100) / 100
+      }
+
+      if (calculatedHours > 0) {
+        const currentAllotted = parseFloat(jobData.allotted_time_hours) || 0
+        const calcRounded = Math.round(calculatedHours * 100) / 100
+        if (calcRounded !== currentAllotted) {
+          await supabase.from('jobs').update({
+            allotted_time_hours: calcRounded,
+            calculated_allotted_time: calcRounded
+          }).eq('id', id)
+          setJob(prev => ({ ...prev, allotted_time_hours: calcRounded, calculated_allotted_time: calcRounded }))
+          setFormData(prev => ({ ...prev, allotted_time_hours: calcRounded }))
+        }
+      }
 
       // Fetch sections
       const { data: sectionsData } = await supabase
@@ -684,6 +728,10 @@ function JobDetailInner() {
   }
 
   const handleSave = async () => {
+    if (!formData.business_unit) {
+      alert('Business Unit is required.')
+      return
+    }
     setSaving(true)
     const updates = {
       job_title: formData.job_title,
@@ -694,6 +742,8 @@ function JobDetailInner() {
       allotted_time_hours: formData.allotted_time_hours,
       details: formData.details,
       notes: formData.notes,
+      salesperson_id: formData.salesperson_id || null,
+      business_unit: formData.business_unit,
       updated_at: new Date().toISOString()
     }
     if (formData.customer_id) updates.customer_id = formData.customer_id
@@ -1384,6 +1434,15 @@ function JobDetailInner() {
   const allottedHours = parseFloat(job.allotted_time_hours) || 0
   const progressPercent = allottedHours > 0 ? Math.min(100, (totalHoursWorked / allottedHours) * 100) : 0
 
+  // Budget: sum of product cost * qty + 3% sundry
+  const productCostTotal = lineItems.reduce((sum, l) => {
+    const cost = parseFloat(l.item?.cost) || 0
+    const qty = parseFloat(l.quantity) || 1
+    return sum + (cost * qty)
+  }, 0)
+  const sundryAmount = productCostTotal * 0.03
+  const totalBudget = productCostTotal + sundryAmount
+
   // Build job statuses from store (DB-driven) with fallback to hardcoded
   const effectiveJobStatuses = (() => {
     if (storeJobStatuses && storeJobStatuses.length > 0) {
@@ -1844,9 +1903,28 @@ function JobDetailInner() {
 
             {editMode ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={labelStyle}>Job Title</label>
-                  <input type="text" value={formData.job_title || ''} onChange={(e) => setFormData(prev => ({ ...prev, job_title: e.target.value }))} style={inputStyle} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Job Title</label>
+                    <input type="text" value={formData.job_title || ''} onChange={(e) => setFormData(prev => ({ ...prev, job_title: e.target.value }))} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Business Unit *</label>
+                    <select
+                      value={formData.business_unit || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, business_unit: e.target.value }))}
+                      style={{ ...inputStyle, borderColor: !formData.business_unit ? '#ef4444' : inputStyle.borderColor }}
+                    >
+                      <option value="">-- Select --</option>
+                      {(businessUnits || []).map(bu => {
+                        const buName = typeof bu === 'object' ? bu.name : bu
+                        return <option key={buName} value={buName}>{buName}</option>
+                      })}
+                    </select>
+                    {!formData.business_unit && (
+                      <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '2px', display: 'block' }}>Required</span>
+                    )}
+                  </div>
                 </div>
                 <div style={{ position: 'relative' }}>
                   <label style={labelStyle}>Customer</label>
@@ -1912,6 +1990,19 @@ function JobDetailInner() {
                   })()}
                 </div>
                 <div>
+                  <label style={labelStyle}>Sales Owner</label>
+                  <select
+                    value={formData.salesperson_id || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, salesperson_id: e.target.value ? parseInt(e.target.value) : null }))}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select --</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label style={labelStyle}>Address</label>
                   <input type="text" value={formData.job_address || ''} onChange={(e) => setFormData(prev => ({ ...prev, job_address: e.target.value }))} style={inputStyle} />
                 </div>
@@ -1942,6 +2033,10 @@ function JobDetailInner() {
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Customer</p>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{job.customer?.name || '-'}</p>
+                </div>
+                <div>
+                  <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Business Unit</p>
+                  <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{job.business_unit || '-'}</p>
                 </div>
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Phone</p>
@@ -1980,6 +2075,10 @@ function JobDetailInner() {
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Start Date</p>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatDateTime(job.start_date)}</p>
+                </div>
+                <div>
+                  <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Sales Owner</p>
+                  <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{job.salesperson?.name || '-'}</p>
                 </div>
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Assigned Team</p>
@@ -2339,6 +2438,21 @@ function JobDetailInner() {
                 }} />
               </div>
             </div>
+
+            {/* Budget Summary */}
+            {totalBudget > 0 && (
+              <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '13px', color: theme.textSecondary }}>
+                  <span style={{ color: theme.textMuted }}>Material Cost:</span> ${productCostTotal.toFixed(2)}
+                </div>
+                <div style={{ fontSize: '13px', color: theme.textSecondary }}>
+                  <span style={{ color: theme.textMuted }}>Sundry (3%):</span> ${sundryAmount.toFixed(2)}
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                  <span style={{ color: theme.textMuted }}>Budget:</span> ${totalBudget.toFixed(2)}
+                </div>
+              </div>
+            )}
 
             {jobTimeLogs.length === 0 ? (
               <div style={{ padding: '32px 20px', textAlign: 'center', color: theme.textMuted }}>
