@@ -2393,9 +2393,10 @@ export default function PMJobSetter() {
                               businessName={job.customer?.business_name}
                               style={{ padding: '0px', overflow: 'hidden', cursor: 'grab' }}
                             >
-                              {/* Job Header */}
+                              {/* Job Header — click to expand, double-click to go to detail */}
                               <div
                                 onClick={() => toggleJobExpanded(job.id)}
+                                onDoubleClick={() => navigate(`/jobs/${job.id}`)}
                                 style={{
                                   padding: '10px 12px',
                                   cursor: 'pointer',
