@@ -50,7 +50,7 @@ export default function DealBreadcrumb({ current, leadId, quoteId, customerId, j
     // If on lead page, find linked job + lead details in one batch
     if (leadId && !jobId) {
       promises.push(
-        supabase.from('jobs').select('id').eq('lead_id', leadId).limit(1).single()
+        supabase.from('jobs').select('id').eq('lead_id', leadId).limit(1).maybeSingle()
           .then(({ data }) => { if (data) r.job = data.id })
           .catch(() => {})
       )
@@ -73,7 +73,7 @@ export default function DealBreadcrumb({ current, leadId, quoteId, customerId, j
     const jid = jobId || null
     if (jid) {
       promises.push(
-        supabase.from('invoices').select('id').eq('job_id', jid).limit(1).single()
+        supabase.from('invoices').select('id').eq('job_id', jid).limit(1).maybeSingle()
           .then(({ data }) => { if (data) r.invoice = data.id })
           .catch(() => {})
       )
@@ -87,7 +87,7 @@ export default function DealBreadcrumb({ current, leadId, quoteId, customerId, j
     Promise.all(promises).then(() => {
       // If we discovered a job from the lead lookup, also check for invoice
       if (r.job && !jid) {
-        supabase.from('invoices').select('id').eq('job_id', r.job).limit(1).single()
+        supabase.from('invoices').select('id').eq('job_id', r.job).limit(1).maybeSingle()
           .then(({ data }) => { if (data) r.invoice = data.id })
           .catch(() => {})
           .finally(() => setResolved({ ...r }))
