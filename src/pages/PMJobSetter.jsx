@@ -538,31 +538,61 @@ export default function PMJobSetter() {
   const parseGpsLocation = useCallback((gpsStr) => {
     if (!gpsStr) return null
     const parts = gpsStr.split(',').map(s => parseFloat(s.trim()))
-    return (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) ? { lat: parts[0], lng: parts[1] } : null
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && (Math.abs(parts[0]) > 0.01 || Math.abs(parts[1]) > 0.01)) {
+      return { lat: parts[0], lng: parts[1] }
+    }
+    return null
   }, [])
 
   useEffect(() => {
-    if (!showJobMap) return
+    if (!showJobMap || filteredJobList.length === 0) return
     let cancelled = false
+
     const geocodeAll = async () => {
-      const newCoords = {}
+      // Phase 1: Instantly plot all jobs with GPS coords or cached addresses
+      const instantCoords = {}
+      const needsGeocoding = []
       for (const job of filteredJobList) {
-        if (cancelled) break
         const gps = parseGpsLocation(job.gps_location)
-        if (gps) { newCoords[job.id] = gps; continue }
+        if (gps) { instantCoords[job.id] = gps; continue }
         const addr = job.job_address || job.customer?.address
         if (!addr) continue
-        if (geocodeCacheRef.current[addr]) { newCoords[job.id] = geocodeCacheRef.current[addr]; continue }
+        if (geocodeCacheRef.current[addr]) { instantCoords[job.id] = geocodeCacheRef.current[addr]; continue }
+        needsGeocoding.push(job)
+      }
+      // Show what we have immediately
+      if (Object.keys(instantCoords).length > 0 && !cancelled) {
+        setJobMapCoords(prev => ({ ...prev, ...instantCoords }))
+      }
+
+      // Phase 2: Geocode remaining addresses progressively (batch of 5, then update)
+      let batch = {}
+      let batchCount = 0
+      for (const job of needsGeocoding) {
+        if (cancelled) break
+        const addr = job.job_address || job.customer?.address
         await new Promise(r => setTimeout(r, 1100))
         if (cancelled) break
         const coords = await geocodeAddress(addr)
-        if (coords) newCoords[job.id] = coords
+        if (coords) {
+          batch[job.id] = coords
+          batchCount++
+        }
+        // Update map every 5 geocoded jobs
+        if (batchCount >= 5 && !cancelled) {
+          setJobMapCoords(prev => ({ ...prev, ...batch }))
+          batch = {}
+          batchCount = 0
+        }
       }
-      if (!cancelled) setJobMapCoords(prev => ({ ...prev, ...newCoords }))
+      // Flush remaining
+      if (Object.keys(batch).length > 0 && !cancelled) {
+        setJobMapCoords(prev => ({ ...prev, ...batch }))
+      }
     }
     geocodeAll()
     return () => { cancelled = true }
-  }, [showJobMap, filteredJobList.length])
+  }, [showJobMap, filteredJobList])
 
   // Initialize / update Leaflet map
   useEffect(() => {
