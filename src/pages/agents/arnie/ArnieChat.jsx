@@ -212,9 +212,9 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
       silenceTimerRef.current = setTimeout(() => {
         const text = transcriptRef.current.trim()
-        if (text && listeningRef.current) {
-          // Set paused BEFORE stopping recognition — prevents onend from restarting mic
-          // which would pick up Arnie's TTS output and create a feedback loop
+        // Must be listening AND not already paused — recognition.stop() triggers a final
+        // onresult which creates a new timer. Without the micState check, handleSend fires twice.
+        if (text && listeningRef.current && micStateRef.current === 'listening') {
           micStateRef.current = 'paused'
           try { recognition.stop() } catch {}
           setInput('')
