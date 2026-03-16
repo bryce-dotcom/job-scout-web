@@ -503,7 +503,8 @@ export default function PMJobSetter() {
   }
 
   // Memoized filtered jobs list (for map + route suggestions)
-  const filteredJobList = useMemo(() => getFilteredJobs(), [jobs, jobStatuses, selectedCalendar, jobCalendars, filterPM, filterBusinessUnit, searchTerm, user, isAdmin])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const filteredJobList = useMemo(() => getFilteredJobs(), [jobs.length, jobStatuses.length, selectedCalendar, filterPM, filterBusinessUnit, searchTerm])
 
   // Load Leaflet CSS & JS when map is toggled on
   useEffect(() => {
@@ -592,37 +593,53 @@ export default function PMJobSetter() {
     }
     geocodeAll()
     return () => { cancelled = true }
-  }, [showJobMap, filteredJobList])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showJobMap, filteredJobList.length, jobs.length])
 
   // Initialize / update Leaflet map
   useEffect(() => {
     if (!showJobMap || !jobMapLoaded || !jobMapRef.current || typeof window.L === 'undefined') return
-    const coordEntries = Object.entries(jobMapCoords)
-    if (coordEntries.length === 0) return
 
-    if (jobMapInstanceRef.current) { jobMapInstanceRef.current.remove(); jobMapInstanceRef.current = null }
+    // Small delay to ensure the DOM element is rendered and sized
+    const timer = setTimeout(() => {
+      if (!jobMapRef.current) return
 
-    const L = window.L
-    const map = L.map(jobMapRef.current, { zoomControl: false, attributionControl: false })
-    L.control.zoom({ position: 'bottomright' }).addTo(map)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map)
-    jobMapInstanceRef.current = map
+      if (jobMapInstanceRef.current) { jobMapInstanceRef.current.remove(); jobMapInstanceRef.current = null }
 
-    const bounds = []
-    coordEntries.forEach(([jobId, coords]) => {
-      const job = filteredJobList.find(j => j.id === parseInt(jobId))
-      if (!job) return
-      const status = jobStatuses.find(s => s.id === job.status || s.name === job.status)
-      const color = status?.color || '#5a6349'
-      const marker = L.circleMarker([coords.lat, coords.lng], { radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9 }).addTo(map)
-      marker.bindTooltip(`<b>${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`, { direction: 'top', offset: [0, -10] })
-      marker.on('click', () => setDetailJob(job))
-      bounds.push([coords.lat, coords.lng])
-    })
+      const L = window.L
+      const map = L.map(jobMapRef.current, { zoomControl: false, attributionControl: false })
+      L.control.zoom({ position: 'bottomright' }).addTo(map)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map)
+      jobMapInstanceRef.current = map
 
-    if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 })
+      const coordEntries = Object.entries(jobMapCoords)
+      const bounds = []
+      coordEntries.forEach(([jobId, coords]) => {
+        const job = filteredJobList.find(j => j.id === parseInt(jobId))
+        if (!job) return
+        const status = jobStatuses.find(s => s.id === job.status || s.name === job.status)
+        const color = status?.color || '#5a6349'
+        const marker = L.circleMarker([coords.lat, coords.lng], { radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9 }).addTo(map)
+        marker.bindTooltip(`<b>${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`, { direction: 'top', offset: [0, -10] })
+        marker.on('click', () => setDetailJob(job))
+        bounds.push([coords.lat, coords.lng])
+      })
 
-    return () => { if (jobMapInstanceRef.current) { jobMapInstanceRef.current.remove(); jobMapInstanceRef.current = null } }
+      if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 })
+      } else {
+        // Default view: Utah area while geocoding is in progress
+        map.setView([40.76, -111.89], 10)
+      }
+
+      // Force Leaflet to recalculate size
+      map.invalidateSize()
+    }, 100)
+
+    return () => {
+      clearTimeout(timer)
+      if (jobMapInstanceRef.current) { jobMapInstanceRef.current.remove(); jobMapInstanceRef.current = null }
+    }
   }, [showJobMap, jobMapLoaded, jobMapCoords, filteredJobList, jobStatuses])
 
   // Get jobs by status, sorted by start_date (soonest first, unscheduled last)
@@ -2290,7 +2307,7 @@ export default function PMJobSetter() {
               )}
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : '280px', minHeight: '180px' }}>
+            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : '240px', minHeight: '160px' }}>
               {jobStatuses.map(status => {
                 const StatusIcon = statusIcons[status.name] || Briefcase
                 return (
@@ -2555,7 +2572,8 @@ export default function PMJobSetter() {
           overflow: 'hidden',
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
-          border: `1px solid ${theme.border}`
+          border: `1px solid ${theme.border}`,
+          marginTop: '4px'
         }}>
           {/* Calendar Header */}
           <div style={{
@@ -3046,13 +3064,13 @@ export default function PMJobSetter() {
                 <X size={16} />
               </button>
             </div>
-            <div ref={jobMapRef} style={{ height: isMobile ? '300px' : '400px', width: '100%', backgroundColor: theme.bg }}>
-              {!jobMapLoaded && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: theme.textMuted, fontSize: '13px' }}>
-                  Loading map...
-                </div>
-              )}
-            </div>
+            {!jobMapLoaded ? (
+              <div style={{ height: isMobile ? '300px' : '400px', width: '100%', backgroundColor: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                Loading map...
+              </div>
+            ) : (
+              <div ref={jobMapRef} style={{ height: isMobile ? '300px' : '400px', width: '100%' }} />
+            )}
             <div style={{ padding: '8px 16px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
               {jobStatuses.map(status => {
                 const count = Object.entries(jobMapCoords).filter(([id]) => {
