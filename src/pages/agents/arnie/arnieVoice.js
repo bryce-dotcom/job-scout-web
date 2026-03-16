@@ -18,8 +18,8 @@ const EDGE_VOICES = [
 ]
 
 const BROWSER_VOICES = [
-  { id: 'browser_male_1', name: 'System Male', desc: 'Built-in voice (lower quality)', engine: 'browser', priority: ['google us english', 'daniel', 'david', 'mark', 'male'] },
-  { id: 'browser_female_1', name: 'System Female', desc: 'Built-in voice (lower quality)', engine: 'browser', priority: ['google us english female', 'samantha', 'karen', 'zira', 'female'] },
+  { id: 'browser_male_1', name: 'System Male', desc: 'Built-in voice (lower quality)', engine: 'browser', gender: 'male', priority: ['google uk english male', 'david', 'mark', 'daniel', 'james', 'alex'] },
+  { id: 'browser_female_1', name: 'System Female', desc: 'Built-in voice (lower quality)', engine: 'browser', gender: 'female', priority: ['google uk english female', 'samantha', 'karen', 'zira', 'victoria'] },
 ]
 
 export const ARNIE_VOICES = [...EDGE_VOICES, ...BROWSER_VOICES]
@@ -211,18 +211,36 @@ function findBestVoice(voiceDef) {
   const voices = getSystemVoices()
   if (voices.length === 0) return null
   const langVoices = voices.filter(v => v.lang.startsWith('en'))
-  const priorities = voiceDef?.priority || ['google us english', 'david', 'daniel']
-  for (const kw of priorities) {
-    const found = langVoices.find(v => {
-      const n = v.name.toLowerCase()
-      if (kw === 'male') return /\bmale\b/.test(n) && !n.includes('female')
-      if (kw === 'female') return n.includes('female')
-      return n.includes(kw)
-    })
-    if (found) return found
+  const wantMale = voiceDef?.gender !== 'female'
+
+  // Log available voices so we can debug
+  if (!findBestVoice._logged) {
+    findBestVoice._logged = true
+    console.log('[Arnie Voice] Available voices:', langVoices.map(v => v.name).join(', '))
   }
-  const google = langVoices.find(v => v.name.toLowerCase().includes('google'))
-  if (google) return google
+
+  // Try priority keywords first
+  const priorities = voiceDef?.priority || ['david', 'mark', 'daniel']
+  for (const kw of priorities) {
+    const found = langVoices.find(v => v.name.toLowerCase().includes(kw))
+    if (found) {
+      console.log('[Arnie Voice] Matched voice:', found.name, 'via keyword:', kw)
+      return found
+    }
+  }
+
+  // If we want male, filter out anything with 'female', 'zira', 'woman', 'girl' in the name
+  if (wantMale) {
+    const maleOnly = langVoices.filter(v => {
+      const n = v.name.toLowerCase()
+      return !n.includes('female') && !n.includes('zira') && !n.includes('woman') && !n.includes('girl')
+    })
+    if (maleOnly.length > 0) {
+      console.log('[Arnie Voice] Male fallback:', maleOnly[0].name)
+      return maleOnly[0]
+    }
+  }
+
   return langVoices[0] || voices[0] || null
 }
 
@@ -283,20 +301,29 @@ function speakChunked(text, voice, onStart, onEnd) {
 
 // ── Main speak ──────────────────────────────────────────────────────────
 
+let speakCallId = 0
+
 export async function speak(text, voiceId, onStart, onEnd) {
+  const callId = ++speakCallId
   const clean = stripMarkdown(text)
   if (!clean) { onEnd?.(); return }
   const truncated = clean.length > 3000 ? clean.slice(0, 3000) + '...' : clean
   const voiceDef = ARNIE_VOICES.find(v => v.id === voiceId) || ARNIE_VOICES[0]
 
+  console.log(`[Arnie Voice] speak #${callId} engine=${voiceDef.engine} voice=${voiceDef.name}`)
+
   // Try Edge TTS (neural voices via WebSocket)
   if (voiceDef.engine === 'edge' && !edgeTTSBroken) {
     const ok = await speakEdge(truncated, voiceDef, onStart, onEnd)
-    if (ok) return
-    console.warn('[Arnie Voice] Falling back to browser voice')
+    if (ok) {
+      console.log(`[Arnie Voice] speak #${callId} → Edge TTS playing`)
+      return
+    }
+    console.warn(`[Arnie Voice] speak #${callId} → Edge TTS failed, using browser`)
   }
 
   // Browser fallback
   const bDef = voiceDef.engine === 'browser' ? voiceDef : BROWSER_VOICES[0]
   speakBrowser(truncated, bDef, onStart, onEnd)
+  console.log(`[Arnie Voice] speak #${callId} → Browser TTS started`)
 }

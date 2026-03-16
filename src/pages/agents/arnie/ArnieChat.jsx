@@ -157,15 +157,23 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
   // ── TTS helper ──────────────────────────────────────────────────────
 
+  const speakingLockRef = useRef(false)
   const speakText = useCallback((text) => {
     if (!voiceOn) {
       resumeMic()
       return
     }
+    if (speakingLockRef.current) {
+      console.warn('[Arnie] speakText blocked — already speaking')
+      return
+    }
+    speakingLockRef.current = true
+    stopSpeaking() // kill anything playing before starting
     speak(text, selectedVoice,
       () => setSpeaking(true),
       () => {
         setSpeaking(false)
+        speakingLockRef.current = false
         resumeMic()
       }
     )
