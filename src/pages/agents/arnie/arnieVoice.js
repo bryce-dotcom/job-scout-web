@@ -1,13 +1,12 @@
 // Arnie TTS — Edge TTS (free neural voices via Supabase edge function) with browser fallback
 //
-// Strategy: Use Microsoft Edge neural voices via our arnie-tts edge function (free, unlimited,
-// high quality). Falls back to browser speechSynthesis if the edge function fails.
+// Edge TTS returns base64-encoded MP3 audio via JSON. Falls back to browser
+// speechSynthesis if the edge function is unavailable.
 
 import { supabase } from '../../../lib/supabase'
 
 // ── Voice options ───────────────────────────────────────────────────────
 
-// Edge TTS voices — free, neural, natural-sounding
 const EDGE_VOICES = [
   { id: 'edge_andrew',  name: 'Andrew',  desc: 'Warm American male',       engine: 'edge' },
   { id: 'edge_brian',   name: 'Brian',   desc: 'Friendly American male',   engine: 'edge' },
@@ -19,17 +18,12 @@ const EDGE_VOICES = [
   { id: 'edge_aria',    name: 'Aria',    desc: 'Friendly American female', engine: 'edge' },
 ]
 
-// Browser voices as fallback
 const BROWSER_VOICES = [
   { id: 'browser_male_1', name: 'System Male', desc: 'Built-in male voice', engine: 'browser', match: ['daniel', 'david', 'james', 'mark', 'alex', 'google us english', 'male'] },
   { id: 'browser_female_1', name: 'System Female', desc: 'Built-in female voice', engine: 'browser', match: ['samantha', 'karen', 'victoria', 'zira', 'google us english female', 'female'] },
 ]
 
-// Export combined list — Edge voices first (they sound way better)
-export const ARNIE_VOICES = [
-  ...EDGE_VOICES,
-  ...BROWSER_VOICES,
-]
+export const ARNIE_VOICES = [...EDGE_VOICES, ...BROWSER_VOICES]
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -54,7 +48,6 @@ function stripMarkdown(text) {
 let currentAudio = null
 let currentUtterance = null
 let audioUnlocked = false
-let edgeTTSFailed = false // sticky flag — if edge function is broken, stop trying
 
 export function unlockAudio() {
   if (audioUnlocked) return
@@ -91,7 +84,7 @@ export function isAvailable() {
   return true
 }
 
-// ── Find best matching browser voice ────────────────────────────────────
+// ── Browser voice matching ──────────────────────────────────────────────
 
 let cachedBrowserVoices = null
 
@@ -105,10 +98,8 @@ function getBrowserVoices() {
 function findBrowserVoice(voiceDef) {
   const voices = getBrowserVoices()
   if (voices.length === 0) return null
-
   const keywords = voiceDef?.match || ['daniel', 'david', 'james', 'mark', 'male']
   const langVoices = voices.filter(v => v.lang.startsWith('en'))
-
   for (const kw of keywords) {
     const found = langVoices.find(v => {
       const name = v.name.toLowerCase()
@@ -118,54 +109,63 @@ function findBrowserVoice(voiceDef) {
     })
     if (found) return found
   }
-
   return langVoices[0] || voices[0] || null
 }
 
-// ── Edge TTS (primary — free neural voices) ────────────────────────────
+// ── Edge TTS (primary) ─────────────────────────────────────────────────
+// Returns true if audio played successfully, false if failed.
+// IMPORTANT: Does NOT call onEnd on failure — only the final playing engine calls onEnd.
 
 async function speakEdgeTTS(text, voiceId, onStart, onEnd) {
   stopSpeaking()
 
-  let ended = false
-  const callOnEnd = () => { if (!ended) { ended = true; onEnd?.() } }
-
   try {
     const { data, error } = await supabase.functions.invoke('arnie-tts', {
       body: { text, voiceId },
-      responseType: 'blob',
     })
 
     if (error) {
-      console.error('[Arnie Voice] Edge TTS error:', error)
-      callOnEnd()
+      console.error('[Arnie Voice] Edge TTS invoke error:', error)
+      return false // NO onEnd — caller will fallback
+    }
+
+    if (!data?.audio) {
+      console.error('[Arnie Voice] Edge TTS returned no audio')
       return false
     }
 
-    // data should be a Blob of audio/mpeg
-    const audioBlob = data instanceof Blob ? data : new Blob([data], { type: 'audio/mpeg' })
+    // Decode base64 to audio blob
+    const binary = atob(data.audio)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    const audioBlob = new Blob([bytes], { type: 'audio/mpeg' })
     const audioUrl = URL.createObjectURL(audioBlob)
     const audio = new Audio(audioUrl)
     audio._blobUrl = audioUrl
 
-    audio.onended = () => { URL.revokeObjectURL(audioUrl); currentAudio = null; callOnEnd() }
-    audio.onerror = () => { URL.revokeObjectURL(audioUrl); currentAudio = null; callOnEnd() }
-
-    try {
-      await audio.play()
-      currentAudio = audio
-      onStart?.()
-      return true
-    } catch (playErr) {
-      console.error('[Arnie Voice] Autoplay blocked:', playErr)
-      URL.revokeObjectURL(audioUrl)
-      callOnEnd()
-      return false
+    let ended = false
+    const callOnEnd = () => {
+      if (!ended) {
+        ended = true
+        URL.revokeObjectURL(audioUrl)
+        currentAudio = null
+        onEnd?.()
+      }
     }
+
+    audio.onended = callOnEnd
+    audio.onerror = () => {
+      console.error('[Arnie Voice] Edge TTS playback error')
+      callOnEnd()
+    }
+
+    await audio.play()
+    currentAudio = audio
+    onStart?.()
+    return true
   } catch (err) {
     console.error('[Arnie Voice] Edge TTS failed:', err)
-    callOnEnd()
-    return false
+    return false // NO onEnd
   }
 }
 
@@ -183,6 +183,12 @@ function speakBrowser(text, voiceDef, onStart, onEnd) {
 
   const trySpeak = () => {
     const voice = findBrowserVoice(voiceDef)
+
+    if (text.length > 200) {
+      speakChunked(text, voice, onStart, onEnd)
+      return
+    }
+
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.voice = voice
     utterance.lang = 'en-US'
@@ -200,21 +206,12 @@ function speakBrowser(text, voiceDef, onStart, onEnd) {
     }
 
     currentUtterance = utterance
-
-    if (text.length > 200) {
-      speakChunked(text, voice, onStart, onEnd)
-      return
-    }
-
     synth.speak(utterance)
   }
 
   const voices = getBrowserVoices()
   if (voices.length === 0) {
-    synth.onvoiceschanged = () => {
-      cachedBrowserVoices = null
-      trySpeak()
-    }
+    synth.onvoiceschanged = () => { cachedBrowserVoices = null; trySpeak() }
     setTimeout(trySpeak, 100)
   } else {
     trySpeak()
@@ -238,33 +235,22 @@ function speakChunked(text, voice, onStart, onEnd) {
 
   let ended = false
   const callOnEnd = () => { if (!ended) { ended = true; currentUtterance = null; onEnd?.() } }
-
   let started = false
   let idx = 0
 
   const speakNext = () => {
-    if (idx >= merged.length || !currentUtterance) {
-      callOnEnd()
-      return
-    }
+    if (idx >= merged.length || !currentUtterance) { callOnEnd(); return }
     const utterance = new SpeechSynthesisUtterance(merged[idx])
     utterance.voice = voice
     utterance.lang = 'en-US'
     utterance.rate = 1.05
     utterance.pitch = 0.9
-
-    utterance.onstart = () => {
-      if (!started) { started = true; onStart?.() }
-    }
-    utterance.onend = () => {
-      idx++
-      speakNext()
-    }
+    utterance.onstart = () => { if (!started) { started = true; onStart?.() } }
+    utterance.onend = () => { idx++; speakNext() }
     utterance.onerror = (e) => {
       if (e.error !== 'canceled') console.error('[Arnie Voice] Chunk error:', e.error)
       callOnEnd()
     }
-
     currentUtterance = utterance
     synth.speak(utterance)
   }
@@ -274,24 +260,23 @@ function speakChunked(text, voice, onStart, onEnd) {
 }
 
 // ── Main speak function ─────────────────────────────────────────────────
+// Only ONE engine calls onEnd per invocation. Edge TTS does NOT call onEnd on failure.
 
 export async function speak(text, voiceId, onStart, onEnd) {
   const clean = stripMarkdown(text)
   if (!clean) { onEnd?.(); return }
 
   const truncated = clean.length > 4000 ? clean.slice(0, 4000) + '...' : clean
-
   const voiceDef = ARNIE_VOICES.find(v => v.id === voiceId) || ARNIE_VOICES[0]
 
-  // Edge TTS — primary (free neural voices)
-  if (voiceDef.engine === 'edge' && !edgeTTSFailed) {
+  // Try Edge TTS first (free neural voices)
+  if (voiceDef.engine === 'edge') {
     const success = await speakEdgeTTS(truncated, voiceDef.id, onStart, onEnd)
-    if (success) return
-    console.log('[Arnie Voice] Edge TTS failed, falling back to browser voice')
-    // Don't set edgeTTSFailed on first failure — could be transient
+    if (success) return // Edge TTS is playing — it will call onEnd when done
+    console.warn('[Arnie Voice] Edge TTS failed, falling back to browser voice')
   }
 
-  // Browser voice fallback
+  // Browser voice fallback — this is the ONLY engine that calls onEnd now
   const browserDef = voiceDef.engine === 'browser' ? voiceDef : BROWSER_VOICES[0]
   speakBrowser(truncated, browserDef, onStart, onEnd)
 }

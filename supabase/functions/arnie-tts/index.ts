@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
-// Edge TTS — uses Microsoft's free neural TTS API (same voices as Edge browser)
-// No API key needed. Completely free, unlimited, high quality neural voices.
+// Edge TTS — Microsoft's free neural TTS via WebSocket
+// Returns base64-encoded MP3 in JSON to avoid content-type issues with supabase.functions.invoke
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,7 +9,6 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-// Microsoft Edge TTS voices — natural sounding neural voices
 const VOICE_MAP: Record<string, string> = {
   'edge_guy':      'en-US-GuyNeural',
   'edge_andrew':   'en-US-AndrewNeural',
@@ -21,101 +20,6 @@ const VOICE_MAP: Record<string, string> = {
   'edge_steffan':  'en-US-SteffanNeural',
 }
 
-const TRUSTED_TOKEN_URL = 'https://dev.virtualearth.net/REST/v1/Locations'
-
-async function getEdgeTTSAudio(text: string, voiceId: string): Promise<ArrayBuffer> {
-  const voice = VOICE_MAP[voiceId] || 'en-US-AndrewNeural'
-
-  // Edge TTS uses WebSocket protocol to the speech service
-  // We'll use the REST endpoint instead for simplicity
-  const url = `https://eastus.api.cognitive.microsoft.com/sts/v1.0/issuetoken`
-
-  // Use the free edge TTS approach via the speech synthesis API
-  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
-    <voice name='${voice}'>
-      <prosody rate='+5%' pitch='-2%'>${escapeXml(text)}</prosody>
-    </voice>
-  </speak>`
-
-  // Direct speech synthesis endpoint (used by Edge browser — no key required)
-  const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=${crypto.randomUUID().replace(/-/g, '')}`
-
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl)
-    const audioChunks: Uint8Array[] = []
-    let headerSent = false
-
-    ws.onopen = () => {
-      // Send config
-      ws.send(`Content-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`)
-
-      // Send SSML
-      const requestId = crypto.randomUUID().replace(/-/g, '')
-      ws.send(`X-RequestId:${requestId}\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n${ssml}`)
-    }
-
-    ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        if (event.data.includes('Path:turn.end')) {
-          ws.close()
-        }
-      } else if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-        // Binary message — extract audio after the header
-        const handler = async () => {
-          let buffer: ArrayBuffer
-          if (event.data instanceof Blob) {
-            buffer = await event.data.arrayBuffer()
-          } else {
-            buffer = event.data
-          }
-          const view = new Uint8Array(buffer)
-          // Find the header separator (two CRLF)
-          const headerEnd = findHeaderEnd(view)
-          if (headerEnd > 0) {
-            audioChunks.push(view.slice(headerEnd))
-          }
-        }
-        handler().catch(console.error)
-      }
-    }
-
-    ws.onclose = () => {
-      if (audioChunks.length === 0) {
-        reject(new Error('No audio received from Edge TTS'))
-        return
-      }
-      // Combine chunks
-      const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0)
-      const combined = new Uint8Array(totalLength)
-      let offset = 0
-      for (const chunk of audioChunks) {
-        combined.set(chunk, offset)
-        offset += chunk.length
-      }
-      resolve(combined.buffer)
-    }
-
-    ws.onerror = (err) => {
-      reject(new Error('Edge TTS WebSocket error'))
-    }
-
-    // Timeout after 15s
-    setTimeout(() => {
-      try { ws.close() } catch {}
-      reject(new Error('Edge TTS timeout'))
-    }, 15000)
-  })
-}
-
-function findHeaderEnd(data: Uint8Array): number {
-  // Look for the pattern "Path:audio\r\n" followed by the binary data
-  // The header ends after the second \r\n after "Path:audio"
-  const text = new TextDecoder().decode(data.slice(0, Math.min(data.length, 500)))
-  const idx = text.indexOf('Path:audio\r\n')
-  if (idx === -1) return -1
-  return idx + 'Path:audio\r\n'.length
-}
-
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -123,6 +27,165 @@ function escapeXml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;')
+}
+
+function makeTimestamp(): string {
+  return new Date().toISOString()
+}
+
+function makeRequestId(): string {
+  return crypto.randomUUID().replace(/-/g, '')
+}
+
+async function getEdgeTTSAudio(text: string, voiceId: string): Promise<Uint8Array> {
+  const voice = VOICE_MAP[voiceId] || 'en-US-AndrewNeural'
+  const connId = makeRequestId()
+  const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=${connId}`
+
+  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='en-US'><voice name='${voice}'><prosody pitch='+0Hz' rate='+5%' volume='+0%'>${escapeXml(text)}</prosody></voice></speak>`
+
+  return new Promise<Uint8Array>((resolve, reject) => {
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(wsUrl)
+    } catch (e) {
+      reject(new Error('WebSocket connection failed: ' + (e as Error).message))
+      return
+    }
+
+    const audioChunks: Uint8Array[] = []
+    let resolved = false
+
+    const cleanup = () => {
+      try { ws.close() } catch {}
+    }
+
+    ws.onopen = () => {
+      const ts = makeTimestamp()
+      // Send config
+      ws.send(
+        `X-Timestamp:${ts}\r\n` +
+        `Content-Type:application/json; charset=utf-8\r\n` +
+        `Path:speech.config\r\n\r\n` +
+        `{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`
+      )
+
+      // Send SSML request
+      const reqId = makeRequestId()
+      ws.send(
+        `X-RequestId:${reqId}\r\n` +
+        `Content-Type:application/ssml+xml\r\n` +
+        `X-Timestamp:${ts}\r\n` +
+        `Path:ssml\r\n\r\n` +
+        ssml
+      )
+    }
+
+    ws.onmessage = async (event) => {
+      if (typeof event.data === 'string') {
+        // Text message — check for turn.end
+        if (event.data.includes('Path:turn.end')) {
+          resolved = true
+          cleanup()
+          if (audioChunks.length === 0) {
+            reject(new Error('No audio chunks received'))
+            return
+          }
+          // Combine chunks
+          const totalLen = audioChunks.reduce((s, c) => s + c.length, 0)
+          const combined = new Uint8Array(totalLen)
+          let offset = 0
+          for (const chunk of audioChunks) {
+            combined.set(chunk, offset)
+            offset += chunk.length
+          }
+          resolve(combined)
+        }
+      } else {
+        // Binary message — contains audio data after a header
+        try {
+          let buffer: ArrayBuffer
+          if (event.data instanceof Blob) {
+            buffer = await event.data.arrayBuffer()
+          } else {
+            buffer = event.data as ArrayBuffer
+          }
+          const view = new Uint8Array(buffer)
+
+          // Header format: "X-RequestId:...\r\nPath:audio\r\n"
+          // Find "Path:audio\r\n" and skip past it
+          const headerStr = new TextDecoder().decode(view.slice(0, Math.min(view.length, 500)))
+          const pathIdx = headerStr.indexOf('Path:audio\r\n')
+          if (pathIdx >= 0) {
+            const audioStart = pathIdx + 'Path:audio\r\n'.length
+            // The header is text but encoded in the binary. We need byte offset.
+            // Since the header is ASCII, char count == byte count
+            const audioBytes = view.slice(audioStart)
+            if (audioBytes.length > 0) {
+              audioChunks.push(audioBytes)
+            }
+          }
+        } catch (e) {
+          console.error('[arnie-tts] Error processing binary message:', e)
+        }
+      }
+    }
+
+    ws.onerror = () => {
+      if (!resolved) {
+        resolved = true
+        reject(new Error('WebSocket error'))
+      }
+    }
+
+    ws.onclose = () => {
+      if (!resolved) {
+        resolved = true
+        if (audioChunks.length > 0) {
+          const totalLen = audioChunks.reduce((s, c) => s + c.length, 0)
+          const combined = new Uint8Array(totalLen)
+          let offset = 0
+          for (const chunk of audioChunks) {
+            combined.set(chunk, offset)
+            offset += chunk.length
+          }
+          resolve(combined)
+        } else {
+          reject(new Error('WebSocket closed with no audio'))
+        }
+      }
+    }
+
+    // 20s timeout
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true
+        cleanup()
+        if (audioChunks.length > 0) {
+          // Return what we have
+          const totalLen = audioChunks.reduce((s, c) => s + c.length, 0)
+          const combined = new Uint8Array(totalLen)
+          let offset = 0
+          for (const chunk of audioChunks) {
+            combined.set(chunk, offset)
+            offset += chunk.length
+          }
+          resolve(combined)
+        } else {
+          reject(new Error('Edge TTS timeout'))
+        }
+      }
+    }, 20000)
+  })
+}
+
+// Encode Uint8Array to base64
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
 }
 
 Deno.serve(async (req) => {
@@ -140,22 +203,18 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Truncate to 3000 chars for speed
     const truncated = text.length > 3000 ? text.slice(0, 3000) + '...' : text
+    const audioBytes = await getEdgeTTSAudio(truncated, voiceId || 'edge_andrew')
+    const base64Audio = uint8ToBase64(audioBytes)
 
-    const audioBuffer = await getEdgeTTSAudio(truncated, voiceId || 'edge_andrew')
-
-    return new Response(audioBuffer, {
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'audio/mpeg',
-        'Cache-Control': 'no-cache',
-      },
-    })
+    return new Response(
+      JSON.stringify({ audio: base64Audio }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
   } catch (err) {
     console.error('[arnie-tts] Error:', err)
     return new Response(
-      JSON.stringify({ error: err.message || 'TTS failed' }),
+      JSON.stringify({ error: (err as Error).message || 'TTS failed' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
