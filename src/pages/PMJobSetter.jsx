@@ -191,6 +191,7 @@ export default function PMJobSetter() {
     start_time: '',
     duration_hours: 4,
     pm_id: '',
+    job_lead_id: '',
     assigned_employee_ids: [],
     assigned_team: '',
     notes: '',
@@ -909,6 +910,7 @@ export default function PMJobSetter() {
         start_time: formatDateTimeLocal(startTime),
         duration_hours: draggedJob.allotted_time_hours || 4,
         pm_id: draggedJob.pm_id || (!isAdmin && user?.id ? String(user.id) : ''),
+        job_lead_id: draggedJob.job_lead_id ? String(draggedJob.job_lead_id) : '',
         assigned_employee_ids: [],
         assigned_team: draggedJob.assigned_team || '',
         notes: draggedJob.notes || '',
@@ -1163,6 +1165,7 @@ export default function PMJobSetter() {
         start_time: formatDateTimeLocal(startTime),
         duration_hours: draggedJob.allotted_time_hours || 4,
         pm_id: draggedJob.pm_id || (!isAdmin && user?.id ? String(user.id) : ''),
+        job_lead_id: draggedJob.job_lead_id ? String(draggedJob.job_lead_id) : '',
         assigned_employee_ids: [],
         assigned_team: draggedJob.assigned_team || '',
         notes: draggedJob.notes || '',
@@ -1295,6 +1298,7 @@ export default function PMJobSetter() {
     // Set PM: use form value, or default to current user for non-admins
     const pmId = scheduleForm.pm_id || (!isAdmin && user?.id ? String(user.id) : '')
     if (pmId) updateData.pm_id = parseInt(pmId)
+    if (scheduleForm.job_lead_id) updateData.job_lead_id = parseInt(scheduleForm.job_lead_id)
     if (scheduleForm.notes) updateData.notes = scheduleForm.notes
     // Build assigned_team from selected employees
     if (scheduleForm.assigned_employee_ids.length > 0) {
@@ -1368,6 +1372,7 @@ export default function PMJobSetter() {
           assigned_team: updateData.assigned_team || scheduleJob.assigned_team || null,
           business_unit: scheduleJob.business_unit || null,
           pm_id: pmId ? parseInt(pmId) : null,
+          job_lead_id: scheduleForm.job_lead_id ? parseInt(scheduleForm.job_lead_id) : null,
           start_date: nextStart.toISOString(),
           end_date: nextEnd.toISOString(),
           allotted_time_hours: scheduleJob.allotted_time_hours || null,
@@ -3839,6 +3844,7 @@ export default function PMJobSetter() {
                     start_time: formatDTL(startTime),
                     duration_hours: detailJob.allotted_time_hours || 4,
                     pm_id: detailJob.pm_id || (!isAdmin && user?.id ? String(user.id) : ''),
+                    job_lead_id: detailJob.job_lead_id ? String(detailJob.job_lead_id) : '',
                     assigned_employee_ids: [],
                     assigned_team: detailJob.assigned_team || '',
                     notes: detailJob.notes || '',
@@ -4110,6 +4116,23 @@ export default function PMJobSetter() {
                       <option key={emp.id} value={emp.id}>{emp.name}</option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Job Lead (Crew Lead)</label>
+                  <select
+                    value={scheduleForm.job_lead_id}
+                    onChange={(e) => setScheduleForm(prev => ({ ...prev, job_lead_id: e.target.value }))}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select Job Lead --</option>
+                    {employees.filter(e => e.active !== false).map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name}{emp.role ? ` (${emp.role})` : ''}</option>
+                    ))}
+                  </select>
+                  <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                    The lead is responsible for on-site completion verification
+                  </p>
                 </div>
 
                 <div>

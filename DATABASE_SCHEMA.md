@@ -668,6 +668,7 @@
 | description | text | |
 | notes | text | |
 | totals | numeric | |
+| photos | text[] | |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 
@@ -769,6 +770,7 @@
 | salesperson | text | |
 | audit_id | integer | |
 | pm_id | integer | FK employees.id |
+| job_lead_id | integer | FK employees.id |
 
 ---
 
@@ -1141,6 +1143,8 @@
 | line_total | numeric | |
 | total | numeric | |
 | item_name | text | |
+| notes | text | |
+| photos | text[] | |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 

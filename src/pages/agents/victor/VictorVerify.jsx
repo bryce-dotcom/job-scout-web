@@ -103,6 +103,9 @@ export default function VictorVerify({
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [step, setStep] = useState(skipJobSelection ? 2 : 1) // 1: select job, 2: checklist + photos, 3: results
+  const [jobLines, setJobLines] = useState([]) // line items for completion verification
+  const [lineItemPhotos, setLineItemPhotos] = useState({}) // { lineId: { file, preview, base64 } }
+  const lineItemInputRefs = useRef({})
 
   const currentEmployee = employees.find(e => e.email === user?.email)
 
@@ -136,6 +139,43 @@ export default function VictorVerify({
       setChecklist(GENERAL_CHECKLIST.map(c => ({ ...c, checked: false, notes: '' })))
     }
   }, [selectedJobId, jobs, isDaily])
+
+  // Fetch line items for completion verification
+  useEffect(() => {
+    if (isDaily || !selectedJobId || !companyId) { setJobLines([]); return }
+    supabase
+      .from('job_lines')
+      .select('*, item:products_services(id, name, description)')
+      .eq('job_id', parseInt(selectedJobId))
+      .order('sort_order')
+      .then(({ data }) => setJobLines(data || []))
+  }, [selectedJobId, isDaily, companyId])
+
+  // Handle line item photo capture
+  const handleLineItemPhoto = async (lineId, e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const preview = URL.createObjectURL(file)
+    const base64 = await new Promise(resolve => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result.split(',')[1])
+      reader.readAsDataURL(file)
+    })
+    setLineItemPhotos(prev => ({ ...prev, [lineId]: { file, preview, base64 } }))
+  }
+
+  const removeLineItemPhoto = (lineId) => {
+    setLineItemPhotos(prev => {
+      if (prev[lineId]) URL.revokeObjectURL(prev[lineId].preview)
+      const next = { ...prev }
+      delete next[lineId]
+      return next
+    })
+    if (lineItemInputRefs.current[lineId]) lineItemInputRefs.current[lineId].value = ''
+  }
+
+  const lineItemPhotoCount = Object.keys(lineItemPhotos).length
+  const allLineItemsPhotographed = jobLines.length === 0 || lineItemPhotoCount >= jobLines.length
 
   const toggleChecklistItem = (idx) => {
     setChecklist(prev => prev.map((item, i) => i === idx ? { ...item, checked: !item.checked } : item))
@@ -177,8 +217,13 @@ export default function VictorVerify({
   }
 
   const runVerification = async () => {
-    if (photos.length === 0) { setError('Please upload at least one photo'); return }
+    const totalPhotos = photos.length + lineItemPhotoCount
+    if (totalPhotos === 0) { setError('Please upload at least one photo'); return }
     if (!isDaily && !selectedJob) { setError('Please select a job'); return }
+    if (!isDaily && jobLines.length > 0 && !allLineItemsPhotographed) {
+      setError(`Please photograph all ${jobLines.length} line items (${lineItemPhotoCount} of ${jobLines.length} done)`)
+      return
+    }
 
     setAnalyzing(true)
     setError(null)
@@ -237,13 +282,52 @@ export default function VictorVerify({
         }
       }
 
+      // 2b. Upload line-item photos
+      for (const [lineId, photo] of Object.entries(lineItemPhotos)) {
+        const line = jobLines.find(l => String(l.id) === String(lineId))
+        const lineName = (line?.item?.name || line?.description || `line-${lineId}`).replace(/[^a-zA-Z0-9._-]/g, '_')
+        const safeName = photo.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const filePath = `${storagePath}/lineitem_${lineName}_${Date.now()}_${safeName}`
+
+        const { error: uploadErr } = await supabase.storage
+          .from('project-documents')
+          .upload(filePath, photo.file)
+
+        if (!uploadErr) {
+          const photoInsert = {
+            company_id: companyId,
+            verification_id: report.id,
+            file_path: filePath,
+            storage_bucket: 'project-documents',
+            photo_type: 'line_item',
+            created_at: new Date().toISOString()
+          }
+          if (selectedJobId) photoInsert.job_id = parseInt(selectedJobId)
+          await supabase.from('verification_photos').insert(photoInsert)
+          uploadedPhotos.push({ filePath, photoType: 'line_item', lineItemName: line?.item?.name || line?.description || '' })
+        }
+      }
+
       // 3. Call Victor AI via edge function
-      const body = {
-        images: photos.map(p => ({
+      const allImages = [
+        ...photos.map(p => ({
           base64: p.base64,
           mediaType: p.file.type || 'image/jpeg',
           photoType: p.photoType
         })),
+        ...Object.entries(lineItemPhotos).map(([lineId, p]) => {
+          const line = jobLines.find(l => String(l.id) === String(lineId))
+          return {
+            base64: p.base64,
+            mediaType: p.file.type || 'image/jpeg',
+            photoType: 'line_item',
+            lineItemName: line?.item?.name || line?.description || ''
+          }
+        })
+      ]
+
+      const body = {
+        images: allImages,
         checklist: checklist.map(c => ({ item: c.item, checked: c.checked, category: c.category })),
         verificationType
       }
@@ -255,7 +339,12 @@ export default function VictorVerify({
           industry,
           address: selectedJob.job_address || '',
           assignedTeam: selectedJob.assigned_team || '',
-          details: selectedJob.details || ''
+          details: selectedJob.details || '',
+          lineItems: jobLines.map(l => ({
+            name: l.item?.name || l.description || '',
+            quantity: l.quantity || 1,
+            description: l.item?.description || l.description || ''
+          }))
         }
       }
 
@@ -491,11 +580,111 @@ export default function VictorVerify({
             </div>
           </div>
 
+          {/* Line Item Photos (completion mode only) */}
+          {!isDaily && jobLines.length > 0 && (
+            <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Camera size={16} style={{ color: '#a855f7' }} />
+                Line Item Verification Photos
+              </h3>
+              <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '16px' }}>
+                Photograph each completed line item. All {jobLines.length} items require a photo.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {jobLines.map((line) => {
+                  const photo = lineItemPhotos[line.id]
+                  const itemName = line.item?.name || line.description || line.item_name || 'Item'
+                  return (
+                    <div key={line.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '12px',
+                      padding: '10px 12px',
+                      backgroundColor: photo ? 'rgba(34,197,94,0.06)' : theme.accentBg,
+                      border: `1px solid ${photo ? 'rgba(34,197,94,0.3)' : theme.border}`,
+                      borderRadius: '10px'
+                    }}>
+                      {photo ? (
+                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                          <img
+                            src={photo.preview}
+                            alt={itemName}
+                            style={{ width: '56px', height: '56px', borderRadius: '8px', objectFit: 'cover' }}
+                          />
+                          <button
+                            onClick={() => removeLineItemPhoto(line.id)}
+                            style={{
+                              position: 'absolute', top: '-6px', right: '-6px',
+                              width: '20px', height: '20px', borderRadius: '50%',
+                              backgroundColor: 'rgba(239,68,68,0.9)', color: '#fff',
+                              border: 'none', cursor: 'pointer', display: 'flex',
+                              alignItems: 'center', justifyContent: 'center', padding: 0
+                            }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => lineItemInputRefs.current[line.id]?.click()}
+                          style={{
+                            width: '56px', height: '56px', borderRadius: '8px',
+                            border: `2px dashed ${theme.border}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', flexShrink: 0, backgroundColor: theme.bgCard
+                          }}
+                        >
+                          <Camera size={20} style={{ color: theme.textMuted }} />
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {itemName}
+                        </div>
+                        {(line.quantity && line.quantity > 1) && (
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>Qty: {line.quantity}</div>
+                        )}
+                        <div style={{ fontSize: '11px', color: photo ? '#22c55e' : '#f59e0b', fontWeight: '600', marginTop: '2px' }}>
+                          {photo ? 'Photographed' : 'Photo required'}
+                        </div>
+                      </div>
+                      <input
+                        ref={el => lineItemInputRefs.current[line.id] = el}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(e) => handleLineItemPhoto(line.id, e)}
+                        style={{ display: 'none' }}
+                      />
+                      {!photo && (
+                        <button
+                          onClick={() => lineItemInputRefs.current[line.id]?.click()}
+                          style={{
+                            padding: '8px 14px', backgroundColor: '#a855f7',
+                            color: '#fff', border: 'none', borderRadius: '8px',
+                            fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                            whiteSpace: 'nowrap', minHeight: '36px'
+                          }}
+                        >
+                          Take Photo
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div style={{ marginTop: '12px', fontSize: '13px', fontWeight: '600', color: allLineItemsPhotographed ? '#22c55e' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {allLineItemsPhotographed ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                {lineItemPhotoCount} / {jobLines.length} line items photographed
+              </div>
+            </div>
+          )}
+
           {/* Photo Upload */}
           <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px', marginBottom: '20px' }}>
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Camera size={16} style={{ color: theme.accent }} />
-              Photos ({photos.length})
+              {!isDaily && jobLines.length > 0 ? 'Additional Photos' : 'Photos'} ({photos.length})
             </h3>
 
             {/* Upload Button */}

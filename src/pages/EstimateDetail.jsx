@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight } from 'lucide-react'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf } from '../lib/estimatePdf'
@@ -80,6 +80,8 @@ export default function EstimateDetail() {
   const [sendingEmail, setSendingEmail] = useState(false)
   const [attachments, setAttachments] = useState([])
   const [convertingToJob, setConvertingToJob] = useState(false)
+  const [expandedLineId, setExpandedLineId] = useState(null)
+  const [viewingPhoto, setViewingPhoto] = useState(null)
   const [showCreateLead, setShowCreateLead] = useState(false)
   const [creatingLead, setCreatingLead] = useState(false)
   const [newLeadForm, setNewLeadForm] = useState({
@@ -331,6 +333,65 @@ export default function EstimateDetail() {
     setFillingForm(false)
   }
 
+  const handleQuantityChange = async (line, newQty) => {
+    const qty = Math.max(1, parseInt(newQty) || 1)
+    const unitPrice = parseFloat(line.price) || 0
+    const newTotal = unitPrice * qty
+
+    // Optimistic UI update
+    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, quantity: qty, line_total: newTotal } : l))
+
+    await supabase.from('quote_lines').update({
+      quantity: qty,
+      line_total: newTotal
+    }).eq('id', line.id)
+
+    await updateEstimateTotal()
+    await fetchEstimateData()
+  }
+
+  const handleLinePhotoUpload = async (lineId, e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const ext = file.name.split('.').pop()
+    const path = `estimates/${id}/lines/${lineId}/${Date.now()}.${ext}`
+
+    const { error: uploadErr } = await supabase.storage
+      .from('project-documents')
+      .upload(path, file)
+    if (uploadErr) {
+      toast.error('Photo upload failed: ' + uploadErr.message)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(path)
+    const photoUrl = urlData.publicUrl
+
+    const line = lineItems.find(l => l.id === lineId)
+    const updatedPhotos = [...(line?.photos || []), photoUrl]
+
+    setLineItems(prev => prev.map(l => l.id === lineId ? { ...l, photos: updatedPhotos } : l))
+    await supabase.from('quote_lines').update({ photos: updatedPhotos }).eq('id', lineId)
+  }
+
+  const handleLinePhotoDelete = async (lineId, photoUrl) => {
+    const line = lineItems.find(l => l.id === lineId)
+    const updatedPhotos = (line?.photos || []).filter(p => p !== photoUrl)
+
+    setLineItems(prev => prev.map(l => l.id === lineId ? { ...l, photos: updatedPhotos } : l))
+    await supabase.from('quote_lines').update({ photos: updatedPhotos }).eq('id', lineId)
+
+    // Try to delete from storage (best effort)
+    try {
+      const url = new URL(photoUrl)
+      const storagePath = url.pathname.split('/object/public/project-documents/')[1]
+      if (storagePath) {
+        await supabase.storage.from('project-documents').remove([decodeURIComponent(storagePath)])
+      }
+    } catch (_) { /* ignore storage cleanup errors */ }
+  }
+
   const handleProductSelect = async (product, laborCost, totalPrice) => {
     setSaving(true)
     setShowProductPicker(false)
@@ -357,11 +418,17 @@ export default function EstimateDetail() {
       item_id: line.item_id,
       quantity: line.quantity,
       price: line.price,
-      line_total: line.line_total
+      line_total: line.line_total,
+      notes: line.notes || null
     })
     await updateEstimateTotal()
     await fetchEstimateData()
     setSaving(false)
+  }
+
+  const handleLineNotesChange = async (line, newNotes) => {
+    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, notes: newNotes } : l))
+    await supabase.from('quote_lines').update({ notes: newNotes || null }).eq('id', line.id)
   }
 
   const removeLineItem = async (lineId) => {
@@ -527,7 +594,9 @@ export default function EstimateDetail() {
           item_id: line.item_id || null,
           quantity: line.quantity || 1,
           price: line.price || 0,
-          total: line.line_total || 0
+          total: line.line_total || 0,
+          notes: line.notes || null,
+          photos: line.photos || []
         }))
         await supabase.from('job_lines').insert(jobLines)
       }
@@ -1286,7 +1355,7 @@ export default function EstimateDetail() {
                 {/* Table Header */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 1.5fr 80px 100px 100px 40px',
+                  gridTemplateColumns: '20px 2fr 1.5fr 80px 100px 100px 72px',
                   gap: '12px',
                   padding: '12px 20px',
                   backgroundColor: theme.accentBg,
@@ -1296,6 +1365,7 @@ export default function EstimateDetail() {
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px'
                 }}>
+                  <div></div>
                   <div>Item</div>
                   <div>Description</div>
                   <div style={{ textAlign: 'right' }}>Qty</div>
@@ -1305,91 +1375,201 @@ export default function EstimateDetail() {
                 </div>
 
                 {/* Table Body */}
-                {lineItems.map((line) => (
-                  <div
-                    key={line.id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '2fr 1.5fr 80px 100px 100px 72px',
-                      gap: '12px',
-                      padding: '14px 20px',
-                      borderBottom: `1px solid ${theme.border}`,
-                      alignItems: 'center'
-                    }}
-                  >
-                    <div>
-                      <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
-                        {line.item?.name || 'Unknown'}
-                      </p>
-                    </div>
-                    <div>
-                      <p style={{
-                        fontSize: '12px',
-                        color: theme.textMuted,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {line.description || line.item?.description || '-'}
-                      </p>
-                    </div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>
-                      {line.quantity}
-                    </div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>
-                      {formatCurrency(line.price)}
-                    </div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>
-                      {formatCurrency(line.line_total)}
-                    </div>
-                    <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
-                      <button
-                        onClick={() => duplicateLineItem(line)}
-                        title="Duplicate line"
+                {lineItems.map((line) => {
+                  const photos = line.photos || []
+                  const isExpanded = expandedLineId === line.id
+                  return (
+                    <div key={line.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                      <div
+                        onClick={() => setExpandedLineId(isExpanded ? null : line.id)}
                         style={{
-                          padding: '6px',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          color: theme.textMuted
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = theme.accentBg
-                          e.currentTarget.style.color = theme.accent
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent'
-                          e.currentTarget.style.color = theme.textMuted
+                          display: 'grid',
+                          gridTemplateColumns: '20px 2fr 1.5fr 80px 100px 100px 72px',
+                          gap: '12px',
+                          padding: '14px 20px',
+                          alignItems: 'center',
+                          cursor: 'pointer'
                         }}
                       >
-                        <Copy size={16} />
-                      </button>
-                      <button
-                        onClick={() => removeLineItem(line.id)}
-                        title="Delete line"
-                        style={{
-                          padding: '6px',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          color: theme.textMuted
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = '#fef2f2'
-                          e.currentTarget.style.color = '#dc2626'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent'
-                          e.currentTarget.style.color = theme.textMuted
-                        }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                        <div style={{ color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
+                          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>
+                            {line.item?.name || line.item_name || 'Unknown'}
+                          </p>
+                          {photos.length > 0 && (
+                            <span style={{ fontSize: '11px', backgroundColor: theme.accentBg, color: theme.accent, padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
+                              <Camera size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{photos.length}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <p style={{
+                            fontSize: '12px',
+                            color: theme.textMuted,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            margin: 0
+                          }}>
+                            {line.description || line.item?.description || '-'}
+                          </p>
+                        </div>
+                        <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            min="1"
+                            defaultValue={line.quantity}
+                            onBlur={(e) => {
+                              const val = parseInt(e.target.value) || 1
+                              if (val !== line.quantity) handleQuantityChange(line, val)
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                            style={{
+                              width: '56px',
+                              padding: '4px 6px',
+                              textAlign: 'right',
+                              fontSize: '14px',
+                              color: theme.textSecondary,
+                              border: `1px solid ${theme.border}`,
+                              borderRadius: '6px',
+                              backgroundColor: theme.bgCard,
+                              outline: 'none'
+                            }}
+                          />
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>
+                          {formatCurrency(line.price)}
+                        </div>
+                        <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                          {formatCurrency(line.line_total)}
+                        </div>
+                        <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); duplicateLineItem(line) }}
+                            title="Duplicate line"
+                            style={{
+                              padding: '6px',
+                              backgroundColor: 'transparent',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              color: theme.textMuted
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = theme.accentBg
+                              e.currentTarget.style.color = theme.accent
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                              e.currentTarget.style.color = theme.textMuted
+                            }}
+                          >
+                            <Copy size={16} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeLineItem(line.id) }}
+                            title="Delete line"
+                            style={{
+                              padding: '6px',
+                              backgroundColor: 'transparent',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              color: theme.textMuted
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#fef2f2'
+                              e.currentTarget.style.color = '#dc2626'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                              e.currentTarget.style.color = theme.textMuted
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                      {/* Expanded detail section: notes + photos */}
+                      {isExpanded && (
+                        <div style={{ padding: '8px 20px 14px', backgroundColor: theme.bg }}>
+                          <div style={{ marginBottom: '10px' }}>
+                            <input
+                              type="text"
+                              placeholder="Line item notes..."
+                              defaultValue={line.notes || ''}
+                              onBlur={(e) => {
+                                const val = e.target.value.trim()
+                                if (val !== (line.notes || '')) handleLineNotesChange(line, val)
+                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                              style={{
+                                width: '100%',
+                                padding: '4px 8px',
+                                fontSize: '12px',
+                                color: theme.textSecondary,
+                                border: `1px solid ${theme.border}`,
+                                borderRadius: '6px',
+                                backgroundColor: theme.bgCard,
+                                outline: 'none',
+                                boxSizing: 'border-box'
+                              }}
+                            />
+                          </div>
+                          <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Photos
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {photos.map((url, idx) => (
+                              <div key={idx} style={{ position: 'relative', width: '72px', height: '72px', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+                                <img
+                                  src={url}
+                                  alt={`Photo ${idx + 1}`}
+                                  onClick={() => setViewingPhoto({ url, name: `${line.item?.name || line.item_name || 'Line'} Photo ${idx + 1}` })}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                                />
+                                <button
+                                  onClick={() => handleLinePhotoDelete(line.id, url)}
+                                  style={{
+                                    position: 'absolute', top: '2px', right: '2px',
+                                    width: '20px', height: '20px', borderRadius: '50%',
+                                    backgroundColor: 'rgba(220,38,38,0.85)', color: '#fff',
+                                    border: 'none', cursor: 'pointer', fontSize: '12px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                  }}
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            ))}
+                            <label style={{
+                              width: '72px', height: '72px', borderRadius: '8px',
+                              border: `2px dashed ${theme.border}`, cursor: 'pointer',
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                              color: theme.textMuted, fontSize: '10px', gap: '2px',
+                              backgroundColor: theme.bgCard
+                            }}>
+                              <Camera size={18} />
+                              <span>Add</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                style={{ display: 'none' }}
+                                onChange={(e) => handleLinePhotoUpload(line.id, e)}
+                              />
+                            </label>
+                          </div>
+                          {photos.length === 0 && (
+                            <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>No photos yet. Click Add to attach.</p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </>
             )}
           </div>
@@ -2322,6 +2502,15 @@ export default function EstimateDetail() {
           </div>
         </div>
       )}
+      {/* Photo Lightbox */}
+      {viewingPhoto && (
+        <div onClick={() => setViewingPhoto(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#fff', fontSize: '22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2001 }}>
+            <X size={22} />
+          </button>
+          <img src={viewingPhoto.url} alt={viewingPhoto.name} style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
+        </div>
+      )}
     </div>
   )
 }
@@ -2588,7 +2777,10 @@ function EstimatePreview({ estimate, lineItems, company, businessUnit, settings 
             <tr key={line.id} style={{ backgroundColor: idx % 2 === 0 ? '#f7f5ef' : '#fff', borderBottom: '1px solid #eee' }}>
               <td style={{ padding: '7px 10px', fontWeight: '500' }}>{line.item_name || line.item?.name || 'Item'}</td>
               {settings.show_line_descriptions && (
-                <td style={{ padding: '7px 10px', color: '#7d8a7f' }}>{line.description || line.item?.description || '—'}</td>
+                <td style={{ padding: '7px 10px', color: '#7d8a7f' }}>
+                  {line.description || line.item?.description || '—'}
+                  {line.notes && <div style={{ fontSize: '11px', color: '#5a6349', fontStyle: 'italic', marginTop: '2px' }}>{line.notes}</div>}
+                </td>
               )}
               <td style={{ padding: '7px 10px', textAlign: 'right' }}>{line.quantity || 0}</td>
               <td style={{ padding: '7px 10px', textAlign: 'right', color: '#7d8a7f' }}>{formatCurrency(line.price)}</td>

@@ -184,7 +184,9 @@ export default function LightingAuditDetail() {
           item_id: area.led_replacement_id || null,
           quantity: qty,
           price: Math.round(unitPrice * 100) / 100,
-          line_total: Math.round(qty * unitPrice * 100) / 100
+          line_total: Math.round(qty * unitPrice * 100) / 100,
+          notes: area.override_notes || null,
+          photos: area.photos || []
         })
       }
     }

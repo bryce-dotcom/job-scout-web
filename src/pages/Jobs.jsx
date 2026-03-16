@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -401,6 +401,7 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
 // ============ MAIN COMPONENT ============
 export default function Jobs() {
   const navigate = useNavigate()
+  const location = useLocation()
   const companyId = useStore((state) => state.companyId)
   const jobs = useStore((state) => state.jobs)
   const customers = useStore((state) => state.customers)
@@ -430,6 +431,7 @@ export default function Jobs() {
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const geocodeCacheRef = useRef({})
+  const customerInputRef = useRef(null)
 
   // Build dynamic board columns from DB-driven job statuses
   const boardColumns = (() => {
@@ -488,6 +490,23 @@ export default function Jobs() {
     }
     fetchJobs()
   }, [companyId, navigate, fetchJobs])
+
+  // Auto-open create modal when navigating from CustomerDetail with customer pre-filled
+  useEffect(() => {
+    if (location.state?.openCreate && location.state?.customerId) {
+      const cust = customers.find(c => c.id === location.state.customerId)
+      if (cust) {
+        setEditingJob(null)
+        setFormData({ ...emptyJob, customer_id: cust.id, job_address: cust.address || '' })
+        setCustomerSearchText(cust.name || '')
+        setShowCustomerDropdown(false)
+        setError(null)
+        setShowModal(true)
+      }
+      // Clear the state so it doesn't re-trigger
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [location.state, customers, navigate, location.pathname])
 
   // Mobile detection
   useEffect(() => {
@@ -1743,7 +1762,7 @@ export default function Jobs() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div style={{ position: 'relative' }}>
                     <label style={labelStyle}>Customer</label>
-                    <div style={{ position: 'relative' }}>
+                    <div style={{ position: 'relative' }} ref={customerInputRef}>
                       <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, pointerEvents: 'none' }} />
                       <input
                         type="text"
@@ -1775,18 +1794,27 @@ export default function Jobs() {
                       const filtered = customers.filter(c =>
                         c.name?.toLowerCase().includes((customerSearchText || '').toLowerCase())
                       )
+                      const rect = customerInputRef.current?.getBoundingClientRect()
+                      const dropdownStyle = rect ? {
+                        position: 'fixed',
+                        top: rect.bottom + 2,
+                        left: rect.left,
+                        width: rect.width,
+                        zIndex: 9999
+                      } : { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999 }
                       return filtered.length > 0 ? (
                         <div style={{
-                          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
+                          ...dropdownStyle,
                           backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
                           borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                          maxHeight: '200px', overflowY: 'auto', marginTop: '2px'
+                          maxHeight: '240px', overflowY: 'auto'
                         }}>
                           {filtered.map(c => (
                             <div
                               key={c.id}
-                              onClick={() => {
-                                setFormData(prev => ({ ...prev, customer_id: c.id }))
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                setFormData(prev => ({ ...prev, customer_id: c.id, job_address: prev.job_address || c.address || '' }))
                                 setCustomerSearchText(c.name)
                                 setShowCustomerDropdown(false)
                               }}
@@ -1805,9 +1833,9 @@ export default function Jobs() {
                         </div>
                       ) : customerSearchText ? (
                         <div style={{
-                          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
+                          ...dropdownStyle,
                           backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
-                          borderRadius: '8px', padding: '12px', marginTop: '2px',
+                          borderRadius: '8px', padding: '12px',
                           fontSize: '13px', color: theme.textMuted, textAlign: 'center'
                         }}>
                           No customers found

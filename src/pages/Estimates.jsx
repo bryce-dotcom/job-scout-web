@@ -38,8 +38,10 @@ export default function Estimates() {
   const employees = useStore((state) => state.employees)
   const serviceTypes = useStore((state) => state.serviceTypes)
   const fetchQuotes = useStore((state) => state.fetchQuotes)
+  const fetchLeads = useStore((state) => state.fetchLeads)
 
   const [showModal, setShowModal] = useState(false)
+  const [associationType, setAssociationType] = useState('lead') // 'lead' | 'customer' | 'newLead'
   const [formData, setFormData] = useState({
     lead_id: '',
     customer_id: '',
@@ -47,6 +49,13 @@ export default function Estimates() {
     service_type: '',
     estimate_name: '',
     notes: ''
+  })
+  const [newLeadData, setNewLeadData] = useState({
+    customer_name: '',
+    email: '',
+    phone: '',
+    address: '',
+    service_type: ''
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -107,6 +116,46 @@ export default function Estimates() {
     setLoading(true)
     setError(null)
 
+    let leadId = null
+    let customerId = null
+
+    if (associationType === 'lead') {
+      leadId = formData.lead_id || null
+    } else if (associationType === 'customer') {
+      customerId = formData.customer_id || null
+    } else if (associationType === 'newLead') {
+      if (!newLeadData.customer_name.trim()) {
+        setError('Customer name is required for a new lead')
+        setLoading(false)
+        return
+      }
+      const leadNumber = `LEAD-${Date.now().toString(36).toUpperCase()}`
+      const { data: newLead, error: leadError } = await supabase
+        .from('leads')
+        .insert([{
+          company_id: companyId,
+          lead_id: leadNumber,
+          customer_name: newLeadData.customer_name.trim(),
+          email: newLeadData.email.trim() || null,
+          phone: newLeadData.phone.trim() || null,
+          address: newLeadData.address.trim() || null,
+          service_type: newLeadData.service_type || formData.service_type || null,
+          salesperson_id: formData.salesperson_id || null,
+          status: 'New',
+          quote_generated: true
+        }])
+        .select()
+        .single()
+
+      if (leadError) {
+        setError('Failed to create lead: ' + leadError.message)
+        setLoading(false)
+        return
+      }
+      leadId = newLead.id
+      fetchLeads() // refresh store so the new lead appears in lists
+    }
+
     const estimateNumber = `EST-${Date.now().toString(36).toUpperCase()}`
 
     const { data, error: insertError } = await supabase
@@ -114,8 +163,8 @@ export default function Estimates() {
       .insert([{
         company_id: companyId,
         quote_id: estimateNumber,
-        lead_id: formData.lead_id || null,
-        customer_id: formData.customer_id || null,
+        lead_id: leadId,
+        customer_id: customerId,
         salesperson_id: formData.salesperson_id || null,
         service_type: formData.service_type || null,
         estimate_name: formData.estimate_name || null,
@@ -134,6 +183,8 @@ export default function Estimates() {
 
     setShowModal(false)
     setFormData({ lead_id: '', customer_id: '', salesperson_id: '', service_type: '', estimate_name: '', notes: '' })
+    setNewLeadData({ customer_name: '', email: '', phone: '', address: '', service_type: '' })
+    setAssociationType('lead')
     await fetchQuotes()
     navigate(`/estimates/${data.id}`)
     setLoading(false)
@@ -497,35 +548,127 @@ export default function Estimates() {
                   />
                 </div>
 
+                {/* Association type toggle */}
                 <div>
-                  <label style={labelStyle}>Lead</label>
-                  <select
-                    name="lead_id"
-                    value={formData.lead_id}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select Lead --</option>
-                    {leads.filter(l => l.status !== 'Lost' && l.status !== 'Not Qualified').map(lead => (
-                      <option key={lead.id} value={lead.id}>{lead.customer_name}</option>
+                  <label style={labelStyle}>Associate With</label>
+                  <div style={{ display: 'flex', borderRadius: '8px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+                    {[
+                      { key: 'lead', label: 'Existing Lead' },
+                      { key: 'customer', label: 'Customer' },
+                      { key: 'newLead', label: 'New Lead' }
+                    ].map(opt => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => {
+                          setAssociationType(opt.key)
+                          setFormData(prev => ({ ...prev, lead_id: '', customer_id: '' }))
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '8px 4px',
+                          fontSize: '13px',
+                          fontWeight: associationType === opt.key ? '600' : '400',
+                          backgroundColor: associationType === opt.key ? theme.accent : 'transparent',
+                          color: associationType === opt.key ? '#ffffff' : theme.textSecondary,
+                          border: 'none',
+                          cursor: 'pointer',
+                          borderRight: opt.key !== 'newLead' ? `1px solid ${theme.border}` : 'none'
+                        }}
+                      >
+                        {opt.label}
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
-                <div>
-                  <label style={labelStyle}>Or Customer</label>
-                  <select
-                    name="customer_id"
-                    value={formData.customer_id}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select Customer --</option>
-                    {customers.map(cust => (
-                      <option key={cust.id} value={cust.id}>{cust.name}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Existing Lead picker */}
+                {associationType === 'lead' && (
+                  <div>
+                    <label style={labelStyle}>Lead</label>
+                    <select
+                      name="lead_id"
+                      value={formData.lead_id}
+                      onChange={handleChange}
+                      style={inputStyle}
+                    >
+                      <option value="">-- Select Lead --</option>
+                      {leads.filter(l => l.status !== 'Lost' && l.status !== 'Not Qualified').map(lead => (
+                        <option key={lead.id} value={lead.id}>{lead.customer_name}{lead.service_type ? ` — ${lead.service_type}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Existing Customer picker */}
+                {associationType === 'customer' && (
+                  <div>
+                    <label style={labelStyle}>Customer</label>
+                    <select
+                      name="customer_id"
+                      value={formData.customer_id}
+                      onChange={handleChange}
+                      style={inputStyle}
+                    >
+                      <option value="">-- Select Customer --</option>
+                      {customers.map(cust => (
+                        <option key={cust.id} value={cust.id}>{cust.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* New Lead inline fields */}
+                {associationType === 'newLead' && (
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', gap: '12px',
+                    padding: '14px', borderRadius: '8px',
+                    backgroundColor: theme.accentBg, border: `1px solid ${theme.border}`
+                  }}>
+                    <div>
+                      <label style={labelStyle}>Customer Name *</label>
+                      <input
+                        type="text"
+                        value={newLeadData.customer_name}
+                        onChange={e => setNewLeadData(prev => ({ ...prev, customer_name: e.target.value }))}
+                        placeholder="Business or person name"
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={labelStyle}>Email</label>
+                        <input
+                          type="email"
+                          value={newLeadData.email}
+                          onChange={e => setNewLeadData(prev => ({ ...prev, email: e.target.value }))}
+                          placeholder="email@example.com"
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={labelStyle}>Phone</label>
+                        <input
+                          type="tel"
+                          value={newLeadData.phone}
+                          onChange={e => setNewLeadData(prev => ({ ...prev, phone: e.target.value }))}
+                          placeholder="(555) 555-5555"
+                          style={inputStyle}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Address</label>
+                      <input
+                        type="text"
+                        value={newLeadData.address}
+                        onChange={e => setNewLeadData(prev => ({ ...prev, address: e.target.value }))}
+                        placeholder="Street address"
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label style={labelStyle}>Salesperson</label>

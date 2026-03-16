@@ -867,7 +867,7 @@ export default function CustomerDetail() {
                 </p>
               </div>
               <button
-                onClick={() => navigate('/jobs')}
+                onClick={() => navigate('/jobs', { state: { openCreate: true, customerId: parseInt(id) } })}
                 style={{
                   padding: isMobile ? '12px 16px' : '10px 16px',
                   minHeight: isMobile ? '44px' : 'auto',

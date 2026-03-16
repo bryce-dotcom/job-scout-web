@@ -407,10 +407,18 @@ export default function Layout() {
     items: [
       { to: '/settings', icon: Settings, label: 'Settings', hint: 'Company and app settings' },
       { to: '/document-rules', icon: FileText, label: 'Document Rules', hint: 'Manage form templates and doc packages' },
-      { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' },
-      { to: '/admin/help', icon: HelpCircle, label: 'Help', hint: 'How the app works — guides and diagrams' }
+      { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' }
     ]
   } : null
+
+  // Help section - visible to all employees
+  const helpSection = {
+    title: 'SUPPORT',
+    sectionIcon: HelpCircle,
+    items: [
+      { to: '/admin/help', icon: HelpCircle, label: 'Help', hint: 'How the app works — guides and diagrams' }
+    ]
+  }
 
   // Dev section - Developer only (level 5)
   const devSection = userAccessLevel >= 5 ? {
@@ -863,6 +871,7 @@ export default function Layout() {
 
             {adminSection && <NavSection section={adminSection} />}
             {devSection && <NavSection section={devSection} />}
+            <NavSection section={helpSection} />
           </nav>
 
           {/* User/Logout */}
@@ -1300,6 +1309,7 @@ export default function Layout() {
 
                 {adminSection && <NavSection section={adminSection} mobile />}
                 {devSection && <NavSection section={devSection} mobile />}
+                <NavSection section={helpSection} mobile />
               </nav>
               <div style={{
                 padding: '16px',

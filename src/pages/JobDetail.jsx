@@ -93,6 +93,7 @@ function JobDetailInner() {
   const fetchJobs = useStore((state) => state.fetchJobs)
   const fetchTimeLogs = useStore((state) => state.fetchTimeLogs)
   const isAdmin = checkAdmin(useStore((state) => state.user))
+  const customers = useStore((state) => state.customers)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
   const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
 
@@ -140,6 +141,8 @@ function JobDetailInner() {
   const [newTime, setNewTime] = useState({ employee_id: '', hours: '', category: 'Regular', notes: '' })
   const [editMode, setEditMode] = useState(false)
   const [formData, setFormData] = useState({})
+  const [customerSearchText, setCustomerSearchText] = useState('')
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [leadMeter, setLeadMeter] = useState(null)
   const [leadEin, setLeadEin] = useState(null)
@@ -180,6 +183,7 @@ function JobDetailInner() {
   // Victor verifications
   const [verificationReports, setVerificationReports] = useState([])
   const [verificationPhotos, setVerificationPhotos] = useState({}) // { [reportId]: [{url, photoType, aiScore}] }
+  const [lineVerificationPhotos, setLineVerificationPhotos] = useState({}) // { [lineId]: [{url, aiScore}] }
   const [verificationsExpanded, setVerificationsExpanded] = useState(false)
 
   // Generate from Library state
@@ -386,6 +390,7 @@ function JobDetailInner() {
         .eq('company_id', companyId)
       if (vPhotos?.length) {
         const grouped = {}
+        const lineVPhotos = {}
         for (const p of vPhotos) {
           const bucket = p.storage_bucket || 'project-documents'
           const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(p.file_path)
@@ -396,13 +401,32 @@ function JobDetailInner() {
             photoType: p.photo_type,
             aiScore: p.ai_score
           })
+          // Group line_item verification photos by matching line item
+          if (p.photo_type === 'line_item' && lines?.length) {
+            const pathSegment = p.file_path.split('/').pop() || ''
+            const match = pathSegment.match(/^lineitem_(.+?)_\d+_/)
+            if (match) {
+              const photoLineName = match[1].replace(/_/g, ' ')
+              const matchedLine = lines.find(l => {
+                const name = (l.item?.name || l.description || '').toLowerCase()
+                return name === photoLineName.toLowerCase() || name.replace(/[^a-z0-9]/g, '') === photoLineName.replace(/[^a-z0-9]/g, '').toLowerCase()
+              })
+              if (matchedLine) {
+                if (!lineVPhotos[matchedLine.id]) lineVPhotos[matchedLine.id] = []
+                lineVPhotos[matchedLine.id].push({ url: urlData.publicUrl, aiScore: p.ai_score })
+              }
+            }
+          }
         }
         setVerificationPhotos(grouped)
+        setLineVerificationPhotos(lineVPhotos)
       } else {
         setVerificationPhotos({})
+        setLineVerificationPhotos({})
       }
     } else {
       setVerificationPhotos({})
+      setLineVerificationPhotos({})
     }
 
     setLoading(false)
@@ -511,10 +535,16 @@ function JobDetailInner() {
       item_id: line.item_id,
       quantity: line.quantity,
       price: line.price,
-      total: line.total
+      total: line.total,
+      notes: line.notes || null
     }])
     await fetchJobData()
     setSaving(false)
+  }
+
+  const handleJobLineNotesChange = async (lineId, newNotes) => {
+    setLineItems(prev => prev.map(l => l.id === lineId ? { ...l, notes: newNotes } : l))
+    await supabase.from('job_lines').update({ notes: newNotes || null }).eq('id', lineId)
   }
 
   const removeLineItem = async (lineId) => {
@@ -522,6 +552,48 @@ function JobDetailInner() {
     await supabase.from('job_lines').delete().eq('id', lineId)
     await fetchJobData()
     setSaving(false)
+  }
+
+  const handleJobLinePhotoUpload = async (lineId, e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const ext = file.name.split('.').pop()
+    const path = `jobs/${id}/lines/${lineId}/${Date.now()}.${ext}`
+
+    const { error: uploadErr } = await supabase.storage
+      .from('project-documents')
+      .upload(path, file)
+    if (uploadErr) {
+      const { toast } = await import('../lib/toast')
+      toast.error('Photo upload failed: ' + uploadErr.message)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(path)
+    const photoUrl = urlData.publicUrl
+
+    const line = lineItems.find(l => l.id === lineId)
+    const updatedPhotos = [...(line?.photos || []), photoUrl]
+
+    setLineItems(prev => prev.map(l => l.id === lineId ? { ...l, photos: updatedPhotos } : l))
+    await supabase.from('job_lines').update({ photos: updatedPhotos }).eq('id', lineId)
+  }
+
+  const handleJobLinePhotoDelete = async (lineId, photoUrl) => {
+    const line = lineItems.find(l => l.id === lineId)
+    const updatedPhotos = (line?.photos || []).filter(p => p !== photoUrl)
+
+    setLineItems(prev => prev.map(l => l.id === lineId ? { ...l, photos: updatedPhotos } : l))
+    await supabase.from('job_lines').update({ photos: updatedPhotos }).eq('id', lineId)
+
+    try {
+      const url = new URL(photoUrl)
+      const storagePath = url.pathname.split('/object/public/project-documents/')[1]
+      if (storagePath) {
+        await supabase.storage.from('project-documents').remove([decodeURIComponent(storagePath)])
+      }
+    } catch (_) { /* ignore */ }
   }
 
   const addTimeEntry = async () => {
@@ -563,7 +635,8 @@ function JobDetailInner() {
         item_id: ql.item_id,
         quantity: ql.quantity,
         price: ql.price,
-        total: ql.line_total || ql.total
+        total: ql.line_total || ql.total,
+        photos: ql.photos || []
       }))
 
       await supabase.from('job_lines').insert(jobLines)
@@ -612,7 +685,7 @@ function JobDetailInner() {
 
   const handleSave = async () => {
     setSaving(true)
-    await supabase.from('jobs').update({
+    const updates = {
       job_title: formData.job_title,
       job_address: formData.job_address,
       start_date: formData.start_date,
@@ -622,7 +695,9 @@ function JobDetailInner() {
       details: formData.details,
       notes: formData.notes,
       updated_at: new Date().toISOString()
-    }).eq('id', id)
+    }
+    if (formData.customer_id) updates.customer_id = formData.customer_id
+    await supabase.from('jobs').update(updates).eq('id', id)
     await fetchJobData()
     await fetchJobs()
     setEditMode(false)
@@ -1753,7 +1828,10 @@ function JobDetailInner() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Job Details</h3>
               <button
-                onClick={() => setEditMode(!editMode)}
+                onClick={() => {
+                  if (!editMode) setCustomerSearchText(job.customer?.name || '')
+                  setEditMode(!editMode)
+                }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '4px',
                   color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px'
@@ -1769,6 +1847,69 @@ function JobDetailInner() {
                 <div>
                   <label style={labelStyle}>Job Title</label>
                   <input type="text" value={formData.job_title || ''} onChange={(e) => setFormData(prev => ({ ...prev, job_title: e.target.value }))} style={inputStyle} />
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <label style={labelStyle}>Customer</label>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, pointerEvents: 'none' }} />
+                    <input
+                      type="text"
+                      value={customerSearchText}
+                      onChange={(e) => {
+                        setCustomerSearchText(e.target.value)
+                        setShowCustomerDropdown(true)
+                        if (!e.target.value) setFormData(prev => ({ ...prev, customer_id: '' }))
+                      }}
+                      onFocus={() => setShowCustomerDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                      placeholder="Type to search customers..."
+                      style={{ ...inputStyle, paddingLeft: '32px' }}
+                      autoComplete="off"
+                    />
+                    {customerSearchText && (
+                      <button
+                        type="button"
+                        onClick={() => { setCustomerSearchText(''); setFormData(prev => ({ ...prev, customer_id: '' })); setShowCustomerDropdown(false) }}
+                        style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: theme.textMuted }}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                  {showCustomerDropdown && (() => {
+                    const filtered = (customers || []).filter(c =>
+                      c.name?.toLowerCase().includes((customerSearchText || '').toLowerCase())
+                    ).slice(0, 10)
+                    return filtered.length > 0 ? (
+                      <div style={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
+                        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                        borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        maxHeight: '200px', overflowY: 'auto', marginTop: '2px'
+                      }}>
+                        {filtered.map(c => (
+                          <div
+                            key={c.id}
+                            onClick={() => {
+                              setFormData(prev => ({ ...prev, customer_id: c.id }))
+                              setCustomerSearchText(c.name)
+                              setShowCustomerDropdown(false)
+                            }}
+                            style={{
+                              padding: '10px 12px', cursor: 'pointer', fontSize: '14px',
+                              color: theme.text, borderBottom: `1px solid ${theme.border}`,
+                              backgroundColor: formData.customer_id === c.id ? theme.accentBg : 'transparent'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = formData.customer_id === c.id ? theme.accentBg : 'transparent'}
+                          >
+                            {c.name}
+                            {c.phone && <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: '8px' }}>{c.phone}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null
+                  })()}
                 </div>
                 <div>
                   <label style={labelStyle}>Address</label>
@@ -1907,7 +2048,10 @@ function JobDetailInner() {
                   <div></div>
                 </div>
                 {lineItems.map((line) => {
-                  const photoCount = (linePhotos[line.id] || []).length
+                  const auditPhotos = line.photos || []
+                  const attPhotoCount = (linePhotos[line.id] || []).length
+                  const victorPhotos = lineVerificationPhotos[line.id] || []
+                  const totalPhotoCount = auditPhotos.length + attPhotoCount + victorPhotos.length
                   const isExpanded = expandedLineId === line.id
                   const beforePhotos = (linePhotos[line.id] || []).filter(p => p.photo_context === 'line_before')
                   const afterPhotos = (linePhotos[line.id] || []).filter(p => p.photo_context === 'line_after')
@@ -1925,9 +2069,19 @@ function JobDetailInner() {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>{line.item?.name || 'Unknown'}</p>
-                          {photoCount > 0 && (
+                          {line.notes && (
+                            <span style={{ fontSize: '11px', backgroundColor: 'rgba(59,130,246,0.1)', color: '#3b82f6', padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
+                              <FileText size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />notes
+                            </span>
+                          )}
+                          {totalPhotoCount > 0 && (
                             <span style={{ fontSize: '11px', backgroundColor: theme.accentBg, color: theme.accent, padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
-                              <Camera size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{photoCount}
+                              <Camera size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{totalPhotoCount}
+                            </span>
+                          )}
+                          {victorPhotos.length > 0 && (
+                            <span style={{ fontSize: '11px', backgroundColor: 'rgba(168,85,247,0.1)', color: '#a855f7', padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
+                              Victor
                             </span>
                           )}
                         </div>
@@ -1945,7 +2099,78 @@ function JobDetailInner() {
                       </div>
                       {isExpanded && (
                         <div style={{ padding: '12px 20px 16px', backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
-                          {/* Before Photos */}
+                          {/* Notes */}
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Notes</div>
+                            <input
+                              type="text"
+                              placeholder="Line item notes..."
+                              defaultValue={line.notes || ''}
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={(e) => {
+                                const val = e.target.value.trim()
+                                if (val !== (line.notes || '')) handleJobLineNotesChange(line.id, val)
+                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                              style={{
+                                width: '100%',
+                                padding: '6px 8px',
+                                fontSize: '13px',
+                                color: theme.textSecondary,
+                                border: `1px solid ${theme.border}`,
+                                borderRadius: '6px',
+                                backgroundColor: theme.bgCard,
+                                outline: 'none',
+                                boxSizing: 'border-box'
+                              }}
+                            />
+                          </div>
+                          {/* Audit/Source Photos (editable) */}
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Photos</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {auditPhotos.map((url, idx) => (
+                                <div key={`audit-${idx}`} style={{ position: 'relative', width: '72px', height: '72px', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+                                  <img
+                                    src={url}
+                                    alt={`Photo ${idx + 1}`}
+                                    onClick={() => setViewingPhoto({ url, name: `${line.item?.name || 'Line'} Photo ${idx + 1}` })}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                                  />
+                                  <button
+                                    onClick={() => handleJobLinePhotoDelete(line.id, url)}
+                                    style={{
+                                      position: 'absolute', top: '2px', right: '2px',
+                                      width: '20px', height: '20px', borderRadius: '50%',
+                                      backgroundColor: 'rgba(220,38,38,0.85)', color: '#fff',
+                                      border: 'none', cursor: 'pointer', fontSize: '12px',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                              <label style={{
+                                width: '72px', height: '72px', borderRadius: '8px',
+                                border: `2px dashed ${theme.border}`, cursor: 'pointer',
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                color: theme.textMuted, fontSize: '10px', gap: '2px',
+                                backgroundColor: theme.bgCard
+                              }}>
+                                <Camera size={18} />
+                                <span>Add</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  style={{ display: 'none' }}
+                                  onChange={(e) => handleJobLinePhotoUpload(line.id, e)}
+                                />
+                              </label>
+                            </div>
+                          </div>
+                          {/* Before Photos (file_attachments) */}
                           <div style={{ marginBottom: '12px' }}>
                             <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Before</div>
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1956,7 +2181,7 @@ function JobDetailInner() {
                             </div>
                           </div>
                           {/* After (Completion) Photos */}
-                          <div>
+                          <div style={{ marginBottom: victorPhotos.length > 0 ? '12px' : '0' }}>
                             <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>After (Completion)</div>
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                               {afterPhotos.map(photo => (
@@ -1965,6 +2190,36 @@ function JobDetailInner() {
                               <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(line.id, 'line_after')} />
                             </div>
                           </div>
+                          {/* Victor Verification Photos (read-only) */}
+                          {victorPhotos.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: '12px', fontWeight: '600', color: '#a855f7', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                Victor Verification
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {victorPhotos.map((vp, idx) => (
+                                  <div key={`victor-${idx}`} style={{ position: 'relative', width: '72px', height: '72px', borderRadius: '8px', overflow: 'hidden', border: '2px solid rgba(168,85,247,0.3)' }}>
+                                    <img
+                                      src={vp.url}
+                                      alt={`Verification ${idx + 1}`}
+                                      onClick={() => setViewingPhoto({ url: vp.url, name: `Victor Verification ${idx + 1}` })}
+                                      style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                                    />
+                                    {vp.aiScore != null && (
+                                      <span style={{
+                                        position: 'absolute', bottom: '2px', right: '2px',
+                                        fontSize: '10px', fontWeight: '700', padding: '1px 4px', borderRadius: '4px',
+                                        backgroundColor: vp.aiScore >= 80 ? '#22c55e' : vp.aiScore >= 60 ? '#eab308' : '#ef4444',
+                                        color: '#fff'
+                                      }}>
+                                        {vp.aiScore}
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2154,25 +2409,63 @@ function JobDetailInner() {
                 <FileText size={18} />
                 Generate Work Order
               </button>
-              {job.lead_id && jobInvoices.length === 0 && (
-                <button onClick={createCustomerInvoice} disabled={saving} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '12px 16px', backgroundColor: theme.accentBg, color: theme.accent,
-                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+              {/* Paired Invoicing: Customer + Utility Incentive */}
+              {(job.lead_id || parseFloat(job.utility_incentive) > 0) && (jobInvoices.length === 0 || jobUtilityInvoices.length === 0) && (
+                <div style={{
+                  border: `1px solid rgba(212,148,10,0.3)`,
+                  borderRadius: '10px',
+                  padding: '14px',
+                  backgroundColor: 'rgba(212,148,10,0.05)',
                 }}>
-                  <DollarSign size={18} />
-                  Customer Copayment
-                </button>
-              )}
-              {(job.lead_id || parseFloat(job.utility_incentive) > 0) && jobUtilityInvoices.length === 0 && (
-                <button onClick={createUtilityInvoice} disabled={saving} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '12px 16px', backgroundColor: 'rgba(212,148,10,0.12)', color: '#d4940a',
-                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
-                }}>
-                  <Zap size={18} />
-                  Utility Incentive Invoice
-                </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                    <Zap size={14} color="#d4940a" />
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#d4940a' }}>Lighting Project Invoicing</span>
+                  </div>
+                  {(() => {
+                    const incentiveAmt = parseFloat(job.utility_incentive) || 0
+                    const projectTotal = lineItems.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0) || (parseFloat(job.quote?.quote_amount) || 0)
+                    const customerOOP = projectTotal > 0 ? projectTotal - incentiveAmt : 0
+                    return (
+                      <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px', lineHeight: '1.6' }}>
+                        {projectTotal > 0 && <div>Project: <strong>${projectTotal.toLocaleString()}</strong></div>}
+                        <div>Utility Incentive: <strong style={{ color: '#d4940a' }}>${incentiveAmt.toLocaleString()}</strong></div>
+                        {customerOOP > 0 && <div>Customer Copay: <strong>${customerOOP.toLocaleString()}</strong></div>}
+                      </div>
+                    )
+                  })()}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {job.lead_id && jobInvoices.length === 0 && (
+                      <button onClick={createCustomerInvoice} disabled={saving} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                        padding: '10px 14px', backgroundColor: theme.accentBg, color: theme.accent,
+                        border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
+                      }}>
+                        <DollarSign size={16} />
+                        Customer Copayment Invoice
+                      </button>
+                    )}
+                    {jobUtilityInvoices.length === 0 && (
+                      <button onClick={createUtilityInvoice} disabled={saving} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                        padding: '10px 14px', backgroundColor: 'rgba(212,148,10,0.12)', color: '#d4940a',
+                        border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
+                      }}>
+                        <Zap size={16} />
+                        Utility Incentive Invoice
+                      </button>
+                    )}
+                    {job.lead_id && jobInvoices.length === 0 && jobUtilityInvoices.length === 0 && (
+                      <button onClick={async () => { await createCustomerInvoice(); await createUtilityInvoice(); }} disabled={saving} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                        padding: '10px 14px', backgroundColor: '#d4940a', color: '#ffffff',
+                        border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer'
+                      }}>
+                        <FileText size={16} />
+                        Create Both Invoices
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
               <button onClick={() => setShowCostingModal(true)} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',

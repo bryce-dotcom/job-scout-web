@@ -11,7 +11,8 @@ import {
   ChevronDown, ChevronUp, ExternalLink, Navigation,
   CheckCircle, Timer, Briefcase, DollarSign, Star,
   AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
-  Loader2, ShieldCheck, Shield, Search, FileText, Lock
+  Loader2, ShieldCheck, Shield, Search, FileText, Lock,
+  Camera
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
 import ArnieFloatingPanel from '../components/ArnieFloatingPanel'
@@ -143,6 +144,7 @@ export default function FieldScout() {
   const [showDailyCheckPrompt, setShowDailyCheckPrompt] = useState(false)
   const [verifiedJobs, setVerifiedJobs] = useState(new Set()) // job IDs with passing verification
   const [clockOutBlocked, setClockOutBlocked] = useState(false)
+  const [hasDailyVerification, setHasDailyVerification] = useState(false) // field roles need this
 
   // Invoice presentation
   const [invoiceJob, setInvoiceJob] = useState(null) // job to show invoice for
@@ -152,12 +154,21 @@ export default function FieldScout() {
   // Job search (for clock-in when no today's jobs)
   const [jobSearchQuery, setJobSearchQuery] = useState('')
 
+  // Receipt capture
+  const [receiptUploading, setReceiptUploading] = useState(null) // job ID being uploaded
+  const receiptInputRef = useRef(null)
+  const [receiptJobId, setReceiptJobId] = useState(null)
+
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const geocodeCacheRef = useRef({})
   const jobCardRefs = useRef({})
 
   const currentEmployee = employees.find(e => e.email === user?.email)
+
+  // Determine if user is a field role that requires Victor verification before clock-out
+  const fieldRoles = ['field tech', 'installer', 'project manager', 'technician', 'foreman', 'crew lead']
+  const isFieldRole = currentEmployee?.role && fieldRoles.includes(currentEmployee.role.toLowerCase())
 
   // Today's jobs — only show jobs assigned to this user (or unassigned)
   const todayStr = new Date().toDateString()
@@ -225,6 +236,25 @@ export default function FieldScout() {
   }, [companyId, todaysJobs.length])
 
   useEffect(() => { fetchVerifiedJobs() }, [fetchVerifiedJobs])
+
+  // Fetch daily verification status for field roles
+  useEffect(() => {
+    if (!companyId || !currentEmployee || !isFieldRole) return
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    supabase
+      .from('verification_reports')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('verified_by', currentEmployee.id)
+      .eq('verification_type', 'daily')
+      .gte('created_at', todayStart.toISOString())
+      .gte('score', 60)
+      .limit(1)
+      .then(({ data }) => {
+        if (data && data.length > 0) setHasDailyVerification(true)
+      })
+  }, [companyId, currentEmployee, isFieldRole])
 
   // Fetch invoice for a job (for presentation)
   const fetchInvoice = async (job) => {
@@ -376,6 +406,11 @@ export default function FieldScout() {
     if (!activeEntry || clockingOut) return
     // Block clock-out if clocked into a job that hasn't been verified
     if (activeEntry.job_id && !verifiedJobs.has(activeEntry.job_id)) {
+      setClockOutBlocked(true)
+      return
+    }
+    // Block field roles clocked in as General if they haven't done daily verification
+    if (isFieldRole && !activeEntry.job_id && !hasDailyVerification) {
       setClockOutBlocked(true)
       return
     }
@@ -542,6 +577,59 @@ export default function FieldScout() {
       window.open(googleReviewUrl, '_blank')
     }
     setReviewSent(prev => new Set(prev).add(job.id))
+  }
+
+  // Receipt capture — uploads photo to storage and creates expense record for job costing
+  const handleReceiptCapture = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !receiptJobId) return
+    setReceiptUploading(receiptJobId)
+
+    try {
+      const timestamp = Date.now()
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const storagePath = `jobs/${receiptJobId}/receipts/${timestamp}_${safeName}`
+
+      const { error: uploadErr } = await supabase.storage
+        .from('project-documents')
+        .upload(storagePath, file, { contentType: file.type })
+
+      if (uploadErr) {
+        toast.error('Receipt upload failed: ' + uploadErr.message)
+        return
+      }
+
+      const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
+
+      const { error: insertErr } = await supabase.from('expenses').insert([{
+        company_id: companyId,
+        job_id: receiptJobId,
+        amount: 0,
+        category: 'Materials',
+        date: new Date().toISOString().split('T')[0],
+        description: 'Receipt capture — Field Scout',
+        receipt_url: urlData.publicUrl,
+        receipt_storage_path: storagePath,
+        source: 'receipt'
+      }])
+
+      if (insertErr) {
+        toast.error('Failed to save expense: ' + insertErr.message)
+      } else {
+        toast.success('Receipt captured — edit amount in Expenses')
+      }
+    } catch (err) {
+      toast.error('Receipt upload error: ' + err.message)
+    } finally {
+      setReceiptUploading(null)
+      setReceiptJobId(null)
+      if (receiptInputRef.current) receiptInputRef.current.value = ''
+    }
+  }
+
+  const triggerReceiptCapture = (jobId) => {
+    setReceiptJobId(jobId)
+    setTimeout(() => receiptInputRef.current?.click(), 50)
   }
 
   // Timer formatting
@@ -761,6 +849,16 @@ export default function FieldScout() {
   return (
     <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', overflowX: 'hidden' }}>
 
+      {/* Hidden file input for receipt camera */}
+      <input
+        ref={receiptInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleReceiptCapture}
+        style={{ display: 'none' }}
+      />
+
       {/* ===== SECTION 1: HEADER ===== */}
       <div style={{ marginBottom: '20px', textAlign: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -898,7 +996,7 @@ export default function FieldScout() {
               style={{
                 flex: 1,
                 padding: '14px',
-                backgroundColor: (activeEntry?.job_id && !verifiedJobs.has(activeEntry.job_id))
+                backgroundColor: ((activeEntry?.job_id && !verifiedJobs.has(activeEntry.job_id)) || (isFieldRole && !activeEntry?.job_id && !hasDailyVerification))
                   ? 'rgba(239,68,68,0.5)' : 'rgba(239,68,68,0.9)',
                 border: 'none',
                 borderRadius: '10px',
@@ -913,7 +1011,7 @@ export default function FieldScout() {
                 minHeight: '48px'
               }}
             >
-              {activeEntry?.job_id && !verifiedJobs.has(activeEntry.job_id) ? (
+              {(activeEntry?.job_id && !verifiedJobs.has(activeEntry.job_id)) || (isFieldRole && !activeEntry?.job_id && !hasDailyVerification) ? (
                 <><Lock size={18} /> Clock Out</>
               ) : (
                 <><Square size={18} /> {clockingOut ? 'Saving...' : 'Clock Out'}</>
@@ -939,12 +1037,18 @@ export default function FieldScout() {
                   Verify before clocking out
                 </div>
                 <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px' }}>
-                  Complete a Victor verification on your active job before clocking out.
+                  {activeEntry.job_id
+                    ? 'Complete a Victor verification on your active job before clocking out.'
+                    : 'Field crew must complete a daily Victor verification before clocking out.'}
                 </div>
                 <button
                   onClick={() => {
                     setClockOutBlocked(false)
-                    handleMarkComplete(activeEntry.job_id)
+                    if (activeEntry.job_id) {
+                      handleMarkComplete(activeEntry.job_id)
+                    } else {
+                      setVictorModal({ type: 'daily', jobId: null })
+                    }
                   }}
                   style={{
                     padding: '10px 16px',
@@ -962,7 +1066,7 @@ export default function FieldScout() {
                   }}
                 >
                   <Shield size={16} />
-                  Verify Now
+                  {activeEntry.job_id ? 'Verify Now' : 'Run Daily Check'}
                 </button>
               </div>
             </div>
@@ -1023,6 +1127,62 @@ export default function FieldScout() {
           </div>
         ))}
       </div>
+
+      {/* ===== UNVERIFIED COMPLETED JOBS WARNING ===== */}
+      {(() => {
+        const unverifiedCompleted = todaysJobs.filter(j =>
+          j.status === 'Completed' && !verifiedJobs.has(j.id)
+        )
+        const isLead = unverifiedCompleted.some(j =>
+          j.job_lead_id && currentEmployee && j.job_lead_id === currentEmployee.id
+        )
+        if (unverifiedCompleted.length === 0) return null
+        return (
+          <div style={{
+            padding: '14px 16px',
+            marginBottom: '16px',
+            backgroundColor: 'rgba(239,68,68,0.08)',
+            border: '2px solid rgba(239,68,68,0.4)',
+            borderRadius: '14px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+              <AlertTriangle size={20} style={{ color: '#ef4444', flexShrink: 0 }} />
+              <div style={{ fontSize: '14px', fontWeight: '700', color: '#ef4444' }}>
+                {isLead ? 'You are the Job Lead — verification required!' : 'Completed jobs need verification'}
+              </div>
+            </div>
+            <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px' }}>
+              {unverifiedCompleted.length} completed job{unverifiedCompleted.length > 1 ? 's' : ''} {unverifiedCompleted.length > 1 ? 'have' : 'has'} not been verified.
+              {isLead ? ' As the lead, you must photograph each line item and run Victor verification before clocking out.' : ' The job lead must complete verification with line-item photos.'}
+            </div>
+            {unverifiedCompleted.map(j => (
+              <button
+                key={j.id}
+                onClick={() => handleMarkComplete(j.id)}
+                style={{
+                  width: '100%',
+                  marginBottom: '6px',
+                  padding: '10px 14px',
+                  background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  minHeight: '44px'
+                }}
+              >
+                <Shield size={16} />
+                Verify: {j.job_title || j.job_id}
+              </button>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* ===== DAILY CHECK PROMPT (after clock-out) ===== */}
       {showDailyCheckPrompt && (
@@ -1277,6 +1437,21 @@ export default function FieldScout() {
                           }}
                         >
                           <DollarSign size={13} /> Payment
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); triggerReceiptCapture(job.id) }}
+                          disabled={receiptUploading === job.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '5px',
+                            padding: '6px 12px',
+                            background: receiptUploading === job.id
+                              ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)'
+                              : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                            border: 'none', borderRadius: '20px', color: '#fff',
+                            fontSize: '12px', fontWeight: '600', cursor: receiptUploading === job.id ? 'wait' : 'pointer', whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <Camera size={13} /> {receiptUploading === job.id ? 'Uploading...' : 'Receipt'}
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); shareReviewLink(job) }}
@@ -1534,6 +1709,33 @@ export default function FieldScout() {
                             Collect Payment
                           </button>
                         </div>
+
+                        {/* Capture Receipt */}
+                        <button
+                          onClick={() => triggerReceiptCapture(job.id)}
+                          disabled={receiptUploading === job.id}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            background: receiptUploading === job.id
+                              ? theme.bg
+                              : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                            border: 'none',
+                            borderRadius: '10px',
+                            color: receiptUploading === job.id ? theme.textMuted : '#fff',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: receiptUploading === job.id ? 'wait' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            minHeight: '44px'
+                          }}
+                        >
+                          <Camera size={16} />
+                          {receiptUploading === job.id ? 'Uploading Receipt...' : 'Capture Receipt'}
+                        </button>
 
                         {/* Get Review */}
                         <button
@@ -1964,17 +2166,23 @@ export default function FieldScout() {
                   .select('score, grade')
                   .eq('id', reportId)
                   .single()
-                if (report?.score >= 60 && jobId) {
-                  setVerifiedJobs(prev => new Set(prev).add(jobId))
-                  setClockOutBlocked(false)
-                  if (shouldMarkComplete) {
-                    await supabase.from('jobs')
-                      .update({ status: 'Completed', updated_at: new Date().toISOString() })
-                      .eq('id', jobId).eq('company_id', companyId)
-                    toast.success('Job verified and marked complete!')
-                    // Refresh store
-                    const { fetchJobs } = useStore.getState()
-                    if (fetchJobs) fetchJobs(companyId)
+                if (report?.score >= 60) {
+                  if (jobId) {
+                    setVerifiedJobs(prev => new Set(prev).add(jobId))
+                    setClockOutBlocked(false)
+                    if (shouldMarkComplete) {
+                      await supabase.from('jobs')
+                        .update({ status: 'Completed', updated_at: new Date().toISOString() })
+                        .eq('id', jobId).eq('company_id', companyId)
+                      toast.success('Job verified and marked complete!')
+                      const { fetchJobs } = useStore.getState()
+                      if (fetchJobs) fetchJobs(companyId)
+                    }
+                  }
+                  // Also check if this was a daily verification (unlocks General clock-out for field roles)
+                  if (victorModal.type === 'daily') {
+                    setHasDailyVerification(true)
+                    setClockOutBlocked(false)
                   }
                 }
                 navigate(`/agents/victor/report/${reportId}`)
