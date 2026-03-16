@@ -2586,7 +2586,7 @@ export default function PMJobSetter() {
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          marginTop: '16px'
+          marginTop: '32px'
         }}>
           {/* Calendar Header */}
           <div style={{
