@@ -286,9 +286,6 @@ export default function PMJobSetter() {
       .eq('company_id', companyId)
       .order('start_time', { ascending: true })
 
-    console.log('[fetchData] Jobs loaded:', (jobsData || []).length, 'validStatuses:', validStatuses)
-    const scheduledJobs = (jobsData || []).filter(j => j.start_date)
-    console.log('[fetchData] Jobs with start_date:', scheduledJobs.length, scheduledJobs.slice(0, 3).map(j => ({ id: j.id, status: j.status, start_date: j.start_date, pm_id: j.pm_id })))
     setJobs(jobsData || [])
     setJobSections(sectionsData || [])
     setAppointments(appointmentsData || [])
@@ -493,11 +490,6 @@ export default function PMJobSetter() {
         j.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         j.customer?.address?.toLowerCase().includes(searchTerm.toLowerCase())
       )
-    }
-    // Debug: log filter stages
-    const withDates = filtered.filter(j => j.start_date)
-    if (withDates.length > 0 || jobs.filter(j => j.start_date).length > 0) {
-      console.log('[getFilteredJobs] total:', jobs.length, '→ after filters:', filtered.length, '| with start_date:', withDates.length, '| PM filter:', effectivePM || 'none', '| calendar:', selectedCalendar)
     }
     return filtered
   }
