@@ -2410,7 +2410,7 @@ function JobDetailInner() {
                 Generate Work Order
               </button>
               {/* Paired Invoicing: Customer + Utility Incentive */}
-              {(job.lead_id || parseFloat(job.utility_incentive) > 0) && (jobInvoices.length === 0 || jobUtilityInvoices.length === 0) && (
+              {parseFloat(job.utility_incentive) > 0 && (jobInvoices.length === 0 || jobUtilityInvoices.length === 0) && (
                 <div style={{
                   border: `1px solid rgba(212,148,10,0.3)`,
                   borderRadius: '10px',
@@ -2434,7 +2434,7 @@ function JobDetailInner() {
                     )
                   })()}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {job.lead_id && jobInvoices.length === 0 && (
+                    {jobInvoices.length === 0 && (
                       <button onClick={createCustomerInvoice} disabled={saving} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                         padding: '10px 14px', backgroundColor: theme.accentBg, color: theme.accent,
@@ -2454,7 +2454,7 @@ function JobDetailInner() {
                         Utility Incentive Invoice
                       </button>
                     )}
-                    {job.lead_id && jobInvoices.length === 0 && jobUtilityInvoices.length === 0 && (
+                    {jobInvoices.length === 0 && jobUtilityInvoices.length === 0 && (
                       <button onClick={async () => { await createCustomerInvoice(); await createUtilityInvoice(); }} disabled={saving} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                         padding: '10px 14px', backgroundColor: '#d4940a', color: '#ffffff',
