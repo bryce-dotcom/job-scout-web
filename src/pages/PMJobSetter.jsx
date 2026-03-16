@@ -2320,7 +2320,7 @@ export default function PMJobSetter() {
               )}
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : '380px', minHeight: '200px' }}>
+            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : '460px', minHeight: '200px' }}>
               {jobStatuses.map(status => {
                 const StatusIcon = statusIcons[status.name] || Briefcase
                 return (
