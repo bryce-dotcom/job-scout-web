@@ -497,125 +497,6 @@ export default function Jobs() {
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Load Leaflet CSS & JS from CDN when map is shown
-  useEffect(() => {
-    if (!showMap) return
-    if (document.getElementById('leaflet-css')) {
-      setMapLoaded(true)
-      return
-    }
-    const link = document.createElement('link')
-    link.id = 'leaflet-css'
-    link.rel = 'stylesheet'
-    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
-    document.head.appendChild(link)
-
-    const script = document.createElement('script')
-    script.id = 'leaflet-js'
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-    script.onload = () => setMapLoaded(true)
-    document.head.appendChild(script)
-  }, [showMap])
-
-  // Geocode job addresses for the map
-  const geocodeAddress = useCallback(async (address) => {
-    if (!address) return null
-    if (geocodeCacheRef.current[address]) return geocodeCacheRef.current[address]
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
-      )
-      const data = await res.json()
-      if (data?.[0]) {
-        const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
-        geocodeCacheRef.current[address] = coords
-        return coords
-      }
-    } catch { /* ignore */ }
-    return null
-  }, [])
-
-  const parseGpsLocation = useCallback((gpsStr) => {
-    if (!gpsStr) return null
-    const parts = gpsStr.split(',').map(s => parseFloat(s.trim()))
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-      return { lat: parts[0], lng: parts[1] }
-    }
-    return null
-  }, [])
-
-  useEffect(() => {
-    if (!showMap) return
-    let cancelled = false
-    const geocodeAll = async () => {
-      const newCoords = {}
-      for (const job of filteredJobs) {
-        if (cancelled) break
-        const gps = parseGpsLocation(job.gps_location)
-        if (gps) { newCoords[job.id] = gps; continue }
-        const addr = job.job_address || job.customer?.address
-        if (!addr) continue
-        if (geocodeCacheRef.current[addr]) {
-          newCoords[job.id] = geocodeCacheRef.current[addr]
-          continue
-        }
-        await new Promise(r => setTimeout(r, 1100)) // Nominatim rate limit
-        if (cancelled) break
-        const coords = await geocodeAddress(addr)
-        if (coords) newCoords[job.id] = coords
-      }
-      if (!cancelled) setJobCoords(prev => ({ ...prev, ...newCoords }))
-    }
-    geocodeAll()
-    return () => { cancelled = true }
-  }, [showMap, filteredJobs.length])
-
-  // Initialize/update Leaflet map
-  useEffect(() => {
-    if (!showMap || !mapLoaded || !mapRef.current || typeof window.L === 'undefined') return
-    const coordEntries = Object.entries(jobCoords)
-    if (coordEntries.length === 0) return
-
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove()
-      mapInstanceRef.current = null
-    }
-
-    const L = window.L
-    const map = L.map(mapRef.current, { zoomControl: false, attributionControl: false })
-    L.control.zoom({ position: 'bottomright' }).addTo(map)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map)
-    mapInstanceRef.current = map
-
-    const bounds = []
-    coordEntries.forEach(([jobId, coords]) => {
-      const job = filteredJobs.find(j => j.id === parseInt(jobId))
-      if (!job) return
-      const col = boardColumns.find(c => c.id === job.status)
-      const color = col?.color || theme.accent
-      const marker = L.circleMarker([coords.lat, coords.lng], {
-        radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9
-      }).addTo(map)
-      marker.bindTooltip(
-        `<b>${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`,
-        { direction: 'top', offset: [0, -10] }
-      )
-      marker.on('click', () => navigate(`/jobs/${job.id}`))
-      bounds.push([coords.lat, coords.lng])
-    })
-
-    if (bounds.length > 0) {
-      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 })
-    }
-
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove()
-        mapInstanceRef.current = null
-      }
-    }
-  }, [showMap, mapLoaded, jobCoords, filteredJobs, boardColumns, theme.accent, navigate])
-
   // Get unique teams for filter
   const teams = [...new Set(jobs.map(j => j.assigned_team).filter(Boolean))]
 
@@ -648,6 +529,104 @@ export default function Jobs() {
   })
   // Jobs not in any board column (e.g. Cancelled, On Hold, or statuses not in the board)
   const otherJobs = filteredJobs.filter(j => !boardColumnIds.has(j.status))
+
+  // Load Leaflet CSS & JS from CDN when map is shown
+  useEffect(() => {
+    if (!showMap) return
+    if (document.getElementById('leaflet-css')) { setMapLoaded(true); return }
+    const link = document.createElement('link')
+    link.id = 'leaflet-css'; link.rel = 'stylesheet'
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    document.head.appendChild(link)
+    const script = document.createElement('script')
+    script.id = 'leaflet-js'; script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    script.onload = () => setMapLoaded(true)
+    document.head.appendChild(script)
+  }, [showMap])
+
+  const geocodeAddress = useCallback(async (address) => {
+    if (!address) return null
+    if (geocodeCacheRef.current[address]) return geocodeCacheRef.current[address]
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`)
+      const data = await res.json()
+      if (data?.[0]) {
+        const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
+        geocodeCacheRef.current[address] = coords
+        return coords
+      }
+    } catch { /* ignore */ }
+    return null
+  }, [])
+
+  const parseGpsLocation = useCallback((gpsStr) => {
+    if (!gpsStr) return null
+    const parts = gpsStr.split(',').map(s => parseFloat(s.trim()))
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && (Math.abs(parts[0]) > 0.01 || Math.abs(parts[1]) > 0.01)) {
+      return { lat: parts[0], lng: parts[1] }
+    }
+    return null
+  }, [])
+
+  useEffect(() => {
+    if (!showMap || filteredJobs.length === 0) return
+    let cancelled = false
+    const geocodeAll = async () => {
+      const newCoords = {}
+      for (const job of filteredJobs) {
+        if (cancelled) break
+        const gps = parseGpsLocation(job.gps_location)
+        if (gps) { newCoords[job.id] = gps; continue }
+        const addr = job.job_address || job.customer?.address
+        if (!addr) continue
+        if (geocodeCacheRef.current[addr]) { newCoords[job.id] = geocodeCacheRef.current[addr]; continue }
+        await new Promise(r => setTimeout(r, 1100))
+        if (cancelled) break
+        const coords = await geocodeAddress(addr)
+        if (coords) newCoords[job.id] = coords
+      }
+      if (!cancelled) setJobCoords(prev => ({ ...prev, ...newCoords }))
+    }
+    geocodeAll()
+    return () => { cancelled = true }
+  }, [showMap, filteredJobs.length])
+
+  useEffect(() => {
+    if (!showMap || !mapLoaded || !mapRef.current || typeof window.L === 'undefined') return
+    const coordEntries = Object.entries(jobCoords)
+
+    const timer = setTimeout(() => {
+      if (!mapRef.current) return
+      if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null }
+
+      const L = window.L
+      const map = L.map(mapRef.current, { zoomControl: false, attributionControl: false })
+      L.control.zoom({ position: 'bottomright' }).addTo(map)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map)
+      mapInstanceRef.current = map
+
+      const bounds = []
+      coordEntries.forEach(([jobId, coords]) => {
+        const job = filteredJobs.find(j => j.id === parseInt(jobId))
+        if (!job) return
+        const col = boardColumns.find(c => c.id === job.status)
+        const color = col?.color || theme.accent
+        const marker = L.circleMarker([coords.lat, coords.lng], { radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9 }).addTo(map)
+        marker.bindTooltip(`<b>${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`, { direction: 'top', offset: [0, -10] })
+        marker.on('click', () => navigate(`/jobs/${job.id}`))
+        bounds.push([coords.lat, coords.lng])
+      })
+
+      if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 })
+      } else {
+        map.setView([40.76, -111.89], 10)
+      }
+      map.invalidateSize()
+    }, 100)
+
+    return () => { clearTimeout(timer); if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null } }
+  }, [showMap, mapLoaded, jobCoords, filteredJobs, boardColumns, theme.accent, navigate])
 
   const openAddModal = () => {
     setEditingJob(null)
