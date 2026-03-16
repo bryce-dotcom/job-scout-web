@@ -28,20 +28,33 @@ const calendarColors = [
 
 // Default status colors (used when store value is plain string)
 const defaultStatusColors = {
+  'Chillin': '#6382bf',
   'Scheduled': '#3b82f6',
   'In Progress': '#f59e0b',
   'On Hold': '#6b7280',
   'Complete': '#22c55e',
+  'Completed': '#22c55e',
   'Not Started': '#9ca3af',
   'Verified': '#8b5cf6'
 }
 
+// Fallback statuses when settings aren't configured yet
+const FALLBACK_JOB_STATUSES = [
+  { id: 'Chillin', name: 'Chillin', color: '#6382bf' },
+  { id: 'Scheduled', name: 'Scheduled', color: '#3b82f6' },
+  { id: 'In Progress', name: 'In Progress', color: '#f59e0b' },
+  { id: 'On Hold', name: 'On Hold', color: '#6b7280' },
+  { id: 'Complete', name: 'Complete', color: '#22c55e' }
+]
+
 // Status icons
 const statusIcons = {
+  'Chillin': ClipboardList,
   'Scheduled': Calendar,
   'In Progress': PlayCircle,
   'On Hold': PauseCircle,
   'Complete': CheckCircle2,
+  'Completed': CheckCircle2,
   'Not Started': AlertCircle,
   'Verified': CheckCircle2
 }
@@ -86,8 +99,9 @@ export default function PMJobSetter() {
     })
   }
 
-  // Use normalized versions
-  const jobStatuses = normalizeStatuses(storeJobStatuses, defaultStatusColors)
+  // Use normalized versions — fall back to defaults if settings not configured
+  const normalizedJobStatuses = normalizeStatuses(storeJobStatuses, defaultStatusColors)
+  const jobStatuses = normalizedJobStatuses.length > 0 ? normalizedJobStatuses : FALLBACK_JOB_STATUSES
   const sectionStatuses = normalizeStatuses(storeJobSectionStatuses, defaultStatusColors)
   const jobCalendarsFromStore = storeJobCalendars || []
 
@@ -242,23 +256,21 @@ export default function PMJobSetter() {
     if (!companyId) return
     setLoading(true)
 
-    // Only fetch jobs with statuses the board displays (avoids loading all 6000+ jobs)
-    const validStatuses = jobStatuses.map(s => s.id)
+    // Always exclude terminal statuses via negative filter (works even if jobStatuses hasn't loaded yet)
     let query = supabase
       .from('jobs')
       .select('*, customer:customers(id, name, business_name, address, phone, email), pm:employees!jobs_pm_id_fkey(id, name)')
       .eq('company_id', companyId)
+      .not('status', 'in', '("Completed","Complete","Verified","Verified Complete","Cancelled")')
       .order('start_date', { ascending: true })
       .limit(5000)
-    if (validStatuses.length > 0) {
-      query = query.in('status', validStatuses)
-    }
     let { data: jobsData, error } = await query
     if (error) {
       console.warn('[PMJobSetter] Join query failed, falling back:', error.message)
       let fallbackQuery = supabase.from('jobs').select('*')
-        .eq('company_id', companyId).order('start_date', { ascending: true }).limit(5000)
-      if (validStatuses.length > 0) fallbackQuery = fallbackQuery.in('status', validStatuses)
+        .eq('company_id', companyId)
+        .not('status', 'in', '("Completed","Complete","Verified","Verified Complete","Cancelled")')
+        .order('start_date', { ascending: true }).limit(5000)
       const res = await fallbackQuery
       jobsData = res.data
     }
@@ -419,7 +431,7 @@ export default function PMJobSetter() {
       return
     }
     fetchData()
-  }, [companyId])
+  }, [companyId, jobStatuses.length])
 
   // Get Project Managers - filter by business unit if selected
   const getProjectManagers = () => {
@@ -471,11 +483,9 @@ export default function PMJobSetter() {
   const getFilteredJobs = () => {
     let filtered = jobs
 
-    // Only show jobs with statuses that exist in our jobStatuses
+    // Filter to jobs with recognized statuses (jobStatuses always has values via fallback)
     const validStatuses = jobStatuses.map(s => s.id)
-    if (validStatuses.length > 0) {
-      filtered = filtered.filter(j => validStatuses.includes(j.status))
-    }
+    filtered = filtered.filter(j => validStatuses.includes(j.status))
 
     if (selectedCalendar !== 'all') {
       const cal = jobCalendars.find(c => c.id === selectedCalendar)
@@ -3811,6 +3821,59 @@ export default function PMJobSetter() {
                   </div>
                 )
               })()}
+
+              {/* Reschedule / Schedule button */}
+              <button
+                onClick={() => {
+                  const startTime = detailJob.start_date ? new Date(detailJob.start_date) : new Date()
+                  const formatDTL = (date) => {
+                    const y = date.getFullYear()
+                    const m = String(date.getMonth() + 1).padStart(2, '0')
+                    const d = String(date.getDate()).padStart(2, '0')
+                    const h = String(date.getHours()).padStart(2, '0')
+                    const min = String(date.getMinutes()).padStart(2, '0')
+                    return `${y}-${m}-${d}T${h}:${min}`
+                  }
+                  setScheduleJob(detailJob)
+                  setScheduleForm({
+                    start_time: formatDTL(startTime),
+                    duration_hours: detailJob.allotted_time_hours || 4,
+                    pm_id: detailJob.pm_id || (!isAdmin && user?.id ? String(user.id) : ''),
+                    assigned_employee_ids: [],
+                    assigned_team: detailJob.assigned_team || '',
+                    notes: detailJob.notes || '',
+                    recurrence: detailJob.recurrence || 'None',
+                    recurrence_end: '',
+                    createAppointment: true,
+                    sendText: false,
+                    sendEmail: false,
+                    phone: detailJob.customer?.phone || '',
+                    email: detailJob.customer?.email || ''
+                  })
+                  setScheduleError(null)
+                  setShowScheduleModal(true)
+                  setDetailJob(null)
+                }}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: theme.accent,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  minHeight: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                <CalendarPlus size={16} />
+                {detailJob.start_date ? 'Reschedule' : 'Schedule'}
+              </button>
             </div>
           </div>
         </div>
@@ -4307,7 +4370,52 @@ export default function PMJobSetter() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+              {scheduleJob?.start_date && (
+                <button
+                  type="button"
+                  disabled={scheduleSaving}
+                  onClick={async () => {
+                    if (!confirm('Remove schedule and move job back to Chillin?')) return
+                    setScheduleSaving(true)
+                    try {
+                      await supabase.from('jobs').update({
+                        start_date: null,
+                        end_date: null,
+                        status: 'Chillin',
+                        updated_at: new Date().toISOString()
+                      }).eq('id', scheduleJob.id)
+                      // Delete associated appointments for this job
+                      await supabase.from('appointments').delete()
+                        .eq('company_id', companyId)
+                        .eq('job_id', scheduleJob.id)
+                      setScheduleSaving(false)
+                      setShowScheduleModal(false)
+                      setScheduleJob(null)
+                      await fetchData()
+                    } catch (err) {
+                      console.error('[PMJobSetter] Unschedule error:', err)
+                      setScheduleSaving(false)
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    marginTop: '16px',
+                    border: `1px solid #ef4444`,
+                    backgroundColor: 'transparent',
+                    color: '#ef4444',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    minHeight: '44px',
+                    opacity: scheduleSaving ? 0.6 : 1
+                  }}
+                >
+                  Remove Schedule
+                </button>
+              )}
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: scheduleJob?.start_date ? '12px' : '24px' }}>
                 <button
                   type="button"
                   onClick={() => { setShowScheduleModal(false); setScheduleJob(null) }}
@@ -4342,7 +4450,7 @@ export default function PMJobSetter() {
                     opacity: scheduleSaving ? 0.6 : 1
                   }}
                 >
-                  {scheduleSaving ? 'Scheduling...' : 'Schedule Job'}
+                  {scheduleSaving ? 'Scheduling...' : (scheduleJob?.start_date ? 'Reschedule Job' : 'Schedule Job')}
                 </button>
               </div>
             </form>
