@@ -545,15 +545,26 @@ export default function PMJobSetter() {
     return null
   }, [])
 
+  // Geocode ref to avoid effect restarts killing in-progress geocoding
+  const geocodingActiveRef = useRef(false)
+  const geocodeCancelRef = useRef(false)
+
+  // Trigger geocoding when map opens or jobs change
   useEffect(() => {
-    if (!showJobMap || filteredJobList.length === 0) return
-    let cancelled = false
+    if (!showJobMap) return
+    const jobList = getFilteredJobs()
+    if (jobList.length === 0) return
+    // Don't restart if already geocoding
+    if (geocodingActiveRef.current) return
+
+    geocodeCancelRef.current = false
+    geocodingActiveRef.current = true
 
     const geocodeAll = async () => {
       // Phase 1: Instantly plot all jobs with GPS coords or cached addresses
       const instantCoords = {}
       const needsGeocoding = []
-      for (const job of filteredJobList) {
+      for (const job of jobList) {
         const gps = parseGpsLocation(job.gps_location)
         if (gps) { instantCoords[job.id] = gps; continue }
         const addr = job.job_address || job.customer?.address
@@ -561,40 +572,42 @@ export default function PMJobSetter() {
         if (geocodeCacheRef.current[addr]) { instantCoords[job.id] = geocodeCacheRef.current[addr]; continue }
         needsGeocoding.push(job)
       }
+      console.log('[JobMap] Phase 1:', Object.keys(instantCoords).length, 'instant,', needsGeocoding.length, 'need geocoding')
       // Show what we have immediately
-      if (Object.keys(instantCoords).length > 0 && !cancelled) {
+      if (Object.keys(instantCoords).length > 0) {
         setJobMapCoords(prev => ({ ...prev, ...instantCoords }))
       }
 
-      // Phase 2: Geocode remaining addresses progressively (batch of 5, then update)
+      // Phase 2: Geocode remaining addresses progressively
       let batch = {}
       let batchCount = 0
       for (const job of needsGeocoding) {
-        if (cancelled) break
+        if (geocodeCancelRef.current) break
         const addr = job.job_address || job.customer?.address
         await new Promise(r => setTimeout(r, 1100))
-        if (cancelled) break
+        if (geocodeCancelRef.current) break
         const coords = await geocodeAddress(addr)
         if (coords) {
           batch[job.id] = coords
           batchCount++
         }
-        // Update map every 5 geocoded jobs
-        if (batchCount >= 5 && !cancelled) {
+        if (batchCount >= 3) {
+          console.log('[JobMap] Batch update:', batchCount, 'pins')
           setJobMapCoords(prev => ({ ...prev, ...batch }))
           batch = {}
           batchCount = 0
         }
       }
-      // Flush remaining
-      if (Object.keys(batch).length > 0 && !cancelled) {
+      if (Object.keys(batch).length > 0 && !geocodeCancelRef.current) {
         setJobMapCoords(prev => ({ ...prev, ...batch }))
       }
+      geocodingActiveRef.current = false
     }
     geocodeAll()
-    return () => { cancelled = true }
+
+    return () => { geocodeCancelRef.current = true; geocodingActiveRef.current = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showJobMap, filteredJobList.length, jobs.length])
+  }, [showJobMap, jobs.length])
 
   // Initialize / update Leaflet map
   useEffect(() => {
@@ -2573,7 +2586,7 @@ export default function PMJobSetter() {
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          marginTop: '4px'
+          marginTop: '16px'
         }}>
           {/* Calendar Header */}
           <div style={{
