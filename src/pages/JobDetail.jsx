@@ -1965,39 +1965,6 @@ function JobDetailInner() {
                       <span style={{ color: '#dc2626' }}>-{formatCurrency(discount)}</span>
                     </div>
                   )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ color: '#4a7c59', fontSize: '13px' }}>Utility Incentive</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ color: '#4a7c59', fontSize: '13px' }}>$</span>
-                      <input
-                        type="number"
-                        value={localIncentive}
-                        onChange={(e) => setLocalIncentive(e.target.value)}
-                        onBlur={async () => {
-                          const val = parseFloat(localIncentive) || 0
-                          if (val !== (parseFloat(job.utility_incentive) || 0)) {
-                            await supabase.from('jobs').update({
-                              utility_incentive: val,
-                              updated_at: new Date().toISOString()
-                            }).eq('id', id)
-                            setJob(prev => ({ ...prev, utility_incentive: val }))
-                          }
-                        }}
-                        style={{
-                          width: '90px',
-                          padding: '4px 8px',
-                          textAlign: 'right',
-                          border: `1px solid ${theme.border}`,
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          color: '#4a7c59',
-                          backgroundColor: theme.bgCard
-                        }}
-                        step="0.01"
-                        min="0"
-                      />
-                    </div>
-                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: `1px solid ${theme.border}` }}>
                     <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
                     <span style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>{formatCurrency(total)}</span>
@@ -2011,6 +1978,56 @@ function JobDetailInner() {
                 </div>
               </>
             )}
+
+            {/* Utility Incentive — always visible */}
+            <div style={{
+              padding: '16px 20px',
+              backgroundColor: 'rgba(74,124,89,0.08)',
+              borderTop: `1px solid ${theme.border}`,
+              borderRadius: '0 0 12px 12px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#4a7c59', fontSize: '14px', fontWeight: '600' }}>Utility Incentive</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ color: '#4a7c59', fontSize: '14px' }}>$</span>
+                  <input
+                    type="number"
+                    value={localIncentive}
+                    onChange={(e) => setLocalIncentive(e.target.value)}
+                    onBlur={async () => {
+                      const val = parseFloat(localIncentive) || 0
+                      if (val !== (parseFloat(job.utility_incentive) || 0)) {
+                        await supabase.from('jobs').update({
+                          utility_incentive: val,
+                          updated_at: new Date().toISOString()
+                        }).eq('id', id)
+                        setJob(prev => ({ ...prev, utility_incentive: val }))
+                      }
+                    }}
+                    placeholder="0.00"
+                    style={{
+                      width: '110px',
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      border: `1px solid rgba(74,124,89,0.3)`,
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      color: '#4a7c59',
+                      fontWeight: '600',
+                      backgroundColor: theme.bgCard
+                    }}
+                    step="0.01"
+                    min="0"
+                  />
+                </div>
+              </div>
+              {incentive > 0 && subtotal > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '13px', color: '#4a7c59' }}>
+                  <span>Customer Cost After Incentive</span>
+                  <span style={{ fontWeight: '600' }}>{formatCurrency(outOfPocket)}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Time Tracking */}
