@@ -1911,7 +1911,7 @@ export default function PMJobSetter() {
   )
 
   return (
-    <div style={{ padding: isMobile ? '12px' : '16px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '12px' : '16px', minHeight: '100%', display: 'flex', flexDirection: 'column', overflowX: 'hidden', maxWidth: '100%' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -2193,7 +2193,7 @@ export default function PMJobSetter() {
       {/* Main Content */}
       {viewMode === 'kanban' ? (
       /* Kanban — FULL WIDTH, calendar below */
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '16px', overflow: 'auto' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {/* Kanban Jobs — full width */}
         <div style={{
           width: '100%',
@@ -2261,7 +2261,7 @@ export default function PMJobSetter() {
               )}
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : 'calc(100vh - 300px)', minHeight: '300px' }}>
               {jobStatuses.map(status => {
                 const StatusIcon = statusIcons[status.name] || Briefcase
                 return (
