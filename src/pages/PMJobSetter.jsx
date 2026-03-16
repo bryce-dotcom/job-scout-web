@@ -2261,7 +2261,7 @@ export default function PMJobSetter() {
               )}
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : 'calc(100vh - 300px)', minHeight: '300px' }}>
+            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : 'calc(50vh - 60px)', minHeight: '250px' }}>
               {jobStatuses.map(status => {
                 const StatusIcon = statusIcons[status.name] || Briefcase
                 return (
@@ -2519,168 +2519,7 @@ export default function PMJobSetter() {
           )}
         </div>
 
-        {/* Job Map — interactive map with all job locations */}
-        {showJobMap && (
-          <div style={{
-            backgroundColor: theme.bgCard,
-            borderRadius: '12px',
-            border: `1px solid ${theme.border}`,
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              padding: '12px 16px',
-              borderBottom: `1px solid ${theme.border}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <MapPin size={16} color={theme.accent} />
-                <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Job Map</span>
-                <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                  {Object.keys(jobMapCoords).length} of {filteredJobList.filter(j => j.job_address || j.customer?.address || j.gps_location).length} located
-                </span>
-              </div>
-              <button onClick={() => setShowJobMap(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}>
-                <X size={16} />
-              </button>
-            </div>
-            <div ref={jobMapRef} style={{ height: isMobile ? '300px' : '400px', width: '100%', backgroundColor: theme.bg }}>
-              {!jobMapLoaded && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: theme.textMuted, fontSize: '13px' }}>
-                  Loading map...
-                </div>
-              )}
-            </div>
-            {/* Map legend */}
-            <div style={{ padding: '8px 16px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-              {jobStatuses.map(status => {
-                const count = Object.entries(jobMapCoords).filter(([id]) => {
-                  const job = filteredJobList.find(j => j.id === parseInt(id))
-                  return job?.status === status.name
-                }).length
-                if (count === 0) return null
-                return (
-                  <div key={status.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: status.color }} />
-                    <span style={{ fontSize: '11px', color: theme.textMuted }}>{status.name} ({count})</span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Route Suggestions — groups unscheduled jobs by area */}
-        {(() => {
-          const needsScheduling = filteredJobList.filter(j => {
-            const status = (j.status || '').toLowerCase()
-            return (status === 'not started' || status === 'scheduled') && (j.job_address || j.customer?.address)
-          })
-          if (needsScheduling.length < 2) return null
-
-          const getArea = (job) => {
-            const addr = job.job_address || job.customer?.address || ''
-            const parts = addr.split(',').map(s => s.trim())
-            if (parts.length >= 2) {
-              const cityPart = parts.length >= 3 ? parts[parts.length - 2] : parts[1]
-              return cityPart.replace(/\d{5}(-\d{4})?/, '').replace(/\b[A-Z]{2}\b/, '').trim() || 'Unknown Area'
-            }
-            return addr.slice(0, 20) || 'No Address'
-          }
-
-          const areaGroups = {}
-          needsScheduling.forEach(job => {
-            const area = getArea(job)
-            if (!areaGroups[area]) areaGroups[area] = []
-            areaGroups[area].push(job)
-          })
-
-          const routeAreas = Object.entries(areaGroups)
-            .filter(([, jobs]) => jobs.length >= 2)
-            .sort((a, b) => b[1].length - a[1].length)
-
-          if (routeAreas.length === 0) return null
-
-          return (
-            <div style={{
-              backgroundColor: theme.bgCard,
-              borderRadius: '12px',
-              border: `1px solid ${theme.border}`,
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                padding: '12px 16px',
-                borderBottom: `1px solid ${theme.border}`,
-                display: 'flex', alignItems: 'center', gap: '8px'
-              }}>
-                <MapPin size={16} color={theme.accent} />
-                <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Route Suggestions</span>
-                <span style={{ fontSize: '12px', color: theme.textMuted }}>{needsScheduling.length} jobs need scheduling</span>
-              </div>
-              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {routeAreas.map(([area, areaJobs]) => (
-                  <div key={area} style={{
-                    padding: '12px', backgroundColor: theme.bg, borderRadius: '10px',
-                    border: `1px solid ${theme.border}`
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <MapPin size={13} color={theme.accent} />
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{area}</span>
-                        <span style={{ padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', backgroundColor: theme.accentBg, color: theme.accent }}>
-                          {areaJobs.length} jobs
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const addresses = areaJobs.map(j => j.job_address || j.customer?.address).filter(Boolean)
-                          if (addresses.length > 0) {
-                            const origin = encodeURIComponent(addresses[0])
-                            const dest = encodeURIComponent(addresses[addresses.length - 1])
-                            const waypoints = addresses.slice(1, -1).map(a => encodeURIComponent(a)).join('|')
-                            window.open(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}${waypoints ? `&waypoints=${waypoints}` : ''}`, '_blank')
-                          }
-                        }}
-                        style={{
-                          padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
-                          backgroundColor: theme.accent, color: '#fff', border: 'none', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', gap: '4px', minHeight: '30px'
-                        }}
-                      >
-                        <MapPin size={11} /> View Route
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {areaJobs.map((job, idx) => (
-                        <div key={job.id} onClick={() => setDetailJob(job)} style={{
-                          display: 'flex', alignItems: 'center', gap: '8px',
-                          padding: '6px 8px', borderRadius: '6px', cursor: 'pointer',
-                          backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`
-                        }}>
-                          <span style={{
-                            width: '20px', height: '20px', borderRadius: '50%',
-                            backgroundColor: theme.accentBg, color: theme.accent,
-                            fontSize: '11px', fontWeight: '700',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                          }}>{idx + 1}</span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ fontSize: '12px', fontWeight: '500', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {job.job_title || 'Untitled'} — {job.customer?.name || 'No customer'}
-                            </p>
-                            <p style={{ fontSize: '10px', color: theme.textMuted, margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {job.job_address || job.customer?.address || 'No address'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* Calendar — BELOW the kanban */}
+        {/* Calendar — right after kanban for drag-and-drop */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
@@ -3153,6 +2992,166 @@ export default function PMJobSetter() {
             )}
           </div>
         </div>
+
+        {/* Job Map — interactive map with all job locations */}
+        {showJobMap && (
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '12px 16px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MapPin size={16} color={theme.accent} />
+                <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Job Map</span>
+                <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                  {Object.keys(jobMapCoords).length} of {filteredJobList.filter(j => j.job_address || j.customer?.address || j.gps_location).length} located
+                </span>
+              </div>
+              <button onClick={() => setShowJobMap(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}>
+                <X size={16} />
+              </button>
+            </div>
+            <div ref={jobMapRef} style={{ height: isMobile ? '300px' : '400px', width: '100%', backgroundColor: theme.bg }}>
+              {!jobMapLoaded && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: theme.textMuted, fontSize: '13px' }}>
+                  Loading map...
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '8px 16px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {jobStatuses.map(status => {
+                const count = Object.entries(jobMapCoords).filter(([id]) => {
+                  const job = filteredJobList.find(j => j.id === parseInt(id))
+                  return job?.status === status.name
+                }).length
+                if (count === 0) return null
+                return (
+                  <div key={status.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: status.color }} />
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>{status.name} ({count})</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Route Suggestions — groups unscheduled jobs by area */}
+        {(() => {
+          const needsScheduling = filteredJobList.filter(j => {
+            const status = (j.status || '').toLowerCase()
+            return (status === 'not started' || status === 'scheduled') && (j.job_address || j.customer?.address)
+          })
+          if (needsScheduling.length < 2) return null
+
+          const getArea = (job) => {
+            const addr = job.job_address || job.customer?.address || ''
+            const parts = addr.split(',').map(s => s.trim())
+            if (parts.length >= 2) {
+              const cityPart = parts.length >= 3 ? parts[parts.length - 2] : parts[1]
+              return cityPart.replace(/\d{5}(-\d{4})?/, '').replace(/\b[A-Z]{2}\b/, '').trim() || 'Unknown Area'
+            }
+            return addr.slice(0, 20) || 'No Address'
+          }
+
+          const areaGroups = {}
+          needsScheduling.forEach(job => {
+            const area = getArea(job)
+            if (!areaGroups[area]) areaGroups[area] = []
+            areaGroups[area].push(job)
+          })
+
+          const routeAreas = Object.entries(areaGroups)
+            .filter(([, jobs]) => jobs.length >= 2)
+            .sort((a, b) => b[1].length - a[1].length)
+
+          if (routeAreas.length === 0) return null
+
+          return (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                padding: '12px 16px',
+                borderBottom: `1px solid ${theme.border}`,
+                display: 'flex', alignItems: 'center', gap: '8px'
+              }}>
+                <MapPin size={16} color={theme.accent} />
+                <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Route Suggestions</span>
+                <span style={{ fontSize: '12px', color: theme.textMuted }}>{needsScheduling.length} jobs need scheduling</span>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {routeAreas.map(([area, areaJobs]) => (
+                  <div key={area} style={{
+                    padding: '12px', backgroundColor: theme.bg, borderRadius: '10px',
+                    border: `1px solid ${theme.border}`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <MapPin size={13} color={theme.accent} />
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{area}</span>
+                        <span style={{ padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', backgroundColor: theme.accentBg, color: theme.accent }}>
+                          {areaJobs.length} jobs
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const addresses = areaJobs.map(j => j.job_address || j.customer?.address).filter(Boolean)
+                          if (addresses.length > 0) {
+                            const origin = encodeURIComponent(addresses[0])
+                            const dest = encodeURIComponent(addresses[addresses.length - 1])
+                            const waypoints = addresses.slice(1, -1).map(a => encodeURIComponent(a)).join('|')
+                            window.open(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}${waypoints ? `&waypoints=${waypoints}` : ''}`, '_blank')
+                          }
+                        }}
+                        style={{
+                          padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
+                          backgroundColor: theme.accent, color: '#fff', border: 'none', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: '4px', minHeight: '30px'
+                        }}
+                      >
+                        <MapPin size={11} /> View Route
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {areaJobs.map((job, idx) => (
+                        <div key={job.id} onClick={() => setDetailJob(job)} style={{
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '6px 8px', borderRadius: '6px', cursor: 'pointer',
+                          backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`
+                        }}>
+                          <span style={{
+                            width: '20px', height: '20px', borderRadius: '50%',
+                            backgroundColor: theme.accentBg, color: theme.accent,
+                            fontSize: '11px', fontWeight: '700',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                          }}>{idx + 1}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: '12px', fontWeight: '500', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {job.job_title || 'Untitled'} — {job.customer?.name || 'No customer'}
+                            </p>
+                            <p style={{ fontSize: '10px', color: theme.textMuted, margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {job.job_address || job.customer?.address || 'No address'}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
       </div>
       ) : (
         /* Gantt View */
