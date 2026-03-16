@@ -48,6 +48,8 @@ export default function LeadDetail() {
   const createQuote = useStore((state) => state.createQuote)
   const createQuoteLine = useStore((state) => state.createQuoteLine)
   const updateLead = useStore((state) => state.updateLead)
+  const deleteLead = useStore((state) => state.deleteLead)
+  const fetchLeads = useStore((state) => state.fetchLeads)
   const updateQuote = useStore((state) => state.updateQuote)
   const serviceTypes = useStore((state) => state.serviceTypes)
   const leadSources = useStore((state) => state.leadSources)
@@ -154,7 +156,7 @@ export default function LeadDetail() {
         .eq('lead_id', id)
         .order('start_time', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
       setAppointment(aptData || null)
     }
 
@@ -194,6 +196,7 @@ export default function LeadDetail() {
       audit_type: 'lighting',
       quote_amount: audit.est_project_cost || 0,
       utility_incentive: audit.estimated_rebate || 0,
+      salesperson_id: lead.salesperson_id || lead.lead_owner_id || null,
       status: 'Draft'
     })
 
@@ -956,12 +959,26 @@ export default function LeadDetail() {
                   </button>
                 </>
               ) : (
-                <button
-                  onClick={handleStartEdit}
-                  style={{ padding: '8px 16px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Edit3 size={14} /> Edit
-                </button>
+                <>
+                  <button
+                    onClick={handleStartEdit}
+                    style={{ padding: '8px 16px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Edit3 size={14} /> Edit
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm(`Delete "${lead.customer_name || 'this lead'}"? This cannot be undone.`)) return
+                      await deleteLead(lead.id)
+                      await fetchLeads()
+                      toast.success('Lead deleted')
+                      navigate('/leads')
+                    }}
+                    style={{ padding: '8px 16px', backgroundColor: 'transparent', border: `1px solid #ef4444`, borderRadius: '8px', color: '#ef4444', fontSize: '13px', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </>
               )}
             </div>
 

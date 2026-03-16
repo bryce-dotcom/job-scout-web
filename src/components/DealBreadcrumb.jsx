@@ -58,10 +58,10 @@ export default function DealBreadcrumb({ current, leadId, quoteId, customerId, j
 
     if (leadId && (!customerId || !quoteId)) {
       promises.push(
-        supabase.from('leads').select('converted_customer_id, quote_id').eq('id', leadId).single()
+        supabase.from('leads').select('customer_id, quote_id').eq('id', leadId).maybeSingle()
           .then(({ data }) => {
             if (data) {
-              if (!r.customer && data.converted_customer_id) r.customer = data.converted_customer_id
+              if (!r.customer && data.customer_id) r.customer = data.customer_id
               if (!r.quote && data.quote_id) r.quote = data.quote_id
             }
           })

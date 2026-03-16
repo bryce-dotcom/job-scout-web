@@ -1816,8 +1816,28 @@ export const useStore = create(
         set(state => ({ leads: state.leads.filter(l => String(l.id) !== String(id)) }))
         await offlineDb.remove('leads', id)
         if (!String(id).startsWith('temp_')) {
-          await syncQueue.enqueue({ table: 'leads', operation: 'delete', data: { id } })
-          if (navigator.onLine) syncQueue.processQueue()
+          if (navigator.onLine) {
+            // Delete child records first to avoid FK constraint violations
+            try {
+              await Promise.all([
+                supabase.from('appointments').delete().eq('lead_id', id),
+                supabase.from('lead_commissions').delete().eq('lead_id', id),
+                supabase.from('setter_commissions').delete().eq('lead_id', id),
+                supabase.from('sales_pipeline').delete().eq('lead_id', id),
+              ])
+              // Unlink quotes and jobs (set lead_id to null instead of deleting)
+              await Promise.all([
+                supabase.from('quotes').update({ lead_id: null }).eq('lead_id', id),
+                supabase.from('jobs').update({ lead_id: null }).eq('lead_id', String(id)),
+              ])
+              const { error } = await supabase.from('leads').delete().eq('id', id)
+              if (error) console.error('[deleteLead] Failed:', error.message)
+            } catch (err) {
+              console.error('[deleteLead] Cascade delete failed:', err)
+            }
+          } else {
+            await syncQueue.enqueue({ table: 'leads', operation: 'delete', data: { id } })
+          }
         }
       },
 
