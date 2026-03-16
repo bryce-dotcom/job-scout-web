@@ -1,10 +1,6 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getUserRole, assembleDataContext, getDataLoadStatus } from './arnieTools'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
-
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '')
-const GEMINI_TIMEOUT_MS = 30000
 
 function buildSystemPrompt(user, company, role) {
   const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
@@ -206,53 +202,39 @@ export function detectIntent(message) {
   return Array.from(domains)
 }
 
-// Streaming Gemini call — calls onChunk with each text delta for instant UI updates
-// Wrapped in try-catch: if stream errors mid-way and we have partial text, return it instead of throwing
-export async function callGeminiStream(conversationHistory, systemPrompt, dataContext, onChunk) {
+// Call Claude via Supabase edge function
+async function callClaude(conversationHistory, systemPrompt, dataContext, onChunk) {
   const contextMessage = dataContext
     ? `\n\n## Current Data Context (REAL DATA — use ONLY these facts)\nBelow is the ACTUAL company data pulled from the database. Use ONLY these numbers and facts when answering data questions. If something is not listed here, you do NOT have it.\n\n${dataContext}`
     : '\n\n## Current Data Context\nNo data was loaded for this query. If the user asks about specific numbers or records, let them know you don\'t have that data available right now.'
 
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
-    systemInstruction: { parts: [{ text: systemPrompt + contextMessage }] }
+  // Build messages array for Claude (roles: 'user' | 'assistant')
+  const messages = conversationHistory.map(msg => ({
+    role: msg.role === 'user' ? 'user' : 'assistant',
+    content: msg.content,
+  }))
+
+  const { data, error } = await supabase.functions.invoke('arnie-chat', {
+    body: {
+      messages,
+      systemPrompt: systemPrompt + contextMessage,
+      sessionId: null,
+    },
   })
 
-  const chat = model.startChat({
-    history: conversationHistory.slice(0, -1).map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }]
-    }))
-  })
-
-  const lastMessage = conversationHistory[conversationHistory.length - 1]
-
-  // 30s timeout via Promise.race around the Gemini call
-  const streamPromise = chat.sendMessageStream(lastMessage.content)
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('Gemini response timed out after 30s')), GEMINI_TIMEOUT_MS)
-  )
-  const result = await Promise.race([streamPromise, timeoutPromise])
-
-  let fullText = ''
-  try {
-    for await (const chunk of result.stream) {
-      const text = chunk.text()
-      if (text) {
-        fullText += text
-        onChunk(fullText)
-      }
-    }
-  } catch (streamErr) {
-    console.error('[Arnie Engine] Stream error mid-response:', streamErr)
-    // If we got partial text, return it rather than losing everything
-    if (fullText.length > 0) {
-      console.warn('[Arnie Engine] Returning partial response (' + fullText.length + ' chars)')
-      return fullText
-    }
-    throw streamErr
+  if (error) {
+    console.error('[Arnie Engine] Edge function error:', error)
+    throw new Error(error.message || 'Failed to call arnie-chat')
   }
-  return fullText
+
+  if (data?.error) {
+    console.error('[Arnie Engine] Claude API error:', data.error, data.details)
+    throw new Error(data.error)
+  }
+
+  const reply = data?.reply || ''
+  onChunk(reply)
+  return reply
 }
 
 // Send a message through the full pipeline with streaming
@@ -297,7 +279,7 @@ export async function sendMessageStream(message, history = [], onChunk) {
     dataContext = ''
   }
 
-  // If data context is empty/minimal, tell Gemini explicitly
+  // If data context is empty/minimal, tell Claude explicitly
   if (!dataContext || dataContext.trim().length < 50) {
     const loadStatus = getDataLoadStatus()
     const totalRecords = Object.values(loadStatus).reduce((a, b) => a + b, 0)
@@ -311,7 +293,7 @@ export async function sendMessageStream(message, history = [], onChunk) {
     { role: 'user', content: message }
   ]
 
-  const response = await callGeminiStream(conversationHistory, systemPrompt, dataContext, onChunk)
+  const response = await callClaude(conversationHistory, systemPrompt, dataContext, onChunk)
   return response
 }
 
