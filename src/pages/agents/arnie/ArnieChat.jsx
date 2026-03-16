@@ -121,13 +121,16 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  // Cleanup on unmount
+  // Cleanup on unmount — fully stop mic and speech
   useEffect(() => {
     return () => {
       stopSpeaking()
-      recognitionRef.current?.abort()
+      listeningRef.current = false
+      micStateRef.current = 'idle'
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
       if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
+      try { recognitionRef.current?.stop() } catch {}
+      recognitionRef.current = null
     }
   }, [])
 
