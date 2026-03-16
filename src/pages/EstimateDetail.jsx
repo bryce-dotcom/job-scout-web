@@ -98,6 +98,8 @@ export default function EstimateDetail() {
     deposit_date: new Date().toISOString().slice(0, 10),
     deposit_notes: ''
   })
+  const [depositPhoto, setDepositPhoto] = useState(null) // { file, preview }
+  const [depositPhotoUploading, setDepositPhotoUploading] = useState(false)
   const [sendEmail, setSendEmail] = useState('')
 
   // Theme with fallback
@@ -475,15 +477,50 @@ export default function EstimateDetail() {
   const handleApproveWithDeposit = async () => {
     setSaving(true)
     try {
+      let photoUrl = null
+
+      // Upload deposit photo if captured
+      if (depositPhoto?.file) {
+        const ext = depositPhoto.file.name.split('.').pop()
+        const path = `estimates/${id}/deposit/${Date.now()}.${ext}`
+        const { error: uploadErr } = await supabase.storage
+          .from('project-documents')
+          .upload(path, depositPhoto.file, { contentType: depositPhoto.file.type })
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(path)
+          photoUrl = urlData.publicUrl
+        }
+      }
+
+      const depositAmount = parseFloat(depositForm.deposit_amount) || 0
+
       const updates = {
         status: 'Approved',
-        deposit_amount: parseFloat(depositForm.deposit_amount) || 0,
+        deposit_amount: depositAmount,
         deposit_method: depositForm.deposit_method || null,
         deposit_date: depositForm.deposit_date || null,
         deposit_notes: depositForm.deposit_notes || null,
+        deposit_photo: photoUrl,
         updated_at: new Date().toISOString()
       }
       await updateQuote(id, updates)
+
+      // Create a payment record linked to the estimate so it can be applied to invoice/job later
+      if (depositAmount > 0) {
+        const paymentId = `DEP-${Date.now().toString(36).toUpperCase()}`
+        await supabase.from('payments').insert([{
+          company_id: companyId,
+          payment_id: paymentId,
+          amount: depositAmount,
+          date: depositForm.deposit_date || new Date().toISOString().split('T')[0],
+          method: depositForm.deposit_method || null,
+          status: 'Completed',
+          notes: `Deposit for estimate ${estimate.quote_id}${depositForm.deposit_notes ? ' — ' + depositForm.deposit_notes : ''}`,
+          is_deposit: true,
+          quote_id: parseInt(id),
+          receipt_photo: photoUrl
+        }])
+      }
 
       // Update linked lead status if exists
       if (estimate.lead_id) {
@@ -492,6 +529,7 @@ export default function EstimateDetail() {
 
       toast.success('Estimate approved!')
       setShowDepositModal(false)
+      setDepositPhoto(null)
       await fetchEstimateData()
       await fetchQuotes()
     } catch (err) {
@@ -1743,6 +1781,16 @@ export default function EstimateDetail() {
                   <span style={{ fontWeight: '500' }}>{formatCurrency(estimate.deposit_amount)}</span>
                 </div>
               )}
+              {estimate.deposit_photo && (
+                <div style={{ marginTop: '8px' }}>
+                  <img
+                    src={estimate.deposit_photo}
+                    alt="Deposit receipt"
+                    onClick={() => setViewingPhoto({ url: estimate.deposit_photo, name: 'Deposit Receipt' })}
+                    style={{ width: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '8px', border: `1px solid ${theme.border}`, cursor: 'pointer' }}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -2294,6 +2342,66 @@ export default function EstimateDetail() {
                   style={{ ...inputStyle, resize: 'vertical' }}
                 />
               </div>
+
+              {/* Photo capture */}
+              <div>
+                <label style={labelStyle}>Receipt / Check Photo</label>
+                {depositPhoto ? (
+                  <div style={{ position: 'relative', display: 'inline-block' }}>
+                    <img
+                      src={depositPhoto.preview}
+                      alt="Deposit receipt"
+                      style={{ width: '100%', maxHeight: '180px', objectFit: 'contain', borderRadius: '8px', border: `1px solid ${theme.border}` }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setDepositPhoto(null)}
+                      style={{
+                        position: 'absolute', top: '4px', right: '4px',
+                        width: '24px', height: '24px', borderRadius: '50%',
+                        backgroundColor: 'rgba(220,38,38,0.85)', color: '#fff',
+                        border: 'none', cursor: 'pointer', fontSize: '14px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <label style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '16px', border: `2px dashed ${theme.border}`, borderRadius: '8px',
+                    cursor: 'pointer', color: theme.textMuted, fontSize: '14px',
+                    backgroundColor: theme.bg
+                  }}>
+                    <Camera size={20} />
+                    <span>Take Photo or Upload</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          setDepositPhoto({ file, preview: URL.createObjectURL(file) })
+                        }
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+
+              {/* Apply to invoice/job info */}
+              {(estimate.job_id || estimate.lead_id) && (
+                <div style={{
+                  padding: '10px 12px', borderRadius: '8px',
+                  backgroundColor: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)',
+                  fontSize: '13px', color: '#3b82f6'
+                }}>
+                  This deposit will be recorded as a payment and can be applied to the job invoice.
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
                 <button

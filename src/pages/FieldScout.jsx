@@ -136,6 +136,7 @@ export default function FieldScout() {
   const [paymentIntentId, setPaymentIntentId] = useState(null)
 
   // Google review & settings
+  const settings = useStore((s) => s.settings)
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [reviewSent, setReviewSent] = useState(new Set())
 
@@ -292,16 +293,13 @@ export default function FieldScout() {
     setInvoiceLoading(false)
   }
 
-  // Load google review URL from settings
+  // Load google review URL from settings store
   useEffect(() => {
-    if (!companyId) return
-    supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'google_review_url').single()
-      .then(({ data }) => {
-        if (data?.value) {
-          try { setGoogleReviewUrl(JSON.parse(data.value)) } catch { setGoogleReviewUrl(data.value) }
-        }
-      })
-  }, [companyId])
+    const setting = settings.find(s => s.key === 'google_review_url')
+    if (setting?.value) {
+      try { setGoogleReviewUrl(JSON.parse(setting.value)) } catch { setGoogleReviewUrl(setting.value) }
+    }
+  }, [settings])
 
   // Fetch job sections for expanded jobs
   const fetchJobSections = async (jobId) => {

@@ -66,16 +66,37 @@ export default function Customers() {
     fetchCustomers()
   }, [companyId, navigate, fetchCustomers])
 
-  const filteredCustomers = customers.filter(customer => {
-    const matchesSearch = searchTerm === '' ||
-      customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.business_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredCustomers = (() => {
+    const term = searchTerm.toLowerCase().trim()
+    const filtered = customers.filter(customer => {
+      const matchesSearch = !term ||
+        customer.name?.toLowerCase().includes(term) ||
+        customer.business_name?.toLowerCase().includes(term) ||
+        customer.email?.toLowerCase().includes(term) ||
+        customer.phone?.replace(/\D/g, '').includes(term.replace(/\D/g, '')) ||
+        customer.address?.toLowerCase().includes(term) ||
+        customer.notes?.toLowerCase().includes(term)
 
-    const matchesStatus = statusFilter === 'all' || customer.status === statusFilter
+      const matchesStatus = statusFilter === 'all' || customer.status === statusFilter
 
-    return matchesSearch && matchesStatus
-  })
+      return matchesSearch && matchesStatus
+    })
+
+    // Sort: exact name start first, then business name start, then the rest alphabetically
+    if (term) {
+      filtered.sort((a, b) => {
+        const aNameStarts = a.name?.toLowerCase().startsWith(term) ? 0 : 1
+        const bNameStarts = b.name?.toLowerCase().startsWith(term) ? 0 : 1
+        if (aNameStarts !== bNameStarts) return aNameStarts - bNameStarts
+        const aBizStarts = a.business_name?.toLowerCase().startsWith(term) ? 0 : 1
+        const bBizStarts = b.business_name?.toLowerCase().startsWith(term) ? 0 : 1
+        if (aBizStarts !== bBizStarts) return aBizStarts - bBizStarts
+        return (a.name || '').localeCompare(b.name || '')
+      })
+    }
+
+    return filtered
+  })()
 
   const openAddModal = () => {
     setEditingCustomer(null)
@@ -256,15 +277,36 @@ export default function Customers() {
           />
           <input
             type="text"
-            placeholder="Search customers..."
+            placeholder="Search by name, business, email, phone, address..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
               ...inputStyle,
               paddingLeft: '40px',
+              paddingRight: searchTerm ? '36px' : '12px',
               backgroundColor: theme.bgCard
             }}
           />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              style={{
+                position: 'absolute',
+                right: '10px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px',
+                color: theme.textMuted,
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
         <select
           value={statusFilter}
@@ -282,6 +324,13 @@ export default function Customers() {
           <option value="Prospect">Prospect</option>
         </select>
       </div>
+
+      {/* Result count */}
+      {(searchTerm || statusFilter !== 'all') && (
+        <div style={{ marginBottom: '12px', fontSize: '13px', color: theme.textMuted }}>
+          {filteredCustomers.length} of {customers.length} customers
+        </div>
+      )}
 
       {/* Customer List */}
       {filteredCustomers.length === 0 ? (
