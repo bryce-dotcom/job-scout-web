@@ -1911,26 +1911,21 @@ export default function PMJobSetter() {
   )
 
   return (
-    <div style={{ padding: isMobile ? '12px' : '16px', minHeight: '100%', display: 'flex', flexDirection: 'column', overflowX: 'hidden', maxWidth: '100%' }}>
+    <div style={{ padding: isMobile ? '12px' : '12px 16px', minHeight: '100%', display: 'flex', flexDirection: 'column', overflowX: 'hidden', maxWidth: '100%' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
-        marginBottom: '16px',
+        marginBottom: '10px',
         flexDirection: isMobile ? 'column' : 'row',
-        gap: '12px'
+        gap: '8px'
       }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h1 style={{ fontSize: isMobile ? '20px' : '22px', fontWeight: '700', color: theme.text, margin: 0 }}>
-              Job Board
-            </h1>
-            <HelpBadge text="Drag job sections to the calendar to schedule work. Track progress across all jobs." />
-          </div>
-          <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
-            Drag sections to calendar to schedule work
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '20px', fontWeight: '700', color: theme.text, margin: 0 }}>
+            Job Board
+          </h1>
+          <HelpBadge text="Drag job sections to the calendar to schedule work. Track progress across all jobs." />
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           {/* View Toggle */}
@@ -2193,7 +2188,7 @@ export default function PMJobSetter() {
       {/* Main Content */}
       {viewMode === 'kanban' ? (
       /* Kanban — FULL WIDTH, calendar below */
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {/* Kanban Jobs — full width */}
         <div style={{
           width: '100%',
@@ -2204,26 +2199,30 @@ export default function PMJobSetter() {
           {/* Stats Row */}
           {jobStatuses.length > 0 && (
             <div style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${jobStatuses.length}, 1fr)`,
-              gap: '8px',
-              marginBottom: '12px'
+              display: 'flex',
+              gap: '6px',
+              marginBottom: '8px',
+              overflowX: 'auto'
             }}>
               {jobStatuses.map(status => (
                 <div
                   key={status.id}
                   style={{
-                    padding: '8px',
+                    padding: '4px 12px',
                     backgroundColor: theme.bgCard,
-                    borderRadius: '8px',
+                    borderRadius: '6px',
                     border: `1px solid ${theme.border}`,
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    flex: '1 0 auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
                   }}
                 >
-                  <div style={{ fontSize: '18px', fontWeight: '700', color: status.color }}>
+                  <div style={{ fontSize: '15px', fontWeight: '700', color: status.color }}>
                     {getJobsByStatus(status.id).length}
                   </div>
-                  <div style={{ fontSize: '10px', color: theme.textMuted }}>{status.name}</div>
+                  <div style={{ fontSize: '10px', color: theme.textMuted, whiteSpace: 'nowrap' }}>{status.name}</div>
                 </div>
               ))}
             </div>
@@ -2261,7 +2260,7 @@ export default function PMJobSetter() {
               )}
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : 'calc(50vh - 60px)', minHeight: '250px' }}>
+            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : '280px', minHeight: '180px' }}>
               {jobStatuses.map(status => {
                 const StatusIcon = statusIcons[status.name] || Briefcase
                 return (
