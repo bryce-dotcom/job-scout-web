@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
 import {
-  Plus, Search, Briefcase, X, Calendar, Clock, MapPin,
+  Plus, Search, Briefcase, X, Calendar, Clock, MapPin, Map,
   Play, CheckCircle, FileText, ChevronRight, User, Upload, Download,
-  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee
+  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, Navigation
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
@@ -424,6 +424,12 @@ export default function Jobs() {
   const [viewMode, setViewMode] = useState('board')
   const [isMobile, setIsMobile] = useState(false)
   const [calendarMonth, setCalendarMonth] = useState(() => new Date())
+  const [showMap, setShowMap] = useState(false)
+  const [mapLoaded, setMapLoaded] = useState(false)
+  const [jobCoords, setJobCoords] = useState({})
+  const mapRef = useRef(null)
+  const mapInstanceRef = useRef(null)
+  const geocodeCacheRef = useRef({})
 
   // Build dynamic board columns from DB-driven job statuses
   const boardColumns = (() => {
@@ -490,6 +496,125 @@ export default function Jobs() {
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
+
+  // Load Leaflet CSS & JS from CDN when map is shown
+  useEffect(() => {
+    if (!showMap) return
+    if (document.getElementById('leaflet-css')) {
+      setMapLoaded(true)
+      return
+    }
+    const link = document.createElement('link')
+    link.id = 'leaflet-css'
+    link.rel = 'stylesheet'
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    document.head.appendChild(link)
+
+    const script = document.createElement('script')
+    script.id = 'leaflet-js'
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    script.onload = () => setMapLoaded(true)
+    document.head.appendChild(script)
+  }, [showMap])
+
+  // Geocode job addresses for the map
+  const geocodeAddress = useCallback(async (address) => {
+    if (!address) return null
+    if (geocodeCacheRef.current[address]) return geocodeCacheRef.current[address]
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
+      )
+      const data = await res.json()
+      if (data?.[0]) {
+        const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
+        geocodeCacheRef.current[address] = coords
+        return coords
+      }
+    } catch { /* ignore */ }
+    return null
+  }, [])
+
+  const parseGpsLocation = useCallback((gpsStr) => {
+    if (!gpsStr) return null
+    const parts = gpsStr.split(',').map(s => parseFloat(s.trim()))
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      return { lat: parts[0], lng: parts[1] }
+    }
+    return null
+  }, [])
+
+  useEffect(() => {
+    if (!showMap) return
+    let cancelled = false
+    const geocodeAll = async () => {
+      const newCoords = {}
+      for (const job of filteredJobs) {
+        if (cancelled) break
+        const gps = parseGpsLocation(job.gps_location)
+        if (gps) { newCoords[job.id] = gps; continue }
+        const addr = job.job_address || job.customer?.address
+        if (!addr) continue
+        if (geocodeCacheRef.current[addr]) {
+          newCoords[job.id] = geocodeCacheRef.current[addr]
+          continue
+        }
+        await new Promise(r => setTimeout(r, 1100)) // Nominatim rate limit
+        if (cancelled) break
+        const coords = await geocodeAddress(addr)
+        if (coords) newCoords[job.id] = coords
+      }
+      if (!cancelled) setJobCoords(prev => ({ ...prev, ...newCoords }))
+    }
+    geocodeAll()
+    return () => { cancelled = true }
+  }, [showMap, filteredJobs.length])
+
+  // Initialize/update Leaflet map
+  useEffect(() => {
+    if (!showMap || !mapLoaded || !mapRef.current || typeof window.L === 'undefined') return
+    const coordEntries = Object.entries(jobCoords)
+    if (coordEntries.length === 0) return
+
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove()
+      mapInstanceRef.current = null
+    }
+
+    const L = window.L
+    const map = L.map(mapRef.current, { zoomControl: false, attributionControl: false })
+    L.control.zoom({ position: 'bottomright' }).addTo(map)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map)
+    mapInstanceRef.current = map
+
+    const bounds = []
+    coordEntries.forEach(([jobId, coords]) => {
+      const job = filteredJobs.find(j => j.id === parseInt(jobId))
+      if (!job) return
+      const col = boardColumns.find(c => c.id === job.status)
+      const color = col?.color || theme.accent
+      const marker = L.circleMarker([coords.lat, coords.lng], {
+        radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9
+      }).addTo(map)
+      marker.bindTooltip(
+        `<b>${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`,
+        { direction: 'top', offset: [0, -10] }
+      )
+      marker.on('click', () => navigate(`/jobs/${job.id}`))
+      bounds.push([coords.lat, coords.lng])
+    })
+
+    if (bounds.length > 0) {
+      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 })
+    }
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove()
+        mapInstanceRef.current = null
+      }
+    }
+  }, [showMap, mapLoaded, jobCoords, filteredJobs, boardColumns, theme.accent, navigate])
 
   // Get unique teams for filter
   const teams = [...new Set(jobs.map(j => j.assigned_team).filter(Boolean))]
@@ -810,6 +935,20 @@ export default function Jobs() {
             <Download size={16} /> {!isMobile && 'Export'}
           </button>
           <button
+            onClick={() => setShowMap(prev => !prev)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '8px 14px',
+              backgroundColor: showMap ? theme.accent : theme.bgCard,
+              color: showMap ? '#fff' : theme.text,
+              border: `1px solid ${showMap ? theme.accent : theme.border}`,
+              borderRadius: '8px', fontSize: '13px', cursor: 'pointer'
+            }}
+          >
+            <Map size={16} />
+            {!isMobile && 'Map'}
+          </button>
+          <button
             onClick={() => navigate('/jobs/calendar')}
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
@@ -1023,6 +1162,76 @@ export default function Jobs() {
                 ))}
               </div>
             </details>
+          )}
+
+          {/* Job Map — interactive Leaflet map with all job locations */}
+          {showMap && (
+            <div style={{
+              marginTop: '20px',
+              backgroundColor: theme.bgCard,
+              borderRadius: '14px',
+              border: `1px solid ${theme.border}`,
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                padding: '14px 16px',
+                borderBottom: `1px solid ${theme.border}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Map size={16} color={theme.accent} />
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
+                    Job Map
+                  </span>
+                  <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                    {Object.keys(jobCoords).length} of {filteredJobs.filter(j => j.job_address || j.customer?.address || j.gps_location).length} located
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowMap(false)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div
+                ref={mapRef}
+                style={{
+                  height: isMobile ? '300px' : '400px',
+                  width: '100%',
+                  backgroundColor: theme.bg
+                }}
+              >
+                {!mapLoaded && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    height: '100%', color: theme.textMuted, fontSize: '13px'
+                  }}>
+                    Loading map...
+                  </div>
+                )}
+              </div>
+              {/* Map legend */}
+              <div style={{
+                padding: '8px 16px',
+                borderTop: `1px solid ${theme.border}`,
+                display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center'
+              }}>
+                {boardColumns.map(col => {
+                  const count = Object.entries(jobCoords).filter(([id]) => {
+                    const job = filteredJobs.find(j => j.id === parseInt(id))
+                    return job?.status === col.id
+                  }).length
+                  if (count === 0) return null
+                  return (
+                    <div key={col.id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: col.color }} />
+                      <span style={{ fontSize: '11px', color: theme.textMuted }}>{col.name} ({count})</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           )}
 
           {/* Route Suggestions — groups "Needs scheduling" jobs by area */}
