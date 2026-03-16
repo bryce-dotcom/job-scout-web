@@ -325,6 +325,9 @@ export function getSchedule(role, userId) {
   const { jobs } = useStore.getState()
   const now = new Date()
   const today = now.toISOString().split('T')[0]
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowStr = tomorrow.toISOString().split('T')[0]
   const weekEnd = new Date(now)
   weekEnd.setDate(weekEnd.getDate() + 7)
 
@@ -333,17 +336,32 @@ export function getSchedule(role, userId) {
     filtered = filtered.filter(j => j.assigned_to === userId)
   }
 
-  const todayJobs = filtered.filter(j => j.scheduled_date?.startsWith(today))
+  const jobsByDate = (dateStr) => filtered.filter(j => j.scheduled_date?.startsWith(dateStr))
+  const mapJob = (j) => ({ id: j.id, name: j.name || j.title || j.job_title, status: j.status, time: j.scheduled_time, customer: j.customer_name, address: j.job_address || j.address, date: j.scheduled_date })
+
+  const todayJobs = jobsByDate(today)
+  const tomorrowJobs = jobsByDate(tomorrowStr)
+
+  // Next 7 days breakdown by date
   const weekJobs = filtered.filter(j => {
     if (!j.scheduled_date) return false
     const d = new Date(j.scheduled_date)
     return d >= now && d <= weekEnd
   })
+  const weekByDay = {}
+  weekJobs.forEach(j => {
+    const d = j.scheduled_date?.split('T')[0] || 'unknown'
+    if (!weekByDay[d]) weekByDay[d] = []
+    weekByDay[d].push(mapJob(j))
+  })
 
   return {
-    today: todayJobs.map(j => ({ id: j.id, name: j.name || j.title, status: j.status, time: j.scheduled_time, customer: j.customer_name })),
+    today: todayJobs.map(mapJob),
+    todayCount: todayJobs.length,
+    tomorrow: tomorrowJobs.map(mapJob),
+    tomorrowCount: tomorrowJobs.length,
     thisWeek: weekJobs.length,
-    todayCount: todayJobs.length
+    weekByDay
   }
 }
 
