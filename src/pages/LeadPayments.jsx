@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Pencil, Trash2, X, CreditCard, Search, DollarSign, Upload, Download } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, CreditCard, Search, DollarSign, Upload, Download, Camera, Loader, Image, Sparkles } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { depositsFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
@@ -31,7 +31,10 @@ const emptyDeposit = {
   amount: '',
   payment_id: '',
   payment_status: 'Completed',
-  notes: ''
+  payment_method: '',
+  notes: '',
+  invoice_id: '',
+  job_id: ''
 }
 
 export default function LeadPayments() {
@@ -48,6 +51,12 @@ export default function LeadPayments() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [showImportExport, setShowImportExport] = useState(false)
+  const [receiptPhoto, setReceiptPhoto] = useState(null) // { file, preview }
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [invoices, setInvoices] = useState([])
+  const [jobs, setJobs] = useState([])
+  const [viewingPhoto, setViewingPhoto] = useState(null)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -58,6 +67,9 @@ export default function LeadPayments() {
       return
     }
     fetchLeadPayments()
+    // Fetch invoices and jobs for linking
+    supabase.from('invoices').select('id, invoice_number, customer_name, total, job_id').eq('company_id', companyId).order('created_at', { ascending: false }).then(({ data }) => { if (data) setInvoices(data) })
+    supabase.from('jobs').select('id, title, customer_name').eq('company_id', companyId).order('created_at', { ascending: false }).then(({ data }) => { if (data) setJobs(data) })
   }, [companyId, navigate, fetchLeadPayments])
 
   const filteredPayments = leadPayments.filter(p => {
@@ -79,6 +91,7 @@ export default function LeadPayments() {
   const openAddModal = () => {
     setEditingPayment(null)
     setFormData(emptyDeposit)
+    setReceiptPhoto(null)
     setError(null)
     setShowModal(true)
   }
@@ -96,8 +109,12 @@ export default function LeadPayments() {
       amount: payment.amount || '',
       payment_id: payment.payment_id || '',
       payment_status: payment.payment_status || 'Completed',
-      notes: payment.notes || ''
+      payment_method: payment.payment_method || '',
+      notes: payment.notes || '',
+      invoice_id: payment.invoice_id || '',
+      job_id: payment.job_id || ''
     })
+    setReceiptPhoto(payment.receipt_photo ? { preview: payment.receipt_photo } : null)
     setError(null)
     setShowModal(true)
   }
@@ -106,7 +123,56 @@ export default function LeadPayments() {
     setShowModal(false)
     setEditingPayment(null)
     setFormData(emptyDeposit)
+    setReceiptPhoto(null)
     setError(null)
+  }
+
+  const handlePhotoCapture = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const preview = URL.createObjectURL(file)
+    setReceiptPhoto({ file, preview })
+  }
+
+  const handleScanReceipt = async () => {
+    if (!receiptPhoto?.file) return
+    setScanning(true)
+    try {
+      // Convert to base64
+      const reader = new FileReader()
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result.split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(receiptPhoto.file)
+      })
+
+      const { data, error: fnErr } = await supabase.functions.invoke('scan-receipt', {
+        body: { image: { base64, mediaType: receiptPhoto.file.type || 'image/jpeg' } }
+      })
+
+      if (fnErr) throw fnErr
+      if (data?.success && data.extracted) {
+        const ext = data.extracted
+        setFormData(prev => ({
+          ...prev,
+          amount: ext.amount != null ? String(ext.amount) : prev.amount,
+          payment_method: ext.payment_method || prev.payment_method,
+          date_created: ext.date || prev.date_created,
+          lead_customer_name: ext.payer_name || prev.lead_customer_name,
+          business: ext.business_name || prev.business,
+          receipt: ext.receipt_number || prev.receipt,
+          description: ext.description || prev.description,
+          notes: ext.notes || prev.notes
+        }))
+      } else {
+        setError('Could not extract details from photo. Fill in manually.')
+      }
+    } catch (err) {
+      console.error('Scan error:', err)
+      setError('Receipt scan failed. Fill in details manually.')
+    } finally {
+      setScanning(false)
+    }
   }
 
   const handleChange = (e) => {
@@ -118,6 +184,24 @@ export default function LeadPayments() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+
+    // Upload receipt photo if new file
+    let photoUrl = editingPayment?.receipt_photo || null
+    if (receiptPhoto?.file) {
+      setPhotoUploading(true)
+      const ext = receiptPhoto.file.name.split('.').pop()
+      const path = `deposits/${companyId}/${Date.now()}.${ext}`
+      const { error: uploadErr } = await supabase.storage
+        .from('project-documents')
+        .upload(path, receiptPhoto.file, { contentType: receiptPhoto.file.type })
+      if (!uploadErr) {
+        const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(path)
+        photoUrl = urlData.publicUrl
+      }
+      setPhotoUploading(false)
+    } else if (!receiptPhoto) {
+      photoUrl = null
+    }
 
     const payload = {
       company_id: companyId,
@@ -131,7 +215,11 @@ export default function LeadPayments() {
       amount: parseFloat(formData.amount) || 0,
       payment_id: formData.payment_id || null,
       payment_status: formData.payment_status || 'Completed',
+      payment_method: formData.payment_method || null,
       notes: formData.notes || null,
+      receipt_photo: photoUrl,
+      invoice_id: formData.invoice_id ? parseInt(formData.invoice_id) : null,
+      job_id: formData.job_id ? parseInt(formData.job_id) : null,
       updated_at: new Date().toISOString()
     }
 
@@ -319,7 +407,7 @@ export default function LeadPayments() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
               <tr style={{ backgroundColor: theme.accentBg, borderBottom: `1px solid ${theme.border}` }}>
-                {['Business', 'Customer', 'Description', 'Account', 'Source', 'Receipt', 'Date', 'Amount', ''].map((col, i) => (
+                {['', 'Business', 'Customer', 'Description', 'Source', 'Method', 'Date', 'Amount', ''].map((col, i) => (
                   <th key={i} style={{
                     padding: '12px 14px',
                     fontSize: '12px',
@@ -337,6 +425,20 @@ export default function LeadPayments() {
             <tbody>
               {filteredPayments.map((p) => (
                 <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '8px 10px', width: '40px' }}>
+                    {p.receipt_photo ? (
+                      <img
+                        src={p.receipt_photo}
+                        alt="Receipt"
+                        onClick={() => setViewingPhoto(p.receipt_photo)}
+                        style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer', border: `1px solid ${theme.border}` }}
+                      />
+                    ) : (
+                      <div style={{ width: '32px', height: '32px', borderRadius: '4px', backgroundColor: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Image size={14} style={{ color: theme.textMuted, opacity: 0.4 }} />
+                      </div>
+                    )}
+                  </td>
                   <td style={{ padding: '12px 14px', fontSize: '14px', color: theme.text }}>
                     {p.business || '-'}
                   </td>
@@ -346,14 +448,11 @@ export default function LeadPayments() {
                   <td style={{ padding: '12px 14px', fontSize: '13px', color: theme.textSecondary, maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.description || p.notes || '-'}
                   </td>
-                  <td style={{ padding: '12px 14px', fontSize: '13px', color: theme.textSecondary }}>
-                    {p.account || '-'}
-                  </td>
                   <td style={{ padding: '12px 14px', fontSize: '13px', color: theme.textSecondary, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.lead_source || '-'}
                   </td>
-                  <td style={{ padding: '12px 14px', fontSize: '13px', color: theme.textMuted }}>
-                    {p.receipt || '-'}
+                  <td style={{ padding: '12px 14px', fontSize: '13px', color: theme.textSecondary }}>
+                    {p.payment_method || '-'}
                   </td>
                   <td style={{ padding: '12px 14px', fontSize: '14px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
                     {formatDate(p.date_created)}
@@ -426,6 +525,101 @@ export default function LeadPayments() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Receipt Photo Capture */}
+                <div>
+                  <label style={labelStyle}>Receipt / Check Photo</label>
+                  {receiptPhoto?.preview ? (
+                    <div style={{ position: 'relative' }}>
+                      <img
+                        src={receiptPhoto.preview}
+                        alt="Receipt"
+                        onClick={() => setViewingPhoto(receiptPhoto.preview)}
+                        style={{
+                          width: '100%',
+                          maxHeight: '200px',
+                          objectFit: 'cover',
+                          borderRadius: '8px',
+                          border: `1px solid ${theme.border}`,
+                          cursor: 'pointer'
+                        }}
+                      />
+                      <div style={{ display: 'flex', gap: '6px', position: 'absolute', top: '8px', right: '8px' }}>
+                        {receiptPhoto.file && (
+                          <button
+                            type="button"
+                            onClick={handleScanReceipt}
+                            disabled={scanning}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '6px 10px',
+                              backgroundColor: '#3b82f6',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: '500',
+                              cursor: scanning ? 'not-allowed' : 'pointer',
+                              opacity: scanning ? 0.7 : 1,
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                            }}
+                          >
+                            {scanning ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={14} />}
+                            {scanning ? 'Scanning...' : 'AI Scan'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setReceiptPhoto(null)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '28px',
+                            height: '28px',
+                            backgroundColor: 'rgba(0,0,0,0.6)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '50%',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '24px',
+                      border: `2px dashed ${theme.border}`,
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      backgroundColor: theme.bg,
+                      transition: 'border-color 0.15s'
+                    }}>
+                      <Camera size={24} style={{ color: theme.textMuted }} />
+                      <span style={{ fontSize: '13px', color: theme.textMuted }}>
+                        Tap to capture or upload receipt photo
+                      </span>
+                      <span style={{ fontSize: '11px', color: theme.textMuted, opacity: 0.7 }}>
+                        AI will auto-fill details from the photo
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handlePhotoCapture}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                  )}
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Business</label>
@@ -455,7 +649,7 @@ export default function LeadPayments() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Receipt</label>
+                    <label style={labelStyle}>Receipt #</label>
                     <input type="text" name="receipt" value={formData.receipt} onChange={handleChange} style={inputStyle} />
                   </div>
                   <div>
@@ -468,7 +662,23 @@ export default function LeadPayments() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Payment Method</label>
+                    <select name="payment_method" value={formData.payment_method} onChange={handleChange} style={inputStyle}>
+                      <option value="">Select...</option>
+                      <option value="check">Check</option>
+                      <option value="cash">Cash</option>
+                      <option value="credit_card">Credit Card</option>
+                      <option value="ACH">ACH</option>
+                      <option value="wire">Wire Transfer</option>
+                      <option value="Zelle">Zelle</option>
+                      <option value="Venmo">Venmo</option>
+                      <option value="PayPal">PayPal</option>
+                      <option value="money_order">Money Order</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
                   <div>
                     <label style={labelStyle}>Payment ID</label>
                     <input type="text" name="payment_id" value={formData.payment_id} onChange={handleChange} style={inputStyle} />
@@ -481,6 +691,42 @@ export default function LeadPayments() {
                       <option value="Failed">Failed</option>
                       <option value="Refunded">Refunded</option>
                     </select>
+                  </div>
+                </div>
+
+                {/* Link to Invoice / Job */}
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: theme.bg,
+                  borderRadius: '8px',
+                  border: `1px solid ${theme.border}`
+                }}>
+                  <label style={{ ...labelStyle, marginBottom: '10px', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Apply To
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ ...labelStyle, fontSize: '12px' }}>Invoice</label>
+                      <select name="invoice_id" value={formData.invoice_id} onChange={handleChange} style={{ ...inputStyle, fontSize: '13px' }}>
+                        <option value="">None</option>
+                        {invoices.map(inv => (
+                          <option key={inv.id} value={inv.id}>
+                            #{inv.invoice_number || inv.id} - {inv.customer_name || 'Unknown'} ({formatCurrency(inv.total)})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ ...labelStyle, fontSize: '12px' }}>Job</label>
+                      <select name="job_id" value={formData.job_id} onChange={handleChange} style={{ ...inputStyle, fontSize: '13px' }}>
+                        <option value="">None</option>
+                        {jobs.map(job => (
+                          <option key={job.id} value={job.id}>
+                            #{job.id} - {job.title || job.customer_name || 'Untitled'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
 
@@ -497,18 +743,41 @@ export default function LeadPayments() {
                 }}>
                   Cancel
                 </button>
-                <button type="submit" disabled={loading} style={{
+                <button type="submit" disabled={loading || photoUploading} style={{
                   flex: 1, padding: '10px 16px', backgroundColor: theme.accent, color: '#ffffff',
                   border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',
-                  cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1
+                  cursor: (loading || photoUploading) ? 'not-allowed' : 'pointer', opacity: (loading || photoUploading) ? 0.6 : 1
                 }}>
-                  {loading ? 'Saving...' : (editingPayment ? 'Update' : 'Record Deposit')}
+                  {loading ? 'Saving...' : photoUploading ? 'Uploading...' : (editingPayment ? 'Update' : 'Record Deposit')}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+      {/* Photo lightbox */}
+      {viewingPhoto && (
+        <div
+          onClick={() => setViewingPhoto(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 60,
+            cursor: 'pointer',
+            padding: '24px'
+          }}
+        >
+          <img src={viewingPhoto} alt="Receipt" style={{ maxWidth: '90%', maxHeight: '90vh', borderRadius: '8px' }} />
+        </div>
+      )}
+
+      {/* Receipt photo thumbnail in table rows */}
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
       {showImportExport && (
         <ImportExportModal
           tableName="lead_payments"

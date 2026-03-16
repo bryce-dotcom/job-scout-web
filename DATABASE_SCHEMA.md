@@ -825,6 +825,10 @@
 | setter_pay_per_appointment | numeric | |
 | marketer_pay_per_appointment | numeric | |
 | lead_customer_name | text | |
+| receipt_photo | text | |
+| invoice_id | integer | FK invoices.id |
+| job_id | integer | FK jobs.id |
+| payment_method | text | |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 
