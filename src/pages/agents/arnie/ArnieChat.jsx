@@ -79,10 +79,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const [exportedId, setExportedId] = useState(null)
 
   // Voice state
-  const [voiceOn, setVoiceOn] = useState(elevenLabsAvailable())
+  const [voiceOn, setVoiceOn] = useState(true) // always available now (browser TTS is free)
   const [listening, setListening] = useState(false)
   const [speaking, setSpeaking] = useState(false)
-  const [selectedVoice, setSelectedVoice] = useState(ARNIE_VOICES[1].id)
+  const [selectedVoice, setSelectedVoice] = useState(ARNIE_VOICES[0]?.id || 'browser_male_1')
   const [showVoiceSelect, setShowVoiceSelect] = useState(false)
 
   const messagesEndRef = useRef(null)
