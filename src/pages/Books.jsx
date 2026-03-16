@@ -143,12 +143,20 @@ export default function Books() {
   const paidInvoicesMTD = (invoices || []).filter(inv => inv.payment_status === 'Paid' && isThisMonth(inv.created_at)).reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
   const depositsMTD = (leadPayments || []).filter(p => isThisMonth(p.date_created || p.created_at)).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
   const plaidInMTD = plaidTransactions.filter(t => t.amount < 0 && isThisMonth(t.date) && !t.is_transfer).reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0) // Plaid: negative = money in
-  const moneyIn = paidInvoicesMTD + depositsMTD + plaidInMTD
 
   // Money out: expenses + positive plaid transactions
   const expensesMTD = (storeExpenses || []).filter(e => isThisMonth(e.date || e.created_at)).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
   const plaidOutMTD = plaidTransactions.filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0) // Plaid: positive = money out
   const moneyOut = expensesMTD + plaidOutMTD
+
+  // Utility incentives tracking
+  const pendingIncentives = (utilityInvoices || []).filter(i => i.payment_status !== 'Paid')
+  const collectedIncentives = (utilityInvoices || []).filter(i => i.payment_status === 'Paid')
+  const pendingIncentiveTotal = pendingIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
+  const collectedIncentiveTotal = collectedIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
+  const collectedIncentiveMTD = collectedIncentives.filter(i => isThisMonth(i.updated_at || i.created_at)).reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
+
+  const moneyIn = paidInvoicesMTD + depositsMTD + plaidInMTD + collectedIncentiveMTD
 
   const netMonth = moneyIn - moneyOut
 
@@ -494,6 +502,73 @@ export default function Books() {
               <div style={{ fontSize: '28px', fontWeight: '700', color: netMonth >= 0 ? '#22c55e' : '#ef4444' }}>{formatCurrency(netMonth)}</div>
             </div>
           </div>
+
+          {/* Utility Incentive Tracking */}
+          {(pendingIncentives.length > 0 || collectedIncentives.length > 0) && (
+            <div style={{
+              ...statCardStyle,
+              marginBottom: '24px',
+              border: '1px solid rgba(74,124,89,0.2)',
+              backgroundColor: 'rgba(74,124,89,0.03)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Zap size={16} style={{ color: '#4a7c59' }} /> Utility Incentives
+                  <HelpBadge text="Track utility rebates and incentive payments from lighting audits and other energy projects." />
+                </h3>
+                <button
+                  onClick={() => navigate('/invoices?type=utility')}
+                  style={{ padding: '6px 14px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '12px', fontWeight: '500', cursor: 'pointer' }}
+                >
+                  View All
+                </button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+                <div style={{ padding: '12px', backgroundColor: theme.bg, borderRadius: '8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Pending</div>
+                  <div style={{ fontSize: '22px', fontWeight: '700', color: '#c28b38' }}>{formatCurrency(pendingIncentiveTotal)}</div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted }}>{pendingIncentives.length} claim{pendingIncentives.length !== 1 ? 's' : ''}</div>
+                </div>
+                <div style={{ padding: '12px', backgroundColor: theme.bg, borderRadius: '8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Collected</div>
+                  <div style={{ fontSize: '22px', fontWeight: '700', color: '#4a7c59' }}>{formatCurrency(collectedIncentiveTotal)}</div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted }}>{collectedIncentives.length} paid</div>
+                </div>
+                <div style={{ padding: '12px', backgroundColor: theme.bg, borderRadius: '8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Total Pipeline</div>
+                  <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{formatCurrency(pendingIncentiveTotal + collectedIncentiveTotal)}</div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted }}>{pendingIncentives.length + collectedIncentives.length} total</div>
+                </div>
+              </div>
+              {pendingIncentives.length > 0 && (
+                <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {pendingIncentives.slice(0, 5).map(inv => (
+                    <div key={inv.id} onClick={() => navigate(`/utility-invoices/${inv.id}`)} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 12px', backgroundColor: theme.bgCard, borderRadius: '6px',
+                      border: `1px solid ${theme.border}`, cursor: 'pointer', fontSize: '13px'
+                    }}>
+                      <div>
+                        <span style={{ fontWeight: '500', color: theme.text }}>{inv.utility_name || 'Utility'}</span>
+                        <span style={{ color: theme.textMuted, marginLeft: '8px' }}>{inv.customer_name || ''}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontWeight: '600', color: '#c28b38' }}>{formatCurrency(inv.amount || inv.incentive_amount)}</span>
+                        <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500', backgroundColor: 'rgba(234,179,8,0.12)', color: '#b45309' }}>
+                          {inv.payment_status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {pendingIncentives.length > 5 && (
+                    <div style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'center', paddingTop: '4px' }}>
+                      +{pendingIncentives.length - 5} more pending
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Needs Review Card */}
           {unreviewedCount > 0 && (

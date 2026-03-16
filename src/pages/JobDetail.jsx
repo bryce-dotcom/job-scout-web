@@ -747,47 +747,64 @@ function JobDetailInner() {
   }
 
   const createUtilityInvoice = async () => {
-    if (!job.lead_id) return
     setSaving(true)
+    const { toast } = await import('../lib/toast')
 
     try {
-      // Fetch the lighting audit linked to this job's lead
-      const { data: audits } = await supabase
-        .from('lighting_audits')
-        .select('*, utility_provider:utility_providers!lighting_audits_utility_provider_id_fkey(id, provider_name)')
-        .eq('lead_id', job.lead_id)
-        .order('created_at', { ascending: false })
-        .limit(1)
+      let utilityName = 'Utility'
+      let totalFixtures = 0
+      let incentiveAmount = parseFloat(job.utility_incentive) || 0
+      let projectCost = 0
+      let netCost = 0
+      let notes = ''
 
-      const audit = audits?.[0]
-      if (!audit) {
-        const { toast } = await import('../lib/toast')
-        toast.error('No lighting audit found for this lead')
+      // Try to pull details from linked lighting audit
+      if (job.lead_id) {
+        const { data: audits } = await supabase
+          .from('lighting_audits')
+          .select('*, utility_provider:utility_providers!lighting_audits_utility_provider_id_fkey(id, provider_name)')
+          .eq('lead_id', job.lead_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        const audit = audits?.[0]
+        if (audit) {
+          utilityName = audit.utility_provider?.provider_name || 'Utility'
+          totalFixtures = audit.total_fixtures || 0
+          incentiveAmount = audit.estimated_rebate || incentiveAmount
+          projectCost = audit.est_project_cost || 0
+          netCost = audit.net_cost || 0
+          notes = `Lighting Audit — ${totalFixtures} fixtures, ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(incentiveAmount)} incentive`
+        }
+      }
+
+      // Fall back to hand-entered incentive on the job
+      if (!incentiveAmount) {
+        toast.error('No incentive amount found. Enter a utility incentive on this job first.')
         setSaving(false)
         return
       }
 
-      const utilityName = audit.utility_provider?.provider_name || 'Utility'
-      const totalFixtures = audit.total_fixtures || 0
-      const incentive = audit.estimated_rebate || 0
+      if (!notes) {
+        notes = `Utility Incentive — ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(incentiveAmount)}`
+      }
 
       const { error } = await supabase
         .from('utility_invoices')
         .insert([{
           company_id: companyId,
           job_id: parseInt(id),
-          lead_id: job.lead_id,
+          lead_id: job.lead_id || null,
           customer_name: job.customer?.name || '',
           utility_name: utilityName,
-          amount: incentive,
-          project_cost: audit.est_project_cost || 0,
-          incentive_amount: incentive,
-          net_cost: audit.net_cost || 0,
+          amount: incentiveAmount,
+          project_cost: projectCost,
+          incentive_amount: incentiveAmount,
+          net_cost: netCost,
           payment_status: 'Pending',
-          notes: `Lighting Audit — ${totalFixtures} fixtures, ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(incentive)} incentive`
+          notes
         }])
 
-      const { toast } = await import('../lib/toast')
       if (error) {
         toast.error('Failed to create utility incentive: ' + error.message)
       } else {
@@ -795,7 +812,6 @@ function JobDetailInner() {
         await fetchJobData()
       }
     } catch (err) {
-      const { toast } = await import('../lib/toast')
       toast.error('Error creating utility incentive')
     }
 
@@ -2148,7 +2164,7 @@ function JobDetailInner() {
                   Customer Copayment
                 </button>
               )}
-              {job.lead_id && jobUtilityInvoices.length === 0 && (
+              {(job.lead_id || parseFloat(job.utility_incentive) > 0) && jobUtilityInvoices.length === 0 && (
                 <button onClick={createUtilityInvoice} disabled={saving} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   padding: '12px 16px', backgroundColor: 'rgba(212,148,10,0.12)', color: '#d4940a',

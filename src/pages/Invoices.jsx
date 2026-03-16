@@ -766,7 +766,7 @@ export default function Invoices() {
               }}
             >
               <Zap size={18} />
-              New Rebate Claim
+              New Utility Incentive
             </button>
           )}
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
@@ -848,7 +848,7 @@ export default function Invoices() {
               padding: '16px',
               textAlign: 'center'
             }}>
-              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Pending Rebates</p>
+              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Pending Incentives</p>
               <p style={{ fontSize: '24px', fontWeight: '600', color: '#c28b38' }}>{utilityPendingCount}</p>
               <p style={{ fontSize: '12px', color: theme.textMuted }}>{formatCurrency(utilityTotalPending)}</p>
             </div>
@@ -859,7 +859,7 @@ export default function Invoices() {
               padding: '16px',
               textAlign: 'center'
             }}>
-              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Collected Rebates</p>
+              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Collected Incentives</p>
               <p style={{ fontSize: '24px', fontWeight: '600', color: '#4a7c59' }}>{utilityPaidCount}</p>
               <p style={{ fontSize: '12px', color: theme.textMuted }}>{formatCurrency(utilityTotalPaid)}</p>
             </div>
@@ -1463,7 +1463,7 @@ export default function Invoices() {
               borderBottom: `1px solid ${theme.border}`
             }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
-                {editingUtilityInvoice ? 'Edit Rebate Claim' : 'New Rebate Claim'}
+                {editingUtilityInvoice ? 'Edit Utility Incentive' : 'New Utility Incentive'}
               </h2>
               <button onClick={closeUtilityModal} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
                 <X size={20} />
@@ -1537,7 +1537,7 @@ export default function Invoices() {
                   border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',
                   cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1
                 }}>
-                  {loading ? 'Saving...' : (editingUtilityInvoice ? 'Update' : 'Add Rebate')}
+                  {loading ? 'Saving...' : (editingUtilityInvoice ? 'Update' : 'Add Incentive')}
                 </button>
               </div>
             </form>
