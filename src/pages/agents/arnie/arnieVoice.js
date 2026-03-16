@@ -249,8 +249,17 @@ function speakBrowser(text, voiceDef, onStart, onEnd) {
   if (!synth) { onEnd?.(); return }
   stopSpeaking()
 
+  let spoken = false
   const trySpeak = () => {
+    if (spoken) return // CRITICAL: prevent double-speak
+    const voices = synth.getVoices() || []
+    if (voices.length === 0) return // voices not ready yet, wait for onvoiceschanged
+    spoken = true
+    synth.onvoiceschanged = null // clean up
+
+    if (voices.length > 0 && !cachedVoices) cachedVoices = voices
     const voice = findBestVoice(voiceDef)
+
     if (text.length > 200) { speakChunked(text, voice, onStart, onEnd); return }
 
     const u = new SpeechSynthesisUtterance(text)
@@ -264,12 +273,26 @@ function speakBrowser(text, voiceDef, onStart, onEnd) {
     synth.speak(u)
   }
 
-  if (getSystemVoices().length === 0) {
-    synth.onvoiceschanged = () => { cachedVoices = null; trySpeak() }
-    setTimeout(trySpeak, 150)
-  } else {
-    trySpeak()
+  // Try immediately with cached voices
+  if (cachedVoices?.length > 0) {
+    spoken = true
+    const voice = findBestVoice(voiceDef)
+    if (text.length > 200) { speakChunked(text, voice, onStart, onEnd); return }
+    const u = new SpeechSynthesisUtterance(text)
+    u.voice = voice; u.lang = 'en-US'; u.rate = 1.0; u.pitch = 1.0
+    let ended = false
+    const callOnEnd = () => { if (!ended) { ended = true; currentUtterance = null; onEnd?.() } }
+    u.onstart = () => onStart?.()
+    u.onend = callOnEnd
+    u.onerror = (e) => { if (e.error !== 'canceled') console.error('[Arnie Voice] TTS error:', e.error); callOnEnd() }
+    currentUtterance = u
+    synth.speak(u)
+    return
   }
+
+  // Voices not cached — wait for them (only one path calls trySpeak)
+  synth.onvoiceschanged = trySpeak
+  setTimeout(trySpeak, 300)
 }
 
 function speakChunked(text, voice, onStart, onEnd) {
