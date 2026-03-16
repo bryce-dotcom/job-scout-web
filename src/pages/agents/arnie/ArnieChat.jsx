@@ -255,11 +255,14 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
   // ── Send message ────────────────────────────────────────────────────
 
+  const sendingRef = useRef(false)
+
   const handleSend = useCallback(async (text) => {
     const msg = (text || input).trim()
-    if (!msg || loading) return
+    if (!msg || loading || sendingRef.current) return
+    sendingRef.current = true
 
-    unlockAudio() // Ensure audio is unlocked before we start the async chain
+    unlockAudio()
     pauseMic()
     setInput('')
     transcriptRef.current = ''
@@ -309,8 +312,8 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       }
     } catch (err) {
       console.error('Arnie error:', err)
-      const errText = err.message?.includes('API key')
-        ? 'Ye gawds! The Gemini API key ain\'t set up yet, kid. Tell your admin to add VITE_GEMINI_API_KEY to the environment.'
+      const errText = err.message?.includes('API key') || err.message?.includes('ANTHROPIC')
+        ? 'Ye gawds! The API key ain\'t set up yet, kid. Tell your admin to check the Supabase secrets.'
         : `Ay, something went sideways. ${err.message || 'Unknown error'}. Try again, boss.`
       setMessages(prev => prev.map(m =>
         m.id === assistantId ? { ...m, content: errText } : m
@@ -318,7 +321,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       speakText(errText)
     } finally {
       setLoading(false)
-      // Clear safety timer if response completed normally
+      sendingRef.current = false
       if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
     }
   }, [input, loading, sessionId, speakText, pauseMic, resumeMic])
