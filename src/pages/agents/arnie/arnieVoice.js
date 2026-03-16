@@ -12,9 +12,9 @@ const ELEVENLABS_TIMEOUT_MS = 20000
 
 // Browser voices — these IDs are used to find the best match from available system voices
 const BROWSER_VOICES = [
-  { id: 'browser_male_1', name: 'System Male', desc: 'Default male voice', engine: 'browser', match: ['male', 'daniel', 'david', 'james', 'mark', 'google us english', 'alex'] },
-  { id: 'browser_male_2', name: 'System Male 2', desc: 'Alternate male voice', engine: 'browser', match: ['male', 'fred', 'tom', 'ralph'] },
-  { id: 'browser_female_1', name: 'System Female', desc: 'Default female voice', engine: 'browser', match: ['female', 'samantha', 'karen', 'victoria', 'google us english female'] },
+  { id: 'browser_male_1', name: 'System Male', desc: 'Default male voice', engine: 'browser', match: ['daniel', 'david', 'james', 'mark', 'alex', 'google us english', 'male'] },
+  { id: 'browser_male_2', name: 'System Male 2', desc: 'Alternate male voice', engine: 'browser', match: ['fred', 'tom', 'ralph', 'male'] },
+  { id: 'browser_female_1', name: 'System Female', desc: 'Default female voice', engine: 'browser', match: ['samantha', 'karen', 'victoria', 'zira', 'google us english female', 'female'] },
 ]
 
 // ElevenLabs premium voices (only shown if API key exists)
@@ -114,12 +114,17 @@ function findBrowserVoice(voiceDef) {
   const voices = getBrowserVoices()
   if (voices.length === 0) return null
 
-  // Try to match by keywords
-  const keywords = voiceDef?.match || ['male', 'daniel', 'david', 'james']
+  const keywords = voiceDef?.match || ['daniel', 'david', 'james', 'mark', 'male']
   const langVoices = voices.filter(v => v.lang.startsWith('en'))
 
   for (const kw of keywords) {
-    const found = langVoices.find(v => v.name.toLowerCase().includes(kw))
+    const found = langVoices.find(v => {
+      const name = v.name.toLowerCase()
+      // "male" must NOT match "female" — check word boundary
+      if (kw === 'male') return /\bmale\b/.test(name) && !name.includes('female')
+      if (kw === 'female') return name.includes('female')
+      return name.includes(kw)
+    })
     if (found) return found
   }
 
