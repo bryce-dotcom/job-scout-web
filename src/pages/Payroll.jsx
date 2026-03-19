@@ -277,18 +277,30 @@ export default function Payroll() {
   // ── Employee Pay Calculations ────────────────────────────
   const calculateEmployeeHours = (employeeId) => {
     const empEntries = timeEntries.filter(e => e.employee_id === employeeId)
+    const empTimeLogs = timeLogEntries.filter(e => e.employee_id === employeeId)
     let regularHours = 0
     let overtimeHours = 0
 
-    // Group by week for overtime
+    // Group by week for overtime (combine time_clock + time_log)
     const weeklyHours = {}
+    const addToWeek = (date, hours) => {
+      const weekStart = new Date(date)
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+      const weekKey = weekStart.toISOString().split('T')[0]
+      weeklyHours[weekKey] = (weeklyHours[weekKey] || 0) + hours
+    }
+
+    // time_clock entries
     empEntries.forEach(entry => {
       if (!entry.total_hours) return
-      const entryDate = new Date(entry.clock_in)
-      const weekStart = new Date(entryDate)
-      weekStart.setDate(entryDate.getDate() - entryDate.getDay())
-      const weekKey = weekStart.toISOString().split('T')[0]
-      weeklyHours[weekKey] = (weeklyHours[weekKey] || 0) + entry.total_hours
+      addToWeek(new Date(entry.clock_in), entry.total_hours)
+    })
+
+    // time_log entries (job-level hours)
+    empTimeLogs.forEach(entry => {
+      if (!entry.hours) return
+      const entryDate = new Date(entry.date || entry.clock_in_time || entry.created_at)
+      addToWeek(entryDate, entry.hours)
     })
 
     const otThreshold = payrollConfig.overtime_threshold || 40

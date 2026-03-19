@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, User, Search, Paperclip, Copy, Camera, ChevronDown, ChevronRight } from 'lucide-react'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf } from '../lib/estimatePdf'
@@ -62,6 +62,7 @@ export default function EstimateDetail() {
   const updateQuote = useStore((state) => state.updateQuote)
   const deleteQuote = useStore((state) => state.deleteQuote)
   const updateLead = useStore((state) => state.updateLead)
+  const customers = useStore((state) => state.customers)
   const settings = useStore((state) => state.settings)
   const businessUnits = useStore((state) => state.businessUnits)
 
@@ -91,6 +92,11 @@ export default function EstimateDetail() {
     address: '',
     business_name: ''
   })
+  const [showLinkCustomer, setShowLinkCustomer] = useState(false)
+  const [linkCustomerSearch, setLinkCustomerSearch] = useState('')
+  const [showLinkCustomerDropdown, setShowLinkCustomerDropdown] = useState(false)
+  const [linkingCustomer, setLinkingCustomer] = useState(false)
+  const linkCustomerInputRef = useRef(null)
 
   const [depositForm, setDepositForm] = useState({
     deposit_amount: '',
@@ -716,6 +722,22 @@ export default function EstimateDetail() {
     setCreatingLead(false)
   }
 
+  // Link an existing customer to this estimate
+  const handleLinkCustomer = async (customerId) => {
+    setLinkingCustomer(true)
+    try {
+      await updateQuote(id, { customer_id: customerId, updated_at: new Date().toISOString() })
+      toast.success('Customer linked!')
+      setShowLinkCustomer(false)
+      setLinkCustomerSearch('')
+      await fetchEstimateData()
+      await fetchQuotes()
+    } catch (err) {
+      toast.error('Failed to link customer: ' + err.message)
+    }
+    setLinkingCustomer(false)
+  }
+
   // Look up the full business unit object by name
   const getBusinessUnitObject = () => {
     if (!estimate?.business_unit) return null
@@ -1141,7 +1163,7 @@ export default function EstimateDetail() {
               }}>
                 Customer Information
               </h3>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {estimate.lead_id ? (
                   <button
                     onClick={() => navigate(`/leads/${estimate.lead_id}`)}
@@ -1176,7 +1198,7 @@ export default function EstimateDetail() {
                     Create Lead
                   </button>
                 )}
-                {estimate.customer_id && (
+                {estimate.customer_id ? (
                   <button
                     onClick={() => navigate(`/customers/${estimate.customer_id}`)}
                     style={{
@@ -1189,6 +1211,25 @@ export default function EstimateDetail() {
                     }}
                   >
                     View Customer
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { setShowLinkCustomer(true); setLinkCustomerSearch(''); setShowLinkCustomerDropdown(false) }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '12px',
+                      color: theme.accent,
+                      background: 'none',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <User size={12} />
+                    Link Customer
                   </button>
                 )}
               </div>
@@ -2610,6 +2651,140 @@ export default function EstimateDetail() {
           </div>
         </div>
       )}
+      {/* Link Customer Modal */}
+      {showLinkCustomer && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            width: '100%',
+            maxWidth: '450px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
+                Link Customer to Estimate
+              </h2>
+              <button onClick={() => setShowLinkCustomer(false)} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px' }}>
+              <p style={{ fontSize: '13px', color: theme.textMuted, margin: '0 0 14px 0' }}>
+                Search for an existing customer to link to this estimate.
+              </p>
+
+              <div style={{ position: 'relative' }} ref={linkCustomerInputRef}>
+                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, pointerEvents: 'none' }} />
+                <input
+                  type="text"
+                  value={linkCustomerSearch}
+                  onChange={(e) => {
+                    setLinkCustomerSearch(e.target.value)
+                    setShowLinkCustomerDropdown(true)
+                  }}
+                  onFocus={() => setShowLinkCustomerDropdown(true)}
+                  placeholder="Search customers..."
+                  style={{ ...inputStyle, paddingLeft: '32px' }}
+                  autoComplete="off"
+                  autoFocus
+                />
+                {linkCustomerSearch && (
+                  <button
+                    type="button"
+                    onClick={() => { setLinkCustomerSearch(''); setShowLinkCustomerDropdown(false) }}
+                    style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: theme.textMuted }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {showLinkCustomerDropdown && (() => {
+                const filtered = customers.filter(c =>
+                  c.name?.toLowerCase().includes((linkCustomerSearch || '').toLowerCase()) ||
+                  c.business_name?.toLowerCase().includes((linkCustomerSearch || '').toLowerCase())
+                )
+                return filtered.length > 0 ? (
+                  <div style={{
+                    marginTop: '4px',
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                    borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    maxHeight: '240px', overflowY: 'auto'
+                  }}>
+                    {filtered.map(c => (
+                      <div
+                        key={c.id}
+                        onClick={() => {
+                          if (!linkingCustomer) handleLinkCustomer(c.id)
+                        }}
+                        style={{
+                          padding: '10px 12px', cursor: linkingCustomer ? 'not-allowed' : 'pointer', fontSize: '14px',
+                          color: theme.text, borderBottom: `1px solid ${theme.border}`,
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                        }}
+                        onMouseEnter={(e) => { if (!linkingCustomer) e.currentTarget.style.backgroundColor = theme.bgCardHover || '#eef2eb' }}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <div>
+                          <span style={{ fontWeight: '500' }}>{c.name}</span>
+                          {c.business_name && <span style={{ color: theme.textMuted, fontSize: '12px', marginLeft: '8px' }}>{c.business_name}</span>}
+                        </div>
+                        {c.phone && <span style={{ fontSize: '12px', color: theme.textMuted }}>{c.phone}</span>}
+                      </div>
+                    ))}
+                  </div>
+                ) : linkCustomerSearch ? (
+                  <div style={{
+                    marginTop: '4px',
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                    borderRadius: '8px', padding: '12px',
+                    fontSize: '13px', color: theme.textMuted, textAlign: 'center'
+                  }}>
+                    No customers found
+                  </div>
+                ) : null
+              })()}
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowLinkCustomer(false)}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent',
+                    color: theme.text,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Photo Lightbox */}
       {viewingPhoto && (
         <div onClick={() => setViewingPhoto(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>

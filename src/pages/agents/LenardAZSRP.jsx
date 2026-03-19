@@ -377,8 +377,12 @@ export default function LenardAZSRP() {
   const [dougiePhotos, setDougiePhotos] = useState([]);
   const [dougieResult, setDougieResult] = useState(null);
 
+  // Reusable AudioContext for click sounds (avoid creating new ones per tap)
+  const audioCtxRef = useRef(null);
+
   // Pull-to-refresh
-  const [pullStartY, setPullStartY] = useState(0);
+  const pullStartYRef = useRef(0);
+  const pullDistanceRef = useRef(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [isPulling, setIsPulling] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -388,6 +392,17 @@ export default function LenardAZSRP() {
   const [contractAccepted, setContractAccepted] = useState(false);
   const sigCanvasRef = useRef(null);
   const sigPadRef = useRef(null);
+
+  // Inject @keyframes spin for loading animations
+  useEffect(() => {
+    const id = 'lenard-keyframes';
+    if (!document.getElementById(id)) {
+      const style = document.createElement('style');
+      style.id = id;
+      style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+      document.head.appendChild(style);
+    }
+  }, []);
 
   // Toast helper
   const showToast = useCallback((message, icon = '\u2713') => {
@@ -421,12 +436,8 @@ export default function LenardAZSRP() {
   // Reset lines when switching programs
   useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('AZ'); setSaveZip(''); setSaveMeterNumber(''); setSaveEIN(''); }, [program]);
 
-  // Register PWA service worker
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw-lenard.js').catch(() => {});
-    }
-  }, []);
+  // PWA service worker is handled by the main Vite PWA plugin (sw.js)
+  // Do NOT register sw-lenard.js here — it conflicts with sw.js at the same scope
 
   // Fetch SMBE products on mount
   useEffect(() => {
@@ -447,22 +458,31 @@ export default function LenardAZSRP() {
   }, []);
 
   // Fetch employees on mount (for lead owner picker)
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      try {
-        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-        const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-        const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-employees`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
-          body: '{}',
-        });
-        const data = await resp.json();
-        if (data.employees) setEmployees(data.employees);
-      } catch (_) { /* employees optional */ }
-    };
-    fetchEmployees();
-  }, []);
+  const [employeeLoadError, setEmployeeLoadError] = useState(false);
+  const fetchEmployeesRef = useRef(null);
+  fetchEmployeesRef.current = async () => {
+    setEmployeeLoadError(false);
+    try {
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-employees`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+        body: '{}',
+      });
+      const data = await resp.json();
+      if (data.employees && data.employees.length > 0) {
+        setEmployees(data.employees);
+      } else {
+        console.warn('lenard-employees returned:', data);
+        setEmployeeLoadError(true);
+      }
+    } catch (err) {
+      console.error('Failed to load employees:', err);
+      setEmployeeLoadError(true);
+    }
+  };
+  useEffect(() => { fetchEmployeesRef.current(); }, []);
 
   // Select lead owner handler
   const selectLeadOwner = useCallback((empId, empName) => {
@@ -1536,7 +1556,11 @@ export default function LenardAZSRP() {
   // Audible click + haptic vibration for counter buttons (matching NewLightingAudit)
   const playClick = useCallback(() => {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -1564,15 +1588,22 @@ export default function LenardAZSRP() {
   return (
     <div
       style={{ maxWidth: '480px', margin: '0 auto', background: T.bg, minHeight: '100vh', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: T.text, paddingBottom: '20px' }}
-      onTouchStart={e => setPullStartY(e.touches[0].clientY)}
+      onTouchStart={e => { pullStartYRef.current = e.touches[0].clientY; pullDistanceRef.current = 0; }}
       onTouchMove={e => {
         if (e.currentTarget.scrollTop > 0) return;
-        const diff = e.touches[0].clientY - pullStartY;
-        if (diff > 0) { setPullDistance(Math.min(diff, 100)); setIsPulling(true); }
+        const diff = e.touches[0].clientY - pullStartYRef.current;
+        if (diff > 0) {
+          pullDistanceRef.current = Math.min(diff, 100);
+          // Only update state every ~30px to avoid excessive re-renders
+          if (Math.abs(pullDistanceRef.current - pullDistance) > 30 || !isPulling) {
+            setPullDistance(pullDistanceRef.current);
+            setIsPulling(true);
+          }
+        }
       }}
       onTouchEnd={() => {
-        if (pullDistance > 70) handlePullRefresh();
-        setPullDistance(0); setIsPulling(false);
+        if (pullDistanceRef.current > 70) handlePullRefresh();
+        setPullDistance(0); setIsPulling(false); pullDistanceRef.current = 0;
       }}
     >
 
@@ -1632,7 +1663,16 @@ export default function LenardAZSRP() {
           <div style={{ background: T.accentDim, border: `1px solid ${T.accent}`, borderRadius: '12px', padding: '14px' }}>
             <div style={{ fontSize: '14px', fontWeight: '700', color: T.accent, marginBottom: '8px' }}>Who are you?</div>
             <div style={{ fontSize: '12px', color: T.textSec, marginBottom: '10px' }}>Select your name to see your audits and save new ones under your account</div>
-            {employees.length === 0 && <div style={{ fontSize: '12px', color: T.textMuted, textAlign: 'center', padding: '8px' }}>Loading team members...</div>}
+            {employees.length === 0 && (
+              employeeLoadError ? (
+                <div style={{ textAlign: 'center', padding: '8px' }}>
+                  <div style={{ fontSize: '12px', color: '#ef4444', marginBottom: '6px' }}>Could not load team members</div>
+                  <button onClick={() => fetchEmployeesRef.current()} style={{ fontSize: '12px', color: T.accent, background: 'none', border: `1px solid ${T.accent}`, borderRadius: '6px', padding: '4px 12px', cursor: 'pointer' }}>Retry</button>
+                </div>
+              ) : (
+                <div style={{ fontSize: '12px', color: T.textMuted, textAlign: 'center', padding: '8px' }}>Loading team members...</div>
+              )
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {employees.map(emp => (
                 <button key={emp.id} onClick={() => { selectLeadOwner(String(emp.id), emp.name); loadProjects(String(emp.id)); }}
@@ -2130,7 +2170,7 @@ export default function LenardAZSRP() {
       {/* ===== SBC INFO POPUP ===== */}
       {showSbcInfo && (<>
         <div onClick={() => setShowSbcInfo(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
-        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '70vh', overflow: 'auto', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
+        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '70vh', overflow: 'auto', WebkitOverflowScrolling: 'touch', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ fontSize: '15px', fontWeight: '700' }}>SBC Fixture Types & Rates</div>
             <button onClick={() => setShowSbcInfo(false)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: '20px', cursor: 'pointer' }}>{'\u2715'}</button>
@@ -2152,7 +2192,7 @@ export default function LenardAZSRP() {
       {/* ===== QUICK ADD MODAL (with category tabs inside) ===== */}
       {showQuickAdd && (<>
         <div onClick={() => setShowQuickAdd(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
-        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '75vh', overflow: 'auto', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
+        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '75vh', overflow: 'auto', WebkitOverflowScrolling: 'touch', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ fontSize: '16px', fontWeight: '700' }}>{'\u26A1'} Quick Add Preset</div>
             <button onClick={() => setShowQuickAdd(false)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: '20px', cursor: 'pointer' }}>{'\u2715'}</button>
@@ -2399,7 +2439,7 @@ export default function LenardAZSRP() {
       {/* ===== PROJECTS LIST MODAL ===== */}
       {showProjects && (<>
         <div onClick={() => setShowProjects(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
-        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '70vh', overflow: 'auto', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
+        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: T.bgCard, borderTopLeftRadius: '20px', borderTopRightRadius: '20px', maxHeight: '70vh', overflow: 'auto', WebkitOverflowScrolling: 'touch', zIndex: 51, padding: '20px 16px', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div style={{ fontSize: '16px', fontWeight: '700' }}>{'\uD83D\uDCC1'} {leadOwnerName ? `${leadOwnerName}'s Projects` : 'Saved Projects'}</div>
             <button onClick={() => setShowProjects(false)} style={{ background: 'none', border: 'none', color: T.textMuted, fontSize: '20px', cursor: 'pointer' }}>{'\u2715'}</button>

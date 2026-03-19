@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Pencil, Trash2, X, User, Phone, Mail, Building2, Search, Upload, Download } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, User, Phone, Mail, Building2, Search, Upload, Download, LayoutGrid, List, ChevronUp, ChevronDown, MapPin } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { customersFields } from '../lib/importExportFields'
@@ -56,6 +56,10 @@ export default function Customers() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
+  const [viewMode, setViewMode] = useState('list')
+  const [sortField, setSortField] = useState('name')
+  const [sortDir, setSortDir] = useState('asc')
+  const [isMobile, setIsMobile] = useState(false)
 
   // Guard clause - redirect if no company
   useEffect(() => {
@@ -66,37 +70,70 @@ export default function Customers() {
     fetchCustomers()
   }, [companyId, navigate, fetchCustomers])
 
-  const filteredCustomers = (() => {
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+
+  const filteredCustomers = useMemo(() => {
     const term = searchTerm.toLowerCase().trim()
+    const digitTerm = term.replace(/\D/g, '')
+
     const filtered = customers.filter(customer => {
       const matchesSearch = !term ||
         customer.name?.toLowerCase().includes(term) ||
         customer.business_name?.toLowerCase().includes(term) ||
         customer.email?.toLowerCase().includes(term) ||
-        customer.phone?.replace(/\D/g, '').includes(term.replace(/\D/g, '')) ||
+        (digitTerm && customer.phone?.replace(/\D/g, '').includes(digitTerm)) ||
         customer.address?.toLowerCase().includes(term) ||
-        customer.notes?.toLowerCase().includes(term)
+        customer.notes?.toLowerCase().includes(term) ||
+        customer.job_title?.toLowerCase().includes(term) ||
+        customer.salesperson?.name?.toLowerCase().includes(term)
 
       const matchesStatus = statusFilter === 'all' || customer.status === statusFilter
 
       return matchesSearch && matchesStatus
     })
 
-    // Sort: exact name start first, then business name start, then the rest alphabetically
-    if (term) {
+    // Sort
+    filtered.sort((a, b) => {
+      let aVal, bVal
+      switch (sortField) {
+        case 'name': aVal = a.name || ''; bVal = b.name || ''; break
+        case 'business_name': aVal = a.business_name || ''; bVal = b.business_name || ''; break
+        case 'email': aVal = a.email || ''; bVal = b.email || ''; break
+        case 'phone': aVal = a.phone || ''; bVal = b.phone || ''; break
+        case 'status': aVal = a.status || ''; bVal = b.status || ''; break
+        case 'salesperson': aVal = a.salesperson?.name || ''; bVal = b.salesperson?.name || ''; break
+        case 'address': aVal = a.address || ''; bVal = b.address || ''; break
+        default: aVal = a.name || ''; bVal = b.name || ''
+      }
+      const cmp = aVal.localeCompare(bVal, undefined, { sensitivity: 'base' })
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+
+    // When searching, boost exact-start matches to top
+    if (term && sortField === 'name') {
       filtered.sort((a, b) => {
-        const aNameStarts = a.name?.toLowerCase().startsWith(term) ? 0 : 1
-        const bNameStarts = b.name?.toLowerCase().startsWith(term) ? 0 : 1
-        if (aNameStarts !== bNameStarts) return aNameStarts - bNameStarts
-        const aBizStarts = a.business_name?.toLowerCase().startsWith(term) ? 0 : 1
-        const bBizStarts = b.business_name?.toLowerCase().startsWith(term) ? 0 : 1
-        if (aBizStarts !== bBizStarts) return aBizStarts - bBizStarts
-        return (a.name || '').localeCompare(b.name || '')
+        const aStarts = a.name?.toLowerCase().startsWith(term) ? 0 : 1
+        const bStarts = b.name?.toLowerCase().startsWith(term) ? 0 : 1
+        return aStarts - bStarts
       })
     }
 
     return filtered
-  })()
+  }, [customers, searchTerm, statusFilter, sortField, sortDir])
+
+  const toggleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+  }
 
   const openAddModal = () => {
     setEditingCustomer(null)
@@ -199,7 +236,8 @@ export default function Customers() {
     borderRadius: '8px',
     color: theme.text,
     fontSize: '14px',
-    outline: 'none'
+    outline: 'none',
+    boxSizing: 'border-box'
   }
 
   const labelStyle = {
@@ -210,79 +248,92 @@ export default function Customers() {
     color: theme.text
   }
 
+  const SortHeader = ({ field, label, style }) => (
+    <div
+      onClick={() => toggleSort(field)}
+      style={{
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        userSelect: 'none',
+        fontSize: '12px',
+        fontWeight: '600',
+        color: sortField === field ? theme.accent : theme.textMuted,
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+        ...style
+      }}
+    >
+      {label}
+      {sortField === field && (
+        sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+      )}
+    </div>
+  )
+
+  // Status counts
+  const statusCounts = useMemo(() => {
+    const counts = { all: customers.length, Active: 0, Inactive: 0, Prospect: 0 }
+    customers.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++ })
+    return counts
+  }, [customers])
+
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: '24px',
+        marginBottom: '20px',
         flexWrap: 'wrap',
-        gap: '16px'
+        gap: '12px'
       }}>
-        <h1 style={{
-          fontSize: '24px',
-          fontWeight: '700',
-          color: theme.text
-        }}>
-          Customers
-        </h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
-            <Upload size={18} /> Import
+        <div>
+          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
+            Customers
+          </h1>
+          <p style={{ margin: '4px 0 0', fontSize: '13px', color: theme.textMuted }}>
+            {statusCounts.Active} active, {statusCounts.Prospect} prospects, {statusCounts.Inactive} inactive
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer', minHeight: '40px' }}>
+            <Upload size={16} /> Import
           </button>
-          <button onClick={() => exportToCSV(filteredCustomers, customersFields, 'customers_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
-            <Download size={18} /> Export
+          <button onClick={() => exportToCSV(filteredCustomers, customersFields, 'customers_export')} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer', minHeight: '40px' }}>
+            <Download size={16} /> Export
           </button>
           <button
             onClick={openAddModal}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              backgroundColor: theme.accent,
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '500',
-              cursor: 'pointer'
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '8px 16px', backgroundColor: theme.accent, color: '#fff',
+              border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600',
+              cursor: 'pointer', minHeight: '40px'
             }}
           >
-            <Plus size={20} />
+            <Plus size={18} />
             Add Customer
           </button>
         </div>
       </div>
 
-      {/* Search and Filter */}
+      {/* Search, Filter, View Toggle */}
       <div style={{
-        display: 'flex',
-        gap: '16px',
-        marginBottom: '24px',
-        flexWrap: 'wrap'
+        display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center'
       }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
-          <Search
-            size={20}
-            style={{
-              position: 'absolute',
-              left: '12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: theme.textMuted
-            }}
-          />
+        <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
           <input
             type="text"
-            placeholder="Search by name, business, email, phone, address..."
+            placeholder="Search name, business, email, phone, address..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
               ...inputStyle,
-              paddingLeft: '40px',
+              paddingLeft: '38px',
               paddingRight: searchTerm ? '36px' : '12px',
               backgroundColor: theme.bgCard
             }}
@@ -291,43 +342,72 @@ export default function Customers() {
             <button
               onClick={() => setSearchTerm('')}
               style={{
-                position: 'absolute',
-                right: '10px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '4px',
-                color: theme.textMuted,
-                display: 'flex',
-                alignItems: 'center'
+                position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+                color: theme.textMuted, display: 'flex', alignItems: 'center'
               }}
             >
               <X size={16} />
             </button>
           )}
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          style={{
-            ...inputStyle,
-            width: 'auto',
-            minWidth: '140px',
-            backgroundColor: theme.bgCard
-          }}
-        >
-          <option value="all">All Status</option>
-          <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
-          <option value="Prospect">Prospect</option>
-        </select>
+
+        {/* Status pills */}
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {['all', 'Active', 'Prospect', 'Inactive'].map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '20px',
+                border: statusFilter === s ? 'none' : `1px solid ${theme.border}`,
+                backgroundColor: statusFilter === s ? theme.accent : 'transparent',
+                color: statusFilter === s ? '#fff' : theme.textSecondary,
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                minHeight: '32px'
+              }}
+            >
+              {s === 'all' ? `All (${statusCounts.all})` : `${s} (${statusCounts[s] || 0})`}
+            </button>
+          ))}
+        </div>
+
+        {/* View toggle */}
+        <div style={{
+          display: 'flex', border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden'
+        }}>
+          <button
+            onClick={() => setViewMode('list')}
+            style={{
+              padding: '8px 10px', border: 'none', cursor: 'pointer',
+              backgroundColor: viewMode === 'list' ? theme.accent : 'transparent',
+              color: viewMode === 'list' ? '#fff' : theme.textMuted,
+              display: 'flex', alignItems: 'center'
+            }}
+          >
+            <List size={16} />
+          </button>
+          <button
+            onClick={() => setViewMode('cards')}
+            style={{
+              padding: '8px 10px', border: 'none', cursor: 'pointer',
+              backgroundColor: viewMode === 'cards' ? theme.accent : 'transparent',
+              color: viewMode === 'cards' ? '#fff' : theme.textMuted,
+              display: 'flex', alignItems: 'center'
+            }}
+          >
+            <LayoutGrid size={16} />
+          </button>
+        </div>
       </div>
 
-      {/* Result count */}
+      {/* Result count when filtering */}
       {(searchTerm || statusFilter !== 'all') && (
-        <div style={{ marginBottom: '12px', fontSize: '13px', color: theme.textMuted }}>
+        <div style={{ marginBottom: '10px', fontSize: '13px', color: theme.textMuted }}>
           {filteredCustomers.length} of {customers.length} customers
         </div>
       )}
@@ -335,10 +415,8 @@ export default function Customers() {
       {/* Customer List */}
       {filteredCustomers.length === 0 ? (
         <div style={{
-          textAlign: 'center',
-          padding: '48px',
-          backgroundColor: theme.bgCard,
-          borderRadius: '12px',
+          textAlign: 'center', padding: '48px',
+          backgroundColor: theme.bgCard, borderRadius: '12px',
           border: `1px solid ${theme.border}`
         }}>
           <Building2 size={48} style={{ color: theme.textMuted, marginBottom: '16px' }} />
@@ -348,7 +426,114 @@ export default function Customers() {
               : 'No customers yet. Add your first customer to get started.'}
           </p>
         </div>
+      ) : viewMode === 'list' ? (
+        /* ===== LIST VIEW ===== */
+        <div style={{
+          backgroundColor: theme.bgCard, borderRadius: '12px',
+          border: `1px solid ${theme.border}`, overflow: 'hidden'
+        }}>
+          {/* Table header */}
+          {!isMobile && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr 100px 80px',
+              gap: '12px', padding: '12px 20px',
+              borderBottom: `1px solid ${theme.border}`,
+              backgroundColor: theme.bg
+            }}>
+              <SortHeader field="name" label="Name" />
+              <SortHeader field="email" label="Email" />
+              <SortHeader field="phone" label="Phone" />
+              <SortHeader field="address" label="Location" />
+              <SortHeader field="status" label="Status" />
+              <div />
+            </div>
+          )}
+
+          {/* Table rows */}
+          {filteredCustomers.map((customer) => (
+            <div
+              key={customer.id}
+              onClick={() => navigate(`/customers/${customer.id}`)}
+              style={{
+                display: isMobile ? 'flex' : 'grid',
+                gridTemplateColumns: isMobile ? undefined : '2fr 1.5fr 1.5fr 1fr 100px 80px',
+                flexDirection: isMobile ? 'column' : undefined,
+                gap: isMobile ? '4px' : '12px',
+                padding: isMobile ? '14px 16px' : '12px 20px',
+                borderBottom: `1px solid ${theme.border}`,
+                cursor: 'pointer',
+                alignItems: isMobile ? undefined : 'center',
+                transition: 'background-color 0.15s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              {/* Name + business */}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {customer.name}
+                </div>
+                {customer.business_name && (
+                  <div style={{ fontSize: '12px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {customer.business_name}
+                  </div>
+                )}
+              </div>
+
+              {/* Email */}
+              <div style={{ fontSize: '13px', color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                {isMobile && customer.email && <Mail size={12} style={{ marginRight: '6px', verticalAlign: 'middle', flexShrink: 0 }} />}
+                {customer.email || <span style={{ color: theme.textMuted }}>—</span>}
+              </div>
+
+              {/* Phone */}
+              <div style={{ fontSize: '13px', color: theme.textSecondary, minWidth: 0 }}>
+                {isMobile && customer.phone && <Phone size={12} style={{ marginRight: '6px', verticalAlign: 'middle' }} />}
+                {customer.phone || <span style={{ color: theme.textMuted }}>—</span>}
+              </div>
+
+              {/* Location - truncated */}
+              <div style={{ fontSize: '12px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                {customer.address
+                  ? customer.address.split(',')[0]
+                  : '—'}
+              </div>
+
+              {/* Status */}
+              <div>
+                <span style={{
+                  fontSize: '11px', padding: '3px 8px', borderRadius: '12px',
+                  fontWeight: '600', ...getStatusStyle(customer.status)
+                }}>
+                  {customer.status}
+                </span>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '2px', justifyContent: isMobile ? 'flex-start' : 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => openEditModal(customer)}
+                  style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', borderRadius: '6px' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = theme.accentBg; e.currentTarget.style.color = theme.accent }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = theme.textMuted }}
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  onClick={() => handleDelete(customer)}
+                  style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', borderRadius: '6px' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; e.currentTarget.style.color = '#dc2626' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = theme.textMuted }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
+        /* ===== CARD VIEW ===== */
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
@@ -369,122 +554,67 @@ export default function Customers() {
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{
-                    width: '48px',
-                    height: '48px',
-                    backgroundColor: theme.accentBg,
-                    borderRadius: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
+                    width: '48px', height: '48px',
+                    backgroundColor: theme.accentBg, borderRadius: '10px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
                   }}>
                     <User size={24} style={{ color: theme.accent }} />
                   </div>
                   <div>
-                    <h3 style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      color: theme.text,
-                      marginBottom: '2px'
-                    }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
                       {customer.name}
                     </h3>
                     {customer.business_name && (
-                      <p style={{
-                        fontSize: '14px',
-                        color: theme.textSecondary
-                      }}>
+                      <p style={{ fontSize: '14px', color: theme.textSecondary }}>
                         {customer.business_name}
                       </p>
                     )}
                   </div>
                 </div>
-                <div
-                  style={{ display: 'flex', gap: '4px' }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    onClick={() => openEditModal(customer)}
-                    style={{
-                      padding: '8px',
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      color: theme.textMuted,
-                      cursor: 'pointer',
-                      borderRadius: '6px'
-                    }}
-                  >
+                <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => openEditModal(customer)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', borderRadius: '6px' }}>
                     <Pencil size={16} />
                   </button>
-                  <button
-                    onClick={() => handleDelete(customer)}
-                    style={{
-                      padding: '8px',
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      color: theme.textMuted,
-                      cursor: 'pointer',
-                      borderRadius: '6px'
-                    }}
-                  >
+                  <button onClick={() => handleDelete(customer)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', borderRadius: '6px' }}>
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {customer.email && (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '14px',
-                    color: theme.textSecondary
-                  }}>
-                    <Mail size={14} />
-                    <span style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {customer.email}
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}>
+                    <Mail size={13} style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customer.email}</span>
                   </div>
                 )}
                 {customer.phone && (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '14px',
-                    color: theme.textSecondary
-                  }}>
-                    <Phone size={14} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}>
+                    <Phone size={13} style={{ flexShrink: 0 }} />
                     <span>{customer.phone}</span>
+                  </div>
+                )}
+                {customer.address && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textMuted }}>
+                    <MapPin size={13} style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customer.address.split(',')[0]}</span>
                   </div>
                 )}
               </div>
 
               <div style={{
-                marginTop: '16px',
-                paddingTop: '16px',
+                marginTop: '12px', paddingTop: '12px',
                 borderTop: `1px solid ${theme.border}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between'
               }}>
                 <span style={{
-                  fontSize: '12px',
-                  padding: '4px 10px',
-                  borderRadius: '20px',
-                  ...getStatusStyle(customer.status)
+                  fontSize: '11px', padding: '3px 10px', borderRadius: '20px',
+                  fontWeight: '600', ...getStatusStyle(customer.status)
                 }}>
                   {customer.status}
                 </span>
                 {customer.salesperson && (
-                  <span style={{
-                    fontSize: '12px',
-                    color: theme.textMuted
-                  }}>
+                  <span style={{ fontSize: '12px', color: theme.textMuted }}>
                     {customer.salesperson.name}
                   </span>
                 )}
@@ -500,54 +630,27 @@ export default function Customers() {
           <div
             onClick={closeModal}
             style={{
-              position: 'fixed',
-              inset: 0,
-              backgroundColor: 'rgba(0,0,0,0.3)',
-              zIndex: 50
+              position: 'fixed', inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50
             }}
           />
           <div style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
+            position: 'fixed', top: '50%', left: '50%',
             transform: 'translate(-50%, -50%)',
-            backgroundColor: theme.bgCard,
-            borderRadius: '16px',
+            backgroundColor: theme.bgCard, borderRadius: '16px',
             border: `1px solid ${theme.border}`,
-            width: '100%',
-            maxWidth: '640px',
-            maxHeight: '90vh',
-            overflow: 'auto',
-            zIndex: 51
+            width: '100%', maxWidth: '640px', maxHeight: '90vh',
+            overflow: 'auto', zIndex: 51
           }}>
             <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '20px',
-              borderBottom: `1px solid ${theme.border}`,
-              position: 'sticky',
-              top: 0,
-              backgroundColor: theme.bgCard,
-              zIndex: 1
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '20px', borderBottom: `1px solid ${theme.border}`,
+              position: 'sticky', top: 0, backgroundColor: theme.bgCard, zIndex: 1
             }}>
-              <h2 style={{
-                fontSize: '18px',
-                fontWeight: '600',
-                color: theme.text
-              }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
                 {editingCustomer ? 'Edit Customer' : 'Add Customer'}
               </h2>
-              <button
-                onClick={closeModal}
-                style={{
-                  padding: '4px',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  color: theme.textMuted,
-                  cursor: 'pointer'
-                }}
-              >
+              <button onClick={closeModal} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}>
                 <X size={20} />
               </button>
             </div>
@@ -555,13 +658,10 @@ export default function Customers() {
             <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
               {error && (
                 <div style={{
-                  marginBottom: '16px',
-                  padding: '12px',
+                  marginBottom: '16px', padding: '12px',
                   backgroundColor: 'rgba(220,38,38,0.08)',
                   border: '1px solid rgba(220,38,38,0.2)',
-                  borderRadius: '8px',
-                  color: '#b91c1c',
-                  fontSize: '14px'
+                  borderRadius: '8px', color: '#b91c1c', fontSize: '14px'
                 }}>
                   {error}
                 </div>
@@ -569,81 +669,37 @@ export default function Customers() {
 
               {/* Primary Contact */}
               <h3 style={{
-                fontSize: '14px',
-                fontWeight: '600',
-                color: theme.text,
-                marginBottom: '16px',
-                paddingBottom: '8px',
+                fontSize: '14px', fontWeight: '600', color: theme.text,
+                marginBottom: '16px', paddingBottom: '8px',
                 borderBottom: `1px solid ${theme.border}`
               }}>
                 Primary Contact
               </h3>
 
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '16px',
-                marginBottom: '16px'
-              }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Name *</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    required
-                    style={inputStyle}
-                  />
+                  <input type="text" name="name" value={formData.name} onChange={handleChange} required style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Business Name</label>
-                  <input
-                    type="text"
-                    name="business_name"
-                    value={formData.business_name}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  />
+                  <input type="text" name="business_name" value={formData.business_name} onChange={handleChange} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Email</label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  />
+                  <input type="email" name="email" value={formData.email} onChange={handleChange} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Phone</label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  />
+                  <input type="tel" name="phone" value={formData.phone} onChange={handleChange} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Job Title</label>
-                  <input
-                    type="text"
-                    name="job_title"
-                    value={formData.job_title}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  />
+                  <input type="text" name="job_title" value={formData.job_title} onChange={handleChange} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Preferred Contact</label>
-                  <select
-                    name="preferred_contact"
-                    value={formData.preferred_contact}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
+                  <select name="preferred_contact" value={formData.preferred_contact} onChange={handleChange} style={inputStyle}>
                     <option value="Phone">Phone</option>
                     <option value="Email">Email</option>
                     <option value="Text">Text</option>
@@ -653,101 +709,50 @@ export default function Customers() {
 
               <div style={{ marginBottom: '24px' }}>
                 <label style={labelStyle}>Address</label>
-                <textarea
-                  name="address"
-                  value={formData.address}
-                  onChange={handleChange}
-                  rows={2}
-                  style={{ ...inputStyle, resize: 'vertical' }}
-                />
+                <textarea name="address" value={formData.address} onChange={handleChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
               </div>
 
               {/* Secondary Contact */}
               <h3 style={{
-                fontSize: '14px',
-                fontWeight: '600',
-                color: theme.text,
-                marginBottom: '16px',
-                paddingBottom: '8px',
+                fontSize: '14px', fontWeight: '600', color: theme.text,
+                marginBottom: '16px', paddingBottom: '8px',
                 borderBottom: `1px solid ${theme.border}`
               }}>
                 Secondary Contact
               </h3>
 
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '16px',
-                marginBottom: '24px'
-              }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
                 <div>
                   <label style={labelStyle}>Name</label>
-                  <input
-                    type="text"
-                    name="secondary_contact_name"
-                    value={formData.secondary_contact_name}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  />
+                  <input type="text" name="secondary_contact_name" value={formData.secondary_contact_name} onChange={handleChange} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Role</label>
-                  <input
-                    type="text"
-                    name="secondary_contact_role"
-                    value={formData.secondary_contact_role}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  />
+                  <input type="text" name="secondary_contact_role" value={formData.secondary_contact_role} onChange={handleChange} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Email</label>
-                  <input
-                    type="email"
-                    name="secondary_contact_email"
-                    value={formData.secondary_contact_email}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  />
+                  <input type="email" name="secondary_contact_email" value={formData.secondary_contact_email} onChange={handleChange} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Phone</label>
-                  <input
-                    type="tel"
-                    name="secondary_contact_phone"
-                    value={formData.secondary_contact_phone}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  />
+                  <input type="tel" name="secondary_contact_phone" value={formData.secondary_contact_phone} onChange={handleChange} style={inputStyle} />
                 </div>
               </div>
 
               {/* Status & Assignment */}
               <h3 style={{
-                fontSize: '14px',
-                fontWeight: '600',
-                color: theme.text,
-                marginBottom: '16px',
-                paddingBottom: '8px',
+                fontSize: '14px', fontWeight: '600', color: theme.text,
+                marginBottom: '16px', paddingBottom: '8px',
                 borderBottom: `1px solid ${theme.border}`
               }}>
                 Status & Assignment
               </h3>
 
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '16px',
-                marginBottom: '16px'
-              }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Status</label>
-                  <select
-                    name="status"
-                    value={formData.status}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
+                  <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                     <option value="Prospect">Prospect</option>
@@ -755,12 +760,7 @@ export default function Customers() {
                 </div>
                 <div>
                   <label style={labelStyle}>Salesperson</label>
-                  <select
-                    name="salesperson_id"
-                    value={formData.salesperson_id}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
+                  <select name="salesperson_id" value={formData.salesperson_id} onChange={handleChange} style={inputStyle}>
                     <option value="">-- Select --</option>
                     {employees.map((emp) => (
                       <option key={emp.id} value={emp.id}>{emp.name}</option>
@@ -769,74 +769,34 @@ export default function Customers() {
                 </div>
               </div>
 
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                marginBottom: '16px'
-              }}>
-                <input
-                  type="checkbox"
-                  name="marketing_opt_in"
-                  id="marketing_opt_in"
-                  checked={formData.marketing_opt_in}
-                  onChange={handleChange}
-                  style={{ accentColor: theme.accent }}
-                />
-                <label
-                  htmlFor="marketing_opt_in"
-                  style={{ fontSize: '14px', color: theme.text }}
-                >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                <input type="checkbox" name="marketing_opt_in" id="marketing_opt_in" checked={formData.marketing_opt_in} onChange={handleChange} style={{ accentColor: theme.accent }} />
+                <label htmlFor="marketing_opt_in" style={{ fontSize: '14px', color: theme.text }}>
                   Marketing opt-in
                 </label>
               </div>
 
               <div style={{ marginBottom: '24px' }}>
                 <label style={labelStyle}>Notes</label>
-                <textarea
-                  name="notes"
-                  value={formData.notes}
-                  onChange={handleChange}
-                  rows={3}
-                  style={{ ...inputStyle, resize: 'vertical' }}
-                />
+                <textarea name="notes" value={formData.notes} onChange={handleChange} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
               </div>
 
               {/* Buttons */}
               <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    backgroundColor: 'transparent',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '8px',
-                    color: theme.textSecondary,
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
+                <button type="button" onClick={closeModal} style={{
+                  flex: 1, padding: '12px', backgroundColor: 'transparent',
+                  border: `1px solid ${theme.border}`, borderRadius: '8px',
+                  color: theme.textSecondary, fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+                }}>
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    backgroundColor: theme.accent,
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    opacity: loading ? 0.7 : 1
-                  }}
-                >
+                <button type="submit" disabled={loading} style={{
+                  flex: 1, padding: '12px', backgroundColor: theme.accent,
+                  border: 'none', borderRadius: '8px', color: '#fff',
+                  fontSize: '14px', fontWeight: '500',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.7 : 1
+                }}>
                   {loading ? 'Saving...' : (editingCustomer ? 'Update' : 'Add Customer')}
                 </button>
               </div>

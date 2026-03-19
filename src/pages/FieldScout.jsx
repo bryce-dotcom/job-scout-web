@@ -104,6 +104,7 @@ export default function FieldScout() {
   const { theme } = useTheme()
   const navigate = useNavigate()
   const companyId = useStore((s) => s.companyId)
+  const company = useStore((s) => s.company)
   const user = useStore((s) => s.user)
   const jobs = useStore((s) => s.jobs)
   const employees = useStore((s) => s.employees)
@@ -263,14 +264,14 @@ export default function FieldScout() {
     setInvoiceLoading(true)
     setInvoiceData(null)
     try {
-      const { data: inv } = await supabase
+      const { data: invRows } = await supabase
         .from('invoices')
         .select('*')
         .eq('company_id', companyId)
         .eq('job_id', job.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
+      const inv = invRows?.[0]
       if (inv) {
         const { data: lines } = await supabase
           .from('invoice_lines')
@@ -654,7 +655,41 @@ export default function FieldScout() {
 
   // Quick stats
   const jobsToday = todaysJobs.length
-  const hoursAllotted = todaysJobs.reduce((sum, j) => sum + (parseFloat(j.hours_allotted) || 0), 0)
+  // Get per-business-unit hourly rates for fallback calculation
+  const hourlyRatesMap = (() => {
+    const s = (settings || []).find(s => s.key === 'default_hourly_rates')
+    if (s) { try { return JSON.parse(s.value) || {} } catch {} }
+    // Fallback to legacy single rate
+    const old = (settings || []).find(s => s.key === 'default_hourly_rate')
+    if (old) { try { return { _default: parseFloat(JSON.parse(old.value)) || 0 } } catch {} }
+    return {}
+  })()
+
+  // Returns { hours, source } where source is 'product' | 'rate' | null
+  const getJobAllotted = (j) => {
+    const stored = parseFloat(j.allotted_time_hours) || 0
+    // If stored value exists, check if it came from product hours or rate
+    // calculated_allotted_time is set by auto-calc; if it matches, it was calculated
+    if (stored > 0) {
+      // If job has calculated_allotted_time matching stored, determine source
+      const calc = parseFloat(j.calculated_allotted_time) || 0
+      const rate = parseFloat(hourlyRatesMap[j.business_unit]) || parseFloat(hourlyRatesMap._default) || 0
+      const rateHours = (rate > 0 && j.job_total) ? Math.round((parseFloat(j.job_total) / rate) * 100) / 100 : 0
+      if (calc > 0 && Math.abs(calc - rateHours) < 0.01 && rateHours > 0) {
+        return { hours: stored, source: 'rate' }
+      }
+      if (calc > 0) return { hours: stored, source: 'product' }
+      return { hours: stored, source: null }
+    }
+    // Fallback: job_total / business unit hourly rate
+    const rate = parseFloat(hourlyRatesMap[j.business_unit]) || parseFloat(hourlyRatesMap._default) || 0
+    if (rate > 0 && j.job_total) {
+      return { hours: Math.round((parseFloat(j.job_total) / rate) * 100) / 100, source: 'rate' }
+    }
+    return { hours: 0, source: null }
+  }
+
+  const hoursAllotted = todaysJobs.reduce((sum, j) => sum + getJobAllotted(j).hours, 0)
   const completedToday = todaysJobs.filter(j => j.status === 'Completed').length
 
   // Open address in native maps
@@ -1305,12 +1340,15 @@ export default function FieldScout() {
                   }}
                 >
                   {/* Card header — tappable */}
-                  <button
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       const next = isExpanded ? null : job.id
                       setExpandedJob(next)
                       if (next) fetchJobSections(next)
                     }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const next = expandedJob === job.id ? null : job.id; setExpandedJob(next); if (next) fetchJobSections(next) } }}
                     style={{
                       width: '100%',
                       padding: '14px 16px',
@@ -1374,18 +1412,23 @@ export default function FieldScout() {
 
                     {/* Meta row */}
                     <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      {job.hours_allotted && (
-                        <span style={{
-                          fontSize: '11px',
-                          padding: '2px 8px',
-                          backgroundColor: theme.accentBg,
-                          color: theme.accent,
-                          borderRadius: '4px',
-                          fontWeight: '500'
-                        }}>
-                          {job.hours_allotted}h allotted
-                        </span>
-                      )}
+                      {(() => {
+                        const { hours, source } = getJobAllotted(job)
+                        if (hours <= 0) return null
+                        return (
+                          <span style={{
+                            fontSize: '11px',
+                            padding: '2px 8px',
+                            backgroundColor: theme.accentBg,
+                            color: theme.accent,
+                            borderRadius: '4px',
+                            fontWeight: '500'
+                          }}>
+                            {hours}h allotted
+                            {source && <span style={{ opacity: 0.7, marginLeft: '3px' }}>({source === 'product' ? 'products' : '$/hr'})</span>}
+                          </span>
+                        )
+                      })()}
                       {job.start_date && (
                         <span style={{ fontSize: '11px', color: theme.textMuted }}>
                           {new Date(job.start_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
@@ -1482,7 +1525,7 @@ export default function FieldScout() {
                         {job.notes}
                       </div>
                     )}
-                  </button>
+                  </div>
 
                   {/* Expanded content */}
                   {isExpanded && (
