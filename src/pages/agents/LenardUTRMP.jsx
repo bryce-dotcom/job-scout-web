@@ -396,7 +396,7 @@ export default function LenardUTRMP() {
 
   useEffect(() => { if (keepLinesOnSwitch.current) { keepLinesOnSwitch.current = false; return; } setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('UT'); setSaveZip(''); setSaveMeterNumber(''); setSaveEIN(''); }, [program]);
 
-  useEffect(() => { if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw-lenard.js').catch(() => {}); } }, []);
+  // PWA service worker handled by main Vite PWA sw.js — do not register sw-lenard.js
 
   // Check if user is authenticated (rep-only Give-Me Engine)
   // Falls back to leadOwnerId as rep indicator when auth unavailable

@@ -36,14 +36,27 @@ function ErrorFallback({ error }) {
   )
 }
 
-// Force service worker update check on every page load
+// Service worker management
 if ('serviceWorker' in navigator) {
+  // Clean up conflicting sw-lenard.js registrations (now handled by main Vite PWA sw.js)
   navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(r => r.update())
+    regs.forEach(r => {
+      const url = (r.active || r.installing || r.waiting)?.scriptURL || ''
+      if (url.includes('sw-lenard')) {
+        r.unregister()
+      } else {
+        r.update()
+      }
+    })
   })
-  // Listen for new SW and reload when it takes over
+  // Listen for new SW and reload when it takes over (guarded to prevent loops)
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    window.location.reload()
+    const key = 'sw_reloaded_at'
+    const last = sessionStorage.getItem(key)
+    if (!last || Date.now() - Number(last) > 30000) {
+      sessionStorage.setItem(key, String(Date.now()))
+      window.location.reload()
+    }
   })
 }
 

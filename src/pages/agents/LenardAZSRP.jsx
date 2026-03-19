@@ -421,12 +421,7 @@ export default function LenardAZSRP() {
   // Reset lines when switching programs
   useEffect(() => { setLines([]); setExpandedLine(null); setNewlyAdded(new Set()); setSavedLeadId(null); setSavedAuditId(null); setIsDirty(false); setCapturedPhotos([]); setSaveCity(''); setSaveState('AZ'); setSaveZip(''); setSaveMeterNumber(''); setSaveEIN(''); }, [program]);
 
-  // Register PWA service worker
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw-lenard.js').catch(() => {});
-    }
-  }, []);
+  // PWA service worker handled by main Vite PWA sw.js — do not register sw-lenard.js
 
   // Fetch SMBE products on mount
   useEffect(() => {
