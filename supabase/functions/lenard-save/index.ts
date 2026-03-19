@@ -408,10 +408,10 @@ serve(async (req) => {
           });
         }
 
-        // Update lead with quote_id and quote_amount so pipeline shows the value
+        // Update lead with quote_id so pipeline shows the value
+        // (quote_amount lives on the quotes table, not leads)
         await supabasePatch(SUPABASE_URL!, 'leads', key, leadId, {
           quote_id: newQuote.id,
-          quote_amount: quoteAmount,
         });
       }
     }

@@ -376,6 +376,7 @@ export default function LenardAZSRP() {
   const [dougieStep, setDougieStep] = useState(null);
   const [dougiePhotos, setDougiePhotos] = useState([]);
   const [dougieResult, setDougieResult] = useState(null);
+  const dougieOriginalRef = useRef(null); // stores AI's original output for diff
 
   // Pull-to-refresh
   const [pullStartY, setPullStartY] = useState(0);
@@ -693,7 +694,10 @@ export default function LenardAZSRP() {
       const data = await resp.json();
       if (data.success && data.header && data.areas) {
         dougiePhotos.forEach(p => setCapturedPhotos(prev => [...prev, p.base64]));
-        setDougieResult({ header: data.header, areas: data.areas });
+        const result = { header: data.header, areas: data.areas };
+        setDougieResult(result);
+        // Deep copy the original AI output so we can diff corrections later
+        dougieOriginalRef.current = JSON.parse(JSON.stringify(result));
         setDougieStep('review');
       } else {
         showToast(data.error || 'Could not read takeoff sheet', '\u26A0\uFE0F');
@@ -736,6 +740,51 @@ export default function LenardAZSRP() {
       });
     });
     showToast(`Imported ${count} fixtures from ${areas.length} area${areas.length > 1 ? 's' : ''}`, '\u2713');
+
+    // Diff corrections and send to backend for learning
+    if (dougieOriginalRef.current) {
+      const corrections = [];
+      const orig = dougieOriginalRef.current;
+      // Compare header fields
+      const headerFields = ['customerName', 'contact', 'phone', 'email', 'meterNumber', 'accountNumber', 'address', 'city', 'state', 'zip', 'ein'];
+      headerFields.forEach(f => {
+        const ov = (orig.header?.[f] || '').trim();
+        const nv = (header[f] || '').trim();
+        if (ov && nv && ov !== nv) {
+          corrections.push({ fieldType: 'header', fieldName: f, originalValue: ov, correctedValue: nv });
+        }
+      });
+      // Compare fixture fields per area
+      (orig.areas || []).forEach((origArea, aIdx) => {
+        const editedArea = areas[aIdx];
+        if (!editedArea) return;
+        (origArea.fixtures || []).forEach((origFix, fIdx) => {
+          const editedFix = (editedArea.fixtures || [])[fIdx];
+          if (!editedFix) return;
+          const ctx = { areaName: editedArea.areaName || origArea.areaName };
+          ['name', 'qty', 'existW', 'newW', 'location'].forEach(f => {
+            const ov = String(origFix[f] ?? '').trim();
+            const nv = String(editedFix[f] ?? '').trim();
+            if (ov && nv && ov !== nv) {
+              corrections.push({ fieldType: 'fixture', fieldName: f, originalValue: ov, correctedValue: nv, context: ctx });
+            }
+          });
+        });
+      });
+      if (corrections.length > 0) {
+        // Fire and forget — don't block import on correction saving
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        fetch(`${SUPABASE_URL}/functions/v1/dougie-corrections`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+          body: JSON.stringify({ corrections }),
+        }).catch(() => {});
+        console.log(`[Dougie] Saved ${corrections.length} corrections for learning`);
+      }
+      dougieOriginalRef.current = null;
+    }
+
     setDougieStep(null); setDougiePhotos([]); setDougieResult(null);
     markDirty();
   };

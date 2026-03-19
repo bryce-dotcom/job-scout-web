@@ -21,6 +21,10 @@ serve(async (req) => {
     }
 
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const companyId = Deno.env.get('LENARD_COMPANY_ID');
+
     if (!ANTHROPIC_API_KEY) {
       return new Response(JSON.stringify({ error: 'API key not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -41,6 +45,29 @@ serve(async (req) => {
         text: `Page ${idx + 1} of ${images.length}`,
       },
     ])).flat();
+
+    // ============ Fetch recent corrections for few-shot learning ============
+    let correctionsBlock = '';
+    if (SUPABASE_URL && SERVICE_KEY && companyId) {
+      try {
+        const corrRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/dougie_corrections?company_id=eq.${companyId}&order=created_at.desc&limit=30`,
+          { headers: { 'Authorization': `Bearer ${SERVICE_KEY}`, 'apikey': SERVICE_KEY } }
+        );
+        if (corrRes.ok) {
+          const corrections = await corrRes.json();
+          if (corrections.length > 0) {
+            const lines = corrections.map((c: any) =>
+              `- ${c.field_type}.${c.field_name}: AI wrote "${c.original_value}" → user corrected to "${c.corrected_value}"${c.context?.areaName ? ` (area: ${c.context.areaName})` : ''}`
+            );
+            correctionsBlock = `\n\nPAST CORRECTIONS FROM THIS TEAM (learn from these — avoid repeating the same mistakes):
+${lines.join('\n')}`;
+          }
+        }
+      } catch (e) {
+        console.warn('[Dougie] Could not fetch corrections:', e);
+      }
+    }
 
     // ============ PASS 1: Pure OCR — just read every character ============
     const ocrPrompt = `Look at this handwritten form. It is a lighting takeoff sheet with a header section at top and a table of rows below.
@@ -107,8 +134,8 @@ Rules:
     const rawTranscription = ocrData.content?.map((c: any) => c.text || '').join('') || '';
     console.log('[Dougie] Pass 1 complete. Transcription length:', rawTranscription.length);
 
-    // ============ PASS 2: Structure the transcription into JSON ============
-    const structurePrompt = `You are given a raw transcription of a handwritten lighting takeoff form. Convert it to structured JSON.
+    // ============ PASS 2: Structure the transcription into JSON (with images for cross-reference) ============
+    const structurePrompt = `You are given a raw transcription of a handwritten lighting takeoff form AND the original images. Use BOTH to produce accurate structured JSON. If the transcription and image disagree, trust the image.
 
 HERE IS THE RAW TRANSCRIPTION:
 ---
@@ -162,6 +189,7 @@ fixtureCategory mapping:
 - Wall pack or WP → "Wall Pack"
 - Exterior pole/flood → "Outdoor"
 - Otherwise → "Linear"
+${correctionsBlock}
 
 Return ONLY valid JSON (no markdown, no backticks):
 {
@@ -196,7 +224,7 @@ Return ONLY valid JSON (no markdown, no backticks):
   ]
 }`;
 
-    console.log('[Dougie] Starting Pass 2: Structuring');
+    console.log('[Dougie] Starting Pass 2: Structuring (with images)');
     const structResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -210,7 +238,8 @@ Return ONLY valid JSON (no markdown, no backticks):
         messages: [
           {
             role: 'user',
-            content: structurePrompt,
+            // Send images + structuring prompt so Pass 2 can cross-reference handwriting
+            content: [...imageBlocks, { type: 'text', text: structurePrompt }],
           },
         ],
       }),
