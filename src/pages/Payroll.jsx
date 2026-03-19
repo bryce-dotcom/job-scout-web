@@ -6,7 +6,8 @@ import { isAdmin as checkAdmin, isManager as checkManager } from '../lib/accessC
 import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
   ChevronRight, ChevronDown, AlertTriangle, TrendingUp, Zap,
-  Award, Filter, ArrowLeft, Eye, Briefcase
+  Award, Filter, ArrowLeft, Eye, Briefcase, MapPin, FileText,
+  Edit3, Save
 } from 'lucide-react'
 
 const AVATAR_COLORS = [
@@ -41,6 +42,8 @@ export default function Payroll() {
   const [filterRole, setFilterRole] = useState('all')
   const [savingSettings, setSavingSettings] = useState(false)
   const [runningPayroll, setRunningPayroll] = useState(false)
+  const [editingEntry, setEditingEntry] = useState(null) // { id, clock_in, clock_out, reason }
+  const [savingEntry, setSavingEntry] = useState(false)
 
   // Payroll settings from settings table
   const [payrollConfig, setPayrollConfig] = useState({
@@ -83,7 +86,7 @@ export default function Payroll() {
       .select('value')
       .eq('company_id', companyId)
       .eq('key', 'payroll_config')
-      .single()
+      .maybeSingle()
 
     if (data?.value) {
       try {
@@ -123,6 +126,53 @@ export default function Payroll() {
       alert('Error saving: ' + err.message)
     } finally {
       setSavingSettings(false)
+    }
+  }
+
+  const saveTimeAdjustment = async () => {
+    if (!editingEntry?.reason?.trim()) {
+      alert('You must provide a reason for the adjustment')
+      return
+    }
+    setSavingEntry(true)
+    try {
+      // Find the original entry to store original values
+      const original = timeEntries.find(e => e.id === editingEntry.id)
+      const newClockIn = new Date(editingEntry.clock_in)
+      const newClockOut = editingEntry.clock_out ? new Date(editingEntry.clock_out) : null
+      const newTotalHours = newClockOut ? Math.round((newClockOut - newClockIn) / 36e5 * 100) / 100 : null
+
+      // Find the admin employee record
+      const adminEmp = employees.find(e => e.email === user?.email)
+
+      const updateData = {
+        clock_in: newClockIn.toISOString(),
+        clock_out: newClockOut ? newClockOut.toISOString() : null,
+        total_hours: newTotalHours,
+        adjusted_by: adminEmp?.id || null,
+        adjusted_at: new Date().toISOString(),
+        adjustment_reason: editingEntry.reason.trim(),
+      }
+
+      // Only store original values on first adjustment
+      if (!original.original_clock_in) {
+        updateData.original_clock_in = original.clock_in
+        updateData.original_clock_out = original.clock_out
+        updateData.original_total_hours = original.total_hours
+      }
+
+      const { error } = await supabase
+        .from('time_clock')
+        .update(updateData)
+        .eq('id', editingEntry.id)
+
+      if (error) throw error
+      setEditingEntry(null)
+      await fetchData()
+    } catch (err) {
+      alert('Error saving adjustment: ' + err.message)
+    } finally {
+      setSavingEntry(false)
     }
   }
 
@@ -213,21 +263,7 @@ export default function Payroll() {
       periodStart.setDate(today.getDate() - (day === 0 ? 6 : day - 1))
       periodEnd = new Date(periodStart)
       periodEnd.setDate(periodStart.getDate() + 6)
-    } else if (frequency === 'bi-weekly') {
-      const day1 = parseInt(payrollConfig.pay_day_1) || 20
-      const day2 = parseInt(payrollConfig.pay_day_2) || 5
-
-      if (today.getDate() <= day2) {
-        periodStart = new Date(today.getFullYear(), today.getMonth() - 1, 16)
-        periodEnd = new Date(today.getFullYear(), today.getMonth(), 0)
-      } else if (today.getDate() <= day1) {
-        periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
-        periodEnd = new Date(today.getFullYear(), today.getMonth(), 15)
-      } else {
-        periodStart = new Date(today.getFullYear(), today.getMonth(), 16)
-        periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-      }
-    } else if (frequency === 'semi-monthly') {
+    } else if (frequency === 'bi-weekly' || frequency === 'semi-monthly') {
       if (today.getDate() <= 15) {
         periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
         periodEnd = new Date(today.getFullYear(), today.getMonth(), 15)
@@ -277,18 +313,34 @@ export default function Payroll() {
   // ── Employee Pay Calculations ────────────────────────────
   const calculateEmployeeHours = (employeeId) => {
     const empEntries = timeEntries.filter(e => e.employee_id === employeeId)
+    const empTimeLogs = timeLogEntries.filter(e => e.employee_id === employeeId)
     let regularHours = 0
     let overtimeHours = 0
 
-    // Group by week for overtime
+    // Group by week for overtime (combine time_clock + time_log)
     const weeklyHours = {}
-    empEntries.forEach(entry => {
-      if (!entry.total_hours) return
-      const entryDate = new Date(entry.clock_in)
-      const weekStart = new Date(entryDate)
-      weekStart.setDate(entryDate.getDate() - entryDate.getDay())
+    const addToWeek = (date, hours) => {
+      const weekStart = new Date(date)
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay())
       const weekKey = weekStart.toISOString().split('T')[0]
-      weeklyHours[weekKey] = (weeklyHours[weekKey] || 0) + entry.total_hours
+      weeklyHours[weekKey] = (weeklyHours[weekKey] || 0) + hours
+    }
+
+    // time_clock entries
+    empEntries.forEach(entry => {
+      let hours = entry.total_hours
+      if (!hours && entry.clock_in && entry.clock_out) {
+        hours = Math.round((new Date(entry.clock_out) - new Date(entry.clock_in)) / 36e5 * 100) / 100
+      }
+      if (!hours) return
+      addToWeek(new Date(entry.clock_in), hours)
+    })
+
+    // time_log entries (job-level hours)
+    empTimeLogs.forEach(entry => {
+      if (!entry.hours) return
+      const entryDate = new Date(entry.date || entry.clock_in_time || entry.created_at)
+      addToWeek(entryDate, entry.hours)
     })
 
     const otThreshold = payrollConfig.overtime_threshold || 40
@@ -839,6 +891,216 @@ export default function Payroll() {
             </div>
           </div>
         )}
+
+        {/* Time Clock Entries */}
+        {(() => {
+          const empClockEntries = timeEntries.filter(e => e.employee_id === emp.id)
+          if (empClockEntries.length === 0 && timeLogEntries.filter(e => e.employee_id === emp.id && e.hours).length === 0) return null
+          const empLogs = timeLogEntries.filter(e => e.employee_id === emp.id && e.hours)
+          return (
+            <>
+              {empClockEntries.length > 0 && (
+                <div style={{ ...cardStyle, marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Clock size={18} style={{ color: '#3b82f6' }} />
+                    Time Clock Entries ({empClockEntries.length})
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {empClockEntries
+                      .sort((a, b) => new Date(b.clock_in) - new Date(a.clock_in))
+                      .map((entry, i) => {
+                        let hours = entry.total_hours
+                        if (!hours && entry.clock_in && entry.clock_out) {
+                          hours = Math.round((new Date(entry.clock_out) - new Date(entry.clock_in)) / 36e5 * 100) / 100
+                        }
+                        const clockIn = new Date(entry.clock_in)
+                        const clockOut = entry.clock_out ? new Date(entry.clock_out) : null
+                        const isEditing = editingEntry?.id === entry.id
+                        const wasAdjusted = !!entry.adjusted_at
+                        const adjBy = wasAdjusted ? employees.find(e => e.id === entry.adjusted_by) : null
+
+                        return (
+                          <div key={i} style={{
+                            padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
+                            border: `1px solid ${wasAdjusted ? 'rgba(249,115,22,0.4)' : theme.border}`
+                          }}>
+                            {isEditing ? (
+                              /* ---- EDIT MODE ---- */
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                                  Adjust Time Entry — {clockIn.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                  <div>
+                                    <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '2px' }}>Clock In</label>
+                                    <input type="datetime-local" value={editingEntry.clock_in}
+                                      onChange={e => setEditingEntry(prev => ({ ...prev, clock_in: e.target.value }))}
+                                      style={{ width: '100%', padding: '6px 8px', background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.text, fontSize: '13px' }} />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '2px' }}>Clock Out</label>
+                                    <input type="datetime-local" value={editingEntry.clock_out || ''}
+                                      onChange={e => setEditingEntry(prev => ({ ...prev, clock_out: e.target.value }))}
+                                      style={{ width: '100%', padding: '6px 8px', background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.text, fontSize: '13px' }} />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '2px' }}>Reason for adjustment *</label>
+                                  <input type="text" value={editingEntry.reason || ''} placeholder="e.g. Employee forgot to clock out, actual time confirmed"
+                                    onChange={e => setEditingEntry(prev => ({ ...prev, reason: e.target.value }))}
+                                    style={{ width: '100%', padding: '6px 8px', background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.text, fontSize: '13px', boxSizing: 'border-box' }} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                  <button onClick={() => setEditingEntry(null)} style={{ padding: '6px 14px', background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
+                                  <button onClick={saveTimeAdjustment} disabled={savingEntry || !editingEntry.reason?.trim()}
+                                    style={{ padding: '6px 14px', background: theme.accent, border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer', opacity: savingEntry || !editingEntry.reason?.trim() ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Save size={12} />{savingEntry ? 'Saving...' : 'Save'}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              /* ---- READ MODE ---- */
+                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                                    {clockIn.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                                    {clockIn.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                    {clockOut ? ` — ${clockOut.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ' — Still clocked in'}
+                                  </div>
+                                  {/* Clock In Location */}
+                                  {(entry.clock_in_address || (entry.clock_in_lat && entry.clock_in_lng)) && (
+                                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                      <MapPin size={10} style={{ color: '#22c55e', flexShrink: 0 }} />
+                                      <span>In: {entry.clock_in_address || `${Number(entry.clock_in_lat).toFixed(4)}, ${Number(entry.clock_in_lng).toFixed(4)}`}</span>
+                                    </div>
+                                  )}
+                                  {/* Clock Out Location */}
+                                  {(entry.clock_out_address || (entry.clock_out_lat && entry.clock_out_lng)) && (
+                                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                      <MapPin size={10} style={{ color: '#ef4444', flexShrink: 0 }} />
+                                      <span>Out: {entry.clock_out_address || `${Number(entry.clock_out_lat).toFixed(4)}, ${Number(entry.clock_out_lng).toFixed(4)}`}</span>
+                                    </div>
+                                  )}
+                                  {/* Adjustment info */}
+                                  {wasAdjusted && (
+                                    <div style={{ fontSize: '11px', color: '#f97316', marginTop: '4px', padding: '3px 8px', backgroundColor: 'rgba(249,115,22,0.08)', borderRadius: '4px', display: 'inline-block' }}>
+                                      Adjusted by {adjBy?.name || 'Admin'} — {entry.adjustment_reason}
+                                      {entry.original_clock_in && (
+                                        <span style={{ color: theme.textMuted }}> (was {new Date(entry.original_clock_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                        {entry.original_clock_out ? `–${new Date(entry.original_clock_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}
+                                        {entry.original_total_hours ? `, ${entry.original_total_hours.toFixed(2)}h` : ''})</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={{ textAlign: 'right', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                  <div>
+                                    <div style={{ fontSize: '16px', fontWeight: '600', color: hours ? theme.text : '#f97316' }}>
+                                      {hours ? `${hours.toFixed(2)}h` : '--'}
+                                    </div>
+                                    {entry.lunch_start && entry.lunch_end && (
+                                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                        Lunch: {Math.round((new Date(entry.lunch_end) - new Date(entry.lunch_start)) / 60000)}m
+                                      </div>
+                                    )}
+                                  </div>
+                                  {isAdmin && (
+                                    <button onClick={() => {
+                                      const ci = new Date(entry.clock_in)
+                                      const co = entry.clock_out ? new Date(entry.clock_out) : null
+                                      const pad = (n) => String(n).padStart(2, '0')
+                                      const toLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+                                      setEditingEntry({
+                                        id: entry.id,
+                                        clock_in: toLocal(ci),
+                                        clock_out: co ? toLocal(co) : '',
+                                        reason: '',
+                                      })
+                                    }} style={{ padding: '4px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '4px', cursor: 'pointer', color: theme.textMuted, display: 'flex', alignItems: 'center' }}
+                                      title="Adjust time entry">
+                                      <Edit3 size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
+                  <div style={{
+                    marginTop: '12px', padding: '10px 12px', backgroundColor: 'rgba(59,130,246,0.08)',
+                    borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: theme.textSecondary }}>Total Clock Hours</span>
+                    <span style={{ fontSize: '16px', fontWeight: '700', color: '#3b82f6' }}>
+                      {empClockEntries.reduce((sum, e) => {
+                        let h = e.total_hours
+                        if (!h && e.clock_in && e.clock_out) h = Math.round((new Date(e.clock_out) - new Date(e.clock_in)) / 36e5 * 100) / 100
+                        return sum + (h || 0)
+                      }, 0).toFixed(2)}h
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {empLogs.length > 0 && (
+                <div style={{ ...cardStyle, marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FileText size={18} style={{ color: '#14b8a6' }} />
+                    Job Time Logs ({empLogs.length})
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {empLogs
+                      .sort((a, b) => new Date(b.date || b.created_at) - new Date(a.date || a.created_at))
+                      .map((entry, i) => {
+                        const job = jobs.find(j => j.id === entry.job_id)
+                        const entryDate = new Date(entry.date || entry.created_at)
+                        return (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
+                            border: `1px solid ${theme.border}`
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                                {entryDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                              </div>
+                              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                                {job ? `${job.job_id || ''} ${job.customer_name || job.job_title || ''}`.trim() : `Job #${entry.job_id || 'N/A'}`}
+                              </div>
+                              {entry.category && entry.category !== 'Regular' && (
+                                <span style={{
+                                  fontSize: '10px', padding: '1px 6px', borderRadius: '4px', marginTop: '2px',
+                                  display: 'inline-block',
+                                  backgroundColor: entry.category === 'Overtime' ? 'rgba(249,115,22,0.1)' : 'rgba(59,130,246,0.1)',
+                                  color: entry.category === 'Overtime' ? '#f97316' : '#3b82f6'
+                                }}>{entry.category}</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
+                              {entry.hours.toFixed(2)}h
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                  <div style={{
+                    marginTop: '12px', padding: '10px 12px', backgroundColor: 'rgba(20,184,166,0.08)',
+                    borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: theme.textSecondary }}>Total Job Hours</span>
+                    <span style={{ fontSize: '16px', fontWeight: '700', color: '#14b8a6' }}>
+                      {empLogs.reduce((sum, e) => sum + (e.hours || 0), 0).toFixed(2)}h
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
+          )
+        })()}
       </div>
     )
   }
