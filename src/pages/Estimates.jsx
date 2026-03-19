@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, UserPlus, Calendar, Upload, Download } from 'lucide-react'
+import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar, Upload, Download } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { estimatesFields, quoteLinesFields } from '../lib/importExportFields'
@@ -41,6 +41,7 @@ export default function Estimates() {
   const fetchLeads = useStore((state) => state.fetchLeads)
 
   const [showModal, setShowModal] = useState(false)
+  const [associationType, setAssociationType] = useState('lead') // 'lead' | 'customer' | 'newLead'
   const [formData, setFormData] = useState({
     lead_id: '',
     customer_id: '',
@@ -56,10 +57,6 @@ export default function Estimates() {
     address: '',
     service_type: ''
   })
-  const [showNewLeadFields, setShowNewLeadFields] = useState(false)
-  const [customerSearchText, setCustomerSearchText] = useState('')
-  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
-  const customerInputRef = useRef(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -119,11 +116,14 @@ export default function Estimates() {
     setLoading(true)
     setError(null)
 
-    let leadId = formData.lead_id || null
-    let customerId = formData.customer_id || null
+    let leadId = null
+    let customerId = null
 
-    // If creating a new lead inline
-    if (showNewLeadFields) {
+    if (associationType === 'lead') {
+      leadId = formData.lead_id || null
+    } else if (associationType === 'customer') {
+      customerId = formData.customer_id || null
+    } else if (associationType === 'newLead') {
       if (!newLeadData.customer_name.trim()) {
         setError('Customer name is required for a new lead')
         setLoading(false)
@@ -153,7 +153,7 @@ export default function Estimates() {
         return
       }
       leadId = newLead.id
-      fetchLeads()
+      fetchLeads() // refresh store so the new lead appears in lists
     }
 
     const estimateNumber = `EST-${Date.now().toString(36).toUpperCase()}`
@@ -184,8 +184,7 @@ export default function Estimates() {
     setShowModal(false)
     setFormData({ lead_id: '', customer_id: '', salesperson_id: '', service_type: '', estimate_name: '', notes: '' })
     setNewLeadData({ customer_name: '', email: '', phone: '', address: '', service_type: '' })
-    setShowNewLeadFields(false)
-    setCustomerSearchText('')
+    setAssociationType('lead')
     await fetchQuotes()
     navigate(`/estimates/${data.id}`)
     setLoading(false)
@@ -549,143 +548,83 @@ export default function Estimates() {
                   />
                 </div>
 
-                {/* Customer search */}
+                {/* Association type toggle */}
                 <div>
-                  <label style={labelStyle}>Customer</label>
-                  <div style={{ position: 'relative' }} ref={customerInputRef}>
-                    <User size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, pointerEvents: 'none' }} />
-                    <input
-                      type="text"
-                      value={customerSearchText}
-                      onChange={(e) => {
-                        setCustomerSearchText(e.target.value)
-                        setShowCustomerDropdown(true)
-                        if (!e.target.value) {
-                          setFormData(prev => ({ ...prev, customer_id: '' }))
-                        }
-                      }}
-                      onFocus={() => setShowCustomerDropdown(true)}
-                      onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
-                      placeholder="Search customers..."
-                      style={{ ...inputStyle, paddingLeft: '32px' }}
-                      autoComplete="off"
-                    />
-                    {customerSearchText && (
+                  <label style={labelStyle}>Associate With</label>
+                  <div style={{ display: 'flex', borderRadius: '8px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+                    {[
+                      { key: 'lead', label: 'Existing Lead' },
+                      { key: 'customer', label: 'Customer' },
+                      { key: 'newLead', label: 'New Lead' }
+                    ].map(opt => (
                       <button
+                        key={opt.key}
                         type="button"
-                        onClick={() => { setCustomerSearchText(''); setFormData(prev => ({ ...prev, customer_id: '' })); setShowCustomerDropdown(false) }}
-                        style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: theme.textMuted }}
+                        onClick={() => {
+                          setAssociationType(opt.key)
+                          setFormData(prev => ({ ...prev, lead_id: '', customer_id: '' }))
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '8px 4px',
+                          fontSize: '13px',
+                          fontWeight: associationType === opt.key ? '600' : '400',
+                          backgroundColor: associationType === opt.key ? theme.accent : 'transparent',
+                          color: associationType === opt.key ? '#ffffff' : theme.textSecondary,
+                          border: 'none',
+                          cursor: 'pointer',
+                          borderRight: opt.key !== 'newLead' ? `1px solid ${theme.border}` : 'none'
+                        }}
                       >
-                        <X size={14} />
+                        {opt.label}
                       </button>
-                    )}
-                  </div>
-                  {showCustomerDropdown && (() => {
-                    const filtered = customers.filter(c =>
-                      c.name?.toLowerCase().includes((customerSearchText || '').toLowerCase())
-                    )
-                    const rect = customerInputRef.current?.getBoundingClientRect()
-                    const dropdownStyle = rect ? {
-                      position: 'fixed',
-                      top: rect.bottom + 2,
-                      left: rect.left,
-                      width: rect.width,
-                      zIndex: 9999
-                    } : { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999 }
-                    return filtered.length > 0 ? (
-                      <div style={{
-                        ...dropdownStyle,
-                        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
-                        borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                        maxHeight: '200px', overflowY: 'auto'
-                      }}>
-                        {filtered.map(c => (
-                          <div
-                            key={c.id}
-                            onMouseDown={(e) => {
-                              e.preventDefault()
-                              setFormData(prev => ({ ...prev, customer_id: c.id }))
-                              setCustomerSearchText(c.name)
-                              setShowCustomerDropdown(false)
-                            }}
-                            style={{
-                              padding: '10px 12px', cursor: 'pointer', fontSize: '14px',
-                              color: theme.text, borderBottom: `1px solid ${theme.border}`,
-                              backgroundColor: formData.customer_id === c.id ? theme.accentBg : 'transparent'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover || '#eef2eb'}
-                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = formData.customer_id === c.id ? theme.accentBg : 'transparent'}
-                          >
-                            {c.name}
-                            {c.business_name && <span style={{ color: theme.textMuted, fontSize: '12px', marginLeft: '8px' }}>{c.business_name}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    ) : customerSearchText ? (
-                      <div style={{
-                        ...dropdownStyle,
-                        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
-                        borderRadius: '8px', padding: '12px',
-                        fontSize: '13px', color: theme.textMuted, textAlign: 'center'
-                      }}>
-                        No customers found
-                      </div>
-                    ) : null
-                  })()}
-                </div>
-
-                {/* Lead select */}
-                <div>
-                  <label style={labelStyle}>Lead</label>
-                  <select
-                    name="lead_id"
-                    value={formData.lead_id}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select Lead (optional) --</option>
-                    {leads.filter(l => l.status !== 'Lost' && l.status !== 'Not Qualified').map(lead => (
-                      <option key={lead.id} value={lead.id}>{lead.customer_name}{lead.service_type ? ` — ${lead.service_type}` : ''}</option>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
-                {/* New Lead toggle */}
-                {!showNewLeadFields && !formData.lead_id && (
-                  <button
-                    type="button"
-                    onClick={() => setShowNewLeadFields(true)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      padding: '8px 12px', fontSize: '13px', fontWeight: '500',
-                      color: theme.accent, backgroundColor: 'transparent',
-                      border: `1px dashed ${theme.border}`, borderRadius: '8px',
-                      cursor: 'pointer', alignSelf: 'flex-start'
-                    }}
-                  >
-                    <UserPlus size={14} />
-                    Create New Lead Instead
-                  </button>
+                {/* Existing Lead picker */}
+                {associationType === 'lead' && (
+                  <div>
+                    <label style={labelStyle}>Lead</label>
+                    <select
+                      name="lead_id"
+                      value={formData.lead_id}
+                      onChange={handleChange}
+                      style={inputStyle}
+                    >
+                      <option value="">-- Select Lead --</option>
+                      {leads.filter(l => l.status !== 'Lost' && l.status !== 'Not Qualified').map(lead => (
+                        <option key={lead.id} value={lead.id}>{lead.customer_name}{lead.service_type ? ` — ${lead.service_type}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Existing Customer picker */}
+                {associationType === 'customer' && (
+                  <div>
+                    <label style={labelStyle}>Customer</label>
+                    <select
+                      name="customer_id"
+                      value={formData.customer_id}
+                      onChange={handleChange}
+                      style={inputStyle}
+                    >
+                      <option value="">-- Select Customer --</option>
+                      {customers.map(cust => (
+                        <option key={cust.id} value={cust.id}>{cust.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 )}
 
                 {/* New Lead inline fields */}
-                {showNewLeadFields && (
+                {associationType === 'newLead' && (
                   <div style={{
                     display: 'flex', flexDirection: 'column', gap: '12px',
                     padding: '14px', borderRadius: '8px',
-                    backgroundColor: theme.accentBg, border: `1px solid ${theme.border}`,
-                    position: 'relative'
+                    backgroundColor: theme.accentBg, border: `1px solid ${theme.border}`
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>New Lead</span>
-                      <button
-                        type="button"
-                        onClick={() => { setShowNewLeadFields(false); setNewLeadData({ customer_name: '', email: '', phone: '', address: '', service_type: '' }) }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: theme.textMuted }}
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
                     <div>
                       <label style={labelStyle}>Customer Name *</label>
                       <input
@@ -731,36 +670,34 @@ export default function Estimates() {
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>Salesperson</label>
-                    <select
-                      name="salesperson_id"
-                      value={formData.salesperson_id}
-                      onChange={handleChange}
-                      style={inputStyle}
-                    >
-                      <option value="">-- Select --</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label style={labelStyle}>Salesperson</label>
+                  <select
+                    name="salesperson_id"
+                    value={formData.salesperson_id}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select --</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-                  <div>
-                    <label style={labelStyle}>Service Type</label>
-                    <select
-                      name="service_type"
-                      value={formData.service_type}
-                      onChange={handleChange}
-                      style={inputStyle}
-                    >
-                      <option value="">-- Select --</option>
-                      {serviceTypes.map(t => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label style={labelStyle}>Service Type</label>
+                  <select
+                    name="service_type"
+                    value={formData.service_type}
+                    onChange={handleChange}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select --</option>
+                    {serviceTypes.map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

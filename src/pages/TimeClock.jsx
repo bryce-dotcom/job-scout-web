@@ -23,7 +23,6 @@ export default function TimeClock() {
   const [timeEntries, setTimeEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
-  const [clockAction, setClockAction] = useState(null) // { employeeId, type: 'in'|'out'|'lunch_start'|'lunch_end' }
   const [showPTOModal, setShowPTOModal] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState(null)
   const [ptoForm, setPtoForm] = useState({
@@ -297,17 +296,15 @@ export default function TimeClock() {
           }
         },
         () => resolve({ lat: null, lng: null, address: null }),
-        { timeout: 5000, maximumAge: 60000 }
+        { timeout: 10000 }
       )
     })
   }
 
   const handleClockIn = async (employeeId) => {
-    if (clockAction) return
-    setClockAction({ employeeId, type: 'in' })
+    const location = await getLocation()
 
     try {
-      const location = await getLocation()
       const { error } = await supabase.from('time_clock').insert({
         company_id: companyId,
         employee_id: employeeId,
@@ -321,30 +318,25 @@ export default function TimeClock() {
       await fetchTimeEntries()
     } catch (err) {
       alert('Error clocking in: ' + err.message)
-    } finally {
-      setClockAction(null)
     }
   }
 
-  const handleClockOut = async (entryId, employeeId) => {
-    if (clockAction) return
-    setClockAction({ employeeId, type: 'out' })
-
+  const handleClockOut = async (entryId) => {
+    const location = await getLocation()
     const entry = timeEntries.find(e => e.id === entryId)
-    if (!entry) { setClockAction(null); return }
+    if (!entry) return
+
+    const clockIn = new Date(entry.clock_in)
+    const clockOut = new Date()
+    let totalHours = (clockOut - clockIn) / (1000 * 60 * 60)
+
+    // Subtract lunch if taken
+    if (entry.lunch_start && entry.lunch_end) {
+      const lunchDuration = (new Date(entry.lunch_end) - new Date(entry.lunch_start)) / (1000 * 60 * 60)
+      totalHours -= lunchDuration
+    }
 
     try {
-      const location = await getLocation()
-      const clockIn = new Date(entry.clock_in)
-      const clockOut = new Date()
-      let totalHours = (clockOut - clockIn) / (1000 * 60 * 60)
-
-      // Subtract lunch if taken
-      if (entry.lunch_start && entry.lunch_end) {
-        const lunchDuration = (new Date(entry.lunch_end) - new Date(entry.lunch_start)) / (1000 * 60 * 60)
-        totalHours -= lunchDuration
-      }
-
       const { error } = await supabase
         .from('time_clock')
         .update({
@@ -360,14 +352,10 @@ export default function TimeClock() {
       await fetchTimeEntries()
     } catch (err) {
       alert('Error clocking out: ' + err.message)
-    } finally {
-      setClockAction(null)
     }
   }
 
-  const handleLunchStart = async (entryId, employeeId) => {
-    if (clockAction) return
-    setClockAction({ employeeId, type: 'lunch_start' })
+  const handleLunchStart = async (entryId) => {
     try {
       const { error } = await supabase
         .from('time_clock')
@@ -378,14 +366,10 @@ export default function TimeClock() {
       await fetchTimeEntries()
     } catch (err) {
       alert('Error: ' + err.message)
-    } finally {
-      setClockAction(null)
     }
   }
 
-  const handleLunchEnd = async (entryId, employeeId) => {
-    if (clockAction) return
-    setClockAction({ employeeId, type: 'lunch_end' })
+  const handleLunchEnd = async (entryId) => {
     try {
       const { error } = await supabase
         .from('time_clock')
@@ -396,8 +380,6 @@ export default function TimeClock() {
       await fetchTimeEntries()
     } catch (err) {
       alert('Error: ' + err.message)
-    } finally {
-      setClockAction(null)
     }
   }
 
@@ -704,8 +686,8 @@ export default function TimeClock() {
                     {/* Lunch Button */}
                     {!isOnLunch ? (
                       <button
-                        onClick={() => handleLunchStart(activeEntry.id, employee.id)}
-                        disabled={!!activeEntry.lunch_end || (clockAction?.employeeId === employee.id)}
+                        onClick={() => handleLunchStart(activeEntry.id)}
+                        disabled={!!activeEntry.lunch_end}
                         style={{
                           flex: 1,
                           padding: '12px',
@@ -715,8 +697,7 @@ export default function TimeClock() {
                           color: activeEntry.lunch_end ? theme.textMuted : '#eab308',
                           fontSize: '14px',
                           fontWeight: '600',
-                          cursor: activeEntry.lunch_end || (clockAction?.employeeId === employee.id) ? 'not-allowed' : 'pointer',
-                          opacity: clockAction?.employeeId === employee.id && clockAction.type === 'lunch_start' ? 0.6 : 1,
+                          cursor: activeEntry.lunch_end ? 'not-allowed' : 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -724,23 +705,21 @@ export default function TimeClock() {
                         }}
                       >
                         <Coffee size={18} />
-                        {clockAction?.employeeId === employee.id && clockAction.type === 'lunch_start' ? 'Starting...' : activeEntry.lunch_end ? 'Lunch Done' : 'Start Lunch'}
+                        {activeEntry.lunch_end ? 'Lunch Done' : 'Start Lunch'}
                       </button>
                     ) : (
                       <button
-                        onClick={() => handleLunchEnd(activeEntry.id, employee.id)}
-                        disabled={clockAction?.employeeId === employee.id}
+                        onClick={() => handleLunchEnd(activeEntry.id)}
                         style={{
                           flex: 1,
                           padding: '12px',
-                          background: clockAction?.employeeId === employee.id && clockAction.type === 'lunch_end' ? '#ca8a04' : 'linear-gradient(135deg, #eab308 0%, #ca8a04 100%)',
+                          background: 'linear-gradient(135deg, #eab308 0%, #ca8a04 100%)',
                           border: 'none',
                           borderRadius: '10px',
                           color: '#fff',
                           fontSize: '14px',
                           fontWeight: '600',
-                          cursor: clockAction?.employeeId === employee.id ? 'not-allowed' : 'pointer',
-                          opacity: clockAction?.employeeId === employee.id && clockAction.type === 'lunch_end' ? 0.6 : 1,
+                          cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -748,25 +727,23 @@ export default function TimeClock() {
                         }}
                       >
                         <Coffee size={18} />
-                        {clockAction?.employeeId === employee.id && clockAction.type === 'lunch_end' ? 'Ending...' : 'End Lunch'}
+                        End Lunch
                       </button>
                     )}
 
                     {/* Clock Out Button */}
                     <button
-                      onClick={() => handleClockOut(activeEntry.id, employee.id)}
-                      disabled={!!clockAction}
+                      onClick={() => handleClockOut(activeEntry.id)}
                       style={{
                         flex: 1,
                         padding: '12px',
-                        background: clockAction?.employeeId === employee.id && clockAction.type === 'out' ? '#dc2626' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
                         border: 'none',
                         borderRadius: '10px',
                         color: '#fff',
                         fontSize: '14px',
                         fontWeight: '600',
-                        cursor: clockAction ? 'not-allowed' : 'pointer',
-                        opacity: clockAction?.employeeId === employee.id && clockAction.type === 'out' ? 0.6 : 1,
+                        cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -774,7 +751,7 @@ export default function TimeClock() {
                       }}
                     >
                       <Square size={18} />
-                      {clockAction?.employeeId === employee.id && clockAction.type === 'out' ? 'Clocking Out...' : 'Clock Out'}
+                      Clock Out
                     </button>
                   </div>
 
@@ -804,18 +781,16 @@ export default function TimeClock() {
                   {/* Clock In Button */}
                   <button
                     onClick={() => handleClockIn(employee.id)}
-                    disabled={!!clockAction}
                     style={{
                       width: '100%',
                       padding: '20px',
-                      background: clockAction?.employeeId === employee.id && clockAction.type === 'in' ? '#16a34a' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                      background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                       border: 'none',
                       borderRadius: '12px',
                       color: '#fff',
                       fontSize: '18px',
                       fontWeight: '700',
-                      cursor: clockAction ? 'not-allowed' : 'pointer',
-                      opacity: clockAction?.employeeId === employee.id && clockAction.type === 'in' ? 0.6 : 1,
+                      cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -824,7 +799,7 @@ export default function TimeClock() {
                     }}
                   >
                     <Play size={24} />
-                    {clockAction?.employeeId === employee.id && clockAction.type === 'in' ? 'Clocking In...' : 'Clock In'}
+                    Clock In
                   </button>
 
                   {/* PTO Request Button */}

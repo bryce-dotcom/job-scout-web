@@ -537,8 +537,32 @@ export default function Settings() {
         return <ListEditor type="service_types" items={serviceTypes} title="Service Types" onAdd={addItem} onRemove={removeItem} theme={theme} />
 
       case 'statuses':
-        return <JobStatusesTab theme={theme} settings={settings} saveSetting={saveSetting} isAdmin={isAdmin} businessUnits={businessUnits} />
+        return (
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>Job Statuses</h3>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
+              These are the standard job statuses used throughout the system.
+            </p>
 
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {jobStatuses.map((status) => (
+                <div
+                  key={status}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: theme.accentBg,
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    color: theme.text,
+                    fontWeight: '500'
+                  }}
+                >
+                  {status}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
 
       case 'users':
         return (
@@ -3923,119 +3947,6 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
         </div>
 
       </div>
-    </div>
-  )
-}
-
-// Job Statuses Tab with admin-only default hourly rate per business unit
-function JobStatusesTab({ theme, settings, saveSetting, isAdmin, businessUnits }) {
-  const rateSetting = settings.find(s => s.key === 'default_hourly_rates')
-  let initialRates = {}
-  if (rateSetting) {
-    try { initialRates = JSON.parse(rateSetting.value) || {} } catch {}
-  }
-  // Migrate from old single-value setting if it exists
-  const oldSingle = settings.find(s => s.key === 'default_hourly_rate')
-  if (oldSingle && Object.keys(initialRates).length === 0) {
-    try {
-      const oldVal = parseFloat(JSON.parse(oldSingle.value))
-      if (oldVal > 0) {
-        const buNames = (businessUnits || []).map(bu => typeof bu === 'string' ? bu : bu.name)
-        buNames.forEach(name => { initialRates[name] = oldVal })
-      }
-    } catch {}
-  }
-
-  const [rates, setRates] = useState(initialRates)
-  const buNames = (businessUnits || []).map(bu => typeof bu === 'string' ? bu : bu.name).filter(Boolean)
-
-  const inputStyle = {
-    width: '100%',
-    padding: '10px 12px',
-    borderRadius: '8px',
-    border: `1px solid ${theme.border}`,
-    backgroundColor: theme.bg,
-    color: theme.text,
-    fontSize: '14px'
-  }
-
-  const saveRate = (buName, value) => {
-    const val = parseFloat(value)
-    const updated = { ...rates }
-    if (!isNaN(val) && val > 0) {
-      updated[buName] = val
-    } else {
-      delete updated[buName]
-    }
-    setRates(updated)
-    saveSetting('default_hourly_rates', updated)
-    toast.success(`Hourly rate saved for ${buName}`)
-  }
-
-  return (
-    <div>
-      <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>Job Statuses</h3>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
-        {jobStatuses.map((status, i) => (
-          <div
-            key={i}
-            style={{
-              padding: '8px 12px',
-              backgroundColor: theme.accentBg,
-              borderRadius: '8px',
-              fontSize: '13px',
-              color: theme.text
-            }}
-          >
-            {status}
-          </div>
-        ))}
-      </div>
-
-      {isAdmin && (
-        <div style={{
-          padding: '16px',
-          backgroundColor: theme.bg,
-          borderRadius: '10px',
-          border: `1px solid ${theme.border}`
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-            <Shield size={16} style={{ color: theme.accent }} />
-            <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Admin Settings</span>
-          </div>
-          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '16px', marginTop: 0 }}>
-            Default hourly rate per business unit. Used to estimate allotted time when products don't specify hours (job total ÷ rate).
-          </p>
-
-          {buNames.length === 0 ? (
-            <p style={{ fontSize: '13px', color: theme.textMuted, fontStyle: 'italic' }}>
-              Add business units first to configure hourly rates.
-            </p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {buNames.map(buName => (
-                <div key={buName} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '500', color: theme.text, minWidth: '120px' }}>{buName}</span>
-                  <div style={{ position: 'relative', width: '140px' }}>
-                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, fontSize: '14px' }}>$</span>
-                    <input
-                      type="number"
-                      defaultValue={rates[buName] || ''}
-                      onBlur={(e) => saveRate(buName, e.target.value)}
-                      placeholder="e.g. 75"
-                      style={{ ...inputStyle, paddingLeft: '28px', width: '140px' }}
-                      min="1"
-                      step="0.01"
-                    />
-                  </div>
-                  <span style={{ fontSize: '13px', color: theme.textMuted }}>/hr</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }

@@ -131,7 +131,6 @@ function JobDetailInner() {
   const [job, setJob] = useState(null)
   const [lineItems, setLineItems] = useState([])
   const [jobTimeLogs, setJobTimeLogs] = useState([])
-  const [allottedSource, setAllottedSource] = useState(null) // 'product' | 'rate' | null
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showAddLine, setShowAddLine] = useState(false)
@@ -292,7 +291,6 @@ function JobDetailInner() {
         : 0
 
       let calculatedHours = productHoursSum
-      let source = productHoursSum > 0 ? 'product' : null
       if (calculatedHours === 0 && jobData.job_total) {
         // Look up per-business-unit hourly rate
         const storeSettings = useStore.getState().settings || []
@@ -311,12 +309,8 @@ function JobDetailInner() {
             try { rate = parseFloat(JSON.parse(oldSetting.value)) || 0 } catch {}
           }
         }
-        if (rate > 0) {
-          calculatedHours = Math.round((parseFloat(jobData.job_total) / rate) * 100) / 100
-          source = 'rate'
-        }
+        if (rate > 0) calculatedHours = Math.round((parseFloat(jobData.job_total) / rate) * 100) / 100
       }
-      setAllottedSource(source)
 
       if (calculatedHours > 0) {
         const currentAllotted = parseFloat(jobData.allotted_time_hours) || 0
@@ -2432,14 +2426,7 @@ function JobDetailInner() {
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <span style={{ fontSize: '13px', color: theme.textSecondary }}>{totalHoursWorked.toFixed(1)}h worked</span>
-                <span style={{ fontSize: '13px', color: theme.textMuted }}>
-                  {allottedHours}h allotted
-                  {allottedSource && (
-                    <span style={{ fontSize: '11px', color: theme.textMuted, marginLeft: '4px' }}>
-                      ({allottedSource === 'product' ? 'from products' : 'from $/hr rate'})
-                    </span>
-                  )}
-                </span>
+                <span style={{ fontSize: '13px', color: theme.textMuted }}>{allottedHours}h allotted</span>
               </div>
               <div style={{ height: '8px', backgroundColor: theme.accentBg, borderRadius: '4px', overflow: 'hidden' }}>
                 <div style={{
