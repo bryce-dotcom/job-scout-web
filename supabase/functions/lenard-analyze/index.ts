@@ -16,9 +16,39 @@ serve(async (req) => {
     }
 
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const companyId = Deno.env.get('LENARD_COMPANY_ID');
+
     if (!ANTHROPIC_API_KEY) {
       return new Response(JSON.stringify({ error: 'API key not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Fetch recent corrections for few-shot learning
+    let correctionsBlock = '';
+    if (SUPABASE_URL && SERVICE_KEY && companyId) {
+      try {
+        const corrRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/dougie_corrections?company_id=eq.${companyId}&field_type=eq.camera_fixture&order=created_at.desc&limit=20`,
+          { headers: { 'Authorization': `Bearer ${SERVICE_KEY}`, 'apikey': SERVICE_KEY } }
+        );
+        if (corrRes.ok) {
+          const corrections = await corrRes.json();
+          if (corrections.length > 0) {
+            const lines = corrections.map((c: any) =>
+              `- ${c.field_name}: AI said "${c.original_value}" → correct answer was "${c.corrected_value}"${c.context?.fixtureName ? ` (fixture: ${c.context.fixtureName})` : ''}${c.context?.category ? ` [${c.context.category}]` : ''}`
+            );
+            correctionsBlock = `
+
+PAST MISTAKES (learn from these — our field team corrected your previous answers):
+${lines.join('\n')}
+Pay close attention to these corrections. If you see a similar fixture, use the corrected values.`;
+          }
+        }
+      } catch (e) {
+        console.warn('[Lenard] Could not fetch corrections:', e);
+      }
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -65,6 +95,7 @@ Common wattages (with ballast):
 400W MH: 458W→150W | 250W MH: 288W→100W | 1000W MH: 1080W→300W
 400W HPS: 465W→150W | 250W HPS: 295W→100W
 175W MH WP: 210W→40W | 100W MH WP: 120W→25W
+${correctionsBlock}
 
 Return ONLY a valid JSON array. No markdown, no backticks, no explanation.` }
           ]

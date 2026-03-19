@@ -377,6 +377,7 @@ export default function LenardAZSRP() {
   const [dougiePhotos, setDougiePhotos] = useState([]);
   const [dougieResult, setDougieResult] = useState(null);
   const dougieOriginalRef = useRef(null); // stores AI's original output for diff
+  const cameraOriginalsRef = useRef({}); // stores AI originals per line ID for camera scan corrections
 
   // Pull-to-refresh
   const [pullStartY, setPullStartY] = useState(0);
@@ -634,6 +635,7 @@ export default function LenardAZSRP() {
           showToast("Couldn't identify fixtures \u2014 try a clearer photo", '\uD83D\uDCF7');
         } else {
           data.fixtures.forEach(f => {
+            const nextId = lineIdRef.current + 1; // addLine will use this ID
             addLine({
               name: f.name, existW: f.existW, newW: f.newW, qty: f.count || 1,
               cat: f.category, sub: f.subtype, sbsType: f.sbsType,
@@ -642,6 +644,11 @@ export default function LenardAZSRP() {
               lightingType: inferLampType(f.name),
               photoIndex: photoIdx,
             });
+            // Store AI's original values for correction tracking
+            cameraOriginalsRef.current[nextId] = {
+              name: f.name || '', qty: f.count || 1, existW: f.existW || 0,
+              newW: f.newW || 0, height: f.height || 0, category: f.category || '',
+            };
           });
           showToast(`Lenard found ${data.fixtures.length} fixture${data.fixtures.length > 1 ? 's' : ''}`, '\uD83D\uDCF7');
         }
@@ -937,6 +944,39 @@ export default function LenardAZSRP() {
         setIsDirty(false);
         setShowSaveModal(false);
         showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
+
+        // Diff camera scan corrections and send for learning
+        const originals = cameraOriginalsRef.current;
+        if (Object.keys(originals).length > 0) {
+          const corrections = [];
+          lines.forEach(line => {
+            const orig = originals[line.id];
+            if (!orig) return;
+            const fields = ['name', 'qty', 'existW', 'newW', 'height'];
+            fields.forEach(f => {
+              const ov = String(orig[f] ?? '').trim();
+              const nv = String(line[f] ?? '').trim();
+              if (ov && nv && ov !== nv) {
+                corrections.push({
+                  fieldType: 'camera_fixture',
+                  fieldName: f,
+                  originalValue: ov,
+                  correctedValue: nv,
+                  context: { fixtureName: line.name, category: line.fixtureCategory || orig.category },
+                });
+              }
+            });
+          });
+          if (corrections.length > 0) {
+            fetch(`${SUPABASE_URL}/functions/v1/dougie-corrections`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+              body: JSON.stringify({ corrections }),
+            }).catch(() => {});
+            console.log(`[Lenard] Saved ${corrections.length} camera scan corrections for learning`);
+          }
+          cameraOriginalsRef.current = {};
+        }
       } else {
         showToast(data.error || 'Save failed', '\u26A0\uFE0F');
       }
