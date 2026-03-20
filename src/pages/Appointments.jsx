@@ -263,20 +263,23 @@ export default function Appointments() {
   if (sourceFilter === 'all' || sourceFilter === 'job') allEvents.push(...normalizedJobs)
   if (sourceFilter === 'all' || sourceFilter === 'google') allEvents.push(...normalizedGcal)
 
-  // Employee filter — "all" shows everything (system calendars + all employees),
-  // selecting an employee scopes to their appointments and Google Calendar
+  // Employee filter — "all" shows everything, selecting an employee scopes to their events
   if (employeeFilter !== 'all') {
     const empId = employeeFilter === 'my' ? user?.id : parseInt(employeeFilter)
+    const emp = employees.find(e => e.id === empId)
+    const empName = emp?.name?.toLowerCase() || ''
     allEvents = allEvents.filter(evt => {
       if (evt.source === 'appointment') {
-        return evt.meta?.setter_id === empId || evt.meta?.employee_id === empId
+        return evt.meta?.setter_id === empId || evt.meta?.employee_id === empId || evt.meta?.salesperson_id === empId
+      }
+      if (evt.source === 'job') {
+        return evt.meta?.salesperson_id === empId ||
+          (empName && evt.meta?.assigned_team?.toLowerCase().includes(empName))
       }
       if (evt.source === 'google') {
-        // Google Calendar events only show for the current user's connected calendar
-        // When filtering by another employee, hide gcal unless it's their calendar
-        return empId === user?.id
+        const connectedIds = connectedEmployees.map(e => e.id)
+        return connectedIds.includes(empId) ? empId === user?.id : false
       }
-      // Jobs are system-level — always shown regardless of employee filter
       return true
     })
   }
@@ -616,13 +619,19 @@ export default function Appointments() {
           <select
             value={employeeFilter}
             onChange={(e) => setEmployeeFilter(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', minWidth: '140px', padding: '6px 10px', fontSize: '13px' }}
+            style={{ ...inputStyle, width: 'auto', minWidth: '160px', padding: '6px 10px', fontSize: '13px' }}
           >
-            <option value="all">All</option>
+            <option value="all">All Calendars</option>
             <option value="my">My Events</option>
-            {connectedEmployees.map(emp => (
-              <option key={emp.id} value={emp.id}>{emp.name}</option>
-            ))}
+            {(isAdmin ? employees : connectedEmployees).map(emp => {
+              if (emp.id === user?.id) return null
+              const hasGcal = connectedEmployees.some(ce => ce.id === emp.id)
+              return (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name}{hasGcal ? ' (cal)' : ''}
+                </option>
+              )
+            })}
           </select>
 
           {/* View toggle */}

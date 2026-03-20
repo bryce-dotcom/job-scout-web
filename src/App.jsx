@@ -172,25 +172,21 @@ function App() {
         const { data: { session } } = await supabase.auth.getSession()
 
         if (session?.user) {
-          // Session exists - check if store has company data
-          const storedCompanyId = useStore.getState().companyId
+          // Always re-fetch employee record so role/permission changes
+          // made in the DB are picked up without requiring a fresh login
+          const { data: employee } = await supabase
+            .from('employees')
+            .select('*, company:companies(*)')
+            .eq('email', session.user.email)
+            .eq('active', true)
+            .single()
 
-          if (!storedCompanyId) {
-            // Store is empty but we have a session - try to recover
-            const { data: employee } = await supabase
-              .from('employees')
-              .select('*, company:companies(*)')
-              .eq('email', session.user.email)
-              .eq('active', true)
-              .single()
-
-            if (employee && employee.company) {
-              setUser(employee)
-              setCompany(employee.company)
-            } else {
-              // No valid employee - clear session
-              await clearSession()
-            }
+          if (employee && employee.company) {
+            setUser(employee)
+            setCompany(employee.company)
+          } else {
+            // No valid employee - clear session
+            await clearSession()
           }
 
           // Don't block on developer status check

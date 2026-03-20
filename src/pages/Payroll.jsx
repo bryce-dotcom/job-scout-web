@@ -7,8 +7,9 @@ import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
   ChevronRight, ChevronDown, AlertTriangle, TrendingUp, Zap,
   Award, Filter, ArrowLeft, Eye, Briefcase, MapPin, FileText,
-  Edit3, Save
+  Edit3, Save, Map
 } from 'lucide-react'
+import LocationTrailModal from '../components/LocationTrailModal'
 
 const AVATAR_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
@@ -44,6 +45,7 @@ export default function Payroll() {
   const [runningPayroll, setRunningPayroll] = useState(false)
   const [editingEntry, setEditingEntry] = useState(null) // { id, clock_in, clock_out, reason }
   const [savingEntry, setSavingEntry] = useState(false)
+  const [locationTrailEntry, setLocationTrailEntry] = useState(null) // entry to show on map
 
   // Payroll settings from settings table
   const [payrollConfig, setPayrollConfig] = useState({
@@ -1006,6 +1008,11 @@ export default function Payroll() {
                                       </div>
                                     )}
                                   </div>
+                                  <button onClick={() => setLocationTrailEntry(entry)}
+                                    style={{ padding: '4px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '4px', cursor: 'pointer', color: theme.textMuted, display: 'flex', alignItems: 'center' }}
+                                    title="View location trail">
+                                    <Map size={14} />
+                                  </button>
                                   {isAdmin && (
                                     <button onClick={() => {
                                       const ci = new Date(entry.clock_in)
@@ -1667,6 +1674,17 @@ export default function Payroll() {
             </div>
           </div>
         </div>
+      )}
+      {locationTrailEntry && (
+        <LocationTrailModal
+          entry={locationTrailEntry}
+          employeeName={(() => {
+            const emp = employees?.find(e => e.id === locationTrailEntry.employee_id)
+            return emp ? emp.name : 'Employee'
+          })()}
+          onClose={() => setLocationTrailEntry(null)}
+          theme={theme}
+        />
       )}
     </div>
   )

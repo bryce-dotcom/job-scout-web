@@ -4,6 +4,7 @@ import { useStore } from '../lib/store'
 import FeedbackButton from './FeedbackButton'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
 import GlobalSearch from './GlobalSearch'
+import { useLocationTracking } from '../hooks/useLocationTracking'
 import {
   LayoutDashboard,
   UserPlus,
@@ -167,6 +168,9 @@ export default function Layout() {
   const [expandedMenus, setExpandedMenus] = useState({})
   const [showAgentSettings, setShowAgentSettings] = useState(false)
   const [editingAgent, setEditingAgent] = useState(null)
+
+  // Background location tracking while clocked in
+  useLocationTracking()
 
   const toggleMenu = (key) => {
     setExpandedMenus(prev => ({ ...prev, [key]: !prev[key] }))

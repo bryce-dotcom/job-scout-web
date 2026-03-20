@@ -1655,35 +1655,106 @@ export default function ProductsServices() {
                   <label style={labelStyle}>Description</label>
                   <textarea name="description" value={productForm.description} onChange={handleProductChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>Price</label>
-                    <input type="number" name="unit_price" value={productForm.unit_price} onChange={handleProductChange} step="0.01" style={inputStyle} />
+                {/* ── Pricing Section ── */}
+                <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Pricing</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={labelStyle}>Product Cost</label>
+                      <input type="number" name="cost" value={productForm.cost} onChange={handleProductChange} step="0.01" placeholder="0.00" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Markup %</label>
+                      <input type="number" name="markup_percent" value={productForm.markup_percent} onChange={handleProductChange} step="0.01" placeholder="0" style={inputStyle} />
+                    </div>
                   </div>
-                  <div>
-                    <label style={labelStyle}>Cost</label>
-                    <input type="number" name="cost" value={productForm.cost} onChange={handleProductChange} step="0.01" style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Markup %</label>
-                    <input type="number" name="markup_percent" value={productForm.markup_percent} onChange={handleProductChange} style={inputStyle} />
-                  </div>
+                  {/* Product price breakdown */}
+                  {(() => {
+                    const cost = parseFloat(productForm.cost) || 0
+                    const markup = parseFloat(productForm.markup_percent) || 0
+                    const markedUpCost = cost * (1 + markup / 100)
+                    return cost > 0 ? (
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted, display: 'flex', gap: '12px' }}>
+                        <span>Cost: ${cost.toFixed(2)}</span>
+                        {markup > 0 && <span>+ {markup}% = <strong style={{ color: theme.text }}>${markedUpCost.toFixed(2)}</strong> product price</span>}
+                      </div>
+                    ) : null
+                  })()}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={labelStyle}>Allotted Time (hours)</label>
-                    <input type="number" name="allotted_time_hours" value={productForm.allotted_time_hours} onChange={handleProductChange} step="0.25" style={inputStyle} />
+
+                {/* ── Labor / Install Section ── */}
+                <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Labor / Install</div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '12px' }}>Set install time and rate. When added to a job, user can choose product only or product + install.</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={labelStyle}>Install Time (hours)</label>
+                      <input type="number" name="allotted_time_hours" value={productForm.allotted_time_hours} onChange={handleProductChange} step="0.25" placeholder="0" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Labor Rate</label>
+                      <select name="labor_rate_id" value={productForm.labor_rate_id || ''} onChange={(e) => setProductForm(prev => ({ ...prev, labor_rate_id: e.target.value ? parseInt(e.target.value) : null }))} style={inputStyle}>
+                        <option value="">Use Default Rate</option>
+                        {laborRates.filter(r => r.active).map(rate => (
+                          <option key={rate.id} value={rate.id}>{rate.name} (${parseFloat(rate.rate_per_hour).toFixed(2)}/hr){rate.is_default ? ' - Default' : ''}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label style={labelStyle}>Labor Rate</label>
-                    <select name="labor_rate_id" value={productForm.labor_rate_id || ''} onChange={(e) => setProductForm(prev => ({ ...prev, labor_rate_id: e.target.value ? parseInt(e.target.value) : null }))} style={inputStyle}>
-                      <option value="">Use Default Rate</option>
-                      {laborRates.filter(r => r.active).map(rate => (
-                        <option key={rate.id} value={rate.id}>{rate.name} (${parseFloat(rate.rate_per_hour).toFixed(2)}/hr){rate.is_default ? ' - Default' : ''}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Labor cost breakdown */}
+                  {(() => {
+                    const hours = parseFloat(productForm.allotted_time_hours) || 0
+                    const rate = productForm.labor_rate_id
+                      ? laborRates.find(r => r.id === productForm.labor_rate_id)
+                      : defaultLaborRate
+                    const laborCost = hours > 0 && rate ? hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1) : 0
+                    return hours > 0 && rate ? (
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted }}>
+                        {hours}h x ${parseFloat(rate.rate_per_hour).toFixed(2)}/hr{rate.multiplier && rate.multiplier !== 1 ? ` x ${rate.multiplier}` : ''} = <strong style={{ color: theme.text }}>${laborCost.toFixed(2)}</strong> labor
+                      </div>
+                    ) : null
+                  })()}
                 </div>
+
+                {/* ── Total Price (auto-calculated) ── */}
+                {(() => {
+                  const cost = parseFloat(productForm.cost) || 0
+                  const markup = parseFloat(productForm.markup_percent) || 0
+                  const markedUpCost = cost * (1 + markup / 100)
+                  const hours = parseFloat(productForm.allotted_time_hours) || 0
+                  const rate = productForm.labor_rate_id
+                    ? laborRates.find(r => r.id === productForm.labor_rate_id)
+                    : defaultLaborRate
+                  const laborCost = hours > 0 && rate ? hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1) : 0
+                  const calculatedPrice = markedUpCost + laborCost
+                  const currentPrice = parseFloat(productForm.unit_price) || 0
+                  const hasCalculation = cost > 0
+                  const priceMatchesCalc = hasCalculation && Math.abs(currentPrice - calculatedPrice) < 0.01
+
+                  return (
+                    <div style={{ padding: '16px', backgroundColor: hasCalculation ? 'rgba(90,99,73,0.08)' : theme.bg, borderRadius: '10px', border: `1px solid ${hasCalculation ? theme.accent : theme.border}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <label style={{ ...labelStyle, marginBottom: 0 }}>Sell Price (Installed)</label>
+                        {hasCalculation && !priceMatchesCalc && (
+                          <button
+                            type="button"
+                            onClick={() => setProductForm(prev => ({ ...prev, unit_price: calculatedPrice.toFixed(2) }))}
+                            style={{ padding: '4px 10px', fontSize: '11px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                          >
+                            Set to ${calculatedPrice.toFixed(2)}
+                          </button>
+                        )}
+                      </div>
+                      <input type="number" name="unit_price" value={productForm.unit_price} onChange={handleProductChange} step="0.01" placeholder="0.00" style={inputStyle} />
+                      {hasCalculation && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted }}>
+                          Calculated: ${markedUpCost.toFixed(2)} product{laborCost > 0 ? ` + $${laborCost.toFixed(2)} labor` : ''} = <strong style={{ color: theme.accent }}>${calculatedPrice.toFixed(2)}</strong>
+                          {laborCost > 0 && <span style={{ marginLeft: '8px', color: theme.textMuted }}>| Product only: ${markedUpCost.toFixed(2)}</span>}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
                 <div>
                   <label style={labelStyle}>Image</label>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>

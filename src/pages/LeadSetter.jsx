@@ -7,7 +7,7 @@ import {
   Plus, X, Phone, Mail, Calendar, Clock, User, Building2, MapPin,
   ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, XCircle,
   MessageSquare, PhoneCall, PhoneOff, CalendarPlus, DollarSign,
-  RefreshCw, Filter, Search, Settings, Trophy
+  RefreshCw, Filter, Search, Settings, Trophy, Trash2
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
@@ -43,6 +43,7 @@ export default function LeadSetter() {
   const company = useStore((state) => state.company)
   const setCompany = useStore((state) => state.setCompany)
   const fetchAppointments = useStore((state) => state.fetchAppointments)
+  const deleteLead = useStore((state) => state.deleteLead)
 
   // Data
   const [leads, setLeads] = useState([])
@@ -67,6 +68,7 @@ export default function LeadSetter() {
   const [showAppointmentModal, setShowAppointmentModal] = useState(false)
   const [showLeadModal, setShowLeadModal] = useState(false)
   const [selectedLead, setSelectedLead] = useState(null)
+  const [contactForm, setContactForm] = useState({ notes: '', callback_date: '', callback_time: '' })
 
   // Drag state
   const [draggedLead, setDraggedLead] = useState(null)
@@ -85,6 +87,7 @@ export default function LeadSetter() {
   // Filters
   const [searchTerm, setSearchTerm] = useState('')
   const [filterSetter, setFilterSetter] = useState('')
+  const [calendarEmployees, setCalendarEmployees] = useState([]) // selected employee IDs to overlay
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -97,20 +100,20 @@ export default function LeadSetter() {
     if (!companyId) return
     setLoading(true)
 
-    // Build query - filter by setter_owner_id for non-admins
+    // Build query - setter board only shows leads without audits/quotes
     let leadsQuery = supabase
       .from('leads')
       .select('*, lead_owner:employees!leads_lead_owner_id_fkey(id, name), setter_owner:employees!leads_setter_owner_id_fkey(id, name)')
       .eq('company_id', companyId)
       .in('status', ['New', 'Assigned', 'Contacted', 'Callback'])
+      .is('quote_id', null)
+      .or('quote_generated.is.null,quote_generated.eq.false')
       .order('created_at', { ascending: false })
 
     // Non-admins only see leads assigned to them as setter
     if (!isAdmin && user?.id) {
       leadsQuery = leadsQuery.eq('setter_owner_id', user.id)
     }
-
-    const { data: leadsData } = await leadsQuery
 
     // Fetch appointments for calendar
     const weekStart = getWeekStart(currentDate)
@@ -119,39 +122,37 @@ export default function LeadSetter() {
     weekEnd.setDate(weekEnd.getDate() + 6)
     weekEnd.setHours(23, 59, 59, 999)
 
-    console.log('=== FETCH DEBUG ===')
-    console.log('currentDate:', currentDate.toLocaleString())
-    console.log('weekStart:', weekStart.toLocaleString(), '| ISO:', weekStart.toISOString())
-    console.log('weekEnd:', weekEnd.toLocaleString(), '| ISO:', weekEnd.toISOString())
+    const [{ data: leadsData }, { data: appointmentsData }, { data: commissionsData }, { data: auditLeadIds }] = await Promise.all([
+      leadsQuery,
 
-    const { data: appointmentsData, error: aptError } = await supabase
-      .from('appointments')
-      .select('*, lead:leads!lead_id(id, customer_name, phone, address, service_type), salesperson:employees!salesperson_id(id, name)')
-      .eq('company_id', companyId)
-      .gte('start_time', weekStart.toISOString())
-      .lte('start_time', weekEnd.toISOString())
-      .order('start_time')
+      supabase
+        .from('appointments')
+        .select('*, lead:leads!lead_id(id, customer_name, phone, address, service_type), salesperson:employees!salesperson_id(id, name)')
+        .eq('company_id', companyId)
+        .gte('start_time', weekStart.toISOString())
+        .lte('start_time', weekEnd.toISOString())
+        .order('start_time'),
 
-    if (aptError) {
-      console.error('Error fetching appointments:', aptError)
-    }
-    console.log('Appointments fetched:', appointmentsData?.length || 0)
-    if (appointmentsData?.length > 0) {
-      appointmentsData.forEach(apt => {
-        const d = new Date(apt.start_time)
-        console.log(`  Apt ${apt.id}: ${apt.title} | ${d.toLocaleString()} | Hour: ${d.getHours()}`)
-      })
-    }
+      supabase
+        .from('setter_commissions')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('setter_id', user?.id)
+        .order('created_at', { ascending: false }),
 
-    // Fetch commissions for current setter
-    const { data: commissionsData } = await supabase
-      .from('setter_commissions')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('setter_id', user?.id)
-      .order('created_at', { ascending: false })
+      // Get lead IDs that have lighting audits — these belong in the sales pipeline, not setter board
+      supabase
+        .from('lighting_audits')
+        .select('lead_id')
+        .eq('company_id', companyId)
+        .not('lead_id', 'is', null)
+    ])
 
-    setLeads(leadsData || [])
+    // Filter out leads that have linked audits
+    const auditLinkedIds = new Set((auditLeadIds || []).map(a => a.lead_id))
+    const filteredLeads = (leadsData || []).filter(l => !auditLinkedIds.has(l.id))
+
+    setLeads(filteredLeads)
     setAppointments(appointmentsData || [])
     setCommissions(commissionsData || [])
 
@@ -227,43 +228,28 @@ export default function LeadSetter() {
   }
 
   const getAppointmentsForSlot = (date, hour) => {
-    const results = appointments.filter(apt => {
+    return appointments.filter(apt => {
       const aptDate = new Date(apt.start_time)
       const sameDay = aptDate.toDateString() === date.toDateString()
       const aptHour = aptDate.getHours()
       const sameHour = aptHour === hour
-      // Also show in closest hour slot if outside 7-19 range
       const isOutsideRange = aptHour < 7 || aptHour > 19
       const showInFirstSlot = isOutsideRange && hour === 7 && aptHour < 7
       const showInLastSlot = isOutsideRange && hour === 19 && aptHour > 19
       return sameDay && (sameHour || showInFirstSlot || showInLastSlot)
     })
-    if (results.length > 0) {
-      console.log(`Slot ${date.toDateString()} ${hour}:00 has ${results.length} appointments`)
-    }
-    return results
   }
 
-  // Debug: Log appointments when they change
-  useEffect(() => {
-    if (appointments.length > 0) {
-      console.log('=== APPOINTMENTS DEBUG ===')
-      console.log('Total appointments:', appointments.length)
-      const weekStart = getWeekStart(currentDate)
-      const days = []
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(weekStart)
-        d.setDate(d.getDate() + i)
-        days.push(d)
-      }
-      console.log('Current week:', days.map(d => d.toDateString()))
-      appointments.forEach(apt => {
-        const aptDate = new Date(apt.start_time)
-        const matchingDay = days.find(d => d.toDateString() === aptDate.toDateString())
-        console.log('Apt:', apt.id, '| Raw:', apt.start_time, '| Local:', aptDate.toLocaleString(), '| Hour:', aptDate.getHours(), '| Matches day:', !!matchingDay)
-      })
-    }
-  }, [appointments, currentDate])
+  // Get color for a salesperson chip
+  const getSalespersonColor = (empId) => {
+    const chipColors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#6366f1', '#f97316']
+    const salespeople = employees.filter(e =>
+      e.role === 'Sales' || e.role === 'Salesman' || e.role === 'Manager' || e.role === 'Admin'
+    )
+    const idx = salespeople.findIndex(sp => sp.id === empId)
+    return idx >= 0 ? chipColors[idx % chipColors.length] : theme.accent
+  }
+
 
   const isToday = (date) => {
     const today = new Date()
@@ -562,19 +548,28 @@ export default function LeadSetter() {
   }
 
   // Log contact attempt
-  const logContact = async (lead, outcome) => {
+  const logContact = async (lead, outcome, contactNotes, callbackDateTime) => {
     const updates = {
       last_contact_at: new Date().toISOString(),
       contact_attempts: (lead.contact_attempts || 0) + 1
+    }
+
+    if (contactNotes) {
+      const existingNotes = lead.notes || ''
+      const timestamp = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      updates.notes = `[${timestamp}] ${contactNotes}${existingNotes ? '\n' + existingNotes : ''}`
     }
 
     if (outcome === 'contacted') {
       updates.status = 'Contacted'
     } else if (outcome === 'callback') {
       updates.status = 'Contacted'
-      updates.callback_date = new Date().toISOString()
+      updates.callback_date = callbackDateTime || null
+      if (contactNotes) updates.callback_notes = contactNotes
     } else if (outcome === 'not_qualified') {
       updates.status = 'Lost'
+    } else if (outcome === 'no_answer') {
+      updates.status = lead.status === 'New' ? 'New' : 'Contacted'
     }
 
     await supabase
@@ -583,6 +578,8 @@ export default function LeadSetter() {
       .eq('id', lead.id)
 
     setShowLeadModal(false)
+    setSelectedLead(null)
+    setContactForm({ notes: '', callback_date: '', callback_time: '' })
     await fetchData()
   }
 
@@ -634,17 +631,6 @@ export default function LeadSetter() {
         Loading...
       </div>
     )
-  }
-
-  // Debug render state
-  console.log('=== CALENDAR RENDER ===')
-  console.log('currentDate:', currentDate?.toDateString())
-  console.log('appointments in state:', appointments.length)
-  if (appointments.length > 0) {
-    appointments.forEach(apt => {
-      const d = new Date(apt.start_time)
-      console.log(`  - Apt ${apt.id}: ${d.toDateString()} @ ${d.getHours()}:00 (${d.toLocaleTimeString()}) - "${apt.title}"`)
-    })
   }
 
   const weekDays = getWeekDays()
@@ -875,46 +861,107 @@ export default function LeadSetter() {
                   flexDirection: 'column',
                   gap: '6px'
                 }}>
-                  {getLeadsByStage(stage.id).map(lead => (
+                  {getLeadsByStage(stage.id)
+                    .sort((a, b) => {
+                      // Overdue callbacks first, then upcoming callbacks, then by created
+                      const now = new Date()
+                      const aCb = a.callback_date ? new Date(a.callback_date) : null
+                      const bCb = b.callback_date ? new Date(b.callback_date) : null
+                      const aOverdue = aCb && aCb <= now
+                      const bOverdue = bCb && bCb <= now
+                      if (aOverdue && !bOverdue) return -1
+                      if (!aOverdue && bOverdue) return 1
+                      if (aCb && bCb) return aCb - bCb
+                      if (aCb) return -1
+                      if (bCb) return 1
+                      return new Date(b.created_at) - new Date(a.created_at)
+                    })
+                    .map(lead => {
+                    const isOverdue = lead.callback_date && new Date(lead.callback_date) <= new Date()
+                    const hasCallback = !!lead.callback_date
+                    const lastNote = lead.notes ? lead.notes.split('\n')[0] : null
+                    const timeSinceContact = lead.last_contact_at
+                      ? Math.floor((Date.now() - new Date(lead.last_contact_at)) / 36e5)
+                      : null
+                    return (
                     <div
                       key={lead.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
+                      onClick={() => openLeadDetail(lead)}
+                      style={{
+                        cursor: 'grab',
+                        padding: '8px 10px',
+                        backgroundColor: isOverdue ? 'rgba(239,68,68,0.06)' : theme.bgCard,
+                        borderRadius: '8px',
+                        border: `1px solid ${isOverdue ? 'rgba(239,68,68,0.3)' : theme.border}`,
+                        transition: 'box-shadow 0.15s',
+                      }}
                     >
-                      <EntityCard
-                        name={lead.customer_name}
-                        businessName={lead.business_name}
-                        onClick={() => openLeadDetail(lead)}
-                        style={{ cursor: 'grab', padding: '8px', fontSize: '12px' }}
-                      >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
                         <div style={{
-                          fontWeight: '600',
+                          fontWeight: '600', fontSize: '13px',
                           color: theme.text,
-                          marginBottom: '4px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1
                         }}>
                           {lead.customer_name}
                         </div>
-                        {lead.phone && (
-                          <div style={{ color: theme.textMuted, fontSize: '11px' }}>
-                            {lead.phone}
-                          </div>
-                        )}
-                        {lead.callback_date && (
-                          <div style={{
-                            marginTop: '4px',
-                            fontSize: '10px',
-                            color: new Date(lead.callback_date) <= new Date() ? '#ef4444' : '#f59e0b'
+                        {lead.contact_attempts > 0 && (
+                          <span style={{
+                            fontSize: '10px', color: theme.textMuted, flexShrink: 0,
+                            backgroundColor: theme.bg, padding: '1px 5px', borderRadius: '4px'
                           }}>
-                            📅 {new Date(lead.callback_date).toLocaleDateString()}
-                          </div>
+                            {lead.contact_attempts}x
+                          </span>
                         )}
-                      </EntityCard>
+                      </div>
+                      {lead.phone && (
+                        <div style={{ color: theme.textMuted, fontSize: '11px', marginTop: '2px' }}>
+                          {lead.phone}
+                        </div>
+                      )}
+                      {lead.service_type && (
+                        <div style={{ fontSize: '10px', color: theme.accent, marginTop: '2px' }}>
+                          {lead.service_type}
+                        </div>
+                      )}
+                      {hasCallback && (
+                        <div style={{
+                          marginTop: '4px', fontSize: '10px', fontWeight: '600',
+                          color: isOverdue ? '#ef4444' : '#f59e0b',
+                          display: 'flex', alignItems: 'center', gap: '3px'
+                        }}>
+                          <Clock size={10} />
+                          {isOverdue ? 'Overdue: ' : 'Callback: '}
+                          {new Date(lead.callback_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          {lead.callback_date.includes('T') && !lead.callback_date.endsWith('T00:00:00') &&
+                            ' ' + new Date(lead.callback_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                          }
+                        </div>
+                      )}
+                      {lastNote && (
+                        <div style={{
+                          marginTop: '3px', fontSize: '10px', color: theme.textMuted,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          fontStyle: 'italic'
+                        }}>
+                          {lastNote.replace(/^\[.*?\]\s*/, '')}
+                        </div>
+                      )}
+                      {timeSinceContact !== null && !hasCallback && (
+                        <div style={{
+                          marginTop: '3px', fontSize: '10px',
+                          color: timeSinceContact > 48 ? '#ef4444' : timeSinceContact > 24 ? '#f59e0b' : theme.textMuted
+                        }}>
+                          {timeSinceContact < 1 ? 'Just contacted' :
+                           timeSinceContact < 24 ? `${timeSinceContact}h ago` :
+                           `${Math.floor(timeSinceContact / 24)}d ago`}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    )
+                  })}
 
                   {getLeadsByStage(stage.id).length === 0 && (
                     <div style={{
@@ -1039,6 +1086,51 @@ export default function LeadSetter() {
             </div>
           </div>
 
+          {/* Salesperson Calendar Overlay Toggles */}
+          {(() => {
+            const salespeople = employees.filter(e =>
+              e.role === 'Sales' || e.role === 'Salesman' || e.role === 'Manager' || e.role === 'Admin'
+            )
+            if (salespeople.length === 0) return null
+            const chipColors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#6366f1', '#f97316']
+            return (
+              <div style={{
+                padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px',
+                flexWrap: 'wrap', borderBottom: `1px solid ${theme.border}`, backgroundColor: theme.bg
+              }}>
+                <span style={{ fontSize: '10px', color: theme.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '2px' }}>
+                  Show:
+                </span>
+                {salespeople.map((sp, idx) => {
+                  const isOn = calendarEmployees.includes(sp.id)
+                  const color = chipColors[idx % chipColors.length]
+                  return (
+                    <button
+                      key={sp.id}
+                      onClick={() => setCalendarEmployees(prev =>
+                        prev.includes(sp.id) ? prev.filter(id => id !== sp.id) : [...prev, sp.id]
+                      )}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                        padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600',
+                        border: `1.5px solid ${color}`,
+                        backgroundColor: isOn ? color : 'transparent',
+                        color: isOn ? '#fff' : color,
+                        cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap'
+                      }}
+                    >
+                      <span style={{
+                        width: '6px', height: '6px', borderRadius: '50%',
+                        backgroundColor: isOn ? '#fff' : color, flexShrink: 0
+                      }} />
+                      {sp.name?.split(' ')[0]}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
           {/* Calendar Grid */}
           <div style={{ flex: 1, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
@@ -1117,30 +1209,39 @@ export default function LeadSetter() {
                             transition: 'background-color 0.15s'
                           }}
                         >
-                          {slotAppointments.map(apt => (
+                          {slotAppointments.map(apt => {
+                            const spId = apt.salesperson_id || apt.employee_id
+                            const isOverlay = spId && calendarEmployees.includes(spId) && apt.setter_id !== user?.id
+                            const spColor = isOverlay ? getSalespersonColor(spId) : null
+                            return (
                             <div
                               key={apt.id}
                               style={{
-                                backgroundColor: apt.status === 'Completed' ? '#dcfce7' :
+                                backgroundColor: isOverlay ? spColor + '18' :
+                                  apt.status === 'Completed' ? '#dcfce7' :
                                   apt.status === 'Cancelled' ? '#fee2e2' :
-                                    isToday(new Date(apt.start_time)) ? '#d1fae5' : theme.accentBg,
-                                borderLeft: `3px solid ${apt.status === 'Completed' ? '#16a34a' :
+                                  isToday(new Date(apt.start_time)) ? '#d1fae5' : theme.accentBg,
+                                borderLeft: `3px solid ${isOverlay ? spColor :
+                                  apt.status === 'Completed' ? '#16a34a' :
                                   apt.status === 'Cancelled' ? '#dc2626' :
-                                    isToday(new Date(apt.start_time)) ? '#059669' : theme.accent}`,
+                                  isToday(new Date(apt.start_time)) ? '#059669' : theme.accent}`,
                                 borderRadius: '4px',
                                 padding: '4px 6px',
                                 fontSize: '10px',
                                 overflow: 'hidden',
-                                cursor: 'pointer'
+                                cursor: 'pointer',
+                                opacity: isOverlay ? 0.85 : 1
                               }}
                               onClick={() => {
-                                setSelectedLead(apt.lead)
-                                setShowLeadModal(true)
+                                if (apt.lead) {
+                                  setSelectedLead(apt.lead)
+                                  setShowLeadModal(true)
+                                }
                               }}
                             >
                               <div style={{
                                 fontWeight: '600',
-                                color: theme.text,
+                                color: isOverlay ? spColor : theme.text,
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap'
@@ -1148,12 +1249,13 @@ export default function LeadSetter() {
                                 {apt.lead?.customer_name || apt.title}
                               </div>
                               {apt.salesperson && (
-                                <div style={{ color: theme.textMuted, fontSize: '9px' }}>
+                                <div style={{ color: isOverlay ? spColor : theme.textMuted, fontSize: '9px', opacity: 0.8 }}>
                                   {apt.salesperson.name}
                                 </div>
                               )}
                             </div>
-                          ))}
+                            )
+                          })}
 
                           {isSlotDragOver && slotAppointments.length === 0 && (
                             <div style={{
@@ -1381,223 +1483,248 @@ export default function LeadSetter() {
       {/* Lead Detail Modal */}
       {showLeadModal && selectedLead && (
         <div style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          zIndex: 50
-        }}>
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px', zIndex: 50
+        }} onClick={(e) => { if (e.target === e.currentTarget) { setShowLeadModal(false); setSelectedLead(null); setContactForm({ notes: '', callback_date: '', callback_time: '' }) } }}>
           <div style={{
-            backgroundColor: theme.bgCard,
-            borderRadius: '16px',
-            width: '100%',
-            maxWidth: '400px',
-            maxHeight: '90vh',
-            overflowY: 'auto'
+            backgroundColor: theme.bgCard, borderRadius: '16px',
+            width: '100%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto'
           }}>
+            {/* Header */}
             <div style={{
-              padding: '20px',
-              borderBottom: `1px solid ${theme.border}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
+              padding: '16px 20px', borderBottom: `1px solid ${theme.border}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
             }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
-                {selectedLead.customer_name}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowLeadModal(false)
-                  setSelectedLead(null)
-                }}
-                style={{
-                  padding: '8px',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: theme.textMuted
-                }}
-              >
-                <X size={20} />
-              </button>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  {selectedLead.customer_name}
+                </h2>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {selectedLead.service_type && <span>{selectedLead.service_type}</span>}
+                  {selectedLead.lead_source && <span>via {selectedLead.lead_source}</span>}
+                  <span>{selectedLead.contact_attempts || 0} attempts</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  onClick={() => navigate(`/leads/${selectedLead.id}`)}
+                  style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}
+                  title="View full lead detail"
+                >
+                  <ChevronRight size={18} />
+                </button>
+                <button
+                  onClick={() => { setShowLeadModal(false); setSelectedLead(null); setContactForm({ notes: '', callback_date: '', callback_time: '' }) }}
+                  style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
-            <div style={{ padding: '20px' }}>
-              {/* Contact Info */}
-              <div style={{ marginBottom: '20px' }}>
+            <div style={{ padding: '16px 20px' }}>
+              {/* Quick Contact Buttons */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                 {selectedLead.phone && (
-                  <a
-                    href={`tel:${selectedLead.phone}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '12px',
-                      backgroundColor: '#dcfce7',
-                      borderRadius: '8px',
-                      color: '#166534',
-                      textDecoration: 'none',
-                      marginBottom: '8px',
-                      fontWeight: '500'
-                    }}
-                  >
+                  <a href={`tel:${selectedLead.phone}`} style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px', backgroundColor: '#dcfce7', borderRadius: '8px',
+                    color: '#166534', textDecoration: 'none', fontWeight: '600', fontSize: '14px',
+                    minHeight: '44px'
+                  }}>
                     <Phone size={18} />
                     {selectedLead.phone}
                   </a>
                 )}
                 {selectedLead.email && (
-                  <a
-                    href={`mailto:${selectedLead.email}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '12px',
-                      backgroundColor: theme.accentBg,
-                      borderRadius: '8px',
-                      color: theme.accent,
-                      textDecoration: 'none',
-                      fontSize: '14px'
-                    }}
-                  >
-                    <Mail size={18} />
-                    {selectedLead.email}
+                  <a href={`mailto:${selectedLead.email}`} style={{
+                    flex: selectedLead.phone ? 0 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    gap: '6px', padding: '12px', backgroundColor: theme.accentBg, borderRadius: '8px',
+                    color: theme.accent, textDecoration: 'none', fontSize: '13px', minHeight: '44px',
+                    minWidth: '44px'
+                  }}>
+                    <Mail size={16} />
+                    {!selectedLead.phone && selectedLead.email}
                   </a>
                 )}
               </div>
 
-              {/* Lead Info */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '12px',
-                marginBottom: '20px'
-              }}>
-                {selectedLead.service_type && (
-                  <div>
-                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Service</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{selectedLead.service_type}</div>
-                  </div>
-                )}
-                {selectedLead.lead_source && (
-                  <div>
-                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Source</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{selectedLead.lead_source}</div>
-                  </div>
-                )}
-                <div>
-                  <div style={{ fontSize: '11px', color: theme.textMuted }}>Status</div>
-                  <div style={{ fontSize: '14px', color: theme.text }}>{selectedLead.status}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '11px', color: theme.textMuted }}>Contact Attempts</div>
-                  <div style={{ fontSize: '14px', color: theme.text }}>{selectedLead.contact_attempts || 0}</div>
-                </div>
-              </div>
-
+              {/* Address */}
               {selectedLead.address && (
-                <div style={{ marginBottom: '20px' }}>
-                  <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Address</div>
-                  <div style={{ fontSize: '14px', color: theme.text }}>{selectedLead.address}</div>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px',
+                  padding: '8px 10px', backgroundColor: theme.bg, borderRadius: '6px',
+                  fontSize: '13px', color: theme.textSecondary
+                }}>
+                  <MapPin size={14} style={{ flexShrink: 0 }} />
+                  {selectedLead.address}
                 </div>
               )}
 
-              {/* Quick Actions */}
-              {selectedLead.status !== 'Appointment Set' && (
-                <div style={{
-                  borderTop: `1px solid ${theme.border}`,
-                  paddingTop: '16px'
-                }}>
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, marginBottom: '12px' }}>
-                    Log Outcome
+              {/* Previous Notes */}
+              {selectedLead.notes && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Notes History
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{
+                    padding: '10px', backgroundColor: theme.bg, borderRadius: '8px',
+                    fontSize: '12px', color: theme.textSecondary, maxHeight: '100px', overflowY: 'auto',
+                    whiteSpace: 'pre-wrap', lineHeight: '1.5'
+                  }}>
+                    {selectedLead.notes}
+                  </div>
+                </div>
+              )}
+
+              {/* Existing callback indicator */}
+              {selectedLead.callback_date && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px',
+                  padding: '10px 12px', borderRadius: '8px',
+                  backgroundColor: new Date(selectedLead.callback_date) <= new Date() ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
+                  border: `1px solid ${new Date(selectedLead.callback_date) <= new Date() ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`
+                }}>
+                  <Clock size={14} color={new Date(selectedLead.callback_date) <= new Date() ? '#ef4444' : '#f59e0b'} />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: new Date(selectedLead.callback_date) <= new Date() ? '#ef4444' : '#f59e0b' }}>
+                      {new Date(selectedLead.callback_date) <= new Date() ? 'Overdue Callback' : 'Callback Scheduled'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+                      {new Date(selectedLead.callback_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      {selectedLead.callback_date.includes('T') && !selectedLead.callback_date.endsWith('T00:00:00') &&
+                        ' at ' + new Date(selectedLead.callback_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                      }
+                    </div>
+                    {selectedLead.callback_notes && (
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px', fontStyle: 'italic' }}>
+                        {selectedLead.callback_notes}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Appointment confirmed */}
+              {selectedLead.status === 'Appointment Set' && selectedLead.appointment_time && (
+                <div style={{
+                  padding: '16px', backgroundColor: '#dcfce7', borderRadius: '8px',
+                  textAlign: 'center', marginBottom: '16px'
+                }}>
+                  <Calendar size={24} color="#166534" style={{ marginBottom: '8px' }} />
+                  <div style={{ fontWeight: '600', color: '#166534' }}>Appointment Scheduled</div>
+                  <div style={{ fontSize: '14px', color: '#15803d' }}>
+                    {new Date(selectedLead.appointment_time).toLocaleString()}
+                  </div>
+                </div>
+              )}
+
+              {/* Log Contact Section */}
+              {selectedLead.status !== 'Appointment Set' && (
+                <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '16px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Log This Contact
+                  </div>
+
+                  {/* Notes */}
+                  <textarea
+                    value={contactForm.notes}
+                    onChange={(e) => setContactForm(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="What happened? Left voicemail, spoke with decision maker, got info..."
+                    style={{
+                      ...inputStyle, minHeight: '70px', resize: 'vertical',
+                      marginBottom: '10px', fontSize: '13px'
+                    }}
+                  />
+
+                  {/* Callback Date/Time */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>Callback Date</label>
+                      <input
+                        type="date"
+                        value={contactForm.callback_date}
+                        onChange={(e) => setContactForm(prev => ({ ...prev, callback_date: e.target.value }))}
+                        min={new Date().toISOString().split('T')[0]}
+                        style={{ ...inputStyle, fontSize: '13px' }}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>Time</label>
+                      <input
+                        type="time"
+                        value={contactForm.callback_time}
+                        onChange={(e) => setContactForm(prev => ({ ...prev, callback_time: e.target.value }))}
+                        style={{ ...inputStyle, fontSize: '13px' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Outcome Buttons */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
                     <button
-                      onClick={() => logContact(selectedLead, 'contacted')}
+                      onClick={() => {
+                        const cbDT = contactForm.callback_date
+                          ? `${contactForm.callback_date}${contactForm.callback_time ? 'T' + contactForm.callback_time + ':00' : 'T00:00:00'}`
+                          : null
+                        logContact(selectedLead, cbDT ? 'callback' : 'contacted', contactForm.notes, cbDT)
+                      }}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '8px 12px',
-                        backgroundColor: '#dbeafe',
-                        color: '#1d4ed8',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        cursor: 'pointer'
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: '6px', padding: '10px 12px', minHeight: '44px',
+                        backgroundColor: '#dbeafe', color: '#1d4ed8',
+                        border: 'none', borderRadius: '8px', fontSize: '13px',
+                        fontWeight: '600', cursor: 'pointer'
                       }}
                     >
-                      <PhoneCall size={14} />
-                      Contacted
+                      <PhoneCall size={15} />
+                      {contactForm.callback_date ? 'Set Callback' : 'Contacted'}
                     </button>
                     <button
-                      onClick={() => logContact(selectedLead, 'callback')}
+                      onClick={() => logContact(selectedLead, 'no_answer', contactForm.notes)}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '8px 12px',
-                        backgroundColor: '#fef3c7',
-                        color: '#b45309',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        cursor: 'pointer'
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: '6px', padding: '10px 12px', minHeight: '44px',
+                        backgroundColor: '#fef3c7', color: '#b45309',
+                        border: 'none', borderRadius: '8px', fontSize: '13px',
+                        fontWeight: '600', cursor: 'pointer'
                       }}
                     >
-                      <Clock size={14} />
-                      Callback
+                      <PhoneOff size={15} />
+                      No Answer
                     </button>
                     <button
-                      onClick={() => logContact(selectedLead, 'not_qualified')}
+                      onClick={() => logContact(selectedLead, 'not_qualified', contactForm.notes)}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '8px 12px',
-                        backgroundColor: '#f3f4f6',
-                        color: '#4b5563',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        cursor: 'pointer'
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: '6px', padding: '10px 12px', minHeight: '44px',
+                        backgroundColor: '#fef2f2', color: '#dc2626',
+                        border: 'none', borderRadius: '8px', fontSize: '13px',
+                        fontWeight: '500', cursor: 'pointer'
                       }}
                     >
-                      <XCircle size={14} />
+                      <XCircle size={15} />
                       Lost
                     </button>
                   </div>
 
+                  {/* Schedule Appointment */}
                   <button
                     onClick={() => {
                       setShowLeadModal(false)
                       setAppointmentForm({
-                        start_time: '',
-                        duration_minutes: 60,
-                        salesperson_id: '',
-                        location: selectedLead.address || '',
-                        notes: ''
+                        start_time: '', duration_minutes: 60, salesperson_id: '',
+                        location: selectedLead.address || '', notes: ''
                       })
                       setShowAppointmentModal(true)
                     }}
                     style={{
-                      width: '100%',
-                      marginTop: '12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      padding: '12px',
-                      backgroundColor: theme.accent,
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      cursor: 'pointer'
+                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      gap: '8px', padding: '12px', minHeight: '44px',
+                      backgroundColor: theme.accent, color: '#fff',
+                      border: 'none', borderRadius: '8px',
+                      fontSize: '14px', fontWeight: '600', cursor: 'pointer'
                     }}
                   >
                     <CalendarPlus size={18} />
@@ -1606,22 +1733,30 @@ export default function LeadSetter() {
                 </div>
               )}
 
-              {selectedLead.status === 'Appointment Set' && selectedLead.appointment_time && (
-                <div style={{
-                  padding: '16px',
-                  backgroundColor: '#dcfce7',
-                  borderRadius: '8px',
-                  textAlign: 'center'
-                }}>
-                  <Calendar size={24} color="#166534" style={{ marginBottom: '8px' }} />
-                  <div style={{ fontWeight: '600', color: '#166534' }}>
-                    Appointment Scheduled
-                  </div>
-                  <div style={{ fontSize: '14px', color: '#15803d' }}>
-                    {new Date(selectedLead.appointment_time).toLocaleString()}
-                  </div>
-                </div>
-              )}
+              {/* Delete */}
+              <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '12px', marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(`Delete "${selectedLead.customer_name}"? This cannot be undone.`)) return
+                    try {
+                      await deleteLead(selectedLead.id)
+                      setLeads(prev => prev.filter(l => l.id !== selectedLead.id))
+                      setShowLeadModal(false)
+                      setSelectedLead(null)
+                    } catch (err) {
+                      alert('Error deleting lead: ' + err.message)
+                    }
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
+                    backgroundColor: 'transparent', color: theme.textMuted,
+                    border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer'
+                  }}
+                >
+                  <Trash2 size={13} />
+                  Delete Lead
+                </button>
+              </div>
             </div>
           </div>
         </div>

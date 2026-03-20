@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { employeesFields } from '../lib/importExportFields'
+import { isAdmin as checkAdmin, canAccessDevTools, canEditPipelineStages } from '../lib/accessControl'
 
 // Role colors (OG DiX style)
 const roleColors = {
@@ -131,15 +132,10 @@ export default function Employees() {
   const [resetMessage, setResetMessage] = useState(null)
   const [showImportExport, setShowImportExport] = useState(false)
 
-  // Check if current user is admin
-  const isAdmin = currentUser?.user_role === 'Admin' || currentUser?.user_role === 'Owner' || currentUser?.user_role === 'Super Admin' ||
-    currentUser?.role === 'Admin' || currentUser?.role === 'Owner' || currentUser?.role === 'Super Admin'
-
-  // Check if current user is owner (can grant developer access)
-  const isOwner = currentUser?.user_role === 'Owner' || currentUser?.role === 'Owner' || currentUser?.user_role === 'Super Admin' || currentUser?.role === 'Super Admin'
-
-  // Only developers can see/grant developer access
-  const isDeveloper = currentUser?.is_developer === true
+  // Use centralized access control
+  const isAdmin = checkAdmin(currentUser)
+  const isOwner = canEditPipelineStages(currentUser) // Super Admin+
+  const isDeveloper = canAccessDevTools(currentUser)
 
   useEffect(() => {
     if (!companyId) {

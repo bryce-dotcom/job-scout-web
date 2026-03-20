@@ -89,42 +89,31 @@ export default function AuthCallback() {
         return
       }
 
-      // OAuth or invite callback — get session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      // If there's a code in the URL, always exchange it first — this is critical
+      // for Google Calendar connect because getSession() returns the existing session
+      // which does NOT contain provider_token (needed for Google Calendar API)
+      const code = params.get('code')
+      let session = null
 
-      if (sessionError || !session) {
-        // Try exchanging code from URL if present
-        const code = params.get('code')
-        if (code) {
-          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-          if (exchangeError || !data.session) {
-            setError('Authentication failed. Please try signing in again.')
-            setLoading(false)
-            return
-          }
-          // Session is now set, proceed with lookup
-          const result = await lookupEmployeeAndCompany(data.session.user.email)
-          if (!result.success) {
-            setError(result.error)
-            setLoading(false)
-            return
-          }
-          setUser(result.employee)
-          setCompany(result.company)
-          await checkDeveloperStatus()
-          // Store Google Calendar token if present
-          await storeGoogleCalendarToken(data.session, result.employee)
-          supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
-          navigate(gcalConnect ? '/appointments' : (result.company.setup_complete === false ? '/onboarding' : '/'), { replace: true })
+      if (code) {
+        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+        if (exchangeError || !data.session) {
+          setError('Authentication failed. Please try signing in again.')
+          setLoading(false)
           return
         }
-
-        setError('No session found. Please try signing in again.')
-        setLoading(false)
-        return
+        session = data.session
+      } else {
+        const { data: { session: existingSession }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError || !existingSession) {
+          setError('No session found. Please try signing in again.')
+          setLoading(false)
+          return
+        }
+        session = existingSession
       }
 
-      // Session exists — look up employee
+      // Session acquired — look up employee
       const result = await lookupEmployeeAndCompany(session.user.email)
 
       if (!result.success) {
@@ -136,7 +125,7 @@ export default function AuthCallback() {
       setUser(result.employee)
       setCompany(result.company)
       await checkDeveloperStatus()
-      // Store Google Calendar token if present
+      // Store Google Calendar token if present (provider_token is only available from code exchange)
       await storeGoogleCalendarToken(session, result.employee)
       supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
       navigate(gcalConnect ? '/appointments' : (result.company.setup_complete === false ? '/onboarding' : '/'), { replace: true })

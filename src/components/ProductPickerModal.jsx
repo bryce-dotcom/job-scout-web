@@ -102,11 +102,30 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
     return inv?.quantity || 0
   }
 
-  // Handle product selection
+  const [confirmProduct, setConfirmProduct] = useState(null) // product awaiting install choice
+
+  // Handle product selection — if it has labor, show install choice
   const handleSelectProduct = (product) => {
     const laborCost = calculateLaborCost(product)
-    const totalPrice = (product.unit_price || 0) + laborCost
+    if (laborCost > 0) {
+      setConfirmProduct(product)
+    } else {
+      onSelect(product, 0, product.unit_price || 0)
+      setSelectedGroup(null)
+      setCatalogSearch('')
+    }
+  }
+
+  const handleConfirmChoice = (withInstall) => {
+    if (!confirmProduct) return
+    const product = confirmProduct
+    const laborCost = withInstall ? calculateLaborCost(product) : 0
+    const cost = parseFloat(product.cost) || 0
+    const markup = parseFloat(product.markup_percent) || 0
+    const markedUpCost = cost > 0 ? cost * (1 + markup / 100) : (product.unit_price || 0)
+    const totalPrice = withInstall ? (product.unit_price || 0) : markedUpCost
     onSelect(product, laborCost, totalPrice)
+    setConfirmProduct(null)
     setSelectedGroup(null)
     setCatalogSearch('')
   }
@@ -425,6 +444,59 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
           )}
         </div>
       </div>
+
+      {/* Install choice overlay */}
+      {confirmProduct && (() => {
+        const p = confirmProduct
+        const laborCost = calculateLaborCost(p)
+        const cost = parseFloat(p.cost) || 0
+        const markup = parseFloat(p.markup_percent) || 0
+        const productOnlyPrice = cost > 0 ? cost * (1 + markup / 100) : (p.unit_price || 0)
+        const installedPrice = p.unit_price || 0
+        return (
+          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
+            <div style={{ backgroundColor: theme.bgCard, borderRadius: '14px', padding: '24px', maxWidth: '380px', width: '90%', border: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>{p.name}</div>
+              <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '20px' }}>Choose how to add this product</div>
+
+              <button
+                onClick={() => handleConfirmChoice(true)}
+                style={{
+                  width: '100%', padding: '14px 16px', marginBottom: '10px',
+                  backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '10px',
+                  cursor: 'pointer', textAlign: 'left', fontSize: '14px'
+                }}
+              >
+                <div style={{ fontWeight: '600' }}>Product + Install</div>
+                <div style={{ fontSize: '12px', opacity: 0.85, marginTop: '2px' }}>
+                  ${installedPrice.toFixed(2)} — includes ${laborCost.toFixed(2)} labor ({p.allotted_time_hours}h)
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleConfirmChoice(false)}
+                style={{
+                  width: '100%', padding: '14px 16px', marginBottom: '12px',
+                  backgroundColor: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '10px',
+                  cursor: 'pointer', textAlign: 'left', fontSize: '14px'
+                }}
+              >
+                <div style={{ fontWeight: '600' }}>Product Only</div>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                  ${productOnlyPrice.toFixed(2)} — no labor included
+                </div>
+              </button>
+
+              <button
+                onClick={() => setConfirmProduct(null)}
+                style={{ width: '100%', padding: '10px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '13px' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )
+      })()}
     </>
   )
 }
@@ -504,7 +576,10 @@ function GroupTile({ group, theme, isMobile, productCount, onSelect, isOther }) 
 // Product card component
 function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventoryCount, onSelect }) {
   const laborCost = calculateLaborCost(product)
-  const totalPrice = (product.unit_price || 0) + laborCost
+  const cost = parseFloat(product.cost) || 0
+  const markup = parseFloat(product.markup_percent) || 0
+  const productOnlyPrice = cost > 0 ? cost * (1 + markup / 100) : (product.unit_price || 0)
+  const totalPrice = product.unit_price || 0
 
   return (
     <button
@@ -573,6 +648,11 @@ function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventor
             <span style={{ fontWeight: '600', color: theme.accent }}>
               ${totalPrice.toFixed(2)}
             </span>
+            {laborCost > 0 && (
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                installed
+              </span>
+            )}
             <span style={{ color: theme.textMuted }}>
               {getInventoryCount(product.id)} in stock
             </span>
@@ -581,9 +661,13 @@ function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventor
             <div style={{
               fontSize: '11px',
               color: theme.textMuted,
-              marginTop: '2px'
+              marginTop: '2px',
+              display: 'flex',
+              gap: '8px'
             }}>
-              +${laborCost.toFixed(2)} labor
+              <span>${productOnlyPrice.toFixed(2)} product only</span>
+              <span>|</span>
+              <span>${laborCost.toFixed(2)} labor ({product.allotted_time_hours}h)</span>
             </div>
           )}
         </div>

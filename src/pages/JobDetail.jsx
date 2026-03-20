@@ -579,11 +579,46 @@ function JobDetailInner() {
       item_id: line.item_id,
       quantity: line.quantity,
       price: line.price,
+      discount: line.discount || 0,
       total: line.total,
       notes: line.notes || null
     }])
     await fetchJobData()
     setSaving(false)
+  }
+
+  const handleJobLineQuantityChange = async (line, newQty) => {
+    const qty = Math.max(1, parseInt(newQty) || 1)
+    const unitPrice = parseFloat(line.price) || 0
+    const discount = parseFloat(line.discount) || 0
+    const newTotal = (unitPrice * qty) - discount
+
+    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, quantity: qty, total: newTotal } : l))
+    await supabase.from('job_lines').update({ quantity: qty, total: newTotal }).eq('id', line.id)
+    await fetchJobData()
+  }
+
+  const handleJobLinePriceChange = async (line, newPrice) => {
+    const basePrice = parseFloat(line.item?.price || line.item?.unit_price) || parseFloat(line.price) || 0
+    const price = Math.max(basePrice, parseFloat(newPrice) || basePrice)
+    const discount = parseFloat(line.discount) || 0
+    const newTotal = (price * (line.quantity || 1)) - discount
+
+    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, price, total: newTotal } : l))
+    await supabase.from('job_lines').update({ price, total: newTotal }).eq('id', line.id)
+    await fetchJobData()
+  }
+
+  const handleJobLineDiscountChange = async (line, newDiscount) => {
+    const discount = Math.max(0, parseFloat(newDiscount) || 0)
+    const unitPrice = parseFloat(line.price) || 0
+    const lineSubtotal = unitPrice * (line.quantity || 1)
+    const cappedDiscount = Math.min(discount, lineSubtotal)
+    const newTotal = lineSubtotal - cappedDiscount
+
+    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, discount: cappedDiscount, total: newTotal } : l))
+    await supabase.from('job_lines').update({ discount: cappedDiscount, total: newTotal }).eq('id', line.id)
+    await fetchJobData()
   }
 
   const handleJobLineNotesChange = async (lineId, newNotes) => {
@@ -2135,7 +2170,7 @@ function JobDetailInner() {
             ) : (
               <>
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 100px 40px', gap: '12px',
+                  display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 90px 100px 72px', gap: '12px',
                   padding: '12px 20px', backgroundColor: theme.accentBg,
                   fontSize: '12px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px'
                 }}>
@@ -2143,6 +2178,7 @@ function JobDetailInner() {
                   <div>Item</div>
                   <div style={{ textAlign: 'right' }}>Qty</div>
                   <div style={{ textAlign: 'right' }}>Price</div>
+                  <div style={{ textAlign: 'right' }}>Discount</div>
                   <div style={{ textAlign: 'right' }}>Total</div>
                   <div></div>
                 </div>
@@ -2159,7 +2195,7 @@ function JobDetailInner() {
                       <div
                         onClick={() => setExpandedLineId(isExpanded ? null : line.id)}
                         style={{
-                          display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 100px 72px', gap: '12px',
+                          display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 90px 100px 72px', gap: '12px',
                           padding: '14px 20px', borderBottom: `1px solid ${theme.border}`, alignItems: 'center', cursor: 'pointer'
                         }}
                       >
@@ -2184,8 +2220,41 @@ function JobDetailInner() {
                             </span>
                           )}
                         </div>
-                        <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{line.quantity}</div>
-                        <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>{formatCurrency(line.price)}</div>
+                        <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                          <input
+                            type="number" min="1" defaultValue={line.quantity}
+                            key={`qty-${line.id}-${line.quantity}`}
+                            onBlur={(e) => { const val = parseInt(e.target.value) || 1; if (val !== line.quantity) handleJobLineQuantityChange(line, val) }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                            style={{ width: '56px', padding: '4px 6px', textAlign: 'right', fontSize: '14px', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard, outline: 'none' }}
+                          />
+                        </div>
+                        <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                          <input
+                            type="number" step="0.01"
+                            min={parseFloat(line.item?.price || line.item?.unit_price) || parseFloat(line.price) || 0}
+                            defaultValue={line.price}
+                            key={`price-${line.id}-${line.price}`}
+                            onBlur={(e) => {
+                              const val = parseFloat(e.target.value)
+                              const basePrice = parseFloat(line.item?.price || line.item?.unit_price) || parseFloat(line.price) || 0
+                              if (val < basePrice) { e.target.value = line.price; return }
+                              if (val !== parseFloat(line.price)) handleJobLinePriceChange(line, val)
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                            style={{ width: '80px', padding: '4px 6px', textAlign: 'right', fontSize: '14px', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard, outline: 'none' }}
+                          />
+                        </div>
+                        <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                          <input
+                            type="number" min="0" step="0.01"
+                            defaultValue={line.discount || ''} placeholder="0"
+                            key={`disc-${line.id}-${line.discount}`}
+                            onBlur={(e) => { const val = parseFloat(e.target.value) || 0; if (val !== (parseFloat(line.discount) || 0)) handleJobLineDiscountChange(line, val) }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                            style={{ width: '70px', padding: '4px 6px', textAlign: 'right', fontSize: '14px', color: (line.discount > 0) ? '#ef4444' : theme.textMuted, border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard, outline: 'none' }}
+                          />
+                        </div>
                         <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatCurrency(line.total)}</div>
                         <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
                           <button onClick={(e) => { e.stopPropagation(); duplicateLineItem(line) }} title="Duplicate line" style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}>
