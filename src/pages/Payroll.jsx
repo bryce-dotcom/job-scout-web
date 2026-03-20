@@ -1108,6 +1108,17 @@ export default function Payroll() {
             </>
           )
         })()}
+        {locationTrailEntry && (
+          <LocationTrailModal
+            entry={locationTrailEntry}
+            employeeName={(() => {
+              const emp = employees?.find(e => e.id === locationTrailEntry.employee_id)
+              return emp ? emp.name : 'Employee'
+            })()}
+            onClose={() => setLocationTrailEntry(null)}
+            theme={theme}
+          />
+        )}
       </div>
     )
   }
