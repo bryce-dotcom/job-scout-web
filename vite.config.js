@@ -18,7 +18,7 @@ export default defineConfig({
         clientsClaim: true,
         navigationPreload: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB — main bundle is ~4.2 MB
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6 MB — main bundle is ~5.2 MB
         runtimeCaching: [
           {
             // Cache Supabase REST API calls — network first, fall back to cache
@@ -76,6 +76,13 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'proposal-vendor': ['framer-motion', 'recharts']
+        }
+      }
+    }
   }
 })

@@ -11,7 +11,7 @@ import {
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
   Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image, Copy,
-  Shield, Star, Receipt, Link2, TrendingUp, Search
+  Shield, Star, Receipt, Link2, TrendingUp, Search, PackageCheck
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import JobCostingModal from '../components/JobCostingModal'
@@ -205,6 +205,13 @@ function JobDetailInner() {
   const receiptInputRef = useRef(null)
   const [showStatusDropdown, setShowStatusDropdown] = useState(false)
   const statusDropdownRef = useRef(null)
+
+  // Submittal package state
+  const [showSubmittalModal, setShowSubmittalModal] = useState(false)
+  const [submittalSelected, setSubmittalSelected] = useState(new Set())
+  const [submittalDownloading, setSubmittalDownloading] = useState(false)
+  const [submittalProgress, setSubmittalProgress] = useState('')
+  const [submittalSections, setSubmittalSections] = useState({ documents: true, lineItems: true, verification: true, notes: true })
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -1531,6 +1538,237 @@ function JobDetailInner() {
       <span style={{ fontSize: '10px' }}>Add</span>
     </button>
   )
+
+  // Submittal helper: selectable photo thumbnail
+  const SelectablePhoto = ({ src, label, itemKey, selected, onToggle, theme: t, score }) => (
+    <div
+      onClick={() => onToggle(itemKey)}
+      style={{
+        position: 'relative', width: '64px', height: '64px', flexShrink: 0,
+        borderRadius: '8px', overflow: 'hidden', cursor: 'pointer',
+        border: selected ? '2px solid #3b82f6' : `1px solid ${t.border}`,
+        opacity: selected ? 1 : 0.7
+      }}
+    >
+      <img src={src} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <div style={{
+        position: 'absolute', top: '2px', left: '2px',
+        width: '18px', height: '18px', borderRadius: '4px',
+        backgroundColor: selected ? '#3b82f6' : 'rgba(0,0,0,0.4)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        {selected && <Check size={12} color="#fff" />}
+      </div>
+      {score != null && (
+        <span style={{
+          position: 'absolute', bottom: '2px', right: '2px',
+          fontSize: '9px', fontWeight: '700', padding: '1px 4px', borderRadius: '4px',
+          backgroundColor: score >= 80 ? 'rgba(34,197,94,0.9)' : score >= 60 ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.9)',
+          color: '#fff'
+        }}>
+          {score}
+        </span>
+      )}
+    </div>
+  )
+
+  // Submittal helper: selectable photo with signed URL fetch
+  const SubmittalSignedPhoto = ({ att, itemKey, selected, onToggle, theme: t }) => {
+    const [thumbUrl, setThumbUrl] = useState(null)
+    useEffect(() => {
+      let cancelled = false
+      supabase.storage.from(att.storage_bucket).createSignedUrl(att.file_path, 3600).then(({ data }) => {
+        if (!cancelled && data?.signedUrl) setThumbUrl(data.signedUrl)
+      })
+      return () => { cancelled = true }
+    }, [att.id])
+
+    if (!thumbUrl) {
+      return (
+        <div
+          onClick={() => onToggle(itemKey)}
+          style={{
+            width: '64px', height: '64px', borderRadius: '8px',
+            backgroundColor: t.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', border: selected ? '2px solid #3b82f6' : `1px solid ${t.border}`
+          }}
+        >
+          <Image size={20} color={t.textMuted} />
+        </div>
+      )
+    }
+    return (
+      <SelectablePhoto
+        src={thumbUrl}
+        label={att.file_name}
+        itemKey={itemKey}
+        selected={selected}
+        onToggle={onToggle}
+        theme={t}
+      />
+    )
+  }
+
+  // Submittal helpers
+  const sanitizeFilename = (name) => (name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').substring(0, 100)
+
+  const toggleSubmittalItem = (key) => {
+    setSubmittalSelected(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
+  const selectAllInGroup = (keys) => {
+    setSubmittalSelected(prev => {
+      const next = new Set(prev)
+      const allSelected = keys.every(k => next.has(k))
+      keys.forEach(k => allSelected ? next.delete(k) : next.add(k))
+      return next
+    })
+  }
+
+  const buildSubmittalManifest = () => {
+    const items = []
+    submittalSelected.forEach(key => {
+      const [type, ...rest] = key.split(':')
+      if (type === 'doc') {
+        const attId = parseInt(rest[0])
+        const att = attachments.find(a => a.id === attId)
+        if (att) items.push({ type: 'doc', att, folder: '01_documents', filename: sanitizeFilename(att.file_name) })
+      } else if (type === 'source') {
+        const [lineId, idx] = rest
+        const line = lineItems.find(l => l.id === parseInt(lineId))
+        const url = line?.photos?.[parseInt(idx)]
+        if (url) {
+          const lineName = sanitizeFilename(line.item?.name || `line_${lineId}`)
+          const ext = url.split('.').pop()?.split('?')[0] || 'jpg'
+          items.push({ type: 'public', url, folder: `02_line_items/${lineName}`, filename: `source_${parseInt(idx) + 1}.${ext}` })
+        }
+      } else if (type === 'before' || type === 'after') {
+        const [lineId, attId] = rest
+        const line = lineItems.find(l => l.id === parseInt(lineId))
+        const photos = (linePhotos[parseInt(lineId)] || []).filter(p => p.photo_context === `line_${type}`)
+        const att = photos.find(p => p.id === parseInt(attId))
+        if (att) {
+          const lineName = sanitizeFilename(line?.item?.name || `line_${lineId}`)
+          const ext = (att.file_name || '').split('.').pop() || 'jpg'
+          items.push({ type: 'signed', att, folder: `02_line_items/${lineName}`, filename: `${type}_${attId}.${ext}` })
+        }
+      } else if (type === 'victor') {
+        const [lineId, idx] = rest
+        const line = lineItems.find(l => l.id === parseInt(lineId))
+        const photos = lineVerificationPhotos[parseInt(lineId)] || []
+        const vp = photos[parseInt(idx)]
+        if (vp) {
+          const lineName = sanitizeFilename(line?.item?.name || `line_${lineId}`)
+          const ext = vp.url.split('.').pop()?.split('?')[0] || 'jpg'
+          items.push({ type: 'public', url: vp.url, folder: `02_line_items/${lineName}`, filename: `verification_${parseInt(idx) + 1}.${ext}` })
+        }
+      } else if (type === 'vreport') {
+        const reportId = parseInt(rest[0])
+        const report = verificationReports.find(r => r.id === reportId)
+        if (report) {
+          const dateStr = new Date(report.created_at).toISOString().slice(0, 10)
+          const text = `Victor Verification Report\nDate: ${dateStr}\nGrade: ${report.grade || 'N/A'}\nScore: ${report.score || 0}/100\n\n${report.summary || ''}\n\n${report.ai_analysis ? JSON.stringify(report.ai_analysis, null, 2) : ''}`
+          items.push({ type: 'text', content: text, folder: '03_verification', filename: `report_${dateStr}_summary.txt` })
+        }
+      } else if (type === 'vphoto') {
+        const [reportId, idx] = rest
+        const photos = verificationPhotos[parseInt(reportId)] || []
+        const photo = photos[parseInt(idx)]
+        if (photo) {
+          const ext = photo.url.split('.').pop()?.split('?')[0] || 'jpg'
+          items.push({ type: 'public', url: photo.url, folder: '03_verification', filename: `report_photo_${parseInt(idx) + 1}.${ext}` })
+        }
+      } else if (type === 'notephoto') {
+        const attId = parseInt(rest[0])
+        const att = notesPhotos.find(p => p.id === attId)
+        if (att) {
+          const ext = (att.file_name || '').split('.').pop() || 'jpg'
+          items.push({ type: 'signed', att, folder: '04_notes', filename: `note_${attId}.${ext}` })
+        }
+      } else if (type === 'auditphoto') {
+        const idx = parseInt(rest[0])
+        const photo = auditPhotos[idx]
+        if (photo) {
+          const ext = photo.url.split('.').pop()?.split('?')[0] || 'jpg'
+          items.push({ type: 'public', url: photo.url, folder: '04_notes', filename: `audit_${idx + 1}.${ext}` })
+        }
+      }
+    })
+    return items
+  }
+
+  const handleDownloadSubmittal = async () => {
+    const manifest = buildSubmittalManifest()
+    if (manifest.length === 0) return
+    setSubmittalDownloading(true)
+    setSubmittalProgress(`Preparing 0/${manifest.length}...`)
+    try {
+      const [{ default: JSZip }, { saveAs }] = await Promise.all([
+        import('jszip'),
+        import('file-saver')
+      ])
+      const zip = new JSZip()
+      const jobName = sanitizeFilename(job.job_title || job.job_id || 'job')
+      let completed = 0
+
+      for (const item of manifest) {
+        try {
+          let data
+          if (item.type === 'text') {
+            data = item.content
+          } else if (item.type === 'public') {
+            const resp = await fetch(item.url)
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+            data = await resp.blob()
+          } else if (item.type === 'signed') {
+            const { data: signedData } = await supabase.storage
+              .from(item.att.storage_bucket)
+              .createSignedUrl(item.att.file_path, 300)
+            if (!signedData?.signedUrl) throw new Error('No signed URL')
+            const resp = await fetch(signedData.signedUrl)
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+            data = await resp.blob()
+          } else if (item.type === 'doc') {
+            // Documents may be in public or private buckets
+            if (item.att.storage_bucket) {
+              const { data: signedData } = await supabase.storage
+                .from(item.att.storage_bucket)
+                .createSignedUrl(item.att.file_path, 300)
+              if (signedData?.signedUrl) {
+                const resp = await fetch(signedData.signedUrl)
+                if (resp.ok) data = await resp.blob()
+              }
+            }
+            if (!data && item.att.url) {
+              const resp = await fetch(item.att.url)
+              if (resp.ok) data = await resp.blob()
+            }
+          }
+          if (data) {
+            zip.file(`${jobName}_submittal_package/${item.folder}/${item.filename}`, data)
+          }
+        } catch (err) {
+          console.warn(`Submittal: skipping ${item.filename}:`, err.message)
+        }
+        completed++
+        setSubmittalProgress(`Fetching ${completed}/${manifest.length}...`)
+      }
+
+      setSubmittalProgress('Building ZIP...')
+      const blob = await zip.generateAsync({ type: 'blob' })
+      saveAs(blob, `${jobName}_submittal_package.zip`)
+    } catch (err) {
+      console.error('Submittal download failed:', err)
+      alert('Download failed: ' + err.message)
+    } finally {
+      setSubmittalDownloading(false)
+      setSubmittalProgress('')
+    }
+  }
 
   return (
     <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
@@ -3215,6 +3453,25 @@ function JobDetailInner() {
                 Generate
               </button>
               <button
+                onClick={() => setShowSubmittalModal(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '5px 8px',
+                  backgroundColor: 'rgba(59,130,246,0.1)',
+                  color: '#3b82f6',
+                  border: '1px solid #3b82f6',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                  fontWeight: '500'
+                }}
+              >
+                <PackageCheck size={12} />
+                Submittal
+              </button>
+              <button
                 onClick={() => fileInputRef.current?.click()}
                 style={{
                   display: 'flex',
@@ -3614,6 +3871,507 @@ function JobDetailInner() {
               >
                 {generating ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
                 {generating ? 'Generating...' : 'Generate Selected'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Submittal Package Modal */}
+      {showSubmittalModal && (
+        <>
+          <div
+            onClick={() => !submittalDownloading && setShowSubmittalModal(false)}
+            style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50 }}
+          />
+          <div style={{
+            position: 'fixed',
+            top: isMobile ? 0 : '50%',
+            left: isMobile ? 0 : '50%',
+            right: isMobile ? 0 : 'auto',
+            bottom: isMobile ? 0 : 'auto',
+            transform: isMobile ? 'none' : 'translate(-50%, -50%)',
+            backgroundColor: theme.bgCard || '#ffffff',
+            borderRadius: isMobile ? 0 : '16px',
+            border: isMobile ? 'none' : `1px solid ${theme.border}`,
+            width: isMobile ? '100%' : '90%',
+            maxWidth: isMobile ? '100%' : '800px',
+            height: isMobile ? '100%' : 'auto',
+            maxHeight: isMobile ? '100%' : '85vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 51
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: isMobile ? '16px' : '20px',
+              borderBottom: `1px solid ${theme.border}`
+            }}>
+              <div>
+                <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Submittal Package
+                </h2>
+                <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
+                  {job?.customer?.name || job?.job_title || 'Job'} — select assets to include
+                </p>
+              </div>
+              <button
+                onClick={() => !submittalDownloading && setShowSubmittalModal(false)}
+                disabled={submittalDownloading}
+                style={{
+                  padding: '8px', backgroundColor: 'transparent', border: 'none',
+                  cursor: submittalDownloading ? 'not-allowed' : 'pointer', color: theme.textMuted,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  opacity: submittalDownloading ? 0.5 : 1
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '20px' }}>
+              {submittalDownloading && (
+                <div style={{
+                  padding: '12px 16px', marginBottom: '16px', borderRadius: '10px',
+                  backgroundColor: '#dbeafe', border: '1px solid #93c5fd',
+                  display: 'flex', alignItems: 'center', gap: '10px'
+                }}>
+                  <Loader size={16} color="#2563eb" style={{ animation: 'spin 1s linear infinite' }} />
+                  <span style={{ fontSize: '14px', color: '#1e40af', fontWeight: '500' }}>{submittalProgress}</span>
+                </div>
+              )}
+
+              {/* No assets at all */}
+              {attachments.length === 0 && lineItems.length === 0 && verificationReports.length === 0 && notesPhotos.length === 0 && auditPhotos.length === 0 ? (
+                <div style={{ padding: '32px 16px', textAlign: 'center', color: theme.textMuted }}>
+                  <Info size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                  <p style={{ fontSize: '14px', margin: 0 }}>No assets available for this job yet. Upload documents, add photos, or run Victor verifications first.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                  {/* Section 1: Documents */}
+                  {attachments.length > 0 && (
+                    <div style={{ border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+                      <div
+                        onClick={() => setSubmittalSections(p => ({ ...p, documents: !p.documents }))}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '12px 16px', backgroundColor: theme.bg, cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {submittalSections.documents ? <ChevronDown size={16} color={theme.textMuted} /> : <ChevronRight size={16} color={theme.textMuted} />}
+                          <Paperclip size={14} color={theme.textMuted} />
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Documents ({attachments.length})</span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            selectAllInGroup(attachments.map(a => `doc:${a.id}`))
+                          }}
+                          style={{
+                            padding: '4px 10px', fontSize: '11px', fontWeight: '500',
+                            backgroundColor: theme.accentBg, color: theme.accent,
+                            border: `1px solid ${theme.accent}`, borderRadius: '6px', cursor: 'pointer'
+                          }}
+                        >
+                          {attachments.every(a => submittalSelected.has(`doc:${a.id}`)) ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+                      {submittalSections.documents && (
+                        <div style={{ padding: '8px 16px' }}>
+                          {attachments.map(att => {
+                            const key = `doc:${att.id}`
+                            const selected = submittalSelected.has(key)
+                            const ext = (att.file_name || '').split('.').pop()?.toLowerCase()
+                            const cat = (att.category || 'CUSTOM').toUpperCase()
+                            const catColors = CATEGORY_COLORS[cat] || CATEGORY_COLORS.CUSTOM
+                            const sizeKB = att.file_size ? Math.round(att.file_size / 1024) : null
+                            return (
+                              <label key={att.id} style={{
+                                display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 4px',
+                                borderRadius: '8px', cursor: 'pointer',
+                                backgroundColor: selected ? 'rgba(59,130,246,0.08)' : 'transparent',
+                                minHeight: '44px'
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={() => toggleSubmittalItem(key)}
+                                  style={{ width: '18px', height: '18px', flexShrink: 0 }}
+                                />
+                                <FileText size={16} color={ext === 'pdf' ? '#dc2626' : ext === 'xlsx' ? '#16a34a' : '#6366f1'} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {att.file_name}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                    {sizeKB ? `${sizeKB} KB` : ''}{sizeKB && att.created_at ? ' · ' : ''}{att.created_at ? new Date(att.created_at).toLocaleDateString() : ''}
+                                  </div>
+                                </div>
+                                <span style={{
+                                  padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '500',
+                                  backgroundColor: catColors.bg, color: catColors.text
+                                }}>{cat}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Section 2: Line Items */}
+                  {lineItems.length > 0 && (
+                    <div style={{ border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+                      <div
+                        onClick={() => setSubmittalSections(p => ({ ...p, lineItems: !p.lineItems }))}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '12px 16px', backgroundColor: theme.bg, cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {submittalSections.lineItems ? <ChevronDown size={16} color={theme.textMuted} /> : <ChevronRight size={16} color={theme.textMuted} />}
+                          <Zap size={14} color={theme.textMuted} />
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Line Item Photos</span>
+                        </div>
+                      </div>
+                      {submittalSections.lineItems && (
+                        <div style={{ padding: '8px 16px' }}>
+                          {lineItems.map(line => {
+                            const sourcePhotos = line.photos || []
+                            const beforePhotos = (linePhotos[line.id] || []).filter(p => p.photo_context === 'line_before')
+                            const afterPhotos = (linePhotos[line.id] || []).filter(p => p.photo_context === 'line_after')
+                            const victorPhotos = lineVerificationPhotos[line.id] || []
+                            const allKeys = [
+                              ...sourcePhotos.map((_, i) => `source:${line.id}:${i}`),
+                              ...beforePhotos.map(p => `before:${line.id}:${p.id}`),
+                              ...afterPhotos.map(p => `after:${line.id}:${p.id}`),
+                              ...victorPhotos.map((_, i) => `victor:${line.id}:${i}`)
+                            ]
+                            const totalPhotos = allKeys.length
+                            if (totalPhotos === 0) return null
+
+                            return (
+                              <div key={line.id} style={{ marginBottom: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                  <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                                    {line.item?.name || 'Unknown'} ({totalPhotos})
+                                  </span>
+                                  <button
+                                    onClick={() => selectAllInGroup(allKeys)}
+                                    style={{
+                                      padding: '2px 8px', fontSize: '10px', fontWeight: '500',
+                                      backgroundColor: theme.accentBg, color: theme.accent,
+                                      border: `1px solid ${theme.accent}`, borderRadius: '4px', cursor: 'pointer'
+                                    }}
+                                  >
+                                    {allKeys.every(k => submittalSelected.has(k)) ? 'Deselect' : 'Select All'}
+                                  </button>
+                                </div>
+
+                                {sourcePhotos.length > 0 && (
+                                  <div style={{ marginBottom: '6px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase' }}>Source</div>
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                      {sourcePhotos.map((url, idx) => (
+                                        <SelectablePhoto
+                                          key={`source-${line.id}-${idx}`}
+                                          src={url}
+                                          label={`Source ${idx + 1}`}
+                                          itemKey={`source:${line.id}:${idx}`}
+                                          selected={submittalSelected.has(`source:${line.id}:${idx}`)}
+                                          onToggle={toggleSubmittalItem}
+                                          theme={theme}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {beforePhotos.length > 0 && (
+                                  <div style={{ marginBottom: '6px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase' }}>Before</div>
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                      {beforePhotos.map(photo => {
+                                        const key = `before:${line.id}:${photo.id}`
+                                        return (
+                                          <SubmittalSignedPhoto
+                                            key={key}
+                                            att={photo}
+                                            itemKey={key}
+                                            selected={submittalSelected.has(key)}
+                                            onToggle={toggleSubmittalItem}
+                                            theme={theme}
+                                          />
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {afterPhotos.length > 0 && (
+                                  <div style={{ marginBottom: '6px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase' }}>After</div>
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                      {afterPhotos.map(photo => {
+                                        const key = `after:${line.id}:${photo.id}`
+                                        return (
+                                          <SubmittalSignedPhoto
+                                            key={key}
+                                            att={photo}
+                                            itemKey={key}
+                                            selected={submittalSelected.has(key)}
+                                            onToggle={toggleSubmittalItem}
+                                            theme={theme}
+                                          />
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {victorPhotos.length > 0 && (
+                                  <div>
+                                    <div style={{ fontSize: '11px', fontWeight: '600', color: '#a855f7', marginBottom: '4px', textTransform: 'uppercase' }}>Verification</div>
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                      {victorPhotos.map((vp, idx) => (
+                                        <SelectablePhoto
+                                          key={`victor-${line.id}-${idx}`}
+                                          src={vp.url}
+                                          label={`Verification ${idx + 1}`}
+                                          itemKey={`victor:${line.id}:${idx}`}
+                                          selected={submittalSelected.has(`victor:${line.id}:${idx}`)}
+                                          onToggle={toggleSubmittalItem}
+                                          theme={theme}
+                                          score={vp.aiScore}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Section 3: Verification Reports */}
+                  {verificationReports.length > 0 && (
+                    <div style={{ border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+                      <div
+                        onClick={() => setSubmittalSections(p => ({ ...p, verification: !p.verification }))}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '12px 16px', backgroundColor: theme.bg, cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {submittalSections.verification ? <ChevronDown size={16} color={theme.textMuted} /> : <ChevronRight size={16} color={theme.textMuted} />}
+                          <Shield size={14} color="#a855f7" />
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Verification Reports ({verificationReports.length})</span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const allKeys = []
+                            verificationReports.forEach(r => {
+                              allKeys.push(`vreport:${r.id}`)
+                              ;(verificationPhotos[r.id] || []).forEach((_, i) => allKeys.push(`vphoto:${r.id}:${i}`))
+                            })
+                            selectAllInGroup(allKeys)
+                          }}
+                          style={{
+                            padding: '4px 10px', fontSize: '11px', fontWeight: '500',
+                            backgroundColor: 'rgba(168,85,247,0.1)', color: '#a855f7',
+                            border: '1px solid #a855f7', borderRadius: '6px', cursor: 'pointer'
+                          }}
+                        >
+                          {(() => {
+                            const allKeys = []
+                            verificationReports.forEach(r => {
+                              allKeys.push(`vreport:${r.id}`)
+                              ;(verificationPhotos[r.id] || []).forEach((_, i) => allKeys.push(`vphoto:${r.id}:${i}`))
+                            })
+                            return allKeys.every(k => submittalSelected.has(k)) ? 'Deselect All' : 'Select All'
+                          })()}
+                        </button>
+                      </div>
+                      {submittalSections.verification && (
+                        <div style={{ padding: '8px 16px' }}>
+                          {verificationReports.map(report => {
+                            const gradeColor = report.grade === 'A' ? '#22c55e' :
+                              report.grade === 'B' ? '#3b82f6' :
+                              report.grade === 'C' ? '#f59e0b' :
+                              report.grade === 'D' ? '#f97316' : '#ef4444'
+                            const reportKey = `vreport:${report.id}`
+                            const reportPhotos = verificationPhotos[report.id] || []
+                            return (
+                              <div key={report.id} style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', backgroundColor: theme.bg }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', minHeight: '44px' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={submittalSelected.has(reportKey)}
+                                    onChange={() => toggleSubmittalItem(reportKey)}
+                                    style={{ width: '18px', height: '18px', flexShrink: 0 }}
+                                  />
+                                  <span style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    width: '28px', height: '28px', borderRadius: '50%',
+                                    fontWeight: '800', fontSize: '14px',
+                                    backgroundColor: `${gradeColor}20`, color: gradeColor
+                                  }}>
+                                    {report.grade || '—'}
+                                  </span>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>
+                                      {report.score || 0}/100 — {new Date(report.created_at).toLocaleDateString()}
+                                    </div>
+                                    {report.summary && (
+                                      <div style={{ fontSize: '11px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {report.summary.substring(0, 80)}{report.summary.length > 80 ? '...' : ''}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span style={{ fontSize: '11px', color: theme.textMuted }}>Summary .txt</span>
+                                </label>
+                                {reportPhotos.length > 0 && (
+                                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px', paddingLeft: '28px' }}>
+                                    {reportPhotos.map((photo, idx) => (
+                                      <SelectablePhoto
+                                        key={`vphoto-${report.id}-${idx}`}
+                                        src={photo.url}
+                                        label={photo.photoType || `Photo ${idx + 1}`}
+                                        itemKey={`vphoto:${report.id}:${idx}`}
+                                        selected={submittalSelected.has(`vphoto:${report.id}:${idx}`)}
+                                        onToggle={toggleSubmittalItem}
+                                        theme={theme}
+                                        score={photo.aiScore}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Section 4: Notes & Audit Photos */}
+                  {(notesPhotos.length > 0 || auditPhotos.length > 0) && (
+                    <div style={{ border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+                      <div
+                        onClick={() => setSubmittalSections(p => ({ ...p, notes: !p.notes }))}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '12px 16px', backgroundColor: theme.bg, cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {submittalSections.notes ? <ChevronDown size={16} color={theme.textMuted} /> : <ChevronRight size={16} color={theme.textMuted} />}
+                          <Camera size={14} color={theme.textMuted} />
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
+                            Notes & Audit Photos ({notesPhotos.length + auditPhotos.length})
+                          </span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const allKeys = [
+                              ...notesPhotos.map(p => `notephoto:${p.id}`),
+                              ...auditPhotos.map((_, i) => `auditphoto:${i}`)
+                            ]
+                            selectAllInGroup(allKeys)
+                          }}
+                          style={{
+                            padding: '4px 10px', fontSize: '11px', fontWeight: '500',
+                            backgroundColor: theme.accentBg, color: theme.accent,
+                            border: `1px solid ${theme.accent}`, borderRadius: '6px', cursor: 'pointer'
+                          }}
+                        >
+                          {[...notesPhotos.map(p => `notephoto:${p.id}`), ...auditPhotos.map((_, i) => `auditphoto:${i}`)].every(k => submittalSelected.has(k)) ? 'Deselect All' : 'Select All'}
+                        </button>
+                      </div>
+                      {submittalSections.notes && (
+                        <div style={{ padding: '8px 16px' }}>
+                          {notesPhotos.length > 0 && (
+                            <div style={{ marginBottom: '10px' }}>
+                              <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>Notes Photos</div>
+                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                {notesPhotos.map(photo => {
+                                  const key = `notephoto:${photo.id}`
+                                  return (
+                                    <SubmittalSignedPhoto
+                                      key={key}
+                                      att={photo}
+                                      itemKey={key}
+                                      selected={submittalSelected.has(key)}
+                                      onToggle={toggleSubmittalItem}
+                                      theme={theme}
+                                    />
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          {auditPhotos.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase' }}>Audit Photos</div>
+                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                {auditPhotos.map((photo, idx) => (
+                                  <SelectablePhoto
+                                    key={`audit-${idx}`}
+                                    src={photo.url}
+                                    label={photo.name || `Audit ${idx + 1}`}
+                                    itemKey={`auditphoto:${idx}`}
+                                    selected={submittalSelected.has(`auditphoto:${idx}`)}
+                                    onToggle={toggleSubmittalItem}
+                                    theme={theme}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: isMobile ? '16px' : '16px 20px',
+              borderTop: `1px solid ${theme.border}`
+            }}>
+              <span style={{ fontSize: '13px', color: theme.textMuted }}>
+                {submittalSelected.size} item{submittalSelected.size !== 1 ? 's' : ''} selected
+              </span>
+              <button
+                onClick={handleDownloadSubmittal}
+                disabled={submittalDownloading || submittalSelected.size === 0}
+                style={{
+                  padding: '10px 20px', backgroundColor: '#3b82f6', color: '#fff',
+                  border: 'none', borderRadius: '8px',
+                  cursor: submittalDownloading || submittalSelected.size === 0 ? 'not-allowed' : 'pointer',
+                  fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px',
+                  opacity: submittalDownloading || submittalSelected.size === 0 ? 0.6 : 1,
+                  minHeight: '44px'
+                }}
+              >
+                {submittalDownloading ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={16} />}
+                {submittalDownloading ? 'Downloading...' : 'Download Package'}
               </button>
             </div>
           </div>

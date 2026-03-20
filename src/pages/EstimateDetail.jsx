@@ -54,6 +54,7 @@ export default function EstimateDetail() {
   const employees = useStore((state) => state.employees)
   const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
   const leads = useStore((state) => state.leads)
+  const customers = useStore((state) => state.customers)
   const fetchQuotes = useStore((state) => state.fetchQuotes)
   const fetchJobs = useStore((state) => state.fetchJobs)
   const fetchLeads = useStore((state) => state.fetchLeads)
@@ -82,7 +83,8 @@ export default function EstimateDetail() {
   const [convertingToJob, setConvertingToJob] = useState(false)
   const [expandedLineId, setExpandedLineId] = useState(null)
   const [viewingPhoto, setViewingPhoto] = useState(null)
-  const [showCreateLead, setShowCreateLead] = useState(false)
+  const [showAssociateModal, setShowAssociateModal] = useState(false)
+  const [associationType, setAssociationType] = useState('lead') // 'lead' | 'customer' | 'newLead'
   const [creatingLead, setCreatingLead] = useState(false)
   const [newLeadForm, setNewLeadForm] = useState({
     customer_name: '',
@@ -164,7 +166,7 @@ export default function EstimateDetail() {
       let lines = null
       const { data: l1, error: lErr } = await supabase
         .from('quote_lines')
-        .select('*, item:products_services(id, name, description)')
+        .select('*, item:products_services(id, name, description, unit_price, cost, markup_percent)')
         .eq('quote_id', id)
         .order('sort_order', { ascending: true })
       if (!lErr) {
@@ -172,7 +174,7 @@ export default function EstimateDetail() {
       } else {
         const { data: l2 } = await supabase
           .from('quote_lines')
-          .select('*, item:products_services(id, name, description)')
+          .select('*, item:products_services(id, name, description, unit_price, cost, markup_percent)')
           .eq('quote_id', id)
           .order('id')
         lines = l2
@@ -353,8 +355,7 @@ export default function EstimateDetail() {
   }
 
   const handlePriceChange = async (line, newPrice) => {
-    const basePrice = parseFloat(line.item?.price) || parseFloat(line.price) || 0
-    const price = Math.max(basePrice, parseFloat(newPrice) || basePrice)
+    const price = Math.max(0, parseFloat(newPrice) || 0)
     const discount = parseFloat(line.discount) || 0
     const newTotal = (price * (line.quantity || 1)) - discount
 
@@ -437,6 +438,8 @@ export default function EstimateDetail() {
       company_id: companyId,
       quote_id: id,
       item_id: product.id,
+      item_name: product.name,
+      description: product.description || null,
       quantity: 1,
       price: totalPrice,
       line_total: totalPrice
@@ -453,6 +456,8 @@ export default function EstimateDetail() {
       company_id: companyId,
       quote_id: id,
       item_id: line.item_id,
+      item_name: line.item_name || line.item?.name || null,
+      description: line.description || null,
       quantity: line.quantity,
       price: line.price,
       discount: line.discount || 0,
@@ -464,9 +469,36 @@ export default function EstimateDetail() {
     setSaving(false)
   }
 
+  const handleLineNameChange = async (line, newName) => {
+    const name = newName.trim()
+    if (!name) return
+    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, item_name: name } : l))
+    await supabase.from('quote_lines').update({ item_name: name }).eq('id', line.id)
+  }
+
+  const handleLineDescriptionChange = async (line, newDesc) => {
+    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, description: newDesc } : l))
+    await supabase.from('quote_lines').update({ description: newDesc || null }).eq('id', line.id)
+  }
+
   const handleLineNotesChange = async (line, newNotes) => {
     setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, notes: newNotes } : l))
     await supabase.from('quote_lines').update({ notes: newNotes || null }).eq('id', line.id)
+  }
+
+  const addCustomLineItem = async () => {
+    setSaving(true)
+    await createQuoteLine({
+      company_id: companyId,
+      quote_id: id,
+      item_name: 'Custom Item',
+      quantity: 1,
+      price: 0,
+      line_total: 0
+    })
+    await updateEstimateTotal()
+    await fetchEstimateData()
+    setSaving(false)
   }
 
   const removeLineItem = async (lineId) => {
@@ -708,46 +740,69 @@ export default function EstimateDetail() {
     setConvertingToJob(false)
   }
 
-  // Create a new lead from estimate
-  const handleCreateLead = async (e) => {
+  // Associate estimate with existing lead, existing customer, or new lead
+  const handleAssociate = async (e) => {
     e.preventDefault()
-    if (!newLeadForm.customer_name.trim()) {
-      toast.error('Customer name is required.')
-      return
-    }
     setCreatingLead(true)
     try {
-      const { data: newLead, error: leadErr } = await supabase
-        .from('leads')
-        .insert({
-          company_id: companyId,
-          customer_name: newLeadForm.customer_name.trim(),
-          business_name: newLeadForm.business_name || null,
-          phone: newLeadForm.phone || null,
-          email: newLeadForm.email || null,
-          address: newLeadForm.address || null,
-          service_type: estimate.service_type || null,
-          status: 'Quote Sent',
-          salesperson_id: estimate.salesperson_id || null,
-          quote_id: estimate.id,
-          quote_amount: parseFloat(estimate.quote_amount) || 0,
-          notes: estimate.summary || null
-        })
-        .select()
-        .single()
+      if (associationType === 'lead') {
+        const selectedLeadId = e.target.elements?.lead_id?.value
+        if (!selectedLeadId) {
+          toast.error('Please select a lead.')
+          setCreatingLead(false)
+          return
+        }
+        await updateQuote(id, { lead_id: selectedLeadId, updated_at: new Date().toISOString() })
+        toast.success('Lead linked!')
+      } else if (associationType === 'customer') {
+        const selectedCustomerId = e.target.elements?.customer_id?.value
+        if (!selectedCustomerId) {
+          toast.error('Please select a customer.')
+          setCreatingLead(false)
+          return
+        }
+        await updateQuote(id, { customer_id: selectedCustomerId, updated_at: new Date().toISOString() })
+        toast.success('Customer linked!')
+      } else if (associationType === 'newLead') {
+        if (!newLeadForm.customer_name.trim()) {
+          toast.error('Customer name is required.')
+          setCreatingLead(false)
+          return
+        }
+        const leadNumber = `LEAD-${Date.now().toString(36).toUpperCase()}`
+        const { data: newLead, error: leadErr } = await supabase
+          .from('leads')
+          .insert({
+            company_id: companyId,
+            lead_id: leadNumber,
+            customer_name: newLeadForm.customer_name.trim(),
+            business_name: newLeadForm.business_name || null,
+            phone: newLeadForm.phone || null,
+            email: newLeadForm.email || null,
+            address: newLeadForm.address || null,
+            service_type: estimate.service_type || null,
+            status: 'Quote Sent',
+            salesperson_id: estimate.salesperson_id || null,
+            quote_id: estimate.id,
+            quote_amount: parseFloat(estimate.quote_amount) || 0,
+            notes: estimate.summary || null
+          })
+          .select()
+          .single()
 
-      if (leadErr) throw leadErr
+        if (leadErr) throw leadErr
+        await updateQuote(id, { lead_id: newLead.id, updated_at: new Date().toISOString() })
+        toast.success('Lead created and linked!')
+        await fetchLeads()
+      }
 
-      // Link estimate to the new lead
-      await updateQuote(id, { lead_id: newLead.id, updated_at: new Date().toISOString() })
-
-      toast.success('Lead created and linked!')
-      setShowCreateLead(false)
-      await fetchLeads()
+      setShowAssociateModal(false)
+      setNewLeadForm({ customer_name: '', phone: '', email: '', address: '', business_name: '' })
+      setAssociationType('lead')
       await fetchEstimateData()
       await fetchQuotes()
     } catch (err) {
-      toast.error('Failed to create lead: ' + err.message)
+      toast.error('Failed: ' + err.message)
     }
     setCreatingLead(false)
   }
@@ -909,7 +964,8 @@ export default function EstimateDetail() {
           business_unit_name: buObject?.name || estimate.business_unit || '',
           business_unit_phone: buObject?.phone || company?.phone || '',
           business_unit_email: buObject?.email || company?.owner_email || '',
-          business_unit_address: buObject?.address || company?.address || ''
+          business_unit_address: buObject?.address || company?.address || '',
+          presentation_mode: estimate.settings_overrides?.presentation_mode || 'pdf',
         }
       })
 
@@ -935,10 +991,15 @@ export default function EstimateDetail() {
     setSendingEmail(false)
   }
 
-  // Settings save
-  const saveSettingsOverrides = async (newSettings) => {
+  // Settings save — updates local state immediately without triggering a full reload
+  const saveSettingsOverrides = async (newSettings, { silent } = {}) => {
     await updateQuote(id, { settings_overrides: newSettings, updated_at: new Date().toISOString() })
-    await fetchEstimateData()
+    if (silent) {
+      // Update local estimate state directly (avoids loading flash that unmounts modals)
+      setEstimate(prev => prev ? { ...prev, settings_overrides: newSettings } : prev)
+    } else {
+      await fetchEstimateData()
+    }
   }
 
   const calculateIncentive = async () => {
@@ -1178,7 +1239,7 @@ export default function EstimateDetail() {
                 Customer Information
               </h3>
               <div style={{ display: 'flex', gap: '8px' }}>
-                {estimate.lead_id ? (
+                {estimate.lead_id && (
                   <button
                     onClick={() => navigate(`/leads/${estimate.lead_id}`)}
                     style={{
@@ -1191,25 +1252,6 @@ export default function EstimateDetail() {
                     }}
                   >
                     View Lead
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowCreateLead(true)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontSize: '12px',
-                      color: theme.accent,
-                      background: 'none',
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '6px',
-                      padding: '4px 8px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <UserPlus size={12} />
-                    Create Lead
                   </button>
                 )}
                 {estimate.customer_id && (
@@ -1225,6 +1267,46 @@ export default function EstimateDetail() {
                     }}
                   >
                     View Customer
+                  </button>
+                )}
+                {!estimate.lead_id && !estimate.customer_id && (
+                  <button
+                    onClick={() => setShowAssociateModal(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '12px',
+                      color: '#fff',
+                      backgroundColor: theme.accent,
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '6px 10px',
+                      cursor: 'pointer',
+                      fontWeight: '500'
+                    }}
+                  >
+                    <UserPlus size={12} />
+                    Link Lead / Customer
+                  </button>
+                )}
+                {(estimate.lead_id || estimate.customer_id) && (
+                  <button
+                    onClick={() => setShowAssociateModal(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      background: 'none',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Change
                   </button>
                 )}
               </div>
@@ -1395,25 +1477,47 @@ export default function EstimateDetail() {
               }}>
                 Line Items
               </h3>
-              <button
-                onClick={() => setShowProductPicker(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 12px',
-                  backgroundColor: theme.accent,
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  cursor: 'pointer'
-                }}
-              >
-                <Plus size={16} />
-                Add Item
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setShowProductPicker(true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 12px',
+                    backgroundColor: theme.accent,
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Plus size={16} />
+                  Add Product
+                </button>
+                <button
+                  onClick={addCustomLineItem}
+                  disabled={saving}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 12px',
+                    backgroundColor: theme.bg,
+                    color: theme.textSecondary,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    cursor: saving ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <Plus size={16} />
+                  Custom Line
+                </button>
+              </div>
             </div>
 
             {lineItems.length === 0 ? (
@@ -1471,7 +1575,7 @@ export default function EstimateDetail() {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>
-                            {line.item?.name || line.item_name || 'Unknown'}
+                            {line.item_name || line.item?.name || 'Custom Item'}
                           </p>
                           {photos.length > 0 && (
                             <span style={{ fontSize: '11px', backgroundColor: theme.accentBg, color: theme.accent, padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
@@ -1482,13 +1586,14 @@ export default function EstimateDetail() {
                         <div>
                           <p style={{
                             fontSize: '12px',
-                            color: theme.textMuted,
+                            color: (line.description || line.item?.description) ? theme.textSecondary : theme.textMuted,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
-                            margin: 0
+                            margin: 0,
+                            fontStyle: (line.description || line.item?.description) ? 'normal' : 'italic'
                           }}>
-                            {line.description || line.item?.description || '-'}
+                            {line.description || line.item?.description || 'Click to add description'}
                           </p>
                         </div>
                         <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
@@ -1517,17 +1622,12 @@ export default function EstimateDetail() {
                         <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                           <input
                             type="number"
-                            min={parseFloat(line.item?.price) || parseFloat(line.price) || 0}
+                            min="0"
                             step="0.01"
                             defaultValue={line.price}
                             key={`price-${line.id}-${line.price}`}
                             onBlur={(e) => {
-                              const val = parseFloat(e.target.value)
-                              const basePrice = parseFloat(line.item?.price) || parseFloat(line.price) || 0
-                              if (val < basePrice) {
-                                e.target.value = line.price
-                                return
-                              }
+                              const val = parseFloat(e.target.value) || 0
                               if (val !== parseFloat(line.price)) handlePriceChange(line, val)
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
@@ -1620,13 +1720,69 @@ export default function EstimateDetail() {
                           </button>
                         </div>
                       </div>
-                      {/* Expanded detail section: notes + photos */}
+                      {/* Expanded detail section: name, description, notes + photos */}
                       {isExpanded && (
                         <div style={{ padding: '8px 20px 14px', backgroundColor: theme.bg }}>
-                          <div style={{ marginBottom: '10px' }}>
+                          {/* Editable Name */}
+                          <div style={{ marginBottom: '8px' }}>
+                            <label style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>Item Name</label>
                             <input
                               type="text"
-                              placeholder="Line item notes..."
+                              defaultValue={line.item_name || line.item?.name || ''}
+                              key={`name-${line.id}-${line.item_name}`}
+                              onBlur={(e) => {
+                                const val = e.target.value.trim()
+                                const current = line.item_name || line.item?.name || ''
+                                if (val && val !== current) handleLineNameChange(line, val)
+                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                              style={{
+                                width: '100%',
+                                padding: '6px 8px',
+                                fontSize: '13px',
+                                fontWeight: '500',
+                                color: theme.text,
+                                border: `1px solid ${theme.border}`,
+                                borderRadius: '6px',
+                                backgroundColor: theme.bgCard,
+                                outline: 'none',
+                                boxSizing: 'border-box'
+                              }}
+                            />
+                          </div>
+                          {/* Editable Description */}
+                          <div style={{ marginBottom: '8px' }}>
+                            <label style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>Description</label>
+                            <textarea
+                              defaultValue={line.description || line.item?.description || ''}
+                              key={`desc-${line.id}-${line.description}`}
+                              placeholder="Add a description for this line item..."
+                              rows={2}
+                              onBlur={(e) => {
+                                const val = e.target.value.trim()
+                                const current = line.description || line.item?.description || ''
+                                if (val !== current) handleLineDescriptionChange(line, val)
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '6px 8px',
+                                fontSize: '12px',
+                                color: theme.textSecondary,
+                                border: `1px solid ${theme.border}`,
+                                borderRadius: '6px',
+                                backgroundColor: theme.bgCard,
+                                outline: 'none',
+                                boxSizing: 'border-box',
+                                resize: 'vertical'
+                              }}
+                            />
+                          </div>
+                          {/* Notes */}
+                          <div style={{ marginBottom: '10px' }}>
+                            <label style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>Internal Notes</label>
+                            <input
+                              type="text"
+                              placeholder="Internal notes (not shown on estimate)..."
                               defaultValue={line.notes || ''}
                               onBlur={(e) => {
                                 const val = e.target.value.trim()
@@ -1635,7 +1791,7 @@ export default function EstimateDetail() {
                               onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
                               style={{
                                 width: '100%',
-                                padding: '4px 8px',
+                                padding: '6px 8px',
                                 fontSize: '12px',
                                 color: theme.textSecondary,
                                 border: `1px solid ${theme.border}`,
@@ -2551,6 +2707,8 @@ export default function EstimateDetail() {
           onClose={() => setShowSendModal(false)}
           inputStyle={inputStyle}
           labelStyle={labelStyle}
+          onSettingsUpdate={saveSettingsOverrides}
+          customer={estimate?.customer || estimate?.lead}
         />
       )}
 
@@ -2567,11 +2725,16 @@ export default function EstimateDetail() {
           onClose={() => setShowSettingsModal(false)}
           inputStyle={inputStyle}
           labelStyle={labelStyle}
+          estimate={estimate}
+          lineItems={lineItems}
+          company={company}
+          customer={estimate?.customer || estimate?.lead}
+          onSettingsUpdate={saveSettingsOverrides}
         />
       )}
 
-      {/* Create Lead Modal */}
-      {showCreateLead && (
+      {/* Associate Lead/Customer Modal */}
+      {showAssociateModal && (
         <div style={{
           position: 'fixed',
           inset: 0,
@@ -2587,7 +2750,9 @@ export default function EstimateDetail() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '450px'
+            maxWidth: '480px',
+            maxHeight: '90vh',
+            overflow: 'auto'
           }}>
             <div style={{
               display: 'flex',
@@ -2597,73 +2762,141 @@ export default function EstimateDetail() {
               borderBottom: `1px solid ${theme.border}`
             }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
-                Create Lead from Estimate
+                Link to Lead or Customer
               </h2>
-              <button onClick={() => setShowCreateLead(false)} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
+              <button onClick={() => setShowAssociateModal(false)} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateLead} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
-                Create a new lead linked to this estimate. The lead tracks the deal through the sales and delivery pipeline.
-              </p>
+            <form onSubmit={handleAssociate} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* 3-way toggle */}
+              <div>
+                <label style={labelStyle}>Associate With</label>
+                <div style={{ display: 'flex', borderRadius: '8px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+                  {[
+                    { key: 'lead', label: 'Existing Lead' },
+                    { key: 'customer', label: 'Customer' },
+                    { key: 'newLead', label: 'New Lead' }
+                  ].map(opt => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setAssociationType(opt.key)}
+                      style={{
+                        flex: 1,
+                        padding: '10px 8px',
+                        fontSize: '13px',
+                        fontWeight: associationType === opt.key ? '600' : '400',
+                        backgroundColor: associationType === opt.key ? theme.accent : 'transparent',
+                        color: associationType === opt.key ? '#ffffff' : theme.textSecondary,
+                        border: 'none',
+                        cursor: 'pointer',
+                        borderRight: opt.key !== 'newLead' ? `1px solid ${theme.border}` : 'none'
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-              <div>
-                <label style={labelStyle}>Customer Name *</label>
-                <input
-                  type="text"
-                  value={newLeadForm.customer_name}
-                  onChange={(e) => setNewLeadForm(prev => ({ ...prev, customer_name: e.target.value }))}
-                  placeholder="Contact name"
-                  style={inputStyle}
-                  required
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Business Name</label>
-                <input
-                  type="text"
-                  value={newLeadForm.business_name}
-                  onChange={(e) => setNewLeadForm(prev => ({ ...prev, business_name: e.target.value }))}
-                  placeholder="Company / business name"
-                  style={inputStyle}
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {/* Existing Lead picker */}
+              {associationType === 'lead' && (
                 <div>
-                  <label style={labelStyle}>Phone</label>
-                  <input
-                    type="text"
-                    value={newLeadForm.phone}
-                    onChange={(e) => setNewLeadForm(prev => ({ ...prev, phone: e.target.value }))}
-                    style={inputStyle}
-                  />
+                  <label style={labelStyle}>Lead</label>
+                  <select name="lead_id" style={inputStyle}>
+                    <option value="">-- Select a lead --</option>
+                    {leads.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.customer_name || l.business_name || l.lead_id} {l.address ? `— ${l.address}` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+              )}
+
+              {/* Existing Customer picker */}
+              {associationType === 'customer' && (
                 <div>
-                  <label style={labelStyle}>Email</label>
-                  <input
-                    type="email"
-                    value={newLeadForm.email}
-                    onChange={(e) => setNewLeadForm(prev => ({ ...prev, email: e.target.value }))}
-                    style={inputStyle}
-                  />
+                  <label style={labelStyle}>Customer</label>
+                  <select name="customer_id" style={inputStyle}>
+                    <option value="">-- Select a customer --</option>
+                    {customers.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name || c.company_name || `Customer #${c.id}`}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </div>
-              <div>
-                <label style={labelStyle}>Address</label>
-                <input
-                  type="text"
-                  value={newLeadForm.address}
-                  onChange={(e) => setNewLeadForm(prev => ({ ...prev, address: e.target.value }))}
-                  style={inputStyle}
-                />
-              </div>
+              )}
+
+              {/* New Lead inline fields */}
+              {associationType === 'newLead' && (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', gap: '12px',
+                  padding: '14px', borderRadius: '8px',
+                  backgroundColor: theme.accentBg, border: `1px solid ${theme.border}`
+                }}>
+                  <div>
+                    <label style={labelStyle}>Customer Name *</label>
+                    <input
+                      type="text"
+                      value={newLeadForm.customer_name}
+                      onChange={(e) => setNewLeadForm(prev => ({ ...prev, customer_name: e.target.value }))}
+                      placeholder="Business or person name"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Business Name</label>
+                    <input
+                      type="text"
+                      value={newLeadForm.business_name}
+                      onChange={(e) => setNewLeadForm(prev => ({ ...prev, business_name: e.target.value }))}
+                      placeholder="Company / business name"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={labelStyle}>Phone</label>
+                      <input
+                        type="tel"
+                        value={newLeadForm.phone}
+                        onChange={(e) => setNewLeadForm(prev => ({ ...prev, phone: e.target.value }))}
+                        placeholder="(555) 555-5555"
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Email</label>
+                      <input
+                        type="email"
+                        value={newLeadForm.email}
+                        onChange={(e) => setNewLeadForm(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="email@example.com"
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Address</label>
+                    <input
+                      type="text"
+                      value={newLeadForm.address}
+                      onChange={(e) => setNewLeadForm(prev => ({ ...prev, address: e.target.value }))}
+                      placeholder="Street address"
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
                 <button
                   type="button"
-                  onClick={() => setShowCreateLead(false)}
+                  onClick={() => setShowAssociateModal(false)}
                   style={{
                     flex: 1,
                     padding: '10px 16px',
@@ -2693,7 +2926,7 @@ export default function EstimateDetail() {
                     opacity: creatingLead ? 0.6 : 1
                   }}
                 >
-                  {creatingLead ? 'Creating...' : 'Create Lead'}
+                  {creatingLead ? 'Saving...' : associationType === 'newLead' ? 'Create & Link' : 'Link'}
                 </button>
               </div>
             </form>
@@ -2714,8 +2947,46 @@ export default function EstimateDetail() {
 }
 
 // Settings Modal Component
-function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle, labelStyle }) {
+function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle, labelStyle, estimate, lineItems, company, customer, onSettingsUpdate }) {
   const [localSettings, setLocalSettings] = useState(settings)
+  const [generatingProposal, setGeneratingProposal] = useState(false)
+
+  const handleGenerateProposal = async () => {
+    setGeneratingProposal(true)
+    try {
+      const { error, data } = await supabase.functions.invoke('generate-proposal-layout', {
+        body: {
+          estimate_id: estimate?.id,
+          company_name: company?.company_name || '',
+          customer_name: customer?.business_name || customer?.name || '',
+          customer_address: customer?.address || '',
+          estimate_message: estimate?.estimate_message || '',
+          line_items: (lineItems || []).map(li => ({
+            item_name: li.item_name || li.description,
+            description: li.description,
+            quantity: li.quantity,
+            price: li.price,
+            total: li.line_total || li.total,
+            category: li.category,
+          })),
+          total: estimate?.total || lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0,
+          utility_incentive: estimate?.utility_incentive || 0,
+          discount: estimate?.discount || 0,
+        }
+      })
+      if (error) throw error
+      if (data?.proposal_layout) {
+        const updated = { ...localSettings, presentation_mode: 'interactive', proposal_layout: data.proposal_layout }
+        setLocalSettings(updated)
+        // Save immediately so the layout is persisted
+        await onSettingsUpdate(updated, { silent: true })
+        toast.success('Proposal layout generated!')
+      }
+    } catch (err) {
+      toast.error('Failed to generate proposal: ' + err.message)
+    }
+    setGeneratingProposal(false)
+  }
 
   const toggle = (key) => {
     setLocalSettings(prev => ({ ...prev, [key]: !prev[key] }))
@@ -2793,6 +3064,24 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
           ))}
 
           <div style={{ marginTop: '8px' }}>
+            <label style={labelStyle}>Presentation Mode</label>
+            <select
+              value={localSettings.presentation_mode || 'pdf'}
+              onChange={(e) => setLocalSettings(prev => ({ ...prev, presentation_mode: e.target.value }))}
+              style={inputStyle}
+            >
+              <option value="pdf">PDF Document</option>
+              <option value="interactive">Interactive Proposal</option>
+            </select>
+            {localSettings.presentation_mode === 'interactive' && (
+              <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', lineHeight: 1.5 }}>
+                Customer portal will show an animated, chart-rich scrolling proposal instead of the standard view.
+                Use "Generate with AI" below to create compelling section copy.
+              </p>
+            )}
+          </div>
+
+          <div style={{ marginTop: '8px' }}>
             <label style={labelStyle}>PDF Layout</label>
             <select
               value={localSettings.pdf_layout || 'email'}
@@ -2814,6 +3103,47 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
               style={{ ...inputStyle, resize: 'vertical' }}
             />
           </div>
+
+          {/* Generate Proposal with AI */}
+          {localSettings.presentation_mode === 'interactive' && (
+            <div style={{
+              marginTop: '12px',
+              padding: '16px',
+              backgroundColor: 'rgba(90,99,73,0.06)',
+              borderRadius: '10px',
+              border: `1px solid ${theme.border}`,
+            }}>
+              <p style={{ fontSize: '13px', fontWeight: '600', color: theme.text, margin: '0 0 6px' }}>
+                Interactive Proposal
+              </p>
+              <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px', lineHeight: 1.5 }}>
+                {localSettings.proposal_layout
+                  ? `Layout generated ${new Date(localSettings.proposal_layout.generated_at).toLocaleDateString()}. Regenerate to update.`
+                  : 'Generate compelling copy and layout sections using AI based on your line items and estimate details.'}
+              </p>
+              <button
+                onClick={handleGenerateProposal}
+                disabled={generatingProposal}
+                style={{
+                  width: '100%',
+                  padding: '10px 16px',
+                  backgroundColor: generatingProposal ? theme.textMuted : theme.accent,
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: generatingProposal ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}
+              >
+                {generatingProposal ? 'Generating...' : 'Generate with AI'}
+              </button>
+            </div>
+          )}
         </div>
 
         <div style={{
@@ -3045,52 +3375,119 @@ function EstimatePreview({ estimate, lineItems, company, businessUnit, settings 
 }
 
 // Preview + Send modal with two steps
-function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle }) {
+function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle, onSettingsUpdate, customer }) {
   const [step, setStep] = useState('preview') // 'preview' | 'send'
+  const [mode, setMode] = useState(settings.presentation_mode || 'pdf')
+  const [generating, setGenerating] = useState(false)
+  const [proposalLayout, setProposalLayout] = useState(settings.proposal_layout || null)
+
+  const handleModeChange = async (newMode) => {
+    setMode(newMode)
+    if (onSettingsUpdate) {
+      await onSettingsUpdate({ ...settings, presentation_mode: newMode }, { silent: true })
+    }
+  }
+
+  const handleGenerate = async () => {
+    setGenerating(true)
+    try {
+      const { error, data } = await supabase.functions.invoke('generate-proposal-layout', {
+        body: {
+          estimate_id: estimate?.id,
+          company_name: company?.company_name || '',
+          customer_name: customer?.business_name || customer?.name || '',
+          customer_address: customer?.address || '',
+          estimate_message: estimate?.estimate_message || '',
+          line_items: (lineItems || []).map(li => ({
+            item_name: li.item_name || li.description,
+            description: li.description,
+            quantity: li.quantity,
+            price: li.price,
+            total: li.line_total || li.total,
+            category: li.category,
+          })),
+          total: estimate?.total || lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0,
+          utility_incentive: estimate?.utility_incentive || 0,
+          discount: estimate?.discount || 0,
+        }
+      })
+      if (error) throw error
+      if (data?.proposal_layout) {
+        setProposalLayout(data.proposal_layout)
+        const updated = { ...settings, presentation_mode: 'interactive', proposal_layout: data.proposal_layout }
+        if (onSettingsUpdate) await onSettingsUpdate(updated, { silent: true })
+        toast.success('Proposal generated!')
+      }
+    } catch (err) {
+      toast.error('Failed to generate: ' + err.message)
+    }
+    setGenerating(false)
+  }
+
+  const logoUrl = businessUnit?.logo_url || company?.logo_url
+  const custName = customer?.business_name || customer?.name || ''
+  const sections = proposalLayout?.sections || []
+  const heroSection = sections.find(s => s.type === 'hero')
+  const approvalSection = sections.find(s => s.type === 'approval')
+  const contentSections = sections.filter(s => s.type !== 'hero' && s.type !== 'approval')
+
+  const sectionLabel = (type) => ({
+    executive_summary: 'Executive Summary',
+    problem_statement: 'The Challenge',
+    solution_overview: 'Proposed Solution',
+    line_items: 'Line Items',
+    cost_breakdown: 'Investment Breakdown',
+    savings_timeline: 'Savings Over Time',
+    roi_summary: 'ROI Summary',
+    utility_incentive: 'Utility Incentive',
+    team: 'Your Team',
+  }[type] || type)
 
   return (
     <div style={{
-      position: 'fixed',
-      inset: 0,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '16px',
-      zIndex: 50
+      position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 50
     }}>
       <div style={{
-        backgroundColor: theme.bgCard,
-        borderRadius: '16px',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
-        width: '100%',
+        backgroundColor: theme.bgCard, borderRadius: '16px',
+        boxShadow: '0 20px 40px rgba(0,0,0,0.15)', width: '100%',
         maxWidth: step === 'preview' ? '680px' : '420px',
-        maxHeight: '90vh',
-        display: 'flex',
-        flexDirection: 'column',
+        maxHeight: '90vh', display: 'flex', flexDirection: 'column',
         transition: 'max-width 0.2s ease'
       }}>
-        {/* Header */}
+        {/* Header with mode toggle */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '20px',
-          borderBottom: `1px solid ${theme.border}`,
-          flexShrink: 0
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 20px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             {step === 'send' && (
-              <button
-                onClick={() => setStep('preview')}
-                style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: theme.textSecondary, display: 'flex' }}
-              >
+              <button onClick={() => setStep('preview')}
+                style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: theme.textSecondary, display: 'flex' }}>
                 <ArrowLeft size={18} />
               </button>
             )}
-            <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
-              {step === 'preview' ? 'Preview Estimate' : 'Send Estimate'}
-            </h2>
+            {step === 'preview' ? (
+              <div style={{
+                display: 'flex', backgroundColor: theme.bg, borderRadius: '8px',
+                border: `1px solid ${theme.border}`, overflow: 'hidden',
+              }}>
+                {[['pdf', 'PDF'], ['interactive', 'Interactive Proposal']].map(([val, label]) => (
+                  <button key={val} onClick={() => handleModeChange(val)}
+                    style={{
+                      padding: '7px 14px', fontSize: '13px', fontWeight: '500', border: 'none', cursor: 'pointer',
+                      backgroundColor: mode === val ? theme.accent : 'transparent',
+                      color: mode === val ? '#fff' : theme.textSecondary,
+                    }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                {mode === 'interactive' ? 'Send Proposal' : 'Send Estimate'}
+              </h2>
+            )}
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
             <X size={20} />
@@ -3099,137 +3496,189 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
 
         {step === 'preview' ? (
           <>
-            {/* Preview content */}
-            <div style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '24px',
-              backgroundColor: '#f7f5ef'
-            }}>
-              <div style={{
-                backgroundColor: '#ffffff',
-                borderRadius: '8px',
-                border: '1px solid #d6cdb8',
-                padding: '28px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
-              }}>
-                <EstimatePreview
-                  estimate={estimate}
-                  lineItems={lineItems}
-                  company={company}
-                  businessUnit={businessUnit}
-                  settings={settings}
-                />
-              </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px', backgroundColor: '#f7f5ef' }}>
+              {mode === 'interactive' ? (
+                proposalLayout ? (
+                  <div style={{
+                    backgroundColor: '#fff', borderRadius: '10px',
+                    border: '1px solid #d6cdb8', overflow: 'hidden',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+                  }}>
+                    {/* Hero */}
+                    <div style={{
+                      backgroundColor: '#2c3530', padding: '32px 24px', textAlign: 'center',
+                      backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(90,99,73,0.3) 0%, transparent 50%)',
+                    }}>
+                      {logoUrl && <img src={logoUrl} alt="" style={{ maxHeight: '36px', maxWidth: '120px', objectFit: 'contain', marginBottom: '12px', filter: 'brightness(0) invert(1)' }} />}
+                      <p style={{ color: '#fff', fontSize: '18px', fontWeight: '700', margin: '0 0 4px' }}>
+                        {heroSection?.heading || `Proposal for ${custName}`}
+                      </p>
+                      <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '13px', margin: 0 }}>
+                        {heroSection?.subheading || `Prepared by ${company?.company_name || ''}`}
+                      </p>
+                    </div>
+
+                    {/* Content sections */}
+                    {contentSections.map((s, i) => (
+                      <div key={i} style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                        <div style={{
+                          width: '6px', minHeight: '100%', borderRadius: '3px', flexShrink: 0,
+                          backgroundColor: s.type === 'roi_summary' ? '#4a7c59' : s.type === 'cost_breakdown' ? theme.accent : theme.border,
+                        }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: '11px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 3px' }}>
+                            {sectionLabel(s.type)}
+                          </p>
+                          {s.content && (
+                            <p style={{ color: theme.textSecondary, fontSize: '12px', margin: 0, lineHeight: 1.5 }}>
+                              {s.content.length > 150 ? s.content.substring(0, 150) + '...' : s.content}
+                            </p>
+                          )}
+                          {s.type === 'line_items' && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                              {(lineItems || []).slice(0, 4).map((li, j) => (
+                                <span key={j} style={{ backgroundColor: theme.accentBg, color: theme.accent, padding: '2px 8px', borderRadius: '10px', fontSize: '10px' }}>
+                                  {li.item_name || li.description || 'Item'}
+                                </span>
+                              ))}
+                              {(lineItems || []).length > 4 && <span style={{ fontSize: '10px', color: theme.textMuted }}>+{lineItems.length - 4}</span>}
+                            </div>
+                          )}
+                          {s.type === 'roi_summary' && s.metrics && (
+                            <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
+                              {[
+                                s.metrics.annual_savings && { v: `$${Math.round(s.metrics.annual_savings).toLocaleString()}`, l: '/yr savings' },
+                                s.metrics.payback_months && { v: `${s.metrics.payback_months}mo`, l: 'payback' },
+                                s.metrics.roi_percent && { v: `${s.metrics.roi_percent}%`, l: 'ROI' },
+                              ].filter(Boolean).map((m, j) => (
+                                <span key={j} style={{ fontSize: '13px', fontWeight: '700', color: '#4a7c59' }}>
+                                  {m.v} <span style={{ fontSize: '10px', fontWeight: '400', color: theme.textMuted }}>{m.l}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {s.type === 'savings_timeline' && (
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', marginTop: '6px', height: '24px' }}>
+                              {[15, 30, 45, 55, 70, 85, 100].map((h, j) => (
+                                <div key={j} style={{ width: '10px', height: `${h}%`, backgroundColor: theme.accent, borderRadius: '2px', opacity: 0.25 + (j * 0.1) }} />
+                              ))}
+                            </div>
+                          )}
+                          {s.type === 'cost_breakdown' && (
+                            <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                              {['#5a6349', '#7d8a7f', '#a8b5a0', '#d6cdb8'].slice(0, Math.min(lineItems?.length || 1, 4)).map((c, j) => (
+                                <div key={j} style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: c }} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* CTA footer */}
+                    <div style={{ backgroundColor: '#2c3530', padding: '16px', textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', padding: '8px 20px', backgroundColor: '#4a7c59', color: '#fff', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>
+                        {approvalSection?.cta_text || 'Approve This Proposal'}
+                      </span>
+                    </div>
+
+                    {/* Regen */}
+                    <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                        Generated {proposalLayout.generated_at ? new Date(proposalLayout.generated_at).toLocaleDateString() : ''}
+                      </span>
+                      <button onClick={handleGenerate} disabled={generating}
+                        style={{ padding: '4px 12px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '11px', cursor: generating ? 'not-allowed' : 'pointer' }}>
+                        {generating ? 'Generating...' : 'Regenerate'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* No layout yet — generate CTA */
+                  <div style={{
+                    backgroundColor: '#fff', borderRadius: '10px', border: '1px solid #d6cdb8',
+                    padding: '48px 24px', textAlign: 'center',
+                  }}>
+                    <FileText size={36} color={theme.textMuted} style={{ marginBottom: '12px' }} />
+                    <p style={{ color: theme.text, fontWeight: '600', fontSize: '16px', margin: '0 0 6px' }}>
+                      Create Interactive Proposal
+                    </p>
+                    <p style={{ color: theme.textMuted, fontSize: '13px', margin: '0 0 24px', lineHeight: 1.6, maxWidth: '340px', marginLeft: 'auto', marginRight: 'auto' }}>
+                      AI will write compelling copy for each section based on your line items and estimate details.
+                    </p>
+                    <button onClick={handleGenerate} disabled={generating}
+                      style={{
+                        padding: '12px 32px', backgroundColor: generating ? theme.textMuted : theme.accent,
+                        color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '600',
+                        cursor: generating ? 'not-allowed' : 'pointer',
+                      }}>
+                      {generating ? 'Generating proposal...' : 'Generate with AI'}
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div style={{
+                  backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #d6cdb8',
+                  padding: '28px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+                }}>
+                  <EstimatePreview estimate={estimate} lineItems={lineItems} company={company} businessUnit={businessUnit} settings={settings} />
+                </div>
+              )}
             </div>
 
-            {/* Preview footer */}
-            <div style={{
-              padding: '16px 20px',
-              borderTop: `1px solid ${theme.border}`,
-              display: 'flex',
-              gap: '12px',
-              flexShrink: 0
-            }}>
-              <button
-                onClick={onClose}
-                style={{
-                  flex: 1,
-                  padding: '10px 16px',
-                  border: `1px solid ${theme.border}`,
-                  backgroundColor: 'transparent',
-                  color: theme.text,
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  cursor: 'pointer'
-                }}
-              >
+            {/* Footer */}
+            <div style={{ padding: '14px 20px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: '12px', flexShrink: 0 }}>
+              <button onClick={onClose}
+                style={{ flex: 1, padding: '10px 16px', border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.text, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
                 Close
               </button>
-              <button
-                onClick={() => setStep('send')}
+              <button onClick={() => setStep('send')}
+                disabled={mode === 'interactive' && !proposalLayout}
                 style={{
-                  flex: 1,
-                  padding: '10px 16px',
-                  backgroundColor: theme.accent,
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
-                }}
-              >
+                  flex: 1, padding: '10px 16px', backgroundColor: theme.accent, color: '#fff',
+                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',
+                  cursor: (mode === 'interactive' && !proposalLayout) ? 'not-allowed' : 'pointer',
+                  opacity: (mode === 'interactive' && !proposalLayout) ? 0.5 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                }}>
                 <Send size={16} />
                 Continue to Send
               </button>
             </div>
           </>
         ) : (
-          <>
-            {/* Send form */}
-            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={labelStyle}>Recipient Email</label>
-                <input
-                  type="email"
-                  value={sendEmail}
-                  onChange={(e) => setSendEmail(e.target.value)}
-                  placeholder="customer@example.com"
-                  style={inputStyle}
-                />
-              </div>
-
-              <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
-                A PDF of the estimate shown in the preview will be generated and attached to the email.
-              </p>
-
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  onClick={() => setStep('preview')}
-                  style={{
-                    flex: 1,
-                    padding: '10px 16px',
-                    border: `1px solid ${theme.border}`,
-                    backgroundColor: 'transparent',
-                    color: theme.text,
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Back
-                </button>
-                <button
-                  onClick={onSend}
-                  disabled={sendingEmail}
-                  style={{
-                    flex: 1,
-                    padding: '10px 16px',
-                    backgroundColor: theme.accent,
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: sendingEmail ? 'not-allowed' : 'pointer',
-                    opacity: sendingEmail ? 0.6 : 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px'
-                  }}
-                >
-                  <Mail size={16} />
-                  {sendingEmail ? 'Sending...' : 'Send Email'}
-                </button>
-              </div>
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label style={labelStyle}>Recipient Email</label>
+              <input type="email" value={sendEmail} onChange={(e) => setSendEmail(e.target.value)} placeholder="customer@example.com" style={inputStyle} />
             </div>
-          </>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', backgroundColor: mode === 'interactive' ? 'rgba(90,99,73,0.08)' : theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: mode === 'interactive' ? theme.accent : theme.textMuted }} />
+              <p style={{ fontSize: '13px', color: theme.textSecondary, margin: 0 }}>
+                {mode === 'interactive'
+                  ? 'Customer will receive a link to an interactive proposal.'
+                  : 'A PDF will be generated and attached to the email.'}
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={() => setStep('preview')}
+                style={{ flex: 1, padding: '10px 16px', border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.text, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                Back
+              </button>
+              <button onClick={onSend} disabled={sendingEmail}
+                style={{
+                  flex: 1, padding: '10px 16px', backgroundColor: theme.accent, color: '#fff',
+                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',
+                  cursor: sendingEmail ? 'not-allowed' : 'pointer', opacity: sendingEmail ? 0.6 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                }}>
+                <Mail size={16} />
+                {sendingEmail ? 'Sending...' : (mode === 'interactive' ? 'Send Proposal' : 'Send Email')}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

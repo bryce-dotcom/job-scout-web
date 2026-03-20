@@ -35,7 +35,10 @@ serve(async (req) => {
       business_unit_phone,
       business_unit_email,
       business_unit_address,
+      presentation_mode,
     } = await req.json();
+
+    const isInteractive = presentation_mode === 'interactive';
 
     if (!recipient_email || !estimate_id) {
       return new Response(JSON.stringify({ error: 'recipient_email and estimate_id are required' }),
@@ -106,7 +109,9 @@ serve(async (req) => {
       <!-- Body -->
       <div style="border-top:1px solid #e8e4db;padding-top:24px;">
         <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
-          Thank you for your interest. Please find your estimate attached to this email as a PDF document.
+          ${isInteractive
+            ? 'We\'ve prepared a detailed proposal for your review. Click below to view your interactive proposal with project details, cost breakdown, and projected savings.'
+            : 'Thank you for your interest. Please find your estimate attached to this email as a PDF document.'}
         </p>
         <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
           If you have any questions or would like to proceed, please don't hesitate to reach out${contactPhone ? ` at <strong>${contactPhone}</strong>` : ''}.
@@ -116,11 +121,11 @@ serve(async (req) => {
         ${portal_url ? `
         <div style="text-align:center;margin:28px 0 8px 0;">
           <a href="${portal_url}" style="display:inline-block;padding:14px 36px;background-color:#5a6349;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;border-radius:8px;">
-            View Estimate Online
+            ${isInteractive ? 'View Your Proposal' : 'View Estimate Online'}
           </a>
         </div>
         <p style="text-align:center;color:#7d8a7f;font-size:12px;margin:8px 0 0 0;">
-          Click above to view and approve your estimate online.
+          ${isInteractive ? 'Click above to view your interactive proposal and approve online.' : 'Click above to view and approve your estimate online.'}
         </p>
         ` : ''}
       </div>
@@ -143,7 +148,7 @@ serve(async (req) => {
     const emailPayload: Record<string, unknown> = {
       from: `${displayName} <estimates@jobscout.appsannex.com>`,
       to: [recipient_email],
-      subject: `Estimate ${estNum} from ${displayName}`,
+      subject: isInteractive ? `Your Proposal from ${displayName}` : `Estimate ${estNum} from ${displayName}`,
       html: htmlBody,
     };
 

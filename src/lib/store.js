@@ -25,6 +25,7 @@ export const useStore = create(
 
       // Products & Quotes
       products: [],
+      productComponents: [],
       quotes: [],
 
       // Jobs & Work
@@ -372,6 +373,53 @@ export const useStore = create(
         } catch (e) {
           console.log('[fetchProducts] Offline, using cache');
         }
+      },
+
+      // ========================================
+      // Product Components (Bundles)
+      // ========================================
+
+      fetchProductComponents: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+        try {
+          const { data, error } = await supabase
+            .from('product_components')
+            .select('*')
+            .eq('company_id', companyId);
+          if (!error) set({ productComponents: data || [] });
+        } catch (e) {
+          console.log('[fetchProductComponents] Error:', e.message);
+        }
+      },
+
+      saveProductComponents: async (parentProductId, components) => {
+        const { companyId } = get();
+        if (!companyId || !parentProductId) return;
+
+        // Delete existing components for this parent
+        await supabase
+          .from('product_components')
+          .delete()
+          .eq('parent_product_id', parentProductId)
+          .eq('company_id', companyId);
+
+        // Insert new components
+        if (components.length > 0) {
+          const rows = components.map(c => ({
+            parent_product_id: parentProductId,
+            component_product_id: c.component_product_id,
+            quantity: c.quantity,
+            company_id: companyId
+          }));
+          const { error } = await supabase
+            .from('product_components')
+            .insert(rows);
+          if (error) console.error('[saveProductComponents] Insert error:', error.message);
+        }
+
+        // Refresh
+        await get().fetchProductComponents();
       },
 
       fetchQuotes: async () => {
@@ -1983,6 +2031,7 @@ export const useStore = create(
           fetchSalesPipeline,
           fetchAppointments,
           fetchProducts,
+          fetchProductComponents,
           fetchQuotes,
           fetchJobs,
           fetchInvoices,
@@ -2030,6 +2079,7 @@ export const useStore = create(
           ['salesPipeline', fetchSalesPipeline()],
           ['appointments', fetchAppointments()],
           ['products', fetchProducts()],
+          ['productComponents', fetchProductComponents()],
           ['quotes', fetchQuotes()],
           ['jobs', fetchJobs()],
           ['invoices', fetchInvoices()],

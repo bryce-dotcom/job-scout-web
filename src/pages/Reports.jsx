@@ -27,7 +27,8 @@ import {
   ClipboardList,
   X,
   Loader2,
-  Table2
+  Table2,
+  Boxes
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -148,31 +149,9 @@ export default function Reports() {
 
   // ── Report Data Computations ──────────────────────────────────────
 
-  const salesReportData = useMemo(() => {
-    const filteredLeads = filterByDate(leads, 'created_at')
-    const totalLeads = filteredLeads.length
-    const converted = filteredLeads.filter(l => l.status === 'Won' || l.status === 'Converted').length
-    const conversionRate = totalLeads > 0 ? converted / totalLeads : 0
-    const byStatus = {}
-    filteredLeads.forEach(l => { byStatus[l.status] = (byStatus[l.status] || 0) + 1 })
-    const bySource = {}
-    filteredLeads.forEach(l => { bySource[l.lead_source || 'Unknown'] = (bySource[l.lead_source || 'Unknown'] || 0) + 1 })
-    const pipelineValue = salesPipeline.filter(d => !['Won', 'Lost'].includes(d.stage)).reduce((sum, d) => sum + (parseFloat(d.quote_amount) || 0), 0)
-    return { totalLeads, converted, conversionRate, byStatus, bySource, pipelineValue }
-  }, [leads, salesPipeline, dateRange])
+  // salesReportData moved to standalone SalesReport component
 
-  const jobsReportData = useMemo(() => {
-    const filteredJobs = filterByDate(jobs, 'start_date')
-    const totalJobs = filteredJobs.length
-    const completed = filteredJobs.filter(j => j.status === 'Completed').length
-    const totalRevenue = filteredJobs.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
-    const avgJobValue = totalJobs > 0 ? totalRevenue / totalJobs : 0
-    const byStatus = {}
-    filteredJobs.forEach(j => { byStatus[j.status] = (byStatus[j.status] || 0) + 1 })
-    const totalAllotted = filteredJobs.reduce((sum, j) => sum + (parseFloat(j.allotted_time_hours) || 0), 0)
-    const totalTracked = filteredJobs.reduce((sum, j) => sum + (parseFloat(j.time_tracked) || 0), 0)
-    return { totalJobs, completed, totalRevenue, avgJobValue, byStatus, totalAllotted, totalTracked }
-  }, [jobs, dateRange])
+  // jobsReportData moved to standalone JobsReport component
 
   const financialReportData = useMemo(() => {
     const filteredInvoices = filterByDate(invoices, 'created_at')
@@ -284,46 +263,9 @@ export default function Reports() {
 
   // ── Preset Report Renderers ───────────────────────────────────────
 
-  const renderSalesReport = () => {
-    const d = salesReportData
-    return (
-      <div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-          <StatCard label="Total Leads" value={d.totalLeads} />
-          <StatCard label="Converted" value={d.converted} />
-          <StatCard label="Conversion Rate" value={formatPercent(d.conversionRate)} />
-          <StatCard label="Pipeline Value" value={formatCurrency(d.pipelineValue)} />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-          <BreakdownTable title="Leads by Status" entries={Object.entries(d.byStatus)} />
-          <BreakdownTable title="Leads by Source" entries={Object.entries(d.bySource)} />
-        </div>
-      </div>
-    )
-  }
+  // Sales report is now a standalone component (SalesReport) below
 
-  const renderJobsReport = () => {
-    const d = jobsReportData
-    const efficiency = d.totalAllotted > 0 ? d.totalTracked / d.totalAllotted : 0
-    return (
-      <div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-          <StatCard label="Total Jobs" value={d.totalJobs} />
-          <StatCard label="Completed" value={d.completed} />
-          <StatCard label="Total Revenue" value={formatCurrency(d.totalRevenue)} />
-          <StatCard label="Avg Job Value" value={formatCurrency(d.avgJobValue)} />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-          <BreakdownTable title="Jobs by Status" entries={Object.entries(d.byStatus)} />
-          <BreakdownTable title="Time Tracking" entries={[
-            ['Time Allotted', `${d.totalAllotted.toFixed(1)} hrs`],
-            ['Time Tracked', `${d.totalTracked.toFixed(1)} hrs`],
-            ['Efficiency', d.totalAllotted > 0 ? formatPercent(efficiency) : 'N/A']
-          ]} valueColor={efficiency > 1 ? '#c25a5a' : '#4a7c59'} />
-        </div>
-      </div>
-    )
-  }
+  // Jobs report is now a standalone component (JobsReport) below
 
   const renderFinancialReport = () => {
     const d = financialReportData
@@ -439,8 +381,8 @@ export default function Reports() {
 
   const renderReport = () => {
     switch (reportType) {
-      case 'sales': return renderSalesReport()
-      case 'jobs': return renderJobsReport()
+      case 'sales': return <SalesReport theme={theme} companyId={companyId} leads={leads} employees={employees} salesPipeline={salesPipeline} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
+      case 'jobs': return <JobsReport theme={theme} companyId={companyId} jobs={jobs} employees={employees} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
       case 'financial': return renderFinancialReport()
       case 'employee': return renderEmployeeReport()
       case 'inventory': return renderInventoryReport()
@@ -454,24 +396,13 @@ export default function Reports() {
   // Handle export for preset reports
   const handleExport = () => {
     switch (reportType) {
-      case 'sales': {
-        const d = salesReportData
-        exportCSV(
-          ['Status', 'Count'],
-          [...Object.entries(d.byStatus), ...Object.entries(d.bySource).map(([s, c]) => [`Source: ${s}`, c])],
-          'sales_report'
-        )
+      case 'sales':
+        toast.info('Use the export button within the report')
         break
-      }
-      case 'jobs': {
-        const d = jobsReportData
-        exportCSV(
-          ['Status', 'Count'],
-          Object.entries(d.byStatus),
-          'jobs_report'
-        )
+      case 'jobs':
+        // Export handled inside JobsReport component
+        toast.info('Use the export button within the report')
         break
-      }
       case 'financial': {
         const d = financialReportData
         exportCSV(
@@ -605,33 +536,860 @@ export default function Reports() {
 // PRODUCTS NEEDED REPORT
 // ═══════════════════════════════════════════════════════════════════
 
-function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency, inputStyle, pillStyle, exportCSV }) {
+const FALLBACK_STATUSES = [
+  { id: 'Chillin', name: 'Chillin' },
+  { id: 'Scheduled', name: 'Scheduled' },
+  { id: 'In Progress', name: 'In Progress' },
+  { id: 'On Hold', name: 'On Hold' },
+  { id: 'Complete', name: 'Complete' }
+]
+
+// ── Sales Report Component ────────────────────────────────────────
+function SalesReport({ theme, companyId, leads, employees, salesPipeline, formatCurrency, inputStyle, pillStyle, exportCSV }) {
+  const navigate = useNavigate()
+  const quotes = useStore((state) => state.quotes)
+  const [statusFilters, setStatusFilters] = useState([])
+  const [buFilter, setBuFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('')
+  const [dateStart, setDateStart] = useState('')
+  const [dateEnd, setDateEnd] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [sortField, setSortField] = useState('created_at')
+  const [sortDir, setSortDir] = useState('desc')
+  const [expandedLeads, setExpandedLeads] = useState(new Set())
+
+  const allStatuses = useMemo(() => {
+    const s = new Set()
+    leads.forEach(l => { if (l.status) s.add(l.status) })
+    return [...s].sort()
+  }, [leads])
+
+  const allSources = useMemo(() => {
+    const s = new Set()
+    leads.forEach(l => { if (l.lead_source) s.add(l.lead_source) })
+    return [...s].sort()
+  }, [leads])
+
+  useEffect(() => {
+    if (allStatuses.length > 0 && statusFilters.length === 0) {
+      setStatusFilters([...allStatuses])
+    }
+  }, [allStatuses])
+
+  const businessUnits = [...new Set(leads.map(l => l.business_unit).filter(Boolean))]
+
+  // Build quote amount map: leadId -> quote_amount
+  const quoteAmountMap = useMemo(() => {
+    const map = {}
+    ;(quotes || []).forEach(q => {
+      if (q.lead_id) map[q.lead_id] = (map[q.lead_id] || 0) + (parseFloat(q.quote_amount) || 0)
+    })
+    return map
+  }, [quotes])
+
+  const filtered = useMemo(() => {
+    return leads.filter(l => {
+      if (statusFilters.length > 0 && !statusFilters.includes(l.status)) return false
+      if (buFilter && l.business_unit !== buFilter) return false
+      if (sourceFilter && l.lead_source !== sourceFilter) return false
+      if (dateStart && (l.created_at || l.created_date || '') < dateStart) return false
+      if (dateEnd && (l.created_at || l.created_date || '') > dateEnd + 'T23:59:59') return false
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase()
+        const name = (l.customer_name || l.business_name || l.lead_id || '').toLowerCase()
+        const addr = (l.address || '').toLowerCase()
+        const email = (l.email || '').toLowerCase()
+        if (!name.includes(q) && !addr.includes(q) && !email.includes(q) && !(l.lead_id || '').toLowerCase().includes(q)) return false
+      }
+      return true
+    })
+  }, [leads, statusFilters, buFilter, sourceFilter, dateStart, dateEnd, searchTerm])
+
+  const enrichedLeads = useMemo(() => {
+    return filtered.map(l => {
+      const quoteAmount = quoteAmountMap[l.id] || 0
+      const salesperson = employees.find(e => e.id === l.salesperson_id)
+      const setter = employees.find(e => e.id === l.setter_id)
+      const daysSinceCreated = l.created_at ? Math.floor((Date.now() - new Date(l.created_at).getTime()) / 86400000) : null
+      const daysSinceContact = l.last_contact_at ? Math.floor((Date.now() - new Date(l.last_contact_at).getTime()) / 86400000) : null
+      return {
+        ...l,
+        quoteAmount,
+        salespersonName: salesperson?.name || l.salesperson || '',
+        setterName: setter?.name || '',
+        daysSinceCreated,
+        daysSinceContact,
+        contactAttempts: l.contact_attempts || 0
+      }
+    })
+  }, [filtered, quoteAmountMap, employees])
+
+  const sortedLeads = useMemo(() => {
+    const arr = [...enrichedLeads]
+    const dir = sortDir === 'desc' ? -1 : 1
+    arr.sort((a, b) => {
+      switch (sortField) {
+        case 'created_at': return dir * ((a.created_at || '').localeCompare(b.created_at || ''))
+        case 'customer': return dir * ((a.customer_name || '').localeCompare(b.customer_name || ''))
+        case 'amount': return dir * (a.quoteAmount - b.quoteAmount)
+        case 'source': return dir * ((a.lead_source || '').localeCompare(b.lead_source || ''))
+        case 'salesperson': return dir * ((a.salespersonName || '').localeCompare(b.salespersonName || ''))
+        case 'age': return dir * ((a.daysSinceCreated || 0) - (b.daysSinceCreated || 0))
+        default: return 0
+      }
+    })
+    return arr
+  }, [enrichedLeads, sortField, sortDir])
+
+  const toggleStatus = (s) => setStatusFilters(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
+  const toggleExpand = (id) => setExpandedLeads(prev => {
+    const n = new Set(prev)
+    n.has(id) ? n.delete(id) : n.add(id)
+    return n
+  })
+
+  // Summary stats
+  const totalLeads = enrichedLeads.length
+  const convertedLeads = enrichedLeads.filter(l => ['Won', 'Converted', 'Job Scheduled', 'Completed'].includes(l.status)).length
+  const conversionRate = totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0
+  const totalQuoteValue = enrichedLeads.reduce((s, l) => s + l.quoteAmount, 0)
+  const pipelineValue = salesPipeline.filter(d => !['Won', 'Lost', 'Completed'].includes(d.stage)).reduce((sum, d) => sum + (parseFloat(d.quote_amount) || 0), 0)
+  const avgDealSize = convertedLeads > 0 ? totalQuoteValue / convertedLeads : 0
+
+  const SortHeader = ({ field, children, align }) => (
+    <th
+      onClick={() => { if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(field); setSortDir('desc') } }}
+      style={{ padding: '10px 12px', textAlign: align || 'right', fontSize: '12px', fontWeight: '600', color: theme.textMuted, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        {children}
+        {sortField === field && <ArrowUpDown size={12} style={{ opacity: 0.6 }} />}
+      </span>
+    </th>
+  )
+
+  const handleExport = () => {
+    exportCSV(
+      ['Lead ID', 'Customer', 'Business', 'Status', 'Source', 'BU', 'Created', 'Quote Amount', 'Salesperson', 'Setter', 'Phone', 'Email', 'Address', 'Contact Attempts', 'Days Since Created'],
+      sortedLeads.map(l => [
+        l.lead_id || '', l.customer_name || '', l.business_name || '', l.status || '', l.lead_source || '',
+        l.business_unit || '', (l.created_at || l.created_date || '').split('T')[0] || '',
+        l.quoteAmount.toFixed(2), l.salespersonName, l.setterName,
+        l.phone || '', l.email || '', l.address || '', l.contactAttempts, l.daysSinceCreated ?? ''
+      ]),
+      'sales_report'
+    )
+  }
+
+  const statusColor = (status) => {
+    const s = (status || '').toLowerCase()
+    if (['won', 'converted', 'job scheduled', 'completed'].includes(s)) return { bg: 'rgba(34,197,94,0.12)', text: '#22c55e' }
+    if (['lost', 'cancelled', 'dead'].includes(s)) return { bg: 'rgba(239,68,68,0.12)', text: '#ef4444' }
+    if (['new', 'new lead'].includes(s)) return { bg: 'rgba(59,130,246,0.12)', text: '#3b82f6' }
+    if (['quote sent', 'proposal sent'].includes(s)) return { bg: 'rgba(168,85,247,0.12)', text: '#a855f7' }
+    return { bg: theme.accentBg, text: theme.accent }
+  }
+
+  const fmtDate = (d) => { if (!d) return '—'; try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) } catch { return '—' } }
+
+  return (
+    <div>
+      {/* Filters */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end' }}>
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {allStatuses.map(s => (
+              <button key={s} onClick={() => toggleStatus(s)} style={{ ...pillStyle(statusFilters.includes(s)), border: 'none' }}>{s}</button>
+            ))}
+          </div>
+        </div>
+
+        {allSources.length > 0 && (
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Source</div>
+            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={{ ...inputStyle, minWidth: '140px' }}>
+              <option value="">All Sources</option>
+              {allSources.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
+
+        {businessUnits.length > 0 && (
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Business Unit</div>
+            <select value={buFilter} onChange={(e) => setBuFilter(e.target.value)} style={{ ...inputStyle, minWidth: '140px' }}>
+              <option value="">All Units</option>
+              {businessUnits.map(bu => <option key={bu} value={bu}>{bu}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date Range</div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input type="date" value={dateStart} onChange={(e) => setDateStart(e.target.value)} style={inputStyle} />
+            <span style={{ color: theme.textMuted, fontSize: '12px' }}>to</span>
+            <input type="date" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)} style={inputStyle} />
+            {(dateStart || dateEnd) && (
+              <button onClick={() => { setDateStart(''); setDateEnd('') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}><X size={14} /></button>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Search</div>
+          <div style={{ position: 'relative' }}>
+            <Search size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
+            <input
+              type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Customer, lead ID..."
+              style={{ ...inputStyle, paddingLeft: '28px', minWidth: '160px' }}
+            />
+          </div>
+        </div>
+
+        <button onClick={handleExport} style={{ ...pillStyle(false), display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
+          <Download size={14} /> Export CSV
+        </button>
+      </div>
+
+      {/* Summary Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Leads</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{totalLeads}</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted }}>{convertedLeads} converted</div>
+        </div>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Conversion Rate</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: conversionRate >= 30 ? '#22c55e' : conversionRate >= 15 ? '#eab308' : '#ef4444' }}>{conversionRate.toFixed(1)}%</div>
+        </div>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Quote Value</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{formatCurrency(totalQuoteValue)}</div>
+        </div>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pipeline</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: '#3b82f6' }}>{formatCurrency(pipelineValue)}</div>
+        </div>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Avg Deal</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{formatCurrency(avgDealSize)}</div>
+        </div>
+      </div>
+
+      {/* Leads Table */}
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '10px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ backgroundColor: theme.accentBg }}>
+              <th style={{ width: '24px', padding: '10px 6px 10px 14px' }}></th>
+              <SortHeader field="created_at" align="left">Date</SortHeader>
+              <SortHeader field="customer" align="left">Lead / Customer</SortHeader>
+              <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textAlign: 'left' }}>Status</th>
+              <SortHeader field="source" align="left">Source</SortHeader>
+              <SortHeader field="amount">Quote $</SortHeader>
+              <SortHeader field="salesperson" align="left">Salesperson</SortHeader>
+              <SortHeader field="age">Age</SortHeader>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedLeads.length === 0 && (
+              <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>No leads match filters</td></tr>
+            )}
+            {sortedLeads.map(l => {
+              const isExpanded = expandedLeads.has(l.id)
+              const sc = statusColor(l.status)
+              return (
+                <Fragment key={l.id}>
+                  <tr
+                    onClick={() => toggleExpand(l.id)}
+                    style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer', backgroundColor: isExpanded ? theme.accentBg : 'transparent' }}
+                    onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.backgroundColor = theme.bgCardHover }}
+                    onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.backgroundColor = 'transparent' }}
+                  >
+                    <td style={{ padding: '10px 6px 10px 14px', color: theme.textMuted }}>
+                      {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
+                      {fmtDate(l.created_at || l.created_date)}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{l.customer_name || l.business_name || l.lead_id || '—'}</div>
+                      {l.business_name && l.customer_name && <div style={{ fontSize: '11px', color: theme.textMuted }}>{l.business_name}</div>}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span style={{
+                        display: 'inline-block', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600',
+                        backgroundColor: sc.bg, color: sc.text
+                      }}>
+                        {l.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', fontSize: '12px', color: theme.textSecondary }}>
+                      {l.lead_source || '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px', fontWeight: l.quoteAmount > 0 ? '600' : '400', color: l.quoteAmount > 0 ? theme.text : theme.textMuted }}>
+                      {l.quoteAmount > 0 ? formatCurrency(l.quoteAmount) : '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontSize: '12px', color: theme.textSecondary }}>
+                      {l.salespersonName || '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '12px' }}>
+                      <span style={{ color: (l.daysSinceCreated || 0) > 30 ? '#ef4444' : (l.daysSinceCreated || 0) > 14 ? '#eab308' : theme.textSecondary }}>
+                        {l.daysSinceCreated != null ? `${l.daysSinceCreated}d` : '—'}
+                      </span>
+                    </td>
+                  </tr>
+
+                  {/* Expanded Detail */}
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: 0 }}>
+                        <div style={{ padding: '16px 20px 16px 44px', backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                            <div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Contact Info</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '12px' }}>
+                                {l.phone && <div><strong style={{ color: theme.textSecondary }}>Phone:</strong> <span style={{ color: theme.text }}>{l.phone}</span></div>}
+                                {l.email && <div><strong style={{ color: theme.textSecondary }}>Email:</strong> <span style={{ color: theme.text }}>{l.email}</span></div>}
+                                {l.address && <div><strong style={{ color: theme.textSecondary }}>Address:</strong> <span style={{ color: theme.text }}>{l.address}</span></div>}
+                                {l.business_unit && <div><strong style={{ color: theme.textSecondary }}>BU:</strong> <span style={{ color: theme.text }}>{l.business_unit}</span></div>}
+                              </div>
+                              <button onClick={(e) => { e.stopPropagation(); navigate(`/leads/${l.id}`) }} style={{ marginTop: '8px', fontSize: '12px', color: theme.accent, background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', padding: '4px 10px', cursor: 'pointer' }}>
+                                Open Lead
+                              </button>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Sales Activity</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Salesperson</span><span style={{ fontWeight: '500' }}>{l.salespersonName || '—'}</span></div>
+                                {l.setterName && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Setter</span><span>{l.setterName}</span></div>}
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Contact Attempts</span><span>{l.contactAttempts}</span></div>
+                                {l.last_contact_at && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Last Contact</span><span>{fmtDate(l.last_contact_at)} ({l.daysSinceContact}d ago)</span></div>}
+                                {l.appointment_time && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Appointment</span><span>{fmtDate(l.appointment_time)}</span></div>}
+                                {l.callback_date && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Callback</span><span>{fmtDate(l.callback_date)}</span></div>}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Deal Info</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Quote Value</span><span style={{ fontWeight: '600' }}>{l.quoteAmount > 0 ? formatCurrency(l.quoteAmount) : '—'}</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Quote Generated</span><span>{l.quote_generated ? 'Yes' : 'No'}</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Service Type</span><span>{l.service_type || '—'}</span></div>
+                                {l.converted_at && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#22c55e' }}>Converted</span><span style={{ color: '#22c55e' }}>{fmtDate(l.converted_at)}</span></div>}
+                                {l.notes && <div style={{ marginTop: '4px', padding: '6px 8px', backgroundColor: theme.bgCard, borderRadius: '6px', fontSize: '11px', color: theme.textSecondary }}>{l.notes}</div>}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Jobs Report Component ─────────────────────────────────────────
+function JobsReport({ theme, companyId, jobs, employees, formatCurrency, inputStyle, pillStyle, exportCSV }) {
+  const storeJobStatuses = useStore((state) => state.jobStatuses)
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [jobLines, setJobLines] = useState([])
-  const [statusFilters, setStatusFilters] = useState(['Scheduled', 'In Progress'])
+  const [statusFilters, setStatusFilters] = useState([])
   const [buFilter, setBuFilter] = useState('')
   const [dateStart, setDateStart] = useState('')
   const [dateEnd, setDateEnd] = useState('')
-  const [groupBy, setGroupBy] = useState('product') // 'product' | 'job' | 'status'
-  const [expandedJobs, setExpandedJobs] = useState(new Set())
-  const [sortField, setSortField] = useState('qty')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [sortField, setSortField] = useState('start_date')
   const [sortDir, setSortDir] = useState('desc')
+  const [expandedJobs, setExpandedJobs] = useState(new Set())
 
-  const allStatuses = ['Scheduled', 'In Progress', 'On Hold', 'Completed', 'Cancelled']
+  const allStatuses = useMemo(() => {
+    if (storeJobStatuses && storeJobStatuses.length > 0) {
+      return storeJobStatuses.map(s => typeof s === 'string' ? s : (s.id || s.name))
+    }
+    return FALLBACK_STATUSES.map(s => s.id)
+  }, [storeJobStatuses])
+
+  useEffect(() => {
+    if (allStatuses.length > 0 && statusFilters.length === 0) {
+      setStatusFilters([...allStatuses]) // start with all selected
+    }
+  }, [allStatuses])
+
   const businessUnits = [...new Set(jobs.map(j => j.business_unit).filter(Boolean))]
 
-  // Fetch all job_lines with product data for the company
+  // Fetch job_lines for costing data
   useEffect(() => {
     if (!companyId) return
     const load = async () => {
       setLoading(true)
       const { data } = await supabase
         .from('job_lines')
-        .select('*, item:products_services(id, name, type, cost, unit_price, business_unit, item_id), job:jobs!job_id(id, job_id, job_title, status, start_date, end_date, business_unit, customer_name)')
+        .select('job_id, item_id, quantity, price, item:products_services(id, name, cost, unit_price)')
         .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-        .limit(10000)
+        .limit(20000)
       setJobLines(data || [])
+      setLoading(false)
+    }
+    load()
+  }, [companyId])
+
+  // Build job costing map: jobId -> { materialCost, revenue, lineItems }
+  const jobCostingMap = useMemo(() => {
+    const map = {}
+    jobLines.forEach(line => {
+      const jid = line.job_id
+      if (!map[jid]) map[jid] = { materialCost: 0, revenue: 0, items: [] }
+      const qty = parseFloat(line.quantity) || 1
+      const cost = parseFloat(line.item?.cost) || 0
+      const price = parseFloat(line.price) || parseFloat(line.item?.unit_price) || 0
+      map[jid].materialCost += cost * qty
+      map[jid].revenue += price * qty
+      map[jid].items.push({
+        name: line.item?.name || 'Item',
+        qty,
+        cost: cost * qty,
+        price: price * qty
+      })
+    })
+    return map
+  }, [jobLines])
+
+  const filtered = useMemo(() => {
+    return jobs.filter(j => {
+      if (statusFilters.length > 0 && !statusFilters.includes(j.status)) return false
+      if (buFilter && j.business_unit !== buFilter) return false
+      if (dateStart && j.start_date && j.start_date < dateStart) return false
+      if (dateEnd && j.start_date && j.start_date > dateEnd + 'T23:59:59') return false
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase()
+        const name = (j.customer_name || j.job_title || j.job_id || '').toLowerCase()
+        const addr = (j.job_address || j.address || '').toLowerCase()
+        if (!name.includes(q) && !addr.includes(q) && !(j.job_id || '').toLowerCase().includes(q)) return false
+      }
+      return true
+    })
+  }, [jobs, statusFilters, buFilter, dateStart, dateEnd, searchTerm])
+
+  const enrichedJobs = useMemo(() => {
+    return filtered.map(j => {
+      const costing = jobCostingMap[j.id] || { materialCost: 0, revenue: 0, items: [] }
+      const revenue = parseFloat(j.job_total) || costing.revenue
+      const materialCost = costing.materialCost
+      const sundry = materialCost * 0.03
+      const budget = materialCost + sundry
+      const expenseAmount = parseFloat(j.expense_amount) || 0
+      const totalCost = materialCost + expenseAmount
+      const incentive = parseFloat(j.utility_incentive) || 0
+      const discount = parseFloat(j.discount) || 0
+      const profit = revenue - totalCost - discount
+      const margin = revenue > 0 ? (profit / revenue) * 100 : 0
+      const allottedHours = parseFloat(j.allotted_time_hours) || parseFloat(j.calculated_allotted_time) || 0
+      const trackedHours = parseFloat(j.time_tracked) || 0
+      const timeEfficiency = allottedHours > 0 ? trackedHours / allottedHours : 0
+      const salesperson = employees.find(e => e.id === j.salesperson_id)
+
+      return {
+        ...j,
+        revenue,
+        materialCost,
+        sundry,
+        budget,
+        expenseAmount,
+        totalCost,
+        incentive,
+        discount,
+        profit,
+        margin,
+        allottedHours,
+        trackedHours,
+        timeEfficiency,
+        salesperson: salesperson?.name || '',
+        lineItems: costing.items
+      }
+    })
+  }, [filtered, jobCostingMap, employees])
+
+  // Sorted
+  const sortedJobs = useMemo(() => {
+    const arr = [...enrichedJobs]
+    const dir = sortDir === 'desc' ? -1 : 1
+    arr.sort((a, b) => {
+      switch (sortField) {
+        case 'start_date': return dir * ((a.start_date || '').localeCompare(b.start_date || ''))
+        case 'revenue': return dir * (a.revenue - b.revenue)
+        case 'cost': return dir * (a.totalCost - b.totalCost)
+        case 'profit': return dir * (a.profit - b.profit)
+        case 'margin': return dir * (a.margin - b.margin)
+        case 'customer': return dir * ((a.customer_name || '').localeCompare(b.customer_name || ''))
+        case 'time': return dir * (a.trackedHours - b.trackedHours)
+        default: return 0
+      }
+    })
+    return arr
+  }, [enrichedJobs, sortField, sortDir])
+
+  const toggleStatus = (s) => setStatusFilters(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
+  const toggleExpand = (id) => setExpandedJobs(prev => {
+    const n = new Set(prev)
+    n.has(id) ? n.delete(id) : n.add(id)
+    return n
+  })
+
+  // Summary stats
+  const totalRevenue = enrichedJobs.reduce((s, j) => s + j.revenue, 0)
+  const totalMaterialCost = enrichedJobs.reduce((s, j) => s + j.materialCost, 0)
+  const totalProfit = enrichedJobs.reduce((s, j) => s + j.profit, 0)
+  const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
+  const totalAllotted = enrichedJobs.reduce((s, j) => s + j.allottedHours, 0)
+  const totalTracked = enrichedJobs.reduce((s, j) => s + j.trackedHours, 0)
+  const completedJobs = enrichedJobs.filter(j => (j.status || '').toLowerCase().includes('complete')).length
+
+  const SortHeader = ({ field, children, align }) => (
+    <th
+      onClick={() => { if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(field); setSortDir('desc') } }}
+      style={{ padding: '10px 12px', textAlign: align || 'right', fontSize: '12px', fontWeight: '600', color: theme.textMuted, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        {children}
+        {sortField === field && <ArrowUpDown size={12} style={{ opacity: 0.6 }} />}
+      </span>
+    </th>
+  )
+
+  const handleExport = () => {
+    exportCSV(
+      ['Job ID', 'Title', 'Customer', 'Status', 'BU', 'Start Date', 'Revenue', 'Material Cost', 'Expenses', 'Total Cost', 'Profit', 'Margin %', 'Incentive', 'Discount', 'Allotted Hrs', 'Tracked Hrs', 'Salesperson'],
+      sortedJobs.map(j => [
+        j.job_id || '', j.job_title || '', j.customer_name || '', j.status || '', j.business_unit || '',
+        j.start_date?.split('T')[0] || '', j.revenue.toFixed(2), j.materialCost.toFixed(2), j.expenseAmount.toFixed(2),
+        j.totalCost.toFixed(2), j.profit.toFixed(2), j.margin.toFixed(1), j.incentive.toFixed(2), j.discount.toFixed(2),
+        j.allottedHours.toFixed(1), j.trackedHours.toFixed(1), j.salesperson
+      ]),
+      'jobs_report'
+    )
+  }
+
+  const marginColor = (m) => m >= 40 ? '#22c55e' : m >= 20 ? '#eab308' : '#ef4444'
+  const fmtDate = (d) => { if (!d) return '—'; try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) } catch { return '—' } }
+
+  if (loading) {
+    return (
+      <div style={{ padding: '60px', textAlign: 'center' }}>
+        <Loader2 size={32} style={{ color: theme.accent, animation: 'spin 1s linear infinite' }} />
+        <p style={{ color: theme.textMuted, marginTop: '12px' }}>Loading job data...</p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* Filters */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end' }}>
+        {/* Status pills */}
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {allStatuses.map(s => (
+              <button key={s} onClick={() => toggleStatus(s)} style={{ ...pillStyle(statusFilters.includes(s)), border: 'none' }}>{s}</button>
+            ))}
+          </div>
+        </div>
+
+        {businessUnits.length > 0 && (
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Business Unit</div>
+            <select value={buFilter} onChange={(e) => setBuFilter(e.target.value)} style={{ ...inputStyle, minWidth: '140px' }}>
+              <option value="">All Units</option>
+              {businessUnits.map(bu => <option key={bu} value={bu}>{bu}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date Range</div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input type="date" value={dateStart} onChange={(e) => setDateStart(e.target.value)} style={inputStyle} />
+            <span style={{ color: theme.textMuted, fontSize: '12px' }}>to</span>
+            <input type="date" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)} style={inputStyle} />
+            {(dateStart || dateEnd) && (
+              <button onClick={() => { setDateStart(''); setDateEnd('') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}><X size={14} /></button>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Search</div>
+          <div style={{ position: 'relative' }}>
+            <Search size={14} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
+            <input
+              type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Customer, job ID..."
+              style={{ ...inputStyle, paddingLeft: '28px', minWidth: '160px' }}
+            />
+          </div>
+        </div>
+
+        <button onClick={handleExport} style={{ ...pillStyle(false), display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto' }}>
+          <Download size={14} /> Export CSV
+        </button>
+      </div>
+
+      {/* Summary Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Jobs</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{enrichedJobs.length}</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted }}>{completedJobs} completed</div>
+        </div>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Revenue</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{formatCurrency(totalRevenue)}</div>
+        </div>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Material Cost</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: '#c25a5a' }}>{formatCurrency(totalMaterialCost)}</div>
+        </div>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Profit</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: totalProfit >= 0 ? '#22c55e' : '#ef4444' }}>{formatCurrency(totalProfit)}</div>
+          <div style={{ fontSize: '11px', color: marginColor(avgMargin), fontWeight: '600' }}>{avgMargin.toFixed(1)}% margin</div>
+        </div>
+        <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Time</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{totalTracked.toFixed(0)}h</div>
+          <div style={{ fontSize: '11px', color: totalTracked > totalAllotted && totalAllotted > 0 ? '#ef4444' : theme.textMuted }}>{totalAllotted.toFixed(0)}h allotted</div>
+        </div>
+      </div>
+
+      {/* Jobs Table */}
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '10px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ backgroundColor: theme.accentBg }}>
+              <th style={{ width: '24px', padding: '10px 6px 10px 14px' }}></th>
+              <SortHeader field="start_date" align="left">Date</SortHeader>
+              <SortHeader field="customer" align="left">Job / Customer</SortHeader>
+              <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textAlign: 'left' }}>Status</th>
+              <SortHeader field="revenue">Revenue</SortHeader>
+              <SortHeader field="cost">Cost</SortHeader>
+              <SortHeader field="profit">Profit</SortHeader>
+              <SortHeader field="margin">Margin</SortHeader>
+              <SortHeader field="time">Time</SortHeader>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedJobs.length === 0 && (
+              <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>No jobs match filters</td></tr>
+            )}
+            {sortedJobs.map(j => {
+              const isExpanded = expandedJobs.has(j.id)
+              return (
+                <Fragment key={j.id}>
+                  <tr
+                    onClick={() => toggleExpand(j.id)}
+                    style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer', backgroundColor: isExpanded ? theme.accentBg : 'transparent' }}
+                    onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.backgroundColor = theme.bgCardHover }}
+                    onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.backgroundColor = 'transparent' }}
+                  >
+                    <td style={{ padding: '10px 6px 10px 14px', color: theme.textMuted }}>
+                      {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
+                      {fmtDate(j.start_date)}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{j.job_title || j.job_id || `Job #${j.id}`}</div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted }}>{j.customer_name || '—'}</div>
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span style={{
+                        display: 'inline-block', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600',
+                        backgroundColor: (j.status || '').toLowerCase().includes('complete') ? 'rgba(34,197,94,0.12)' : theme.accentBg,
+                        color: (j.status || '').toLowerCase().includes('complete') ? '#22c55e' : theme.accent
+                      }}>
+                        {j.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                      {formatCurrency(j.revenue)}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px', color: theme.textSecondary }}>
+                      {formatCurrency(j.totalCost)}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '13px', fontWeight: '600', color: j.profit >= 0 ? '#22c55e' : '#ef4444' }}>
+                      {formatCurrency(j.profit)}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: marginColor(j.margin) }}>{j.margin.toFixed(0)}%</span>
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '12px' }}>
+                      <span style={{ color: j.trackedHours > j.allottedHours && j.allottedHours > 0 ? '#ef4444' : theme.textSecondary }}>
+                        {j.trackedHours.toFixed(1)}h
+                      </span>
+                      {j.allottedHours > 0 && (
+                        <span style={{ color: theme.textMuted }}> / {j.allottedHours.toFixed(1)}h</span>
+                      )}
+                    </td>
+                  </tr>
+
+                  {/* Expanded Detail */}
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={9} style={{ padding: 0 }}>
+                        <div style={{ padding: '16px 20px 16px 44px', backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                            <div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Job Details</div>
+                              <div style={{ fontSize: '13px', color: theme.text }}><strong>ID:</strong> {j.job_id || `#${j.id}`}</div>
+                              {j.business_unit && <div style={{ fontSize: '12px', color: theme.textSecondary }}><strong>BU:</strong> {j.business_unit}</div>}
+                              {j.job_address && <div style={{ fontSize: '12px', color: theme.textSecondary }}><strong>Address:</strong> {j.job_address}</div>}
+                              {j.salesperson && <div style={{ fontSize: '12px', color: theme.textSecondary }}><strong>Sales:</strong> {j.salesperson}</div>}
+                              {j.end_date && <div style={{ fontSize: '12px', color: theme.textSecondary }}><strong>End:</strong> {fmtDate(j.end_date)}</div>}
+                              <button onClick={(e) => { e.stopPropagation(); navigate(`/jobs/${j.id}`) }} style={{ marginTop: '6px', fontSize: '12px', color: theme.accent, background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', padding: '4px 10px', cursor: 'pointer' }}>
+                                Open Job
+                              </button>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Costing Breakdown</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Material Cost</span><span style={{ fontWeight: '600' }}>{formatCurrency(j.materialCost)}</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Sundry (3%)</span><span>{formatCurrency(j.sundry)}</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Budget</span><span style={{ fontWeight: '600' }}>{formatCurrency(j.budget)}</span></div>
+                                {j.expenseAmount > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#ef4444' }}>Expenses</span><span style={{ color: '#ef4444' }}>{formatCurrency(j.expenseAmount)}</span></div>}
+                                {j.discount > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textMuted }}>Discount</span><span>-{formatCurrency(j.discount)}</span></div>}
+                                {j.incentive > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#4a7c59' }}>Incentive</span><span style={{ color: '#4a7c59' }}>{formatCurrency(j.incentive)}</span></div>}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: `1px solid ${theme.border}`, paddingTop: '4px', marginTop: '2px' }}>
+                                  <span style={{ fontWeight: '600', color: theme.text }}>Revenue</span>
+                                  <span style={{ fontWeight: '700' }}>{formatCurrency(j.revenue)}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                  <span style={{ fontWeight: '600', color: j.profit >= 0 ? '#22c55e' : '#ef4444' }}>Profit</span>
+                                  <span style={{ fontWeight: '700', color: j.profit >= 0 ? '#22c55e' : '#ef4444' }}>{formatCurrency(j.profit)}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Time & Efficiency</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Allotted</span><span>{j.allottedHours.toFixed(1)}h</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Tracked</span><span style={{ color: j.trackedHours > j.allottedHours && j.allottedHours > 0 ? '#ef4444' : theme.text }}>{j.trackedHours.toFixed(1)}h</span></div>
+                                {j.allottedHours > 0 && (
+                                  <>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                      <span style={{ color: theme.textSecondary }}>Efficiency</span>
+                                      <span style={{ fontWeight: '600', color: j.timeEfficiency > 1 ? '#ef4444' : '#22c55e' }}>{(j.timeEfficiency * 100).toFixed(0)}%</span>
+                                    </div>
+                                    <div style={{ height: '6px', borderRadius: '3px', backgroundColor: theme.border, marginTop: '4px', overflow: 'hidden' }}>
+                                      <div style={{ height: '100%', width: `${Math.min(j.timeEfficiency * 100, 100)}%`, borderRadius: '3px', backgroundColor: j.timeEfficiency > 1 ? '#ef4444' : '#22c55e' }} />
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Line Items */}
+                          {j.lineItems.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Line Items</div>
+                              <div style={{ borderRadius: '8px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+                                {j.lineItems.map((item, idx) => (
+                                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 100px 100px', gap: '8px', padding: '6px 12px', fontSize: '12px', borderBottom: idx < j.lineItems.length - 1 ? `1px solid ${theme.border}` : 'none', backgroundColor: idx % 2 === 0 ? theme.bgCard : theme.bg }}>
+                                    <span style={{ color: theme.text }}>{item.name}</span>
+                                    <span style={{ textAlign: 'right', color: theme.textMuted }}>x{item.qty}</span>
+                                    <span style={{ textAlign: 'right', color: theme.textSecondary }}>{formatCurrency(item.cost)}</span>
+                                    <span style={{ textAlign: 'right', fontWeight: '500' }}>{formatCurrency(item.price)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Products Needed Report Component ──────────────────────────────
+function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency, inputStyle, pillStyle, exportCSV }) {
+  const storeJobStatuses = useStore((state) => state.jobStatuses)
+  const [loading, setLoading] = useState(true)
+  const [jobLines, setJobLines] = useState([])
+  const [componentMap, setComponentMap] = useState({}) // parentId -> [{component_product_id, quantity}]
+  const [statusFilters, setStatusFilters] = useState([])
+  const [buFilter, setBuFilter] = useState('')
+  const [dateStart, setDateStart] = useState('')
+  const [dateEnd, setDateEnd] = useState('')
+  const [groupBy, setGroupBy] = useState('product') // 'product' | 'job' | 'status'
+  const [expandedJobs, setExpandedJobs] = useState(new Set())
+  const [showComponents, setShowComponents] = useState(true)
+  const [sortField, setSortField] = useState('qty')
+  const [sortDir, setSortDir] = useState('desc')
+
+  // Use DB-driven job statuses from store, fall back to defaults
+  const allStatuses = useMemo(() => {
+    if (storeJobStatuses && storeJobStatuses.length > 0) {
+      return storeJobStatuses.map(s => typeof s === 'string' ? s : (s.id || s.name))
+    }
+    return FALLBACK_STATUSES.map(s => s.id)
+  }, [storeJobStatuses])
+
+  // Set default filters once statuses are available
+  useEffect(() => {
+    if (allStatuses.length > 0 && statusFilters.length === 0) {
+      // Pre-select active statuses (exclude terminal ones like Complete/Completed/Cancelled)
+      const terminal = ['complete', 'completed', 'cancelled', 'canceled', 'closed']
+      const defaults = allStatuses.filter(s => !terminal.includes(s.toLowerCase()))
+      setStatusFilters(defaults.length > 0 ? defaults : allStatuses)
+    }
+  }, [allStatuses])
+
+  const businessUnits = [...new Set(jobs.map(j => j.business_unit).filter(Boolean))]
+
+  // Fetch all job_lines with product data + product_components for the company
+  useEffect(() => {
+    if (!companyId) return
+    const load = async () => {
+      setLoading(true)
+      const [linesRes, compRes] = await Promise.all([
+        supabase
+          .from('job_lines')
+          .select('*, item:products_services(id, name, type, cost, unit_price, business_unit, item_id), job:jobs!job_id(id, job_id, job_title, status, start_date, end_date, business_unit, customer_name)')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false })
+          .limit(10000),
+        supabase
+          .from('product_components')
+          .select('*')
+          .eq('company_id', companyId)
+      ])
+      setJobLines(linesRes.data || [])
+      // Build component lookup: parentId -> [{ component_product_id, quantity }]
+      const cMap = {}
+      ;(compRes.data || []).forEach(pc => {
+        if (!cMap[pc.parent_product_id]) cMap[pc.parent_product_id] = []
+        cMap[pc.parent_product_id].push({ component_product_id: pc.component_product_id, quantity: pc.quantity })
+      })
+      setComponentMap(cMap)
       setLoading(false)
     }
     load()
@@ -648,31 +1406,56 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
     })
   }, [jobLines, statusFilters, buFilter, dateStart, dateEnd])
 
-  // Aggregate by product
+  // Aggregate by product (with component expansion)
   const productAggregation = useMemo(() => {
     const map = {}
+    const addToMap = (pid, name, productItemId, cost, qty, price, jobId, type, isComponent, parentName) => {
+      if (!map[pid]) map[pid] = { name, productId: productItemId, totalQty: 0, totalCost: 0, totalRevenue: 0, jobCount: new Set(), type, isComponent: false, parentNames: new Set() }
+      map[pid].totalQty += qty
+      map[pid].totalCost += cost * qty
+      map[pid].totalRevenue += price * qty
+      map[pid].jobCount.add(jobId)
+      if (isComponent) {
+        map[pid].isComponent = true
+        if (parentName) map[pid].parentNames.add(parentName)
+      }
+    }
+
     filtered.forEach(line => {
       const pid = line.item_id || line.item?.id || 'unknown'
       const name = line.item?.name || line.description || 'Unknown Product'
       const cost = parseFloat(line.item?.cost) || 0
       const qty = parseFloat(line.quantity) || 1
       const price = parseFloat(line.price) || parseFloat(line.item?.unit_price) || 0
-      if (!map[pid]) map[pid] = { name, productId: line.item?.item_id || '', totalQty: 0, totalCost: 0, totalRevenue: 0, jobCount: new Set(), type: line.item?.type || '' }
-      map[pid].totalQty += qty
-      map[pid].totalCost += cost * qty
-      map[pid].totalRevenue += price * qty
-      map[pid].jobCount.add(line.job?.id)
+      const itemId = line.item?.id
+      const components = itemId ? (componentMap[itemId] || []) : []
+      const isBundle = showComponents && components.length > 0
+
+      // Always add the parent line item
+      addToMap(pid, name, line.item?.item_id || '', cost, qty, price, line.job?.id, line.item?.type || '', false, null)
+      if (isBundle) map[pid].isBundle = true
+
+      // If bundle + showComponents, also add component products
+      if (isBundle) {
+        components.forEach(comp => {
+          const cp = products.find(p => p.id === comp.component_product_id)
+          if (!cp) return
+          const compCost = parseFloat(cp.cost) || 0
+          const compQty = comp.quantity * qty
+          addToMap(`comp-${cp.id}`, cp.name, cp.item_id || '', compCost, compQty, 0, line.job?.id, cp.type || '', true, name)
+        })
+      }
     })
-    let arr = Object.entries(map).map(([id, d]) => ({ id, ...d, jobCount: d.jobCount.size }))
+    let arr = Object.entries(map).map(([id, d]) => ({ id, ...d, jobCount: d.jobCount.size, parentNames: [...d.parentNames] }))
     // Sort
     if (sortField === 'qty') arr.sort((a, b) => sortDir === 'desc' ? b.totalQty - a.totalQty : a.totalQty - b.totalQty)
     else if (sortField === 'cost') arr.sort((a, b) => sortDir === 'desc' ? b.totalCost - a.totalCost : a.totalCost - b.totalCost)
     else if (sortField === 'name') arr.sort((a, b) => sortDir === 'desc' ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name))
     else if (sortField === 'jobs') arr.sort((a, b) => sortDir === 'desc' ? b.jobCount - a.jobCount : a.jobCount - b.jobCount)
     return arr
-  }, [filtered, sortField, sortDir])
+  }, [filtered, sortField, sortDir, componentMap, products, showComponents])
 
-  // Aggregate by job — keep individual line items per job
+  // Aggregate by job — keep individual line items per job (with component expansion)
   const jobAggregation = useMemo(() => {
     const map = {}
     filtered.forEach(line => {
@@ -682,6 +1465,10 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
       const qty = parseFloat(line.quantity) || 1
       const cost = parseFloat(line.item?.cost) || 0
       const price = parseFloat(line.price) || parseFloat(line.item?.unit_price) || 0
+      const itemId = line.item?.id
+      const components = itemId ? (componentMap[itemId] || []) : []
+      const isBundle = showComponents && components.length > 0
+
       map[jid].lineCount += qty
       map[jid].totalCost += cost * qty
       map[jid].totalRevenue += price * qty
@@ -692,13 +1479,21 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
         qty,
         cost: cost * qty,
         price: price * qty,
-        type: line.item?.type || ''
+        type: line.item?.type || '',
+        isBundle,
+        components: isBundle ? components.map(comp => {
+          const cp = products.find(p => p.id === comp.component_product_id)
+          if (!cp) return null
+          const compCost = parseFloat(cp.cost) || 0
+          const compQty = comp.quantity * qty
+          return { name: cp.name, productId: cp.item_id || '', qty: compQty, cost: compCost * compQty, type: cp.type || '' }
+        }).filter(Boolean) : []
       })
     })
     return Object.values(map).sort((a, b) => (b.totalCost - a.totalCost))
-  }, [filtered])
+  }, [filtered, componentMap, products, showComponents])
 
-  // Aggregate by status
+  // Aggregate by status (with component expansion)
   const statusAggregation = useMemo(() => {
     const map = {}
     filtered.forEach(line => {
@@ -708,9 +1503,22 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
       map[s].totalQty += qty
       map[s].totalCost += (parseFloat(line.item?.cost) || 0) * qty
       map[s].jobCount.add(line.job?.id)
+
+      // Add component quantities
+      if (showComponents) {
+        const itemId = line.item?.id
+        const components = itemId ? (componentMap[itemId] || []) : []
+        components.forEach(comp => {
+          const cp = products.find(p => p.id === comp.component_product_id)
+          if (!cp) return
+          const compQty = comp.quantity * qty
+          map[s].totalQty += compQty
+          map[s].totalCost += (parseFloat(cp.cost) || 0) * compQty
+        })
+      }
     })
     return Object.entries(map).map(([status, d]) => ({ status, ...d, jobCount: d.jobCount.size }))
-  }, [filtered])
+  }, [filtered, componentMap, products, showComponents])
 
   const toggleStatus = (s) => setStatusFilters(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
 
@@ -733,19 +1541,24 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
   const handleExport = () => {
     if (groupBy === 'product') {
       exportCSV(
-        ['Product', 'Product ID', 'Type', 'Qty Needed', 'Total Cost', 'Total Revenue', 'Jobs'],
-        productAggregation.map(p => [p.name, p.productId, p.type, p.totalQty, p.totalCost.toFixed(2), p.totalRevenue.toFixed(2), p.jobCount]),
+        ['Product', 'Product ID', 'Type', 'Qty Needed', 'Total Cost', 'Total Revenue', 'Jobs', 'Role'],
+        productAggregation.map(p => [p.name, p.productId, p.type, p.totalQty, p.totalCost.toFixed(2), p.totalRevenue.toFixed(2), p.jobCount, p.isComponent ? 'Component' : p.isBundle ? 'Bundle' : '']),
         'products_needed'
       )
     } else if (groupBy === 'job') {
       const rows = []
       jobAggregation.forEach(j => {
         j.items.forEach(item => {
-          rows.push([j.title, j.customer, j.status, j.startDate?.split('T')[0] || '', item.name, item.productId, item.type, item.qty, item.cost.toFixed(2), item.price.toFixed(2)])
+          rows.push([j.title, j.customer, j.status, j.startDate?.split('T')[0] || '', item.name, item.productId, item.type, item.qty, item.cost.toFixed(2), item.price.toFixed(2), item.isBundle ? 'Bundle' : ''])
+          if (item.components) {
+            item.components.forEach(comp => {
+              rows.push([j.title, j.customer, j.status, j.startDate?.split('T')[0] || '', `  ↳ ${comp.name}`, comp.productId, comp.type, comp.qty, comp.cost.toFixed(2), '', 'Component'])
+            })
+          }
         })
       })
       exportCSV(
-        ['Job', 'Customer', 'Status', 'Start Date', 'Product', 'Product ID', 'Type', 'Qty', 'Material Cost', 'Revenue'],
+        ['Job', 'Customer', 'Status', 'Start Date', 'Product', 'Product ID', 'Type', 'Qty', 'Material Cost', 'Revenue', 'Role'],
         rows,
         'products_needed_by_job'
       )
@@ -810,6 +1623,21 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
           </div>
         </div>
 
+        {/* Bundle Components Toggle */}
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Bundles</div>
+          <button
+            onClick={() => setShowComponents(prev => !prev)}
+            style={{
+              ...pillStyle(showComponents),
+              border: 'none',
+              display: 'flex', alignItems: 'center', gap: '6px'
+            }}
+          >
+            <Boxes size={14} /> Components
+          </button>
+        </div>
+
         {/* Export */}
         <div style={{ marginLeft: 'auto' }}>
           <button onClick={handleExport} style={{ padding: '8px 14px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500' }}>
@@ -863,15 +1691,22 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
               ) : productAggregation.map(p => {
                 const costPct = p.totalRevenue > 0 ? (p.totalCost / p.totalRevenue) * 100 : 0
                 return (
-                <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  <td style={{ padding: '10px 14px', fontSize: '14px', color: theme.text, fontWeight: '500' }}>
-                    {p.name}
-                    {p.productId && <span style={{ fontSize: '11px', color: theme.textMuted, marginLeft: '6px' }}>#{p.productId}</span>}
+                <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}`, backgroundColor: p.isComponent ? theme.bgCard : 'transparent' }}>
+                  <td style={{ padding: p.isComponent ? '7px 14px 7px 28px' : '10px 14px', fontSize: p.isComponent ? '13px' : '14px', color: p.isComponent ? theme.textSecondary : theme.text, fontWeight: '500' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {p.isBundle && <Boxes size={14} style={{ color: theme.accent, flexShrink: 0 }} />}
+                      {p.isComponent && <span style={{ color: theme.textMuted }}>↳</span>}
+                      {p.name}
+                      {p.productId && <span style={{ fontSize: '11px', color: theme.textMuted }}>#{p.productId}</span>}
+                    </span>
+                    {p.isComponent && p.parentNames.length > 0 && (
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>via {p.parentNames.join(', ')}</div>
+                    )}
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: '12px', color: theme.textMuted }}>{p.type}</td>
                   <td style={{ padding: '10px 14px', fontSize: '14px', fontWeight: '600', color: theme.text, textAlign: 'right' }}>{p.totalQty}</td>
                   <td style={{ padding: '10px 14px', fontSize: '14px', color: theme.text, textAlign: 'right' }}>{formatCurrency(p.totalCost)}</td>
-                  <td style={{ padding: '10px 14px', fontSize: '14px', color: '#4a7c59', textAlign: 'right' }}>{formatCurrency(p.totalRevenue)}</td>
+                  <td style={{ padding: '10px 14px', fontSize: '14px', color: '#4a7c59', textAlign: 'right' }}>{p.isComponent ? '—' : formatCurrency(p.totalRevenue)}</td>
                   <td style={{ padding: '10px 14px', fontSize: '13px', fontWeight: '600', textAlign: 'right', color: costPct > 50 ? '#c25a5a' : costPct > 30 ? '#d4940a' : '#4a7c59' }}>{p.totalRevenue > 0 ? `${costPct.toFixed(1)}%` : '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: '14px', color: theme.textSecondary, textAlign: 'right' }}>{p.jobCount}</td>
                 </tr>
@@ -925,11 +1760,15 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
                     {isExpanded && j.items.map((item, idx) => {
                       const itemCostPct = item.price > 0 ? (item.cost / item.price) * 100 : 0
                       return (
-                      <tr key={item.id || idx} style={{ backgroundColor: theme.bgCard, borderBottom: idx === j.items.length - 1 ? `1px solid ${theme.border}` : `1px solid ${theme.bg}` }}>
+                      <Fragment key={item.id || idx}>
+                      <tr style={{ backgroundColor: theme.bgCard, borderBottom: (idx === j.items.length - 1 && (!item.components || item.components.length === 0)) ? `1px solid ${theme.border}` : `1px solid ${theme.bg}` }}>
                         <td></td>
                         <td style={{ padding: '7px 14px 7px 28px', fontSize: '13px', color: theme.textSecondary }}>
-                          {item.name}
-                          {item.productId && <span style={{ fontSize: '11px', color: theme.textMuted, marginLeft: '6px' }}>#{item.productId}</span>}
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {item.isBundle && <Boxes size={13} style={{ color: theme.accent }} />}
+                            {item.name}
+                            {item.productId && <span style={{ fontSize: '11px', color: theme.textMuted }}>#{item.productId}</span>}
+                          </span>
                         </td>
                         <td style={{ padding: '7px 14px', fontSize: '12px', color: theme.textMuted }}>{item.type}</td>
                         <td></td>
@@ -938,6 +1777,24 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
                         <td style={{ padding: '7px 14px', fontSize: '13px', color: theme.textSecondary, textAlign: 'right' }}>{formatCurrency(item.price)}</td>
                         <td style={{ padding: '7px 14px', fontSize: '12px', color: itemCostPct > 50 ? '#c25a5a' : itemCostPct > 30 ? '#d4940a' : '#4a7c59', textAlign: 'right' }}>{item.price > 0 ? `${itemCostPct.toFixed(1)}%` : '—'}</td>
                       </tr>
+                      {item.components && item.components.map((comp, cidx) => (
+                        <tr key={`comp-${cidx}`} style={{ backgroundColor: theme.bgCard, borderBottom: (idx === j.items.length - 1 && cidx === item.components.length - 1) ? `1px solid ${theme.border}` : `1px solid ${theme.bg}` }}>
+                          <td></td>
+                          <td style={{ padding: '5px 14px 5px 44px', fontSize: '12px', color: theme.textMuted }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <span>↳</span> {comp.name}
+                              {comp.productId && <span style={{ fontSize: '10px', color: theme.textMuted }}>#{comp.productId}</span>}
+                            </span>
+                          </td>
+                          <td style={{ padding: '5px 14px', fontSize: '11px', color: theme.textMuted }}>{comp.type}</td>
+                          <td></td>
+                          <td style={{ padding: '5px 14px', fontSize: '12px', color: theme.textMuted, textAlign: 'right' }}>{comp.qty}</td>
+                          <td style={{ padding: '5px 14px', fontSize: '12px', color: theme.textMuted, textAlign: 'right' }}>{formatCurrency(comp.cost)}</td>
+                          <td style={{ padding: '5px 14px', fontSize: '12px', color: theme.textMuted, textAlign: 'right' }}>—</td>
+                          <td style={{ padding: '5px 14px', fontSize: '11px', color: theme.textMuted, textAlign: 'right' }}>—</td>
+                        </tr>
+                      ))}
+                      </Fragment>
                       )
                     })}
                   </Fragment>

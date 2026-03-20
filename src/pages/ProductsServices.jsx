@@ -230,7 +230,10 @@ export default function ProductsServices() {
   const products = useStore((state) => state.products)
   const inventory = useStore((state) => state.inventory)
   const laborRates = useStore((state) => state.laborRates)
+  const productComponents = useStore((state) => state.productComponents)
   const fetchProducts = useStore((state) => state.fetchProducts)
+  const fetchProductComponents = useStore((state) => state.fetchProductComponents)
+  const saveProductComponents = useStore((state) => state.saveProductComponents)
   const fetchLaborRates = useStore((state) => state.fetchLaborRates)
   const fetchInventory = useStore((state) => state.fetchInventory)
 
@@ -267,6 +270,10 @@ export default function ProductsServices() {
   })
   const [uploadingDoc, setUploadingDoc] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
+
+  // Components (bundle) state for product modal
+  const [modalComponents, setModalComponents] = useState([]) // [{component_product_id, quantity}]
+  const [componentSearch, setComponentSearch] = useState('')
 
   // Labor rates panel state
   const [showLaborRates, setShowLaborRates] = useState(false)
@@ -617,6 +624,11 @@ export default function ProductsServices() {
         spec_sheet_url: product.spec_sheet_url || '', install_guide_url: product.install_guide_url || '',
         datasheet_json: product.datasheet_json || {}
       })
+      // Load existing components for this product
+      const existing = productComponents
+        .filter(pc => pc.parent_product_id === product.id)
+        .map(pc => ({ component_product_id: pc.component_product_id, quantity: pc.quantity }))
+      setModalComponents(existing)
     } else {
       setEditingProduct(null)
       setProductForm({
@@ -629,7 +641,9 @@ export default function ProductsServices() {
         dlc_listed: false, dlc_listing_number: '', warranty_years: '',
         spec_sheet_url: '', install_guide_url: '', datasheet_json: {}
       })
+      setModalComponents([])
     }
+    setComponentSearch('')
     setProductModalTab('overview')
     setShowProductModal(true)
   }
@@ -669,6 +683,10 @@ export default function ProductsServices() {
       if (productForm.active && productId) {
         await syncProductToInventory(productId, productForm.name, true)
         await fetchInventory()
+      }
+      // Save components (bundle)
+      if (productId) {
+        await saveProductComponents(productId, modalComponents)
       }
       await fetchProducts()
       setShowProductModal(false)
@@ -1614,7 +1632,8 @@ export default function ProductsServices() {
             {[
               { key: 'overview', label: 'Overview', icon: Package },
               { key: 'specs', label: 'Specs', icon: FileText },
-              { key: 'documents', label: 'Documents', icon: FileSpreadsheet }
+              { key: 'documents', label: 'Documents', icon: FileSpreadsheet },
+              { key: 'components', label: 'Components', icon: Boxes, badge: modalComponents.length }
             ].map(tab => (
               <button key={tab.key} onClick={() => setProductModalTab(tab.key)} style={{
                 padding: '10px 16px', fontSize: '13px', fontWeight: '500',
@@ -1624,6 +1643,12 @@ export default function ProductsServices() {
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '-1px'
               }}>
                 <tab.icon size={14} /> {tab.label}
+                {tab.badge > 0 && (
+                  <span style={{
+                    backgroundColor: theme.accent, color: '#fff', fontSize: '10px', fontWeight: '700',
+                    borderRadius: '10px', padding: '1px 6px', minWidth: '18px', textAlign: 'center'
+                  }}>{tab.badge}</span>
+                )}
               </button>
             ))}
           </div>
@@ -1947,6 +1972,169 @@ export default function ProductsServices() {
                 </div>
               </div>
             )}
+
+            {/* COMPONENTS TAB */}
+            {productModalTab === 'components' && (() => {
+              const currentProductId = editingProduct?.id
+              const componentProductIds = modalComponents.map(c => c.component_product_id)
+              const searchResults = componentSearch.trim()
+                ? products.filter(p =>
+                    p.active !== false &&
+                    p.id !== currentProductId &&
+                    !componentProductIds.includes(p.id) &&
+                    p.name.toLowerCase().includes(componentSearch.toLowerCase())
+                  ).slice(0, 8)
+                : []
+
+              // Calculate totals
+              const componentTotal = modalComponents.reduce((sum, c) => {
+                const p = products.find(pr => pr.id === c.component_product_id)
+                if (!p) return sum
+                const cost = parseFloat(p.cost) || 0
+                return sum + (cost * c.quantity)
+              }, 0)
+              const markup = parseFloat(productForm.markup_percent) || 0
+              const suggestedPrice = componentTotal * (1 + markup / 100)
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Add Component Search */}
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Search size={16} style={{ color: theme.textMuted, position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', zIndex: 1 }} />
+                      <input
+                        type="text"
+                        value={componentSearch}
+                        onChange={(e) => setComponentSearch(e.target.value)}
+                        placeholder="Search products to add as component..."
+                        style={{ ...inputStyle, paddingLeft: '36px', width: '100%' }}
+                      />
+                    </div>
+                    {searchResults.length > 0 && (
+                      <div style={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
+                        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                        borderRadius: '8px', marginTop: '4px', maxHeight: '200px', overflow: 'auto',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                      }}>
+                        {searchResults.map(p => (
+                          <button key={p.id} onClick={() => {
+                            setModalComponents(prev => [...prev, { component_product_id: p.id, quantity: 1 }])
+                            setComponentSearch('')
+                          }} style={{
+                            display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                            padding: '10px 14px', border: 'none', backgroundColor: 'transparent',
+                            cursor: 'pointer', textAlign: 'left', fontSize: '13px', color: theme.text
+                          }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bg}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <Package size={14} style={{ color: theme.textMuted, flexShrink: 0 }} />
+                            <span style={{ flex: 1 }}>{p.name}</span>
+                            <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+                              ${(parseFloat(p.cost) || parseFloat(p.unit_price) || 0).toFixed(2)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Component List */}
+                  {modalComponents.length === 0 ? (
+                    <div style={{ padding: '32px 16px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                      <Boxes size={28} style={{ color: theme.border, marginBottom: '8px' }} />
+                      <div>No components yet. Search above to add products to this bundle.</div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {modalComponents.map((comp, idx) => {
+                        const p = products.find(pr => pr.id === comp.component_product_id)
+                        if (!p) return null
+                        const unitCost = parseFloat(p.cost) || 0
+                        const subtotal = unitCost * comp.quantity
+                        return (
+                          <div key={comp.component_product_id} style={{
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            padding: '10px 14px', backgroundColor: theme.bg, borderRadius: '8px',
+                            border: `1px solid ${theme.border}`
+                          }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {p.name}
+                              </div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                ${unitCost.toFixed(2)} each
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <button onClick={() => {
+                                setModalComponents(prev => prev.map((c, i) => i === idx ? { ...c, quantity: Math.max(1, c.quantity - 1) } : c))
+                              }} style={{
+                                width: '28px', height: '28px', borderRadius: '6px', border: `1px solid ${theme.border}`,
+                                backgroundColor: theme.bgCard, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: theme.textSecondary, fontSize: '16px', fontWeight: '700'
+                              }}>-</button>
+                              <span style={{ width: '28px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.text }}>{comp.quantity}</span>
+                              <button onClick={() => {
+                                setModalComponents(prev => prev.map((c, i) => i === idx ? { ...c, quantity: c.quantity + 1 } : c))
+                              }} style={{
+                                width: '28px', height: '28px', borderRadius: '6px', border: `1px solid ${theme.border}`,
+                                backgroundColor: theme.bgCard, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: theme.textSecondary, fontSize: '16px', fontWeight: '700'
+                              }}>+</button>
+                            </div>
+                            <span style={{ fontSize: '13px', fontWeight: '600', color: theme.accent, minWidth: '60px', textAlign: 'right' }}>
+                              ${subtotal.toFixed(2)}
+                            </span>
+                            <button onClick={() => {
+                              setModalComponents(prev => prev.filter((_, i) => i !== idx))
+                            }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}>
+                              <X size={14} />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Summary Footer */}
+                  {modalComponents.length > 0 && (
+                    <div style={{
+                      padding: '14px 16px', backgroundColor: 'rgba(90,99,73,0.08)', borderRadius: '10px',
+                      border: `1px solid ${theme.accent}`
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>Component Cost Total</span>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>${componentTotal.toFixed(2)}</span>
+                      </div>
+                      {markup > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '12px', color: theme.textMuted }}>+ {markup}% Markup</span>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: theme.accent }}>${suggestedPrice.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => {
+                          setProductForm(prev => ({
+                            ...prev,
+                            cost: componentTotal.toFixed(2),
+                            unit_price: suggestedPrice.toFixed(2)
+                          }))
+                          setProductModalTab('overview')
+                        }}
+                        style={{
+                          ...buttonStyle, width: '100%', marginTop: '8px', padding: '8px 0',
+                          backgroundColor: theme.accent, color: '#fff', fontSize: '13px', justifyContent: 'center'
+                        }}
+                      >
+                        <DollarSign size={14} /> Apply ${suggestedPrice.toFixed(2)} to Pricing
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           <div style={{ display: 'flex', gap: '12px', padding: '16px 20px', borderTop: `1px solid ${theme.border}` }}>

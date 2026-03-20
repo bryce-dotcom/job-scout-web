@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
+
+const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -210,6 +212,33 @@ export default function CustomerPortal() {
 
   // Line items (estimates)
   const estimateTotal = line_items?.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0) || 0
+
+  // Interactive proposal mode — lazy-load the full proposal experience
+  const presentationMode = isEstimate && doc.settings_overrides?.presentation_mode
+  if (presentationMode === 'interactive') {
+    return (
+      <Suspense fallback={
+        <div style={styles.pageWrapper}>
+          <div style={styles.container}>
+            <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+              <div style={styles.spinner} />
+              <p style={{ color: theme.textMuted, marginTop: '16px', fontSize: '15px' }}>Loading proposal...</p>
+            </div>
+          </div>
+        </div>
+      }>
+        <InteractiveProposal
+          data={data}
+          onApprove={handleApprove}
+          approverName={approverName}
+          setApproverName={setApproverName}
+          approverEmail={approverEmail}
+          setApproverEmail={setApproverEmail}
+          approvalSuccess={approvalSuccess}
+        />
+      </Suspense>
+    )
+  }
 
   return (
     <div style={styles.pageWrapper}>

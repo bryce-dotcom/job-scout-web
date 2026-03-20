@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from './Layout'
 import {
-  X, Search, ChevronLeft, Grid3X3, Wrench, Zap, Droplets, Leaf, ShoppingBag, Box, Package
+  X, Search, ChevronLeft, Grid3X3, Wrench, Zap, Droplets, Leaf, ShoppingBag, Box, Package, Boxes
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -30,6 +30,7 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
   const serviceTypes = useStore((state) => state.serviceTypes)
   const laborRates = useStore((state) => state.laborRates)
   const inventory = useStore((state) => state.inventory)
+  const productComponents = useStore((state) => state.productComponents)
 
   const [productGroups, setProductGroups] = useState([])
   const [catalogServiceType, setCatalogServiceType] = useState('')
@@ -100,6 +101,11 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
   const getInventoryCount = (productId) => {
     const inv = inventory.find(i => i.product_id === productId)
     return inv?.quantity || 0
+  }
+
+  // Get component count for product (bundle indicator)
+  const getComponentCount = (productId) => {
+    return productComponents.filter(pc => pc.parent_product_id === productId).length
   }
 
   const [confirmProduct, setConfirmProduct] = useState(null) // product awaiting install choice
@@ -333,6 +339,7 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
                       isMobile={isMobile}
                       calculateLaborCost={calculateLaborCost}
                       getInventoryCount={getInventoryCount}
+                      getComponentCount={getComponentCount}
                       onSelect={handleSelectProduct}
                     />
                   ))}
@@ -574,8 +581,9 @@ function GroupTile({ group, theme, isMobile, productCount, onSelect, isOther }) 
 }
 
 // Product card component
-function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventoryCount, onSelect }) {
+function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventoryCount, getComponentCount, onSelect }) {
   const laborCost = calculateLaborCost(product)
+  const componentCount = getComponentCount ? getComponentCount(product.id) : 0
   const cost = parseFloat(product.cost) || 0
   const markup = parseFloat(product.markup_percent) || 0
   const productOnlyPrice = cost > 0 ? cost * (1 + markup / 100) : (product.unit_price || 0)
@@ -635,9 +643,15 @@ function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventor
             marginBottom: '4px',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
           }}>
             {product.name}
+            {componentCount > 0 && (
+              <Boxes size={13} style={{ color: theme.textMuted, flexShrink: 0 }} title={`Bundle: ${componentCount} components`} />
+            )}
           </div>
           <div style={{
             display: 'flex',
