@@ -2928,7 +2928,8 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
       provider: 'google',
       options: {
         redirectTo: window.location.origin + '/auth/callback?gcal_connect=true',
-        scopes: 'https://www.googleapis.com/auth/calendar.events.readonly'
+        scopes: 'https://www.googleapis.com/auth/calendar.events.readonly',
+        queryParams: { access_type: 'offline', prompt: 'consent' }
       }
     })
   }
