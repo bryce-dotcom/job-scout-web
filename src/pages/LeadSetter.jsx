@@ -111,9 +111,9 @@ export default function LeadSetter() {
       .or('quote_generated.is.null,quote_generated.eq.false')
       .order('created_at', { ascending: false })
 
-    // Non-admins only see leads assigned to them as setter
+    // Non-admins only see leads assigned to them (as setter or lead owner)
     if (!isAdmin && user?.id) {
-      leadsQuery = leadsQuery.eq('setter_owner_id', user.id)
+      leadsQuery = leadsQuery.or(`setter_owner_id.eq.${user.id},lead_owner_id.eq.${user.id}`)
     }
 
     // Fetch appointments for calendar
@@ -192,9 +192,10 @@ export default function LeadSetter() {
     }
     if (filterSetter) {
       if (filterSetter === 'unassigned') {
-        filtered = filtered.filter(l => !l.setter_owner_id)
+        filtered = filtered.filter(l => !l.setter_owner_id && !l.lead_owner_id)
       } else {
-        filtered = filtered.filter(l => l.setter_owner_id === parseInt(filterSetter))
+        const fId = parseInt(filterSetter)
+        filtered = filtered.filter(l => l.setter_owner_id === fId || l.lead_owner_id === fId)
       }
     }
     return filtered
