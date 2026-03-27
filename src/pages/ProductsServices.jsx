@@ -101,7 +101,9 @@ function DraggableModal({ children, theme, isMobile, maxWidth = '600px', onClose
 }
 
 // ============ PRODUCT CARD ============
-function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost, draggable, isAdmin, isManagerPlus, onView }) {
+function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost, draggable, isAdmin, isManagerPlus, onView, productComponents, products }) {
+  const components = (productComponents || []).filter(pc => pc.parent_product_id === product.id)
+  const isBundle = components.length > 0
   return (
     <div
       draggable={!!draggable}
@@ -215,9 +217,31 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
           )}
         </div>
         {laborCost > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#8b5cf6', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#8b5cf6', marginBottom: isBundle ? '6px' : '10px' }}>
             <DollarSign size={11} />
             Labor: {formatCurrency(laborCost)}
+          </div>
+        )}
+        {isBundle && (
+          <div style={{ marginBottom: '10px', padding: '8px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '6px' }}>
+              <Boxes size={10} />
+              Bundle ({components.length})
+            </div>
+            {components.map(comp => {
+              const p = (products || []).find(pr => pr.id === comp.component_product_id)
+              if (!p) return null
+              return (
+                <div key={comp.component_product_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', padding: '2px 0' }}>
+                  <span style={{ color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>
+                    {comp.quantity > 1 ? `${comp.quantity}x ` : ''}{p.name}
+                  </span>
+                  <span style={{ color: theme.accent, fontWeight: '500', flexShrink: 0 }}>
+                    {formatCurrency((parseFloat(p.unit_price) || parseFloat(p.cost) || 0) * comp.quantity)}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         )}
         {isManagerPlus && (
@@ -1035,8 +1059,14 @@ export default function ProductsServices() {
         await saveProductComponents(productId, modalComponents)
       }
       await fetchProducts()
+      await fetchProductComponents()
       setShowProductModal(false)
       setEditingProduct(null)
+      // Re-open the detail view with the updated product so user stays in context
+      if (productId) {
+        const updated = useStore.getState().products.find(p => p.id === productId)
+        if (updated) setViewingProduct(updated)
+      }
     }
     setSaving(false)
   }
@@ -1545,7 +1575,7 @@ export default function ProductsServices() {
                       handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
                       inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
                       draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus}
-                      onView={setViewingProduct} />
+                      onView={setViewingProduct} productComponents={productComponents} products={products} />
                   ))}
                 </div>
               )}
@@ -1674,7 +1704,7 @@ export default function ProductsServices() {
                           handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
                           inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
                           draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus}
-                          onView={setViewingProduct} />
+                          onView={setViewingProduct} productComponents={productComponents} products={products} />
                       ))}
                     </div>
                   ) : isAdmin && sectionGroups.length > 0 ? (
