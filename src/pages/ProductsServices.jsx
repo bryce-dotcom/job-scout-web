@@ -639,7 +639,7 @@ export default function ProductsServices() {
         labor_rate_id: '',
         manufacturer: '', model_number: '', product_category: '',
         dlc_listed: false, dlc_listing_number: '', warranty_years: '',
-        spec_sheet_url: '', install_guide_url: '', datasheet_json: {}
+        spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {}
       })
       setModalComponents([])
     }
