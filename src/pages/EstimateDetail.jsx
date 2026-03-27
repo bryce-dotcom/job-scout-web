@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image } from 'lucide-react'
 import FlowIndicator from '../components/FlowIndicator'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
@@ -101,6 +101,12 @@ export default function EstimateDetail() {
   const [showAddExpense, setShowAddExpense] = useState(false)
   const [expenseForm, setExpenseForm] = useState({ amount: '', merchant: '', category: 'Cost of Sale', notes: '' })
   const [receiptUploading, setReceiptUploading] = useState(false)
+
+  // Line photos (before/after via file_attachments) and notes photos
+  const [linePhotos, setLinePhotos] = useState({}) // { [quote_line_id]: [file_attachment, ...] }
+  const [notesPhotos, setNotesPhotos] = useState([])
+  const [photoUploadTarget, setPhotoUploadTarget] = useState(null) // { lineId, context }
+  const photoInputRef = useRef(null)
 
   const [depositForm, setDepositForm] = useState({
     deposit_amount: '',
@@ -223,7 +229,25 @@ export default function EstimateDetail() {
           .select('*')
           .eq('quote_id', id)
           .order('created_at', { ascending: false })
-        setAttachments(atts || [])
+        const allAtts = atts || []
+
+        // Separate photo attachments from document attachments (same pattern as JobDetail)
+        const isPhoto = (att) => att.photo_context && att.file_type?.startsWith('image/')
+        setAttachments(allAtts.filter(a => !isPhoto(a)))
+
+        // Group line photos by quote_line_id
+        const grouped = {}
+        const notePhotos = []
+        for (const p of allAtts.filter(a => isPhoto(a))) {
+          if (p.photo_context === 'notes') {
+            notePhotos.push(p)
+          } else if (p.quote_line_id) {
+            if (!grouped[p.quote_line_id]) grouped[p.quote_line_id] = []
+            grouped[p.quote_line_id].push(p)
+          }
+        }
+        setLinePhotos(grouped)
+        setNotesPhotos(notePhotos)
       } catch {
         // quote_id column may not exist yet (migration not applied)
         setAttachments([])
@@ -658,6 +682,96 @@ export default function EstimateDetail() {
     setSaving(false)
   }
 
+  // Photo upload handler (before/after/notes - matches JobDetail pattern)
+  const handleUploadPhoto = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !photoUploadTarget) return
+    e.target.value = ''
+
+    const { lineId, context } = photoUploadTarget
+    setPhotoUploadTarget(null)
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const subPath = context === 'notes' ? 'notes' : `${context}/${lineId}`
+    const filePath = `estimates/${id}/photos/${subPath}/${Date.now()}_${safeName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('project-documents')
+      .upload(filePath, file)
+
+    if (uploadError) {
+      toast.error('Upload failed: ' + uploadError.message)
+      return
+    }
+
+    const insertData = {
+      company_id: companyId,
+      quote_id: parseInt(id),
+      lead_id: estimate.lead_id ? parseInt(estimate.lead_id) : null,
+      file_name: file.name,
+      file_path: filePath,
+      file_type: file.type || null,
+      file_size: file.size,
+      storage_bucket: 'project-documents',
+      photo_context: context,
+    }
+    if (lineId && context !== 'notes') insertData.quote_line_id = lineId
+
+    const { error: dbError } = await supabase.from('file_attachments').insert(insertData)
+    if (dbError) {
+      toast.error('Failed to save photo: ' + dbError.message)
+      return
+    }
+    await fetchEstimateData()
+  }
+
+  const handleDeletePhoto = async (att) => {
+    if (!confirm('Delete this photo?')) return
+    await supabase.from('file_attachments').delete().eq('id', att.id)
+    await supabase.storage.from(att.storage_bucket).remove([att.file_path])
+    await fetchEstimateData()
+  }
+
+  const triggerPhotoInput = (lineId, context) => {
+    setPhotoUploadTarget({ lineId, context })
+    setTimeout(() => photoInputRef.current?.click(), 50)
+  }
+
+  // PhotoThumbnail and AddPhotoButton (matches JobDetail)
+  const PhotoThumbnail = ({ att, theme: t, onView, onDelete }) => {
+    const [thumbUrl, setThumbUrl] = useState(null)
+    useEffect(() => {
+      let cancelled = false
+      supabase.storage.from(att.storage_bucket).createSignedUrl(att.file_path, 3600).then(({ data }) => {
+        if (!cancelled && data?.signedUrl) setThumbUrl(data.signedUrl)
+      })
+      return () => { cancelled = true }
+    }, [att.id])
+    return (
+      <div style={{ position: 'relative', width: '64px', height: '64px', flexShrink: 0 }}>
+        {thumbUrl ? (
+          <img src={thumbUrl} alt={att.file_name} onClick={() => onView({ url: thumbUrl, name: att.file_name })}
+            style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '8px', cursor: 'pointer', border: `1px solid ${t.border}` }} />
+        ) : (
+          <div style={{ width: '64px', height: '64px', borderRadius: '8px', backgroundColor: t.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Image size={20} color={t.textMuted} />
+          </div>
+        )}
+        <button onClick={(e) => { e.stopPropagation(); onDelete(att) }}
+          style={{ position: 'absolute', top: '-4px', right: '-4px', width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#dc2626', color: '#fff', border: 'none', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
+          {'\u2715'}
+        </button>
+      </div>
+    )
+  }
+
+  const AddPhotoButton = ({ theme: t, onClick }) => (
+    <button onClick={onClick} style={{ width: '64px', height: '64px', borderRadius: '8px', border: `2px dashed ${t.border}`, backgroundColor: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', color: t.textMuted, flexShrink: 0 }}>
+      <Camera size={18} />
+      <span style={{ fontSize: '10px' }}>Add</span>
+    </button>
+  )
+
   // Expense handlers
   const fetchQuoteExpenses = async () => {
     const { data } = await supabase
@@ -804,16 +918,41 @@ export default function EstimateDetail() {
           notes: line.notes || null,
           photos: line.photos || []
         }))
-        await supabase.from('job_lines').insert(jobLines)
+        const { data: createdJobLines } = await supabase.from('job_lines').insert(jobLines).select('id')
+
+        // Map quote_line_id → job_line_id for photo carry-forward
+        if (createdJobLines?.length) {
+          for (let i = 0; i < lineItems.length; i++) {
+            const quoteLineId = lineItems[i].id
+            const jobLineId = createdJobLines[i]?.id
+            if (quoteLineId && jobLineId) {
+              await supabase
+                .from('file_attachments')
+                .update({ job_id: newJob.id, job_line_id: jobLineId })
+                .eq('quote_line_id', quoteLineId)
+                .eq('company_id', companyId)
+            }
+          }
+        }
       }
 
-      // 4. Link attachments to the new job
+      // 4. Link document attachments to the new job
       if (attachments.length > 0) {
         for (const att of attachments) {
           await supabase
             .from('file_attachments')
             .update({ job_id: newJob.id })
             .eq('id', att.id)
+        }
+      }
+
+      // Also carry notes photos forward
+      if (notesPhotos.length > 0) {
+        for (const p of notesPhotos) {
+          await supabase
+            .from('file_attachments')
+            .update({ job_id: newJob.id })
+            .eq('id', p.id)
         }
       }
 
@@ -1271,6 +1410,9 @@ export default function EstimateDetail() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+      {/* Hidden photo input for before/after/notes uploads */}
+      <input type="file" ref={photoInputRef} accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUploadPhoto} />
+
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -1852,6 +1994,8 @@ export default function EstimateDetail() {
                 {/* Table Body */}
                 {lineItems.map((line) => {
                   const photos = line.photos || []
+                  const attPhotoCount = (linePhotos[line.id] || []).length
+                  const totalPhotoCount = photos.length + attPhotoCount
                   const isExpanded = expandedLineId === line.id
                   return (
                     <div key={line.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
@@ -1873,9 +2017,9 @@ export default function EstimateDetail() {
                           <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>
                             {line.item_name || line.item?.name || 'Custom Item'}
                           </p>
-                          {photos.length > 0 && (
+                          {totalPhotoCount > 0 && (
                             <span style={{ fontSize: '11px', backgroundColor: theme.accentBg, color: theme.accent, padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
-                              <Camera size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{photos.length}
+                              <Camera size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{totalPhotoCount}
                             </span>
                           )}
                         </div>
@@ -2107,53 +2251,74 @@ export default function EstimateDetail() {
                               </span>
                             </div>
                           )}
-                          <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                            Photos
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {photos.map((url, idx) => (
-                              <div key={idx} style={{ position: 'relative', width: '72px', height: '72px', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${theme.border}` }}>
-                                <img
-                                  src={url}
-                                  alt={`Photo ${idx + 1}`}
-                                  onClick={() => setViewingPhoto({ url, name: `${line.item?.name || line.item_name || 'Line'} Photo ${idx + 1}` })}
-                                  style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                          {/* Source/Audit Photos (stored on quote_lines.photos JSON) */}
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Photos</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {photos.map((url, idx) => (
+                                <div key={idx} style={{ position: 'relative', width: '72px', height: '72px', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+                                  <img
+                                    src={url}
+                                    alt={`Photo ${idx + 1}`}
+                                    onClick={() => setViewingPhoto({ url, name: `${line.item?.name || line.item_name || 'Line'} Photo ${idx + 1}` })}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                                  />
+                                  <button
+                                    onClick={() => handleLinePhotoDelete(line.id, url)}
+                                    style={{
+                                      position: 'absolute', top: '2px', right: '2px',
+                                      width: '20px', height: '20px', borderRadius: '50%',
+                                      backgroundColor: 'rgba(220,38,38,0.85)', color: '#fff',
+                                      border: 'none', cursor: 'pointer', fontSize: '12px',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                              <label style={{
+                                width: '72px', height: '72px', borderRadius: '8px',
+                                border: `2px dashed ${theme.border}`, cursor: 'pointer',
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                color: theme.textMuted, fontSize: '10px', gap: '2px',
+                                backgroundColor: theme.bgCard
+                              }}>
+                                <Camera size={18} />
+                                <span>Add</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  style={{ display: 'none' }}
+                                  onChange={(e) => handleLinePhotoUpload(line.id, e)}
                                 />
-                                <button
-                                  onClick={() => handleLinePhotoDelete(line.id, url)}
-                                  style={{
-                                    position: 'absolute', top: '2px', right: '2px',
-                                    width: '20px', height: '20px', borderRadius: '50%',
-                                    backgroundColor: 'rgba(220,38,38,0.85)', color: '#fff',
-                                    border: 'none', cursor: 'pointer', fontSize: '12px',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                  }}
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-                            ))}
-                            <label style={{
-                              width: '72px', height: '72px', borderRadius: '8px',
-                              border: `2px dashed ${theme.border}`, cursor: 'pointer',
-                              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                              color: theme.textMuted, fontSize: '10px', gap: '2px',
-                              backgroundColor: theme.bgCard
-                            }}>
-                              <Camera size={18} />
-                              <span>Add</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                style={{ display: 'none' }}
-                                onChange={(e) => handleLinePhotoUpload(line.id, e)}
-                              />
-                            </label>
+                              </label>
+                            </div>
+                            {photos.length === 0 && (
+                              <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>No photos yet. Click Add to attach.</p>
+                            )}
                           </div>
-                          {photos.length === 0 && (
-                            <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>No photos yet. Click Add to attach.</p>
-                          )}
+                          {/* Before Photos (file_attachments) */}
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Before</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {((linePhotos[line.id] || []).filter(p => p.photo_context === 'line_before')).map(photo => (
+                                <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
+                              ))}
+                              <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(line.id, 'line_before')} />
+                            </div>
+                          </div>
+                          {/* After (Completion) Photos */}
+                          <div>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>After (Completion)</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {((linePhotos[line.id] || []).filter(p => p.photo_context === 'line_after')).map(photo => (
+                                <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
+                              ))}
+                              <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(line.id, 'line_after')} />
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2188,170 +2353,15 @@ export default function EstimateDetail() {
               }}
               placeholder="Internal notes..."
             />
-          </div>
-
-          {/* Expenses */}
-          <div style={{
-            backgroundColor: theme.bgCard,
-            borderRadius: '12px',
-            border: `1px solid ${theme.border}`,
-            padding: '20px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Receipt size={16} style={{ color: theme.accent }} />
-                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                  Expenses ({quoteExpenses.length})
-                </h3>
-              </div>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  style={{ display: 'none' }}
-                  ref={(el) => { if (el) el._receiptInput = true }}
-                  id="quote-receipt-input"
-                  onChange={handleQuoteReceiptCapture}
-                />
-                <button
-                  onClick={() => document.getElementById('quote-receipt-input')?.click()}
-                  disabled={receiptUploading}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '4px',
-                    padding: '8px 12px', backgroundColor: theme.accentBg, color: theme.accent,
-                    border: `1px solid ${theme.accent}`, borderRadius: '6px',
-                    fontSize: '12px', fontWeight: '500', cursor: 'pointer', minHeight: '44px',
-                    opacity: receiptUploading ? 0.6 : 1
-                  }}
-                >
-                  <Camera size={14} />
-                  {receiptUploading ? 'Uploading...' : 'Receipt'}
-                </button>
-                <button
-                  onClick={() => setShowAddExpense(!showAddExpense)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '4px',
-                    padding: '8px 12px', backgroundColor: theme.accent, color: '#fff',
-                    border: 'none', borderRadius: '6px',
-                    fontSize: '12px', fontWeight: '500', cursor: 'pointer', minHeight: '44px'
-                  }}
-                >
-                  <Plus size={14} />
-                  Add
-                </button>
-              </div>
+            {/* Notes photos */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' }}>
+              {notesPhotos.map(photo => (
+                <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
+              ))}
+              <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(null, 'notes')} />
             </div>
-
-            {showAddExpense && (
-              <div style={{
-                padding: '12px', backgroundColor: theme.bg, borderRadius: '8px',
-                border: `1px solid ${theme.border}`, marginBottom: '12px'
-              }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Amount</label>
-                    <input
-                      type="number" step="0.01" value={expenseForm.amount}
-                      onChange={(e) => setExpenseForm(f => ({ ...f, amount: e.target.value }))}
-                      placeholder="0.00"
-                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Merchant</label>
-                    <input
-                      type="text" value={expenseForm.merchant}
-                      onChange={(e) => setExpenseForm(f => ({ ...f, merchant: e.target.value }))}
-                      placeholder="Store name"
-                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
-                    />
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Category</label>
-                    <select
-                      value={expenseForm.category}
-                      onChange={(e) => setExpenseForm(f => ({ ...f, category: e.target.value }))}
-                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
-                    >
-                      {EXPENSE_CATEGORIES.map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Notes</label>
-                    <input
-                      type="text" value={expenseForm.notes}
-                      onChange={(e) => setExpenseForm(f => ({ ...f, notes: e.target.value }))}
-                      placeholder="Optional"
-                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
-                    />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={handleAddQuoteExpense} style={{
-                    padding: '10px 20px', backgroundColor: theme.accent, color: '#fff',
-                    border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500',
-                    cursor: 'pointer', minHeight: '44px'
-                  }}>
-                    Save Expense
-                  </button>
-                  <button onClick={() => setShowAddExpense(false)} style={{
-                    padding: '10px 16px', backgroundColor: 'transparent', color: theme.textMuted,
-                    border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px',
-                    cursor: 'pointer', minHeight: '44px'
-                  }}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {quoteExpenses.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '16px 0', color: theme.textMuted, fontSize: '13px' }}>
-                No expenses yet. Capture a receipt or add an expense manually.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {quoteExpenses.map(exp => (
-                  <div key={exp.id} style={{
-                    display: 'flex', alignItems: 'center', gap: '10px',
-                    padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
-                    border: `1px solid ${theme.border}`
-                  }}>
-                    {exp.receipt_url && (
-                      <img
-                        src={exp.receipt_url}
-                        alt="receipt"
-                        onClick={() => setViewingPhoto({ url: exp.receipt_url, name: 'Receipt' })}
-                        style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: `1px solid ${theme.border}`, flexShrink: 0 }}
-                      />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
-                        {exp.vendor || exp.description || 'Expense'}
-                      </div>
-                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                        {exp.category || 'Uncategorized'} {exp.date ? `— ${new Date(exp.date).toLocaleDateString()}` : ''}
-                      </div>
-                    </div>
-                    <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px', flexShrink: 0 }}>
-                      ${(parseFloat(exp.amount) || 0).toFixed(2)}
-                    </div>
-                    <button onClick={() => handleDeleteQuoteExpense(exp.id)} style={{
-                      padding: '4px', background: 'none', border: 'none', color: theme.textMuted,
-                      cursor: 'pointer'
-                    }}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
+
         </div>
 
         {/* Sidebar */}
@@ -2847,6 +2857,77 @@ export default function EstimateDetail() {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Expenses */}
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <DollarSign size={15} style={{ color: theme.accent }} />
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: 0 }}>Expenses ({quoteExpenses.length})</h3>
+              </div>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} id="quote-receipt-input" onChange={handleQuoteReceiptCapture} />
+                <button onClick={() => document.getElementById('quote-receipt-input')?.click()} disabled={receiptUploading} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '6px 10px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '6px', fontSize: '11px', fontWeight: '500', cursor: 'pointer', minHeight: '32px', opacity: receiptUploading ? 0.6 : 1 }}>
+                  <Camera size={12} />{receiptUploading ? '...' : 'Receipt'}
+                </button>
+                <button onClick={() => setShowAddExpense(!showAddExpense)} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '6px 10px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '500', cursor: 'pointer', minHeight: '32px' }}>
+                  <Plus size={12} />Add
+                </button>
+              </div>
+            </div>
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '10px', lineHeight: '1.4' }}>Track costs (meals, travel, etc.). These follow to the job on conversion.</div>
+            {showAddExpense && (
+              <div style={{ padding: '10px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}`, marginBottom: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: theme.text, marginBottom: '3px' }}>Amount</label>
+                      <input type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" style={{ width: '100%', padding: '8px 10px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: theme.text, marginBottom: '3px' }}>Merchant</label>
+                      <input type="text" value={expenseForm.merchant} onChange={(e) => setExpenseForm(f => ({ ...f, merchant: e.target.value }))} placeholder="Store name" style={{ width: '100%', padding: '8px 10px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: theme.text, marginBottom: '3px' }}>Category</label>
+                    <select value={expenseForm.category} onChange={(e) => setExpenseForm(f => ({ ...f, category: e.target.value }))} style={{ width: '100%', padding: '8px 10px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}>
+                      {EXPENSE_CATEGORIES.map(c => (<option key={c} value={c}>{c}</option>))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: theme.text, marginBottom: '3px' }}>Notes</label>
+                    <input type="text" value={expenseForm.notes} onChange={(e) => setExpenseForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" style={{ width: '100%', padding: '8px 10px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={handleAddQuoteExpense} style={{ padding: '8px 14px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '500', cursor: 'pointer', minHeight: '36px' }}>Save</button>
+                  <button onClick={() => setShowAddExpense(false)} style={{ padding: '8px 12px', backgroundColor: 'transparent', color: theme.textMuted, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '12px', cursor: 'pointer', minHeight: '36px' }}>Cancel</button>
+                </div>
+              </div>
+            )}
+            {quoteExpenses.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '12px 0', color: theme.textMuted, fontSize: '12px' }}>No expenses yet</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {quoteExpenses.map(exp => (
+                  <div key={exp.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
+                    {exp.receipt_url && (<img src={exp.receipt_url} alt="receipt" onClick={() => setViewingPhoto({ url: exp.receipt_url, name: 'Receipt' })} style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer', border: `1px solid ${theme.border}`, flexShrink: 0 }} />)}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.vendor || exp.description || 'Expense'}</div>
+                      <div style={{ fontSize: '10px', color: theme.textMuted }}>{exp.category || 'Uncategorized'}</div>
+                    </div>
+                    <div style={{ fontWeight: '600', color: theme.text, fontSize: '13px', flexShrink: 0 }}>${(parseFloat(exp.amount) || 0).toFixed(2)}</div>
+                    <button onClick={() => handleDeleteQuoteExpense(exp.id)} style={{ padding: '4px', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><Trash2 size={12} /></button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', fontSize: '12px', fontWeight: '600', color: theme.text, borderTop: `1px solid ${theme.border}`, marginTop: '4px' }}>
+                  <span>Total</span>
+                  <span>${quoteExpenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0).toFixed(2)}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Attachments */}
