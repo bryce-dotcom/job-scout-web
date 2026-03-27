@@ -1163,76 +1163,238 @@ export default function LeadDetail() {
         {/* APPOINTMENT TAB */}
         {activeTab === 'appointment' && (
           <div>
-            {appointment ? (
-              <div style={{
-                padding: isMobile ? '16px' : '24px',
-                backgroundColor: '#dcfce7',
-                borderRadius: '12px',
-                border: '1px solid #86efac'
-              }}>
-                <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: '12px', marginBottom: '16px' }}>
-                  <Calendar size={isMobile ? 20 : 24} color="#166534" style={{ flexShrink: 0, marginTop: isMobile ? '2px' : 0 }} />
-                  <div>
-                    <div style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: '700', color: '#166534' }}>
-                      {new Date(appointment.start_time).toLocaleDateString('en-US', {
-                        weekday: isMobile ? 'short' : 'long',
-                        month: isMobile ? 'short' : 'long',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
-                    </div>
-                    <div style={{ fontSize: isMobile ? '14px' : '16px', color: '#15803d' }}>
-                      {new Date(appointment.start_time).toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                      {appointment.end_time && (
-                        <>
-                          {' - '}
-                          {new Date(appointment.end_time).toLocaleTimeString('en-US', {
-                            hour: '2-digit',
-                            minute: '2-digit'
+            {appointment ? (() => {
+              const statusColors = {
+                'Scheduled': { bg: 'rgba(59,130,246,0.12)', text: '#2563eb', border: '#93c5fd' },
+                'Confirmed': { bg: '#dcfce7', text: '#166534', border: '#86efac' },
+                'Completed': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349', border: '#a3b18a' },
+                'Cancelled': { bg: 'rgba(194,90,90,0.1)', text: '#991b1b', border: '#fca5a5' },
+                'No Show': { bg: 'rgba(234,179,8,0.12)', text: '#854d0e', border: '#fde047' }
+              }
+              const sc = statusColors[appointment.status] || statusColors['Scheduled']
+              return (
+                <div style={{
+                  padding: isMobile ? '16px' : '24px',
+                  backgroundColor: sc.bg,
+                  borderRadius: '12px',
+                  border: `1px solid ${sc.border}`
+                }}>
+                  {/* Header: date/time + edit link */}
+                  <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: '12px' }}>
+                      <Calendar size={isMobile ? 20 : 24} color={sc.text} style={{ flexShrink: 0, marginTop: isMobile ? '2px' : 0 }} />
+                      <div>
+                        <div style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: '700', color: sc.text }}>
+                          {appointment.title || new Date(appointment.start_time).toLocaleDateString('en-US', {
+                            weekday: isMobile ? 'short' : 'long',
+                            month: isMobile ? 'short' : 'long',
+                            day: 'numeric',
+                            year: 'numeric'
                           })}
-                        </>
-                      )}
+                        </div>
+                        <div style={{ fontSize: isMobile ? '14px' : '16px', color: sc.text, opacity: 0.8 }}>
+                          {new Date(appointment.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          {' '}
+                          {new Date(appointment.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          {appointment.end_time && (
+                            <> - {new Date(appointment.end_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</>
+                          )}
+                        </div>
+                      </div>
                     </div>
+                    <button
+                      onClick={() => navigate('/appointments')}
+                      style={{
+                        padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                        backgroundColor: 'rgba(255,255,255,0.6)', color: sc.text,
+                        border: `1px solid ${sc.border}`, borderRadius: '6px', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0
+                      }}
+                    >
+                      <ExternalLink size={12} />
+                      Calendar
+                    </button>
                   </div>
-                </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '16px' }}>
-                  <div>
-                    <div style={{ fontSize: '12px', color: '#15803d', marginBottom: '4px' }}>Status</div>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534' }}>
-                      {appointment.status}
+                  {/* Editable fields */}
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '12px' : '16px' }}>
+                    {/* Status dropdown */}
+                    <div>
+                      <div style={{ fontSize: '12px', color: sc.text, marginBottom: '4px', fontWeight: '600' }}>Status</div>
+                      <select
+                        value={appointment.status}
+                        onChange={async (e) => {
+                          const newStatus = e.target.value
+                          await supabase.from('appointments').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', appointment.id)
+                          setAppointment(prev => ({ ...prev, status: newStatus }))
+                        }}
+                        style={{
+                          width: '100%', padding: '8px 10px', fontSize: '14px', fontWeight: '600',
+                          backgroundColor: 'rgba(255,255,255,0.7)', color: sc.text,
+                          border: `1px solid ${sc.border}`, borderRadius: '8px',
+                          cursor: 'pointer', outline: 'none', minHeight: '44px'
+                        }}
+                      >
+                        {['Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'No Show'].map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Salesperson dropdown */}
+                    <div>
+                      <div style={{ fontSize: '12px', color: sc.text, marginBottom: '4px', fontWeight: '600' }}>Salesperson</div>
+                      <select
+                        value={appointment.salesperson_id || ''}
+                        onChange={async (e) => {
+                          const newId = e.target.value || null
+                          await supabase.from('appointments').update({ salesperson_id: newId, updated_at: new Date().toISOString() }).eq('id', appointment.id)
+                          const emp = employees.find(em => em.id === newId)
+                          setAppointment(prev => ({ ...prev, salesperson_id: newId, salesperson: emp ? { id: emp.id, name: emp.name } : null }))
+                        }}
+                        style={{
+                          width: '100%', padding: '8px 10px', fontSize: '14px',
+                          backgroundColor: 'rgba(255,255,255,0.7)', color: sc.text,
+                          border: `1px solid ${sc.border}`, borderRadius: '8px',
+                          cursor: 'pointer', outline: 'none', minHeight: '44px'
+                        }}
+                      >
+                        <option value="">Unassigned</option>
+                        {employees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Appointment Type */}
+                    <div>
+                      <div style={{ fontSize: '12px', color: sc.text, marginBottom: '4px', fontWeight: '600' }}>Type</div>
+                      <select
+                        value={appointment.appointment_type || ''}
+                        onChange={async (e) => {
+                          const val = e.target.value || null
+                          await supabase.from('appointments').update({ appointment_type: val, updated_at: new Date().toISOString() }).eq('id', appointment.id)
+                          setAppointment(prev => ({ ...prev, appointment_type: val }))
+                        }}
+                        style={{
+                          width: '100%', padding: '8px 10px', fontSize: '14px',
+                          backgroundColor: 'rgba(255,255,255,0.7)', color: sc.text,
+                          border: `1px solid ${sc.border}`, borderRadius: '8px',
+                          cursor: 'pointer', outline: 'none', minHeight: '44px'
+                        }}
+                      >
+                        <option value="">Select type</option>
+                        {['Sales Call', 'Estimate', 'Site Visit', 'Follow-up', 'Consultation', 'Other'].map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Location */}
+                    <div>
+                      <div style={{ fontSize: '12px', color: sc.text, marginBottom: '4px', fontWeight: '600' }}>Location</div>
+                      <input
+                        type="text"
+                        defaultValue={appointment.location || ''}
+                        placeholder="Address or location"
+                        onBlur={async (e) => {
+                          const val = e.target.value || null
+                          if (val !== (appointment.location || '')) {
+                            await supabase.from('appointments').update({ location: val, updated_at: new Date().toISOString() }).eq('id', appointment.id)
+                            setAppointment(prev => ({ ...prev, location: val }))
+                          }
+                        }}
+                        style={{
+                          width: '100%', padding: '8px 10px', fontSize: '14px',
+                          backgroundColor: 'rgba(255,255,255,0.7)', color: sc.text,
+                          border: `1px solid ${sc.border}`, borderRadius: '8px',
+                          outline: 'none', minHeight: '44px', boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
+                    {/* Reschedule - date/time */}
+                    <div>
+                      <div style={{ fontSize: '12px', color: sc.text, marginBottom: '4px', fontWeight: '600' }}>Date & Time</div>
+                      <input
+                        type="datetime-local"
+                        defaultValue={appointment.start_time ? appointment.start_time.slice(0, 16) : ''}
+                        onBlur={async (e) => {
+                          const val = e.target.value
+                          if (val && val !== (appointment.start_time || '').slice(0, 16)) {
+                            await supabase.from('appointments').update({ start_time: val, updated_at: new Date().toISOString() }).eq('id', appointment.id)
+                            setAppointment(prev => ({ ...prev, start_time: val }))
+                          }
+                        }}
+                        style={{
+                          width: '100%', padding: '8px 10px', fontSize: '14px',
+                          backgroundColor: 'rgba(255,255,255,0.7)', color: sc.text,
+                          border: `1px solid ${sc.border}`, borderRadius: '8px',
+                          outline: 'none', minHeight: '44px', boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
+                    {/* Outcome */}
+                    <div>
+                      <div style={{ fontSize: '12px', color: sc.text, marginBottom: '4px', fontWeight: '600' }}>Outcome</div>
+                      <input
+                        type="text"
+                        defaultValue={appointment.outcome || ''}
+                        placeholder="e.g. Signed contract, Needs follow-up"
+                        onBlur={async (e) => {
+                          const val = e.target.value || null
+                          if (val !== (appointment.outcome || '')) {
+                            await supabase.from('appointments').update({ outcome: val, updated_at: new Date().toISOString() }).eq('id', appointment.id)
+                            setAppointment(prev => ({ ...prev, outcome: val }))
+                          }
+                        }}
+                        style={{
+                          width: '100%', padding: '8px 10px', fontSize: '14px',
+                          backgroundColor: 'rgba(255,255,255,0.7)', color: sc.text,
+                          border: `1px solid ${sc.border}`, borderRadius: '8px',
+                          outline: 'none', minHeight: '44px', boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
+                    {/* Notes — full width */}
+                    <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                      <div style={{ fontSize: '12px', color: sc.text, marginBottom: '4px', fontWeight: '600' }}>Notes</div>
+                      <textarea
+                        defaultValue={appointment.notes || ''}
+                        placeholder="Add notes for the sales rep..."
+                        rows={3}
+                        onBlur={async (e) => {
+                          const val = e.target.value || null
+                          if (val !== (appointment.notes || '')) {
+                            await supabase.from('appointments').update({ notes: val, updated_at: new Date().toISOString() }).eq('id', appointment.id)
+                            setAppointment(prev => ({ ...prev, notes: val }))
+                          }
+                        }}
+                        style={{
+                          width: '100%', padding: '10px', fontSize: '14px',
+                          backgroundColor: 'rgba(255,255,255,0.7)', color: sc.text,
+                          border: `1px solid ${sc.border}`, borderRadius: '8px',
+                          outline: 'none', resize: 'vertical', minHeight: '80px',
+                          boxSizing: 'border-box', lineHeight: '1.5'
+                        }}
+                      />
                     </div>
                   </div>
-                  {appointment.salesperson && (
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#15803d', marginBottom: '4px' }}>Salesperson</div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534' }}>
-                        {appointment.salesperson.name}
+
+                  {/* Setter info */}
+                  {appointment.setter_id && (() => {
+                    const setter = employees.find(e => e.id === appointment.setter_id)
+                    return setter ? (
+                      <div style={{ marginTop: '12px', fontSize: '12px', color: sc.text, opacity: 0.6 }}>
+                        Set by {setter.name} {appointment.created_at && <>on {new Date(appointment.created_at).toLocaleDateString()}</>}
                       </div>
-                    </div>
-                  )}
-                  {appointment.location && (
-                    <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
-                      <div style={{ fontSize: '12px', color: '#15803d', marginBottom: '4px' }}>Location</div>
-                      <div style={{ fontSize: '14px', color: '#166534' }}>
-                        {appointment.location}
-                      </div>
-                    </div>
-                  )}
-                  {appointment.notes && (
-                    <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
-                      <div style={{ fontSize: '12px', color: '#15803d', marginBottom: '4px' }}>Notes</div>
-                      <div style={{ fontSize: '14px', color: '#166534' }}>
-                        {appointment.notes}
-                      </div>
-                    </div>
-                  )}
+                    ) : null
+                  })()}
                 </div>
-              </div>
-            ) : (
+              )
+            })() : (
               <EmptyState
                 icon={CalendarDays}
                 iconColor="#22c55e"

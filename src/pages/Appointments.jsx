@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { APPOINTMENT_STATUS } from '../lib/schema'
 import { SOURCE_COLORS, normalizeAppointment, normalizeJob, normalizeGoogleEvent } from '../lib/calendarUtils'
-import { Plus, X, Trash2, Upload, Download, ChevronLeft, ChevronRight, RefreshCw, Calendar, Unlink } from 'lucide-react'
+import { Plus, X, Trash2, Upload, Download, ChevronLeft, ChevronRight, RefreshCw, Calendar, Unlink, Ban } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { appointmentsFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
@@ -109,6 +109,10 @@ export default function Appointments() {
   const [gcalLoading, setGcalLoading] = useState(false)
   const [gcalToken, setGcalToken] = useState(null)
   const [connectedEmployees, setConnectedEmployees] = useState([]) // employees with connected Google Calendars
+
+  // Drag-and-drop state (week view)
+  const [dragEvent, setDragEvent] = useState(null) // normalized event being dragged
+  const [dragOverSlot, setDragOverSlot] = useState(null) // { day: Date, hour: number }
 
   const isAdmin = checkAdmin(user)
 
@@ -324,6 +328,94 @@ export default function Appointments() {
     if (gcalConnected) fetchGcalEvents()
   }
 
+  // ─── Drag-and-drop handlers (week view) ───
+  const handleDragStart = (evt, e) => {
+    if (evt.readOnly || evt.source !== 'appointment') return
+    setDragEvent(evt)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', evt.id)
+  }
+
+  const handleDragOver = (day, hour, e) => {
+    if (!dragEvent) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverSlot({ day: day.toDateString(), hour })
+  }
+
+  const handleDragLeave = () => {
+    setDragOverSlot(null)
+  }
+
+  const handleDrop = async (day, hour, e) => {
+    e.preventDefault()
+    setDragOverSlot(null)
+    if (!dragEvent || dragEvent.source !== 'appointment') { setDragEvent(null); return }
+
+    const apt = dragEvent.meta
+    const oldStart = new Date(apt.start_time)
+    const newStart = new Date(day)
+    newStart.setHours(hour, 0, 0, 0)
+
+    // If same slot, no-op
+    if (oldStart.toDateString() === newStart.toDateString() && oldStart.getHours() === hour) {
+      setDragEvent(null)
+      return
+    }
+
+    // Calculate duration to shift end_time proportionally
+    let newEnd = null
+    if (apt.end_time) {
+      const duration = new Date(apt.end_time).getTime() - oldStart.getTime()
+      newEnd = new Date(newStart.getTime() + duration).toISOString()
+    }
+
+    try {
+      await updateAppointment(apt.id, {
+        start_time: newStart.toISOString(),
+        end_time: newEnd,
+        updated_at: new Date().toISOString()
+      })
+      await fetchAppointments()
+    } catch (err) {
+      console.error('Failed to move appointment:', err)
+    }
+    setDragEvent(null)
+  }
+
+  const handleDragEnd = () => {
+    setDragEvent(null)
+    setDragOverSlot(null)
+  }
+
+  // ─── Block Time helper ───
+  const openBlockTimeModal = (date = null, hour = null) => {
+    setEditingAppointment(null)
+    let defaultDate = ''
+    if (date && hour != null) {
+      const dt = new Date(date)
+      dt.setHours(hour, 0, 0, 0)
+      defaultDate = formatDateTimeLocal(dt)
+    }
+    const endDate = defaultDate ? (() => {
+      const d = new Date(date)
+      d.setHours(hour + 1, 0, 0, 0)
+      return formatDateTimeLocal(d)
+    })() : ''
+    setFormData({
+      ...emptyAppointment,
+      title: 'Blocked',
+      appointment_type: 'Block',
+      status: 'Confirmed',
+      employee_id: user?.id || '',
+      start_time: defaultDate,
+      end_time: endDate,
+      notes: ''
+    })
+    setError(null)
+    setShowModal(true)
+  }
+
   // ─── Modal helpers ───
   const formatDateTimeLocal = (date) => {
     const y = date.getFullYear()
@@ -507,29 +599,51 @@ export default function Appointments() {
 
   // ─── Event chip renderer ───
   const renderEventChip = (evt, compact = false) => {
+    const isBlock = evt.source === 'appointment' && evt.meta?.appointment_type === 'Block'
+    const isDraggable = evt.source === 'appointment' && !evt.readOnly
+    const isDragging = dragEvent?.id === evt.id
+
     return (
       <div
         key={evt.id}
+        draggable={isDraggable && compact}
+        onDragStart={isDraggable && compact ? (e) => handleDragStart(evt, e) : undefined}
+        onDragEnd={isDraggable && compact ? handleDragEnd : undefined}
         onClick={(e) => { e.stopPropagation(); handleEventClick(evt) }}
         style={{
-          backgroundColor: evt.color + '18',
-          borderLeft: `3px solid ${evt.color}`,
-          color: theme.text,
+          backgroundColor: isBlock ? `${theme.textMuted}20` : (evt.color + '18'),
+          borderLeft: isBlock ? `3px solid ${theme.textMuted}` : `3px solid ${evt.color}`,
+          color: isBlock ? theme.textMuted : theme.text,
           fontSize: compact ? '10px' : '11px',
           padding: compact ? '2px 4px' : '4px 6px',
           borderRadius: '4px',
-          cursor: 'pointer',
+          cursor: isDraggable && compact ? 'grab' : 'pointer',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          marginBottom: '2px'
+          marginBottom: '2px',
+          opacity: isDragging ? 0.4 : 1,
+          fontStyle: isBlock ? 'italic' : 'normal',
+          background: isBlock && compact ? `repeating-linear-gradient(-45deg, ${theme.textMuted}10, ${theme.textMuted}10 4px, ${theme.textMuted}06 4px, ${theme.textMuted}06 8px)` : undefined
         }}
-        title={`${evt.start ? formatTime(evt.start) : ''} ${evt.title}${evt.location ? ' - ' + evt.location : ''}`}
+        title={isBlock
+          ? `Blocked: ${evt.meta?.notes || evt.title}${evt.start ? ' at ' + formatTime(evt.start) : ''}`
+          : `${evt.start ? formatTime(evt.start) : ''} ${evt.title}${evt.location ? ' - ' + evt.location : ''}`
+        }
       >
-        {!compact && evt.start && !evt.allDay && (
-          <span style={{ fontWeight: '600', marginRight: '4px', color: evt.color }}>{formatTime(evt.start)}</span>
+        {isBlock ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <Ban size={compact ? 8 : 10} />
+            {compact ? (evt.meta?.notes || 'Blocked') : evt.title}
+          </span>
+        ) : (
+          <>
+            {!compact && evt.start && !evt.allDay && (
+              <span style={{ fontWeight: '600', marginRight: '4px', color: evt.color }}>{formatTime(evt.start)}</span>
+            )}
+            <span>{evt.title}</span>
+          </>
         )}
-        <span>{evt.title}</span>
       </div>
     )
   }
@@ -553,6 +667,25 @@ export default function Appointments() {
           </button>
           <button onClick={() => exportToCSV(storeAppointments || [], appointmentsFields, 'appointments_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
+          </button>
+          <button
+            onClick={() => openBlockTimeModal()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 16px',
+              backgroundColor: 'transparent',
+              color: theme.textMuted,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Ban size={18} />
+            Block Time
           </button>
           <button
             onClick={() => openAddModal()}
@@ -724,18 +857,28 @@ export default function Appointments() {
                   }}>{formatHour(hour)}</td>
                   {weekDays.map((day, i) => {
                     const slotEvents = getEventsForSlot(day, hour)
+                    const isDropTarget = dragOverSlot?.day === day.toDateString() && dragOverSlot?.hour === hour
+                    const hasBlock = slotEvents.some(evt => evt.source === 'appointment' && evt.meta?.appointment_type === 'Block')
                     return (
                       <td
                         key={i}
                         onClick={() => openAddModal(day, hour)}
+                        onDragOver={(e) => handleDragOver(day, hour, e)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(day, hour, e)}
                         style={{
                           padding: '2px',
                           borderBottom: `1px solid ${theme.border}`,
                           borderLeft: `1px solid ${theme.border}`,
                           height: '50px',
                           verticalAlign: 'top',
-                          backgroundColor: isToday(day) ? 'rgba(90,99,73,0.04)' : 'transparent',
-                          cursor: 'pointer'
+                          backgroundColor: isDropTarget
+                            ? 'rgba(59,130,246,0.12)'
+                            : hasBlock
+                              ? `${theme.textMuted}08`
+                              : isToday(day) ? 'rgba(90,99,73,0.04)' : 'transparent',
+                          cursor: dragEvent ? 'copy' : 'pointer',
+                          transition: 'background-color 0.15s'
                         }}
                       >
                         {slotEvents.map(evt => renderEventChip(evt, true))}
@@ -955,6 +1098,7 @@ export default function Appointments() {
                     <option value="Follow-up">Follow-up</option>
                     <option value="Consultation">Consultation</option>
                     <option value="Other">Other</option>
+                    <option value="Block">Block (No Scheduling)</option>
                   </select>
                 </div>
 

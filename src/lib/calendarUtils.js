@@ -24,7 +24,8 @@ const statusToJobColor = {
 }
 
 export function normalizeAppointment(apt) {
-  const color = statusToAppointmentColor[apt.status] || SOURCE_COLORS.appointment.bg
+  const isBlock = apt.appointment_type === 'Block'
+  const color = isBlock ? '#9ca3af' : (statusToAppointmentColor[apt.status] || SOURCE_COLORS.appointment.bg)
   return {
     id: apt.id,
     source: 'appointment',
