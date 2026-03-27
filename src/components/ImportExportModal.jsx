@@ -220,16 +220,38 @@ export default function ImportExportModal({
 
   const reqField = requiredField || fields.find(f => f.required)?.field || fields[0]?.field
 
-  // PDF handler — extracts structured data via Gemini
+  // Render PDF pages to images using pdfjs-dist (works with scanned/image PDFs)
+  const renderPdfToImages = async (arrayBuf) => {
+    const pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise
+    const pageImages = []
+    const maxPages = Math.min(pdf.numPages, 10) // Cap at 10 pages
+    for (let i = 1; i <= maxPages; i++) {
+      const page = await pdf.getPage(i)
+      const scale = 2 // 2x for readability
+      const viewport = page.getViewport({ scale })
+      const canvas = document.createElement('canvas')
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+      // Convert to JPEG base64 (smaller than PNG)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+      pageImages.push({ data: dataUrl.split(',')[1], mediaType: 'image/jpeg' })
+    }
+    return pageImages
+  }
+
+  // PDF handler — renders pages to images, then extracts structured data via Claude vision
   const handlePdfFile = async (file) => {
     setImportFile(file)
     setPdfExtracting(true)
     setStep('mapping')
     try {
       const arrayBuf = await file.arrayBuffer()
-      const base64 = btoa(
-        new Uint8Array(arrayBuf).reduce((data, byte) => data + String.fromCharCode(byte), '')
-      )
+
+      // Render PDF pages to images client-side (handles scanned PDFs, image-only PDFs, etc.)
+      const pageImages = await renderPdfToImages(arrayBuf)
 
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -238,12 +260,12 @@ export default function ImportExportModal({
         field: f.field, type: f.type, required: !!f.required, desc: f.desc || f.label,
       }))
 
-      // Step 1: Extract structured data from PDF via edge function (Claude + PDF vision)
+      // Step 1: Extract structured data via edge function (Claude vision on rendered page images)
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-extract-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
         body: JSON.stringify({
-          pdfBase64: base64,
+          pageImages,
           entityName: entityName || 'records',
           targetFields: targetFieldDefs,
           extraContext: extraContext || undefined,

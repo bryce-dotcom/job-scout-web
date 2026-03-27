@@ -80,7 +80,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'proposal-vendor': ['framer-motion', 'recharts']
+          'proposal-vendor': ['framer-motion', 'recharts'],
+          'pdfjs': ['pdfjs-dist']
         }
       }
     }

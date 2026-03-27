@@ -10,10 +10,10 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { pdfBase64, entityName, targetFields, extraContext } = body;
+    const { pdfBase64, pageImages, entityName, targetFields, extraContext } = body;
 
-    if (!pdfBase64) {
-      return new Response(JSON.stringify({ error: 'No PDF data provided' }),
+    if (!pdfBase64 && (!pageImages || pageImages.length === 0)) {
+      return new Response(JSON.stringify({ error: 'No PDF or image data provided' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -27,13 +27,9 @@ serve(async (req) => {
       `${f.field} (${f.type}${f.required ? ', required' : ''}): ${f.desc || f.label}`
     ).join('\n');
 
-    const prompt = `Extract all ${entityName || 'records'} from this PDF document. Return ONLY a valid JSON object with this exact structure:
-{
-  "headers": ["column1", "column2", ...],
-  "rows": [["val1", "val2", ...], ...]
-}
+    const userPrompt = `Extract all ${entityName || 'records'} from this document.
 
-Target fields for context (use these as column names where the data matches):
+Target fields (use these as column names where the data matches):
 ${fieldDescriptions}
 ${extraContext ? `\nAdditional context: ${extraContext}` : ''}
 
@@ -43,55 +39,108 @@ Rules:
 - For data that doesn't match any target field, use a descriptive header name
 - Numbers should be plain (no $ or , formatting)
 - Each row array must have the same length as the headers array
-- Return valid JSON only, no markdown fences or extra text`;
+- Return ONLY a JSON object with {"headers": [...], "rows": [[...], ...]}`;
+
+    // Build content blocks — prefer page images (rendered from PDF), fall back to PDF document type
+    const contentBlocks: any[] = [];
+
+    if (pageImages && pageImages.length > 0) {
+      // Client rendered PDF pages as images — most reliable approach
+      for (const img of pageImages) {
+        contentBlocks.push({
+          type: 'image',
+          source: { type: 'base64', media_type: img.mediaType || 'image/png', data: img.data },
+        });
+      }
+    } else {
+      // Fall back to PDF document type
+      contentBlocks.push({
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
+      });
+    }
+
+    contentBlocks.push({ type: 'text', text: userPrompt });
+
+    // Use beta header only when sending PDF document type (not needed for images)
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    };
+    if (!pageImages || pageImages.length === 0) {
+      headers['anthropic-beta'] = 'pdfs-2024-09-25';
+    }
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
+      headers,
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 8192,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
-            },
-            { type: 'text', text: prompt },
-          ],
-        }],
+        system: 'You are a data extraction assistant. Respond with ONLY a valid JSON object. No markdown fences, no explanation, no preamble. Structure: {"headers": ["col1", "col2", ...], "rows": [["val1", "val2", ...], ...]}',
+        messages: [
+          { role: 'user', content: contentBlocks },
+          { role: 'assistant', content: '{"headers":' },
+        ],
       }),
     });
 
     if (!resp.ok) {
       const errText = await resp.text();
-      return new Response(JSON.stringify({ error: `AI request failed: ${errText}` }),
+      console.error('AI API error:', resp.status, errText);
+      return new Response(JSON.stringify({ error: `AI request failed (${resp.status}). Try again or use CSV/Excel instead.` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const aiData = await resp.json();
-    const text = aiData.content?.[0]?.text || '';
+    const rawText = aiData.content?.[0]?.text || '';
 
-    // Extract JSON from response (handle potential markdown wrapping)
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const toParse = jsonMatch ? jsonMatch[1].trim() : text.trim();
+    // We prefilled with '{"headers":', so prepend it
+    const text = '{"headers":' + rawText;
 
-    // Find the JSON object
-    const objMatch = toParse.match(/\{[\s\S]*\}/);
-    if (!objMatch) {
-      return new Response(JSON.stringify({ error: 'Could not parse AI response', raw: text.substring(0, 500) }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    // Try multiple parsing strategies
+    let result: any = null;
+
+    // Strategy 1: Direct parse
+    try { result = JSON.parse(text); } catch (_) {}
+
+    // Strategy 2: Strip markdown fences then parse
+    if (!result) {
+      const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch) {
+        try { result = JSON.parse(fenceMatch[1].trim()); } catch (_) {}
+      }
     }
 
-    const result = JSON.parse(objMatch[0]);
+    // Strategy 3: Find largest JSON object
+    if (!result) {
+      const objMatch = text.match(/\{[\s\S]*\}/);
+      if (objMatch) {
+        try { result = JSON.parse(objMatch[0]); } catch (_) {}
+      }
+    }
 
-    if (!result.headers || !result.rows || result.rows.length === 0) {
-      return new Response(JSON.stringify({ error: 'No data could be extracted from this PDF' }),
+    // Strategy 4: Fix trailing commas and close truncated brackets
+    if (!result) {
+      let cleaned = text.replace(/,\s*([\]}])/g, '$1');
+      const openBrackets = (cleaned.match(/\[/g) || []).length - (cleaned.match(/\]/g) || []).length;
+      const openBraces = (cleaned.match(/\{/g) || []).length - (cleaned.match(/\}/g) || []).length;
+      for (let i = 0; i < openBrackets; i++) cleaned += ']';
+      for (let i = 0; i < openBraces; i++) cleaned += '}';
+      try { result = JSON.parse(cleaned); } catch (_) {}
+    }
+
+    if (!result || !result.headers || !result.rows) {
+      console.error('Parse failed. Raw:', text.substring(0, 1000));
+      return new Response(JSON.stringify({
+        error: 'Could not extract structured data. The document may not contain tabular data.',
+        raw: text.substring(0, 300),
+      }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (result.rows.length === 0) {
+      return new Response(JSON.stringify({ error: 'No data rows found in this document.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -99,6 +148,7 @@ Rules:
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
+    console.error('PDF extraction error:', error);
     return new Response(JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
