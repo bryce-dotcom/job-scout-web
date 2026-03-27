@@ -74,6 +74,7 @@ export default function LeadSetter() {
   const [draggedLead, setDraggedLead] = useState(null)
   const [dragOverStage, setDragOverStage] = useState(null)
   const [dragOverSlot, setDragOverSlot] = useState(null)
+  const [draggedAppointment, setDraggedAppointment] = useState(null) // for rescheduling existing appointments
 
   // Appointment form
   const [appointmentForm, setAppointmentForm] = useState({
@@ -308,6 +309,7 @@ export default function LeadSetter() {
 
   const handleDragEnd = () => {
     setDraggedLead(null)
+    setDraggedAppointment(null)
     setDragOverStage(null)
     setDragOverSlot(null)
   }
@@ -337,11 +339,19 @@ export default function LeadSetter() {
     await fetchData()
   }
 
-  // Drag to calendar slot
+  // Drag to calendar slot (works for both leads and existing appointments)
   const handleSlotDragOver = (e, date, hour) => {
     e.preventDefault()
     setDragOverSlot({ date, hour })
     setDragOverStage(null)
+  }
+
+  // Drag start for existing appointment chip
+  const handleAppointmentDragStart = (e, apt) => {
+    setDraggedAppointment(apt)
+    setDraggedLead(null)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', `apt:${apt.id}`)
   }
 
   // Helper to format date for datetime-local input (uses local time, not UTC)
@@ -357,6 +367,36 @@ export default function LeadSetter() {
   const handleSlotDrop = async (e, date, hour) => {
     e.preventDefault()
     setDragOverSlot(null)
+
+    // Reschedule existing appointment via drag
+    if (draggedAppointment) {
+      const apt = draggedAppointment
+      const oldStart = new Date(apt.start_time)
+      const newStart = new Date(date)
+      newStart.setHours(hour, 0, 0, 0)
+
+      // Same slot — no-op
+      if (oldStart.toDateString() === newStart.toDateString() && oldStart.getHours() === hour) {
+        setDraggedAppointment(null)
+        return
+      }
+
+      // Preserve duration
+      let newEnd = null
+      if (apt.end_time) {
+        const duration = new Date(apt.end_time).getTime() - oldStart.getTime()
+        newEnd = new Date(newStart.getTime() + duration).toISOString()
+      }
+
+      await supabase
+        .from('appointments')
+        .update({ start_time: newStart.toISOString(), end_time: newEnd, updated_at: new Date().toISOString() })
+        .eq('id', apt.id)
+
+      setDraggedAppointment(null)
+      await fetchData()
+      return
+    }
 
     if (!draggedLead) return
 
@@ -1192,6 +1232,7 @@ export default function LeadSetter() {
                     {weekDays.map((day, i) => {
                       const slotAppointments = getAppointmentsForSlot(day, hour)
                       const isSlotDragOver = dragOverSlot?.date?.toDateString() === day.toDateString() && dragOverSlot?.hour === hour
+                      const hasBlock = slotAppointments.some(a => a.appointment_type === 'Block')
 
                       return (
                         <td
@@ -1205,7 +1246,10 @@ export default function LeadSetter() {
                             borderLeft: `1px solid ${theme.border}`,
                             height: '50px',
                             verticalAlign: 'top',
-                            backgroundColor: isSlotDragOver ? theme.accentBg : (isToday(day) ? 'rgba(90,99,73,0.04)' : 'transparent'),
+                            backgroundColor: isSlotDragOver
+                              ? (draggedAppointment ? 'rgba(59,130,246,0.12)' : theme.accentBg)
+                              : hasBlock ? `${theme.textMuted}08`
+                              : (isToday(day) ? 'rgba(90,99,73,0.04)' : 'transparent'),
                             transition: 'background-color 0.15s'
                           }}
                         >
@@ -1213,15 +1257,22 @@ export default function LeadSetter() {
                             const spId = apt.salesperson_id || apt.employee_id
                             const isOverlay = spId && calendarEmployees.includes(spId) && apt.setter_id !== user?.id
                             const spColor = isOverlay ? getSalespersonColor(spId) : null
+                            const isDragging = draggedAppointment?.id === apt.id
+                            const isBlock = apt.appointment_type === 'Block'
                             return (
                             <div
                               key={apt.id}
+                              draggable
+                              onDragStart={(e) => handleAppointmentDragStart(e, apt)}
+                              onDragEnd={handleDragEnd}
                               style={{
-                                backgroundColor: isOverlay ? spColor + '18' :
+                                backgroundColor: isBlock ? `${theme.textMuted}15` :
+                                  isOverlay ? spColor + '18' :
                                   apt.status === 'Completed' ? '#dcfce7' :
                                   apt.status === 'Cancelled' ? '#fee2e2' :
                                   isToday(new Date(apt.start_time)) ? '#d1fae5' : theme.accentBg,
-                                borderLeft: `3px solid ${isOverlay ? spColor :
+                                borderLeft: `3px solid ${isBlock ? theme.textMuted :
+                                  isOverlay ? spColor :
                                   apt.status === 'Completed' ? '#16a34a' :
                                   apt.status === 'Cancelled' ? '#dc2626' :
                                   isToday(new Date(apt.start_time)) ? '#059669' : theme.accent}`,
@@ -1229,8 +1280,9 @@ export default function LeadSetter() {
                                 padding: '4px 6px',
                                 fontSize: '10px',
                                 overflow: 'hidden',
-                                cursor: 'pointer',
-                                opacity: isOverlay ? 0.85 : 1
+                                cursor: 'grab',
+                                opacity: isDragging ? 0.4 : isOverlay ? 0.85 : 1,
+                                fontStyle: isBlock ? 'italic' : 'normal'
                               }}
                               onClick={() => {
                                 if (apt.lead) {
@@ -1257,15 +1309,15 @@ export default function LeadSetter() {
                             )
                           })}
 
-                          {isSlotDragOver && slotAppointments.length === 0 && (
+                          {isSlotDragOver && (draggedLead || draggedAppointment) && slotAppointments.length === 0 && (
                             <div style={{
                               height: '100%',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              border: `2px dashed ${theme.accent}`,
+                              border: `2px dashed ${draggedAppointment ? '#3b82f6' : theme.accent}`,
                               borderRadius: '4px',
-                              color: theme.accent,
+                              color: draggedAppointment ? '#3b82f6' : theme.accent,
                               fontSize: '10px'
                             }}>
                               <CalendarPlus size={14} />
