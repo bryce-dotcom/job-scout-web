@@ -5,6 +5,8 @@ import { useTheme } from '../components/Layout'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
 import { photoQueue } from '../lib/photoQueue'
 import { ArrowLeft, Plus, Minus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText, Copy } from 'lucide-react'
+import { auditStatusColors as statusColors } from '../lib/statusColors'
+import DealBreadcrumb from '../components/DealBreadcrumb'
 
 // Light theme fallback
 const defaultTheme = {
@@ -17,15 +19,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Draft': { bg: 'rgba(125,138,127,0.15)', text: '#7d8a7f' },
-  'In Progress': { bg: 'rgba(90,99,73,0.15)', text: '#5a6349' },
-  'Completed': { bg: 'rgba(74,124,89,0.15)', text: '#4a7c59' },
-  'Submitted': { bg: 'rgba(106,90,205,0.15)', text: '#6a5acd' },
-  'Approved': { bg: 'rgba(74,124,89,0.15)', text: '#4a7c59' },
-  'Rejected': { bg: 'rgba(194,90,90,0.15)', text: '#c25a5a' }
 }
 
 // fixtureCategories and lampTypes now imported from lightingConstants.js
@@ -700,6 +693,14 @@ export default function LightingAuditDetail() {
           )}
         </div>
       </div>
+
+      {audit.lead_id && (
+        <DealBreadcrumb
+          current="lead"
+          leadId={audit.lead_id}
+          customerId={audit.customer_id}
+        />
+      )}
 
       {/* Info Section */}
       <div className="audit-detail-info" style={{

@@ -12,6 +12,8 @@ import {
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { jobsFields, jobLinesFields, jobSectionsFields } from '../lib/importExportFields'
+import { jobStatusColors as statusColors, invoiceStatusColors } from '../lib/statusColors'
+import PageHeader from '../components/PageHeader'
 
 // Light theme fallback
 const defaultTheme = {
@@ -24,21 +26,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Chillin': { bg: 'rgba(99,130,191,0.12)', text: '#6382bf' },
-  'Scheduled': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
-  'In Progress': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
-  'Completed': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
-  'Cancelled': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
-  'On Hold': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
-}
-
-const invoiceStatusColors = {
-  'Not Invoiced': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' },
-  'Invoiced': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
-  'Paid': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' }
 }
 
 const emptyJob = {
@@ -885,20 +872,10 @@ export default function Jobs() {
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '16px',
-        marginBottom: '24px',
-        flexWrap: 'wrap'
-      }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
-          Jobs
-        </h1>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {/* View toggle */}
+      <PageHeader
+        title="Jobs"
+        icon={Briefcase}
+        actions={<>
           <div style={{
             display: 'flex', borderRadius: '8px', overflow: 'hidden',
             border: `1px solid ${theme.border}`
@@ -971,8 +948,8 @@ export default function Jobs() {
             <Plus size={16} />
             Add Job
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* Recent Wins Carousel */}
       <RecentWins

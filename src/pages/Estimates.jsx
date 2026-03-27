@@ -7,6 +7,8 @@ import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar, Up
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { estimatesFields, quoteLinesFields } from '../lib/importExportFields'
+import { quoteStatusColors as statusColors } from '../lib/statusColors'
+import PageHeader from '../components/PageHeader'
 
 // Light theme fallback
 const defaultTheme = {
@@ -19,14 +21,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Draft': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' },
-  'Sent': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
-  'Approved': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
-  'Rejected': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
-  'Expired': { bg: 'rgba(124,111,74,0.12)', text: '#7c6f4a' }
 }
 
 export default function Estimates() {
@@ -229,23 +223,10 @@ export default function Estimates() {
   return (
     <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '16px',
-        marginBottom: '24px',
-        flexWrap: 'wrap'
-      }}>
-        <h1 style={{
-          fontSize: '24px',
-          fontWeight: '700',
-          color: theme.text
-        }}>
-          Estimates
-        </h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+      <PageHeader
+        title="Estimates"
+        icon={FileText}
+        actions={<>
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
@@ -271,8 +252,8 @@ export default function Estimates() {
             <Plus size={18} />
             New Estimate
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* Stats Cards */}
       <div style={{

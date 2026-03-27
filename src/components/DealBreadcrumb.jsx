@@ -22,7 +22,7 @@ const steps = [
   { key: 'invoice', label: 'Invoice', path: (id) => `/invoices/${id}` }
 ]
 
-export default function DealBreadcrumb({ current, leadId, quoteId, customerId, jobId }) {
+export default function DealBreadcrumb({ current, leadId, quoteId, customerId, jobId, invoiceId }) {
   const navigate = useNavigate()
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -32,7 +32,7 @@ export default function DealBreadcrumb({ current, leadId, quoteId, customerId, j
     quote: quoteId || null,
     customer: customerId || null,
     job: jobId || null,
-    invoice: null
+    invoice: invoiceId || null
   })
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export default function DealBreadcrumb({ current, leadId, quoteId, customerId, j
       quote: quoteId || null,
       customer: customerId || null,
       job: jobId || null,
-      invoice: null
+      invoice: invoiceId || null
     }
 
     const promises = []

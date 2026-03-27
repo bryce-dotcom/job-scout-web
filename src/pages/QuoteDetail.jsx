@@ -7,6 +7,7 @@ import ProductPickerModal from '../components/ProductPickerModal'
 import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download } from 'lucide-react'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
+import { quoteStatusColors as statusColors } from '../lib/statusColors'
 
 // Light theme fallback
 const defaultTheme = {
@@ -19,13 +20,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Draft': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' },
-  'Sent': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
-  'Approved': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
-  'Rejected': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' }
 }
 
 export default function QuoteDetail() {

@@ -3,9 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Pencil, Trash2, X, User, Phone, Mail, Building2, Search, Upload, Download } from 'lucide-react'
+import { supabase } from '../lib/supabase'
+import { toast } from '../lib/toast'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { customersFields } from '../lib/importExportFields'
+import PageHeader from '../components/PageHeader'
 
 const emptyCustomer = {
   name: '',
@@ -171,11 +174,29 @@ export default function Customers() {
     setLoading(false)
   }
 
-  // Soft delete - set status to Inactive
   const handleDelete = async (customer) => {
-    if (!confirm(`Are you sure you want to deactivate ${customer.name}?`)) return
+    if (!confirm(`Delete ${customer.name}? This will permanently remove the customer.`)) return
 
-    await updateCustomer(customer.id, { status: 'Inactive', updated_at: new Date().toISOString() })
+    // Try hard delete directly via supabase
+    const { error } = await supabase
+      .from('customers')
+      .delete()
+      .eq('id', customer.id)
+
+    if (error) {
+      // FK constraint — customer has linked records
+      if (error.code === '23503' || error.message?.includes('violates foreign key')) {
+        toast.error(`Cannot delete — ${customer.name} has linked jobs, invoices, or quotes. Deactivating instead.`)
+        await updateCustomer(customer.id, { status: 'Inactive', updated_at: new Date().toISOString() })
+      } else {
+        toast.error('Delete failed: ' + error.message)
+      }
+      return
+    }
+
+    // Remove from local state
+    await fetchCustomers()
+    toast.success(`${customer.name} deleted`)
   }
 
   const getStatusStyle = (status) => {
@@ -212,23 +233,10 @@ export default function Customers() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '24px',
-        flexWrap: 'wrap',
-        gap: '16px'
-      }}>
-        <h1 style={{
-          fontSize: '24px',
-          fontWeight: '700',
-          color: theme.text
-        }}>
-          Customers
-        </h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+      <PageHeader
+        title="Customers"
+        icon={User}
+        actions={<>
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
@@ -254,8 +262,8 @@ export default function Customers() {
             <Plus size={20} />
             Add Customer
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* Search and Filter */}
       <div style={{

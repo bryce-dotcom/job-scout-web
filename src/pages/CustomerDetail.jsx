@@ -12,6 +12,7 @@ import {
 import ProductPickerModal from '../components/ProductPickerModal'
 import Tooltip from '../components/Tooltip'
 import EmptyState from '../components/EmptyState'
+import { quoteStatusColors, invoiceStatusColors } from '../lib/statusColors'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -384,7 +385,7 @@ export default function CustomerDetail() {
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate('/customers')}
             style={{
               padding: isMobile ? '12px' : '8px',
               minWidth: isMobile ? '44px' : 'auto',
@@ -500,6 +501,41 @@ export default function CustomerDetail() {
               Send to Setter
             </button>
           </Tooltip>
+          <button
+            onClick={async () => {
+              if (!confirm(`Delete ${customer.name}? This will permanently remove the customer.`)) return
+              const { error } = await supabase.from('customers').delete().eq('id', customer.id)
+              if (error) {
+                if (error.code === '23503' || error.message?.includes('violates foreign key')) {
+                  toast.error(`Cannot delete — ${customer.name} has linked jobs, invoices, or quotes.`)
+                } else {
+                  toast.error('Delete failed: ' + error.message)
+                }
+                return
+              }
+              toast.success(`${customer.name} deleted`)
+              navigate('/customers')
+            }}
+            style={{
+              padding: isMobile ? '12px 16px' : '10px 14px',
+              minHeight: isMobile ? '44px' : 'auto',
+              backgroundColor: 'transparent',
+              color: '#dc2626',
+              border: '1px solid #fecaca',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              flex: isMobile ? 1 : 'none'
+            }}
+          >
+            <Trash2 size={16} />
+            Delete
+          </button>
         </div>
       </div>
 
@@ -752,13 +788,7 @@ export default function CustomerDetail() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {quotes.map(quote => {
-                  const statusColors = {
-                    'Draft': { bg: '#fef3c7', text: '#b45309' },
-                    'Sent': { bg: '#dbeafe', text: '#1d4ed8' },
-                    'Approved': { bg: '#dcfce7', text: '#166534' },
-                    'Rejected': { bg: '#fee2e2', text: '#dc2626' }
-                  }
-                  const statusStyle = statusColors[quote.status] || statusColors['Draft']
+                  const statusStyle = quoteStatusColors[quote.status] || quoteStatusColors['Draft']
 
                   return (
                     <div key={quote.id} style={{
@@ -990,7 +1020,7 @@ export default function CustomerDetail() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {invoices.map(inv => {
-                  const statusColor = inv.payment_status === 'Paid' ? '#16a34a' : inv.payment_status === 'Overdue' ? '#dc2626' : '#f59e0b'
+                  const invStatusStyle = invoiceStatusColors[inv.payment_status] || invoiceStatusColors['Pending']
                   return (
                     <div key={inv.id} style={{
                       padding: isMobile ? '14px 16px' : '16px 20px',
@@ -1010,8 +1040,8 @@ export default function CustomerDetail() {
                           </div>
                           <span style={{
                             padding: '4px 10px',
-                            backgroundColor: statusColor + '20',
-                            color: statusColor,
+                            backgroundColor: invStatusStyle.bg,
+                            color: invStatusStyle.text,
                             borderRadius: '6px',
                             fontSize: '12px',
                             fontWeight: '600'

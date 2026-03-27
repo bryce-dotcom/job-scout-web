@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { ClipboardList, Search, Plus, Zap, DollarSign, TrendingDown, User } from 'lucide-react'
+import { auditStatusColors as statusColors } from '../lib/statusColors'
+import PageHeader from '../components/PageHeader'
 
 // Light theme fallback
 const defaultTheme = {
@@ -15,15 +17,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Draft': { bg: 'rgba(125,138,127,0.15)', text: '#7d8a7f' },
-  'In Progress': { bg: 'rgba(90,99,73,0.15)', text: '#5a6349' },
-  'Completed': { bg: 'rgba(74,124,89,0.15)', text: '#4a7c59' },
-  'Submitted': { bg: 'rgba(106,90,205,0.15)', text: '#6a5acd' },
-  'Approved': { bg: 'rgba(74,124,89,0.15)', text: '#4a7c59' },
-  'Rejected': { bg: 'rgba(194,90,90,0.15)', text: '#c25a5a' }
 }
 
 export default function LightingAudits() {
@@ -120,41 +113,32 @@ export default function LightingAudits() {
           .audit-list-root .audit-card { padding: 14px !important; }
         }
       `}</style>
-      {/* Header */}
-      <div className="page-header" style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '24px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <ClipboardList size={28} style={{ color: theme.accent }} />
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
-            Lighting Audits
-          </h1>
-        </div>
-
-        <button
-          className="audit-list-new-btn"
-          onClick={() => navigate('/lighting-audits/new')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '12px 20px',
-            backgroundColor: theme.accent,
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '16px',
-            fontWeight: '500',
-            cursor: 'pointer'
-          }}
-        >
-          <Plus size={18} />
-          New Audit
-        </button>
-      </div>
+      <PageHeader
+        title="Lighting Audits"
+        icon={ClipboardList}
+        actions={
+          <button
+            className="audit-list-new-btn"
+            onClick={() => navigate('/lighting-audits/new')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '12px 20px',
+              backgroundColor: theme.accent,
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '16px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            <Plus size={18} />
+            New Audit
+          </button>
+        }
+      />
 
       {/* Stats Cards */}
       <div className="stat-grid" style={{

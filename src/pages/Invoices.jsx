@@ -9,6 +9,8 @@ import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { invoicesFields, paymentsFields } from '../lib/importExportFields'
 import { toast } from '../lib/toast'
+import { invoiceStatusColors as statusColors } from '../lib/statusColors'
+import PageHeader from '../components/PageHeader'
 
 // Light theme fallback
 const defaultTheme = {
@@ -21,15 +23,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Pending': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
-  'Open': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
-  'Partially Paid': { bg: 'rgba(59,130,246,0.12)', text: '#3b82f6' },
-  'Paid': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
-  'Overdue': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
-  'Cancelled': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
 }
 
 const emptyUtilityInvoice = {
@@ -714,19 +707,10 @@ export default function Invoices() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '16px',
-        marginBottom: '24px',
-        flexWrap: 'wrap'
-      }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
-          Invoices
-        </h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+      <PageHeader
+        title="Invoices"
+        icon={FileText}
+        actions={<>
           {(typeFilter === 'all' || typeFilter === 'customer') && (
             <button
               onClick={() => setShowModal(true)}
@@ -778,8 +762,8 @@ export default function Invoices() {
           <button onClick={() => setShowSettings(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <SettingsIcon size={18} /> Settings
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* Filter Buttons */}
       <div style={{

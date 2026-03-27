@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { ArrowLeft, CheckCircle, Pencil, Trash2 } from 'lucide-react'
+import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -15,13 +16,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Pending': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
-  'Paid': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
-  'Overdue': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
-  'Cancelled': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
 }
 
 export default function UtilityInvoiceDetail() {

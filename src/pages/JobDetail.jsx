@@ -5,6 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
 import DealBreadcrumb from '../components/DealBreadcrumb'
+import { jobStatusColors as statusColors } from '../lib/statusColors'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
@@ -47,15 +48,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Chillin': { bg: 'rgba(99,130,191,0.12)', text: '#6382bf' },
-  'Scheduled': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
-  'In Progress': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
-  'Completed': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
-  'Cancelled': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
-  'On Hold': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
 }
 
 class JobDetailErrorBoundary extends Component {

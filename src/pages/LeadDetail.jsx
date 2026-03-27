@@ -12,6 +12,7 @@ import {
   Receipt, Camera
 } from 'lucide-react'
 import { STATUS, EXPENSE_CATEGORIES } from '../lib/schema'
+import { quoteStatusColors, appointmentStatusColors } from '../lib/statusColors'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import Tooltip from '../components/Tooltip'
 import FlowIndicator from '../components/FlowIndicator'
@@ -921,7 +922,7 @@ export default function LeadDetail() {
         {/* Row 1: Back + Name + Status + Quick Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate('/leads')}
             style={{
               padding: '8px',
               minWidth: '36px',
@@ -1343,14 +1344,7 @@ export default function LeadDetail() {
         {activeTab === 'appointment' && (
           <div>
             {appointment ? (() => {
-              const statusColors = {
-                'Scheduled': { bg: 'rgba(59,130,246,0.12)', text: '#2563eb', border: '#93c5fd' },
-                'Confirmed': { bg: '#dcfce7', text: '#166534', border: '#86efac' },
-                'Completed': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349', border: '#a3b18a' },
-                'Cancelled': { bg: 'rgba(194,90,90,0.1)', text: '#991b1b', border: '#fca5a5' },
-                'No Show': { bg: 'rgba(234,179,8,0.12)', text: '#854d0e', border: '#fde047' }
-              }
-              const sc = statusColors[appointment.status] || statusColors['Scheduled']
+              const sc = appointmentStatusColors[appointment.status] || appointmentStatusColors['Scheduled']
               return (
                 <div style={{
                   padding: isMobile ? '16px' : '24px',
@@ -1770,13 +1764,7 @@ export default function LeadDetail() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {quotes.map(quote => {
-                  const statusColors = {
-                    'Draft': { bg: '#fef3c7', text: '#b45309' },
-                    'Sent': { bg: '#dbeafe', text: '#1d4ed8' },
-                    'Approved': { bg: '#dcfce7', text: '#166534' },
-                    'Rejected': { bg: '#fee2e2', text: '#dc2626' }
-                  }
-                  const statusStyle = statusColors[quote.status] || statusColors['Draft']
+                  const statusStyle = quoteStatusColors[quote.status] || quoteStatusColors['Draft']
 
                   return (
                     <div key={quote.id} style={{

@@ -7,6 +7,8 @@ import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, 
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { leadsFields } from '../lib/importExportFields'
+import { leadStatusColors } from '../lib/statusColors'
+import PageHeader from '../components/PageHeader'
 
 const LEAD_STATUSES = ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost']
 
@@ -105,25 +107,8 @@ export default function Leads() {
     return matchesSearch && matchesStatus && matchesSource && matchesOwner
   })
 
-  // Status colors for badges
-  const statusColors = {
-    'New': { bg: '#e0e7ff', text: '#4338ca' },
-    'Contacted': { bg: '#fef3c7', text: '#d97706' },
-    'Appointment Set': { bg: '#d1fae5', text: '#059669' },
-    'Qualified': { bg: '#dbeafe', text: '#2563eb' },
-    'Quote Sent': { bg: '#e0e7ff', text: '#4f46e5' },
-    'Negotiation': { bg: '#ffedd5', text: '#ea580c' },
-    'Won': { bg: '#d1fae5', text: '#059669' },
-    'Lost': { bg: '#f3f4f6', text: '#6b7280' },
-    // Legacy statuses (still in DB, rendered as their mapped status)
-    'Assigned': { bg: '#e0e7ff', text: '#4338ca' },
-    'Callback': { bg: '#fef3c7', text: '#d97706' },
-    'Not Qualified': { bg: '#f3f4f6', text: '#6b7280' },
-    'Converted': { bg: '#d1fae5', text: '#059669' }
-  }
-
   const getStatusStyle = (status) => {
-    const colors = statusColors[status] || { bg: theme.bg, text: theme.textMuted }
+    const colors = leadStatusColors[status] || { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
     return { backgroundColor: colors.bg, color: colors.text }
   }
 
@@ -372,10 +357,10 @@ export default function Leads() {
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', width: '100%', boxSizing: 'border-box' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Leads</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+      <PageHeader
+        title="Leads"
+        icon={Users}
+        actions={<>
           <button onClick={() => navigate('/pipeline')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }} title="Switch to board view">
             {!isMobile ? 'Board View' : '▦'}
           </button>
@@ -391,11 +376,10 @@ export default function Leads() {
             <Plus size={20} />
             {isMobile ? 'Add' : 'Add Lead'}
           </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: isMobile ? '8px' : '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+        </>}
+      >
+        {/* Filters */}
+        <div style={{ display: 'flex', gap: isMobile ? '8px' : '16px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: isMobile ? '100%' : '200px' }}>
           <Search size={20} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
           <input type="text" placeholder="Search leads..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle, paddingLeft: '40px', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }} />
@@ -413,7 +397,8 @@ export default function Leads() {
           <option value="all">All Sources</option>
           {leadSources.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-      </div>
+        </div>
+      </PageHeader>
 
       {/* Leads List */}
       {filteredLeads.length === 0 ? (

@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle } from 'lucide-react'
+import DealBreadcrumb from '../components/DealBreadcrumb'
+import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
 
@@ -18,14 +20,6 @@ const defaultTheme = {
   textMuted: '#7d8a7f',
   accent: '#5a6349',
   accentBg: 'rgba(90,99,73,0.12)'
-}
-
-const statusColors = {
-  'Pending': { bg: 'rgba(194,139,56,0.12)', text: '#c28b38' },
-  'Partially Paid': { bg: 'rgba(59,130,246,0.12)', text: '#3b82f6' },
-  'Paid': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
-  'Overdue': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
-  'Cancelled': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' }
 }
 
 export default function InvoiceDetail() {
@@ -99,7 +93,7 @@ export default function InvoiceDetail() {
 
     const { data: invoiceData } = await supabase
       .from('invoices')
-      .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title)')
+      .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, lead_id, quote_id)')
       .eq('id', id)
       .single()
 
@@ -728,6 +722,16 @@ export default function InvoiceDetail() {
         </span>
       </div>
 
+      {/* Deal Chain */}
+      <DealBreadcrumb
+        current="invoice"
+        invoiceId={parseInt(id)}
+        leadId={invoice.job?.lead_id}
+        quoteId={invoice.job?.quote_id}
+        customerId={invoice.customer_id}
+        jobId={invoice.job_id}
+      />
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px' }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -744,7 +748,13 @@ export default function InvoiceDetail() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
                 <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Customer</p>
-                <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{invoice.customer?.name || '-'}</p>
+                {invoice.customer?.id ? (
+                  <button onClick={() => navigate(`/customers/${invoice.customer.id}`)} style={{ fontSize: '14px', fontWeight: '500', color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                    {invoice.customer.name}
+                  </button>
+                ) : (
+                  <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{invoice.customer?.name || '-'}</p>
+                )}
               </div>
               <div>
                 <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Email</p>
