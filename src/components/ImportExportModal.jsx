@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useTheme } from './Layout'
-import { Upload, X, ArrowRight, CheckCircle, AlertCircle, Loader, FileSpreadsheet, Undo2 } from 'lucide-react'
+import { Upload, X, ArrowRight, CheckCircle, AlertCircle, Loader, FileSpreadsheet, Undo2, FileText } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 const defaultTheme = {
@@ -209,6 +209,7 @@ export default function ImportExportModal({
   const [insertedIds, setInsertedIds] = useState([])
   const [undoing, setUndoing] = useState(false)
   const [undone, setUndone] = useState(false)
+  const [pdfExtracting, setPdfExtracting] = useState(false)
 
   // Multi-sheet state
   const [isMultiSheet, setIsMultiSheet] = useState(false)
@@ -219,8 +220,92 @@ export default function ImportExportModal({
 
   const reqField = requiredField || fields.find(f => f.required)?.field || fields[0]?.field
 
-  // File handler — reads CSV/XLSX/XLS/TSV
+  // PDF handler — extracts structured data via Gemini
+  const handlePdfFile = async (file) => {
+    setImportFile(file)
+    setPdfExtracting(true)
+    setStep('mapping')
+    try {
+      const arrayBuf = await file.arrayBuffer()
+      const base64 = btoa(
+        new Uint8Array(arrayBuf).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      )
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+      const targetFieldDefs = fields.map(f => ({
+        field: f.field, type: f.type, required: !!f.required, desc: f.desc || f.label,
+      }))
+
+      // Step 1: Extract structured data from PDF via edge function (Claude + PDF vision)
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-extract-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+        body: JSON.stringify({
+          pdfBase64: base64,
+          entityName: entityName || 'records',
+          targetFields: targetFieldDefs,
+          extraContext: extraContext || undefined,
+        }),
+      })
+
+      const result = await resp.json()
+      if (!resp.ok || result.error) {
+        throw new Error(result.error || `Server error: ${resp.status}`)
+      }
+
+      if (!result.headers || !result.rows || result.rows.length === 0) {
+        throw new Error('No data could be extracted from this PDF. Try a CSV or Excel file instead.')
+      }
+
+      const fileHeaders = result.headers.map(h => String(h).trim())
+      const fileRows = result.rows.map(row =>
+        row.map(cell => cell === null || cell === undefined ? '' : cell)
+      )
+
+      setHeaders(fileHeaders)
+      setRows(fileRows)
+      setPdfExtracting(false)
+
+      // Step 2: AI column mapping (same as CSV/XLSX path)
+      setMappingLoading(true)
+      try {
+        const mapResp = await fetch(`${SUPABASE_URL}/functions/v1/ai-map-columns`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+          body: JSON.stringify({
+            headers: fileHeaders,
+            sampleRows: fileRows.slice(0, 5),
+            targetFields: targetFieldDefs,
+            requiredField: reqField,
+            extraContext: extraContext || undefined,
+          }),
+        })
+        const mapResult = await mapResp.json()
+        if (mapResult.mapping) {
+          setMapping(mapResult.mapping)
+          setDefaults(mapResult.defaults || {})
+          setNotes(mapResult.notes || '')
+        }
+      } catch (_) {
+        setNotes('AI mapping unavailable — please map columns manually')
+      }
+      setMappingLoading(false)
+    } catch (err) {
+      console.error('PDF extraction failed:', err)
+      alert('Could not extract data from PDF: ' + err.message)
+      setStep('upload')
+      setPdfExtracting(false)
+    }
+  }
+
+  // File handler — reads CSV/XLSX/XLS/TSV/PDF
   const handleFile = async (file) => {
+    // Route PDFs to Claude extraction via edge function
+    if (file.name?.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
+      return handlePdfFile(file)
+    }
     setImportFile(file)
     try {
       const data = await file.arrayBuffer()
@@ -723,7 +808,7 @@ export default function ImportExportModal({
                 onClick={() => {
                   const input = document.createElement('input')
                   input.type = 'file'
-                  input.accept = '.csv,.xlsx,.xls,.tsv'
+                  input.accept = '.csv,.xlsx,.xls,.tsv,.pdf'
                   input.onchange = e => { const f = e.target.files?.[0]; if (f) handleFile(f) }
                   input.click()
                 }}
@@ -733,7 +818,7 @@ export default function ImportExportModal({
                   Drop a file here or click to browse
                 </div>
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  CSV, Excel (.xlsx, .xls), or TSV — any column format
+                  CSV, Excel (.xlsx, .xls), TSV, or PDF — any column format
                 </div>
                 <div style={{
                   marginTop: '16px', padding: '10px 16px',
@@ -750,7 +835,15 @@ export default function ImportExportModal({
           {/* STEP 2: MAPPING */}
           {step === 'mapping' && (
             <div>
-              {mappingLoading ? (
+              {pdfExtracting ? (
+                <div style={{ textAlign: 'center', padding: '32px' }}>
+                  <FileText size={36} style={{ color: '#3b82f6', marginBottom: '12px', opacity: 0.7 }} />
+                  <Loader size={28} style={{ color: '#3b82f6', animation: 'spin 1s linear infinite' }} />
+                  <div style={{ fontSize: '14px', color: theme.textSecondary, marginTop: '12px' }}>AI is reading your PDF...</div>
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>Extracting structured data from {importFile?.name}</div>
+                  <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                </div>
+              ) : mappingLoading ? (
                 <div style={{ textAlign: 'center', padding: '32px' }}>
                   <Loader size={28} style={{ color: '#3b82f6', animation: 'spin 1s linear infinite' }} />
                   <div style={{ fontSize: '14px', color: theme.textSecondary, marginTop: '12px' }}>AI is analyzing your columns...</div>

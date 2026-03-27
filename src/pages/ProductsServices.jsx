@@ -266,7 +266,7 @@ export default function ProductsServices() {
     taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: '', labor_rate_id: '',
     manufacturer: '', model_number: '', product_category: '',
     dlc_listed: false, dlc_listing_number: '', warranty_years: '',
-    spec_sheet_url: '', install_guide_url: '', datasheet_json: {}
+    spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {}
   })
   const [uploadingDoc, setUploadingDoc] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -621,7 +621,7 @@ export default function ProductsServices() {
         manufacturer: product.manufacturer || '', model_number: product.model_number || '',
         product_category: product.product_category || '', dlc_listed: product.dlc_listed ?? false,
         dlc_listing_number: product.dlc_listing_number || '', warranty_years: product.warranty_years || '',
-        spec_sheet_url: product.spec_sheet_url || '', install_guide_url: product.install_guide_url || '',
+        spec_sheet_url: product.spec_sheet_url || '', install_guide_url: product.install_guide_url || '', dlc_document_url: product.dlc_document_url || '',
         datasheet_json: product.datasheet_json || {}
       })
       // Load existing components for this product
@@ -667,7 +667,7 @@ export default function ProductsServices() {
       manufacturer: productForm.manufacturer || null, model_number: productForm.model_number || null,
       product_category: productForm.product_category || null, dlc_listed: productForm.dlc_listed,
       dlc_listing_number: productForm.dlc_listing_number || null, warranty_years: productForm.warranty_years || null,
-      spec_sheet_url: productForm.spec_sheet_url || null, install_guide_url: productForm.install_guide_url || null,
+      spec_sheet_url: productForm.spec_sheet_url || null, install_guide_url: productForm.install_guide_url || null, dlc_document_url: productForm.dlc_document_url || null,
       datasheet_json: productForm.datasheet_json || {}, updated_at: new Date().toISOString()
     }
     let result, productId = editingProduct?.id
@@ -1843,6 +1843,47 @@ export default function ProductsServices() {
                     </select>
                   </div>
                 </div>
+                {/* Spec Sheet Upload */}
+                <div style={{ padding: '12px 16px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: `3px solid ${theme.accent}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                    <FileText size={16} style={{ color: theme.accent }} />
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase' }}>Spec Sheet</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                    <label style={{
+                      ...buttonStyle, padding: '8px 14px', fontSize: '13px',
+                      backgroundColor: uploadingDoc === 'spec_sheet_url' ? theme.accentBg : theme.accent,
+                      color: uploadingDoc === 'spec_sheet_url' ? theme.accent : '#fff',
+                      cursor: uploadingDoc ? 'wait' : 'pointer'
+                    }}>
+                      <Upload size={14} /> {uploadingDoc === 'spec_sheet_url' ? 'Uploading...' : 'Upload'}
+                      <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={(e) => handleDocUpload(e, 'spec_sheet_url')} disabled={!!uploadingDoc} style={{ display: 'none' }} />
+                    </label>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>or</span>
+                    <input type="url" name="spec_sheet_url" value={productForm.spec_sheet_url} onChange={handleProductChange} placeholder="Paste URL..." style={{ ...inputStyle, flex: 1, fontSize: '13px' }} />
+                  </div>
+                  {uploadingDoc === 'spec_sheet_url' && (
+                    <div style={{ height: '4px', backgroundColor: theme.border, borderRadius: '2px', overflow: 'hidden', marginBottom: '8px' }}>
+                      <div style={{ height: '100%', width: `${uploadProgress}%`, backgroundColor: theme.accent, borderRadius: '2px', transition: 'width 0.3s ease' }} />
+                    </div>
+                  )}
+                  {productForm.spec_sheet_url && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: theme.bgCard, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
+                      <FileText size={14} style={{ color: theme.accent, flexShrink: 0 }} />
+                      <span style={{ fontSize: '12px', color: theme.textSecondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {productForm.spec_sheet_url.split('/').pop()}
+                      </span>
+                      <a href={productForm.spec_sheet_url} target="_blank" rel="noopener noreferrer" style={{ ...buttonStyle, padding: '4px 10px', fontSize: '12px', backgroundColor: theme.accentBg, color: theme.accent, textDecoration: 'none' }}>
+                        <ExternalLink size={12} /> Open
+                      </a>
+                      <button onClick={() => setProductForm(prev => ({ ...prev, spec_sheet_url: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Certifications & DLC */}
                 <div style={{ padding: '12px 16px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: '3px solid #22c55e' }}>
                   <div style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e', textTransform: 'uppercase', marginBottom: '12px' }}>Certifications</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
@@ -1853,10 +1894,51 @@ export default function ProductsServices() {
                     {productForm.dlc_listed && <ShieldCheck size={18} style={{ color: '#22c55e' }} />}
                   </div>
                   {productForm.dlc_listed && (
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={labelStyle}>DLC Listing Number</label>
-                      <input type="text" name="dlc_listing_number" value={productForm.dlc_listing_number} onChange={handleProductChange} style={inputStyle} placeholder="e.g., QUQH-43D4LBU4" />
-                    </div>
+                    <>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={labelStyle}>DLC Listing Number</label>
+                        <input type="text" name="dlc_listing_number" value={productForm.dlc_listing_number} onChange={handleProductChange} style={inputStyle} placeholder="e.g., QUQH-43D4LBU4" />
+                      </div>
+                      {/* DLC Supporting Document */}
+                      <div style={{ padding: '12px', backgroundColor: theme.bgCard, borderRadius: '8px', border: `1px solid ${theme.border}`, marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                          <ShieldCheck size={14} style={{ color: '#22c55e' }} />
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>DLC Supporting Document</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                          <label style={{
+                            ...buttonStyle, padding: '7px 12px', fontSize: '12px',
+                            backgroundColor: uploadingDoc === 'dlc_document_url' ? 'rgba(34,197,94,0.12)' : '#22c55e',
+                            color: uploadingDoc === 'dlc_document_url' ? '#22c55e' : '#fff',
+                            cursor: uploadingDoc ? 'wait' : 'pointer'
+                          }}>
+                            <Upload size={14} /> {uploadingDoc === 'dlc_document_url' ? 'Uploading...' : 'Upload'}
+                            <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={(e) => handleDocUpload(e, 'dlc_document_url')} disabled={!!uploadingDoc} style={{ display: 'none' }} />
+                          </label>
+                          <span style={{ fontSize: '12px', color: theme.textMuted }}>or</span>
+                          <input type="url" name="dlc_document_url" value={productForm.dlc_document_url} onChange={handleProductChange} placeholder="Paste URL..." style={{ ...inputStyle, flex: 1, fontSize: '13px' }} />
+                        </div>
+                        {uploadingDoc === 'dlc_document_url' && (
+                          <div style={{ height: '4px', backgroundColor: theme.border, borderRadius: '2px', overflow: 'hidden', marginBottom: '8px' }}>
+                            <div style={{ height: '100%', width: `${uploadProgress}%`, backgroundColor: '#22c55e', borderRadius: '2px', transition: 'width 0.3s ease' }} />
+                          </div>
+                        )}
+                        {productForm.dlc_document_url && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
+                            <ShieldCheck size={14} style={{ color: '#22c55e', flexShrink: 0 }} />
+                            <span style={{ fontSize: '12px', color: theme.textSecondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {productForm.dlc_document_url.split('/').pop()}
+                            </span>
+                            <a href={productForm.dlc_document_url} target="_blank" rel="noopener noreferrer" style={{ ...buttonStyle, padding: '4px 10px', fontSize: '12px', backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e', textDecoration: 'none' }}>
+                              <ExternalLink size={12} /> Open
+                            </a>
+                            <button onClick={() => setProductForm(prev => ({ ...prev, dlc_document_url: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}>
+                              <X size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </>
                   )}
                   <div>
                     <label style={labelStyle}>Warranty (years)</label>
@@ -1892,45 +1974,6 @@ export default function ProductsServices() {
             {/* DOCUMENTS TAB */}
             {productModalTab === 'documents' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {/* Spec Sheet */}
-                <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                    <FileText size={16} style={{ color: theme.accent }} />
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Spec Sheet</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-                    <label style={{
-                      ...buttonStyle, padding: '8px 14px', fontSize: '13px',
-                      backgroundColor: uploadingDoc === 'spec_sheet_url' ? theme.accentBg : theme.accent,
-                      color: uploadingDoc === 'spec_sheet_url' ? theme.accent : '#fff',
-                      cursor: uploadingDoc ? 'wait' : 'pointer'
-                    }}>
-                      <Upload size={14} /> {uploadingDoc === 'spec_sheet_url' ? 'Uploading...' : 'Upload'}
-                      <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={(e) => handleDocUpload(e, 'spec_sheet_url')} disabled={!!uploadingDoc} style={{ display: 'none' }} />
-                    </label>
-                    <span style={{ fontSize: '12px', color: theme.textMuted }}>or</span>
-                    <input type="url" name="spec_sheet_url" value={productForm.spec_sheet_url} onChange={handleProductChange} placeholder="Paste URL..." style={{ ...inputStyle, flex: 1, fontSize: '13px' }} />
-                  </div>
-                  {uploadingDoc === 'spec_sheet_url' && (
-                    <div style={{ height: '4px', backgroundColor: theme.border, borderRadius: '2px', overflow: 'hidden', marginBottom: '8px' }}>
-                      <div style={{ height: '100%', width: `${uploadProgress}%`, backgroundColor: theme.accent, borderRadius: '2px', transition: 'width 0.3s ease' }} />
-                    </div>
-                  )}
-                  {productForm.spec_sheet_url && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: theme.bgCard, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
-                      <FileText size={14} style={{ color: theme.accent, flexShrink: 0 }} />
-                      <span style={{ fontSize: '12px', color: theme.textSecondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {productForm.spec_sheet_url.split('/').pop()}
-                      </span>
-                      <a href={productForm.spec_sheet_url} target="_blank" rel="noopener noreferrer" style={{ ...buttonStyle, padding: '4px 10px', fontSize: '12px', backgroundColor: theme.accentBg, color: theme.accent, textDecoration: 'none' }}>
-                        <ExternalLink size={12} /> Open
-                      </a>
-                      <button onClick={() => setProductForm(prev => ({ ...prev, spec_sheet_url: '' }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}>
-                        <X size={14} />
-                      </button>
-                    </div>
-                  )}
-                </div>
                 {/* Install Guide */}
                 <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
