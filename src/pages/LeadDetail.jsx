@@ -8,9 +8,10 @@ import {
   ArrowLeft, Calendar, FileText, Clipboard, Plus, Send, Phone, Mail,
   MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
   CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package, Grid3X3,
-  Paperclip, Download, Briefcase, Upload, Loader, Check, Info, Eye, Trophy, XCircle
+  Paperclip, Download, Briefcase, Upload, Loader, Check, Info, Eye, Trophy, XCircle,
+  Receipt, Camera
 } from 'lucide-react'
-import { STATUS } from '../lib/schema'
+import { STATUS, EXPENSE_CATEGORIES } from '../lib/schema'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import Tooltip from '../components/Tooltip'
 import FlowIndicator from '../components/FlowIndicator'
@@ -84,6 +85,13 @@ export default function LeadDetail() {
 
   // Document viewer state
   const [viewingDoc, setViewingDoc] = useState(null) // { url, name }
+
+  // Expense state
+  const [leadExpenses, setLeadExpenses] = useState([])
+  const [showAddExpense, setShowAddExpense] = useState(false)
+  const [expenseForm, setExpenseForm] = useState({ amount: '', merchant: '', category: 'Cost of Sale', notes: '' })
+  const [receiptUploading, setReceiptUploading] = useState(false)
+  const receiptInputRef = useRef(null)
 
   // Generate from Library state
   const [showGenerateModal, setShowGenerateModal] = useState(false)
@@ -191,7 +199,87 @@ export default function LeadDetail() {
       .order('created_at', { ascending: false })
     setAttachments(attachData || [])
 
+    // Fetch expenses linked to this lead
+    const { data: expData } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('lead_id', id)
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: false })
+    setLeadExpenses(expData || [])
+
     setLoading(false)
+  }
+
+  // Expense handlers
+  const fetchLeadExpenses = async () => {
+    const { data } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('lead_id', id)
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: false })
+    setLeadExpenses(data || [])
+  }
+
+  const handleAddLeadExpense = async () => {
+    if (!expenseForm.amount) return
+    await supabase.from('expenses').insert([{
+      company_id: companyId,
+      lead_id: parseInt(id),
+      amount: parseFloat(expenseForm.amount) || 0,
+      category: expenseForm.category || 'Cost of Sale',
+      vendor: expenseForm.merchant || null,
+      description: expenseForm.notes || null,
+      date: new Date().toISOString().split('T')[0]
+    }])
+    await fetchLeadExpenses()
+    setExpenseForm({ amount: '', merchant: '', category: 'Cost of Sale', notes: '' })
+    setShowAddExpense(false)
+  }
+
+  const handleDeleteLeadExpense = async (expId) => {
+    if (!confirm('Delete this expense?')) return
+    await supabase.from('expenses').delete().eq('id', expId)
+    await fetchLeadExpenses()
+  }
+
+  const handleLeadReceiptCapture = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !lead) return
+    setReceiptUploading(true)
+
+    const timestamp = Date.now()
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const storagePath = `leads/${id}/receipts/${timestamp}_${safeName}`
+
+    const { error: uploadErr } = await supabase.storage
+      .from('project-documents')
+      .upload(storagePath, file, { contentType: file.type })
+
+    if (uploadErr) {
+      console.error('Receipt upload failed:', uploadErr)
+      setReceiptUploading(false)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
+
+    await supabase.from('expenses').insert([{
+      company_id: companyId,
+      lead_id: parseInt(id),
+      amount: 0,
+      category: 'Cost of Sale',
+      date: new Date().toISOString().split('T')[0],
+      description: 'Receipt capture',
+      receipt_url: urlData.publicUrl,
+      receipt_storage_path: storagePath,
+      source: 'receipt'
+    }])
+
+    await fetchLeadExpenses()
+    setReceiptUploading(false)
+    if (receiptInputRef.current) receiptInputRef.current.value = ''
   }
 
   // Create quote from audit
@@ -698,7 +786,17 @@ export default function LeadDetail() {
         }
       }
 
-      // 5. Navigate to the new job
+      // 5. Carry lead expenses forward to the new job
+      if (leadExpenses.length > 0) {
+        await supabase
+          .from('expenses')
+          .update({ job_id: newJob.id })
+          .eq('lead_id', parseInt(id))
+          .is('job_id', null)
+          .eq('company_id', companyId)
+      }
+
+      // 6. Navigate to the new job
       toast.success('Moved to delivery pipeline')
       setConvertingToJob(false)
       navigate(`/jobs/${newJob.id}`)
@@ -788,6 +886,7 @@ export default function LeadDetail() {
     { id: 'appointment', label: 'Appointment', icon: Calendar, hint: 'Scheduled meetings with this lead' },
     { id: 'audits', label: `Audits (${audits.length})`, icon: Clipboard, hint: 'Site surveys - Lenard can help with lighting' },
     { id: 'quotes', label: `Estimates (${quotes.length})`, icon: FileText, hint: 'Price estimates from audits' },
+    { id: 'expenses', label: `Expenses (${leadExpenses.length})`, icon: Receipt, hint: 'Track costs associated with this lead' },
     { id: 'documents', label: `Docs (${attachments.length})`, icon: Paperclip, hint: 'Attached files and documents' }
   ]
 
@@ -1770,6 +1869,170 @@ export default function LeadDetail() {
                     </div>
                   )
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* EXPENSES TAB */}
+        {activeTab === 'expenses' && (
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Receipt size={16} style={{ color: theme.accent }} />
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Lead Expenses ({leadExpenses.length})
+                </h3>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="file"
+                  ref={receiptInputRef}
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={handleLeadReceiptCapture}
+                />
+                <button
+                  onClick={() => receiptInputRef.current?.click()}
+                  disabled={receiptUploading}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    padding: '8px 12px', backgroundColor: theme.accentBg, color: theme.accent,
+                    border: `1px solid ${theme.accent}`, borderRadius: '6px',
+                    fontSize: '12px', fontWeight: '500', cursor: 'pointer', minHeight: '44px',
+                    opacity: receiptUploading ? 0.6 : 1
+                  }}
+                >
+                  <Camera size={14} />
+                  {receiptUploading ? 'Uploading...' : 'Receipt'}
+                </button>
+                <button
+                  onClick={() => setShowAddExpense(!showAddExpense)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    padding: '8px 12px', backgroundColor: theme.accent, color: '#fff',
+                    border: 'none', borderRadius: '6px',
+                    fontSize: '12px', fontWeight: '500', cursor: 'pointer', minHeight: '44px'
+                  }}
+                >
+                  <Plus size={14} />
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {showAddExpense && (
+              <div style={{
+                padding: '12px', backgroundColor: theme.bg, borderRadius: '8px',
+                border: `1px solid ${theme.border}`, marginBottom: '12px'
+              }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Amount</label>
+                    <input
+                      type="number" step="0.01" value={expenseForm.amount}
+                      onChange={(e) => setExpenseForm(f => ({ ...f, amount: e.target.value }))}
+                      placeholder="0.00"
+                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Merchant</label>
+                    <input
+                      type="text" value={expenseForm.merchant}
+                      onChange={(e) => setExpenseForm(f => ({ ...f, merchant: e.target.value }))}
+                      placeholder="Store name"
+                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Category</label>
+                    <select
+                      value={expenseForm.category}
+                      onChange={(e) => setExpenseForm(f => ({ ...f, category: e.target.value }))}
+                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    >
+                      {EXPENSE_CATEGORIES.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Notes</label>
+                    <input
+                      type="text" value={expenseForm.notes}
+                      onChange={(e) => setExpenseForm(f => ({ ...f, notes: e.target.value }))}
+                      placeholder="Optional"
+                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={handleAddLeadExpense} style={{
+                    padding: '10px 20px', backgroundColor: theme.accent, color: '#fff',
+                    border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500',
+                    cursor: 'pointer', minHeight: '44px'
+                  }}>
+                    Save Expense
+                  </button>
+                  <button onClick={() => setShowAddExpense(false)} style={{
+                    padding: '10px 16px', backgroundColor: 'transparent', color: theme.textMuted,
+                    border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px',
+                    cursor: 'pointer', minHeight: '44px'
+                  }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {leadExpenses.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px 0', color: theme.textMuted, fontSize: '13px' }}>
+                No expenses yet. Capture a receipt or add an expense manually.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {leadExpenses.map(exp => (
+                  <div key={exp.id} style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
+                    border: `1px solid ${theme.border}`
+                  }}>
+                    {exp.receipt_url && (
+                      <img
+                        src={exp.receipt_url}
+                        alt="receipt"
+                        onClick={() => setViewingDoc({ url: exp.receipt_url, name: 'Receipt' })}
+                        style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: `1px solid ${theme.border}`, flexShrink: 0 }}
+                      />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                        {exp.vendor || exp.description || 'Expense'}
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                        {exp.category || 'Uncategorized'} {exp.date ? `— ${new Date(exp.date).toLocaleDateString()}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px', flexShrink: 0 }}>
+                      ${(parseFloat(exp.amount) || 0).toFixed(2)}
+                    </div>
+                    <button onClick={() => handleDeleteLeadExpense(exp.id)} style={{
+                      padding: '4px', background: 'none', border: 'none', color: theme.textMuted,
+                      cursor: 'pointer'
+                    }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
