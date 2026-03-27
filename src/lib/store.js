@@ -1827,6 +1827,23 @@ export const useStore = create(
 
       // --- Customers ---
       createCustomer: async (custData) => {
+        // When online, insert directly for immediate availability
+        if (navigator.onLine) {
+          try {
+            const { data, error } = await supabase
+              .from('customers')
+              .insert(custData)
+              .select()
+              .single()
+            if (error) throw error
+            set(state => ({ customers: [...state.customers, data] }))
+            await offlineDb.put('customers', data)
+            return data.id
+          } catch (e) {
+            console.error('[createCustomer] Direct insert failed, falling back to sync queue:', e)
+          }
+        }
+        // Offline fallback — use sync queue
         const tempId = `temp_${crypto.randomUUID()}`
         const record = { ...custData, id: tempId, created_at: new Date().toISOString() }
         set(state => ({ customers: [...state.customers, record] }))

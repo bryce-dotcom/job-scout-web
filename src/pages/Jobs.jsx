@@ -1791,8 +1791,12 @@ export default function Jobs() {
                       )}
                     </div>
                     {showCustomerDropdown && (() => {
+                      const term = (customerSearchText || '').toLowerCase()
                       const filtered = customers.filter(c =>
-                        c.name?.toLowerCase().includes((customerSearchText || '').toLowerCase())
+                        c.name?.toLowerCase().includes(term) ||
+                        c.business_name?.toLowerCase().includes(term) ||
+                        c.email?.toLowerCase().includes(term) ||
+                        c.phone?.replace(/\D/g, '').includes(term.replace(/\D/g, ''))
                       )
                       const rect = customerInputRef.current?.getBoundingClientRect()
                       const dropdownStyle = rect ? {
