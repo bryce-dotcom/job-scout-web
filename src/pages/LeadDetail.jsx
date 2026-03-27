@@ -8,8 +8,9 @@ import {
   ArrowLeft, Calendar, FileText, Clipboard, Plus, Send, Phone, Mail,
   MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
   CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package, Grid3X3,
-  Paperclip, Download, Briefcase, Upload, Loader, Check, Info, Eye
+  Paperclip, Download, Briefcase, Upload, Loader, Check, Info, Eye, Trophy, XCircle
 } from 'lucide-react'
+import { STATUS } from '../lib/schema'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import Tooltip from '../components/Tooltip'
 import FlowIndicator from '../components/FlowIndicator'
@@ -74,6 +75,12 @@ export default function LeadDetail() {
   const [attachments, setAttachments] = useState([])
   const [convertingToJob, setConvertingToJob] = useState(false)
   const fileInputRef = useRef(null)
+
+  // Won/Lost modal state
+  const [showWonModal, setShowWonModal] = useState(false)
+  const [showLostModal, setShowLostModal] = useState(false)
+  const [wonNotes, setWonNotes] = useState('')
+  const [lostReason, setLostReason] = useState('')
 
   // Document viewer state
   const [viewingDoc, setViewingDoc] = useState(null) // { url, name }
@@ -545,6 +552,59 @@ export default function LeadDetail() {
     await fetchLeadData()
   }
 
+  // Status change handler for dropdown
+  const handleStatusChange = (newStatus) => {
+    if (newStatus === 'Won') {
+      setWonNotes('')
+      setShowWonModal(true)
+    } else if (newStatus === 'Lost') {
+      setLostReason('')
+      setShowLostModal(true)
+    } else {
+      updateLead(lead.id, { status: newStatus, updated_at: new Date().toISOString() })
+      setLead(prev => ({ ...prev, status: newStatus }))
+      toast.success(`Status updated to ${newStatus}`)
+    }
+  }
+
+  const handleMarkAsWon = async () => {
+    try {
+      const updates = {
+        status: 'Won',
+        converted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      if (wonNotes.trim()) {
+        updates.notes = (lead.notes ? lead.notes + '\n' : '') + `WON: ${wonNotes.trim()}`
+      }
+      await updateLead(lead.id, updates)
+      setLead(prev => ({ ...prev, ...updates }))
+      setShowWonModal(false)
+      setWonNotes('')
+      toast.success('Lead marked as Won!')
+    } catch (err) {
+      toast.error('Error: ' + err.message)
+    }
+  }
+
+  const handleMarkAsLost = async () => {
+    if (!lostReason) return
+    try {
+      const updates = {
+        status: 'Lost',
+        updated_at: new Date().toISOString(),
+        notes: (lead.notes ? lead.notes + '\n' : '') + `LOST: ${lostReason}`
+      }
+      await updateLead(lead.id, updates)
+      setLead(prev => ({ ...prev, ...updates }))
+      setShowLostModal(false)
+      setLostReason('')
+      toast.success('Lead marked as Lost')
+    } catch (err) {
+      toast.error('Error: ' + err.message)
+    }
+  }
+
   // Convert Won lead to Job & Customer
   const handleConvertToJob = async () => {
     if (!confirm('Convert this lead to a Job & Customer?')) return
@@ -786,17 +846,31 @@ export default function LeadDetail() {
               <h1 style={{ fontSize: isMobile ? '16px' : '24px', fontWeight: '700', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {lead.customer_name}
               </h1>
-              <span style={{
-                padding: '2px 6px',
-                backgroundColor: getStatusColor(lead.status) + '20',
-                color: getStatusColor(lead.status),
-                borderRadius: '4px',
-                fontSize: '11px',
-                fontWeight: '600',
-                flexShrink: 0
-              }}>
-                {lead.status}
-              </span>
+              <select
+                value={lead.status}
+                onChange={(e) => handleStatusChange(e.target.value)}
+                style={{
+                  padding: '2px 20px 2px 6px',
+                  backgroundColor: getStatusColor(lead.status) + '20',
+                  color: getStatusColor(lead.status),
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  flexShrink: 0,
+                  border: 'none',
+                  cursor: 'pointer',
+                  appearance: 'none',
+                  WebkitAppearance: 'none',
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='${encodeURIComponent(getStatusColor(lead.status))}'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 4px center',
+                  minHeight: '24px'
+                }}
+              >
+                {STATUS.lead.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
             </div>
             {!isMobile && (
               <div style={{ fontSize: '13px', color: theme.textMuted, display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -865,7 +939,13 @@ export default function LeadDetail() {
 
       {/* Lead Journey Flow Indicator - compact on mobile */}
       <div style={{ maxWidth: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        <FlowIndicator currentStatus={lead.status} showCompact={isMobile} />
+        <FlowIndicator currentStatus={lead.status} showCompact={isMobile} onStageClick={(stageId) => {
+          // Only handle sales stages - delivery stages are auto-managed
+          const salesStages = ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost']
+          if (salesStages.includes(stageId) && stageId !== lead.status) {
+            handleStatusChange(stageId)
+          }
+        }} />
       </div>
 
       {/* Deal Breadcrumb - hidden on mobile to save space */}
@@ -2627,6 +2707,226 @@ export default function LeadDetail() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Won Modal */}
+      {showWonModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 60
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '380px',
+            padding: '20px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '16px'
+            }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '50%',
+                backgroundColor: '#dcfce7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Trophy size={22} color="#16a34a" />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Mark as Won
+                </h2>
+                <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
+                  {lead.customer_name}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.textSecondary, marginBottom: '4px' }}>
+                Notes (optional)
+              </label>
+              <textarea
+                value={wonNotes}
+                onChange={(e) => setWonNotes(e.target.value)}
+                placeholder="Add any closing notes..."
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: theme.text,
+                  backgroundColor: theme.bgCard,
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => { setShowWonModal(false); setWonNotes('') }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  border: `1px solid ${theme.border}`,
+                  backgroundColor: 'transparent',
+                  color: theme.text,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMarkAsWon}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: '#16a34a',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  fontSize: '13px'
+                }}
+              >
+                Mark as Won
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lost Modal */}
+      {showLostModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          zIndex: 60
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '380px',
+            padding: '20px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '16px'
+            }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '50%',
+                backgroundColor: '#fee2e2',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <XCircle size={22} color="#dc2626" />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Mark as Lost
+                </h2>
+                <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
+                  {lead.customer_name}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.textSecondary, marginBottom: '4px' }}>
+                Reason *
+              </label>
+              <select
+                value={lostReason}
+                onChange={(e) => setLostReason(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: theme.text,
+                  backgroundColor: theme.bgCard,
+                  boxSizing: 'border-box'
+                }}
+              >
+                <option value="">Select a reason...</option>
+                <option value="Price too high">Price too high</option>
+                <option value="Went with competitor">Went with competitor</option>
+                <option value="No budget">No budget</option>
+                <option value="Project cancelled">Project cancelled</option>
+                <option value="No response">No response</option>
+                <option value="Not qualified">Not qualified</option>
+                <option value="Timing not right">Timing not right</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => { setShowLostModal(false); setLostReason('') }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  border: `1px solid ${theme.border}`,
+                  backgroundColor: 'transparent',
+                  color: theme.text,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMarkAsLost}
+                disabled={!lostReason}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: lostReason ? '#dc2626' : '#ccc',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: lostReason ? 'pointer' : 'not-allowed',
+                  fontWeight: '500',
+                  fontSize: '13px'
+                }}
+              >
+                Mark as Lost
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

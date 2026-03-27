@@ -249,12 +249,12 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborCos
   const cost = parseFloat(product.cost) || 0
   const markup = parseFloat(product.markup_percent) || 0
   const components = productComponents.filter(pc => pc.parent_product_id === product.id)
-  const compCost = components.reduce((sum, c) => {
+  const compValue = components.reduce((sum, c) => {
     const p = products.find(pr => pr.id === c.component_product_id)
-    return sum + ((parseFloat(p?.cost) || 0) * c.quantity)
+    return sum + ((parseFloat(p?.unit_price) || parseFloat(p?.cost) || 0) * c.quantity)
   }, 0)
-  const totalCost = cost + compCost
-  const markedUpCost = totalCost * (1 + markup / 100)
+  const markedUpDirectCost = cost * (1 + markup / 100)
+  const productSubtotal = markedUpDirectCost + compValue
   const datasheet = product.datasheet_json || {}
   const hasSpecs = product.manufacturer || product.model_number || product.product_category || Object.keys(datasheet).length > 0
 
@@ -341,22 +341,22 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborCos
               {formatCurrency(product.unit_price)}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {compCost > 0 && (
-                <div style={detailRow}>
-                  <span style={{ color: theme.textMuted }}>Components</span>
-                  <span style={{ color: theme.text }}>{formatCurrency(compCost)}</span>
-                </div>
-              )}
               {cost > 0 && (
                 <div style={detailRow}>
                   <span style={{ color: theme.textMuted }}>Direct cost</span>
                   <span style={{ color: theme.text }}>{formatCurrency(cost)}</span>
                 </div>
               )}
-              {markup > 0 && (cost > 0 || compCost > 0) && (
+              {cost > 0 && markup > 0 && (
                 <div style={detailRow}>
                   <span style={{ color: theme.textMuted }}>Markup ({markup}%)</span>
-                  <span style={{ color: theme.text }}>+{formatCurrency(markedUpCost - totalCost)}</span>
+                  <span style={{ color: theme.text }}>+{formatCurrency(markedUpDirectCost - cost)}</span>
+                </div>
+              )}
+              {compValue > 0 && (
+                <div style={detailRow}>
+                  <span style={{ color: theme.textMuted }}>Components</span>
+                  <span style={{ color: theme.text }}>{formatCurrency(compValue)}</span>
                 </div>
               )}
               {laborCost > 0 && (
@@ -389,10 +389,10 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborCos
                     <div key={comp.component_product_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${theme.border}` }}>
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>{p.name}</div>
-                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{formatCurrency(parseFloat(p.cost) || 0)} each</div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{formatCurrency(parseFloat(p.unit_price) || parseFloat(p.cost) || 0)} each</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.accent }}>{formatCurrency((parseFloat(p.cost) || 0) * comp.quantity)}</div>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.accent }}>{formatCurrency((parseFloat(p.unit_price) || parseFloat(p.cost) || 0) * comp.quantity)}</div>
                         <div style={{ fontSize: '11px', color: theme.textMuted }}>x{comp.quantity}</div>
                       </div>
                     </div>
@@ -951,28 +951,30 @@ export default function ProductsServices() {
     setShowProductModal(true)
   }
 
-  // Helper: compute component cost from modalComponents
-  const getComponentCost = (components) => {
+  // Helper: compute component value from modalComponents using each component's own unit_price
+  const getComponentValue = (components) => {
     return components.reduce((sum, c) => {
       const p = products.find(pr => pr.id === c.component_product_id)
       if (!p) return sum
-      return sum + ((parseFloat(p.cost) || 0) * c.quantity)
+      return sum + ((parseFloat(p.unit_price) || parseFloat(p.cost) || 0) * c.quantity)
     }, 0)
   }
 
-  // Helper: recalculate unit_price from cost + markup + labor + components
+  // Helper: recalculate unit_price from cost + markup + components + labor
+  // Components use their own unit_price (their markup is already baked in).
+  // The parent's markup only applies to the parent's direct cost.
   const recalcUnitPrice = (form, components) => {
     const cost = parseFloat(form.cost) || 0
-    if (cost === 0 && getComponentCost(components) === 0) return form // no cost basis — keep manual
+    const compValue = getComponentValue(components)
+    if (cost === 0 && compValue === 0) return form // no cost basis — keep manual
     const markup = parseFloat(form.markup_percent) || 0
-    const compCost = getComponentCost(components)
-    const markedUpCost = (cost + compCost) * (1 + markup / 100)
+    const markedUpDirectCost = cost * (1 + markup / 100)
     const hours = parseFloat(form.allotted_time_hours) || 0
     const rate = form.labor_rate_id
       ? laborRates.find(r => r.id === (typeof form.labor_rate_id === 'string' ? parseInt(form.labor_rate_id) : form.labor_rate_id))
       : defaultLaborRate
     const laborCost = hours > 0 && rate ? hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1) : 0
-    const calculatedPrice = markedUpCost + laborCost
+    const calculatedPrice = markedUpDirectCost + compValue + laborCost
     return { ...form, unit_price: calculatedPrice.toFixed(2) }
   }
 
@@ -2056,19 +2058,15 @@ export default function ProductsServices() {
                       <input type="number" name="markup_percent" value={productForm.markup_percent} onChange={handleProductChange} step="0.01" placeholder="0" style={inputStyle} />
                     </div>
                   </div>
-                  {/* Price breakdown with components */}
+                  {/* Price breakdown */}
                   {(() => {
                     const cost = parseFloat(productForm.cost) || 0
                     const markup = parseFloat(productForm.markup_percent) || 0
-                    const compCost = getComponentCost(modalComponents)
-                    const totalCost = cost + compCost
-                    const markedUpCost = totalCost * (1 + markup / 100)
-                    return (cost > 0 || compCost > 0) ? (
+                    const markedUpDirectCost = cost * (1 + markup / 100)
+                    return cost > 0 ? (
                       <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        {compCost > 0 && <span>Components: ${compCost.toFixed(2)}</span>}
-                        {cost > 0 && compCost > 0 && <span>Direct: ${cost.toFixed(2)}</span>}
-                        {(cost > 0 || compCost > 0) && markup > 0 && (
-                          <span>${totalCost.toFixed(2)} + {markup}% = <strong style={{ color: theme.text }}>${markedUpCost.toFixed(2)}</strong> product price</span>
+                        {markup > 0 && (
+                          <span>${cost.toFixed(2)} + {markup}% = <strong style={{ color: theme.text }}>${markedUpDirectCost.toFixed(2)}</strong></span>
                         )}
                       </div>
                     ) : null
@@ -2112,17 +2110,17 @@ export default function ProductsServices() {
                 {/* ── Sell Price (auto-calculated or manual) ── */}
                 {(() => {
                   const cost = parseFloat(productForm.cost) || 0
-                  const compCost = getComponentCost(modalComponents)
+                  const compValue = getComponentValue(modalComponents)
                   const markup = parseFloat(productForm.markup_percent) || 0
-                  const totalCost = cost + compCost
-                  const markedUpCost = totalCost * (1 + markup / 100)
+                  const markedUpDirectCost = cost * (1 + markup / 100)
                   const hours = parseFloat(productForm.allotted_time_hours) || 0
                   const rate = productForm.labor_rate_id
                     ? laborRates.find(r => r.id === productForm.labor_rate_id)
                     : defaultLaborRate
                   const laborCost = hours > 0 && rate ? hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1) : 0
-                  const calculatedPrice = markedUpCost + laborCost
-                  const hasCostBasis = cost > 0 || compCost > 0
+                  const productSubtotal = markedUpDirectCost + compValue
+                  const calculatedPrice = productSubtotal + laborCost
+                  const hasCostBasis = cost > 0 || compValue > 0
 
                   return (
                     <div style={{ padding: '16px', backgroundColor: hasCostBasis ? 'rgba(90,99,73,0.08)' : theme.bg, borderRadius: '10px', border: `1px solid ${hasCostBasis ? theme.accent : theme.border}` }}>
@@ -2133,12 +2131,12 @@ export default function ProductsServices() {
                             ${calculatedPrice.toFixed(2)}
                           </div>
                           <div style={{ fontSize: '12px', color: theme.textMuted, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            {compCost > 0 && <span>Components: ${compCost.toFixed(2)}</span>}
                             {cost > 0 && <span>Direct cost: ${cost.toFixed(2)}</span>}
-                            {markup > 0 && <span>Markup ({markup}%): +${(markedUpCost - totalCost).toFixed(2)}</span>}
-                            <span style={{ fontWeight: '500', color: theme.text }}>Product subtotal: ${markedUpCost.toFixed(2)}</span>
+                            {cost > 0 && markup > 0 && <span>Markup ({markup}%): +${(markedUpDirectCost - cost).toFixed(2)}</span>}
+                            {compValue > 0 && <span>Components: ${compValue.toFixed(2)} (at their own prices)</span>}
+                            <span style={{ fontWeight: '500', color: theme.text }}>Product subtotal: ${productSubtotal.toFixed(2)}</span>
                             {laborCost > 0 && <span>Labor: +${laborCost.toFixed(2)}</span>}
-                            {laborCost > 0 && <span style={{ marginTop: '4px', color: theme.textMuted }}>Product only: ${markedUpCost.toFixed(2)}</span>}
+                            {laborCost > 0 && <span style={{ marginTop: '4px', color: theme.textMuted }}>Product only: ${productSubtotal.toFixed(2)}</span>}
                           </div>
                         </>
                       ) : (
@@ -2396,15 +2394,13 @@ export default function ProductsServices() {
                   ).slice(0, 8)
                 : []
 
-              // Calculate totals
+              // Calculate totals — use each component's own unit_price (their markup is baked in)
               const componentTotal = modalComponents.reduce((sum, c) => {
                 const p = products.find(pr => pr.id === c.component_product_id)
                 if (!p) return sum
-                const cost = parseFloat(p.cost) || 0
-                return sum + (cost * c.quantity)
+                const price = parseFloat(p.unit_price) || parseFloat(p.cost) || 0
+                return sum + (price * c.quantity)
               }, 0)
-              const markup = parseFloat(productForm.markup_percent) || 0
-              const suggestedPrice = componentTotal * (1 + markup / 100)
 
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -2442,7 +2438,7 @@ export default function ProductsServices() {
                             <Package size={14} style={{ color: theme.textMuted, flexShrink: 0 }} />
                             <span style={{ flex: 1 }}>{p.name}</span>
                             <span style={{ color: theme.textMuted, fontSize: '12px' }}>
-                              ${(parseFloat(p.cost) || parseFloat(p.unit_price) || 0).toFixed(2)}
+                              ${(parseFloat(p.unit_price) || parseFloat(p.cost) || 0).toFixed(2)}
                             </span>
                           </button>
                         ))}
@@ -2461,8 +2457,8 @@ export default function ProductsServices() {
                       {modalComponents.map((comp, idx) => {
                         const p = products.find(pr => pr.id === comp.component_product_id)
                         if (!p) return null
-                        const unitCost = parseFloat(p.cost) || 0
-                        const subtotal = unitCost * comp.quantity
+                        const unitPrice = parseFloat(p.unit_price) || parseFloat(p.cost) || 0
+                        const subtotal = unitPrice * comp.quantity
                         return (
                           <div key={comp.component_product_id} style={{
                             display: 'flex', alignItems: 'center', gap: '10px',
@@ -2474,7 +2470,7 @@ export default function ProductsServices() {
                                 {p.name}
                               </div>
                               <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                ${unitCost.toFixed(2)} each
+                                ${unitPrice.toFixed(2)} each
                               </div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2515,17 +2511,11 @@ export default function ProductsServices() {
                       border: `1px solid ${theme.accent}`
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                        <span style={{ fontSize: '12px', color: theme.textMuted }}>Component Cost Total</span>
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>${componentTotal.toFixed(2)}</span>
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>Components Total</span>
+                        <span style={{ fontSize: '15px', fontWeight: '600', color: theme.accent }}>${componentTotal.toFixed(2)}</span>
                       </div>
-                      {markup > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '12px', color: theme.textMuted }}>+ {markup}% Markup</span>
-                          <span style={{ fontSize: '13px', fontWeight: '600', color: theme.accent }}>${suggestedPrice.toFixed(2)}</span>
-                        </div>
-                      )}
-                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px', textAlign: 'center' }}>
-                        Component costs are automatically included in the sell price calculation.
+                      <div style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'center' }}>
+                        Each component uses its own price. Automatically included in the sell price.
                       </div>
                     </div>
                   )}

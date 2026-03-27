@@ -125,11 +125,13 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
   const handleConfirmChoice = (withInstall) => {
     if (!confirmProduct) return
     const product = confirmProduct
-    const laborCost = withInstall ? calculateLaborCost(product) : 0
-    const cost = parseFloat(product.cost) || 0
-    const markup = parseFloat(product.markup_percent) || 0
-    const markedUpCost = cost > 0 ? cost * (1 + markup / 100) : (product.unit_price || 0)
-    const totalPrice = withInstall ? (product.unit_price || 0) : markedUpCost
+    const fullLaborCost = calculateLaborCost(product)
+    const laborCost = withInstall ? fullLaborCost : 0
+    // unit_price = directCost*markup + components + labor
+    // "Product Only" = unit_price minus labor
+    const installedPrice = product.unit_price || 0
+    const productOnlyPrice = installedPrice - fullLaborCost
+    const totalPrice = withInstall ? installedPrice : Math.max(0, productOnlyPrice)
     onSelect(product, laborCost, totalPrice)
     setConfirmProduct(null)
     setSelectedGroup(null)
@@ -456,10 +458,8 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
       {confirmProduct && (() => {
         const p = confirmProduct
         const laborCost = calculateLaborCost(p)
-        const cost = parseFloat(p.cost) || 0
-        const markup = parseFloat(p.markup_percent) || 0
-        const productOnlyPrice = cost > 0 ? cost * (1 + markup / 100) : (p.unit_price || 0)
         const installedPrice = p.unit_price || 0
+        const productOnlyPrice = Math.max(0, installedPrice - laborCost)
         return (
           <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
             <div style={{ backgroundColor: theme.bgCard, borderRadius: '14px', padding: '24px', maxWidth: '380px', width: '90%', border: `1px solid ${theme.border}` }}>
@@ -584,9 +584,6 @@ function GroupTile({ group, theme, isMobile, productCount, onSelect, isOther }) 
 function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventoryCount, getComponentCount, onSelect }) {
   const laborCost = calculateLaborCost(product)
   const componentCount = getComponentCount ? getComponentCount(product.id) : 0
-  const cost = parseFloat(product.cost) || 0
-  const markup = parseFloat(product.markup_percent) || 0
-  const productOnlyPrice = cost > 0 ? cost * (1 + markup / 100) : (product.unit_price || 0)
   const totalPrice = product.unit_price || 0
 
   return (

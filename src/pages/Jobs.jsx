@@ -410,6 +410,7 @@ export default function Jobs() {
   const businessUnits = useStore((state) => state.businessUnits)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
   const fetchJobs = useStore((state) => state.fetchJobs)
+  const fetchCustomers = useStore((state) => state.fetchCustomers)
 
   const [showModal, setShowModal] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
@@ -489,7 +490,8 @@ export default function Jobs() {
       return
     }
     fetchJobs()
-  }, [companyId, navigate, fetchJobs])
+    fetchCustomers()
+  }, [companyId, navigate, fetchJobs, fetchCustomers])
 
   // Auto-open create modal when navigating from CustomerDetail with customer pre-filled
   useEffect(() => {
@@ -654,6 +656,7 @@ export default function Jobs() {
     setCustomerSearchText('')
     setShowCustomerDropdown(false)
     setShowModal(true)
+    fetchCustomers() // Ensure fresh customer list
   }
 
   const openEditModal = (job) => {
@@ -1792,12 +1795,21 @@ export default function Jobs() {
                     </div>
                     {showCustomerDropdown && (() => {
                       const term = (customerSearchText || '').toLowerCase()
-                      const filtered = customers.filter(c =>
-                        c.name?.toLowerCase().includes(term) ||
-                        c.business_name?.toLowerCase().includes(term) ||
-                        c.email?.toLowerCase().includes(term) ||
-                        c.phone?.replace(/\D/g, '').includes(term.replace(/\D/g, ''))
-                      )
+                      const normalize = (s) => (s || '').toLowerCase().replace(/[''`]/g, '')
+                      const termNorm = normalize(term)
+                      const termWords = termNorm.split(/\s+/).filter(Boolean)
+                      const matchesAllWords = (str) => {
+                        const norm = normalize(str)
+                        return termWords.every(w => norm.includes(w))
+                      }
+                      const filtered = termNorm
+                        ? customers.filter(c =>
+                            matchesAllWords(c.name) ||
+                            matchesAllWords(c.business_name) ||
+                            c.email?.toLowerCase().includes(term) ||
+                            c.phone?.replace(/\D/g, '').includes(term.replace(/\D/g, ''))
+                          )
+                        : customers.slice(0, 20)
                       const rect = customerInputRef.current?.getBoundingClientRect()
                       const dropdownStyle = rect ? {
                         position: 'fixed',

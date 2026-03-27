@@ -5,7 +5,9 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye } from 'lucide-react'
+import FlowIndicator from '../components/FlowIndicator'
+import DealBreadcrumb from '../components/DealBreadcrumb'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf } from '../lib/estimatePdf'
@@ -119,6 +121,16 @@ export default function EstimateDetail() {
     return DEFAULT_SETTINGS
   }
 
+  const [isMobile, setIsMobile] = useState(false)
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
   const getEffectiveSettings = () => {
     const defaults = getEstimateDefaults()
     if (estimate?.settings_overrides) {
@@ -140,7 +152,7 @@ export default function EstimateDetail() {
 
     // Try with technician join first; if the column doesn't exist yet fall back
     let estimateData = null
-    const baseSelect = '*, lead:leads(id, customer_name, phone, email, address), customer:customers(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name)'
+    const baseSelect = '*, lead:leads(id, customer_name, phone, email, address, status), customer:customers(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name)'
     const { data: d1, error: e1 } = await supabase
       .from('quotes')
       .select(baseSelect + ', technician:employees!technician_id(id, name)')
@@ -596,7 +608,7 @@ export default function EstimateDetail() {
         await updateLead(estimate.lead_id, { status: 'Won', updated_at: new Date().toISOString() })
       }
 
-      toast.success('Estimate approved!')
+      toast.success('Estimate approved! Ready to convert to a Job.', { duration: 5000 })
       setShowDepositModal(false)
       setDepositPhoto(null)
       await fetchEstimateData()
@@ -621,7 +633,7 @@ export default function EstimateDetail() {
         await updateLead(estimate.lead_id, { status: 'Won', updated_at: new Date().toISOString() })
       }
 
-      toast.success('Estimate approved!')
+      toast.success('Estimate approved! Ready to convert to a Job.', { duration: 5000 })
       setShowDepositModal(false)
       await fetchEstimateData()
       await fetchQuotes()
@@ -1216,6 +1228,117 @@ export default function EstimateDetail() {
           </button>
         </div>
       </div>
+
+      {/* Flow context - only when linked to a lead */}
+      {estimate.lead_id && estimate.lead?.status && (
+        <FlowIndicator currentStatus={estimate.lead.status} showCompact={isMobile} />
+      )}
+      {estimate.lead_id && (
+        <DealBreadcrumb
+          current="quote"
+          leadId={estimate.lead_id}
+          quoteId={estimate.id}
+          customerId={estimate.customer_id}
+          jobId={estimate.job_id}
+        />
+      )}
+
+      {/* Next Step: Convert to Job banner - when Approved and no job yet */}
+      {estimate.status === 'Approved' && !estimate.job_id && (
+        <div style={{
+          display: 'flex',
+          alignItems: isMobile ? 'flex-start' : 'center',
+          flexDirection: isMobile ? 'column' : 'row',
+          gap: isMobile ? '12px' : '16px',
+          padding: '16px 20px',
+          backgroundColor: 'rgba(34,197,94,0.08)',
+          border: '1px solid rgba(34,197,94,0.25)',
+          borderRadius: '12px',
+          marginBottom: '24px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              backgroundColor: '#dcfce7',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <CheckCircle size={20} color="#16a34a" />
+            </div>
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: '600', color: '#166534' }}>Estimate Approved</div>
+              <div style={{ fontSize: '13px', color: '#4d7c0f' }}>Ready to convert to a job and start delivery</div>
+            </div>
+          </div>
+          <button
+            onClick={handleConvertToJob}
+            disabled={convertingToJob}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: convertingToJob ? '#9ca3af' : '#16a34a',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: convertingToJob ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              minHeight: '44px',
+              whiteSpace: 'nowrap',
+              width: isMobile ? '100%' : 'auto',
+              justifyContent: 'center'
+            }}
+          >
+            <Briefcase size={18} />
+            {convertingToJob ? 'Converting...' : 'Convert to Job'}
+          </button>
+        </div>
+      )}
+
+      {/* View Job banner - when already converted */}
+      {estimate.job_id && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '12px 16px',
+          backgroundColor: 'rgba(90,99,73,0.08)',
+          border: `1px solid rgba(90,99,73,0.2)`,
+          borderRadius: '8px',
+          marginBottom: '24px'
+        }}>
+          <div style={{ flex: 1, fontSize: '13px', color: theme.textSecondary }}>
+            This estimate has been converted to a job.
+          </div>
+          <button
+            onClick={() => navigate(`/jobs/${estimate.job_id}`)}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: theme.accent,
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              minHeight: '36px',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            <Eye size={14} />
+            View Job
+          </button>
+        </div>
+      )}
 
       <div style={{
         display: 'grid',
