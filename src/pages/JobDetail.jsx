@@ -97,6 +97,7 @@ function JobDetailInner() {
   const storeJobStatuses = useStore((state) => state.jobStatuses)
   const businessUnits = useStore((state) => state.businessUnits)
   const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
+  const laborRates = useStore((state) => state.laborRates)
   const settings = useStore((state) => state.settings)
 
   // Normalize section statuses from store
@@ -151,6 +152,7 @@ function JobDetailInner() {
   const [jobInvoices, setJobInvoices] = useState([])
   const [jobUtilityInvoices, setJobUtilityInvoices] = useState([])
   const [localIncentive, setLocalIncentive] = useState('')
+  const [localDiscount, setLocalDiscount] = useState('')
 
   // Section state
   const [sections, setSections] = useState([])
@@ -268,6 +270,7 @@ function JobDetailInner() {
       setJob(jobData)
       setFormData(jobData)
       setLocalIncentive(jobData.utility_incentive || '')
+      setLocalDiscount(jobData.discount || '')
 
       // Fetch lead's meter_number and ein if linked
       if (jobData.lead_id) {
@@ -553,6 +556,14 @@ function JobDetailInner() {
     await fetchJobExpenses()
   }
 
+  const calculateProductLaborCost = (product) => {
+    if (!product.allotted_time_hours) return 0
+    const defaultRate = laborRates.find(r => r.is_default) || laborRates[0]
+    const rate = product.labor_rate_id ? laborRates.find(r => r.id === product.labor_rate_id) : defaultRate
+    if (!rate) return 0
+    return product.allotted_time_hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1)
+  }
+
   const addLineItem = async () => {
     if (!newLine.item_id) return
 
@@ -562,6 +573,7 @@ function JobDetailInner() {
     setSaving(true)
 
     const lineTotal = (product.unit_price || 0) * newLine.quantity
+    const laborCost = calculateProductLaborCost(product)
 
     await supabase.from('job_lines').insert([{
       company_id: companyId,
@@ -569,7 +581,8 @@ function JobDetailInner() {
       item_id: product.id,
       quantity: newLine.quantity,
       price: product.unit_price,
-      total: lineTotal
+      total: lineTotal,
+      labor_cost: laborCost || 0
     }])
 
     await fetchJobData()
@@ -722,7 +735,8 @@ function JobDetailInner() {
         quantity: ql.quantity,
         price: ql.price,
         total: ql.line_total || ql.total,
-        photos: ql.photos || []
+        photos: ql.photos || [],
+        labor_cost: ql.labor_cost || 0
       }))
 
       await supabase.from('job_lines').insert(jobLines)
@@ -2505,6 +2519,15 @@ function JobDetailInner() {
                       </div>
                       {isExpanded && (
                         <div style={{ padding: '12px 20px 16px', backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                          {/* Labor cost info */}
+                          {line.labor_cost > 0 && (
+                            <div style={{ marginBottom: '12px', padding: '8px 10px', backgroundColor: 'rgba(139,92,246,0.08)', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <DollarSign size={12} style={{ color: '#8b5cf6' }} />
+                              <span style={{ fontSize: '12px', color: '#8b5cf6', fontWeight: '500' }}>
+                                Labor cost: ${parseFloat(line.labor_cost).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
                           {/* Notes */}
                           <div style={{ marginBottom: '12px' }}>
                             <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Notes</div>
@@ -2642,6 +2665,12 @@ function JobDetailInner() {
                       <span style={{ color: '#dc2626' }}>-{formatCurrency(discount)}</span>
                     </div>
                   )}
+                  {discount > 0 && incentive > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: '#4a7c59' }}>
+                      <span style={{ fontWeight: '500' }}>After Discount & Incentive</span>
+                      <span style={{ fontWeight: '600' }}>{formatCurrency(outOfPocket)}</span>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: `1px solid ${theme.border}` }}>
                     <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
                     <span style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>{formatCurrency(total)}</span>
@@ -2655,6 +2684,49 @@ function JobDetailInner() {
                 </div>
               </>
             )}
+
+            {/* Discount — always visible */}
+            <div style={{
+              padding: '16px 20px',
+              backgroundColor: 'rgba(220,38,38,0.06)',
+              borderTop: `1px solid ${theme.border}`
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#dc2626', fontSize: '14px', fontWeight: '600' }}>Discount</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ color: '#dc2626', fontSize: '14px' }}>$</span>
+                  <input
+                    type="number"
+                    value={localDiscount}
+                    onChange={(e) => setLocalDiscount(e.target.value)}
+                    onBlur={async () => {
+                      const val = parseFloat(localDiscount) || 0
+                      if (val !== (parseFloat(job.discount) || 0)) {
+                        await supabase.from('jobs').update({
+                          discount: val,
+                          updated_at: new Date().toISOString()
+                        }).eq('id', id)
+                        setJob(prev => ({ ...prev, discount: val }))
+                      }
+                    }}
+                    placeholder="0.00"
+                    style={{
+                      width: '110px',
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      border: `1px solid rgba(220,38,38,0.25)`,
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      color: '#dc2626',
+                      fontWeight: '600',
+                      backgroundColor: theme.bgCard
+                    }}
+                    step="0.01"
+                    min="0"
+                  />
+                </div>
+              </div>
+            </div>
 
             {/* Utility Incentive — always visible */}
             <div style={{

@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign } from 'lucide-react'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf } from '../lib/estimatePdf'
@@ -442,7 +442,8 @@ export default function EstimateDetail() {
       description: product.description || null,
       quantity: 1,
       price: totalPrice,
-      line_total: totalPrice
+      line_total: totalPrice,
+      labor_cost: laborCost || 0
     })
 
     await updateEstimateTotal()
@@ -1802,6 +1803,15 @@ export default function EstimateDetail() {
                               }}
                             />
                           </div>
+                          {/* Labor cost info */}
+                          {line.labor_cost > 0 && (
+                            <div style={{ marginBottom: '10px', padding: '8px 10px', backgroundColor: 'rgba(139,92,246,0.08)', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <DollarSign size={12} style={{ color: '#8b5cf6' }} />
+                              <span style={{ fontSize: '12px', color: '#8b5cf6', fontWeight: '500' }}>
+                                Labor cost: ${parseFloat(line.labor_cost).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
                           <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                             Photos
                           </div>

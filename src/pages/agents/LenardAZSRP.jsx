@@ -1008,7 +1008,10 @@ export default function LenardAZSRP() {
     try {
       // Full JSON is stored in audit.notes (lead notes are human-readable)
       const rawNotes = project.audit?.notes || project.notes;
-      const pd = JSON.parse(rawNotes);
+      let pd = {};
+      try { pd = JSON.parse(rawNotes) || {}; } catch (_) { pd = {}; }
+
+      // Always load customer info from lead
       setProjectName(project.customerName || '');
       setSavePhone(project.phone || '');
       setSaveEmail(project.email || '');
@@ -2496,20 +2499,33 @@ export default function LenardAZSRP() {
           )}
           {loadingProjects && <div style={{ textAlign: 'center', padding: '20px', color: T.textMuted }}>Loading...</div>}
           {!loadingProjects && projects.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: T.textMuted }}>No saved projects yet</div>}
-          {projects.map(p => (
-            <button key={p.id} onClick={() => loadProject(p)} style={{ width: '100%', textAlign: 'left', padding: '12px', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '10px', color: T.text, cursor: 'pointer', marginBottom: '6px' }}>
+          {projects.map(p => {
+            const isLenard = (p.leadSource || '').startsWith('Lenard');
+            const isAssigned = !isLenard && !p.audit;
+            return (
+            <button key={p.id} onClick={() => loadProject(p)} style={{ width: '100%', textAlign: 'left', padding: '12px', background: isAssigned ? 'rgba(59,130,246,0.06)' : T.bgInput, border: `1px solid ${isAssigned ? 'rgba(59,130,246,0.3)' : T.border}`, borderRadius: '10px', color: T.text, cursor: 'pointer', marginBottom: '6px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: '600' }}>{p.customerName}</div>
-                  <div style={{ fontSize: '11px', color: T.textMuted }}>{new Date(p.createdAt).toLocaleDateString()} \u2022 {p.status}{p.audit ? ` \u2022 Audit ${p.audit.status}` : ''}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {p.customerName}
+                    {isAssigned && <span style={{ fontSize: '9px', fontWeight: '700', color: '#3b82f6', background: 'rgba(59,130,246,0.12)', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap' }}>NEW LEAD</span>}
+                  </div>
+                  <div style={{ fontSize: '11px', color: T.textMuted }}>
+                    {new Date(p.createdAt).toLocaleDateString()} {'\u2022'} {p.status}
+                    {p.audit ? ` \u2022 Audit ${p.audit.status}` : ''}
+                    {isAssigned && p.serviceType ? ` \u2022 ${p.serviceType}` : ''}
+                    {!isLenard && p.leadSource ? ` \u2022 ${p.leadSource}` : ''}
+                  </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   {p.audit?.estimated_rebate > 0 && <div style={{ ...S.money, fontSize: '15px' }}>${Math.round(p.audit.estimated_rebate).toLocaleString()}</div>}
                   {p.audit?.watts_reduced > 0 && <div style={{ fontSize: '10px', color: T.textSec }}>{p.audit.watts_reduced.toLocaleString()}W saved</div>}
+                  {isAssigned && <div style={{ fontSize: '10px', color: '#3b82f6' }}>Tap to start audit</div>}
                 </div>
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
       </>)}
 

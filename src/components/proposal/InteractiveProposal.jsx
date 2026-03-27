@@ -35,6 +35,7 @@ export default function InteractiveProposal({
   const totalCost = line_items?.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0) || 0
   const annualSavings = findMetric(sections, 'annual_savings')
   const incentive = parseFloat(doc.utility_incentive) || 0
+  const discountAmount = parseFloat(doc.discount) || 0
 
   // Render each section based on type
   const renderSection = (section, index) => {
@@ -204,6 +205,7 @@ export default function InteractiveProposal({
             totalCost={totalCost}
             annualSavings={annualSavings}
             incentive={incentive}
+            discount={discountAmount}
             certified={certified}
             brandName={brandName}
           />
@@ -310,9 +312,9 @@ export default function InteractiveProposal({
                   borderRadius: '10px',
                   border: `1px solid ${proposalTheme.border}`,
                 }}>
-                  <span style={{ color: proposalTheme.textMuted, fontSize: '14px' }}>Net cost after incentive: </span>
+                  <span style={{ color: proposalTheme.textMuted, fontSize: '14px' }}>Net cost after {discountAmount > 0 ? 'discount & ' : ''}incentive: </span>
                   <span style={{ color: proposalTheme.text, fontSize: '18px', fontWeight: '700' }}>
-                    {formatCurrency(totalCost - incentive)}
+                    {formatCurrency(totalCost - discountAmount - incentive)}
                   </span>
                 </div>
               </div>

@@ -28,18 +28,55 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Fetch leads — optionally filtered by lead_owner_id
-    const leadParams = new URLSearchParams({
-      company_id: `eq.${companyId}`,
-      lead_source: `eq.${leadSource || 'Lenard AZ SRP'}`,
-      select: 'id,customer_name,created_at,status,notes,phone,email,address,lead_owner_id,meter_number,ein',
-      order: 'created_at.desc',
-      limit: '50',
-    });
+    const selectFields = 'id,customer_name,created_at,status,notes,phone,email,address,lead_owner_id,lead_source,service_type,meter_number,ein';
+    const defaultSource = leadSource || 'Lenard AZ SRP';
+    let leads: any[] = [];
+
     if (leadOwnerId) {
-      leadParams.set('lead_owner_id', `eq.${leadOwnerId}`);
+      // "My Projects" — show ALL leads assigned to this person (any source)
+      // plus any Lenard leads they created, merged and deduped
+      const ownerParams = new URLSearchParams({
+        company_id: `eq.${companyId}`,
+        lead_owner_id: `eq.${leadOwnerId}`,
+        select: selectFields,
+        order: 'created_at.desc',
+        limit: '100',
+      });
+      const ownerLeads = await querySupabase(SUPABASE_URL!, 'leads', key, ownerParams.toString());
+
+      // Also grab Lenard-source leads by this owner (in case lead_owner_id wasn't set)
+      const sourceParams = new URLSearchParams({
+        company_id: `eq.${companyId}`,
+        lead_source: `eq.${defaultSource}`,
+        lead_owner_id: `eq.${leadOwnerId}`,
+        select: selectFields,
+        order: 'created_at.desc',
+        limit: '50',
+      });
+      const sourceLeads = await querySupabase(SUPABASE_URL!, 'leads', key, sourceParams.toString());
+
+      // Merge and dedupe by id
+      const seen = new Set<number>();
+      for (const l of [...ownerLeads, ...sourceLeads]) {
+        if (!seen.has(l.id)) {
+          seen.add(l.id);
+          leads.push(l);
+        }
+      }
+      // Sort by created_at desc
+      leads.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      leads = leads.slice(0, 100);
+    } else {
+      // "All Projects" — show all Lenard-source leads for the company
+      const leadParams = new URLSearchParams({
+        company_id: `eq.${companyId}`,
+        lead_source: `eq.${defaultSource}`,
+        select: selectFields,
+        order: 'created_at.desc',
+        limit: '50',
+      });
+      leads = await querySupabase(SUPABASE_URL!, 'leads', key, leadParams.toString());
     }
-    const leads = await querySupabase(SUPABASE_URL!, 'leads', key, leadParams.toString());
 
     // Fetch matching audits (linked by lead_id)
     const leadIds = leads.map((l: any) => l.id);
@@ -92,6 +129,8 @@ serve(async (req) => {
       meter_number: l.meter_number,
       ein: l.ein,
       leadOwnerId: l.lead_owner_id,
+      leadSource: l.lead_source,
+      serviceType: l.service_type,
       audit: auditsMap[l.id] || null,
     }));
 

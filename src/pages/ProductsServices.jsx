@@ -9,7 +9,7 @@ import {
   Upload, Download, Clock, DollarSign, Pencil, ChevronRight, Archive, Search,
   FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, Loader,
   ExternalLink, FileText, ShieldCheck, Award, PlusCircle, MinusCircle,
-  Wrench, GripHorizontal, GripVertical
+  Wrench, GripHorizontal, GripVertical, Eye
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
@@ -101,7 +101,7 @@ function DraggableModal({ children, theme, isMobile, maxWidth = '600px', onClose
 }
 
 // ============ PRODUCT CARD ============
-function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost, draggable, isAdmin, isManagerPlus }) {
+function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost, draggable, isAdmin, isManagerPlus, onView }) {
   return (
     <div
       draggable={!!draggable}
@@ -111,13 +111,23 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
         e.currentTarget.style.opacity = '0.5'
       } : undefined}
       onDragEnd={draggable ? (e) => { e.currentTarget.style.opacity = product.active ? '1' : '0.6' } : undefined}
+      onClick={() => onView && onView(product)}
       style={{
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
         border: `1px solid ${theme.border}`,
         overflow: 'hidden',
         opacity: product.active ? 1 : 0.6,
-        cursor: draggable ? 'grab' : undefined
+        cursor: 'pointer',
+        transition: 'border-color 0.2s, box-shadow 0.2s'
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = theme.accent
+        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = theme.border
+        e.currentTarget.style.boxShadow = 'none'
       }}
     >
       <div style={{
@@ -165,6 +175,17 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
             DLC Listed
           </div>
         )}
+        {product.allotted_time_hours > 0 && (
+          <div style={{
+            position: 'absolute', top: product.dlc_listed ? '30px' : '8px', left: '8px',
+            backgroundColor: '#8b5cf6', color: '#fff', padding: '3px 8px',
+            borderRadius: '10px', fontSize: '10px', fontWeight: '700',
+            display: 'flex', alignItems: 'center', gap: '3px', letterSpacing: '0.3px'
+          }}>
+            <Wrench size={10} />
+            Service
+          </div>
+        )}
       </div>
       <div style={{ padding: '12px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
@@ -200,7 +221,7 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
           </div>
         )}
         {isManagerPlus && (
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ display: 'flex', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
             <button onClick={() => openProductForm(product)} style={{
               flex: 1, ...buttonStyle, backgroundColor: theme.accentBg,
               color: theme.accent, padding: '8px', fontSize: '12px'
@@ -218,6 +239,285 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
         )}
       </div>
     </div>
+  )
+}
+
+// ============ PRODUCT DETAIL MODAL (read-only) ============
+function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborCost, laborRates, productComponents, products, onClose, onEdit, isManagerPlus }) {
+  if (!product) return null
+
+  const cost = parseFloat(product.cost) || 0
+  const markup = parseFloat(product.markup_percent) || 0
+  const components = productComponents.filter(pc => pc.parent_product_id === product.id)
+  const compCost = components.reduce((sum, c) => {
+    const p = products.find(pr => pr.id === c.component_product_id)
+    return sum + ((parseFloat(p?.cost) || 0) * c.quantity)
+  }, 0)
+  const totalCost = cost + compCost
+  const markedUpCost = totalCost * (1 + markup / 100)
+  const datasheet = product.datasheet_json || {}
+  const hasSpecs = product.manufacturer || product.model_number || product.product_category || Object.keys(datasheet).length > 0
+
+  const sectionStyle = { padding: '14px 16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }
+  const sectionTitleStyle = { fontSize: '11px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }
+  const detailRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '13px' }
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50 }} />
+      <div style={{
+        position: 'fixed',
+        top: isMobile ? 0 : '50%',
+        left: isMobile ? 0 : '50%',
+        right: isMobile ? 0 : 'auto',
+        bottom: isMobile ? 0 : 'auto',
+        transform: isMobile ? 'none' : 'translate(-50%, -50%)',
+        backgroundColor: theme.bgCard,
+        borderRadius: isMobile ? 0 : '16px',
+        border: isMobile ? 'none' : `1px solid ${theme.border}`,
+        width: isMobile ? '100%' : '90%',
+        maxWidth: isMobile ? '100%' : '560px',
+        maxHeight: isMobile ? '100%' : '85vh',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 51,
+        boxShadow: '0 25px 50px rgba(0,0,0,0.15)'
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {product.name}
+              </h2>
+              {product.allotted_time_hours > 0 && (
+                <span style={{ backgroundColor: '#8b5cf6', color: '#fff', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: '700', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <Wrench size={10} /> Service
+                </span>
+              )}
+              {product.dlc_listed && (
+                <span style={{ backgroundColor: '#22c55e', color: '#fff', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: '700', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <ShieldCheck size={10} /> DLC
+                </span>
+              )}
+            </div>
+            {product.type && <div style={{ fontSize: '12px', color: theme.textMuted }}>{product.type}</div>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            {isManagerPlus && (
+              <button onClick={() => { onClose(); onEdit(product) }} style={{
+                padding: '8px 12px', backgroundColor: theme.accentBg, color: theme.accent,
+                border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500',
+                display: 'flex', alignItems: 'center', gap: '6px'
+              }}>
+                <Pencil size={14} /> Edit
+              </button>
+            )}
+            <button onClick={onClose} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflow: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Image + Description */}
+          {(product.image_url || product.description) && (
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+              {product.image_url && (
+                <img src={product.image_url} alt={product.name} style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '10px', border: `1px solid ${theme.border}`, flexShrink: 0 }} />
+              )}
+              {product.description && (
+                <p style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5', margin: 0 }}>{product.description}</p>
+              )}
+            </div>
+          )}
+
+          {/* Pricing */}
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>Pricing</div>
+            <div style={{ fontSize: '24px', fontWeight: '700', color: theme.accent, marginBottom: '8px' }}>
+              {formatCurrency(product.unit_price)}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {compCost > 0 && (
+                <div style={detailRow}>
+                  <span style={{ color: theme.textMuted }}>Components</span>
+                  <span style={{ color: theme.text }}>{formatCurrency(compCost)}</span>
+                </div>
+              )}
+              {cost > 0 && (
+                <div style={detailRow}>
+                  <span style={{ color: theme.textMuted }}>Direct cost</span>
+                  <span style={{ color: theme.text }}>{formatCurrency(cost)}</span>
+                </div>
+              )}
+              {markup > 0 && (cost > 0 || compCost > 0) && (
+                <div style={detailRow}>
+                  <span style={{ color: theme.textMuted }}>Markup ({markup}%)</span>
+                  <span style={{ color: theme.text }}>+{formatCurrency(markedUpCost - totalCost)}</span>
+                </div>
+              )}
+              {laborCost > 0 && (
+                <div style={detailRow}>
+                  <span style={{ color: theme.textMuted }}>Labor ({product.allotted_time_hours}h)</span>
+                  <span style={{ color: '#8b5cf6', fontWeight: '500' }}>{formatCurrency(laborCost)}</span>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+              {product.taxable && <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '8px', backgroundColor: theme.accentBg, color: theme.accent }}>Taxable</span>}
+              <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '8px', backgroundColor: product.active ? 'rgba(74,124,89,0.12)' : 'rgba(0,0,0,0.06)', color: product.active ? '#4a7c59' : theme.textMuted }}>
+                {product.active ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+          </div>
+
+          {/* Components */}
+          {components.length > 0 && (
+            <div style={sectionStyle}>
+              <div style={sectionTitleStyle}>
+                <Boxes size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
+                Components ({components.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {components.map(comp => {
+                  const p = products.find(pr => pr.id === comp.component_product_id)
+                  if (!p) return null
+                  return (
+                    <div key={comp.component_product_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${theme.border}` }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>{p.name}</div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{formatCurrency(parseFloat(p.cost) || 0)} each</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.accent }}>{formatCurrency((parseFloat(p.cost) || 0) * comp.quantity)}</div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>x{comp.quantity}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Specs & Product Info */}
+          {hasSpecs && (
+            <div style={sectionStyle}>
+              <div style={sectionTitleStyle}>Specifications</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
+                {product.manufacturer && (
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Manufacturer</div>
+                    <div style={{ fontSize: '13px', color: theme.text, fontWeight: '500' }}>{product.manufacturer}</div>
+                  </div>
+                )}
+                {product.model_number && (
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Model Number</div>
+                    <div style={{ fontSize: '13px', color: theme.text, fontWeight: '500' }}>{product.model_number}</div>
+                  </div>
+                )}
+                {product.product_category && (
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Category</div>
+                    <div style={{ fontSize: '13px', color: theme.text, fontWeight: '500' }}>{product.product_category}</div>
+                  </div>
+                )}
+                {product.warranty_years && (
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Warranty</div>
+                    <div style={{ fontSize: '13px', color: theme.text, fontWeight: '500' }}>{product.warranty_years} years</div>
+                  </div>
+                )}
+              </div>
+              {Object.keys(datasheet).length > 0 && (
+                <div style={{ marginTop: '12px', borderTop: `1px solid ${theme.border}`, paddingTop: '10px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px' }}>Datasheet</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+                    {Object.entries(datasheet).map(([key, value]) => (
+                      <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '2px 0' }}>
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>{key}</span>
+                        <span style={{ fontSize: '12px', color: theme.text, fontWeight: '500', textAlign: 'right' }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Certifications */}
+          {product.dlc_listed && (
+            <div style={{ ...sectionStyle, borderLeft: '3px solid #22c55e' }}>
+              <div style={{ ...sectionTitleStyle, color: '#22c55e' }}>
+                <ShieldCheck size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
+                DLC Certification
+              </div>
+              {product.dlc_listing_number && (
+                <div style={{ fontSize: '13px', color: theme.text, marginBottom: '8px' }}>
+                  Listing: <strong>{product.dlc_listing_number}</strong>
+                </div>
+              )}
+              {product.dlc_document_url && (
+                <a href={product.dlc_document_url} target="_blank" rel="noopener noreferrer" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                  backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e', borderRadius: '8px',
+                  fontSize: '12px', fontWeight: '500', textDecoration: 'none'
+                }}>
+                  <ExternalLink size={12} /> View DLC Document
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Documents */}
+          {(product.spec_sheet_url || product.install_guide_url) && (
+            <div style={sectionStyle}>
+              <div style={sectionTitleStyle}>
+                <FileText size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
+                Documents
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {product.spec_sheet_url && (
+                  <a href={product.spec_sheet_url} target="_blank" rel="noopener noreferrer" style={{
+                    display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px',
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px',
+                    textDecoration: 'none', color: theme.text
+                  }}>
+                    <FileText size={18} style={{ color: theme.accent, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: '500' }}>Spec Sheet</div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {product.spec_sheet_url.split('/').pop()}
+                      </div>
+                    </div>
+                    <ExternalLink size={14} style={{ color: theme.textMuted, flexShrink: 0 }} />
+                  </a>
+                )}
+                {product.install_guide_url && (
+                  <a href={product.install_guide_url} target="_blank" rel="noopener noreferrer" style={{
+                    display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px',
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px',
+                    textDecoration: 'none', color: theme.text
+                  }}>
+                    <FileSpreadsheet size={18} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: '500' }}>Install Guide</div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {product.install_guide_url.split('/').pop()}
+                      </div>
+                    </div>
+                    <ExternalLink size={14} style={{ color: theme.textMuted, flexShrink: 0 }} />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -256,6 +556,9 @@ export default function ProductsServices() {
   const [groupForm, setGroupForm] = useState({
     name: '', service_type: '', description: '', image_url: '', icon: 'Package', sort_order: 0, active: true
   })
+
+  // Product detail (read-only) modal state
+  const [viewingProduct, setViewingProduct] = useState(null)
 
   // Product modal state
   const [showProductModal, setShowProductModal] = useState(false)
@@ -648,9 +951,50 @@ export default function ProductsServices() {
     setShowProductModal(true)
   }
 
+  // Helper: compute component cost from modalComponents
+  const getComponentCost = (components) => {
+    return components.reduce((sum, c) => {
+      const p = products.find(pr => pr.id === c.component_product_id)
+      if (!p) return sum
+      return sum + ((parseFloat(p.cost) || 0) * c.quantity)
+    }, 0)
+  }
+
+  // Helper: recalculate unit_price from cost + markup + labor + components
+  const recalcUnitPrice = (form, components) => {
+    const cost = parseFloat(form.cost) || 0
+    if (cost === 0 && getComponentCost(components) === 0) return form // no cost basis — keep manual
+    const markup = parseFloat(form.markup_percent) || 0
+    const compCost = getComponentCost(components)
+    const markedUpCost = (cost + compCost) * (1 + markup / 100)
+    const hours = parseFloat(form.allotted_time_hours) || 0
+    const rate = form.labor_rate_id
+      ? laborRates.find(r => r.id === (typeof form.labor_rate_id === 'string' ? parseInt(form.labor_rate_id) : form.labor_rate_id))
+      : defaultLaborRate
+    const laborCost = hours > 0 && rate ? hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1) : 0
+    const calculatedPrice = markedUpCost + laborCost
+    return { ...form, unit_price: calculatedPrice.toFixed(2) }
+  }
+
   const handleProductChange = (e) => {
     const { name, value, type, checked } = e.target
-    setProductForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
+    setProductForm(prev => {
+      const updated = { ...prev, [name]: type === 'checkbox' ? checked : value }
+      // Auto-recalc unit_price when pricing fields change
+      if (['cost', 'markup_percent', 'allotted_time_hours'].includes(name)) {
+        return recalcUnitPrice(updated, modalComponents)
+      }
+      return updated
+    })
+  }
+
+  // Update components and recalc unit_price in one go
+  const updateComponentsAndRecalc = (updater) => {
+    setModalComponents(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      setProductForm(form => recalcUnitPrice(form, next))
+      return next
+    })
   }
 
   const handleSaveProduct = async () => {
@@ -1198,7 +1542,8 @@ export default function ProductsServices() {
                       formatCurrency={formatCurrency} openProductForm={openProductForm}
                       handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
                       inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
-                      draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus} />
+                      draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus}
+                      onView={setViewingProduct} />
                   ))}
                 </div>
               )}
@@ -1326,7 +1671,8 @@ export default function ProductsServices() {
                           formatCurrency={formatCurrency} openProductForm={openProductForm}
                           handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
                           inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
-                          draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus} />
+                          draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus}
+                          onView={setViewingProduct} />
                       ))}
                     </div>
                   ) : isAdmin && sectionGroups.length > 0 ? (
@@ -1615,6 +1961,23 @@ export default function ProductsServices() {
         </DraggableModal>
       )}
 
+      {/* ============ PRODUCT DETAIL MODAL (read-only) ============ */}
+      {viewingProduct && (
+        <ProductDetailModal
+          product={viewingProduct}
+          theme={theme}
+          isMobile={isMobile}
+          formatCurrency={formatCurrency}
+          laborCost={getLaborCost(viewingProduct)}
+          laborRates={laborRates}
+          productComponents={productComponents}
+          products={products}
+          onClose={() => setViewingProduct(null)}
+          onEdit={openProductForm}
+          isManagerPlus={isManagerPlus}
+        />
+      )}
+
       {/* ============ PRODUCT MODAL (draggable, tabbed) ============ */}
       {showProductModal && (
         <DraggableModal theme={theme} isMobile={isMobile} maxWidth="600px" onClose={() => setShowProductModal(false)}>
@@ -1685,7 +2048,7 @@ export default function ProductsServices() {
                   <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Pricing</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
-                      <label style={labelStyle}>Product Cost</label>
+                      <label style={labelStyle}>Direct Cost</label>
                       <input type="number" name="cost" value={productForm.cost} onChange={handleProductChange} step="0.01" placeholder="0.00" style={inputStyle} />
                     </div>
                     <div>
@@ -1693,15 +2056,20 @@ export default function ProductsServices() {
                       <input type="number" name="markup_percent" value={productForm.markup_percent} onChange={handleProductChange} step="0.01" placeholder="0" style={inputStyle} />
                     </div>
                   </div>
-                  {/* Product price breakdown */}
+                  {/* Price breakdown with components */}
                   {(() => {
                     const cost = parseFloat(productForm.cost) || 0
                     const markup = parseFloat(productForm.markup_percent) || 0
-                    const markedUpCost = cost * (1 + markup / 100)
-                    return cost > 0 ? (
-                      <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted, display: 'flex', gap: '12px' }}>
-                        <span>Cost: ${cost.toFixed(2)}</span>
-                        {markup > 0 && <span>+ {markup}% = <strong style={{ color: theme.text }}>${markedUpCost.toFixed(2)}</strong> product price</span>}
+                    const compCost = getComponentCost(modalComponents)
+                    const totalCost = cost + compCost
+                    const markedUpCost = totalCost * (1 + markup / 100)
+                    return (cost > 0 || compCost > 0) ? (
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        {compCost > 0 && <span>Components: ${compCost.toFixed(2)}</span>}
+                        {cost > 0 && compCost > 0 && <span>Direct: ${cost.toFixed(2)}</span>}
+                        {(cost > 0 || compCost > 0) && markup > 0 && (
+                          <span>${totalCost.toFixed(2)} + {markup}% = <strong style={{ color: theme.text }}>${markedUpCost.toFixed(2)}</strong> product price</span>
+                        )}
                       </div>
                     ) : null
                   })()}
@@ -1718,7 +2086,7 @@ export default function ProductsServices() {
                     </div>
                     <div>
                       <label style={labelStyle}>Labor Rate</label>
-                      <select name="labor_rate_id" value={productForm.labor_rate_id || ''} onChange={(e) => setProductForm(prev => ({ ...prev, labor_rate_id: e.target.value ? parseInt(e.target.value) : null }))} style={inputStyle}>
+                      <select name="labor_rate_id" value={productForm.labor_rate_id || ''} onChange={(e) => setProductForm(prev => recalcUnitPrice({ ...prev, labor_rate_id: e.target.value ? parseInt(e.target.value) : null }, modalComponents))} style={inputStyle}>
                         <option value="">Use Default Rate</option>
                         {laborRates.filter(r => r.active).map(rate => (
                           <option key={rate.id} value={rate.id}>{rate.name} (${parseFloat(rate.rate_per_hour).toFixed(2)}/hr){rate.is_default ? ' - Default' : ''}</option>
@@ -1741,41 +2109,40 @@ export default function ProductsServices() {
                   })()}
                 </div>
 
-                {/* ── Total Price (auto-calculated) ── */}
+                {/* ── Sell Price (auto-calculated or manual) ── */}
                 {(() => {
                   const cost = parseFloat(productForm.cost) || 0
+                  const compCost = getComponentCost(modalComponents)
                   const markup = parseFloat(productForm.markup_percent) || 0
-                  const markedUpCost = cost * (1 + markup / 100)
+                  const totalCost = cost + compCost
+                  const markedUpCost = totalCost * (1 + markup / 100)
                   const hours = parseFloat(productForm.allotted_time_hours) || 0
                   const rate = productForm.labor_rate_id
                     ? laborRates.find(r => r.id === productForm.labor_rate_id)
                     : defaultLaborRate
                   const laborCost = hours > 0 && rate ? hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1) : 0
                   const calculatedPrice = markedUpCost + laborCost
-                  const currentPrice = parseFloat(productForm.unit_price) || 0
-                  const hasCalculation = cost > 0
-                  const priceMatchesCalc = hasCalculation && Math.abs(currentPrice - calculatedPrice) < 0.01
+                  const hasCostBasis = cost > 0 || compCost > 0
 
                   return (
-                    <div style={{ padding: '16px', backgroundColor: hasCalculation ? 'rgba(90,99,73,0.08)' : theme.bg, borderRadius: '10px', border: `1px solid ${hasCalculation ? theme.accent : theme.border}` }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <label style={{ ...labelStyle, marginBottom: 0 }}>Sell Price (Installed)</label>
-                        {hasCalculation && !priceMatchesCalc && (
-                          <button
-                            type="button"
-                            onClick={() => setProductForm(prev => ({ ...prev, unit_price: calculatedPrice.toFixed(2) }))}
-                            style={{ padding: '4px 10px', fontSize: '11px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
-                          >
-                            Set to ${calculatedPrice.toFixed(2)}
-                          </button>
-                        )}
-                      </div>
-                      <input type="number" name="unit_price" value={productForm.unit_price} onChange={handleProductChange} step="0.01" placeholder="0.00" style={inputStyle} />
-                      {hasCalculation && (
-                        <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted }}>
-                          Calculated: ${markedUpCost.toFixed(2)} product{laborCost > 0 ? ` + $${laborCost.toFixed(2)} labor` : ''} = <strong style={{ color: theme.accent }}>${calculatedPrice.toFixed(2)}</strong>
-                          {laborCost > 0 && <span style={{ marginLeft: '8px', color: theme.textMuted }}>| Product only: ${markedUpCost.toFixed(2)}</span>}
-                        </div>
+                    <div style={{ padding: '16px', backgroundColor: hasCostBasis ? 'rgba(90,99,73,0.08)' : theme.bg, borderRadius: '10px', border: `1px solid ${hasCostBasis ? theme.accent : theme.border}` }}>
+                      <label style={{ ...labelStyle, marginBottom: '8px' }}>Sell Price (Installed)</label>
+                      {hasCostBasis ? (
+                        <>
+                          <div style={{ fontSize: '24px', fontWeight: '700', color: theme.accent, marginBottom: '8px' }}>
+                            ${calculatedPrice.toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: '12px', color: theme.textMuted, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            {compCost > 0 && <span>Components: ${compCost.toFixed(2)}</span>}
+                            {cost > 0 && <span>Direct cost: ${cost.toFixed(2)}</span>}
+                            {markup > 0 && <span>Markup ({markup}%): +${(markedUpCost - totalCost).toFixed(2)}</span>}
+                            <span style={{ fontWeight: '500', color: theme.text }}>Product subtotal: ${markedUpCost.toFixed(2)}</span>
+                            {laborCost > 0 && <span>Labor: +${laborCost.toFixed(2)}</span>}
+                            {laborCost > 0 && <span style={{ marginTop: '4px', color: theme.textMuted }}>Product only: ${markedUpCost.toFixed(2)}</span>}
+                          </div>
+                        </>
+                      ) : (
+                        <input type="number" name="unit_price" value={productForm.unit_price} onChange={handleProductChange} step="0.01" placeholder="0.00" style={inputStyle} />
                       )}
                     </div>
                   )
@@ -2062,7 +2429,7 @@ export default function ProductsServices() {
                       }}>
                         {searchResults.map(p => (
                           <button key={p.id} onClick={() => {
-                            setModalComponents(prev => [...prev, { component_product_id: p.id, quantity: 1 }])
+                            updateComponentsAndRecalc(prev => [...prev, { component_product_id: p.id, quantity: 1 }])
                             setComponentSearch('')
                           }} style={{
                             display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
@@ -2112,7 +2479,7 @@ export default function ProductsServices() {
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <button onClick={() => {
-                                setModalComponents(prev => prev.map((c, i) => i === idx ? { ...c, quantity: Math.max(1, c.quantity - 1) } : c))
+                                updateComponentsAndRecalc(prev => prev.map((c, i) => i === idx ? { ...c, quantity: Math.max(1, c.quantity - 1) } : c))
                               }} style={{
                                 width: '28px', height: '28px', borderRadius: '6px', border: `1px solid ${theme.border}`,
                                 backgroundColor: theme.bgCard, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2120,7 +2487,7 @@ export default function ProductsServices() {
                               }}>-</button>
                               <span style={{ width: '28px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.text }}>{comp.quantity}</span>
                               <button onClick={() => {
-                                setModalComponents(prev => prev.map((c, i) => i === idx ? { ...c, quantity: c.quantity + 1 } : c))
+                                updateComponentsAndRecalc(prev => prev.map((c, i) => i === idx ? { ...c, quantity: c.quantity + 1 } : c))
                               }} style={{
                                 width: '28px', height: '28px', borderRadius: '6px', border: `1px solid ${theme.border}`,
                                 backgroundColor: theme.bgCard, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2131,7 +2498,7 @@ export default function ProductsServices() {
                               ${subtotal.toFixed(2)}
                             </span>
                             <button onClick={() => {
-                              setModalComponents(prev => prev.filter((_, i) => i !== idx))
+                              updateComponentsAndRecalc(prev => prev.filter((_, i) => i !== idx))
                             }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', padding: '4px' }}>
                               <X size={14} />
                             </button>
@@ -2157,22 +2524,9 @@ export default function ProductsServices() {
                           <span style={{ fontSize: '13px', fontWeight: '600', color: theme.accent }}>${suggestedPrice.toFixed(2)}</span>
                         </div>
                       )}
-                      <button
-                        onClick={() => {
-                          setProductForm(prev => ({
-                            ...prev,
-                            cost: componentTotal.toFixed(2),
-                            unit_price: suggestedPrice.toFixed(2)
-                          }))
-                          setProductModalTab('overview')
-                        }}
-                        style={{
-                          ...buttonStyle, width: '100%', marginTop: '8px', padding: '8px 0',
-                          backgroundColor: theme.accent, color: '#fff', fontSize: '13px', justifyContent: 'center'
-                        }}
-                      >
-                        <DollarSign size={14} /> Apply ${suggestedPrice.toFixed(2)} to Pricing
-                      </button>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px', textAlign: 'center' }}>
+                        Component costs are automatically included in the sell price calculation.
+                      </div>
                     </div>
                   )}
                 </div>

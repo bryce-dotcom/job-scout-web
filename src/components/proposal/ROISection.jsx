@@ -2,11 +2,11 @@ import ProposalSection from './ProposalSection'
 import { AnimatedNumber } from './ProposalSection'
 import proposalTheme from './proposalTheme'
 
-export default function ROISection({ section, totalCost, annualSavings, incentive, certified, brandName }) {
+export default function ROISection({ section, totalCost, annualSavings, incentive, discount, certified, brandName }) {
   const metrics = section?.metrics || {}
   const annual = metrics.annual_savings || annualSavings || 0
   const cost = totalCost || 0
-  const netCost = incentive ? cost - incentive : cost
+  const netCost = cost - (discount || 0) - (incentive || 0)
   const paybackMonths = metrics.payback_months || (annual > 0 ? Math.round((netCost / annual) * 12) : 0)
   const roiPercent = metrics.roi_percent || (netCost > 0 && annual > 0 ? Math.round(((annual * 5 - netCost) / netCost) * 100) : 0)
 

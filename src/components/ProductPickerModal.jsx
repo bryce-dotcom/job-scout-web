@@ -662,28 +662,27 @@ function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventor
             <span style={{ fontWeight: '600', color: theme.accent }}>
               ${totalPrice.toFixed(2)}
             </span>
-            {laborCost > 0 && (
-              <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                installed
+            {laborCost > 0 ? (
+              <span style={{
+                fontSize: '10px', fontWeight: '600', color: '#8b5cf6',
+                backgroundColor: 'rgba(139,92,246,0.1)', padding: '2px 6px',
+                borderRadius: '8px'
+              }}>
+                includes install ({product.allotted_time_hours}h)
+              </span>
+            ) : (
+              <span style={{
+                fontSize: '10px', color: theme.textMuted,
+                backgroundColor: theme.bg, padding: '2px 6px',
+                borderRadius: '8px'
+              }}>
+                product only
               </span>
             )}
-            <span style={{ color: theme.textMuted }}>
-              {getInventoryCount(product.id)} in stock
-            </span>
           </div>
-          {laborCost > 0 && (
-            <div style={{
-              fontSize: '11px',
-              color: theme.textMuted,
-              marginTop: '2px',
-              display: 'flex',
-              gap: '8px'
-            }}>
-              <span>${productOnlyPrice.toFixed(2)} product only</span>
-              <span>|</span>
-              <span>${laborCost.toFixed(2)} labor ({product.allotted_time_hours}h)</span>
-            </div>
-          )}
+          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+            {getInventoryCount(product.id)} in stock
+          </div>
         </div>
       </div>
     </button>
