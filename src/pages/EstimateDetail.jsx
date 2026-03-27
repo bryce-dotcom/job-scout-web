@@ -3,9 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { PAYMENT_METHODS } from '../lib/schema'
+import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt } from 'lucide-react'
 import FlowIndicator from '../components/FlowIndicator'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
@@ -95,6 +95,12 @@ export default function EstimateDetail() {
     address: '',
     business_name: ''
   })
+
+  // Expense state
+  const [quoteExpenses, setQuoteExpenses] = useState([])
+  const [showAddExpense, setShowAddExpense] = useState(false)
+  const [expenseForm, setExpenseForm] = useState({ amount: '', merchant: '', category: 'Cost of Sale', notes: '' })
+  const [receiptUploading, setReceiptUploading] = useState(false)
 
   const [depositForm, setDepositForm] = useState({
     deposit_amount: '',
@@ -222,6 +228,15 @@ export default function EstimateDetail() {
         // quote_id column may not exist yet (migration not applied)
         setAttachments([])
       }
+
+      // Fetch expenses linked to this estimate
+      const { data: expData } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('quote_id', id)
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false })
+      setQuoteExpenses(expData || [])
 
       // Load mapped rebate forms if estimate has an audit
       if (estimateData.audit_id) {
@@ -643,6 +658,78 @@ export default function EstimateDetail() {
     setSaving(false)
   }
 
+  // Expense handlers
+  const fetchQuoteExpenses = async () => {
+    const { data } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('quote_id', id)
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: false })
+    setQuoteExpenses(data || [])
+  }
+
+  const handleAddQuoteExpense = async () => {
+    if (!expenseForm.amount) return
+    await supabase.from('expenses').insert([{
+      company_id: companyId,
+      quote_id: parseInt(id),
+      lead_id: estimate.lead_id ? parseInt(estimate.lead_id) : null,
+      amount: parseFloat(expenseForm.amount) || 0,
+      category: expenseForm.category || 'Cost of Sale',
+      vendor: expenseForm.merchant || null,
+      description: expenseForm.notes || null,
+      date: new Date().toISOString().split('T')[0]
+    }])
+    await fetchQuoteExpenses()
+    setExpenseForm({ amount: '', merchant: '', category: 'Cost of Sale', notes: '' })
+    setShowAddExpense(false)
+  }
+
+  const handleDeleteQuoteExpense = async (expId) => {
+    if (!confirm('Delete this expense?')) return
+    await supabase.from('expenses').delete().eq('id', expId)
+    await fetchQuoteExpenses()
+  }
+
+  const handleQuoteReceiptCapture = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !estimate) return
+    setReceiptUploading(true)
+
+    const timestamp = Date.now()
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const storagePath = `estimates/${id}/receipts/${timestamp}_${safeName}`
+
+    const { error: uploadErr } = await supabase.storage
+      .from('project-documents')
+      .upload(storagePath, file, { contentType: file.type })
+
+    if (uploadErr) {
+      console.error('Receipt upload failed:', uploadErr)
+      setReceiptUploading(false)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
+
+    await supabase.from('expenses').insert([{
+      company_id: companyId,
+      quote_id: parseInt(id),
+      lead_id: estimate.lead_id ? parseInt(estimate.lead_id) : null,
+      amount: 0,
+      category: 'Cost of Sale',
+      date: new Date().toISOString().split('T')[0],
+      description: 'Receipt capture',
+      receipt_url: urlData.publicUrl,
+      receipt_storage_path: storagePath,
+      source: 'receipt'
+    }])
+
+    await fetchQuoteExpenses()
+    setReceiptUploading(false)
+  }
+
   // Convert approved estimate to a Job
   const handleConvertToJob = async () => {
     if (!confirm('Convert this estimate to a Job?')) return
@@ -730,10 +817,27 @@ export default function EstimateDetail() {
         }
       }
 
-      // 5. Link job back to estimate
+      // 5. Carry quote expenses forward to the new job
+      await supabase
+        .from('expenses')
+        .update({ job_id: newJob.id })
+        .eq('quote_id', estimate.id)
+        .eq('company_id', companyId)
+
+      // Also carry lead expenses forward (ones not already on a job)
+      if (estimate.lead_id) {
+        await supabase
+          .from('expenses')
+          .update({ job_id: newJob.id })
+          .eq('lead_id', estimate.lead_id)
+          .is('job_id', null)
+          .eq('company_id', companyId)
+      }
+
+      // 6. Link job back to estimate
       await updateQuote(id, { job_id: newJob.id, customer_id: customerId, updated_at: new Date().toISOString() })
 
-      // 6. Update lead status if linked
+      // 7. Update lead status if linked
       if (estimate.lead_id) {
         await updateLead(estimate.lead_id, {
           status: 'Job Scheduled',
@@ -1200,16 +1304,43 @@ export default function EstimateDetail() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{
-            padding: '6px 14px',
-            borderRadius: '20px',
-            fontSize: '13px',
-            fontWeight: '500',
-            backgroundColor: statusStyle.bg,
-            color: statusStyle.text
-          }}>
-            {estimate.status}
-          </span>
+          <select
+            value={estimate.status}
+            onChange={async (e) => {
+              const newStatus = e.target.value
+              if (newStatus === estimate.status) return
+              if (newStatus === 'Approved') {
+                setShowDepositModal(true)
+              } else if (newStatus === 'Sent') {
+                await sendEstimate()
+              } else if (newStatus === 'Rejected') {
+                await rejectEstimate()
+              } else {
+                await updateEstimateField('status', newStatus)
+                await fetchQuotes()
+              }
+            }}
+            style={{
+              padding: '6px 28px 6px 14px',
+              borderRadius: '20px',
+              fontSize: '13px',
+              fontWeight: '500',
+              backgroundColor: statusStyle.bg,
+              color: statusStyle.text,
+              border: 'none',
+              cursor: 'pointer',
+              appearance: 'none',
+              WebkitAppearance: 'none',
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='${encodeURIComponent(statusStyle.text)}'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 10px center',
+              minHeight: '32px'
+            }}
+          >
+            {['Draft', 'Sent', 'Approved', 'Rejected'].map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
           <button
             onClick={() => setShowSettingsModal(true)}
             title="Estimate Settings"
@@ -1241,6 +1372,47 @@ export default function EstimateDetail() {
           customerId={estimate.customer_id}
           jobId={estimate.job_id}
         />
+      )}
+
+      {/* Next Step hint for Draft/Sent */}
+      {(estimate.status === 'Draft' || estimate.status === 'Sent') && !estimate.job_id && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '12px 16px',
+          backgroundColor: 'rgba(59,130,246,0.06)',
+          border: '1px solid rgba(59,130,246,0.15)',
+          borderRadius: '8px',
+          marginBottom: '16px',
+          fontSize: '13px',
+          color: theme.textSecondary
+        }}>
+          <CheckCircle size={16} color="#3b82f6" />
+          <span>
+            {estimate.status === 'Draft'
+              ? 'Next: Mark as Sent, then Approve to convert to a Job.'
+              : 'Next: Approve this estimate to convert it to a Job.'}
+          </span>
+          <button
+            onClick={() => estimate.status === 'Draft' ? sendEstimate() : setShowDepositModal(true)}
+            style={{
+              marginLeft: 'auto',
+              padding: '6px 14px',
+              backgroundColor: theme.accent,
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '500',
+              whiteSpace: 'nowrap',
+              minHeight: '32px'
+            }}
+          >
+            {estimate.status === 'Draft' ? 'Mark as Sent' : 'Approve Now'}
+          </button>
+        </div>
       )}
 
       {/* Next Step: Convert to Job banner - when Approved and no job yet */}
@@ -2016,6 +2188,169 @@ export default function EstimateDetail() {
               }}
               placeholder="Internal notes..."
             />
+          </div>
+
+          {/* Expenses */}
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Receipt size={16} style={{ color: theme.accent }} />
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Expenses ({quoteExpenses.length})
+                </h3>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  ref={(el) => { if (el) el._receiptInput = true }}
+                  id="quote-receipt-input"
+                  onChange={handleQuoteReceiptCapture}
+                />
+                <button
+                  onClick={() => document.getElementById('quote-receipt-input')?.click()}
+                  disabled={receiptUploading}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    padding: '8px 12px', backgroundColor: theme.accentBg, color: theme.accent,
+                    border: `1px solid ${theme.accent}`, borderRadius: '6px',
+                    fontSize: '12px', fontWeight: '500', cursor: 'pointer', minHeight: '44px',
+                    opacity: receiptUploading ? 0.6 : 1
+                  }}
+                >
+                  <Camera size={14} />
+                  {receiptUploading ? 'Uploading...' : 'Receipt'}
+                </button>
+                <button
+                  onClick={() => setShowAddExpense(!showAddExpense)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    padding: '8px 12px', backgroundColor: theme.accent, color: '#fff',
+                    border: 'none', borderRadius: '6px',
+                    fontSize: '12px', fontWeight: '500', cursor: 'pointer', minHeight: '44px'
+                  }}
+                >
+                  <Plus size={14} />
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {showAddExpense && (
+              <div style={{
+                padding: '12px', backgroundColor: theme.bg, borderRadius: '8px',
+                border: `1px solid ${theme.border}`, marginBottom: '12px'
+              }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Amount</label>
+                    <input
+                      type="number" step="0.01" value={expenseForm.amount}
+                      onChange={(e) => setExpenseForm(f => ({ ...f, amount: e.target.value }))}
+                      placeholder="0.00"
+                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Merchant</label>
+                    <input
+                      type="text" value={expenseForm.merchant}
+                      onChange={(e) => setExpenseForm(f => ({ ...f, merchant: e.target.value }))}
+                      placeholder="Store name"
+                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Category</label>
+                    <select
+                      value={expenseForm.category}
+                      onChange={(e) => setExpenseForm(f => ({ ...f, category: e.target.value }))}
+                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    >
+                      {EXPENSE_CATEGORIES.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Notes</label>
+                    <input
+                      type="text" value={expenseForm.notes}
+                      onChange={(e) => setExpenseForm(f => ({ ...f, notes: e.target.value }))}
+                      placeholder="Optional"
+                      style={{ width: '100%', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={handleAddQuoteExpense} style={{
+                    padding: '10px 20px', backgroundColor: theme.accent, color: '#fff',
+                    border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500',
+                    cursor: 'pointer', minHeight: '44px'
+                  }}>
+                    Save Expense
+                  </button>
+                  <button onClick={() => setShowAddExpense(false)} style={{
+                    padding: '10px 16px', backgroundColor: 'transparent', color: theme.textMuted,
+                    border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px',
+                    cursor: 'pointer', minHeight: '44px'
+                  }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {quoteExpenses.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px 0', color: theme.textMuted, fontSize: '13px' }}>
+                No expenses yet. Capture a receipt or add an expense manually.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {quoteExpenses.map(exp => (
+                  <div key={exp.id} style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
+                    border: `1px solid ${theme.border}`
+                  }}>
+                    {exp.receipt_url && (
+                      <img
+                        src={exp.receipt_url}
+                        alt="receipt"
+                        onClick={() => setViewingPhoto({ url: exp.receipt_url, name: 'Receipt' })}
+                        style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: `1px solid ${theme.border}`, flexShrink: 0 }}
+                      />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                        {exp.vendor || exp.description || 'Expense'}
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                        {exp.category || 'Uncategorized'} {exp.date ? `— ${new Date(exp.date).toLocaleDateString()}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px', flexShrink: 0 }}>
+                      ${(parseFloat(exp.amount) || 0).toFixed(2)}
+                    </div>
+                    <button onClick={() => handleDeleteQuoteExpense(exp.id)} style={{
+                      padding: '4px', background: 'none', border: 'none', color: theme.textMuted,
+                      cursor: 'pointer'
+                    }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
