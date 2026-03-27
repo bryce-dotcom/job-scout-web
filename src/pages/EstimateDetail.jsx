@@ -2954,10 +2954,66 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
   const handleGenerateProposal = async () => {
     setGeneratingProposal(true)
     try {
+      const brandName = estimate?.business_unit || company?.company_name || ''
+
+      // Fetch audit data if linked
+      let auditData = null
+      let auditAreasData = null
+      if (estimate?.audit_id) {
+        const { data: audit } = await supabase
+          .from('lighting_audits')
+          .select('*')
+          .eq('id', estimate.audit_id)
+          .single()
+        if (audit) {
+          auditData = {
+            annual_savings_kwh: audit.annual_savings_kwh || 0,
+            annual_savings_dollars: audit.annual_savings_dollars || 0,
+            electric_rate: audit.electric_rate || 0,
+            operating_hours: audit.operating_hours || 0,
+            operating_days: audit.operating_days || 0,
+            total_existing_watts: audit.total_existing_watts || 0,
+            total_proposed_watts: audit.total_proposed_watts || 0,
+            watts_reduced: audit.watts_reduced || 0,
+            total_fixtures: audit.total_fixtures || 0,
+            estimated_rebate: audit.estimated_rebate || 0,
+          }
+          const { data: areas } = await supabase
+            .from('audit_areas')
+            .select('*')
+            .eq('audit_id', estimate.audit_id)
+          if (areas?.length) {
+            auditAreasData = areas.map(a => ({
+              area_name: a.area_name || a.name || 'Area',
+              fixture_count: a.fixture_count || 0,
+              existing_wattage: a.existing_wattage || 0,
+              led_wattage: a.led_wattage || 0,
+              total_existing_watts: a.total_existing_watts || 0,
+              total_led_watts: a.total_led_watts || 0,
+              area_watts_reduced: a.area_watts_reduced || 0,
+              ceiling_height: a.ceiling_height || '',
+              fixture_category: a.fixture_category || '',
+              area_rebate_estimate: a.area_rebate_estimate || 0,
+            }))
+          }
+        }
+      }
+
+      // Get proposal notes
+      const storeSettings = useStore.getState().settings || []
+      const defaultsSetting = storeSettings.find(s => s.key === 'estimate_defaults')
+      let proposalNotes = ''
+      if (defaultsSetting) {
+        try {
+          const parsed = JSON.parse(defaultsSetting.value)
+          proposalNotes = parsed.proposal_notes || ''
+        } catch {}
+      }
+
       const { error, data } = await supabase.functions.invoke('generate-proposal-layout', {
         body: {
           estimate_id: estimate?.id,
-          company_name: company?.company_name || '',
+          company_name: brandName,
           customer_name: customer?.business_name || customer?.name || '',
           customer_address: customer?.address || '',
           estimate_message: estimate?.estimate_message || '',
@@ -2972,6 +3028,9 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
           total: estimate?.total || lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0,
           utility_incentive: estimate?.utility_incentive || 0,
           discount: estimate?.discount || 0,
+          audit_data: auditData,
+          audit_areas_data: auditAreasData,
+          proposal_notes: proposalNotes,
         }
       })
       if (error) throw error
@@ -3380,6 +3439,51 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
   const [mode, setMode] = useState(settings.presentation_mode || 'pdf')
   const [generating, setGenerating] = useState(false)
   const [proposalLayout, setProposalLayout] = useState(settings.proposal_layout || null)
+  const [editingField, setEditingField] = useState(null) // e.g. 'hero.heading', '2.content'
+  const [editValue, setEditValue] = useState('')
+  const [aiDirection, setAiDirection] = useState('')
+  const [showDirectionInput, setShowDirectionInput] = useState(false)
+
+  const formatCurrency = (v) => {
+    if (!v && v !== 0) return '$0.00'
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v)
+  }
+
+  const startEdit = (fieldKey, currentValue) => {
+    setEditingField(fieldKey)
+    setEditValue(currentValue || '')
+  }
+
+  const saveEdit = async () => {
+    if (!editingField || !proposalLayout) return
+    const updated = JSON.parse(JSON.stringify(proposalLayout))
+    const [indexOrKey, field] = editingField.split('.')
+
+    if (indexOrKey === 'hero') {
+      const hero = updated.sections.find(s => s.type === 'hero')
+      if (hero) hero[field] = editValue
+    } else if (indexOrKey === 'approval') {
+      const approval = updated.sections.find(s => s.type === 'approval')
+      if (approval) approval[field] = editValue
+    } else {
+      const idx = parseInt(indexOrKey)
+      if (!isNaN(idx) && updated.sections[idx]) {
+        updated.sections[idx][field] = editValue
+      }
+    }
+
+    setProposalLayout(updated)
+    setEditingField(null)
+    setEditValue('')
+    if (onSettingsUpdate) {
+      await onSettingsUpdate({ ...settings, proposal_layout: updated }, { silent: true })
+    }
+  }
+
+  const cancelEdit = () => {
+    setEditingField(null)
+    setEditValue('')
+  }
 
   const handleModeChange = async (newMode) => {
     setMode(newMode)
@@ -3388,13 +3492,69 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
     }
   }
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (direction) => {
     setGenerating(true)
     try {
+      const brandName = businessUnit?.name || company?.company_name || ''
+
+      // Fetch real audit data if estimate is linked to a lighting audit
+      let auditData = null
+      let auditAreasData = null
+      if (estimate?.audit_id) {
+        const { data: audit } = await supabase
+          .from('lighting_audits')
+          .select('*')
+          .eq('id', estimate.audit_id)
+          .single()
+        if (audit) {
+          auditData = {
+            annual_savings_kwh: audit.annual_savings_kwh || 0,
+            annual_savings_dollars: audit.annual_savings_dollars || 0,
+            electric_rate: audit.electric_rate || 0,
+            operating_hours: audit.operating_hours || 0,
+            operating_days: audit.operating_days || 0,
+            total_existing_watts: audit.total_existing_watts || 0,
+            total_proposed_watts: audit.total_proposed_watts || 0,
+            watts_reduced: audit.watts_reduced || 0,
+            total_fixtures: audit.total_fixtures || 0,
+            estimated_rebate: audit.estimated_rebate || 0,
+          }
+          const { data: areas } = await supabase
+            .from('audit_areas')
+            .select('*')
+            .eq('audit_id', estimate.audit_id)
+          if (areas?.length) {
+            auditAreasData = areas.map(a => ({
+              area_name: a.area_name || a.name || 'Area',
+              fixture_count: a.fixture_count || 0,
+              existing_wattage: a.existing_wattage || 0,
+              led_wattage: a.led_wattage || 0,
+              total_existing_watts: a.total_existing_watts || 0,
+              total_led_watts: a.total_led_watts || 0,
+              area_watts_reduced: a.area_watts_reduced || 0,
+              ceiling_height: a.ceiling_height || '',
+              fixture_category: a.fixture_category || '',
+              area_rebate_estimate: a.area_rebate_estimate || 0,
+            }))
+          }
+        }
+      }
+
+      // Get proposal notes from company settings (useStore is in parent scope)
+      const storeSettings = useStore.getState().settings || []
+      const defaultsSetting = storeSettings.find(s => s.key === 'estimate_defaults')
+      let proposalNotes = ''
+      if (defaultsSetting) {
+        try {
+          const parsed = JSON.parse(defaultsSetting.value)
+          proposalNotes = parsed.proposal_notes || ''
+        } catch {}
+      }
+
       const { error, data } = await supabase.functions.invoke('generate-proposal-layout', {
         body: {
           estimate_id: estimate?.id,
-          company_name: company?.company_name || '',
+          company_name: brandName,
           customer_name: customer?.business_name || customer?.name || '',
           customer_address: customer?.address || '',
           estimate_message: estimate?.estimate_message || '',
@@ -3409,11 +3569,18 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
           total: estimate?.total || lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0,
           utility_incentive: estimate?.utility_incentive || 0,
           discount: estimate?.discount || 0,
+          user_direction: direction || '',
+          existing_layout: direction && direction !== '__fresh__' && proposalLayout ? proposalLayout : null,
+          audit_data: auditData,
+          audit_areas_data: auditAreasData,
+          proposal_notes: proposalNotes,
         }
       })
       if (error) throw error
       if (data?.proposal_layout) {
         setProposalLayout(data.proposal_layout)
+        setAiDirection('')
+        setShowDirectionInput(false)
         const updated = { ...settings, presentation_mode: 'interactive', proposal_layout: data.proposal_layout }
         if (onSettingsUpdate) await onSettingsUpdate(updated, { silent: true })
         toast.success('Proposal generated!')
@@ -3440,6 +3607,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
     savings_timeline: 'Savings Over Time',
     roi_summary: 'ROI Summary',
     utility_incentive: 'Utility Incentive',
+    warranty: 'Product Warranty',
     team: 'Your Team',
   }[type] || type)
 
@@ -3496,6 +3664,45 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
 
         {step === 'preview' ? (
           <>
+            {/* Cost summary bar — always visible */}
+            {(() => {
+              const subtotal = (lineItems || []).reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0)
+              const discount = parseFloat(estimate.discount) || 0
+              const incentive = parseFloat(estimate.utility_incentive) || 0
+              const total = subtotal - discount
+              const netCost = total - incentive
+              return (
+                <div style={{
+                  padding: '10px 20px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0,
+                  display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center',
+                  backgroundColor: theme.bg,
+                }}>
+                  <div>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'block' }}>Subtotal</span>
+                    <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{formatCurrency(subtotal)}</span>
+                  </div>
+                  {discount > 0 && (
+                    <div>
+                      <span style={{ fontSize: '11px', color: theme.textMuted, display: 'block' }}>Discount</span>
+                      <span style={{ fontSize: '15px', fontWeight: '600', color: '#c25a5a' }}>-{formatCurrency(discount)}</span>
+                    </div>
+                  )}
+                  {incentive > 0 && (
+                    <div>
+                      <span style={{ fontSize: '11px', color: theme.textMuted, display: 'block' }}>Incentive</span>
+                      <span style={{ fontSize: '15px', fontWeight: '600', color: '#4a7c59' }}>-{formatCurrency(incentive)}</span>
+                    </div>
+                  )}
+                  <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'block' }}>
+                      {incentive > 0 ? 'Net Cost' : 'Total'}
+                    </span>
+                    <span style={{ fontSize: '18px', fontWeight: '700', color: theme.accent }}>{formatCurrency(incentive > 0 ? netCost : total)}</span>
+                  </div>
+                </div>
+              )
+            })()}
+
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px', backgroundColor: '#f7f5ef' }}>
               {mode === 'interactive' ? (
                 proposalLayout ? (
@@ -3504,97 +3711,198 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                     border: '1px solid #d6cdb8', overflow: 'hidden',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
                   }}>
-                    {/* Hero */}
+                    {/* Hero — editable */}
                     <div style={{
                       backgroundColor: '#2c3530', padding: '32px 24px', textAlign: 'center',
                       backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(90,99,73,0.3) 0%, transparent 50%)',
                     }}>
                       {logoUrl && <img src={logoUrl} alt="" style={{ maxHeight: '36px', maxWidth: '120px', objectFit: 'contain', marginBottom: '12px', filter: 'brightness(0) invert(1)' }} />}
-                      <p style={{ color: '#fff', fontSize: '18px', fontWeight: '700', margin: '0 0 4px' }}>
-                        {heroSection?.heading || `Proposal for ${custName}`}
-                      </p>
-                      <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '13px', margin: 0 }}>
-                        {heroSection?.subheading || `Prepared by ${company?.company_name || ''}`}
-                      </p>
+                      {editingField === 'hero.heading' ? (
+                        <input value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={saveEdit} onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                          autoFocus
+                          style={{ backgroundColor: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', color: '#fff', fontSize: '18px', fontWeight: '700', textAlign: 'center', width: '100%', padding: '6px 10px', outline: 'none', boxSizing: 'border-box' }}
+                        />
+                      ) : (
+                        <p onClick={() => startEdit('hero.heading', heroSection?.heading)}
+                          style={{ color: '#fff', fontSize: '18px', fontWeight: '700', margin: '0 0 4px', cursor: 'pointer', borderBottom: '1px dashed rgba(255,255,255,0.3)' }}>
+                          {heroSection?.heading || `Proposal for ${custName}`}
+                        </p>
+                      )}
+                      {editingField === 'hero.subheading' ? (
+                        <input value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={saveEdit} onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                          autoFocus
+                          style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', color: 'rgba(255,255,255,0.7)', fontSize: '13px', textAlign: 'center', width: '100%', padding: '4px 10px', outline: 'none', marginTop: '4px', boxSizing: 'border-box' }}
+                        />
+                      ) : (
+                        <p onClick={() => startEdit('hero.subheading', heroSection?.subheading)}
+                          style={{ color: 'rgba(255,255,255,0.65)', fontSize: '13px', margin: 0, cursor: 'pointer', borderBottom: '1px dashed rgba(255,255,255,0.2)' }}>
+                          {heroSection?.subheading || `Prepared by ${businessUnit?.name || company?.company_name || ''}`}
+                        </p>
+                      )}
                     </div>
 
-                    {/* Content sections */}
-                    {contentSections.map((s, i) => (
-                      <div key={i} style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                        <div style={{
-                          width: '6px', minHeight: '100%', borderRadius: '3px', flexShrink: 0,
-                          backgroundColor: s.type === 'roi_summary' ? '#4a7c59' : s.type === 'cost_breakdown' ? theme.accent : theme.border,
-                        }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: '11px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 3px' }}>
-                            {sectionLabel(s.type)}
-                          </p>
-                          {s.content && (
-                            <p style={{ color: theme.textSecondary, fontSize: '12px', margin: 0, lineHeight: 1.5 }}>
-                              {s.content.length > 150 ? s.content.substring(0, 150) + '...' : s.content}
+                    {/* Content sections — editable */}
+                    {sections.map((s, i) => {
+                      if (s.type === 'hero' || s.type === 'approval') return null
+                      const fieldKey = `${i}.content`
+                      return (
+                        <div key={i} style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                          <div style={{
+                            width: '6px', minHeight: '20px', borderRadius: '3px', flexShrink: 0, marginTop: '2px',
+                            backgroundColor: s.type === 'roi_summary' ? '#4a7c59' : s.type === 'cost_breakdown' ? theme.accent : theme.border,
+                          }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: '11px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 4px' }}>
+                              {sectionLabel(s.type)}
                             </p>
-                          )}
-                          {s.type === 'line_items' && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                              {(lineItems || []).slice(0, 4).map((li, j) => (
-                                <span key={j} style={{ backgroundColor: theme.accentBg, color: theme.accent, padding: '2px 8px', borderRadius: '10px', fontSize: '10px' }}>
-                                  {li.item_name || li.description || 'Item'}
-                                </span>
-                              ))}
-                              {(lineItems || []).length > 4 && <span style={{ fontSize: '10px', color: theme.textMuted }}>+{lineItems.length - 4}</span>}
-                            </div>
-                          )}
-                          {s.type === 'roi_summary' && s.metrics && (
-                            <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
-                              {[
-                                s.metrics.annual_savings && { v: `$${Math.round(s.metrics.annual_savings).toLocaleString()}`, l: '/yr savings' },
-                                s.metrics.payback_months && { v: `${s.metrics.payback_months}mo`, l: 'payback' },
-                                s.metrics.roi_percent && { v: `${s.metrics.roi_percent}%`, l: 'ROI' },
-                              ].filter(Boolean).map((m, j) => (
-                                <span key={j} style={{ fontSize: '13px', fontWeight: '700', color: '#4a7c59' }}>
-                                  {m.v} <span style={{ fontSize: '10px', fontWeight: '400', color: theme.textMuted }}>{m.l}</span>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {s.type === 'savings_timeline' && (
-                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', marginTop: '6px', height: '24px' }}>
-                              {[15, 30, 45, 55, 70, 85, 100].map((h, j) => (
-                                <div key={j} style={{ width: '10px', height: `${h}%`, backgroundColor: theme.accent, borderRadius: '2px', opacity: 0.25 + (j * 0.1) }} />
-                              ))}
-                            </div>
-                          )}
-                          {s.type === 'cost_breakdown' && (
-                            <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
-                              {['#5a6349', '#7d8a7f', '#a8b5a0', '#d6cdb8'].slice(0, Math.min(lineItems?.length || 1, 4)).map((c, j) => (
-                                <div key={j} style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: c }} />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
 
-                    {/* CTA footer */}
+                            {/* Editable content */}
+                            {s.content != null && (
+                              editingField === fieldKey ? (
+                                <textarea value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                                  onBlur={saveEdit} autoFocus
+                                  rows={3}
+                                  style={{ width: '100%', fontSize: '12px', color: theme.text, border: `1px solid ${theme.accent}`, borderRadius: '6px', padding: '8px', outline: 'none', resize: 'vertical', lineHeight: 1.5, fontFamily: 'inherit', boxSizing: 'border-box' }}
+                                />
+                              ) : (
+                                <p onClick={() => startEdit(fieldKey, s.content)}
+                                  style={{ color: theme.textSecondary, fontSize: '12px', margin: 0, lineHeight: 1.5, cursor: 'pointer', padding: '2px 0', borderRadius: '4px' }}
+                                  title="Click to edit">
+                                  {s.content}
+                                </p>
+                              )
+                            )}
+
+                            {/* Visual indicators for special sections */}
+                            {s.type === 'line_items' && (
+                              <div style={{ marginTop: '6px' }}>
+                                {(lineItems || []).map((li, j) => (
+                                  <div key={j} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: j < lineItems.length - 1 ? `1px solid ${theme.border}` : 'none' }}>
+                                    <span style={{ fontSize: '12px', color: theme.text }}>{li.item_name || li.description || 'Item'}</span>
+                                    <span style={{ fontSize: '12px', fontWeight: '600', color: theme.accent }}>{formatCurrency(li.line_total || li.total)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {s.type === 'roi_summary' && s.metrics && (
+                              <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+                                {[
+                                  s.metrics.annual_savings && { v: formatCurrency(s.metrics.annual_savings), l: '/yr savings' },
+                                  s.metrics.payback_months && { v: `${s.metrics.payback_months}mo`, l: 'payback' },
+                                  s.metrics.roi_percent && { v: `${s.metrics.roi_percent}%`, l: 'ROI' },
+                                ].filter(Boolean).map((m, j) => (
+                                  <div key={j} style={{ textAlign: 'center' }}>
+                                    <span style={{ fontSize: '16px', fontWeight: '700', color: '#4a7c59', display: 'block' }}>{m.v}</span>
+                                    <span style={{ fontSize: '10px', color: theme.textMuted }}>{m.l}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {s.type === 'savings_timeline' && (
+                              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', marginTop: '8px', height: '32px' }}>
+                                {[15, 30, 45, 55, 70, 85, 100].map((h, j) => (
+                                  <div key={j} style={{ width: '12px', height: `${h}%`, backgroundColor: theme.accent, borderRadius: '2px', opacity: 0.25 + (j * 0.1) }} />
+                                ))}
+                                <span style={{ fontSize: '10px', color: theme.textMuted, marginLeft: '6px' }}>{s.years || 5}yr</span>
+                              </div>
+                            )}
+                            {s.type === 'cost_breakdown' && (
+                              <div style={{ display: 'flex', gap: '6px', marginTop: '8px', alignItems: 'center' }}>
+                                {['#5a6349', '#7d8a7f', '#a8b5a0', '#d6cdb8'].slice(0, Math.min(lineItems?.length || 1, 4)).map((c, j) => (
+                                  <div key={j} style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: c }} />
+                                ))}
+                                <span style={{ fontSize: '10px', color: theme.textMuted }}>Donut chart</span>
+                              </div>
+                            )}
+                            {s.highlights && s.highlights.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                                {s.highlights.map((h, j) => (
+                                  <span key={j} style={{ backgroundColor: theme.accentBg, color: theme.accent, padding: '2px 8px', borderRadius: '10px', fontSize: '10px' }}>{h}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {/* CTA footer — editable */}
                     <div style={{ backgroundColor: '#2c3530', padding: '16px', textAlign: 'center' }}>
-                      <span style={{ display: 'inline-block', padding: '8px 20px', backgroundColor: '#4a7c59', color: '#fff', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>
-                        {approvalSection?.cta_text || 'Approve This Proposal'}
-                      </span>
+                      {editingField === 'approval.cta_text' ? (
+                        <input value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={saveEdit} onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                          autoFocus
+                          style={{ backgroundColor: 'rgba(74,124,89,0.8)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', color: '#fff', fontSize: '12px', fontWeight: '600', textAlign: 'center', padding: '8px 20px', outline: 'none' }}
+                        />
+                      ) : (
+                        <span onClick={() => startEdit('approval.cta_text', approvalSection?.cta_text || 'Approve This Proposal')}
+                          style={{ display: 'inline-block', padding: '8px 20px', backgroundColor: '#4a7c59', color: '#fff', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', borderBottom: '1px dashed rgba(255,255,255,0.4)' }}>
+                          {approvalSection?.cta_text || 'Approve This Proposal'}
+                        </span>
+                      )}
                     </div>
 
-                    {/* Regen */}
-                    <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                        Generated {proposalLayout.generated_at ? new Date(proposalLayout.generated_at).toLocaleDateString() : ''}
-                      </span>
-                      <button onClick={handleGenerate} disabled={generating}
-                        style={{ padding: '4px 12px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '11px', cursor: generating ? 'not-allowed' : 'pointer' }}>
-                        {generating ? 'Generating...' : 'Regenerate'}
-                      </button>
+                    {/* AI direction + regen */}
+                    <div style={{ padding: '10px 16px', borderTop: `1px solid ${theme.border}` }}>
+                      {showDirectionInput ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <textarea
+                            value={aiDirection}
+                            onChange={(e) => setAiDirection(e.target.value)}
+                            placeholder="e.g. Make it more formal, emphasize energy savings, shorter executive summary, add urgency..."
+                            rows={2}
+                            autoFocus
+                            style={{
+                              width: '100%', fontSize: '12px', color: theme.text, border: `1px solid ${theme.border}`,
+                              borderRadius: '8px', padding: '8px 10px', outline: 'none', resize: 'none',
+                              lineHeight: 1.5, fontFamily: 'inherit', boxSizing: 'border-box',
+                              backgroundColor: theme.bgCard,
+                            }}
+                          />
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <button
+                              onClick={() => { setShowDirectionInput(false); setAiDirection('') }}
+                              style={{ padding: '5px 12px', backgroundColor: 'transparent', color: theme.textMuted, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleGenerate(aiDirection.trim() || '')}
+                              disabled={generating}
+                              style={{
+                                flex: 1, padding: '5px 12px', backgroundColor: generating ? theme.textMuted : theme.accent,
+                                color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '500',
+                                cursor: generating ? 'not-allowed' : 'pointer',
+                              }}>
+                              {generating ? 'Regenerating...' : (aiDirection.trim() ? 'Refine with Direction' : 'Regenerate Fresh')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                            Click any text to edit
+                          </span>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              onClick={() => { setProposalLayout(null); handleGenerate('__fresh__') }}
+                              disabled={generating}
+                              style={{ padding: '5px 12px', backgroundColor: 'transparent', color: theme.error || '#8b5a5a', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '11px', cursor: generating ? 'not-allowed' : 'pointer', opacity: generating ? 0.5 : 1 }}>
+                              {generating ? 'Generating...' : 'Start Fresh'}
+                            </button>
+                            <button
+                              onClick={() => setShowDirectionInput(true)}
+                              style={{ padding: '5px 12px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
+                              Refine with AI
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
-                  /* No layout yet — generate CTA */
+                  /* No layout yet */
                   <div style={{
                     backgroundColor: '#fff', borderRadius: '10px', border: '1px solid #d6cdb8',
                     padding: '48px 24px', textAlign: 'center',
@@ -3603,10 +3911,23 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                     <p style={{ color: theme.text, fontWeight: '600', fontSize: '16px', margin: '0 0 6px' }}>
                       Create Interactive Proposal
                     </p>
-                    <p style={{ color: theme.textMuted, fontSize: '13px', margin: '0 0 24px', lineHeight: 1.6, maxWidth: '340px', marginLeft: 'auto', marginRight: 'auto' }}>
+                    <p style={{ color: theme.textMuted, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.6, maxWidth: '360px', marginLeft: 'auto', marginRight: 'auto' }}>
                       AI will write compelling copy for each section based on your line items and estimate details.
                     </p>
-                    <button onClick={handleGenerate} disabled={generating}
+                    <textarea
+                      value={aiDirection}
+                      onChange={(e) => setAiDirection(e.target.value)}
+                      placeholder="Optional: give the AI direction — e.g. emphasize urgency, focus on energy savings, keep it short and punchy..."
+                      rows={2}
+                      style={{
+                        width: '100%', maxWidth: '360px', fontSize: '12px', color: theme.text,
+                        border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '8px 10px',
+                        outline: 'none', resize: 'none', lineHeight: 1.5, fontFamily: 'inherit',
+                        boxSizing: 'border-box', marginBottom: '16px', backgroundColor: theme.bgCard,
+                      }}
+                    />
+                    <br />
+                    <button onClick={() => handleGenerate(aiDirection)} disabled={generating}
                       style={{
                         padding: '12px 32px', backgroundColor: generating ? theme.textMuted : theme.accent,
                         color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '600',

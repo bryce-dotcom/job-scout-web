@@ -2,7 +2,7 @@ import ProposalSection from './ProposalSection'
 import { AnimatedNumber } from './ProposalSection'
 import proposalTheme from './proposalTheme'
 
-export default function ROISection({ section, totalCost, annualSavings, incentive }) {
+export default function ROISection({ section, totalCost, annualSavings, incentive, certified, brandName }) {
   const metrics = section?.metrics || {}
   const annual = metrics.annual_savings || annualSavings || 0
   const cost = totalCost || 0
@@ -46,6 +46,32 @@ export default function ROISection({ section, totalCost, annualSavings, incentiv
     }}>
       <div style={{ maxWidth: proposalTheme.maxWidth, margin: '0 auto' }}>
         <ProposalSection>
+          {certified && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              marginBottom: '12px',
+            }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: proposalTheme.certGoldBg,
+                padding: '6px 14px',
+                borderRadius: '20px',
+                border: `1px solid ${proposalTheme.certGoldBorder}`,
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={proposalTheme.certGold} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+                <span style={{ fontSize: '12px', fontWeight: '700', color: proposalTheme.certGold, letterSpacing: '1px', textTransform: 'uppercase' }}>
+                  Investment Grade Analysis {brandName ? `— ${brandName}` : ''}
+                </span>
+              </div>
+            </div>
+          )}
           <h2 style={{
             fontSize: '28px',
             fontWeight: '700',
@@ -116,6 +142,25 @@ export default function ROISection({ section, totalCost, annualSavings, incentiv
             </ProposalSection>
           ))}
         </div>
+
+        {/* Net cost after incentive callout */}
+        {incentive > 0 && (
+          <ProposalSection delay={0.5}>
+            <div style={{
+              textAlign: 'center',
+              marginTop: '20px',
+              padding: '16px',
+              backgroundColor: proposalTheme.bg,
+              borderRadius: '10px',
+              border: `1px solid ${proposalTheme.border}`,
+            }}>
+              <span style={{ color: proposalTheme.textMuted, fontSize: '14px' }}>Net investment after rebate: </span>
+              <span style={{ color: proposalTheme.success, fontSize: '20px', fontWeight: '700' }}>
+                {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(netCost)}
+              </span>
+            </div>
+          </ProposalSection>
+        )}
       </div>
     </div>
   )

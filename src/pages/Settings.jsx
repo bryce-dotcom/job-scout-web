@@ -1839,6 +1839,21 @@ function EstimateDefaultsTab({ theme, settings, saveSetting }) {
           />
         </div>
 
+        <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '16px' }}>
+          <p style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Interactive Proposal Settings</p>
+          <label style={labelStyle}>Proposal Notes</label>
+          <textarea
+            value={form.proposal_notes || ''}
+            onChange={(e) => setForm(prev => ({ ...prev, proposal_notes: e.target.value }))}
+            rows={3}
+            placeholder="Notes included in AI-generated proposals (e.g. warranty terms, guarantees)..."
+            style={{ ...inputStyle, resize: 'vertical' }}
+          />
+          <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+            These notes are included when generating interactive proposals with AI. Example: warranty terms, satisfaction guarantees, payment terms.
+          </p>
+        </div>
+
         <button
           onClick={handleSave}
           disabled={saving}

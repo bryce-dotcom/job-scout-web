@@ -25,7 +25,10 @@ export default function InteractiveProposal({
 }) {
   const { document: doc, line_items, company, customer, business_unit, approval } = data
   const layout = doc.settings_overrides?.proposal_layout
-  const sections = layout?.sections || getDefaultSections(doc, customer, company)
+  const brandName = business_unit?.name || company?.company_name || 'Our Team'
+  const sections = layout?.sections || getDefaultSections(doc, customer, brandName)
+  const auditSummary = layout?.audit_summary || null
+  const certified = !!layout?.audit_certified
 
   const logoUrl = business_unit?.logo_url || company?.logo_url
   const isApproved = doc.status === 'Approved' || !!approval || approvalSuccess
@@ -38,13 +41,94 @@ export default function InteractiveProposal({
     switch (section.type) {
       case 'hero':
         return (
-          <HeroSection
-            key={index}
-            section={section}
-            company={company}
-            customer={customer}
-            logoUrl={logoUrl}
-          />
+          <div key={index}>
+            <HeroSection
+              section={section}
+              company={company}
+              customer={customer}
+              logoUrl={logoUrl}
+              certified={certified}
+              brandName={brandName}
+            />
+            {certified && (
+              <div style={{
+                backgroundColor: '#1a1f16',
+                borderBottom: '3px solid #d4af37',
+                padding: '20px 24px',
+                textAlign: 'center',
+              }}>
+                <div style={{
+                  maxWidth: proposalTheme.maxWidth,
+                  margin: '0 auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexWrap: 'wrap',
+                  gap: '16px',
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}>
+                    <div style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(212,175,55,0.15)',
+                      border: '2px solid #d4af37',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d4af37" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                      </svg>
+                    </div>
+                    <div style={{ textAlign: 'left' }}>
+                      <p style={{
+                        color: '#d4af37',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        letterSpacing: '1px',
+                        textTransform: 'uppercase',
+                        margin: 0,
+                      }}>
+                        Investment Grade Energy Audit
+                      </p>
+                      <p style={{
+                        color: 'rgba(255,255,255,0.6)',
+                        fontSize: '12px',
+                        margin: '2px 0 0',
+                      }}>
+                        Certified by {brandName}
+                      </p>
+                    </div>
+                  </div>
+                  {auditSummary && (
+                    <div style={{
+                      display: 'flex',
+                      gap: '24px',
+                      flexWrap: 'wrap',
+                      justifyContent: 'center',
+                    }}>
+                      {[
+                        { label: 'Fixtures', value: auditSummary.total_fixtures },
+                        { label: 'kWh/yr Saved', value: auditSummary.annual_kwh_savings?.toLocaleString() },
+                        { label: 'Annual Savings', value: `$${auditSummary.annual_dollar_savings?.toLocaleString()}` },
+                      ].filter(m => m.value).map(m => (
+                        <div key={m.label} style={{ textAlign: 'center' }}>
+                          <p style={{ color: '#ffffff', fontSize: '18px', fontWeight: '700', margin: 0 }}>{m.value}</p>
+                          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>{m.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         )
 
       case 'executive_summary':
@@ -93,6 +177,9 @@ export default function InteractiveProposal({
             key={index}
             section={section}
             lineItems={line_items}
+            auditSummary={auditSummary}
+            certified={certified}
+            brandName={brandName}
           />
         )
 
@@ -103,6 +190,9 @@ export default function InteractiveProposal({
             section={section}
             totalCost={totalCost}
             annualSavings={annualSavings}
+            auditSummary={auditSummary}
+            certified={certified}
+            brandName={brandName}
           />
         )
 
@@ -114,7 +204,64 @@ export default function InteractiveProposal({
             totalCost={totalCost}
             annualSavings={annualSavings}
             incentive={incentive}
+            certified={certified}
+            brandName={brandName}
           />
+        )
+
+      case 'warranty':
+        return (
+          <div key={index} style={{
+            padding: proposalTheme.sectionPadding,
+            maxWidth: proposalTheme.maxWidth,
+            margin: '0 auto',
+          }}>
+            <ProposalSection>
+              <div style={{
+                backgroundColor: proposalTheme.accentBg,
+                borderRadius: proposalTheme.cardRadius,
+                border: `1px solid ${proposalTheme.accent}`,
+                padding: '32px',
+                textAlign: 'center',
+              }}>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  backgroundColor: proposalTheme.bgCard,
+                  marginBottom: '16px',
+                  border: `2px solid ${proposalTheme.accent}`,
+                }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={proposalTheme.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg>
+                </div>
+                <h2 style={{
+                  fontSize: '24px',
+                  fontWeight: '700',
+                  color: proposalTheme.text,
+                  margin: '0 0 12px',
+                  fontFamily: proposalTheme.fontFamily,
+                }}>
+                  Product Warranty
+                </h2>
+                <p style={{
+                  color: proposalTheme.textSecondary,
+                  fontSize: '16px',
+                  lineHeight: 1.7,
+                  margin: 0,
+                  maxWidth: '500px',
+                  marginLeft: 'auto',
+                  marginRight: 'auto',
+                }}>
+                  {section.content || 'All products include a 5-year product warranty.'}
+                </p>
+              </div>
+            </ProposalSection>
+          </div>
         )
 
       case 'utility_incentive':
@@ -282,9 +429,9 @@ export default function InteractiveProposal({
 }
 
 // Generate default section layout when AI hasn't generated one
-function getDefaultSections(doc, customer, company) {
+function getDefaultSections(doc, customer, brandName) {
   return [
-    { type: 'hero', heading: `Proposal for ${customer?.business_name || customer?.name || 'You'}`, subheading: `Prepared by ${company?.company_name || 'Our Team'}` },
+    { type: 'hero', heading: `Proposal for ${customer?.business_name || customer?.name || 'You'}`, subheading: `Prepared by ${brandName}` },
     { type: 'executive_summary', content: doc.estimate_message || 'Thank you for the opportunity to provide this proposal. We look forward to working with you.' },
     { type: 'line_items' },
     { type: 'cost_breakdown' },

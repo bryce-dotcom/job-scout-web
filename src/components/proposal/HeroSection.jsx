@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import proposalTheme from './proposalTheme'
 
-export default function HeroSection({ section, company, customer, logoUrl }) {
+export default function HeroSection({ section, company, customer, logoUrl, certified, brandName }) {
   const heading = section?.heading || `Proposal for ${customer?.business_name || customer?.name || 'You'}`
   const subheading = section?.subheading || `Prepared by ${company?.company_name || 'Our Team'}`
 
@@ -43,6 +43,37 @@ export default function HeroSection({ section, company, customer, logoUrl }) {
               filter: 'brightness(0) invert(1)',
             }}
           />
+        )}
+
+        {certified && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              backgroundColor: 'rgba(212,175,55,0.15)',
+              padding: '8px 20px',
+              borderRadius: '24px',
+              border: '1px solid rgba(212,175,55,0.4)',
+              marginBottom: '20px',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d4af37" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span style={{
+              color: '#d4af37',
+              fontSize: '12px',
+              fontWeight: '700',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+            }}>
+              Investment Grade Energy Audit
+            </span>
+          </motion.div>
         )}
 
         <motion.h1
