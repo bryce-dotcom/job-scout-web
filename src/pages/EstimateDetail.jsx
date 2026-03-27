@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload } from 'lucide-react'
 import FlowIndicator from '../components/FlowIndicator'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
@@ -87,6 +87,10 @@ export default function EstimateDetail() {
   const [viewingPhoto, setViewingPhoto] = useState(null)
   const [showAssociateModal, setShowAssociateModal] = useState(false)
   const [associationType, setAssociationType] = useState('lead') // 'lead' | 'customer' | 'newLead'
+  const [leadSearch, setLeadSearch] = useState('')
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [selectedLeadId, setSelectedLeadId] = useState(null)
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null)
   const [creatingLead, setCreatingLead] = useState(false)
   const [newLeadForm, setNewLeadForm] = useState({
     customer_name: '',
@@ -107,6 +111,7 @@ export default function EstimateDetail() {
   const [notesPhotos, setNotesPhotos] = useState([])
   const [photoUploadTarget, setPhotoUploadTarget] = useState(null) // { lineId, context }
   const photoInputRef = useRef(null)
+  const docInputRef = useRef(null)
 
   const [depositForm, setDepositForm] = useState({
     deposit_amount: '',
@@ -682,6 +687,42 @@ export default function EstimateDetail() {
     setSaving(false)
   }
 
+  // Document upload handler
+  const handleUploadDocument = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const filePath = `estimates/${id}/${Date.now()}_${safeName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('project-documents')
+      .upload(filePath, file)
+
+    if (uploadError) {
+      toast.error('Upload failed: ' + uploadError.message)
+      return
+    }
+
+    const { error: dbError } = await supabase.from('file_attachments').insert({
+      company_id: companyId,
+      quote_id: parseInt(id),
+      lead_id: estimate.lead_id ? parseInt(estimate.lead_id) : null,
+      file_name: file.name,
+      file_path: filePath,
+      file_type: file.type || null,
+      file_size: file.size,
+      storage_bucket: 'project-documents'
+    })
+
+    if (dbError) {
+      toast.error('Failed to save attachment: ' + dbError.message)
+      return
+    }
+    await fetchEstimateData()
+  }
+
   // Photo upload handler (before/after/notes - matches JobDetail pattern)
   const handleUploadPhoto = async (e) => {
     const file = e.target.files?.[0]
@@ -1002,7 +1043,6 @@ export default function EstimateDetail() {
     setCreatingLead(true)
     try {
       if (associationType === 'lead') {
-        const selectedLeadId = e.target.elements?.lead_id?.value
         if (!selectedLeadId) {
           toast.error('Please select a lead.')
           setCreatingLead(false)
@@ -1011,7 +1051,6 @@ export default function EstimateDetail() {
         await updateQuote(id, { lead_id: selectedLeadId, updated_at: new Date().toISOString() })
         toast.success('Lead linked!')
       } else if (associationType === 'customer') {
-        const selectedCustomerId = e.target.elements?.customer_id?.value
         if (!selectedCustomerId) {
           toast.error('Please select a customer.')
           setCreatingLead(false)
@@ -1055,6 +1094,10 @@ export default function EstimateDetail() {
       setShowAssociateModal(false)
       setNewLeadForm({ customer_name: '', phone: '', email: '', address: '', business_name: '' })
       setAssociationType('lead')
+      setLeadSearch('')
+      setCustomerSearch('')
+      setSelectedLeadId(null)
+      setSelectedCustomerId(null)
       await fetchEstimateData()
       await fetchQuotes()
     } catch (err) {
@@ -2328,40 +2371,6 @@ export default function EstimateDetail() {
             )}
           </div>
 
-          {/* Notes */}
-          <div style={{
-            backgroundColor: theme.bgCard,
-            borderRadius: '12px',
-            border: `1px solid ${theme.border}`,
-            padding: '20px'
-          }}>
-            <h3 style={{
-              fontSize: '15px',
-              fontWeight: '600',
-              color: theme.text,
-              marginBottom: '12px'
-            }}>
-              Notes
-            </h3>
-            <textarea
-              value={estimate.notes || ''}
-              onChange={(e) => updateEstimateField('notes', e.target.value)}
-              rows={3}
-              style={{
-                ...inputStyle,
-                resize: 'vertical'
-              }}
-              placeholder="Internal notes..."
-            />
-            {/* Notes photos */}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' }}>
-              {notesPhotos.map(photo => (
-                <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
-              ))}
-              <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(null, 'notes')} />
-            </div>
-          </div>
-
         </div>
 
         {/* Sidebar */}
@@ -2930,71 +2939,160 @@ export default function EstimateDetail() {
             )}
           </div>
 
-          {/* Attachments */}
-          {attachments.length > 0 && (
-            <div style={{
-              backgroundColor: theme.bgCard,
-              borderRadius: '12px',
-              border: `1px solid ${theme.border}`,
-              padding: '20px'
-            }}>
-              <h3 style={{
-                fontSize: '15px',
-                fontWeight: '600',
-                color: theme.text,
-                marginBottom: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <Paperclip size={16} />
-                Attachments
-              </h3>
+          {/* Notes */}
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Notes</h3>
+            <textarea
+              value={estimate.notes || ''}
+              onChange={(e) => updateEstimateField('notes', e.target.value)}
+              rows={4}
+              style={{
+                ...inputStyle,
+                resize: 'vertical'
+              }}
+              placeholder="Add notes..."
+            />
+            {/* Notes photos */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' }}>
+              {notesPhotos.map(photo => (
+                <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
+              ))}
+              <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(null, 'notes')} />
+            </div>
+          </div>
+
+          {/* Documents */}
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <Paperclip size={16} color={theme.textMuted} />
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, flex: 1, margin: 0 }}>Documents ({attachments.length})</h3>
+              <input type="file" ref={docInputRef} style={{ display: 'none' }} onChange={handleUploadDocument} />
+              <button
+                onClick={() => docInputRef.current?.click()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '6px 10px',
+                  backgroundColor: theme.accent,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500'
+                }}
+              >
+                <Upload size={14} />
+                Upload
+              </button>
+            </div>
+            {attachments.length === 0 ? (
+              <p style={{ fontSize: '13px', color: theme.textMuted }}>No documents attached yet. Upload files or they will appear from audit and contract workflows.</p>
+            ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {attachments.map(att => (
-                  <div
-                    key={att.id}
-                    style={{
+                {attachments.map(att => {
+                  const ext = (att.file_name || '').split('.').pop()?.toLowerCase()
+                  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
+                  const sizeKB = att.file_size ? Math.round(att.file_size / 1024) : null
+                  return (
+                    <div key={att.id} style={{
+                      padding: '10px 12px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '8px',
+                      border: `1px solid ${theme.border}`,
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 10px',
-                      backgroundColor: theme.bg,
-                      borderRadius: '6px',
-                      fontSize: '13px'
-                    }}
-                  >
-                    <span style={{ color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                      {att.file_name}
-                    </span>
-                    <button
-                      onClick={async () => {
-                        const { data } = await supabase.storage.from(att.storage_bucket || 'project-documents').download(att.file_path)
-                        if (data) {
-                          const url = URL.createObjectURL(data)
-                          const a = document.createElement('a')
-                          a.href = url
-                          a.download = att.file_name
-                          a.click()
-                          URL.revokeObjectURL(url)
-                        }
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        padding: '4px',
-                        cursor: 'pointer',
-                        color: theme.accent,
-                        flexShrink: 0
-                      }}
-                    >
-                      <Download size={14} />
-                    </button>
-                  </div>
-                ))}
+                      gap: '10px'
+                    }}>
+                      {isImage && att.storage_bucket ? (
+                        <img
+                          src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${att.storage_bucket}/${att.file_path}`}
+                          alt={att.file_name}
+                          style={{
+                            width: '48px', height: '48px',
+                            objectFit: 'cover',
+                            borderRadius: '6px',
+                            flexShrink: 0,
+                            border: `1px solid ${theme.border}`
+                          }}
+                        />
+                      ) : (
+                        <div style={{
+                          width: '48px', height: '48px',
+                          borderRadius: '6px',
+                          backgroundColor: theme.accentBg,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0
+                        }}>
+                          <FileText size={20} color={theme.textMuted} />
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {att.file_name}
+                        </div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                          {ext?.toUpperCase()}{sizeKB ? ` — ${sizeKB} KB` : ''}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                        <button
+                          onClick={async () => {
+                            const { data } = await supabase.storage.from(att.storage_bucket || 'project-documents').download(att.file_path)
+                            if (data) {
+                              const url = URL.createObjectURL(data)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = att.file_name
+                              a.click()
+                              URL.revokeObjectURL(url)
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: '4px',
+                            cursor: 'pointer',
+                            color: theme.accent
+                          }}
+                        >
+                          <Download size={14} />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Delete this document?')) return
+                            await supabase.from('file_attachments').delete().eq('id', att.id)
+                            await supabase.storage.from(att.storage_bucket || 'project-documents').remove([att.file_path])
+                            await fetchEstimateData()
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: '4px',
+                            cursor: 'pointer',
+                            color: theme.textMuted
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Contract */}
           <div style={{
@@ -3350,35 +3448,73 @@ export default function EstimateDetail() {
                 </div>
               </div>
 
-              {/* Existing Lead picker */}
-              {associationType === 'lead' && (
-                <div>
-                  <label style={labelStyle}>Lead</label>
-                  <select name="lead_id" style={inputStyle}>
-                    <option value="">-- Select a lead --</option>
-                    {leads.map(l => (
-                      <option key={l.id} value={l.id}>
-                        {l.customer_name || l.business_name || l.lead_id} {l.address ? `— ${l.address}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Existing Lead picker - searchable */}
+              {associationType === 'lead' && (() => {
+                const q = leadSearch.toLowerCase().trim()
+                const filtered = q ? leads.filter(l => [l.customer_name, l.business_name, l.lead_id, l.address, l.phone, l.email].filter(Boolean).join(' ').toLowerCase().includes(q)) : leads.slice(0, 20)
+                const selLead = selectedLeadId ? leads.find(l => l.id === selectedLeadId) : null
+                return (
+                  <div>
+                    <label style={labelStyle}>Search Leads</label>
+                    <input type="text" value={leadSearch} onChange={(e) => { setLeadSearch(e.target.value); setSelectedLeadId(null) }} placeholder="Type name, address, phone, email..." autoFocus style={inputStyle} />
+                    {selLead && (
+                      <div style={{ marginTop: '8px', padding: '10px 12px', backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <CheckCircle size={16} color="#16a34a" />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{selLead.customer_name || selLead.business_name}</div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>{[selLead.address, selLead.phone].filter(Boolean).join(' \xb7 ')}</div>
+                        </div>
+                        <button type="button" onClick={() => { setSelectedLeadId(null); setLeadSearch('') }} style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: theme.textMuted }}><X size={14} /></button>
+                      </div>
+                    )}
+                    {!selectedLeadId && (
+                      <div style={{ maxHeight: '200px', overflowY: 'auto', marginTop: '6px', border: filtered.length ? `1px solid ${theme.border}` : 'none', borderRadius: '8px' }}>
+                        {filtered.length === 0 && q && (<div style={{ padding: '12px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>No leads found</div>)}
+                        {filtered.map(l => (
+                          <button key={l.id} type="button" onClick={() => { setSelectedLeadId(l.id); setLeadSearch(l.customer_name || l.business_name || '') }} style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%', padding: '10px 12px', background: 'none', border: 'none', borderBottom: `1px solid ${theme.border}`, cursor: 'pointer', textAlign: 'left', minHeight: '44px', justifyContent: 'center' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = theme.accentBg }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}>
+                            <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>{l.customer_name || l.business_name || l.lead_id}</div>
+                            <div style={{ fontSize: '11px', color: theme.textMuted }}>{[l.address, l.phone, l.email].filter(Boolean).join(' \xb7 ') || 'No details'}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
-              {/* Existing Customer picker */}
-              {associationType === 'customer' && (
-                <div>
-                  <label style={labelStyle}>Customer</label>
-                  <select name="customer_id" style={inputStyle}>
-                    <option value="">-- Select a customer --</option>
-                    {customers.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name || c.company_name || `Customer #${c.id}`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Existing Customer picker - searchable */}
+              {associationType === 'customer' && (() => {
+                const q = customerSearch.toLowerCase().trim()
+                const filtered = q ? customers.filter(c => [c.name, c.business_name, c.company_name, c.address, c.phone, c.email].filter(Boolean).join(' ').toLowerCase().includes(q)) : customers.slice(0, 20)
+                const selCust = selectedCustomerId ? customers.find(c => c.id === selectedCustomerId) : null
+                return (
+                  <div>
+                    <label style={labelStyle}>Search Customers</label>
+                    <input type="text" value={customerSearch} onChange={(e) => { setCustomerSearch(e.target.value); setSelectedCustomerId(null) }} placeholder="Type name, address, phone, email..." autoFocus style={inputStyle} />
+                    {selCust && (
+                      <div style={{ marginTop: '8px', padding: '10px 12px', backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <CheckCircle size={16} color="#16a34a" />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{selCust.name || selCust.company_name}</div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>{[selCust.address, selCust.phone].filter(Boolean).join(' \xb7 ')}</div>
+                        </div>
+                        <button type="button" onClick={() => { setSelectedCustomerId(null); setCustomerSearch('') }} style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: theme.textMuted }}><X size={14} /></button>
+                      </div>
+                    )}
+                    {!selectedCustomerId && (
+                      <div style={{ maxHeight: '200px', overflowY: 'auto', marginTop: '6px', border: filtered.length ? `1px solid ${theme.border}` : 'none', borderRadius: '8px' }}>
+                        {filtered.length === 0 && q && (<div style={{ padding: '12px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>No customers found</div>)}
+                        {filtered.map(c => (
+                          <button key={c.id} type="button" onClick={() => { setSelectedCustomerId(c.id); setCustomerSearch(c.name || c.company_name || '') }} style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%', padding: '10px 12px', background: 'none', border: 'none', borderBottom: `1px solid ${theme.border}`, cursor: 'pointer', textAlign: 'left', minHeight: '44px', justifyContent: 'center' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = theme.accentBg }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}>
+                            <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>{c.name || c.company_name || `Customer #${c.id}`}</div>
+                            <div style={{ fontSize: '11px', color: theme.textMuted }}>{[c.address, c.phone, c.email].filter(Boolean).join(' \xb7 ') || 'No details'}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* New Lead inline fields */}
               {associationType === 'newLead' && (
