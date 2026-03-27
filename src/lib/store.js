@@ -238,17 +238,26 @@ export const useStore = create(
         const cached = await offlineDb.getAll('customers');
         if (cached.length > 0 && get().customers.length === 0) set({ customers: cached });
 
-        // Network refresh
+        // Network refresh — paginate to get ALL customers (Supabase caps at 1000/request)
         try {
-          const { data, error } = await supabase
-            .from(TABLES.customers)
-            .select(QUERIES.customers)
-            .eq('company_id', companyId)
-            .order('name');
-
-          if (!error) {
-            set({ customers: data || [] });
-            await offlineDb.putAll('customers', data || []);
+          let allData = [];
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from(TABLES.customers)
+              .select(QUERIES.customers)
+              .eq('company_id', companyId)
+              .order('name')
+              .range(from, from + PAGE - 1);
+            if (error) break;
+            allData = allData.concat(data || []);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
+          }
+          if (allData.length > 0 || from === 0) {
+            set({ customers: allData });
+            await offlineDb.putAll('customers', allData);
           }
         } catch (e) {
           console.log('[fetchCustomers] Offline, using cache');
@@ -266,31 +275,42 @@ export const useStore = create(
         const cached = await offlineDb.getAll('leads');
         if (cached.length > 0 && get().leads.length === 0) set({ leads: cached });
 
-        // Network refresh
+        // Network refresh — paginate to get ALL leads (Supabase caps at 1000/request)
         try {
-          let { data, error } = await supabase
-            .from('leads')
-            .select('*, source_employee:employees!leads_lead_source_employee_id_fkey(id, name)')
-            .eq('company_id', companyId)
-            .order('created_at', { ascending: false });
-
-          // If join fails (e.g. PostgREST schema cache not refreshed), fall back to simple query
-          if (error) {
-            console.warn('[fetchLeads] Join query failed, falling back:', error.message);
-            ({ data, error } = await supabase
+          let allData = [];
+          let from = 0;
+          const PAGE = 1000;
+          let useJoin = true;
+          while (true) {
+            let query = supabase
               .from('leads')
-              .select('*')
+              .select(useJoin ? '*, source_employee:employees!leads_lead_source_employee_id_fkey(id, name)' : '*')
               .eq('company_id', companyId)
-              .order('created_at', { ascending: false }));
+              .order('created_at', { ascending: false })
+              .range(from, from + PAGE - 1);
+            let { data, error } = await query;
+
+            // If join fails on first page, fall back to simple query
+            if (error && useJoin && from === 0) {
+              console.warn('[fetchLeads] Join query failed, falling back:', error.message);
+              useJoin = false;
+              ({ data, error } = await supabase
+                .from('leads')
+                .select('*')
+                .eq('company_id', companyId)
+                .order('created_at', { ascending: false })
+                .range(from, from + PAGE - 1));
+            }
+
+            if (error) break;
+            allData = allData.concat(data || []);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
           }
 
-          if (error) {
-            console.error('[fetchLeads] Error:', error);
-          } else {
-            console.log('[fetchLeads] Loaded', data?.length || 0, 'leads');
-            set({ leads: data || [] });
-            await offlineDb.putAll('leads', data || []);
-          }
+          console.log('[fetchLeads] Loaded', allData.length, 'leads');
+          set({ leads: allData });
+          await offlineDb.putAll('leads', allData);
         } catch (e) {
           console.log('[fetchLeads] Offline, using cache');
         }
@@ -430,17 +450,26 @@ export const useStore = create(
         const cached = await offlineDb.getAll('quotes');
         if (cached.length > 0 && get().quotes.length === 0) set({ quotes: cached });
 
-        // Network refresh
+        // Network refresh — paginate to get ALL quotes (Supabase caps at 1000/request)
         try {
-          const { data, error } = await supabase
-            .from(TABLES.quotes)
-            .select(QUERIES.quotes)
-            .eq('company_id', companyId)
-            .order('created_at', { ascending: false });
-
-          if (!error) {
-            set({ quotes: data || [] });
-            await offlineDb.putAll('quotes', data || []);
+          let allData = [];
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from(TABLES.quotes)
+              .select(QUERIES.quotes)
+              .eq('company_id', companyId)
+              .order('created_at', { ascending: false })
+              .range(from, from + PAGE - 1);
+            if (error) break;
+            allData = allData.concat(data || []);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
+          }
+          if (allData.length > 0 || from === 0) {
+            set({ quotes: allData });
+            await offlineDb.putAll('quotes', allData);
           }
         } catch (e) {
           console.log('[fetchQuotes] Offline, using cache');
