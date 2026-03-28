@@ -13,7 +13,8 @@ import {
   HelpCircle, Zap, MessageCircle, Camera, Mail,
   Presentation, X, ChevronLeft, Sparkles, RefreshCw,
   Boxes, Shield, FileBarChart, Globe, Target, TrendingUp,
-  Loader
+  Loader, MapPin, Wrench, Navigation, Smartphone, AlertCircle,
+  CircleDot, Hash, ChevronUp
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -392,55 +393,175 @@ const STORY_SCENES = [
     title: 'Job Time',
     icon: Briefcase,
     color: '#5a6349',
-    arnieText: "Won deal automatically becomes a Job. The PM drags it to 'Scheduled' on the board, assigns Dave's crew, picks the install dates. Dave sees it show up on Field Scout on his phone. Crew's ready to roll.",
+    arnieText: "The deal is won, so it automatically becomes a Job. Right now it's sitting in 'Chillin' on the board — that's the PM's to-do pile. Lisa the PM drags it to 'Scheduled', assigns Dave's crew, and picks the install dates. Monday through Wednesday. Three days, 200 fixtures.",
     mockup: (theme) => (
       <div>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
           {['Chillin', 'Scheduled', 'In Progress', 'Completed'].map(col => (
             <div key={col} style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '10px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.04em' }}>{col}</div>
-              <div style={{ minHeight: '50px', borderRadius: '8px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, padding: '4px' }}>
+              <div style={{ fontSize: '10px', fontWeight: '600', color: col === 'Scheduled' ? '#5a6349' : theme.textMuted, textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.04em' }}>{col}</div>
+              <div style={{ minHeight: '60px', borderRadius: '8px', backgroundColor: theme.bg, border: `1px solid ${col === 'Scheduled' ? theme.accent + '40' : theme.border}`, padding: '4px' }}>
                 {col === 'Scheduled' && (
-                  <div style={{ padding: '8px', borderRadius: '6px', backgroundColor: theme.bgCard, border: `1px solid ${theme.accent}40`, fontSize: '11px' }}>
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.7, duration: 0.4 }}
+                    style={{ padding: '8px', borderRadius: '6px', backgroundColor: theme.bgCard, border: `1px solid ${theme.accent}40`, fontSize: '11px' }}
+                  >
                     <div style={{ fontWeight: '600', color: theme.text, marginBottom: '2px' }}>Chen Warehouse</div>
                     <div style={{ color: theme.textMuted, fontSize: '10px' }}>Dave's Crew · Mon-Wed</div>
-                  </div>
+                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                      <span style={{ padding: '1px 6px', borderRadius: '3px', fontSize: '9px', backgroundColor: '#5a634912', color: '#5a6349' }}>200 fixtures</span>
+                      <span style={{ padding: '1px 6px', borderRadius: '3px', fontSize: '9px', backgroundColor: '#3b82f612', color: '#3b82f6' }}>8 areas</span>
+                    </div>
+                  </motion.div>
                 )}
               </div>
             </div>
           ))}
+        </div>
+        <div style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'center', fontStyle: 'italic' }}>PM drags jobs between columns to update status</div>
+      </div>
+    ),
+  },
+  {
+    id: 'field-scout',
+    title: 'Dave Opens His Phone',
+    icon: Compass,
+    color: '#22c55e',
+    arnieText: "Monday morning, 6:45 AM. Dave opens the app on his phone. Field Scout shows him exactly what's on his plate today — the Chen Warehouse retrofit. Address, scope, notes from the PM. He taps Navigate and his phone pulls up directions. No calling the office. No wondering where to go.",
+    mockup: (theme) => (
+      <div>
+        <div style={{ fontSize: '11px', fontWeight: '600', color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>Today's Jobs</div>
+        <div style={{ padding: '12px', borderRadius: '10px', border: `2px solid #22c55e30`, backgroundColor: '#22c55e06', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Chen Warehouse LED Retrofit</div>
+              <div style={{ fontSize: '12px', color: theme.textMuted }}>1234 Industrial Blvd</div>
+            </div>
+            <span style={{ padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '600', backgroundColor: '#5a634912', color: '#5a6349' }}>Scheduled</span>
+          </div>
+          <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '8px', padding: '6px 8px', borderRadius: '6px', backgroundColor: theme.bg }}>
+            PM Note: "Customer wants minimal downtime. Start with Bay 3 — it's the main warehouse floor."
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <div style={{ flex: 1, padding: '8px', borderRadius: '6px', backgroundColor: '#f9731612', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#f97316' }}>
+              <Clock size={14} style={{ marginBottom: '2px' }} /><br />Clock In
+            </div>
+            <div style={{ flex: 1, padding: '8px', borderRadius: '6px', backgroundColor: '#3b82f612', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#3b82f6' }}>
+              <MapPin size={14} style={{ marginBottom: '2px' }} /><br />Navigate
+            </div>
+            <div style={{ flex: 1, padding: '8px', borderRadius: '6px', backgroundColor: '#8b5cf612', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#8b5cf6' }}>
+              <Camera size={14} style={{ marginBottom: '2px' }} /><br />Photos
+            </div>
+          </div>
         </div>
       </div>
     ),
   },
   {
     id: 'work',
-    title: 'Boots on the Ground',
+    title: 'Clock In, Get to Work',
     icon: Clock,
     color: '#f97316',
-    arnieText: "Monday morning. The crew clocks in, tags their hours to Sarah's job, and starts swapping out those old tubes. Victor snaps before-and-after photos for proof. By Wednesday afternoon, 200 brand new LEDs are humming. Job status: Completed.",
+    arnieText: "Dave taps 'Clock In', picks the Chen Warehouse job, and his timer starts. GPS confirms he's on-site. His crew does the same. They swap fixtures all morning, take a lunch break — clock out, clock back in — and keep going. Every hour is tagged to this specific job. No timesheets, no guessing.",
     mockup: (theme) => (
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.15)' }}>
-          <Clock size={16} color="#f97316" />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>Dave clocked in</div>
-            <div style={{ fontSize: '11px', color: theme.textMuted }}>7:02 AM · Chen Warehouse LED Retrofit</div>
-          </div>
-          <span style={{ fontSize: '12px', fontWeight: '600', color: '#f97316' }}>6.5 hrs</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+          {[
+            { name: 'Dave M.', time: '7:02 AM', hours: '4.5 hrs', status: 'Active', color: '#22c55e' },
+            { name: 'Tony R.', time: '7:08 AM', hours: '4.3 hrs', status: 'Active', color: '#22c55e' },
+            { name: 'Mike S.', time: '7:15 AM', hours: '0.0 hrs', status: 'On Break', color: '#f59e0b' },
+          ].map(person => (
+            <div key={person.name} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '8px', backgroundColor: person.color + '06', border: `1px solid ${person.color}18` }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: person.color, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{person.name}</div>
+                <div style={{ fontSize: '11px', color: theme.textMuted }}>Clocked in {person.time}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '12px', fontWeight: '600', color: person.color }}>{person.hours}</div>
+                <div style={{ fontSize: '10px', color: theme.textMuted }}>{person.status}</div>
+              </div>
+            </div>
+          ))}
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `1px solid ${theme.border}`, textAlign: 'center' }}>
-            <Camera size={16} color={theme.textMuted} style={{ marginBottom: '4px' }} />
-            <div style={{ fontSize: '10px', color: theme.textMuted }}>Before</div>
-            <div style={{ height: '40px', borderRadius: '6px', backgroundColor: '#fef3c720', marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>T8</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '8px', backgroundColor: '#3b82f608', border: `1px solid #3b82f615`, fontSize: '11px', color: '#3b82f6' }}>
+          <MapPin size={12} /> GPS verified: 1234 Industrial Blvd (on-site)
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'photos',
+    title: 'Proof of Work',
+    icon: Camera,
+    color: '#8b5cf6',
+    arnieText: "Before they start each bay, someone snaps a photo of the old fixtures. When they finish, another photo of the new LEDs. These upload straight to the job record — proof for the customer, proof for the utility rebate, proof for when someone asks 'did we actually do that?' six months later. Victor the AI can even verify the work quality.",
+    mockup: (theme) => (
+      <div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ borderRadius: '8px', overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+            <div style={{ height: '70px', backgroundColor: '#fef3c718', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ fontSize: '20px' }}>T8</div>
+              <div style={{ fontSize: '10px', color: theme.textMuted }}>Old fluorescent</div>
+            </div>
+            <div style={{ padding: '6px 8px', backgroundColor: theme.bg, fontSize: '10px', color: '#ef4444', fontWeight: '600', textAlign: 'center' }}>BEFORE — Bay 3</div>
           </div>
-          <ArrowRight size={14} color={theme.textMuted} style={{ alignSelf: 'center' }} />
-          <div style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `1px solid ${theme.border}`, textAlign: 'center' }}>
-            <Camera size={16} color={theme.textMuted} style={{ marginBottom: '4px' }} />
-            <div style={{ fontSize: '10px', color: theme.textMuted }}>After</div>
-            <div style={{ height: '40px', borderRadius: '6px', backgroundColor: '#22c55e15', marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>LED</div>
+          <div style={{ borderRadius: '8px', overflow: 'hidden', border: `1px solid #22c55e30` }}>
+            <div style={{ height: '70px', backgroundColor: '#22c55e08', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ fontSize: '20px' }}>LED</div>
+              <div style={{ fontSize: '10px', color: theme.textMuted }}>New LED tube</div>
+            </div>
+            <div style={{ padding: '6px 8px', backgroundColor: '#22c55e08', fontSize: '10px', color: '#22c55e', fontWeight: '600', textAlign: 'center' }}>AFTER — Bay 3</div>
           </div>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {['Bay 1', 'Bay 2', 'Bay 3', 'Bay 4', 'Bay 5', 'Bay 6', 'Bay 7', 'Bay 8'].map((bay, i) => (
+            <span key={bay} style={{
+              padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '500',
+              backgroundColor: i < 5 ? '#22c55e12' : theme.bg,
+              color: i < 5 ? '#22c55e' : theme.textMuted,
+              border: `1px solid ${i < 5 ? '#22c55e20' : theme.border}`,
+            }}>
+              {bay} {i < 5 ? '4/4' : '0/4'}
+            </span>
+          ))}
+        </div>
+        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px', textAlign: 'center' }}>20 of 32 photos uploaded</div>
+      </div>
+    ),
+  },
+  {
+    id: 'job-done',
+    title: 'Job Complete',
+    icon: CheckCircle,
+    color: '#4a7c59',
+    arnieText: "Wednesday afternoon. Last fixture swapped, last photo taken. Dave marks the job 'Completed' right from his phone. The PM sees it move across the board. Total labor: 22.5 crew-hours across 3 days. All documented, all tagged, all tracked. Now the office can send the invoice without asking anyone a single question.",
+    mockup: (theme) => (
+      <div style={{ textAlign: 'center' }}>
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.6, type: 'spring' }}
+        >
+          <CheckCircle size={40} color="#4a7c59" style={{ marginBottom: '8px' }} />
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#4a7c59', marginBottom: '12px' }}>Job Completed</div>
+        </motion.div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+          {[
+            { label: 'Crew Hours', value: '22.5', color: '#f97316' },
+            { label: 'Photos', value: '32', color: '#8b5cf6' },
+            { label: 'Fixtures', value: '200', color: '#22c55e' },
+          ].map(s => (
+            <div key={s.label} style={{ padding: '10px 6px', borderRadius: '8px', backgroundColor: s.color + '08', textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: '700', color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: '10px', color: theme.textMuted }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: '12px', color: theme.textSecondary, padding: '8px', borderRadius: '6px', backgroundColor: theme.bg }}>
+          All hours, photos, and materials logged automatically. Ready for invoicing.
         </div>
       </div>
     ),
@@ -842,25 +963,184 @@ const HELP_SECTIONS = [
   },
   {
     id: 'operations',
-    title: 'Operations',
+    title: 'Operations — How the Work Gets Done',
     icon: ClipboardList,
     color: '#5a6349',
-    content: (theme) => (
+    content: (theme, animate) => (
       <div>
-        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '16px' }}>
-          Day-to-day tools for running jobs in the field and managing your product catalog.
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '8px' }}>
+          This is the part that matters most. Sales can close all the deals they want — but if the crew can't find their jobs, track their hours, or know what materials to bring, nothing gets done. Here's exactly how a typical day works.
+        </p>
+        <p style={{ fontSize: '13px', color: theme.textMuted, lineHeight: 1.6, marginBottom: '20px' }}>
+          Every tool here is designed to be used on a phone, in the field, with one hand, while standing on a ladder. No training manual needed.
         </p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <EntityCard icon={Compass} title="Field Scout" color="#22c55e" description="Daily dashboard for field technicians. Shows today's jobs, active clock-ins, and quick actions. Techs see only their assigned work." theme={theme} />
-          <EntityCard icon={ClipboardList} title="Job Board (PM)" color="#3b82f6" description="Project manager workspace. Schedule job sections, assign techs, drag to reorder priorities. Gantt-style view of who's doing what and when." theme={theme} />
-          <EntityCard icon={Package} title="Products & Services" color="#f59e0b" description="Your product catalog organized by sections and groups. Each product has pricing, labor rates, spec sheets, DLC certification, and can be bundled with components. Bundles show their component breakdown and total price right on the card." theme={theme} />
-          <EntityCard icon={Warehouse} title="Inventory" color="#8b5cf6" description="Track materials, tools, and consumables. Set reorder points, assign to locations or vehicles. Products sync automatically from your catalog." theme={theme} />
+        {/* ─── Field Scout ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#22c55e', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Compass size={18} /> Field Scout — The Tech's Home Base
+        </h4>
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '12px' }}>
+          When a tech opens the app, this is the first thing they see. No menus to dig through, no lists to scroll. Just <strong>today's work</strong>.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+          {[
+            { icon: Briefcase, label: "Today's Jobs", desc: 'See every job assigned to you today. Address, customer name, what needs to happen. Tap to see full details.', color: '#5a6349' },
+            { icon: Clock, label: 'Clock In / Out', desc: "Big button, can't miss it. Tap once to start, tap again to stop. Tags your hours to whatever job you pick.", color: '#f97316' },
+            { icon: MapPin, label: 'Navigate to Job', desc: 'One tap opens Google Maps or Apple Maps with the job address. No copy-pasting.', color: '#3b82f6' },
+            { icon: Camera, label: 'Job Photos', desc: 'Snap before/after photos right from the job. They upload automatically and attach to the job record.', color: '#8b5cf6' },
+          ].map(item => (
+            <div key={item.label} style={{ padding: '14px', borderRadius: '10px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <item.icon size={16} color={item.color} />
+                <span style={{ fontSize: '13px', fontWeight: '600', color: item.color }}>{item.label}</span>
+              </div>
+              <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: 1.5 }}>{item.desc}</div>
+            </div>
+          ))}
+        </div>
+        <InfoBox title="Why this matters" color="#22c55e" theme={theme}>
+          Your techs don't need to call the office asking "where am I going today?" or "what's the customer's name again?" It's all right there. Open the app, see the work, clock in, go. That's it.
+        </InfoBox>
+
+        {/* ─── A Tech's Typical Day ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#f97316', margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Clock size={18} /> A Tech's Typical Day
+        </h4>
+        <div style={{ position: 'relative', paddingLeft: '24px', borderLeft: `2px solid ${theme.border}`, marginBottom: '20px' }}>
+          {[
+            { time: '6:45 AM', action: 'Open Field Scout. See 2 jobs for today. First one is a warehouse retrofit on Industrial Blvd.', color: '#5a6349' },
+            { time: '7:00 AM', action: 'Arrive at site. Tap "Clock In" and pick the job. GPS confirms you\'re at the right location. Timer starts.', color: '#f97316' },
+            { time: '7:05 AM', action: 'Open the job details. See the scope: 40 fixtures in Bay 3, LED tubes are in the truck. Notes from the PM say "customer wants minimal downtime, do Bay 3 first."', color: '#3b82f6' },
+            { time: '11:30 AM', action: 'Bay 3 done. Snap a photo of the finished work. It uploads and attaches to the job automatically.', color: '#8b5cf6' },
+            { time: '12:00 PM', action: 'Lunch break. Clock out. Grab a sandwich.', color: '#7d8a7f' },
+            { time: '12:30 PM', action: 'Clock back in, same job. Finish Bay 4 by 3 PM.', color: '#f97316' },
+            { time: '3:15 PM', action: 'Clock out. Total: 7.5 hours tagged to this job. Drive to job #2 — a small office relight. Clock in on the new job.', color: '#22c55e' },
+            { time: '5:00 PM', action: 'Done for the day. Clock out. All hours are logged, all photos uploaded. The PM can see everything from the office.', color: '#16a34a' },
+          ].map((step, i) => (
+            <div key={i} style={{ marginBottom: i < 7 ? '14px' : 0, position: 'relative' }}>
+              <div style={{ position: 'absolute', left: '-29px', top: '2px', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: step.color, border: `2px solid ${theme.bg}` }} />
+              <div style={{ fontSize: '11px', fontWeight: '700', color: step.color, marginBottom: '2px' }}>{step.time}</div>
+              <div style={{ fontSize: '13px', color: theme.text, lineHeight: 1.5 }}>{step.action}</div>
+            </div>
+          ))}
         </div>
 
-        <InfoBox title="Product Bundles" color="#f59e0b" theme={theme}>
-          Products can include <strong>components</strong> (other products). When you add a bundle to an estimate, all components and their pricing are included. The card shows each component, quantity, and price breakdown so you always know what's inside.
+        {/* ─── Time Clock ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#3b82f6', margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Clock size={18} /> Time Clock — No Paper Timesheets
+        </h4>
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '12px' }}>
+          Every clock-in and clock-out is tagged to a specific job. That means the company knows exactly how many hours went into each project — not just how many hours each person worked. This feeds directly into job costing and payroll.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+          {[
+            { label: 'GPS stamped', desc: 'Every clock event records the location. Verify your crew is actually on-site.', icon: MapPin, color: '#3b82f6' },
+            { label: 'Job-tagged hours', desc: 'Hours go to the job, not just the person. Know your actual labor cost per project.', icon: Briefcase, color: '#5a6349' },
+            { label: 'Break tracking', desc: 'Clock out for lunch, clock back in. Breaks are tracked separately.', icon: Pause, color: '#7d8a7f' },
+            { label: 'Feeds payroll', desc: 'Hours automatically flow into the payroll calculator. No double-entry.', icon: DollarSign, color: '#16a34a' },
+          ].map(item => (
+            <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '8px', backgroundColor: item.color + '08', border: `1px solid ${item.color}15` }}>
+              <item.icon size={16} color={item.color} style={{ flexShrink: 0 }} />
+              <div>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: item.color }}>{item.label}</span>
+                <span style={{ fontSize: '12px', color: theme.textSecondary, marginLeft: '8px' }}>{item.desc}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <InfoBox title="Real talk" color="#f97316" theme={theme}>
+          Nobody likes filling out timesheets at the end of the week trying to remember what they did on Tuesday. Clock in when you get there, clock out when you leave. It's two taps. Your hours are accurate, your pay is right, and nobody's arguing about it on Friday.
         </InfoBox>
+
+        {/* ─── Job Board (PM) ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#3b82f6', margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ClipboardList size={18} /> Job Board — The PM's Command Center
+        </h4>
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '12px' }}>
+          The project manager (or whoever's scheduling the work) uses the Job Board to see everything at a glance. Think of it like a whiteboard with sticky notes — but it updates in real time.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+          {[
+            'See all jobs organized by status — Chillin, Scheduled, In Progress, Completed',
+            'Drag and drop jobs between columns to update their status',
+            'Assign crew members and set start/end dates',
+            'Break big jobs into sections (Bay 1, Bay 2, etc.) and schedule each one',
+            'See who\'s clocked in right now and what they\'re working on',
+            'Click any job to drill into details, line items, photos, and notes',
+          ].map((item, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: theme.text, lineHeight: 1.5 }}>
+              <CheckCircle size={14} color="#3b82f6" style={{ marginTop: '2px', flexShrink: 0 }} />
+              {item}
+            </div>
+          ))}
+        </div>
+
+        <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Job Statuses</h4>
+        <StatusPipeline animate={animate} statuses={['Chillin', 'Scheduled', 'In Progress', 'Completed', 'On Hold', 'Cancelled']} colors={{
+          'Chillin': '#6382bf', 'Scheduled': '#5a6349', 'In Progress': '#c28b38',
+          'Completed': '#4a7c59', 'On Hold': '#7d8a7f', 'Cancelled': '#8b5a5a'
+        }} theme={theme} />
+
+        <InfoBox title="What 'Chillin' means" color="#6382bf" theme={theme}>
+          When a deal is won, the job starts in "Chillin" — it exists, but nobody's scheduled it yet. It's the PM's to-do pile. Once dates and crew are assigned, it moves to "Scheduled." No job gets forgotten because it's sitting right there on the board.
+        </InfoBox>
+
+        {/* ─── Routes & Calendar ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#5a6349', margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Navigation size={18} /> Routes & Calendar
+        </h4>
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '12px' }}>
+          See all scheduled jobs on a map or calendar view. Plan efficient routes so your crews aren't crisscrossing the city. The calendar shows job blocks by day and by tech — the PM can see gaps and overloads instantly.
+        </p>
+
+        {/* ─── Products & Inventory ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#f59e0b', margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Package size={18} /> Products, Bundles & Inventory
+        </h4>
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '12px' }}>
+          Your product catalog is the brain behind estimates and job line items. Every product has a price, labor rate, and description. Products can be grouped into <strong>bundles</strong> — for example, a "Bay Retrofit Package" might include 20 LED tubes, 20 drivers, labor, and disposal. When you add the bundle to an estimate, everything's included with the right pricing.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+          <EntityCard icon={Package} title="Products & Services" color="#f59e0b" description="Your full catalog: fixtures, materials, labor, services. Each product has cost, sell price, labor rate, spec sheets, photos, and DLC certification status. Organized by sections and groups." theme={theme} />
+          <EntityCard icon={Boxes} title="Bundles" color="#f97316" description="Group products together. A bundle shows all its components with quantities and prices right on the card. Add it to an estimate and everything inside gets included. No forgetting the driver for the LED tube." theme={theme} />
+          <EntityCard icon={Warehouse} title="Inventory" color="#8b5cf6" description="Track what you have, where it is, and when to reorder. Assign inventory to warehouse locations or specific trucks so techs know what's on their vehicle before they drive out." theme={theme} />
+        </div>
+        <InfoBox title="Why bundles save hours" color="#f59e0b" theme={theme}>
+          Instead of manually adding 8 line items every time you quote a bay retrofit, create a bundle once. Next estimate — one click, all 8 items added with correct quantities and pricing. Your estimates go out faster and nothing gets missed.
+        </InfoBox>
+
+        {/* ─── What techs need to know ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: theme.accent, margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Smartphone size={18} /> Bottom Line for Field Techs
+        </h4>
+        <div style={{
+          padding: '16px 20px', borderRadius: '12px',
+          backgroundColor: theme.accent + '08', border: `2px solid ${theme.accent}20`,
+        }}>
+          <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.8, margin: 0 }}>
+            You don't need to learn the whole app. You need <strong>three things</strong>:
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+            {[
+              { num: '1', text: 'Field Scout — see your jobs for today', color: '#22c55e' },
+              { num: '2', text: 'Time Clock — clock in, pick the job, clock out when done', color: '#f97316' },
+              { num: '3', text: 'Camera — snap photos of the work', color: '#8b5cf6' },
+            ].map(item => (
+              <div key={item.num} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '28px', height: '28px', borderRadius: '50%',
+                  backgroundColor: item.color + '18', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  fontSize: '14px', fontWeight: '700', color: item.color, flexShrink: 0,
+                }}>{item.num}</div>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{item.text}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '12px', marginBottom: 0, lineHeight: 1.6 }}>
+            Everything else — scheduling, estimates, invoicing — that's the office's job. You just do the work, track your time, and take photos. The app handles the rest.
+          </p>
+        </div>
       </div>
     )
   },
