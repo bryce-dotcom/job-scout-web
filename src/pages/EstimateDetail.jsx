@@ -74,6 +74,8 @@ export default function EstimateDetail() {
   const [showDepositModal, setShowDepositModal] = useState(false)
   const [showSendModal, setShowSendModal] = useState(false)
   const [generatingPdf, setGeneratingPdf] = useState(false)
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null)
+  const [pdfPreviewBlob, setPdfPreviewBlob] = useState(null)
   const [sendingEmail, setSendingEmail] = useState(false)
   const [attachments, setAttachments] = useState([])
   const [convertingToJob, setConvertingToJob] = useState(false)
@@ -1129,20 +1131,38 @@ export default function EstimateDetail() {
         businessUnit: buObject
       })
 
-      // Upload to Supabase Storage
+      // Show preview instead of immediately saving
+      const url = URL.createObjectURL(pdfBlob)
+      setPdfPreviewBlob(pdfBlob)
+      setPdfPreviewUrl(url)
+    } catch (err) {
+      toast.error('PDF generation failed: ' + err.message)
+    }
+    setGeneratingPdf(false)
+  }
+
+  const handleDiscardPdfPreview = () => {
+    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl)
+    setPdfPreviewUrl(null)
+    setPdfPreviewBlob(null)
+  }
+
+  const handleSavePdfPreview = async () => {
+    if (!pdfPreviewBlob) return
+    setGeneratingPdf(true)
+    try {
+      const effectiveSettings = getEffectiveSettings()
       const fileName = `estimates/${companyId}/${estimate.quote_id || estimate.id}_${Date.now()}.pdf`
       const { error: uploadError } = await supabase.storage
         .from('project-documents')
-        .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true })
+        .upload(fileName, pdfPreviewBlob, { contentType: 'application/pdf', upsert: true })
 
       if (uploadError) {
-        // Still allow local download even if upload fails
         console.error('Upload error:', uploadError)
-        toast.error('PDF generated but upload failed. Downloading locally.')
+        toast.error('Upload failed. Downloading locally instead.')
       } else {
         await updateQuote(id, { pdf_url: fileName, pdf_layout: effectiveSettings.pdf_layout })
 
-        // Save as file_attachment linked to this estimate
         try {
           await supabase.from('file_attachments').insert({
             company_id: companyId,
@@ -1151,27 +1171,26 @@ export default function EstimateDetail() {
             file_name: `${estimate.quote_id || 'estimate'}.pdf`,
             file_path: fileName,
             file_type: 'application/pdf',
-            file_size: pdfBlob.size,
+            file_size: pdfPreviewBlob.size,
             storage_bucket: 'project-documents'
           })
         } catch {
           // quote_id column may not exist yet
         }
 
-        toast.success('PDF generated and saved!')
+        toast.success('PDF saved to documents!')
       }
 
-      // Download locally
-      const url = URL.createObjectURL(pdfBlob)
+      // Also download locally
       const a = document.createElement('a')
-      a.href = url
+      a.href = pdfPreviewUrl
       a.download = `${estimate.quote_id || 'estimate'}.pdf`
       a.click()
-      URL.revokeObjectURL(url)
 
+      handleDiscardPdfPreview()
       await fetchEstimateData()
     } catch (err) {
-      toast.error('PDF generation failed: ' + err.message)
+      toast.error('Save failed: ' + err.message)
     }
     setGeneratingPdf(false)
   }
@@ -2559,7 +2578,7 @@ export default function EstimateDetail() {
                 }}
               >
                 <FileText size={18} />
-                {generatingPdf ? 'Generating...' : 'Generate PDF'}
+                {generatingPdf ? 'Generating...' : 'Preview PDF'}
               </button>
 
               {estimate.pdf_url && (
@@ -4681,6 +4700,88 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
           </div>
         )}
       </div>
+
+      {/* PDF Preview Modal */}
+      {pdfPreviewUrl && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '900px',
+            height: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexShrink: 0
+            }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                PDF Preview
+              </h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={handleDiscardPdfPreview}
+                  style={{
+                    padding: '10px 16px', minHeight: '44px',
+                    backgroundColor: 'transparent',
+                    color: theme.textSecondary,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <X size={16} /> Discard
+                </button>
+                <button
+                  onClick={handleSavePdfPreview}
+                  disabled={generatingPdf}
+                  style={{
+                    padding: '10px 16px', minHeight: '44px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: generatingPdf ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    opacity: generatingPdf ? 0.6 : 1
+                  }}
+                >
+                  <Download size={16} /> {generatingPdf ? 'Saving...' : 'Save to Documents'}
+                </button>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <iframe
+                src={pdfPreviewUrl}
+                title="PDF Preview"
+                style={{ width: '100%', height: '100%', border: 'none' }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

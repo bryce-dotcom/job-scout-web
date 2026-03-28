@@ -58,6 +58,8 @@ export default function InvoiceDetail() {
   const [generatingPdf, setGeneratingPdf] = useState(false)
   const [pdfHistory, setPdfHistory] = useState([])
   const [latestPdfSignedUrl, setLatestPdfSignedUrl] = useState(null)
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null)
+  const [pdfPreviewBlob, setPdfPreviewBlob] = useState(null)
 
   // Send modal state
   const [showSendModal, setShowSendModal] = useState(false)
@@ -316,164 +318,236 @@ export default function InvoiceDetail() {
   const generateInvoicePDF = () => {
     const doc = new jsPDF()
     const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+    const margin = 20
+    const rightEdge = pageWidth - margin
+    const contentWidth = pageWidth - margin * 2
+    const lineHeight = 5
+    const bottomMargin = 30 // reserve space for footer
     let y = 20
 
-    // Company header
+    // Helper: check if we need a new page, add one if so
+    const checkPage = (needed = 20) => {
+      if (y + needed > pageHeight - bottomMargin) {
+        doc.addPage()
+        y = 20
+      }
+    }
+
+    // Helper: draw wrapped text and advance y properly
+    const drawWrappedText = (text, x, maxWidth, opts = {}) => {
+      const fontSize = opts.fontSize || 10
+      const font = opts.font || 'normal'
+      doc.setFontSize(fontSize)
+      doc.setFont('helvetica', font)
+      if (opts.color) doc.setTextColor(...(Array.isArray(opts.color) ? opts.color : [opts.color]))
+      const lines = doc.splitTextToSize(text, maxWidth)
+      const lh = fontSize * 0.45 // line height proportional to font size
+      for (let i = 0; i < lines.length; i++) {
+        checkPage(lh + 2)
+        doc.text(lines[i], x, y)
+        y += lh
+      }
+      return lines.length
+    }
+
+    // ── Company header ──
     const companyName = company?.name || 'Company'
     doc.setFontSize(20)
     doc.setFont('helvetica', 'bold')
-    doc.text(companyName, 20, y)
-    y += 10
+    doc.text(companyName, margin, y)
+    y += 8
 
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(100)
-    if (company?.address) { doc.text(company.address, 20, y); y += 5 }
-    if (company?.phone) { doc.text(company.phone, 20, y); y += 5 }
-    if (company?.email) { doc.text(company.email, 20, y); y += 5 }
+    if (company?.address) { doc.text(company.address, margin, y); y += 5 }
+    if (company?.phone) { doc.text(company.phone, margin, y); y += 5 }
+    if (company?.email) { doc.text(company.email, margin, y); y += 5 }
     y += 5
 
-    // Invoice title
-    doc.setTextColor(0)
-    doc.setFontSize(16)
+    // ── Invoice title (right side, absolute position) ──
+    doc.setTextColor(90, 99, 73) // accent color
+    doc.setFontSize(18)
     doc.setFont('helvetica', 'bold')
-    doc.text('INVOICE', pageWidth - 20, 20, { align: 'right' })
+    doc.text('INVOICE', rightEdge, 20, { align: 'right' })
+    doc.setTextColor(80)
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
-    doc.text(`Invoice #: ${invoice.invoice_id || ''}`, pageWidth - 20, 30, { align: 'right' })
-    doc.text(`Date: ${formatDate(invoice.created_at)}`, pageWidth - 20, 36, { align: 'right' })
+    let iy = 30
+    doc.text(`Invoice #: ${invoice.invoice_id || ''}`, rightEdge, iy, { align: 'right' }); iy += 5
+    doc.text(`Date: ${formatDate(invoice.created_at)}`, rightEdge, iy, { align: 'right' }); iy += 5
     if (invoice.due_date) {
-      doc.text(`Due Date: ${formatDate(invoice.due_date)}`, pageWidth - 20, 42, { align: 'right' })
+      doc.text(`Due Date: ${formatDate(invoice.due_date)}`, rightEdge, iy, { align: 'right' })
     }
 
-    // Divider line
-    doc.setDrawColor(200)
-    doc.line(20, y, pageWidth - 20, y)
+    // ── Divider ──
+    doc.setDrawColor(214, 205, 184)
+    doc.line(margin, y, rightEdge, y)
     y += 10
 
-    // Bill To
+    // ── Bill To ──
+    doc.setTextColor(0)
     doc.setFontSize(11)
     doc.setFont('helvetica', 'bold')
-    doc.text('Bill To:', 20, y)
+    doc.text('Bill To:', margin, y)
     y += 6
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(10)
-    if (invoice.customer?.name) { doc.text(invoice.customer.name, 20, y); y += 5 }
-    if (invoice.customer?.address) { doc.text(invoice.customer.address, 20, y); y += 5 }
-    if (invoice.customer?.email) { doc.text(invoice.customer.email, 20, y); y += 5 }
-    if (invoice.customer?.phone) { doc.text(invoice.customer.phone, 20, y); y += 5 }
-    y += 10
+    if (invoice.customer?.name) { doc.text(invoice.customer.name, margin, y); y += 5 }
+    if (invoice.customer?.address) {
+      // Wrap long addresses
+      const addrLines = doc.splitTextToSize(invoice.customer.address, contentWidth / 2)
+      for (const line of addrLines) { doc.text(line, margin, y); y += 5 }
+    }
+    if (invoice.customer?.email) { doc.text(invoice.customer.email, margin, y); y += 5 }
+    if (invoice.customer?.phone) { doc.text(invoice.customer.phone, margin, y); y += 5 }
+    y += 8
 
-    // Description / line items
+    // ── Description table ──
     if (invoice.job_description) {
-      doc.setFontSize(11)
+      checkPage(30)
+
+      // Table header
+      doc.setFillColor(90, 99, 73)
+      doc.rect(margin, y - 4, contentWidth, 8, 'F')
+      doc.setTextColor(255)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
-      doc.text('Description', 20, y)
-      doc.text('Amount', pageWidth - 20, y, { align: 'right' })
-      y += 2
-      doc.setDrawColor(200)
-      doc.line(20, y, pageWidth - 20, y)
-      y += 6
+      doc.text('Description', margin + 4, y)
+      doc.text('Amount', rightEdge - 4, y, { align: 'right' })
+      y += 8
+
+      // Table row with proper wrapping
+      doc.setTextColor(0)
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(10)
+      const descMaxWidth = contentWidth - 50 // leave room for amount column
+      const descLines = doc.splitTextToSize(invoice.job_description, descMaxWidth)
+      const rowStartY = y
 
-      // Wrap long descriptions
-      const lines = doc.splitTextToSize(invoice.job_description, pageWidth - 80)
-      doc.text(lines, 20, y)
-      doc.text(formatCurrency(invoice.amount), pageWidth - 20, y, { align: 'right' })
-      y += lines.length * 5 + 5
+      // Draw description lines with page break support
+      for (let i = 0; i < descLines.length; i++) {
+        checkPage(lineHeight + 2)
+        doc.text(descLines[i], margin + 4, y)
+        if (i === 0) {
+          // Amount on first line only
+          doc.text(formatCurrency(invoice.amount), rightEdge - 4, y, { align: 'right' })
+        }
+        y += lineHeight
+      }
+      y += 3
 
-      doc.setDrawColor(200)
-      doc.line(20, y, pageWidth - 20, y)
+      // Bottom border
+      doc.setDrawColor(214, 205, 184)
+      doc.line(margin, y, rightEdge, y)
       y += 8
     }
 
-    // Totals section
-    const totalsX = pageWidth - 80
+    // ── Totals section ──
+    checkPage(50)
+    const totalsX = rightEdge - 70
     doc.setFontSize(10)
 
-    doc.setFont('helvetica', 'normal')
-    doc.text('Subtotal:', totalsX, y)
-    doc.text(formatCurrency(invoice.amount), pageWidth - 20, y, { align: 'right' })
-    y += 6
-
-    if (parseFloat(invoice.discount_applied) > 0) {
-      doc.text('Discount:', totalsX, y)
-      doc.setTextColor(200, 0, 0)
-      doc.text(`-${formatCurrency(invoice.discount_applied)}`, pageWidth - 20, y, { align: 'right' })
-      doc.setTextColor(0)
+    const drawTotalLine = (label, amount, opts = {}) => {
+      checkPage(8)
+      doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
+      doc.setFontSize(opts.fontSize || 10)
+      if (opts.color) doc.setTextColor(...opts.color)
+      else doc.setTextColor(0)
+      doc.text(label, totalsX, y)
+      doc.text(amount, rightEdge, y, { align: 'right' })
       y += 6
     }
 
+    drawTotalLine('Subtotal:', formatCurrency(invoice.amount))
+
+    if (parseFloat(invoice.discount_applied) > 0) {
+      drawTotalLine('Discount:', `-${formatCurrency(invoice.discount_applied)}`, { color: [200, 0, 0] })
+    }
+
     if (parseFloat(invoice.credit_card_fee) > 0) {
-      doc.text('CC Processing Fee:', totalsX, y)
-      doc.text(formatCurrency(invoice.credit_card_fee), pageWidth - 20, y, { align: 'right' })
-      y += 6
+      drawTotalLine('CC Processing Fee:', formatCurrency(invoice.credit_card_fee))
     }
 
     const totalPaidAmt = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
     if (totalPaidAmt > 0) {
-      doc.text('Paid:', totalsX, y)
-      doc.text(formatCurrency(totalPaidAmt), pageWidth - 20, y, { align: 'right' })
-      y += 6
+      drawTotalLine('Paid:', formatCurrency(totalPaidAmt), { color: [0, 128, 0] })
     }
 
     y += 2
-    doc.setDrawColor(0)
-    doc.line(totalsX, y, pageWidth - 20, y)
-    y += 6
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(12)
-    const balDue = (parseFloat(invoice.amount) || 0) - (parseFloat(invoice.discount_applied) || 0) + (parseFloat(invoice.credit_card_fee) || 0) - totalPaidAmt
-    doc.text('Balance Due:', totalsX, y)
-    doc.text(formatCurrency(Math.max(0, balDue)), pageWidth - 20, y, { align: 'right' })
-    y += 15
+    doc.setDrawColor(90, 99, 73)
+    doc.setLineWidth(0.5)
+    doc.line(totalsX, y, rightEdge, y)
+    doc.setLineWidth(0.2)
+    y += 7
 
-    // Payment preference note
+    const balDue = (parseFloat(invoice.amount) || 0) - (parseFloat(invoice.discount_applied) || 0) + (parseFloat(invoice.credit_card_fee) || 0) - totalPaidAmt
+    drawTotalLine('Balance Due:', formatCurrency(Math.max(0, balDue)), { bold: true, fontSize: 13 })
+    y += 10
+
+    // ── Payment preference note ──
     if (showPreferredNote && preferredPaymentNote) {
-      doc.setFontSize(9)
-      doc.setFont('helvetica', 'italic')
+      checkPage(20)
       doc.setTextColor(100)
-      const noteLines = doc.splitTextToSize(preferredPaymentNote, pageWidth - 40)
-      doc.text(noteLines, 20, y)
-      y += noteLines.length * 4 + 8
+      drawWrappedText(preferredPaymentNote, margin, contentWidth, { fontSize: 9, font: 'italic', color: [100] })
       doc.setTextColor(0)
+      y += 6
     }
 
-    // Notes
+    // ── Notes ──
     if (invoice.notes) {
+      checkPage(20)
       doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
-      doc.text('Notes:', 20, y)
-      y += 5
-      doc.setFont('helvetica', 'normal')
-      const noteLines = doc.splitTextToSize(invoice.notes, pageWidth - 40)
-      doc.text(noteLines, 20, y)
-      y += noteLines.length * 5 + 10
+      doc.setTextColor(0)
+      doc.text('Notes:', margin, y)
+      y += 6
+      drawWrappedText(invoice.notes, margin, contentWidth, { fontSize: 10, font: 'normal', color: [60] })
+      y += 6
     }
 
-    // Footer
-    doc.setFontSize(9)
-    doc.setTextColor(150)
-    doc.text('Thank you for your business!', pageWidth / 2, 280, { align: 'center' })
+    // ── Footer on every page ──
+    const pageCount = doc.internal.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(9)
+      doc.setTextColor(150)
+      doc.text('Thank you for your business!', pageWidth / 2, pageHeight - 15, { align: 'center' })
+      if (pageCount > 1) {
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' })
+      }
+    }
 
     return doc
   }
 
-  const handleGenerateAndUploadPDF = async () => {
+  // Preview PDF before saving
+  const handlePreviewPDF = () => {
+    const doc = generateInvoicePDF()
+    const blob = doc.output('blob')
+    const url = URL.createObjectURL(blob)
+    setPdfPreviewBlob(blob)
+    setPdfPreviewUrl(url)
+  }
+
+  const handleDiscardPreview = () => {
+    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl)
+    setPdfPreviewUrl(null)
+    setPdfPreviewBlob(null)
+  }
+
+  const handleSavePreviewPDF = async () => {
+    if (!pdfPreviewBlob) return
     setGeneratingPdf(true)
-    const { toast } = await import('../lib/toast')
 
     try {
-      const doc = generateInvoicePDF()
-      const pdfBlob = doc.output('blob')
-
       const timestamp = Date.now()
       const filePath = `invoices/${companyId}/${invoice.invoice_id || id}_${timestamp}.pdf`
 
       const { error: uploadError } = await supabase.storage
         .from('project-documents')
-        .upload(filePath, pdfBlob, { contentType: 'application/pdf' })
+        .upload(filePath, pdfPreviewBlob, { contentType: 'application/pdf' })
 
       if (uploadError) {
         toast.error('Failed to upload PDF: ' + uploadError.message)
@@ -481,13 +555,11 @@ export default function InvoiceDetail() {
         return
       }
 
-      // Update pdf_url to always point to the latest PDF
       await supabase.from('invoices').update({
         pdf_url: filePath,
         updated_at: new Date().toISOString()
       }).eq('id', id)
 
-      // Save as a file_attachment so it shows in PDF History and Documents
       const snapshotDate = new Date().toLocaleDateString()
       await supabase.from('file_attachments').insert({
         company_id: companyId,
@@ -496,17 +568,57 @@ export default function InvoiceDetail() {
         file_name: `${invoice.invoice_id || 'Invoice'} - ${snapshotDate}.pdf`,
         file_path: filePath,
         file_type: 'application/pdf',
-        file_size: pdfBlob.size,
+        file_size: pdfPreviewBlob.size,
         storage_bucket: 'project-documents'
       })
 
-      toast.success('PDF snapshot generated and saved')
+      toast.success('PDF saved to documents')
+      handleDiscardPreview()
       await fetchInvoiceData()
     } catch (err) {
-      toast.error('Error generating PDF')
+      toast.error('Error saving PDF')
     }
 
     setGeneratingPdf(false)
+  }
+
+  // Direct generate + upload (used by send flow when no PDF exists)
+  const handleDirectGenerateAndUploadPDF = async () => {
+    const doc = generateInvoicePDF()
+    const pdfBlob = doc.output('blob')
+    const timestamp = Date.now()
+    const filePath = `invoices/${companyId}/${invoice.invoice_id || id}_${timestamp}.pdf`
+
+    const { error: uploadError } = await supabase.storage
+      .from('project-documents')
+      .upload(filePath, pdfBlob, { contentType: 'application/pdf' })
+
+    if (uploadError) {
+      toast.error('Failed to upload PDF: ' + uploadError.message)
+      return
+    }
+
+    await supabase.from('invoices').update({
+      pdf_url: filePath,
+      updated_at: new Date().toISOString()
+    }).eq('id', id)
+
+    const snapshotDate = new Date().toLocaleDateString()
+    await supabase.from('file_attachments').insert({
+      company_id: companyId,
+      job_id: invoice.job?.id || null,
+      lead_id: null,
+      file_name: `${invoice.invoice_id || 'Invoice'} - ${snapshotDate}.pdf`,
+      file_path: filePath,
+      file_type: 'application/pdf',
+      file_size: pdfBlob.size,
+      storage_bucket: 'project-documents'
+    })
+  }
+
+  // Button handler — opens preview
+  const handleGenerateAndUploadPDF = () => {
+    handlePreviewPDF()
   }
 
   const handleDownloadPDF = async () => {
@@ -534,7 +646,7 @@ export default function InvoiceDetail() {
     try {
       // Auto-generate PDF if none exists
       if (!invoice.pdf_url) {
-        await handleGenerateAndUploadPDF()
+        await handleDirectGenerateAndUploadPDF()
       }
       // Re-read invoice to get fresh pdf_url
       const { data: freshInvoice } = await supabase
@@ -1018,7 +1130,7 @@ export default function InvoiceDetail() {
                 }}
               >
                 <FileText size={16} />
-                {generatingPdf ? 'Generating...' : 'Generate New Snapshot'}
+                {generatingPdf ? 'Saving...' : 'Preview PDF'}
               </button>
             </div>
 
@@ -1557,6 +1669,90 @@ export default function InvoiceDetail() {
                   {sendingEmail ? 'Sending...' : 'Send Email'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* PDF Preview Modal */}
+      {pdfPreviewUrl && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '900px',
+            height: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexShrink: 0
+            }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                PDF Preview
+              </h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={handleDiscardPreview}
+                  style={{
+                    padding: '10px 16px', minHeight: '44px',
+                    backgroundColor: 'transparent',
+                    color: theme.textSecondary,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <X size={16} /> Discard
+                </button>
+                <button
+                  onClick={handleSavePreviewPDF}
+                  disabled={generatingPdf}
+                  style={{
+                    padding: '10px 16px', minHeight: '44px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: generatingPdf ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    opacity: generatingPdf ? 0.6 : 1
+                  }}
+                >
+                  <Download size={16} /> {generatingPdf ? 'Saving...' : 'Save to Documents'}
+                </button>
+              </div>
+            </div>
+
+            {/* PDF iframe */}
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <iframe
+                src={pdfPreviewUrl}
+                title="PDF Preview"
+                style={{ width: '100%', height: '100%', border: 'none' }}
+              />
             </div>
           </div>
         </div>
