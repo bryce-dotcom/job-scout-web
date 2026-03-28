@@ -139,6 +139,7 @@ export const JOB_PRIORITIES = ['Low', 'Normal', 'High', 'Urgent'];
 
 // Expense categories
 export const EXPENSE_CATEGORIES = [
+  'Cost of Sale',
   'Materials',
   'Labor',
   'Equipment Rental',
@@ -178,7 +179,7 @@ export const QUERIES = {
   invoiceLines: '*, item:products_services(id, name)',
   payments: '*',
   timeLogs: '*, employee:employees!employee_id(id, name)',
-  expenses: '*, plaid_transaction:plaid_transactions!expenses_plaid_transaction_id_fkey(id, merchant_name, date, amount)',
+  expenses: '*, plaid_transaction:plaid_transactions!expenses_plaid_transaction_id_fkey(id, merchant_name, date, amount), lead:leads!lead_id(id, customer_name), quote:quotes!quote_id(id, quote_id)',
   fleet: '*',
   fleetMaintenance: '*, asset:fleet!asset_id(id, name, asset_id)',
   lightingAudits: '*, customer:customers!customer_id(id, name), utility_provider:utility_providers!utility_provider_id(id, provider_name)',

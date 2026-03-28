@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -7,7 +7,7 @@ import { toast } from '../lib/toast'
 import {
   ArrowLeft, FileText, Briefcase, Plus, Send, Phone, Mail,
   MapPin, Building2, User, X, Save, Trash2, Package, UserPlus, Grid3X3,
-  DollarSign, TrendingUp, MessageCircle, CreditCard, ExternalLink
+  DollarSign, TrendingUp, MessageCircle, CreditCard, ExternalLink, Edit2
 } from 'lucide-react'
 import ProductPickerModal from '../components/ProductPickerModal'
 import Tooltip from '../components/Tooltip'
@@ -31,8 +31,11 @@ export default function CustomerDetail() {
   const companyId = useStore((state) => state.companyId)
   const employees = useStore((state) => state.employees)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
+  const updateCustomer = useStore((state) => state.updateCustomer)
 
   const [customer, setCustomer] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState({})
   const [quotes, setQuotes] = useState([])
   const [jobs, setJobs] = useState([])
   const [invoices, setInvoices] = useState([])
@@ -347,6 +350,73 @@ export default function CustomerDetail() {
     return colors[status] || theme.accent
   }
 
+  const startEditing = () => {
+    setEditForm({
+      name: customer?.name || '',
+      business_name: customer?.business_name || '',
+      job_title: customer?.job_title || '',
+      phone: customer?.phone || '',
+      email: customer?.email || '',
+      address: customer?.address || '',
+      status: customer?.status || 'Active',
+      preferred_contact: customer?.preferred_contact || '',
+      salesperson_id: customer?.salesperson_id || '',
+      marketing_opt_in: customer?.marketing_opt_in || false,
+      secondary_contact_name: customer?.secondary_contact_name || '',
+      secondary_contact_role: customer?.secondary_contact_role || '',
+      secondary_contact_phone: customer?.secondary_contact_phone || '',
+      secondary_contact_email: customer?.secondary_contact_email || '',
+      notes: customer?.notes || '',
+    })
+    setEditing(true)
+  }
+
+  const handleSaveCustomer = async () => {
+    const changes = { ...editForm, updated_at: new Date().toISOString() }
+    // Convert empty strings to null for optional fields
+    const optionalFields = ['business_name', 'job_title', 'phone', 'email', 'address', 'preferred_contact', 'secondary_contact_name', 'secondary_contact_role', 'secondary_contact_phone', 'secondary_contact_email', 'notes']
+    optionalFields.forEach(f => { if (changes[f] === '') changes[f] = null })
+    if (!changes.salesperson_id) changes.salesperson_id = null
+
+    const { error } = await supabase
+      .from('customers')
+      .update(changes)
+      .eq('id', customer.id)
+
+    if (error) {
+      toast.error('Save failed: ' + error.message)
+      return
+    }
+
+    setCustomer(prev => ({ ...prev, ...changes, salesperson: employees.find(e => e.id === changes.salesperson_id) || null }))
+    setEditing(false)
+    toast.success('Customer updated')
+    fetchCustomers()
+  }
+
+  const editField = (field, value) => {
+    setEditForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  const inputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    fontSize: '14px',
+    color: theme.text,
+    backgroundColor: theme.bgCard,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '8px',
+    outline: 'none',
+    minHeight: '44px',
+    boxSizing: 'border-box',
+  }
+
+  const selectStyle = {
+    ...inputStyle,
+    cursor: 'pointer',
+    appearance: 'auto',
+  }
+
   if (loading) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>
@@ -595,97 +665,221 @@ export default function CustomerDetail() {
         {/* INFO TAB */}
         {activeTab === 'info' && (
           <div>
+            {/* Edit / Save / Cancel bar */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '16px' }}>
+              {editing ? (
+                <>
+                  <button
+                    onClick={() => setEditing(false)}
+                    style={{
+                      padding: '10px 16px', minHeight: '44px',
+                      backgroundColor: 'transparent', color: theme.textSecondary,
+                      border: `1px solid ${theme.border}`, borderRadius: '8px',
+                      cursor: 'pointer', fontSize: '14px', fontWeight: '500',
+                      display: 'flex', alignItems: 'center', gap: '6px'
+                    }}
+                  >
+                    <X size={16} /> Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveCustomer}
+                    style={{
+                      padding: '10px 16px', minHeight: '44px',
+                      backgroundColor: theme.accent, color: '#fff',
+                      border: 'none', borderRadius: '8px',
+                      cursor: 'pointer', fontSize: '14px', fontWeight: '500',
+                      display: 'flex', alignItems: 'center', gap: '6px'
+                    }}
+                  >
+                    <Save size={16} /> Save
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={startEditing}
+                  style={{
+                    padding: '10px 16px', minHeight: '44px',
+                    backgroundColor: theme.accentBg, color: theme.accent,
+                    border: `1px solid ${theme.accent}`, borderRadius: '8px',
+                    cursor: 'pointer', fontSize: '14px', fontWeight: '500',
+                    display: 'flex', alignItems: 'center', gap: '6px'
+                  }}
+                >
+                  <Edit2 size={16} /> Edit
+                </button>
+              )}
+            </div>
+
             <div style={{
               display: 'grid',
               gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))',
               gap: isMobile ? '16px' : '24px'
             }}>
               {/* Contact Info */}
-              <div style={{
-                padding: isMobile ? '16px' : '20px',
-                backgroundColor: theme.bg,
-                borderRadius: '10px'
-              }}>
+              <div style={{ padding: isMobile ? '16px' : '20px', backgroundColor: theme.bg, borderRadius: '10px' }}>
                 <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '12px' : '16px' }}>
                   Contact Information
                 </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <User size={16} color={theme.textMuted} />
-                    <span style={{ color: theme.text }}>{customer.name}</span>
+                {editing ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Name *</label>
+                      <input style={inputStyle} value={editForm.name} onChange={e => editField('name', e.target.value)} placeholder="Customer name" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Business Name</label>
+                      <input style={inputStyle} value={editForm.business_name} onChange={e => editField('business_name', e.target.value)} placeholder="Business name" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Job Title</label>
+                      <input style={inputStyle} value={editForm.job_title} onChange={e => editField('job_title', e.target.value)} placeholder="Job title" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Phone</label>
+                      <input style={inputStyle} type="tel" value={editForm.phone} onChange={e => editField('phone', e.target.value)} placeholder="Phone number" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Email</label>
+                      <input style={inputStyle} type="email" value={editForm.email} onChange={e => editField('email', e.target.value)} placeholder="Email address" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Address</label>
+                      <input style={inputStyle} value={editForm.address} onChange={e => editField('address', e.target.value)} placeholder="Street address" />
+                    </div>
                   </div>
-                  {customer.business_name && (
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Building2 size={16} color={theme.textMuted} />
-                      <span style={{ color: theme.text }}>{customer.business_name}</span>
+                      <User size={16} color={theme.textMuted} />
+                      <span style={{ color: theme.text }}>{customer.name}</span>
                     </div>
-                  )}
-                  {customer.job_title && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Briefcase size={16} color={theme.textMuted} />
-                      <span style={{ color: theme.text }}>{customer.job_title}</span>
-                    </div>
-                  )}
-                  {customer.phone && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Phone size={16} color={theme.textMuted} />
-                      <a href={`tel:${customer.phone}`} style={{ color: theme.accent }}>{customer.phone}</a>
-                    </div>
-                  )}
-                  {customer.email && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <Mail size={16} color={theme.textMuted} />
-                      <a href={`mailto:${customer.email}`} style={{ color: theme.accent }}>{customer.email}</a>
-                    </div>
-                  )}
-                  {customer.address && (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                      <MapPin size={16} color={theme.textMuted} style={{ marginTop: '2px' }} />
-                      <span style={{ color: theme.text }}>{customer.address}</span>
-                    </div>
-                  )}
-                </div>
+                    {customer.business_name && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Building2 size={16} color={theme.textMuted} />
+                        <span style={{ color: theme.text }}>{customer.business_name}</span>
+                      </div>
+                    )}
+                    {customer.job_title && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Briefcase size={16} color={theme.textMuted} />
+                        <span style={{ color: theme.text }}>{customer.job_title}</span>
+                      </div>
+                    )}
+                    {customer.phone && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Phone size={16} color={theme.textMuted} />
+                        <a href={`tel:${customer.phone}`} style={{ color: theme.accent }}>{customer.phone}</a>
+                      </div>
+                    )}
+                    {customer.email && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Mail size={16} color={theme.textMuted} />
+                        <a href={`mailto:${customer.email}`} style={{ color: theme.accent }}>{customer.email}</a>
+                      </div>
+                    )}
+                    {customer.address && (
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                        <MapPin size={16} color={theme.textMuted} style={{ marginTop: '2px' }} />
+                        <span style={{ color: theme.text }}>{customer.address}</span>
+                      </div>
+                    )}
+                    {!customer.phone && !customer.email && !customer.address && !customer.business_name && !customer.job_title && (
+                      <div style={{ fontSize: '13px', color: theme.textMuted, fontStyle: 'italic' }}>
+                        No contact details — click Edit to add information
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Customer Details */}
-              <div style={{
-                padding: isMobile ? '16px' : '20px',
-                backgroundColor: theme.bg,
-                borderRadius: '10px'
-              }}>
+              <div style={{ padding: isMobile ? '16px' : '20px', backgroundColor: theme.bg, borderRadius: '10px' }}>
                 <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '12px' : '16px' }}>
                   Customer Details
                 </h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Status</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{customer.status || '-'}</div>
+                {editing ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Status</label>
+                      <select style={selectStyle} value={editForm.status} onChange={e => editField('status', e.target.value)}>
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Prospect">Prospect</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Preferred Contact Method</label>
+                      <select style={selectStyle} value={editForm.preferred_contact} onChange={e => editField('preferred_contact', e.target.value)}>
+                        <option value="">None</option>
+                        <option value="Phone">Phone</option>
+                        <option value="Email">Email</option>
+                        <option value="Text">Text</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Salesperson</label>
+                      <select style={selectStyle} value={editForm.salesperson_id || ''} onChange={e => editField('salesperson_id', e.target.value ? parseInt(e.target.value) : null)}>
+                        <option value="">None</option>
+                        {employees.filter(e => e.status === 'Active').map(e => (
+                          <option key={e.id} value={e.id}>{e.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Marketing Opt-in</label>
+                      <select style={selectStyle} value={editForm.marketing_opt_in ? 'yes' : 'no'} onChange={e => editField('marketing_opt_in', e.target.value === 'yes')}>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Preferred Contact</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{customer.preferred_contact || '-'}</div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Status</div>
+                      <div style={{ fontSize: '14px', color: theme.text }}>{customer.status || '-'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Preferred Contact</div>
+                      <div style={{ fontSize: '14px', color: theme.text }}>{customer.preferred_contact || '-'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Salesperson</div>
+                      <div style={{ fontSize: '14px', color: theme.text }}>{customer.salesperson?.name || '-'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Marketing Opt-in</div>
+                      <div style={{ fontSize: '14px', color: theme.text }}>{customer.marketing_opt_in ? 'Yes' : 'No'}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Salesperson</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{customer.salesperson?.name || '-'}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Marketing Opt-in</div>
-                    <div style={{ fontSize: '14px', color: theme.text }}>{customer.marketing_opt_in ? 'Yes' : 'No'}</div>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Secondary Contact */}
-              {(customer.secondary_contact_name || customer.secondary_contact_email || customer.secondary_contact_phone) && (
-                <div style={{
-                  padding: isMobile ? '16px' : '20px',
-                  backgroundColor: theme.bg,
-                  borderRadius: '10px'
-                }}>
-                  <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '12px' : '16px' }}>
-                    Secondary Contact
-                  </h3>
+              <div style={{ padding: isMobile ? '16px' : '20px', backgroundColor: theme.bg, borderRadius: '10px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: isMobile ? '12px' : '16px' }}>
+                  Secondary Contact
+                </h3>
+                {editing ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Name</label>
+                      <input style={inputStyle} value={editForm.secondary_contact_name} onChange={e => editField('secondary_contact_name', e.target.value)} placeholder="Contact name" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Role</label>
+                      <input style={inputStyle} value={editForm.secondary_contact_role} onChange={e => editField('secondary_contact_role', e.target.value)} placeholder="e.g. Office Manager" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Phone</label>
+                      <input style={inputStyle} type="tel" value={editForm.secondary_contact_phone} onChange={e => editField('secondary_contact_phone', e.target.value)} placeholder="Phone number" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Email</label>
+                      <input style={inputStyle} type="email" value={editForm.secondary_contact_email} onChange={e => editField('secondary_contact_email', e.target.value)} placeholder="Email address" />
+                    </div>
+                  </div>
+                ) : (customer.secondary_contact_name || customer.secondary_contact_email || customer.secondary_contact_phone) ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {customer.secondary_contact_name && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -713,25 +907,40 @@ export default function CustomerDetail() {
                       </div>
                     )}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div style={{ fontSize: '13px', color: theme.textMuted, fontStyle: 'italic' }}>
+                    No secondary contact — click Edit to add
+                  </div>
+                )}
+              </div>
 
               {/* Notes */}
-              {customer.notes && (
-                <div style={{
-                  padding: isMobile ? '16px' : '20px',
-                  backgroundColor: theme.bg,
-                  borderRadius: '10px',
-                  gridColumn: isMobile ? 'span 1' : 'span 2'
-                }}>
-                  <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: '12px' }}>
-                    Notes
-                  </h3>
+              <div style={{
+                padding: isMobile ? '16px' : '20px',
+                backgroundColor: theme.bg,
+                borderRadius: '10px',
+                gridColumn: isMobile ? 'span 1' : 'span 2'
+              }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, marginBottom: '12px' }}>
+                  Notes
+                </h3>
+                {editing ? (
+                  <textarea
+                    style={{ ...inputStyle, minHeight: '120px', resize: 'vertical', fontFamily: 'inherit' }}
+                    value={editForm.notes}
+                    onChange={e => editField('notes', e.target.value)}
+                    placeholder="Add notes about this customer..."
+                  />
+                ) : customer.notes ? (
                   <p style={{ fontSize: '14px', color: theme.text, whiteSpace: 'pre-wrap', margin: 0 }}>
                     {customer.notes}
                   </p>
-                </div>
-              )}
+                ) : (
+                  <div style={{ fontSize: '13px', color: theme.textMuted, fontStyle: 'italic' }}>
+                    No notes — click Edit to add
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

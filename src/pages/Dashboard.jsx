@@ -119,6 +119,8 @@ export default function Dashboard() {
   const employees = useStore((state) => state.employees)
   const expenses = useStore((state) => state.expenses)
   const leadPayments = useStore((state) => state.leadPayments)
+  const plaidTransactions = useStore((state) => state.plaidTransactions)
+  const utilityInvoices = useStore((state) => state.utilityInvoices)
 
   const currentEmployee = employees.find(e => e.email === user?.email)
 
@@ -186,11 +188,21 @@ export default function Dashboard() {
     const s = (j.status || '').toLowerCase()
     return ['scheduled', 'in progress', 'needs scheduling', 'chillin', 'waiting product'].includes(s)
   }).length
-  const pendingInvoices = invoices.filter(i => i.payment_status === 'Pending').length
+  const unpaidInvoices = invoices.filter(i => ['Pending', 'Sent', 'Partial', 'Overdue'].includes(i.payment_status))
+  const pendingInvoices = unpaidInvoices.length
+  const accountsReceivable = unpaidInvoices.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
 
-  const thisMonthRevenue = payments.filter(p => new Date(p.date) >= firstOfMonth).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-  const thisMonthExpenses = (expenses || []).filter(e => e.date && new Date(e.date) >= firstOfMonth).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
-  const thisMonthDeposits = (leadPayments || []).filter(d => d.date_created && new Date(d.date_created) >= firstOfMonth).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
+  const isThisMonth = (dateStr) => dateStr && new Date(dateStr) >= firstOfMonth
+  // Revenue: match Books.jsx formula (paid invoices + deposits + Plaid bank deposits + collected incentives)
+  const paidInvoicesMTD = (invoices || []).filter(inv => inv.payment_status === 'Paid' && isThisMonth(inv.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
+  const thisMonthDeposits = (leadPayments || []).filter(d => isThisMonth(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
+  const plaidInMTD = (plaidTransactions || []).filter(t => t.amount < 0 && isThisMonth(t.date) && !t.is_transfer).reduce((sum, t) => sum + Math.abs(parseFloat(t.amount) || 0), 0)
+  const collectedIncentiveMTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisMonth(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
+  const thisMonthRevenue = paidInvoicesMTD + thisMonthDeposits + plaidInMTD + collectedIncentiveMTD
+  // Expenses: manual expenses + Plaid outflows (match Books.jsx)
+  const manualExpensesMTD = (expenses || []).filter(e => e.date && isThisMonth(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
+  const plaidOutMTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
+  const thisMonthExpenses = manualExpensesMTD + plaidOutMTD
 
   const wonOrDeliveryStatuses = ['Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed']
   const mtdWonLeads = leads.filter(l => {
@@ -208,7 +220,7 @@ export default function Dashboard() {
   // Extra metrics
   const completedJobsMTD = jobs.filter(j => j.status === 'Completed' && j.updated_at && new Date(j.updated_at) >= firstOfMonth).length
   const totalLeadsCount = leads.length
-  const netIncome = thisMonthRevenue + thisMonthDeposits - thisMonthExpenses
+  const netIncome = thisMonthRevenue - thisMonthExpenses
   const completedJobsAll = jobs.filter(j => j.status === 'Completed')
   const avgJobValue = completedJobsAll.length > 0
     ? completedJobsAll.reduce((sum, j) => sum + (parseFloat(j.total_amount) || 0), 0) / completedJobsAll.length
@@ -217,20 +229,57 @@ export default function Dashboard() {
   const decidedLeads = leads.filter(l => [...wonOrDeliveryStatuses, 'Lost'].includes(l.status)).length
   const conversionRate = decidedLeads > 0 ? Math.round((wonLeads / decidedLeads) * 100) : 0
 
+  // ── YTD calculations ──
+  const firstOfYear = new Date(today.getFullYear(), 0, 1)
+  const isThisYear = (dateStr) => dateStr && new Date(dateStr) >= firstOfYear
+
+  const paidInvoicesYTD = (invoices || []).filter(inv => inv.payment_status === 'Paid' && isThisYear(inv.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
+  const depositsYTD = (leadPayments || []).filter(d => isThisYear(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
+  const plaidInYTD = (plaidTransactions || []).filter(t => t.amount < 0 && isThisYear(t.date) && !t.is_transfer).reduce((sum, t) => sum + Math.abs(parseFloat(t.amount) || 0), 0)
+  const collectedIncentiveYTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisYear(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
+  const ytdRevenue = paidInvoicesYTD + depositsYTD + plaidInYTD + collectedIncentiveYTD
+
+  const manualExpensesYTD = (expenses || []).filter(e => e.date && isThisYear(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
+  const plaidOutYTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisYear(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
+  const ytdExpenses = manualExpensesYTD + plaidOutYTD
+  const ytdNetIncome = ytdRevenue - ytdExpenses
+
+  const ytdSalesWon = leads.filter(l => {
+    if (!wonOrDeliveryStatuses.includes(l.status)) return false
+    const wonDate = l.converted_at || l.updated_at
+    return wonDate && new Date(wonDate) >= firstOfYear
+  }).reduce((sum, l) => sum + (quoteByLead[l.id] || 0), 0)
+
+  const ytdDeposits = depositsYTD
+  const completedJobsYTD = jobs.filter(j => j.status === 'Completed' && j.updated_at && isThisYear(j.updated_at)).length
+
+  // ── Build revenue/expense breakdown descriptions ──
+  const revenueParts = []
+  if (paidInvoicesMTD > 0) revenueParts.push(`${formatCurrency(paidInvoicesMTD)} invoices`)
+  if (thisMonthDeposits > 0) revenueParts.push(`${formatCurrency(thisMonthDeposits)} deposits`)
+  if (plaidInMTD > 0) revenueParts.push(`${formatCurrency(plaidInMTD)} bank`)
+  if (collectedIncentiveMTD > 0) revenueParts.push(`${formatCurrency(collectedIncentiveMTD)} incentives`)
+  const revenueSubtitle = revenueParts.length > 0 ? revenueParts.join(' + ') : 'No revenue this month'
+
+  const expenseParts = []
+  if (manualExpensesMTD > 0) expenseParts.push(`${formatCurrency(manualExpensesMTD)} manual`)
+  if (plaidOutMTD > 0) expenseParts.push(`${formatCurrency(plaidOutMTD)} bank`)
+  const expenseSubtitle = expenseParts.length > 0 ? expenseParts.join(' + ') : 'No expenses this month'
+
   // Metric values map
   const metricValues = {
-    mtdSalesWon: formatCurrency(mtdSalesWon),
-    activeLeads: activeLeads,
-    openJobs: openJobs,
-    pendingInvoices: pendingInvoices,
-    mtdRevenue: formatCurrency(thisMonthRevenue),
-    mtdDeposits: formatCurrency(thisMonthDeposits),
-    mtdExpenses: formatCurrency(thisMonthExpenses),
-    completedJobs: completedJobsMTD,
-    totalLeads: totalLeadsCount,
-    netIncome: formatCurrency(netIncome),
-    avgJobValue: formatCurrency(avgJobValue),
-    conversionRate: `${conversionRate}%`,
+    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonLeads.length} deal${mtdWonLeads.length !== 1 ? 's' : ''} won this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won' },
+    activeLeads: { value: activeLeads },
+    openJobs: { value: openJobs },
+    pendingInvoices: { value: pendingInvoices, subtitle: `${formatCurrency(accountsReceivable)} accounts receivable` },
+    mtdRevenue: { value: formatCurrency(thisMonthRevenue), subtitle: revenueSubtitle, ytdValue: formatCurrency(ytdRevenue), ytdLabel: 'YTD Revenue' },
+    mtdDeposits: { value: formatCurrency(thisMonthDeposits), subtitle: 'Lead/job deposits collected', ytdValue: formatCurrency(ytdDeposits), ytdLabel: 'YTD Deposits' },
+    mtdExpenses: { value: formatCurrency(thisMonthExpenses), subtitle: expenseSubtitle, ytdValue: formatCurrency(ytdExpenses), ytdLabel: 'YTD Expenses' },
+    completedJobs: { value: completedJobsMTD, ytdValue: completedJobsYTD, ytdLabel: 'YTD Completed' },
+    totalLeads: { value: totalLeadsCount },
+    netIncome: { value: formatCurrency(netIncome), subtitle: 'Revenue minus expenses', ytdValue: formatCurrency(ytdNetIncome), ytdLabel: 'YTD Net Income' },
+    avgJobValue: { value: formatCurrency(avgJobValue), subtitle: `Across ${completedJobsAll.length} completed job${completedJobsAll.length !== 1 ? 's' : ''}` },
+    conversionRate: { value: `${conversionRate}%`, subtitle: `${wonLeads} won / ${decidedLeads} decided` },
   }
 
   // Pipeline
@@ -302,7 +351,7 @@ export default function Dashboard() {
   }
 
   // ── Reusable components ──
-  const MetricCard = ({ icon: Icon, label, value, color, onClick }) => (
+  const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue }) => (
     <div
       onClick={onClick}
       style={{
@@ -327,6 +376,15 @@ export default function Dashboard() {
         <span style={{ fontSize: '13px', color: theme.textMuted, fontWeight: '500' }}>{label}</span>
       </div>
       <div style={{ fontSize: '32px', fontWeight: '700', color: theme.text }}>{value}</div>
+      {subtitle && (
+        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px', lineHeight: '1.4' }}>{subtitle}</div>
+      )}
+      {ytdValue !== undefined && (
+        <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${theme.border}` }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{ytdLabel || 'YTD'}</div>
+          <div style={{ fontSize: '20px', fontWeight: '700', color: theme.text }}>{ytdValue}</div>
+        </div>
+      )}
     </div>
   )
 
@@ -548,18 +606,23 @@ export default function Dashboard() {
 
       {/* ═══ Row 1: Key Metrics ═══ */}
       {prefs.metrics.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           {prefs.metrics.map(id => {
             const def = METRIC_DEFS.find(m => m.id === id)
             if (!def) return null
+            const mv = metricValues[id] || {}
+            const val = typeof mv === 'object' ? mv.value : mv
             return (
               <MetricCard
                 key={id}
                 icon={def.icon}
                 label={def.label}
-                value={metricValues[id]}
+                value={val}
                 color={def.color}
                 onClick={def.nav ? () => navigate(def.nav) : undefined}
+                subtitle={mv.subtitle}
+                ytdValue={mv.ytdValue}
+                ytdLabel={mv.ytdLabel}
               />
             )
           })}
