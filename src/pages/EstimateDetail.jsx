@@ -931,7 +931,7 @@ export default function EstimateDetail() {
           job_address: customerInfo?.address || null,
           status: 'Scheduled',
           start_date: estimate.service_date || new Date().toISOString(),
-          total_amount: subtotal - discount,
+          job_total: subtotal - discount,
           utility_incentive: parseFloat(estimate.utility_incentive) || 0,
           details: estimate.summary || null,
           updated_at: new Date().toISOString()
