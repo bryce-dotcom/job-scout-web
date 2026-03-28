@@ -151,6 +151,571 @@ function StatCard({ label, value, color, theme }) {
   )
 }
 
+// ─── Story Components ─────────────────────────────────────────────
+
+function SpeechBubble({ text, theme, visible }) {
+  return (
+    <div style={{ position: 'relative', maxWidth: '100%' }}>
+      {/* Triangle tail */}
+      <div style={{
+        position: 'absolute', left: '24px', top: '-8px',
+        width: 0, height: 0,
+        borderLeft: '8px solid transparent',
+        borderRight: '8px solid transparent',
+        borderBottom: `8px solid ${theme.border}`,
+      }} />
+      <div style={{
+        position: 'absolute', left: '25px', top: '-6px',
+        width: 0, height: 0,
+        borderLeft: '7px solid transparent',
+        borderRight: '7px solid transparent',
+        borderBottom: `7px solid ${theme.bgCard}`,
+      }} />
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 }}
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+        style={{
+          padding: '16px 20px',
+          backgroundColor: theme.bgCard,
+          border: `1px solid ${theme.border}`,
+          borderRadius: '16px',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+          fontSize: '15px',
+          lineHeight: 1.7,
+          color: theme.text,
+        }}
+      >
+        {text}
+      </motion.div>
+    </div>
+  )
+}
+
+function MiniMockup({ children, theme, icon: Icon, title, color }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: 0.5, duration: 0.4 }}
+      style={{
+        border: `1px solid ${theme.border}`,
+        borderRadius: '12px',
+        overflow: 'hidden',
+        backgroundColor: theme.bgCard,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+      }}
+    >
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '8px',
+        padding: '10px 14px',
+        backgroundColor: (color || theme.accent) + '10',
+        borderBottom: `1px solid ${theme.border}`,
+      }}>
+        <div style={{
+          width: '8px', height: '8px', borderRadius: '50%',
+          backgroundColor: color || theme.accent,
+        }} />
+        {Icon && <Icon size={14} color={color || theme.accent} />}
+        <span style={{ fontSize: '12px', fontWeight: '600', color: color || theme.accent }}>{title}</span>
+      </div>
+      <div style={{ padding: '16px' }}>{children}</div>
+    </motion.div>
+  )
+}
+
+// ─── Story Scenes ─────────────────────────────────────────────────
+
+const STORY_SCENES = [
+  {
+    id: 'intro',
+    title: 'Meet the Team',
+    icon: UserPlus,
+    color: '#5a6349',
+    arnieText: "Hey there! I'm Arnie, your guide around here. Let me show you how this whole thing works by following a real deal from start to finish. Meet Bright Path Lighting — they retrofit old fluorescent buildings with shiny new LEDs. And today, someone just hit their website...",
+    mockup: (theme) => (
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: '18px', fontWeight: '700', color: theme.text, marginBottom: '8px' }}>Bright Path Lighting Co.</div>
+        <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>Commercial LED Retrofit Specialists</div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          {[{ label: 'Jake', role: 'Setter', color: '#8b5cf6' }, { label: 'Maria', role: 'Sales Rep', color: '#3b82f6' }, { label: 'Dave', role: 'Lead Tech', color: '#f97316' }].map(p => (
+            <div key={p.label} style={{ padding: '10px 16px', borderRadius: '10px', backgroundColor: p.color + '12', border: `1px solid ${p.color}25`, textAlign: 'center' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: p.color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 6px', color: p.color, fontWeight: '700', fontSize: '15px' }}>{p.label[0]}</div>
+              <div style={{ fontSize: '13px', fontWeight: '600', color: p.color }}>{p.label}</div>
+              <div style={{ fontSize: '11px', color: theme.textMuted }}>{p.role}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'new-lead',
+    title: 'A New Lead',
+    icon: UserPlus,
+    color: '#3b82f6',
+    arnieText: "Sarah Chen just submitted a form asking about her warehouse lights. Boom — she lands right in the Leads page as a brand new lead. Name, email, phone, what she needs. That's it. She's in the system.",
+    mockup: (theme) => (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div>
+            <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Sarah Chen</div>
+            <div style={{ fontSize: '12px', color: theme.textMuted }}>Chen Warehousing LLC</div>
+          </div>
+          <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>New</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', color: theme.textSecondary }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Mail size={13} /> sarah@chenwarehousing.com</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Globe size={13} /> Source: Website Form</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Target size={13} /> Service: LED Retrofit</div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'setter-call',
+    title: 'The Call',
+    icon: Headphones,
+    color: '#8b5cf6',
+    arnieText: "Jake picks up Sarah's lead in the Lead Setter page. He calls her, asks about the facility — 40,000 sq ft warehouse, old T8 fluorescents everywhere, utility bill through the roof. He books an on-site visit for Thursday. Status goes from 'New' to 'Appointment Set'. Nice work, Jake.",
+    mockup: (theme) => (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Headphones size={20} color="#8b5cf6" />
+          </div>
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Jake is calling Sarah Chen...</div>
+            <div style={{ fontSize: '12px', color: theme.textMuted }}>Duration: 4:32</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '500', backgroundColor: 'rgba(59,130,246,0.1)', color: '#3b82f6', textDecoration: 'line-through' }}>New</span>
+          <ArrowRight size={14} color={theme.textMuted} />
+          <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>Appointment Set</span>
+        </div>
+        <div style={{ marginTop: '12px', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)', fontSize: '12px', color: theme.textSecondary }}>
+          <Calendar size={12} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+          Thursday 10:00 AM — On-site walkthrough
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'audit',
+    title: 'The Audit',
+    icon: Lightbulb,
+    color: '#eab308',
+    arnieText: "Thursday. Maria pulls up Lenard on her phone, walks the warehouse room by room, and snaps photos of every fixture. 200 old fluorescent tubes in 8 areas. Lenard crunches the numbers instantly — watts reduced, energy savings, utility rebates. This place is gonna save a fortune.",
+    mockup: (theme) => (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Chen Warehouse Audit</div>
+          <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>Completed</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          {[
+            { label: 'Areas', value: '8', color: '#3b82f6' },
+            { label: 'Fixtures', value: '200', color: '#eab308' },
+            { label: 'kWh Saved/yr', value: '142,000', color: '#22c55e' },
+            { label: 'Rebate', value: '$8,400', color: '#16a34a' },
+          ].map(s => (
+            <div key={s.label} style={{ padding: '10px', borderRadius: '8px', backgroundColor: s.color + '08', border: `1px solid ${s.color}18`, textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: '700', color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: '11px', color: theme.textMuted }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'proposal',
+    title: 'The Proposal',
+    icon: FileText,
+    color: '#d4af37',
+    arnieText: "One click turns that audit into a gorgeous Interactive Proposal. AI writes the pitch — ROI charts, savings timelines, the whole nine yards. It gets the gold 'Investment Grade' badge because it's backed by real audit data. Sarah gets a link that looks like it came from a Fortune 500 company.",
+    mockup: (theme) => (
+      <div>
+        <div style={{ padding: '12px', borderRadius: '10px', backgroundColor: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Shield size={18} color="#d4af37" />
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#d4af37', letterSpacing: '0.03em' }}>INVESTMENT GRADE ENERGY AUDIT</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted }}>Certified lighting analysis with verified savings data</div>
+          </div>
+        </div>
+        <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Chen Warehousing — LED Retrofit Proposal</div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {['Executive Summary', 'Investment Breakdown', 'ROI Analysis', 'Approval'].map(s => (
+            <span key={s} style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '11px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.border}` }}>{s}</span>
+          ))}
+        </div>
+        <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: '8px', backgroundColor: '#d4af3710', textAlign: 'center' }}>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: '#d4af37' }}>$47,200</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted }}>Total Investment · 18-month payback</div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'won',
+    title: 'She Said Yes!',
+    icon: CheckCircle,
+    color: '#22c55e',
+    arnieText: "Sarah opens the proposal on her phone, scrolls through the savings breakdown, and taps 'Approve'. Digital signature captured, timestamp logged. The lead moves to 'Won' on the pipeline board. That's the sound of revenue, baby.",
+    mockup: (theme) => (
+      <div style={{ textAlign: 'center' }}>
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ delay: 0.6, type: 'spring', stiffness: 200 }}
+        >
+          <CheckCircle size={48} color="#22c55e" style={{ marginBottom: '12px' }} />
+        </motion.div>
+        <div style={{ fontSize: '18px', fontWeight: '700', color: '#22c55e', marginBottom: '4px' }}>Deal Won!</div>
+        <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>Sarah Chen approved the proposal</div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          {['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Won'].map((s, i) => (
+            <span key={s} style={{
+              padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '600',
+              backgroundColor: s === 'Won' ? 'rgba(34,197,94,0.15)' : 'rgba(0,0,0,0.04)',
+              color: s === 'Won' ? '#22c55e' : theme.textMuted,
+              border: s === 'Won' ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
+            }}>{s === 'Won' ? '* Won *' : s}</span>
+          ))}
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'job',
+    title: 'Job Time',
+    icon: Briefcase,
+    color: '#5a6349',
+    arnieText: "Won deal automatically becomes a Job. The PM drags it to 'Scheduled' on the board, assigns Dave's crew, picks the install dates. Dave sees it show up on Field Scout on his phone. Crew's ready to roll.",
+    mockup: (theme) => (
+      <div>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+          {['Chillin', 'Scheduled', 'In Progress', 'Completed'].map(col => (
+            <div key={col} style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '10px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.04em' }}>{col}</div>
+              <div style={{ minHeight: '50px', borderRadius: '8px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, padding: '4px' }}>
+                {col === 'Scheduled' && (
+                  <div style={{ padding: '8px', borderRadius: '6px', backgroundColor: theme.bgCard, border: `1px solid ${theme.accent}40`, fontSize: '11px' }}>
+                    <div style={{ fontWeight: '600', color: theme.text, marginBottom: '2px' }}>Chen Warehouse</div>
+                    <div style={{ color: theme.textMuted, fontSize: '10px' }}>Dave's Crew · Mon-Wed</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'work',
+    title: 'Boots on the Ground',
+    icon: Clock,
+    color: '#f97316',
+    arnieText: "Monday morning. The crew clocks in, tags their hours to Sarah's job, and starts swapping out those old tubes. Victor snaps before-and-after photos for proof. By Wednesday afternoon, 200 brand new LEDs are humming. Job status: Completed.",
+    mockup: (theme) => (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.15)' }}>
+          <Clock size={16} color="#f97316" />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>Dave clocked in</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted }}>7:02 AM · Chen Warehouse LED Retrofit</div>
+          </div>
+          <span style={{ fontSize: '12px', fontWeight: '600', color: '#f97316' }}>6.5 hrs</span>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `1px solid ${theme.border}`, textAlign: 'center' }}>
+            <Camera size={16} color={theme.textMuted} style={{ marginBottom: '4px' }} />
+            <div style={{ fontSize: '10px', color: theme.textMuted }}>Before</div>
+            <div style={{ height: '40px', borderRadius: '6px', backgroundColor: '#fef3c720', marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>T8</div>
+          </div>
+          <ArrowRight size={14} color={theme.textMuted} style={{ alignSelf: 'center' }} />
+          <div style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `1px solid ${theme.border}`, textAlign: 'center' }}>
+            <Camera size={16} color={theme.textMuted} style={{ marginBottom: '4px' }} />
+            <div style={{ fontSize: '10px', color: theme.textMuted }}>After</div>
+            <div style={{ height: '40px', borderRadius: '6px', backgroundColor: '#22c55e15', marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>LED</div>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'invoice',
+    title: 'Send the Bill',
+    icon: Receipt,
+    color: '#3b82f6',
+    arnieText: "Job's done. One click generates the invoice from the job's line items. The rebate credits from the utility company are already calculated. Invoice goes out — Sarah's got 30 days. Easy.",
+    mockup: (theme) => (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>INV-2026-0147</div>
+          <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>Sent</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textSecondary }}>
+            <span>LED Retrofit — 200 fixtures</span>
+            <span>$47,200</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a' }}>
+            <span>Utility Rebate Credit</span>
+            <span>-$8,400</span>
+          </div>
+          <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '6px', display: 'flex', justifyContent: 'space-between', fontWeight: '700', color: theme.text }}>
+            <span>Total Due</span>
+            <span>$38,800</span>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'paid',
+    title: 'Money in the Bank',
+    icon: DollarSign,
+    color: '#16a34a',
+    arnieText: "Payment received. Invoice flips to 'Paid', shows up in the Books, and the whole chain is traceable. Click any record and you can follow the breadcrumb all the way back to Sarah filling out that website form. That's the full loop. That's JobScout. Now go close some deals!",
+    mockup: (theme) => (
+      <div style={{ textAlign: 'center' }}>
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.6, type: 'spring' }}
+          style={{ marginBottom: '16px' }}
+        >
+          <div style={{ fontSize: '32px', fontWeight: '800', color: '#16a34a' }}>$38,800</div>
+          <div style={{ fontSize: '13px', color: theme.textMuted }}>Payment Received</div>
+        </motion.div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '11px' }}>
+          {[
+            { label: 'Lead', color: '#3b82f6' },
+            { label: 'Appointment', color: '#8b5cf6' },
+            { label: 'Audit', color: '#eab308' },
+            { label: 'Proposal', color: '#d4af37' },
+            { label: 'Won', color: '#22c55e' },
+            { label: 'Job', color: '#5a6349' },
+            { label: 'Invoice', color: '#3b82f6' },
+            { label: 'Paid', color: '#16a34a' },
+          ].map((s, i, arr) => (
+            <span key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ padding: '3px 8px', borderRadius: '4px', fontWeight: '600', backgroundColor: s.color + '15', color: s.color, border: `1px solid ${s.color}25` }}>
+                {s.label}
+              </span>
+              {i < arr.length - 1 && <ArrowRight size={10} color={theme.textMuted} />}
+            </span>
+          ))}
+        </div>
+      </div>
+    ),
+  },
+]
+
+// ─── Story Mode ───────────────────────────────────────────────────
+
+function StoryMode({ theme, onClose }) {
+  const [currentScene, setCurrentScene] = useState(0)
+  const [direction, setDirection] = useState(1)
+  const [textVisible, setTextVisible] = useState(false)
+  const scene = STORY_SCENES[currentScene]
+  const Icon = scene.icon
+
+  const next = useCallback(() => {
+    if (currentScene < STORY_SCENES.length - 1) {
+      setDirection(1)
+      setTextVisible(false)
+      setCurrentScene(prev => prev + 1)
+    }
+  }, [currentScene])
+
+  const prev = useCallback(() => {
+    if (currentScene > 0) {
+      setDirection(-1)
+      setTextVisible(false)
+      setCurrentScene(prev => prev - 1)
+    }
+  }, [currentScene])
+
+  useEffect(() => {
+    const t = setTimeout(() => setTextVisible(true), 350)
+    return () => clearTimeout(t)
+  }, [currentScene])
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next() }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); prev() }
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [next, prev, onClose])
+
+  const variants = {
+    enter: (d) => ({ x: d > 0 ? 300 : -300, opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (d) => ({ x: d > 0 ? -300 : 300, opacity: 0 }),
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      backgroundColor: theme.bg,
+      display: 'flex', flexDirection: 'column',
+    }}>
+      {/* Top bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 20px', borderBottom: `1px solid ${theme.border}`,
+        backgroundColor: theme.bgCard,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img src="/Scout_LOGO_GUY.png" alt="Arnie" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
+          <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Arnie's Walkthrough</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>
+            {currentScene + 1} / {STORY_SCENES.length}
+          </span>
+          <button onClick={onClose} style={{
+            padding: '6px', backgroundColor: 'transparent', border: 'none',
+            cursor: 'pointer', color: theme.textMuted, borderRadius: '6px',
+          }}>
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: '3px', backgroundColor: theme.border }}>
+        <motion.div
+          animate={{ width: `${((currentScene + 1) / STORY_SCENES.length) * 100}%` }}
+          transition={{ duration: 0.3 }}
+          style={{ height: '100%', backgroundColor: scene.color }}
+        />
+      </div>
+
+      {/* Main content */}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 16px' }}>
+        <AnimatePresence mode="wait" custom={direction}>
+          <motion.div
+            key={currentScene}
+            custom={direction}
+            variants={variants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.35, ease: 'easeInOut' }}
+            style={{ width: '100%', maxWidth: '600px' }}
+          >
+            {/* Arnie + Speech Bubble */}
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', alignItems: 'flex-start' }}>
+              <motion.img
+                src="/Scout_LOGO_GUY.png"
+                alt="Arnie"
+                animate={{ y: [0, -4, 0] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ width: '56px', height: '56px', objectFit: 'contain', flexShrink: 0 }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <SpeechBubble text={scene.arnieText} theme={theme} visible={textVisible} />
+              </div>
+            </div>
+
+            {/* Scene title */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: textVisible ? 1 : 0 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                marginBottom: '16px',
+              }}
+            >
+              <div style={{
+                width: '36px', height: '36px', borderRadius: '10px',
+                backgroundColor: scene.color + '15',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Icon size={18} color={scene.color} />
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: scene.color, margin: 0 }}>{scene.title}</h3>
+            </motion.div>
+
+            {/* Mini mockup */}
+            <MiniMockup theme={theme} icon={scene.icon} title={scene.title} color={scene.color}>
+              {scene.mockup(theme)}
+            </MiniMockup>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* Bottom nav */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 20px', borderTop: `1px solid ${theme.border}`,
+        backgroundColor: theme.bgCard,
+      }}>
+        <button
+          onClick={prev}
+          disabled={currentScene === 0}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '8px 16px', borderRadius: '8px',
+            border: `1px solid ${theme.border}`,
+            backgroundColor: 'transparent',
+            color: currentScene === 0 ? theme.textMuted : theme.text,
+            cursor: currentScene === 0 ? 'default' : 'pointer',
+            fontSize: '13px', fontWeight: '500',
+            opacity: currentScene === 0 ? 0.4 : 1,
+          }}
+        >
+          <ChevronLeft size={16} /> Back
+        </button>
+
+        {/* Dots */}
+        <div style={{ display: 'flex', gap: '5px' }}>
+          {STORY_SCENES.map((s, i) => (
+            <button
+              key={s.id}
+              onClick={() => { setDirection(i > currentScene ? 1 : -1); setTextVisible(false); setCurrentScene(i) }}
+              style={{
+                width: i === currentScene ? '20px' : '6px',
+                height: '6px',
+                borderRadius: '3px',
+                backgroundColor: i === currentScene ? scene.color : theme.border,
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                padding: 0,
+              }}
+            />
+          ))}
+        </div>
+
+        <button
+          onClick={currentScene === STORY_SCENES.length - 1 ? onClose : next}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '8px 16px', borderRadius: '8px',
+            border: 'none',
+            backgroundColor: scene.color,
+            color: '#fff',
+            cursor: 'pointer',
+            fontSize: '13px', fontWeight: '600',
+          }}
+        >
+          {currentScene === STORY_SCENES.length - 1 ? 'Done' : 'Next'} <ChevronRight size={16} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Help Content ─────────────────────────────────────────────────
 
 const HELP_SECTIONS = [
@@ -693,6 +1258,7 @@ export default function Help() {
   const theme = themeContext?.theme || defaultTheme
   const [expandedSections, setExpandedSections] = useState({ overview: true })
   const [showPresentation, setShowPresentation] = useState(false)
+  const [showStory, setShowStory] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const employee = useStore((state) => state.employee)
   const isAdmin = employee?.access_level === 'admin' || employee?.access_level === 'super_admin' || employee?.access_level === 'owner'
@@ -737,6 +1303,13 @@ export default function Help() {
 
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <button onClick={() => setShowStory(true)} style={{
+            padding: '8px 16px', borderRadius: '8px', border: '1px solid #f97316',
+            backgroundColor: '#f9731610', color: '#f97316', fontSize: '13px', cursor: 'pointer',
+            fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px',
+          }}>
+            <Sparkles size={16} /> Arnie's Story
+          </button>
           <button onClick={() => setShowPresentation(true)} style={{
             padding: '8px 16px', borderRadius: '8px', border: `1px solid ${theme.accent}`,
             backgroundColor: theme.accent, color: '#fff', fontSize: '13px', cursor: 'pointer',
@@ -894,6 +1467,20 @@ export default function Help() {
               theme={theme}
               onClose={() => setShowPresentation(false)}
             />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Arnie's Story Overlay */}
+      <AnimatePresence>
+        {showStory && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <StoryMode theme={theme} onClose={() => setShowStory(false)} />
           </motion.div>
         )}
       </AnimatePresence>
