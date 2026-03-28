@@ -69,6 +69,10 @@ export default function LeadSetter() {
   const [showLeadModal, setShowLeadModal] = useState(false)
   const [selectedLead, setSelectedLead] = useState(null)
   const [contactForm, setContactForm] = useState({ notes: '', callback_date: '', callback_time: '' })
+  const [showEventModal, setShowEventModal] = useState(false)
+  const [selectedEvent, setSelectedEvent] = useState(null)
+  const [eventForm, setEventForm] = useState({ start_time: '', duration_minutes: 60, salesperson_id: '', location: '', notes: '' })
+  const [savingEvent, setSavingEvent] = useState(false)
 
   // Drag state
   const [draggedLead, setDraggedLead] = useState(null)
@@ -1286,10 +1290,15 @@ export default function LeadSetter() {
                                 fontStyle: isBlock ? 'italic' : 'normal'
                               }}
                               onClick={() => {
-                                if (apt.lead) {
-                                  setSelectedLead(apt.lead)
-                                  setShowLeadModal(true)
-                                }
+                                setSelectedEvent(apt)
+                                setEventForm({
+                                  start_time: formatDateTimeLocal(new Date(apt.start_time)),
+                                  duration_minutes: apt.duration_minutes || 60,
+                                  salesperson_id: apt.salesperson_id || '',
+                                  location: apt.location || '',
+                                  notes: apt.notes || ''
+                                })
+                                setShowEventModal(true)
                               }}
                             >
                               <div style={{
@@ -1809,13 +1818,169 @@ export default function LeadSetter() {
                   <Trash2 size={13} />
                   Delete Lead
                 </button>
+                {selectedLead.appointment_id && (
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm('Remove this appointment? The lead will remain.')) return
+                      try {
+                        await supabase.from('appointments').delete().eq('id', selectedLead.appointment_id)
+                        await supabase.from('leads').update({ status: 'Contacted', appointment_time: null, appointment_id: null, updated_at: new Date().toISOString() }).eq('id', selectedLead.id)
+                        setShowLeadModal(false)
+                        setSelectedLead(null)
+                        await fetchData()
+                      } catch (err) {
+                        alert('Error: ' + err.message)
+                      }
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
+                      backgroundColor: 'transparent', color: '#dc2626',
+                      border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', cursor: 'pointer'
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    Delete Event
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Settings Modal */}
+      {/* Event Detail Modal */}
+      {showEventModal && selectedEvent && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px', zIndex: 50
+        }} onClick={(e) => { if (e.target === e.currentTarget) { setShowEventModal(false); setSelectedEvent(null) } }}>
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>{selectedEvent.lead?.customer_name || selectedEvent.title}</h2>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                  {selectedEvent.lead?.service_type || 'Appointment'}{selectedEvent.salesperson ? ` \xb7 ${selectedEvent.salesperson.name}` : ''}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {selectedEvent.lead_id && (
+                  <button onClick={() => navigate(`/leads/${selectedEvent.lead_id}`)} style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }} title="View full lead"><ChevronRight size={18} /></button>
+                )}
+                <button onClick={() => { setShowEventModal(false); setSelectedEvent(null) }} style={{ padding: '8px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
+              </div>
+            </div>
+
+            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Quick Contact */}
+              {(selectedEvent.lead?.phone || selectedEvent.lead?.address) && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {selectedEvent.lead?.phone && (
+                    <a href={`tel:${selectedEvent.lead.phone}`} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', backgroundColor: '#dcfce7', borderRadius: '8px', color: '#166534', textDecoration: 'none', fontWeight: '600', fontSize: '13px', minHeight: '44px' }}>
+                      <Phone size={16} />{selectedEvent.lead.phone}
+                    </a>
+                  )}
+                  {selectedEvent.lead?.address && (
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px', padding: '10px', backgroundColor: theme.bg, borderRadius: '8px', fontSize: '12px', color: theme.textSecondary }}>
+                      <MapPin size={14} style={{ flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedEvent.lead.address}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Date & Time */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date & Time</label>
+                <input type="datetime-local" value={eventForm.start_time} onChange={(e) => setEventForm(f => ({ ...f, start_time: e.target.value }))} style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* Duration & Assigned To */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Duration</label>
+                  <select value={eventForm.duration_minutes} onChange={(e) => setEventForm(f => ({ ...f, duration_minutes: parseInt(e.target.value) }))} style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard, outline: 'none', boxSizing: 'border-box' }}>
+                    <option value={30}>30 min</option><option value={60}>1 hour</option><option value={90}>1.5 hours</option><option value={120}>2 hours</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned To</label>
+                  <select value={eventForm.salesperson_id} onChange={(e) => setEventForm(f => ({ ...f, salesperson_id: e.target.value }))} style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard, outline: 'none', boxSizing: 'border-box' }}>
+                    <option value="">Unassigned</option>
+                    {employees.filter(emp => ['Sales', 'Manager', 'Admin'].includes(emp.role)).map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Location */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Location</label>
+                <input type="text" value={eventForm.location} onChange={(e) => setEventForm(f => ({ ...f, location: e.target.value }))} placeholder="Address or 'Virtual'" style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Notes</label>
+                <textarea value={eventForm.notes} onChange={(e) => setEventForm(f => ({ ...f, notes: e.target.value }))} placeholder="Meeting notes, agenda, follow-up items..." rows={3} style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard, outline: 'none', boxSizing: 'border-box', resize: 'vertical' }} />
+              </div>
+
+              {/* Save */}
+              <button
+                onClick={async () => {
+                  setSavingEvent(true)
+                  try {
+                    const startDT = new Date(eventForm.start_time)
+                    const endDT = new Date(startDT.getTime() + eventForm.duration_minutes * 60000)
+                    await supabase.from('appointments').update({
+                      start_time: startDT.toISOString(), end_time: endDT.toISOString(),
+                      duration_minutes: eventForm.duration_minutes,
+                      salesperson_id: eventForm.salesperson_id || null,
+                      location: eventForm.location || null, notes: eventForm.notes || null,
+                      updated_at: new Date().toISOString()
+                    }).eq('id', selectedEvent.id)
+                    if (selectedEvent.lead_id) {
+                      await supabase.from('leads').update({
+                        appointment_time: startDT.toISOString(),
+                        salesperson_id: eventForm.salesperson_id || null,
+                        updated_at: new Date().toISOString()
+                      }).eq('id', selectedEvent.lead_id)
+                    }
+                    setShowEventModal(false); setSelectedEvent(null)
+                    await fetchData()
+                  } catch (err) { alert('Error: ' + err.message) }
+                  setSavingEvent(false)
+                }}
+                disabled={savingEvent}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', minHeight: '44px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: savingEvent ? 'not-allowed' : 'pointer', opacity: savingEvent ? 0.6 : 1 }}
+              >
+                <CheckCircle2 size={16} />{savingEvent ? 'Saving...' : 'Save Changes'}
+              </button>
+
+              {/* Delete Event */}
+              <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '12px', display: 'flex', justifyContent: 'center' }}>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm('Delete this appointment? The lead will remain.')) return
+                    try {
+                      await supabase.from('appointments').delete().eq('id', selectedEvent.id)
+                      if (selectedEvent.lead_id) {
+                        await supabase.from('leads').update({ status: 'Contacted', appointment_time: null, appointment_id: null, updated_at: new Date().toISOString() }).eq('id', selectedEvent.lead_id)
+                      }
+                      setShowEventModal(false); setSelectedEvent(null)
+                      await fetchData()
+                    } catch (err) { alert('Error: ' + err.message) }
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', backgroundColor: 'transparent', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+                >
+                  <Trash2 size={13} />Delete Event
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* Settings Modal */}
       {showSettingsModal && (
         <div style={{
           position: 'fixed',
