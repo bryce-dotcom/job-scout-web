@@ -2604,7 +2604,7 @@ export default function EstimateDetail() {
                 </button>
               )}
 
-              {/* Send Email */}
+              {/* Send / Proposal */}
               <button
                 onClick={() => setShowSendModal(true)}
                 disabled={saving}
@@ -2624,8 +2624,8 @@ export default function EstimateDetail() {
                   opacity: saving ? 0.6 : 1
                 }}
               >
-                <Mail size={18} />
-                Send Estimate
+                <Send size={18} />
+                Create Proposal
               </button>
 
               {/* Portal Link */}
@@ -4127,6 +4127,88 @@ function EstimatePreview({ estimate, lineItems, company, businessUnit, settings 
 
       {/* Bottom accent bar */}
       <div style={{ height: '3px', background: '#5a6349', borderRadius: '0 0 3px 3px', marginTop: '16px' }} />
+
+      {/* PDF Preview Modal */}
+      {pdfPreviewUrl && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '900px',
+            height: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexShrink: 0
+            }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                PDF Preview
+              </h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={handleDiscardPdfPreview}
+                  style={{
+                    padding: '10px 16px', minHeight: '44px',
+                    backgroundColor: 'transparent',
+                    color: theme.textSecondary,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <X size={16} /> Discard
+                </button>
+                <button
+                  onClick={handleSavePdfPreview}
+                  disabled={generatingPdf}
+                  style={{
+                    padding: '10px 16px', minHeight: '44px',
+                    backgroundColor: theme.accent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: generatingPdf ? 'not-allowed' : 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    opacity: generatingPdf ? 0.6 : 1
+                  }}
+                >
+                  <Download size={16} /> {generatingPdf ? 'Saving...' : 'Save to Documents'}
+                </button>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <iframe
+                src={pdfPreviewUrl}
+                title="PDF Preview"
+                style={{ width: '100%', height: '100%', border: 'none' }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -4701,87 +4783,6 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
         )}
       </div>
 
-      {/* PDF Preview Modal */}
-      {pdfPreviewUrl && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '20px'
-        }}>
-          <div style={{
-            backgroundColor: theme.bgCard,
-            borderRadius: '12px',
-            width: '100%',
-            maxWidth: '900px',
-            height: '90vh',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
-          }}>
-            <div style={{
-              padding: '16px 20px',
-              borderBottom: `1px solid ${theme.border}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexShrink: 0
-            }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                PDF Preview
-              </h3>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={handleDiscardPdfPreview}
-                  style={{
-                    padding: '10px 16px', minHeight: '44px',
-                    backgroundColor: 'transparent',
-                    color: theme.textSecondary,
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  <X size={16} /> Discard
-                </button>
-                <button
-                  onClick={handleSavePdfPreview}
-                  disabled={generatingPdf}
-                  style={{
-                    padding: '10px 16px', minHeight: '44px',
-                    backgroundColor: theme.accent,
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: generatingPdf ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    opacity: generatingPdf ? 0.6 : 1
-                  }}
-                >
-                  <Download size={16} /> {generatingPdf ? 'Saving...' : 'Save to Documents'}
-                </button>
-              </div>
-            </div>
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-              <iframe
-                src={pdfPreviewUrl}
-                title="PDF Preview"
-                style={{ width: '100%', height: '100%', border: 'none' }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
