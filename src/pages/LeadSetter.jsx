@@ -92,10 +92,15 @@ export default function LeadSetter() {
   // Filters
   const [searchTerm, setSearchTerm] = useState('')
   const [filterSetter, setFilterSetter] = useState('')
-  const [calendarEmployees, setCalendarEmployees] = useState([]) // selected employee IDs to overlay
+  const [calendarEmployees, setCalendarEmployees] = useState(() => { try { return JSON.parse(localStorage.getItem("leadsetter_calendar_employees") || "[]") } catch { return [] } }) // selected employee IDs to overlay
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+
+  // Persist calendar employee overlay selections
+  useEffect(() => {
+    localStorage.setItem('leadsetter_calendar_employees', JSON.stringify(calendarEmployees))
+  }, [calendarEmployees])
 
   // Check if user is admin
   const isAdmin = checkAdmin(user)
