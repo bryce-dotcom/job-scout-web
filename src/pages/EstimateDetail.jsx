@@ -4498,22 +4498,129 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                                 ))}
                               </div>
                             )}
-                            {s.type === 'savings_timeline' && (
-                              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', marginTop: '8px', height: '32px' }}>
-                                {[15, 30, 45, 55, 70, 85, 100].map((h, j) => (
-                                  <div key={j} style={{ width: '12px', height: `${h}%`, backgroundColor: theme.accent, borderRadius: '2px', opacity: 0.25 + (j * 0.1) }} />
-                                ))}
-                                <span style={{ fontSize: '10px', color: theme.textMuted, marginLeft: '6px' }}>{s.years || 5}yr</span>
-                              </div>
-                            )}
-                            {s.type === 'cost_breakdown' && (
-                              <div style={{ display: 'flex', gap: '6px', marginTop: '8px', alignItems: 'center' }}>
-                                {['#5a6349', '#7d8a7f', '#a8b5a0', '#d6cdb8'].slice(0, Math.min(lineItems?.length || 1, 4)).map((c, j) => (
-                                  <div key={j} style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: c }} />
-                                ))}
-                                <span style={{ fontSize: '10px', color: theme.textMuted }}>Donut chart</span>
-                              </div>
-                            )}
+                            {s.type === 'savings_timeline' && (() => {
+                              const years = s.years || 5
+                              const annualSavings = parseFloat(s.annual_savings) || 0
+                              const investmentTotal = parseFloat(estimate?.total) || lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0
+                              const incentive = parseFloat(estimate?.utility_incentive) || 0
+                              const netInvestment = investmentTotal - incentive
+                              const yearData = []
+                              for (let y = 1; y <= years; y++) {
+                                const cumSavings = annualSavings * y
+                                const netPosition = cumSavings - netInvestment
+                                yearData.push({ year: y, cumSavings, netPosition })
+                              }
+                              const maxVal = Math.max(netInvestment, ...yearData.map(d => d.cumSavings))
+                              const paybackYear = annualSavings > 0 ? Math.ceil(netInvestment / annualSavings) : null
+                              return (
+                                <div style={{ marginTop: '10px' }}>
+                                  {/* Chart */}
+                                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '100px', padding: '0 4px', position: 'relative' }}>
+                                    {/* Investment baseline */}
+                                    {maxVal > 0 && (
+                                      <div style={{
+                                        position: 'absolute', left: 0, right: 0,
+                                        bottom: `${(netInvestment / maxVal) * 100}%`,
+                                        borderTop: '1.5px dashed #ef4444',
+                                        zIndex: 1,
+                                      }}>
+                                        <span style={{ position: 'absolute', right: 0, top: '-14px', fontSize: '8px', color: '#ef4444', fontWeight: '600' }}>
+                                          Investment {formatCurrency(netInvestment)}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {yearData.map((d, j) => {
+                                      const height = maxVal > 0 ? (d.cumSavings / maxVal) * 100 : 0
+                                      const isPastPayback = paybackYear && d.year >= paybackYear
+                                      return (
+                                        <div key={j} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                          <span style={{ fontSize: '7px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+                                            {formatCurrency(d.cumSavings)}
+                                          </span>
+                                          <div style={{
+                                            width: '100%', maxWidth: '32px',
+                                            height: `${Math.max(height, 2)}%`,
+                                            backgroundColor: isPastPayback ? '#22c55e' : theme.accent,
+                                            borderRadius: '3px 3px 0 0',
+                                            opacity: isPastPayback ? 1 : 0.6,
+                                            transition: 'height 0.3s',
+                                          }} />
+                                          <span style={{ fontSize: '9px', color: theme.textMuted, fontWeight: '500' }}>Yr {d.year}</span>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                  {/* Legend */}
+                                  <div style={{ display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap' }}>
+                                    {annualSavings > 0 && (
+                                      <span style={{ fontSize: '10px', color: theme.textSecondary }}>
+                                        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '2px', backgroundColor: '#22c55e', marginRight: '4px', verticalAlign: 'middle' }} />
+                                        {formatCurrency(annualSavings)}/yr savings
+                                      </span>
+                                    )}
+                                    {paybackYear && paybackYear <= years && (
+                                      <span style={{ fontSize: '10px', color: '#22c55e', fontWeight: '600' }}>
+                                        Payback in Year {paybackYear}
+                                      </span>
+                                    )}
+                                    {s.annual_kwh_savings && (
+                                      <span style={{ fontSize: '10px', color: theme.textMuted }}>
+                                        {Number(s.annual_kwh_savings).toLocaleString()} kWh/yr saved
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })()}
+                            {s.type === 'cost_breakdown' && (() => {
+                              const items = (lineItems || []).filter(li => parseFloat(li.line_total || li.total) > 0)
+                              const total = items.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0)
+                              const colors = ['#5a6349', '#4a7c59', '#7d8a7f', '#a8b5a0', '#d6cdb8', '#8b7355', '#6b8f71', '#9cab93']
+                              if (items.length === 0 || total === 0) return null
+                              // Build conic gradient segments
+                              let cumPercent = 0
+                              const segments = items.map((li, idx) => {
+                                const pct = (parseFloat(li.line_total || li.total) / total) * 100
+                                const start = cumPercent
+                                cumPercent += pct
+                                return { start, end: cumPercent, color: colors[idx % colors.length], name: li.item_name || li.description || 'Item', amount: parseFloat(li.line_total || li.total), pct }
+                              })
+                              const gradientStr = segments.map(seg => `${seg.color} ${seg.start}% ${seg.end}%`).join(', ')
+                              return (
+                                <div style={{ marginTop: '10px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                  {/* Donut */}
+                                  <div style={{
+                                    width: '90px', height: '90px', borderRadius: '50%', flexShrink: 0,
+                                    background: `conic-gradient(${gradientStr})`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  }}>
+                                    <div style={{
+                                      width: '50px', height: '50px', borderRadius: '50%',
+                                      backgroundColor: theme.bgCard,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      flexDirection: 'column',
+                                    }}>
+                                      <span style={{ fontSize: '10px', fontWeight: '700', color: theme.accent }}>{formatCurrency(total)}</span>
+                                      <span style={{ fontSize: '7px', color: theme.textMuted }}>Total</span>
+                                    </div>
+                                  </div>
+                                  {/* Legend */}
+                                  <div style={{ flex: 1, minWidth: '120px' }}>
+                                    {segments.map((seg, j) => (
+                                      <div key={j} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0' }}>
+                                        <div style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: seg.color, flexShrink: 0 }} />
+                                        <span style={{ fontSize: '10px', color: theme.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                          {seg.name}
+                                        </span>
+                                        <span style={{ fontSize: '10px', color: theme.textMuted, flexShrink: 0 }}>
+                                          {formatCurrency(seg.amount)} ({Math.round(seg.pct)}%)
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })()}
                             {s.highlights && s.highlights.length > 0 && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
                                 {s.highlights.map((h, j) => (
@@ -4525,6 +4632,83 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                         </div>
                       )
                     })}
+
+                    {/* Certified Financial Audit Section */}
+                    {proposalLayout?.audit_certified && proposalLayout?.audit_summary && (
+                      <div style={{ padding: '16px', borderBottom: `1px solid ${theme.border}`, backgroundColor: 'rgba(74,124,89,0.04)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                          <div style={{ width: '6px', minHeight: '20px', borderRadius: '3px', backgroundColor: '#4a7c59' }} />
+                          <div>
+                            <p style={{ fontSize: '11px', fontWeight: '600', color: '#4a7c59', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
+                              Certified Energy Audit
+                            </p>
+                            <p style={{ fontSize: '9px', color: theme.textMuted, margin: '2px 0 0' }}>
+                              Investment-grade analysis based on verified facility data
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Key metrics grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                          {[
+                            { label: 'Total Fixtures', value: proposalLayout.audit_summary.total_fixtures },
+                            { label: 'Watts Reduced', value: `${Number(proposalLayout.audit_summary.watts_reduced || 0).toLocaleString()}W` },
+                            { label: 'Annual kWh Saved', value: `${Number(proposalLayout.audit_summary.annual_kwh_savings || 0).toLocaleString()}` },
+                            { label: 'Annual Savings', value: formatCurrency(proposalLayout.audit_summary.annual_dollar_savings) },
+                            { label: 'Electric Rate', value: `$${proposalLayout.audit_summary.electric_rate}/kWh` },
+                            { label: 'Operating Hours', value: `${proposalLayout.audit_summary.operating_hours}h/day, ${proposalLayout.audit_summary.operating_days}d/yr` },
+                          ].filter(m => m.value && m.value !== '$0.00' && m.value !== '0').map((m, j) => (
+                            <div key={j} style={{
+                              backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                              borderRadius: '8px', padding: '8px', textAlign: 'center',
+                            }}>
+                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#4a7c59', display: 'block' }}>{m.value}</span>
+                              <span style={{ fontSize: '9px', color: theme.textMuted }}>{m.label}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Per-area breakdown table */}
+                        {proposalLayout.audit_summary.areas && proposalLayout.audit_summary.areas.length > 0 && (
+                          <div>
+                            <p style={{ fontSize: '10px', fontWeight: '600', color: theme.textSecondary, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                              Area-by-Area Breakdown
+                            </p>
+                            <div style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}>
+                              {/* Header */}
+                              <div style={{
+                                display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr',
+                                gap: '4px', padding: '6px 10px',
+                                backgroundColor: theme.accent, color: '#fff',
+                                fontSize: '9px', fontWeight: '600', textTransform: 'uppercase',
+                              }}>
+                                <span>Area</span>
+                                <span style={{ textAlign: 'center' }}>Fixtures</span>
+                                <span style={{ textAlign: 'center' }}>Existing W</span>
+                                <span style={{ textAlign: 'center' }}>LED W</span>
+                              </div>
+                              {/* Rows */}
+                              {proposalLayout.audit_summary.areas.map((area, j) => (
+                                <div key={j} style={{
+                                  display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr',
+                                  gap: '4px', padding: '5px 10px',
+                                  borderTop: j > 0 ? `1px solid ${theme.border}` : 'none',
+                                  fontSize: '10px', color: theme.text,
+                                }}>
+                                  <span style={{ fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {area.area_name}
+                                    {area.ceiling_height ? <span style={{ color: theme.textMuted, fontSize: '8px', marginLeft: '4px' }}>{area.ceiling_height}ft</span> : null}
+                                  </span>
+                                  <span style={{ textAlign: 'center' }}>{area.fixture_count}</span>
+                                  <span style={{ textAlign: 'center', color: '#ef4444' }}>{area.existing_wattage || area.total_existing_watts}W</span>
+                                  <span style={{ textAlign: 'center', color: '#22c55e' }}>{area.led_wattage || area.total_led_watts}W</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* CTA footer — editable */}
                     <div style={{ backgroundColor: '#2c3530', padding: '16px', textAlign: 'center' }}>
