@@ -1620,36 +1620,36 @@ export default function Payroll() {
               <div style={{ height: '1px', backgroundColor: theme.border, margin: '20px 0' }} />
 
               {/* Efficiency Bonus */}
-              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Zap size={16} style={{ color: '#8b5cf6' }} />
+              <h4 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Zap size={18} style={{ color: '#8b5cf6' }} />
                 Bonus Hours
               </h4>
 
               {/* How It Works explainer */}
               <div style={{
-                padding: '14px 16px', marginBottom: '16px', borderRadius: '10px',
+                padding: '16px 18px', marginBottom: '16px', borderRadius: '10px',
                 backgroundColor: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)'
               }}>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>How Bonus Hours Work</div>
-                <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: '1.7' }}>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>1.</span>
+                <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '10px' }}>How Bonus Hours Work</div>
+                <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.7' }}>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: '700', color: '#8b5cf6', minWidth: '20px', fontSize: '14px' }}>1.</span>
                     <span>Every job has <strong>allotted hours</strong> based on its line items. This is the time budget.</span>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>2.</span>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: '700', color: '#8b5cf6', minWidth: '20px', fontSize: '14px' }}>2.</span>
                     <span>When a crew finishes <strong>under</strong> the allotted hours, the saved time is multiplied by a <strong>dollar rate</strong> to create a <strong>bonus pool</strong>.</span>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>3.</span>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: '700', color: '#8b5cf6', minWidth: '20px', fontSize: '14px' }}>3.</span>
                     <span>The company keeps a <strong>configurable %</strong> of the pool (margin boost for efficiency), and the rest goes to the crew.</span>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>4.</span>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: '700', color: '#8b5cf6', minWidth: '20px', fontSize: '14px' }}>4.</span>
                     <span>The crew's share is split by <strong>skill-level weight</strong> — higher-skilled roles earn a bigger piece. Set weights under Employees &gt; Settings &gt; Skill Levels.</span>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>5.</span>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <span style={{ fontWeight: '700', color: '#8b5cf6', minWidth: '20px', fontSize: '14px' }}>5.</span>
                     <span>Installers see their <strong>live potential bonus</strong> on every job page — creating real-time motivation to work efficiently.</span>
                   </div>
                 </div>
@@ -1673,66 +1673,84 @@ export default function Payroll() {
               </label>
 
               {payrollConfig.efficiency_bonus_enabled && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Bonus rate per hour saved ($)</label>
-                    <input
-                      type="number" min="0" step="5"
-                      value={payrollConfig.efficiency_bonus_rate}
-                      onChange={(e) => setPayrollConfig({ ...payrollConfig, efficiency_bonus_rate: parseFloat(e.target.value) || 25 })}
-                      style={inputStyle}
-                    />
-                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>
+                      Bonus Rate Per Hour Saved
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '16px', fontWeight: '600', color: theme.textSecondary }}>$</span>
+                      <input
+                        type="number" min="0" step="5"
+                        value={payrollConfig.efficiency_bonus_rate}
+                        onChange={(e) => setPayrollConfig({ ...payrollConfig, efficiency_bonus_rate: parseFloat(e.target.value) || 25 })}
+                        style={inputStyle}
+                      />
+                      <span style={{ fontSize: '14px', color: theme.textMuted }}>/hour</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
                       Each hour the crew saves is worth this amount. This is the foundation of the bonus pool.
                     </div>
                   </div>
 
-                  <div>
-                    <label style={labelStyle}>Company retention %</label>
-                    <input
-                      type="number" min="0" max="50" step="5"
-                      value={payrollConfig.company_bonus_cut_percent}
-                      onChange={(e) => setPayrollConfig({ ...payrollConfig, company_bonus_cut_percent: parseFloat(e.target.value) || 0 })}
-                      style={inputStyle}
-                    />
-                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px' }}>
+                  <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>
+                      Company Retention
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="number" min="0" max="50" step="5"
+                        value={payrollConfig.company_bonus_cut_percent}
+                        onChange={(e) => setPayrollConfig({ ...payrollConfig, company_bonus_cut_percent: parseFloat(e.target.value) || 0 })}
+                        style={inputStyle}
+                      />
+                      <span style={{ fontSize: '14px', color: theme.textMuted }}>%</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '6px' }}>
                       Faster work benefits <strong>both</strong> the company and the crew. The company keeps <strong>{payrollConfig.company_bonus_cut_percent}%</strong> of the pool as a margin boost, and the crew splits the remaining <strong>{100 - payrollConfig.company_bonus_cut_percent}%</strong>. Set to 0% if you want 100% to go to the crew.
                     </div>
                   </div>
 
-                  <div>
-                    <label style={labelStyle}>Minimum hours saved to qualify</label>
-                    <input
-                      type="number" min="0" step="0.25"
-                      value={payrollConfig.bonus_min_hours_saved}
-                      onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_min_hours_saved: parseFloat(e.target.value) || 0 })}
-                      style={inputStyle}
-                    />
-                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                  <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>
+                      Minimum Hours Saved to Qualify
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="number" min="0" step="0.25"
+                        value={payrollConfig.bonus_min_hours_saved}
+                        onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_min_hours_saved: parseFloat(e.target.value) || 0 })}
+                        style={inputStyle}
+                      />
+                      <span style={{ fontSize: '14px', color: theme.textMuted }}>hours</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
                       Prevents tiny payouts on short jobs. A crew must save at least this many hours for a bonus to apply.
                     </div>
                   </div>
 
                   <label style={{
-                    display: 'flex', alignItems: 'center', gap: '10px',
-                    padding: '12px', backgroundColor: theme.bg, borderRadius: '8px', cursor: 'pointer'
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                    padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', cursor: 'pointer',
+                    border: `1px solid ${payrollConfig.bonus_quality_gate ? theme.accent : theme.border}`
                   }}>
                     <input
                       type="checkbox"
                       checked={payrollConfig.bonus_quality_gate}
                       onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_quality_gate: e.target.checked })}
+                      style={{ width: '18px', height: '18px' }}
                     />
                     <div>
-                      <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Quality gate</div>
-                      <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Quality Gate</div>
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
                         If a job has any callbacks or rework, the bonus is forfeited. Speed without quality doesn't count.
                       </div>
                     </div>
                   </label>
 
                   {/* Live example */}
-                  <div style={{ padding: '14px 16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
-                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '10px' }}>Live Example With Your Settings</div>
+                  <div style={{ padding: '16px 18px', backgroundColor: theme.bgCard, borderRadius: '10px', border: `1px solid ${theme.border}`, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '12px' }}>Live Example With Your Settings</div>
                     <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: '1.8' }}>
                       <div>A job is bid at <strong>40 hours</strong>. The crew finishes in <strong>32 hours</strong> — saving <strong>8 hours</strong>.</div>
                       <div style={{ marginTop: '4px' }}>

@@ -278,7 +278,7 @@ const STORY_SCENES = [
     title: 'The Call',
     icon: Headphones,
     color: '#8b5cf6',
-    arnieText: "Jake picks up Sarah's lead in the Lead Setter page. He calls her, asks about the facility — 40,000 sq ft warehouse, old T8 fluorescents everywhere, utility bill through the roof. He books an on-site visit for Thursday. Status goes from 'New' to 'Appointment Set'. Nice work, Jake.",
+    arnieText: "Jake picks up Sarah's lead in the Lead Setter page. He calls her, asks about the facility — 40,000 sq ft warehouse, old T8 fluorescents everywhere, utility bill through the roof. He drags the lead to Thursday on the calendar and fills in the event details — time, duration, location, notes. Status goes from 'New' to 'Appointment Set'. His calendar shows the event with his color overlay. Nice work, Jake.",
     mockup: (theme) => (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
@@ -363,7 +363,7 @@ const STORY_SCENES = [
     title: 'She Said Yes!',
     icon: CheckCircle,
     color: '#22c55e',
-    arnieText: "Sarah opens the proposal on her phone, scrolls through the savings breakdown, and taps 'Approve'. Digital signature captured, timestamp logged. The lead moves to 'Won' on the pipeline board. That's the sound of revenue, baby.",
+    arnieText: "Sarah opens the proposal on her phone, scrolls through the savings breakdown, and taps 'Approve'. Digital signature captured, timestamp logged. Maria opens the lead detail page and changes the status to 'Won' right from the dropdown — a trophy pops up, she adds a closing note, and boom. Or she can drag it on the Pipeline board. Either way, that's the sound of revenue, baby.",
     mockup: (theme) => (
       <div style={{ textAlign: 'center' }}>
         <motion.div
@@ -393,7 +393,7 @@ const STORY_SCENES = [
     title: 'Job Time',
     icon: Briefcase,
     color: '#5a6349',
-    arnieText: "The deal is won, so it automatically becomes a Job. Right now it's sitting in 'Chillin' on the board — that's the PM's to-do pile. Lisa the PM drags it to 'Scheduled', assigns Dave's crew, and picks the install dates. Monday through Wednesday. Three days, 200 fixtures.",
+    arnieText: "The deal is won, so Maria clicks 'Convert to Job' from the estimate page — that big green banner makes it impossible to miss. The job gets created with all line items, customer info, and any expenses from the lead and estimate automatically carried over. Right now it's sitting in 'Chillin' on the board — that's the PM's to-do pile. Lisa the PM drags it to 'Scheduled', assigns Dave's crew, and picks the install dates. Monday through Wednesday. Three days, 200 fixtures.",
     mockup: (theme) => (
       <div>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
@@ -1093,11 +1093,11 @@ const HELP_SECTIONS = [
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-          <EntityCard icon={UserPlus} title="1. Leads" color="#3b82f6" description="Where all prospects enter the system. A lead is any potential business opportunity — new customer inquiries, referrals, website forms, or repeat business. Tracks contact info, source, value, and current status. Leads assigned to owners show in their Lenard standalone agent automatically." theme={theme} />
-          <EntityCard icon={Headphones} title="2. Lead Setter" color="#8b5cf6" description="The calling workspace. Setters call leads, qualify them, and schedule appointments. Leads flow from 'New' to 'Contacted' to 'Appointment Set'. The setter earns commission per appointment set. Calendar view shows all scheduled meetings." theme={theme} />
+          <EntityCard icon={UserPlus} title="1. Leads" color="#3b82f6" description="Where all prospects enter the system. A lead is any potential business opportunity — new customer inquiries, referrals, website forms, or repeat business. Tracks contact info, source, value, and current status. Change status directly from the Lead Detail page via the dropdown — selecting Won or Lost opens confirmation modals. Click stages in the FlowIndicator to jump statuses. Add expenses and capture receipts right on the lead. Leads assigned to owners show in their Lenard standalone agent automatically." theme={theme} />
+          <EntityCard icon={Headphones} title="2. Lead Setter" color="#8b5cf6" description="The calling workspace. Setters call leads, qualify them, and schedule appointments. Leads flow from 'New' to 'Contacted' to 'Appointment Set'. The setter earns commission per appointment set. Calendar view shows all scheduled meetings with color-coded employee overlays (selections persist across page navigations). Click any appointment to open an editable Event Detail with date/time, duration, salesperson, location, and notes — no nested modals." theme={theme} />
           <EntityCard icon={GitBranch} title="3. Pipeline" color="#f59e0b" description="Visual kanban board showing all leads by stage. Drag leads between columns to update their status. This is your bird's-eye view of the entire sales funnel with deal values at each stage." theme={theme} />
-          <EntityCard icon={FileText} title="4. Estimates" color="#3b82f6" description="Create price quotes for qualified leads. Add products from your catalog, apply labor rates, and send to the customer. Two modes: standard PDF or Interactive Proposal (Qwilr-style animated page with charts, ROI analysis, and digital approval)." theme={theme} />
-          <EntityCard icon={Briefcase} title="5. Jobs" color="#5a6349" description="Won deals become jobs. The kanban board shows jobs by stage: Chillin, Scheduled, In Progress, Completed. Each job has sections, line items, time tracking, documents, and photos." theme={theme} />
+          <EntityCard icon={FileText} title="4. Estimates" color="#3b82f6" description="Create price quotes for qualified leads. Add products from your catalog, apply labor rates, and send to the customer. Two modes: standard PDF or Interactive Proposal (Qwilr-style animated page with charts, ROI analysis, and digital approval). The estimate page shows a FlowIndicator and DealBreadcrumb for full deal context. Change status via the dropdown in the header. When approved, a prominent green banner guides you to convert to a job." theme={theme} />
+          <EntityCard icon={Briefcase} title="5. Jobs" color="#5a6349" description="Won deals become jobs. The kanban board shows jobs by stage: Chillin, Scheduled, In Progress, Completed. Each job has sections, line items, time tracking, documents, photos, and expenses. When a lead or estimate converts to a job, all associated expenses (meals, materials, receipts) transfer automatically." theme={theme} />
         </div>
 
         <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Lead Statuses</h4>
@@ -1115,6 +1115,14 @@ const HELP_SECTIONS = [
 
         <InfoBox title="Interactive Proposals" color="#d4af37" theme={theme}>
           Estimates can be sent as <strong>Interactive Proposals</strong> — full-page animated experiences with investment-grade audit data, ROI charts, savings timelines, and one-click digital approval. Toggle between PDF and Interactive mode in estimate settings. AI writes compelling sales copy tailored to each project.
+        </InfoBox>
+
+        <InfoBox title="Lead Status Dropdown" color="#8b5cf6" theme={theme}>
+          You can change a lead's status directly from the Lead Detail page using the dropdown in the header — no need to go to the Pipeline kanban. Selecting <strong>Won</strong> opens a confirmation modal with optional closing notes. Selecting <strong>Lost</strong> opens a modal requiring a reason (e.g. "Price too high", "Went with competitor"). You can also click stages in the FlowIndicator bar to jump statuses.
+        </InfoBox>
+
+        <InfoBox title="Estimate to Job Conversion" color="#3b82f6" theme={theme}>
+          To convert an estimate into a job: <strong>1)</strong> Change the estimate status to "Approved" using the dropdown in the header. <strong>2)</strong> A green "Estimate Approved — Ready to convert to a job" banner appears with a large "Convert to Job" button. <strong>3)</strong> Click it — the job is created with all line items, expenses, and customer info carried over. If the estimate is still Draft or Sent, a blue hint banner shows what to do next.
         </InfoBox>
 
         <InfoBox title="When to skip the pipeline" color="#22c55e" theme={theme}>
@@ -1469,7 +1477,7 @@ const HELP_SECTIONS = [
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
           <EntityCard icon={Receipt} title="Invoices" color="#3b82f6" description="Generate invoices from completed jobs. Tracks payment status (Draft, Sent, Paid). Includes utility incentive tracking for lighting jobs." theme={theme} />
           <EntityCard icon={CreditCard} title="Deposits" color="#8b5cf6" description="Pre-job payments and deposits received from leads/deals. Linked to the lead record so you can track partial payments through the pipeline." theme={theme} />
-          <EntityCard icon={DollarSign} title="Expenses" color="#ef4444" description="Business expenses — materials, fuel, subcontractors, etc. Categorized and linked to business units. Connects to Plaid for auto-import from bank accounts." theme={theme} />
+          <EntityCard icon={DollarSign} title="Expenses" color="#ef4444" description="Business expenses — materials, fuel, subcontractors, meals, etc. Add expenses directly on Lead, Estimate, or Job detail pages with optional receipt photo capture. Photos upload to storage and display as thumbnails on the Expenses admin page. Each expense links to its source entity (lead, quote, or job) with clickable navigation. When a deal converts to a job, expenses follow automatically. Connects to Plaid for auto-import from bank accounts." theme={theme} />
           <EntityCard icon={BookOpen} title="Books" color="#16a34a" description="Full accounting view. Revenue vs expenses, P&L, bank connections, transaction categorization. Your financial command center." theme={theme} />
         </div>
 
@@ -1483,6 +1491,15 @@ const HELP_SECTIONS = [
           <strong>Deposits</strong> are collected during the sales process (before the job).<br />
           <strong>Invoices</strong> are generated after the job is done.<br />
           <strong>Books</strong> pulls everything together for accounting.
+        </InfoBox>
+
+        <InfoBox title="Expense & Receipt Tracking" color="#ef4444" theme={theme}>
+          Capture expenses and receipts anywhere in the sales-to-delivery flow:<br />
+          <strong>Leads:</strong> Track pre-sale costs (client dinners, site visits, materials).<br />
+          <strong>Estimates:</strong> Record costs of sale while the deal is in progress.<br />
+          <strong>Jobs:</strong> Log materials, labor, and other job costs.<br />
+          <strong>Field Scout:</strong> Techs snap receipt photos in the field — they attach to the job automatically.<br />
+          All expenses show up on the admin Expenses page with receipt photo thumbnails, linked entities, and status tracking. When a lead or estimate converts to a job, its expenses transfer over so nothing gets lost.
         </InfoBox>
       </div>
     )
@@ -1680,6 +1697,12 @@ const HELP_SECTIONS = [
             { tip: 'Product bundles show their components right on the card — no guessing what\'s inside.', color: '#22c55e' },
             { tip: 'Interactive Proposals: Toggle "Interactive Proposal" in estimate settings, then "Generate with AI" for a premium sales experience.', color: '#d4af37' },
             { tip: 'Every table filters by your company. Multi-tenant means your data is always isolated.', color: '#5a6349' },
+            { tip: 'Change lead status directly from the Lead Detail page — no need to drag on the Pipeline kanban. Won and Lost open confirmation modals.', color: '#3b82f6' },
+            { tip: 'Click stages in the FlowIndicator bar on Lead Detail to quickly jump statuses (e.g. New to Qualified).', color: '#8b5cf6' },
+            { tip: 'To convert an estimate to a job: set status to Approved, then click the green "Convert to Job" banner that appears.', color: '#22c55e' },
+            { tip: 'Add expenses and snap receipt photos on Leads, Estimates, and Jobs. They all sync to the admin Expenses page with thumbnails.', color: '#ef4444' },
+            { tip: 'On the Lead Setter calendar, employee overlay selections persist when you leave and come back — no re-selecting.', color: '#8b5cf6' },
+            { tip: 'Click an appointment on the Lead Setter calendar to edit event details (time, duration, notes) directly — no nested modals.', color: '#f97316' },
           ].map((item, i) => (
             <div key={i} style={{
               display: 'flex', gap: '10px', alignItems: 'flex-start',

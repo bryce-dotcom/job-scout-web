@@ -2442,19 +2442,19 @@ export default function Employees() {
                     padding: '14px 16px', marginBottom: '16px', borderRadius: '10px',
                     backgroundColor: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.15)'
                   }}>
-                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Zap size={14} style={{ color: '#8b5cf6' }} />
+                    <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Zap size={16} style={{ color: '#8b5cf6' }} />
                       How Bonus Weights Work
                     </div>
-                    <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: '1.6' }}>
-                      <div style={{ marginBottom: '4px' }}>When a crew finishes a job under the allotted hours, the saved time becomes a <strong>bonus pool</strong> (hours saved x bonus rate). That pool is split based on each crew member's weight:</div>
-                      <div style={{ padding: '8px 0 4px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        <span><strong>Weight 0</strong> — No bonus (e.g., trainees still learning)</span>
-                        <span><strong>Weight 1</strong> — Base share (entry-level installers)</span>
-                        <span><strong>Weight 2</strong> — 2x share (lead installers)</span>
-                        <span><strong>Weight 3</strong> — 3x share (crew leads / foremen)</span>
+                    <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.7' }}>
+                      <div style={{ marginBottom: '6px' }}>When a crew finishes a job under the allotted hours, the saved time becomes a <strong>bonus pool</strong> (hours saved x bonus rate). That pool is split based on each crew member's weight:</div>
+                      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'rgba(168,85,247,0.04)', borderRadius: '8px', marginBottom: '8px' }}>
+                        <span><strong style={{ color: theme.textMuted, minWidth: '70px', display: 'inline-block' }}>Weight 0</strong> — No bonus (e.g., trainees still learning)</span>
+                        <span><strong style={{ color: '#8b5cf6', minWidth: '70px', display: 'inline-block' }}>Weight 1</strong> — Base share (entry-level installers)</span>
+                        <span><strong style={{ color: '#8b5cf6', minWidth: '70px', display: 'inline-block' }}>Weight 2</strong> — 2x share (lead installers)</span>
+                        <span><strong style={{ color: '#8b5cf6', minWidth: '70px', display: 'inline-block' }}>Weight 3</strong> — 3x share (crew leads / foremen)</span>
                       </div>
-                      <div style={{ marginTop: '6px', fontStyle: 'italic', color: theme.textMuted }}>
+                      <div style={{ fontStyle: 'italic', color: theme.textMuted }}>
                         Example: If the crew pool is $160 and the crew is a Crew Lead (wt 3), a Lead (wt 2), and a Scout (wt 1) — the Lead gets $160 x 2/6 = $53.33.
                       </div>
                     </div>

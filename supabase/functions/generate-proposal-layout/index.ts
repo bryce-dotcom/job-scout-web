@@ -30,6 +30,7 @@ serve(async (req) => {
       audit_areas_data,
       proposal_notes,
       include_tiers,
+      eos_data,
     } = await req.json();
 
     const totalNum = parseFloat(total) || 0;
@@ -74,6 +75,34 @@ CERTIFIED ENERGY AUDIT DATA (use these EXACT numbers — do NOT estimate or gues
       notesBlock = `\nCOMPANY NOTES (include these in the proposal):\n${proposal_notes}\n`;
     }
 
+    // Build EOS company strategy block
+    let eosBlock = '';
+    if (eos_data) {
+      const parts: string[] = [];
+      if (eos_data.core_values?.length) {
+        parts.push(`Core Values: ${eos_data.core_values.map((v: any) => typeof v === 'string' ? v : v.name || v.value).join(', ')}`);
+      }
+      if (eos_data.core_focus) {
+        if (eos_data.core_focus.purpose) parts.push(`Our Purpose: ${eos_data.core_focus.purpose}`);
+        if (eos_data.core_focus.niche) parts.push(`Our Niche: ${eos_data.core_focus.niche}`);
+      }
+      if (eos_data.marketing_strategy) {
+        const ms = eos_data.marketing_strategy;
+        if (ms.target_market) parts.push(`Target Market: ${ms.target_market}`);
+        if (ms.uniques?.length) parts.push(`3 Uniques (our differentiators):\n${ms.uniques.map((u: any, i: number) => `  ${i + 1}. ${typeof u === 'string' ? u : u.name || u.value}`).join('\n')}`);
+        if (ms.proven_process?.length) parts.push(`Proven Process: ${ms.proven_process.map((s: any) => typeof s === 'string' ? s : s.name || s.step).join(' → ')}`);
+        if (ms.guarantee) parts.push(`Our Guarantee: ${ms.guarantee}`);
+      }
+      if (eos_data.ten_year_target) {
+        const t = typeof eos_data.ten_year_target === 'string' ? eos_data.ten_year_target : eos_data.ten_year_target.target || eos_data.ten_year_target.description;
+        if (t) parts.push(`10-Year Vision: ${t}`);
+      }
+      if (parts.length > 0) {
+        eosBlock = `\nCOMPANY STRATEGY & IDENTITY (weave these into the proposal to sell the company, not just the project):
+${parts.join('\n')}\n`;
+      }
+    }
+
     let prompt: string;
 
     if (hasDirection && hasExisting) {
@@ -94,6 +123,7 @@ ${incentiveNum > 0 ? `Utility Incentive/Rebate: $${incentiveNum.toFixed(2)}` : '
 ${discountNum > 0 ? `Discount: $${discountNum.toFixed(2)}` : ''}
 ${auditBlock}
 ${notesBlock}
+${eosBlock}
 USER'S DIRECTION:
 ${user_direction}
 
@@ -120,6 +150,7 @@ ${incentiveNum > 0 ? `Utility Incentive/Rebate: $${incentiveNum.toFixed(2)} (FRE
 ${discountNum > 0 ? `Discount Applied: $${discountNum.toFixed(2)}` : ''}
 ${auditBlock}
 ${notesBlock}
+${eosBlock}
 ${hasDirection && user_direction !== '__fresh__' ? `\nSPECIFIC DIRECTION:\n${user_direction}\n` : ''}
 
 WRITING RULES:
@@ -130,6 +161,7 @@ WRITING RULES:
 - The executive_summary should read like a confident handshake — short, direct, "here's what we're going to do and why it's a no-brainer."
 - Highlights should be punchy one-liners that a CFO would underline.
 - The approval content should create urgency without being sleazy — pricing holds, scheduling windows, seasonal timing, rebate deadlines, etc.
+- If COMPANY STRATEGY data is provided, use it to sell the company: weave core values into the executive summary, reference the proven process in solution_overview, use the guarantee in the approval section, and create a compelling "why_us" section from the 3 uniques and company purpose. Don't just list them — tell a story about why this company is different.
 ${include_tiers ? `
 PRICING TIERS (Good / Better / Best):
 Create 3 pricing tiers to give the customer options. The "good" tier is the base scope (roughly the estimate as-is). "Better" adds meaningful upgrades (controls, sensors, extended warranty, etc.). "Best" is the premium package. Each tier needs a name, price, net_price (after rebate proportionally), description, features list, annual_savings, and payback_months. The recommended tier should be "better".
@@ -158,6 +190,7 @@ Return ONLY valid JSON (no markdown fences):
     { "type": "executive_summary", "content": "2-3 sentences. Direct. What are we doing, why, and what they get. End with a line about the ROI." },
     { "type": "problem_statement", "content": "Make them feel what it's costing them to do nothing. Aging equipment, energy waste, safety risk, liability — whatever fits. Be specific to their project." },
     { "type": "solution_overview", "content": "What we're doing and why it's the right call. Specific to their line items.", "highlights": ["punchy benefit 1", "punchy benefit 2", "punchy benefit 3"] },
+    ${eosBlock ? '{ "type": "why_us", "heading": "Why [company name]", "content": "compelling narrative about what makes this company different — weave in core values, proven process, guarantee, and 3 uniques. Do NOT just list bullet points — tell a story.", "highlights": ["differentiator 1", "differentiator 2", "differentiator 3"] },' : ''}
     { "type": "line_items", "show_images": true },
     { "type": "cost_breakdown", "chart_type": "donut" },
     { "type": "savings_timeline", "years": 5, "annual_savings": <real number>, "content": "specific description of WHERE the savings come from"${hasAudit ? `, "annual_kwh_savings": ${audit_data.annual_savings_kwh}, "watts_reduced": ${audit_data.watts_reduced}, "total_fixtures": ${audit_data.total_fixtures}` : ''} },

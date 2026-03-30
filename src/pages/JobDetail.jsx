@@ -2839,15 +2839,15 @@ function JobDetailInner() {
                   padding: '16px 20px', borderBottom: `1px solid ${theme.border}`,
                   background: isComplete && !isOverBudget ? 'linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(34,197,94,0.02) 100%)' : undefined
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Zap size={18} style={{ color: isOverBudget ? '#ef4444' : '#22c55e' }} />
-                    <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Zap size={20} style={{ color: isOverBudget ? '#ef4444' : '#22c55e' }} />
+                    <h3 style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>
                       {isComplete && !isOverBudget ? 'Bonus Earned' : 'Bonus Hours'}
                     </h3>
                   </div>
                   {!isOverBudget && crewPool > 0 && (
                     <div style={{
-                      padding: '4px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: '600',
+                      padding: '5px 12px', borderRadius: '20px', fontSize: '14px', fontWeight: '700',
                       backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e'
                     }}>
                       ${crewPool.toFixed(0)} pool
@@ -2858,11 +2858,11 @@ function JobDetailInner() {
                 <div style={{ padding: '16px 20px' }}>
                   {/* How it works — always visible, one-liner with expandable detail */}
                   <div style={{
-                    padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
+                    padding: '12px 16px', borderRadius: '10px', marginBottom: '16px',
                     backgroundColor: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.12)',
-                    fontSize: '12px', color: theme.textSecondary, lineHeight: '1.6'
+                    fontSize: '13px', color: theme.textSecondary, lineHeight: '1.7'
                   }}>
-                    <strong style={{ color: theme.text }}>How this works:</strong> This job was bid at <strong>{allottedHours}h</strong>.
+                    <strong style={{ color: theme.text, fontSize: '13px' }}>How this works:</strong> This job was bid at <strong>{allottedHours}h</strong>.
                     Every hour your crew saves is worth <strong>${rate}/hr</strong>.
                     {companyCut > 0
                       ? <> The company keeps <strong>{companyCut}%</strong> and the crew splits <strong>{100 - companyCut}%</strong>, weighted by skill level — higher roles earn a bigger share.</>
@@ -2874,25 +2874,25 @@ function JobDetailInner() {
 
                   {/* Progress bar */}
                   <div style={{ marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px' }}>
-                      <span style={{ color: theme.textSecondary }}>{totalHoursWorked.toFixed(1)}h logged</span>
-                      <span style={{ color: theme.textMuted }}>{allottedHours}h allotted</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
+                      <span style={{ color: theme.textSecondary, fontWeight: '600' }}>{totalHoursWorked.toFixed(1)}h logged</span>
+                      <span style={{ color: theme.textMuted, fontWeight: '500' }}>{allottedHours}h allotted</span>
                     </div>
-                    <div style={{ height: '10px', backgroundColor: theme.accentBg, borderRadius: '5px', overflow: 'hidden' }}>
+                    <div style={{ height: '12px', backgroundColor: theme.accentBg, borderRadius: '6px', overflow: 'hidden' }}>
                       <div style={{
                         height: '100%',
                         width: `${Math.min(progressPct, 100)}%`,
                         backgroundColor: barColor,
-                        borderRadius: '5px',
+                        borderRadius: '6px',
                         transition: 'width 0.3s'
                       }} />
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px' }}>
-                      <span style={{ color: isOverBudget ? '#ef4444' : '#22c55e', fontWeight: '600' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '13px' }}>
+                      <span style={{ color: isOverBudget ? '#ef4444' : '#22c55e', fontWeight: '700' }}>
                         {isOverBudget ? `${Math.abs(hoursRemaining).toFixed(1)}h over budget` : `${hoursRemaining.toFixed(1)}h remaining`}
                       </span>
                       {!isOverBudget && savedHours > 0 && (
-                        <span style={{ color: theme.textMuted }}>
+                        <span style={{ color: theme.textSecondary, fontWeight: '500' }}>
                           {savedHours.toFixed(1)}h saved = ${totalPool.toFixed(0)} pool
                         </span>
                       )}
@@ -2902,24 +2902,24 @@ function JobDetailInner() {
                   {/* Pool breakdown — transparent math */}
                   {!isOverBudget && crewPool > 0 && (
                     <div style={{
-                      display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap'
+                      display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap'
                     }}>
                       <div style={{
-                        flex: 1, minWidth: '120px', padding: '10px 12px', borderRadius: '8px',
+                        flex: 1, minWidth: '130px', padding: '14px 16px', borderRadius: '10px',
                         backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.15)', textAlign: 'center'
                       }}>
-                        <div style={{ fontSize: '11px', color: theme.textMuted }}>Crew Pool</div>
-                        <div style={{ fontSize: '18px', fontWeight: '700', color: '#22c55e' }}>${crewPool.toFixed(0)}</div>
-                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{100 - companyCut}% of ${totalPool.toFixed(0)}</div>
+                        <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: '0.3px' }}>Crew Pool</div>
+                        <div style={{ fontSize: '22px', fontWeight: '700', color: '#22c55e', margin: '4px 0' }}>${crewPool.toFixed(0)}</div>
+                        <div style={{ fontSize: '12px', color: theme.textMuted }}>{100 - companyCut}% of ${totalPool.toFixed(0)}</div>
                       </div>
                       {companyShare > 0 && (
                         <div style={{
-                          flex: 1, minWidth: '120px', padding: '10px 12px', borderRadius: '8px',
+                          flex: 1, minWidth: '130px', padding: '14px 16px', borderRadius: '10px',
                           backgroundColor: theme.bg, border: `1px solid ${theme.border}`, textAlign: 'center'
                         }}>
-                          <div style={{ fontSize: '11px', color: theme.textMuted }}>Company</div>
-                          <div style={{ fontSize: '18px', fontWeight: '700', color: theme.textSecondary }}>${companyShare.toFixed(0)}</div>
-                          <div style={{ fontSize: '11px', color: theme.textMuted }}>{companyCut}% retention</div>
+                          <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: '0.3px' }}>Company</div>
+                          <div style={{ fontSize: '22px', fontWeight: '700', color: theme.textSecondary, margin: '4px 0' }}>${companyShare.toFixed(0)}</div>
+                          <div style={{ fontSize: '12px', color: theme.textMuted }}>{companyCut}% retention</div>
                         </div>
                       )}
                     </div>
@@ -2928,21 +2928,21 @@ function JobDetailInner() {
                   {/* My share callout */}
                   {myShare !== null && myShare > 0 && !isOverBudget && (
                     <div style={{
-                      padding: '12px 16px', borderRadius: '10px', marginBottom: '16px',
+                      padding: '16px 18px', borderRadius: '12px', marginBottom: '16px',
                       background: 'linear-gradient(135deg, rgba(34,197,94,0.1) 0%, rgba(168,85,247,0.08) 100%)',
                       border: '1px solid rgba(34,197,94,0.2)',
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between'
                     }}>
                       <div>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>Your Bonus</div>
-                        <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
+                        <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>Your Bonus</div>
+                        <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
                           {myMember.skillLevel || 'Unassigned'} — weight {myMember.weight} of {totalWeight} total
                         </div>
-                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                        <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '3px' }}>
                           ${crewPool.toFixed(0)} x {myMember.weight}/{totalWeight} = ${myShare.toFixed(2)}
                         </div>
                       </div>
-                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#22c55e' }}>
+                      <div style={{ fontSize: '26px', fontWeight: '700', color: '#22c55e' }}>
                         ${myShare.toFixed(2)}
                       </div>
                     </div>
@@ -2961,7 +2961,7 @@ function JobDetailInner() {
                   {/* Crew breakdown */}
                   {crewMembers.length > 0 && !isOverBudget && (
                     <div>
-                      <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <div style={{ fontSize: '13px', color: theme.text, marginBottom: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         Crew Breakdown
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -2972,21 +2972,21 @@ function JobDetailInner() {
                           return (
                             <div key={member.id} style={{
                               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                              padding: '8px 12px', backgroundColor: theme.bg, borderRadius: '8px',
-                              fontSize: '13px'
+                              padding: '10px 14px', backgroundColor: theme.bg, borderRadius: '8px',
+                              fontSize: '14px', border: `1px solid ${theme.border}33`
                             }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
                                 <div style={{
-                                  width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                                  width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0,
                                   backgroundColor: member.weight > 0 ? '#a855f7' : theme.textMuted
                                 }} />
-                                <span style={{ color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.name}</span>
-                                <span style={{ color: theme.textMuted, fontSize: '12px', flexShrink: 0 }}>
+                                <span style={{ color: theme.text, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.name}</span>
+                                <span style={{ color: theme.textMuted, fontSize: '12px', flexShrink: 0, padding: '2px 6px', backgroundColor: 'rgba(168,85,247,0.08)', borderRadius: '4px' }}>
                                   wt {member.weight}
                                 </span>
                               </div>
                               <span style={{
-                                fontWeight: '600', flexShrink: 0, marginLeft: '8px',
+                                fontWeight: '700', flexShrink: 0, marginLeft: '8px', fontSize: '15px',
                                 color: member.weight > 0 ? '#22c55e' : theme.textMuted
                               }}>
                                 {member.weight > 0 ? `$${share.toFixed(2)}` : 'Not eligible'}
@@ -2995,7 +2995,7 @@ function JobDetailInner() {
                           )
                         })}
                       </div>
-                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px', textAlign: 'center', fontStyle: 'italic' }}>
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '10px', textAlign: 'center', fontStyle: 'italic' }}>
                         Share = crew pool x (your weight / total weight). Higher skill level = higher weight = bigger share.
                       </div>
                     </div>

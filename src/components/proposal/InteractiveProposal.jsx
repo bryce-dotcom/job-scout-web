@@ -163,6 +163,95 @@ export default function InteractiveProposal({
           </div>
         )
 
+      case 'why_us':
+        return (
+          <div key={index} style={{
+            padding: proposalTheme.sectionPadding,
+            backgroundColor: proposalTheme.bgCard,
+          }}>
+            <div style={{ maxWidth: proposalTheme.maxWidth, margin: '0 auto' }}>
+              <ProposalSection>
+                <h2 style={{
+                  fontSize: '28px',
+                  fontWeight: '700',
+                  color: proposalTheme.text,
+                  margin: '0 0 8px',
+                  textAlign: 'center',
+                  fontFamily: proposalTheme.fontFamily,
+                }}>
+                  {section.heading || `Why ${brandName}`}
+                </h2>
+                <p style={{
+                  color: proposalTheme.textSecondary,
+                  fontSize: '17px',
+                  lineHeight: 1.8,
+                  margin: '0 0 24px',
+                  textAlign: 'center',
+                }}>
+                  {section.content}
+                </p>
+              </ProposalSection>
+              {section.highlights && section.highlights.length > 0 && (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${Math.min(section.highlights.length, 3)}, 1fr)`,
+                  gap: '16px',
+                }}>
+                  {section.highlights.map((h, j) => (
+                    <ProposalSection key={j} delay={j * 0.1}>
+                      <div style={{
+                        textAlign: 'center',
+                        padding: '24px 16px',
+                        backgroundColor: proposalTheme.bg,
+                        borderRadius: proposalTheme.cardRadius,
+                        border: `1px solid ${proposalTheme.border}`,
+                      }}>
+                        <div style={{
+                          width: '40px', height: '40px', borderRadius: '50%',
+                          backgroundColor: proposalTheme.accentBg || 'rgba(90,99,73,0.12)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          margin: '0 auto 12px',
+                        }}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={proposalTheme.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        </div>
+                        <p style={{
+                          color: proposalTheme.text,
+                          fontSize: '15px',
+                          fontWeight: '600',
+                          margin: 0,
+                          lineHeight: 1.5,
+                        }}>
+                          {h}
+                        </p>
+                      </div>
+                    </ProposalSection>
+                  ))}
+                </div>
+              )}
+              {section.guarantee && (
+                <ProposalSection delay={0.3}>
+                  <div style={{
+                    textAlign: 'center',
+                    marginTop: '20px',
+                    padding: '16px 24px',
+                    backgroundColor: 'rgba(90,99,73,0.06)',
+                    borderRadius: '10px',
+                    border: `1px solid ${proposalTheme.border}`,
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={proposalTheme.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '6px' }}>
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    </svg>
+                    <p style={{ color: proposalTheme.text, fontSize: '15px', fontWeight: '600', margin: '0 0 4px' }}>Our Guarantee</p>
+                    <p style={{ color: proposalTheme.textSecondary, fontSize: '14px', margin: 0, lineHeight: 1.6 }}>{section.guarantee}</p>
+                  </div>
+                </ProposalSection>
+              )}
+            </div>
+          </div>
+        )
+
       case 'solution_overview':
       case 'line_items':
         return (

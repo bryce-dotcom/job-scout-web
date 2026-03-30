@@ -280,10 +280,30 @@ function SmallBtn({ children, onClick, color, theme, disabled, style: s }) {
   )
 }
 
+// Bare local-state input for inline editing (no border/bg, used inside styled containers)
+function LocalInput({ value, onChange, placeholder, style: s }) {
+  const [local, setLocal] = useState(value || '')
+  useEffect(() => { setLocal(value || '') }, [value])
+  return (
+    <input value={local} onChange={e => setLocal(e.target.value)}
+      onBlur={() => { if (local !== (value || '')) onChange(local) }}
+      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+      placeholder={placeholder}
+      style={s}
+    />
+  )
+}
+
 function InlineInput({ value, onChange, placeholder, style: s, theme, multiline }) {
+  const [local, setLocal] = useState(value || '')
+  const ref = useRef(null)
+  useEffect(() => { setLocal(value || '') }, [value])
   const Tag = multiline ? 'textarea' : 'input'
   return (
-    <Tag value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+    <Tag ref={ref} value={local} onChange={e => setLocal(e.target.value)}
+      onBlur={() => { if (local !== (value || '')) onChange(local) }}
+      onKeyDown={e => { if (!multiline && e.key === 'Enter') { e.target.blur() } }}
+      placeholder={placeholder}
       style={{
         width: '100%', padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
         border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text,
@@ -472,9 +492,9 @@ function VTOTab({ data, save, theme, employees }) {
                     border: `1px solid #f59e0b30`, display: 'flex', alignItems: 'center', gap: '6px',
                   }}>
                     <span style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b' }}>{i + 1}.</span>
-                    <input value={step.name} onChange={e => {
+                    <LocalInput value={step.name} onChange={v => {
                       const pp = [...(marketing.proven_process || [])]
-                      pp[i] = { ...pp[i], name: e.target.value }
+                      pp[i] = { ...pp[i], name: v }
                       save('marketing', { ...marketing, proven_process: pp })
                     }} placeholder="Step name" style={{
                       border: 'none', background: 'none', fontSize: '13px', fontWeight: '600',
@@ -542,9 +562,9 @@ function VTOTab({ data, save, theme, employees }) {
               }} style={{ padding: '2px', background: 'none', border: 'none', cursor: 'pointer' }}>
                 {g.done ? <CheckCircle size={18} color="#22c55e" /> : <Circle size={18} color={theme.border} />}
               </button>
-              <input value={g.text} onChange={e => {
+              <LocalInput value={g.text} onChange={v => {
                 const goals = [...(oneYear.goals || [])]
-                goals[i] = { ...goals[i], text: e.target.value }
+                goals[i] = { ...goals[i], text: v }
                 save('one_year', { ...oneYear, goals })
               }} placeholder="Annual goal..." style={{
                 flex: 1, border: 'none', background: 'none', fontSize: '13px', color: theme.text,
@@ -851,7 +871,7 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities }) {
                     {formatMetricValue(actual, fmt)}
                   </div>
                 ) : (
-                  <input value={actual} onChange={e => updateMetric(m.id, { current: e.target.value })}
+                  <LocalInput value={actual} onChange={v => updateMetric(m.id, { current: v })}
                     placeholder="—" style={{
                       width: '100%', padding: '4px 8px', borderRadius: '6px', fontSize: '13px', fontWeight: '700',
                       border: `2px solid ${color}30`, backgroundColor: color + '08', color,
@@ -1715,10 +1735,10 @@ function SeatCard({ seat, employees, theme, color, onUpdate, onRemove }) {
         {/* 5 Roles */}
         <div style={{ fontSize: '10px', fontWeight: '700', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase' }}>5 Roles</div>
         {[0, 1, 2, 3, 4].map(i => (
-          <input key={i} value={(seat.roles || [])[i] || ''} onChange={e => {
+          <LocalInput key={i} value={(seat.roles || [])[i] || ''} onChange={v => {
             const roles = [...(seat.roles || ['', '', '', '', ''])]
             while (roles.length < 5) roles.push('')
-            roles[i] = e.target.value
+            roles[i] = v
             onUpdate({ roles })
           }} placeholder={`Role ${i + 1}`} style={{
             width: '100%', padding: '3px 8px', fontSize: '12px', color: theme.text,
