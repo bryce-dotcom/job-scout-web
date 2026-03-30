@@ -83,15 +83,10 @@ export default function AuthCallback() {
       const type = params.get('type') || hashParams.get('type')
       const gcalConnect = params.get('gcal_connect') === 'true'
 
-      if (type === 'recovery') {
-        setIsRecovery(true)
-        setLoading(false)
-        return
-      }
-
       // If there's a code in the URL, always exchange it first — this is critical
-      // for Google Calendar connect because getSession() returns the existing session
-      // which does NOT contain provider_token (needed for Google Calendar API)
+      // for recovery (password reset) and Google Calendar connect flows.
+      // The code must be exchanged to establish an auth session before we can
+      // call updateUser() or access provider_token.
       const code = params.get('code')
       let session = null
 
@@ -111,6 +106,13 @@ export default function AuthCallback() {
           return
         }
         session = existingSession
+      }
+
+      // Now that session is established, check if this is a password recovery flow
+      if (type === 'recovery') {
+        setIsRecovery(true)
+        setLoading(false)
+        return
       }
 
       // Session acquired — look up employee
