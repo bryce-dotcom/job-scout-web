@@ -6,9 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function jsonResponse(data: unknown, status = 200) {
+function jsonResponse(data: unknown) {
   return new Response(JSON.stringify(data), {
-    status,
+    status: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 }
@@ -27,11 +27,11 @@ serve(async (req) => {
     const { companyId, employeeId, email, password, callerEmployeeId } = await req.json();
 
     if (!companyId || !employeeId || !email || !password) {
-      return jsonResponse({ error: 'companyId, employeeId, email, and password are required' }, 400);
+      return jsonResponse({ success: false, error: 'companyId, employeeId, email, and password are required' });
     }
 
     if (password.length < 6) {
-      return jsonResponse({ error: 'Password must be at least 6 characters' }, 400);
+      return jsonResponse({ success: false, error: 'Password must be at least 6 characters' });
     }
 
     // Verify caller is in the same company (security check)
@@ -44,13 +44,13 @@ serve(async (req) => {
         .single();
 
       if (!caller) {
-        return jsonResponse({ error: 'Unauthorized' }, 403);
+        return jsonResponse({ success: false, error: 'Unauthorized' });
       }
 
       // Must be Admin+ to set credentials
       const adminRoles = ['Admin', 'Super Admin', 'Developer'];
       if (!caller.is_admin && !caller.is_developer && !adminRoles.includes(caller.user_role)) {
-        return jsonResponse({ error: 'Only admins can set employee credentials' }, 403);
+        return jsonResponse({ success: false, error: 'Only admins can set employee credentials' });
       }
     }
 
@@ -63,35 +63,50 @@ serve(async (req) => {
       .single();
 
     if (empError || !employee) {
-      return jsonResponse({ error: 'Employee not found in this company' }, 404);
+      return jsonResponse({ success: false, error: 'Employee not found in this company' });
     }
 
-    // Check if an auth user already exists with this email
-    const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
-    const existingUser = (users || []).find(
-      (u: { email?: string }) => u.email?.toLowerCase() === email.toLowerCase()
-    );
+    // Try to create the auth user first; if they already exist, update instead
+    const { data: createdUser, error: createError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
 
-    if (existingUser) {
-      // Update the existing auth user's password
-      const { error: updateError } = await supabase.auth.admin.updateUserById(
-        existingUser.id,
-        { password, email_confirm: true }
-      );
+    let existingUser = false;
 
-      if (updateError) {
-        return jsonResponse({ error: 'Failed to update password: ' + updateError.message }, 500);
-      }
-    } else {
-      // Create a new auth user with confirmed email (no verification email sent)
-      const { error: createError } = await supabase.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-      });
+    if (createError) {
+      // User already exists — find them and update password
+      if (createError.message?.includes('already been registered') || (createError as any).status === 422) {
+        const { data: { users }, error: listError } = await supabase.auth.admin.listUsers({
+          page: 1,
+          perPage: 1000,
+        });
 
-      if (createError) {
-        return jsonResponse({ error: 'Failed to create auth account: ' + createError.message }, 500);
+        if (listError) {
+          return jsonResponse({ success: false, error: 'Failed to look up existing user: ' + listError.message });
+        }
+
+        const found = (users || []).find(
+          (u: { email?: string }) => u.email?.toLowerCase() === email.toLowerCase()
+        );
+
+        if (!found) {
+          return jsonResponse({ success: false, error: 'User exists but could not be found for update' });
+        }
+
+        const { error: updateError } = await supabase.auth.admin.updateUserById(
+          found.id,
+          { password, email_confirm: true }
+        );
+
+        if (updateError) {
+          return jsonResponse({ success: false, error: 'Failed to update password: ' + updateError.message });
+        }
+
+        existingUser = true;
+      } else {
+        return jsonResponse({ success: false, error: 'Failed to create auth account: ' + createError.message });
       }
     }
 
@@ -111,6 +126,6 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('set-employee-credentials error:', error);
-    return jsonResponse({ error: error.message }, 500);
+    return jsonResponse({ success: false, error: error.message });
   }
 });

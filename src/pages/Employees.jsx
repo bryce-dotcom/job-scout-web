@@ -623,7 +623,11 @@ export default function Employees() {
         }
       })
 
-      if (res.data?.success) {
+      if (res.error) {
+        // Edge function returned non-2xx or network error
+        const msg = typeof res.error === 'object' ? (res.error.message || JSON.stringify(res.error)) : String(res.error)
+        setError(msg)
+      } else if (res.data?.success) {
         setCredentialsResult({ email: credEmail, password: credPassword })
         // Update local employee data if email changed
         if (viewingEmployee.email !== credEmail) {
