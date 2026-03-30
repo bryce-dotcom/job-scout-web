@@ -274,7 +274,7 @@ function JobDetailInner() {
 
     const { data: jobData } = await supabase
       .from('jobs')
-      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id), pm:employees!jobs_pm_id_fkey(id, name)')
+      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id, audit_id, customer_id), pm:employees!jobs_pm_id_fkey(id, name)')
       .eq('id', id)
       .single()
 
@@ -866,22 +866,48 @@ function JobDetailInner() {
   }
 
   const createCustomerInvoice = async () => {
-    if (!job.lead_id) return
     setSaving(true)
 
     try {
-      // Fetch the lighting audit linked to this job's lead
-      const { data: audits } = await supabase
-        .from('lighting_audits')
-        .select('*')
-        .eq('lead_id', job.lead_id)
-        .order('created_at', { ascending: false })
-        .limit(1)
+      // Find the lighting audit through multiple paths:
+      // 1. Via quote's audit_id (most direct)
+      // 2. Via job's lead_id
+      // 3. Via customer_id as last resort
+      let audit = null
 
-      const audit = audits?.[0]
+      if (job.quote?.audit_id) {
+        const { data } = await supabase
+          .from('lighting_audits')
+          .select('*')
+          .eq('id', job.quote.audit_id)
+          .single()
+        audit = data
+      }
+
+      if (!audit && job.lead_id) {
+        const { data: audits } = await supabase
+          .from('lighting_audits')
+          .select('*')
+          .eq('lead_id', job.lead_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        audit = audits?.[0] || null
+      }
+
+      if (!audit && job.customer_id) {
+        const { data: audits } = await supabase
+          .from('lighting_audits')
+          .select('*')
+          .eq('customer_id', job.customer_id)
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        audit = audits?.[0] || null
+      }
+
       if (!audit) {
         const { toast } = await import('../lib/toast')
-        toast.error('No lighting audit found for this lead')
+        toast.error('No lighting audit found for this job')
         setSaving(false)
         return
       }
@@ -898,8 +924,8 @@ function JobDetailInner() {
       const customerIncentive = (audit.estimated_rebate || 0) - additionalOOP
       const customerOOP = (audit.net_cost || 0) + additionalOOP
 
-      // Resolve customer_id: prefer job, fall back to audit
-      const resolvedCustomerId = job.customer_id || audit.customer_id || null
+      // Resolve customer_id: prefer job, fall back to quote, then audit
+      const resolvedCustomerId = job.customer_id || job.quote?.customer_id || audit.customer_id || null
 
       const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
 
