@@ -869,7 +869,7 @@ function JobDetailInner() {
     setSaving(true)
 
     try {
-      // Find the lighting audit through multiple paths:
+      // Try to find a lighting audit through multiple paths:
       // 1. Via quote's audit_id (most direct)
       // 2. Via job's lead_id
       // 3. Via customer_id as last resort
@@ -905,27 +905,38 @@ function JobDetailInner() {
         audit = audits?.[0] || null
       }
 
-      if (!audit) {
+      // Calculate invoice amounts — use audit data if available, otherwise use job data
+      const incentiveAmt = parseFloat(job.utility_incentive) || 0
+      let projectCost, customerIncentive, customerOOP
+
+      if (audit) {
+        // Parse the notes JSON to get Give Me adjustments
+        let additionalOOP = 0
+        try {
+          const pd = JSON.parse(audit.notes || '{}')
+          additionalOOP = pd.giveMe?.additionalOOP || 0
+        } catch (_) { /* notes may not be JSON */ }
+
+        projectCost = audit.est_project_cost || 0
+        customerIncentive = (audit.estimated_rebate || 0) - additionalOOP
+        customerOOP = (audit.net_cost || 0) + additionalOOP
+      } else {
+        // No audit — calculate from job data directly
+        const jobTotal = lineItems.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
+          || parseFloat(job.job_total) || 0
+        projectCost = jobTotal
+        customerIncentive = incentiveAmt
+        customerOOP = jobTotal - incentiveAmt
+      }
+
+      if (customerOOP <= 0) {
         const { toast } = await import('../lib/toast')
-        toast.error('No lighting audit found for this job')
+        toast.error('Customer copayment is $0 or less — no invoice needed')
         setSaving(false)
         return
       }
 
-      // Parse the notes JSON to get Give Me adjustments
-      let additionalOOP = 0
-      try {
-        const pd = JSON.parse(audit.notes || '{}')
-        additionalOOP = pd.giveMe?.additionalOOP || 0
-      } catch (_) { /* notes may not be JSON */ }
-
-      // Customer-presented numbers
-      const projectCost = audit.est_project_cost || 0
-      const customerIncentive = (audit.estimated_rebate || 0) - additionalOOP
-      const customerOOP = (audit.net_cost || 0) + additionalOOP
-
-      // Resolve customer_id: prefer job, fall back to quote, then audit
-      const resolvedCustomerId = job.customer_id || job.quote?.customer_id || audit.customer_id || null
+      const resolvedCustomerId = job.customer_id || job.quote?.customer_id || audit?.customer_id || null
 
       const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
 
