@@ -29,6 +29,7 @@ serve(async (req) => {
       audit_data,
       audit_areas_data,
       proposal_notes,
+      include_tiers,
     } = await req.json();
 
     const totalNum = parseFloat(total) || 0;
@@ -129,6 +130,10 @@ WRITING RULES:
 - The executive_summary should read like a confident handshake — short, direct, "here's what we're going to do and why it's a no-brainer."
 - Highlights should be punchy one-liners that a CFO would underline.
 - The approval content should create urgency without being sleazy — pricing holds, scheduling windows, seasonal timing, rebate deadlines, etc.
+${include_tiers ? `
+PRICING TIERS (Good / Better / Best):
+Create 3 pricing tiers to give the customer options. The "good" tier is the base scope (roughly the estimate as-is). "Better" adds meaningful upgrades (controls, sensors, extended warranty, etc.). "Best" is the premium package. Each tier needs a name, price, net_price (after rebate proportionally), description, features list, annual_savings, and payback_months. The recommended tier should be "better".
+` : ''}
 ${hasAudit ? `
 INVESTMENT GRADE AUDIT DATA (these are REAL certified numbers — use them EXACTLY):
 You MUST use these exact figures in savings_timeline and roi_summary. Do NOT estimate or round them.
@@ -159,6 +164,11 @@ Return ONLY valid JSON (no markdown fences):
     { "type": "roi_summary", "content": "a line that frames the ROI as obvious", "metrics": { "annual_savings": <real number>, "payback_months": <calculated number>, "roi_percent": <calculated number> } },
     ${proposal_notes ? '{ "type": "warranty", "content": "write this based on the company notes above — make it feel like extra protection, not fine print" },' : ''}
     ${incentiveNum > 0 ? '{ "type": "utility_incentive", "content": "This is free money — explain why they need to claim it now" },' : ''}
+    ${include_tiers ? `{ "type": "pricing_tiers", "heading": "Choose Your Package", "content": "compelling subheading about options", "recommended": "better", "tiers": [
+      { "id": "good", "name": "descriptive name", "price": <number>, "net_price": <number after proportional rebate>, "description": "what they get", "features": ["feature 1", "feature 2", "feature 3"], "annual_savings": <number>, "payback_months": <number> },
+      { "id": "better", "name": "descriptive name", "price": <number ~15-25% more>, "net_price": <number>, "description": "what they get — emphasize the value adds", "features": ["everything in good", "plus upgrade 1", "plus upgrade 2", "plus upgrade 3"], "annual_savings": <higher number>, "payback_months": <number> },
+      { "id": "best", "name": "descriptive name", "price": <number ~30-50% more>, "net_price": <number>, "description": "the premium experience", "features": ["everything in better", "plus premium 1", "plus premium 2", "plus premium 3"], "annual_savings": <highest number>, "payback_months": <number> }
+    ] },` : ''}
     { "type": "team" },
     { "type": "approval", "cta_text": "Approve & Schedule", "content": "create urgency — pricing, scheduling, rebate deadlines, seasonal timing. Make them feel like waiting costs money." }
   ]${hasAudit ? `,

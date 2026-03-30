@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import {
   X, DollarSign, TrendingUp, TrendingDown, Receipt,
-  Clock, Package, Truck, Users, Loader
+  Clock, Package, Truck, Users, Loader, Zap
 } from 'lucide-react'
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -29,7 +29,7 @@ export default function JobCostingModal({ job, theme, onClose }) {
       const companyId = job.company_id
 
       // Fetch all data in parallel
-      const [invoicesRes, expensesRes, plaidRes, timeRes] = await Promise.all([
+      const [invoicesRes, expensesRes, plaidRes, timeRes, configRes, skillRes] = await Promise.all([
         supabase
           .from('invoices')
           .select('id, amount, status')
@@ -47,9 +47,21 @@ export default function JobCostingModal({ job, theme, onClose }) {
           .eq('company_id', companyId),
         supabase
           .from('time_log')
-          .select('*, employee:employees!employee_id(id, name, hourly_rate)')
+          .select('*, employee:employees!employee_id(id, name, hourly_rate, skill_level)')
           .eq('job_id', job.id)
           .eq('company_id', companyId),
+        supabase
+          .from('settings')
+          .select('value')
+          .eq('company_id', companyId)
+          .eq('key', 'payroll_config')
+          .maybeSingle(),
+        supabase
+          .from('settings')
+          .select('value')
+          .eq('company_id', companyId)
+          .eq('key', 'skill_levels')
+          .maybeSingle(),
       ])
 
       const invoices = invoicesRes.data || []
@@ -117,9 +129,46 @@ export default function JobCostingModal({ job, theme, onClose }) {
         otherExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) +
         otherPlaid.reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0)
 
+      // Bonus hours calculation
+      let bonusData = null
+      let payrollCfg = null
+      try { payrollCfg = configRes.data?.value ? JSON.parse(configRes.data.value) : null } catch {}
+      let skillLevels = []
+      try {
+        const parsed = skillRes.data?.value ? JSON.parse(skillRes.data.value) : []
+        skillLevels = parsed.map(s => typeof s === 'string' ? { name: s, weight: 1 } : s)
+      } catch {}
+
+      const allottedHours = parseFloat(job.allotted_time_hours) || 0
+      const totalActualHours = timeLogs.reduce((s, tl) => s + (parseFloat(tl.hours) || 0), 0)
+
+      if (payrollCfg?.efficiency_bonus_enabled && allottedHours > 0 && totalActualHours < allottedHours) {
+        const savedHours = allottedHours - totalActualHours
+        const rate = payrollCfg.efficiency_bonus_rate || 25
+        const companyCutPct = payrollCfg.company_bonus_cut_percent || 0
+        const totalPool = savedHours * rate
+        const companyShare = totalPool * (companyCutPct / 100)
+        const crewBonus = totalPool - companyShare
+
+        // Crew breakdown with weights
+        const crewMemberIds = [...new Set(timeLogs.map(tl => tl.employee?.id || tl.employee_id))]
+        const crewMembers = crewMemberIds.map(empId => {
+          const tl = timeLogs.find(t => (t.employee?.id || t.employee_id) === empId)
+          const skillLevel = tl?.employee?.skill_level || ''
+          const found = skillLevels.find(s => s.name === skillLevel)
+          const weight = found ? found.weight : 1
+          return { name: tl?.employee?.name || 'Unknown', weight }
+        })
+
+        bonusData = { savedHours, rate, totalPool, companyShare, crewBonus, crewMembers }
+      }
+
       const totalCosts = materialCost + laborCost + subCost + otherCost
+      const crewBonusExpense = bonusData?.crewBonus || 0
+      const totalCostsWithBonus = totalCosts + crewBonusExpense
       const totalRevenue = parseFloat(job.job_total) || 0
-      const grossProfit = totalRevenue - totalCosts
+      const companyBonusBenefit = bonusData?.companyShare || 0
+      const grossProfit = totalRevenue - totalCostsWithBonus
       const profitMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0
 
       setData({
@@ -137,10 +186,11 @@ export default function JobCostingModal({ job, theme, onClose }) {
         otherExpenses,
         otherPlaid,
         receiptExpenses,
-        totalCosts,
+        totalCosts: totalCostsWithBonus,
         totalRevenue,
         grossProfit,
         profitMargin,
+        bonusData,
       })
     } catch (err) {
       console.error('JobCostingModal fetch error:', err)
@@ -442,6 +492,54 @@ export default function JobCostingModal({ job, theme, onClose }) {
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bonus Hours Impact */}
+              {data.bonusData && (
+                <div style={sectionStyle}>
+                  <div style={sectionHeaderStyle}>
+                    <Zap size={18} color='#8b5cf6' />
+                    <span>Bonus Hours Impact</span>
+                  </div>
+                  <div style={rowStyle}>
+                    <span style={labelStyle}>Hours Saved</span>
+                    <span style={{ ...valueStyle, color: '#22c55e' }}>{data.bonusData.savedHours.toFixed(1)}h</span>
+                  </div>
+                  <div style={rowStyle}>
+                    <span style={labelStyle}>Total Pool ({data.bonusData.savedHours.toFixed(1)}h × {fmt(data.bonusData.rate)}/hr)</span>
+                    <span style={valueStyle}>{fmt(data.bonusData.totalPool)}</span>
+                  </div>
+                  <div style={rowStyle}>
+                    <span style={labelStyle}>Company Retention</span>
+                    <span style={{ ...valueStyle, color: '#22c55e' }}>{fmt(data.bonusData.companyShare)}</span>
+                  </div>
+                  <div style={rowStyle}>
+                    <span style={labelStyle}>Crew Bonus Expense</span>
+                    <span style={{ ...valueStyle, color: theme.error || '#ef4444' }}>{fmt(data.bonusData.crewBonus)}</span>
+                  </div>
+                  {data.bonusData.crewMembers.length > 0 && (
+                    <div style={{ marginTop: '8px' }}>
+                      {data.bonusData.crewMembers.map((m, idx) => {
+                        const totalWeight = data.bonusData.crewMembers.filter(c => c.weight > 0).reduce((s, c) => s + c.weight, 0)
+                        const share = m.weight > 0 && totalWeight > 0 ? data.bonusData.crewBonus * (m.weight / totalWeight) : 0
+                        return (
+                          <div key={idx} style={{ ...rowStyle, fontSize: '13px' }}>
+                            <span style={{ color: theme.textMuted }}>
+                              {m.name} {m.weight > 0 ? `(wt ${m.weight})` : '(no bonus)'}
+                            </span>
+                            <span style={{ fontWeight: 500, color: m.weight > 0 ? theme.text : theme.textMuted }}>
+                              {m.weight > 0 ? fmt(share) : '—'}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  <div style={subtotalRowStyle}>
+                    <span>Net Company Benefit</span>
+                    <span style={{ color: '#22c55e' }}>{fmt(data.bonusData.companyShare)}</span>
                   </div>
                 </div>
               )}

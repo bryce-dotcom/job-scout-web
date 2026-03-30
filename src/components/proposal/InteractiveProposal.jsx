@@ -5,6 +5,7 @@ import SolutionSection from './SolutionSection'
 import CostBreakdownSection from './CostBreakdownSection'
 import SavingsSection from './SavingsSection'
 import ROISection from './ROISection'
+import PricingTiersSection from './PricingTiersSection'
 import ApprovalSection from './ApprovalSection'
 import ProposalSection from './ProposalSection'
 import proposalTheme from './proposalTheme'
@@ -181,6 +182,18 @@ export default function InteractiveProposal({
             auditSummary={auditSummary}
             certified={certified}
             brandName={brandName}
+            totalCost={totalCost}
+            incentive={incentive}
+            discount={discountAmount}
+            annualSavings={annualSavings}
+          />
+        )
+
+      case 'pricing_tiers':
+        return (
+          <PricingTiersSection
+            key={index}
+            section={section}
           />
         )
 
@@ -194,6 +207,8 @@ export default function InteractiveProposal({
             auditSummary={auditSummary}
             certified={certified}
             brandName={brandName}
+            incentive={incentive}
+            discount={discountAmount}
           />
         )
 
@@ -412,19 +427,71 @@ export default function InteractiveProposal({
 
       {sections.map((section, i) => renderSection(section, i))}
 
-      {/* Footer */}
+      {/* Document Credentials Footer */}
       <div style={{
-        textAlign: 'center',
-        padding: '24px 16px 48px',
         borderTop: `1px solid ${proposalTheme.border}`,
+        padding: '32px 24px 48px',
+        maxWidth: proposalTheme.maxWidth,
+        margin: '0 auto',
       }}>
-        <p style={{
-          color: proposalTheme.textMuted,
-          fontSize: '12px',
-          margin: 0,
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+          gap: '24px',
+          marginBottom: '20px',
         }}>
-          Powered by Job Scout
-        </p>
+          {/* Left: Document info */}
+          <div style={{ fontSize: '11px', color: proposalTheme.textMuted, lineHeight: 1.8 }}>
+            {doc.salesperson_name && (
+              <div>Prepared by <span style={{ color: proposalTheme.textSecondary, fontWeight: '500' }}>{doc.salesperson_name}</span></div>
+            )}
+            <div>
+              On behalf of <span style={{ color: proposalTheme.textSecondary, fontWeight: '500' }}>{brandName}</span>
+            </div>
+            {layout?.generated_at && (
+              <div>Generated {new Date(layout.generated_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
+            )}
+            {doc.quote_number && <div>Reference: {doc.quote_number}</div>}
+          </div>
+
+          {/* Right: Certification & attribution */}
+          <div style={{ fontSize: '11px', color: proposalTheme.textMuted, lineHeight: 1.8, textAlign: 'right' }}>
+            {certified && (
+              <div style={{ color: proposalTheme.certGold, fontWeight: '600' }}>
+                Certified Investment Grade Energy Audit
+              </div>
+            )}
+            {certified && (
+              <div>Financial analysis produced by {brandName}</div>
+            )}
+            <div>Proposal content co-authored by Claude AI</div>
+            <div>Powered by Job Scout</div>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ borderTop: `1px solid ${proposalTheme.border}`, paddingTop: '16px' }}>
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            gap: '12px',
+            fontSize: '10px',
+            color: proposalTheme.textMuted,
+            lineHeight: 1.6,
+          }}>
+            <div style={{ maxWidth: '500px' }}>
+              This proposal is confidential and intended solely for {customer?.business_name || customer?.name || 'the intended recipient'}.
+              All pricing, projections, and financial estimates are valid as of the date above and subject to change.
+              {certified && ' Energy savings projections are based on certified audit data and actual operating conditions; actual results may vary based on usage patterns and utility rate changes.'}
+              {doc.expiration_date && ` This proposal expires ${new Date(doc.expiration_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.`}
+            </div>
+            <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+              &copy; {new Date().getFullYear()} {company?.company_name || brandName}. All rights reserved.
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -9,7 +9,7 @@ import {
   MapPin, Building2, User, Clock, Edit3, ExternalLink, CheckCircle2, Lightbulb,
   CalendarDays, ClipboardList, X, Save, DollarSign, Inbox, Trash2, Package, Grid3X3,
   Paperclip, Download, Briefcase, Upload, Loader, Check, Info, Eye, Trophy, XCircle,
-  Receipt, Camera
+  Receipt, Camera, UserPlus
 } from 'lucide-react'
 import { STATUS, EXPENSE_CATEGORIES } from '../lib/schema'
 import { quoteStatusColors, appointmentStatusColors } from '../lib/statusColors'
@@ -694,6 +694,21 @@ export default function LeadDetail() {
     }
   }
 
+  // Send lead to the setter pipeline
+  const handleSendToSetter = async () => {
+    if (!confirm(`Send ${lead.customer_name} to the Lead Setter pipeline?\n\nThis will reset the lead status to "New" so a setter can schedule an appointment.`)) return
+    const { error } = await supabase
+      .from('leads')
+      .update({ status: 'New', setter_owner_id: null, appointment_id: null, appointment_time: null })
+      .eq('id', lead.id)
+    if (error) {
+      toast.error('Error: ' + error.message)
+      return
+    }
+    toast.success('Lead sent to setter pipeline')
+    navigate('/lead-setter')
+  }
+
   // Convert Won lead to Job & Customer
   const handleConvertToJob = async () => {
     if (!confirm('Convert this lead to a Job & Customer?')) return
@@ -1010,6 +1025,13 @@ export default function LeadDetail() {
                 <Mail size={16} /> Email
               </a>
             )}
+            {!['Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed', 'Lost'].includes(lead.status) && (
+              <Tooltip text="Send this lead to the setter pipeline for appointment scheduling">
+                <button onClick={handleSendToSetter} style={{ padding: '10px 14px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '500' }}>
+                  <UserPlus size={16} /> Send to Setter
+                </button>
+              </Tooltip>
+            )}
             {lead.status === 'Won' && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                 <button onClick={handleConvertToJob} disabled={convertingToJob} style={{ padding: '10px 14px', backgroundColor: convertingToJob ? '#9ca3af' : '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', cursor: convertingToJob ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '600' }}>
@@ -1021,7 +1043,12 @@ export default function LeadDetail() {
           </div>
         )}
 
-        {/* Mobile: Convert to Job button (full width, only when Won) */}
+        {/* Mobile: Send to Setter + Convert to Job buttons */}
+        {isMobile && !['Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed', 'Lost'].includes(lead.status) && (
+          <button onClick={handleSendToSetter} style={{ padding: '10px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '500', width: '100%' }}>
+            <UserPlus size={14} /> Send to Setter
+          </button>
+        )}
         {isMobile && lead.status === 'Won' && (
           <button onClick={handleConvertToJob} disabled={convertingToJob} style={{ padding: '10px', backgroundColor: convertingToJob ? '#9ca3af' : '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', cursor: convertingToJob ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', width: '100%' }}>
             <Briefcase size={14} /> {convertingToJob ? 'Converting...' : 'Convert to Job & Customer'}

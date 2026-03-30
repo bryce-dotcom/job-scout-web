@@ -55,9 +55,13 @@ export default function Payroll() {
     commission_trigger: 'payment_received', // payment_received, invoice_created, job_completed
     efficiency_bonus_enabled: false,
     efficiency_bonus_rate: 25, // $ per hour saved
+    company_bonus_cut_percent: 20, // company keeps 20% of saved-hour value
+    bonus_quality_gate: false, // require zero callbacks to qualify
+    bonus_min_hours_saved: 0.5, // minimum hours saved to trigger bonus
     overtime_threshold: 40, // hours per week
     overtime_multiplier: 1.5,
   })
+  const [skillLevelSettings, setSkillLevelSettings] = useState([])
 
   const isAdmin = checkAdmin(user)
   const isManagerPlus = checkManager(user)
@@ -83,17 +87,23 @@ export default function Payroll() {
   }, [company])
 
   const loadPayrollConfig = async () => {
-    const { data } = await supabase
-      .from('settings')
-      .select('value')
-      .eq('company_id', companyId)
-      .eq('key', 'payroll_config')
-      .maybeSingle()
+    const [configRes, skillRes] = await Promise.all([
+      supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payroll_config').maybeSingle(),
+      supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'skill_levels').maybeSingle()
+    ])
 
-    if (data?.value) {
+    if (configRes.data?.value) {
       try {
-        const parsed = JSON.parse(data.value)
+        const parsed = JSON.parse(configRes.data.value)
         setPayrollConfig(prev => ({ ...prev, ...parsed }))
+      } catch {}
+    }
+
+    if (skillRes.data?.value) {
+      try {
+        const parsed = JSON.parse(skillRes.data.value)
+        // Normalize old string[] format to object[]
+        setSkillLevelSettings(parsed.map(s => typeof s === 'string' ? { name: s, weight: 1 } : s))
       } catch {}
     }
   }
@@ -467,12 +477,23 @@ export default function Payroll() {
     return { total, apptCount, sourceCount, details: empCommissions }
   }
 
-  // Efficiency bonuses: allotted hours - actual hours, split between crew
+  // Helper: get bonus weight for an employee's skill level
+  const getSkillWeight = (empId) => {
+    const emp = employees.find(e => e.id === empId)
+    if (!emp?.skill_level) return 1 // default weight if no skill level assigned
+    const found = skillLevelSettings.find(s => s.name === emp.skill_level)
+    return found ? found.weight : 1
+  }
+
+  // Efficiency bonuses: allotted hours - actual hours, weighted split between crew
   const calculateEfficiencyBonus = (employeeId) => {
     if (!payrollConfig.efficiency_bonus_enabled) return { bonus: 0, details: [] }
 
     const details = []
     let totalBonus = 0
+    const rate = payrollConfig.efficiency_bonus_rate || 25
+    const companyCut = payrollConfig.company_bonus_cut_percent || 0
+    const minSaved = payrollConfig.bonus_min_hours_saved || 0
 
     // Get time_log entries for this employee during this period
     const empTimeLogs = timeLogEntries.filter(tl => tl.employee_id === employeeId)
@@ -495,11 +516,41 @@ export default function Payroll() {
       const savedHours = job.allotted_time_hours - totalActualHours
 
       if (savedHours <= 0) return // No bonus if over time
+      if (savedHours < minSaved) return // Below minimum threshold
 
-      // Count unique workers on this job
-      const uniqueWorkers = new Set(allJobTimeLogs.map(tl => tl.employee_id)).size || 1
-      const employeeShare = savedHours / uniqueWorkers
-      const bonusAmount = employeeShare * (payrollConfig.efficiency_bonus_rate || 25)
+      // Quality gate: skip if job has callbacks/rework (check job.has_callback flag)
+      if (payrollConfig.bonus_quality_gate && job.has_callback) return
+
+      const totalPool = savedHours * rate
+      const companyShare = totalPool * (companyCut / 100)
+      const crewPool = totalPool - companyShare
+
+      // Weighted split: get all unique crew members and their weights
+      const crewMemberIds = [...new Set(allJobTimeLogs.map(tl => tl.employee_id))]
+      const crewWeights = crewMemberIds.map(id => ({ id, weight: getSkillWeight(id) }))
+      const participatingCrew = crewWeights.filter(c => c.weight > 0)
+      const totalWeight = participatingCrew.reduce((sum, c) => sum + c.weight, 0)
+
+      if (totalWeight <= 0) return // No eligible crew
+
+      const myWeight = getSkillWeight(employeeId)
+      if (myWeight <= 0) {
+        // This employee has weight 0 — no bonus
+        details.push({
+          jobId: job.job_id || job.id,
+          jobTitle: job.job_title || job.customer_name || 'Job',
+          allottedHours: job.allotted_time_hours,
+          actualHours: totalActualHours,
+          savedHours,
+          crewSize: crewMemberIds.length,
+          employeeShare: 0,
+          bonusAmount: 0,
+          weightedOut: true,
+        })
+        return
+      }
+
+      const bonusAmount = crewPool * (myWeight / totalWeight)
 
       totalBonus += bonusAmount
       details.push({
@@ -508,9 +559,12 @@ export default function Payroll() {
         allottedHours: job.allotted_time_hours,
         actualHours: totalActualHours,
         savedHours,
-        crewSize: uniqueWorkers,
-        employeeShare,
+        crewSize: crewMemberIds.length,
+        employeeShare: savedHours * (myWeight / totalWeight),
         bonusAmount,
+        companyCut: companyShare,
+        totalPool,
+        crewPool,
       })
     })
 
@@ -576,7 +630,7 @@ export default function Payroll() {
       data[emp.id] = calculateFullPay(emp)
     })
     return data
-  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leadCommissions, payrollConfig])
+  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leadCommissions, payrollConfig, skillLevelSettings])
 
   const totalPayroll = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),
@@ -1568,8 +1622,39 @@ export default function Payroll() {
               {/* Efficiency Bonus */}
               <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Zap size={16} style={{ color: '#8b5cf6' }} />
-                Efficiency Bonuses
+                Bonus Hours
               </h4>
+
+              {/* How It Works explainer */}
+              <div style={{
+                padding: '14px 16px', marginBottom: '16px', borderRadius: '10px',
+                backgroundColor: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)'
+              }}>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>How Bonus Hours Work</div>
+                <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: '1.7' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>1.</span>
+                    <span>Every job has <strong>allotted hours</strong> based on its line items. This is the time budget.</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>2.</span>
+                    <span>When a crew finishes <strong>under</strong> the allotted hours, the saved time is multiplied by a <strong>dollar rate</strong> to create a <strong>bonus pool</strong>.</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>3.</span>
+                    <span>The company keeps a <strong>configurable %</strong> of the pool (margin boost for efficiency), and the rest goes to the crew.</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>4.</span>
+                    <span>The crew's share is split by <strong>skill-level weight</strong> — higher-skilled roles earn a bigger piece. Set weights under Employees &gt; Settings &gt; Skill Levels.</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ fontWeight: '600', color: '#8b5cf6', minWidth: '16px' }}>5.</span>
+                    <span>Installers see their <strong>live potential bonus</strong> on every job page — creating real-time motivation to work efficiently.</span>
+                  </div>
+                </div>
+              </div>
+
               <label style={{
                 display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px',
                 padding: '12px', backgroundColor: theme.bg, borderRadius: '8px', cursor: 'pointer'
@@ -1580,24 +1665,93 @@ export default function Payroll() {
                   onChange={(e) => setPayrollConfig({ ...payrollConfig, efficiency_bonus_enabled: e.target.checked })}
                 />
                 <div>
-                  <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Enable efficiency bonuses</div>
+                  <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Enable bonus hours</div>
                   <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                    Reward crews that finish jobs under allotted time. Hours saved are split between crew members.
+                    Crews that finish jobs under allotted time earn a bonus. Each installer sees their potential payout on every job.
                   </div>
                 </div>
               </label>
 
               {payrollConfig.efficiency_bonus_enabled && (
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={labelStyle}>Bonus rate per hour saved ($)</label>
-                  <input
-                    type="number" min="0" step="5"
-                    value={payrollConfig.efficiency_bonus_rate}
-                    onChange={(e) => setPayrollConfig({ ...payrollConfig, efficiency_bonus_rate: parseFloat(e.target.value) || 25 })}
-                    style={inputStyle}
-                  />
-                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
-                    Example: A 10-hour job done in 7 hours by 2 techs = 3h saved, 1.5h each × ${payrollConfig.efficiency_bonus_rate} = ${(1.5 * payrollConfig.efficiency_bonus_rate).toFixed(2)} per tech
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Bonus rate per hour saved ($)</label>
+                    <input
+                      type="number" min="0" step="5"
+                      value={payrollConfig.efficiency_bonus_rate}
+                      onChange={(e) => setPayrollConfig({ ...payrollConfig, efficiency_bonus_rate: parseFloat(e.target.value) || 25 })}
+                      style={inputStyle}
+                    />
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                      Each hour the crew saves is worth this amount. This is the foundation of the bonus pool.
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>Company retention %</label>
+                    <input
+                      type="number" min="0" max="50" step="5"
+                      value={payrollConfig.company_bonus_cut_percent}
+                      onChange={(e) => setPayrollConfig({ ...payrollConfig, company_bonus_cut_percent: parseFloat(e.target.value) || 0 })}
+                      style={inputStyle}
+                    />
+                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px' }}>
+                      Faster work benefits <strong>both</strong> the company and the crew. The company keeps <strong>{payrollConfig.company_bonus_cut_percent}%</strong> of the pool as a margin boost, and the crew splits the remaining <strong>{100 - payrollConfig.company_bonus_cut_percent}%</strong>. Set to 0% if you want 100% to go to the crew.
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>Minimum hours saved to qualify</label>
+                    <input
+                      type="number" min="0" step="0.25"
+                      value={payrollConfig.bonus_min_hours_saved}
+                      onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_min_hours_saved: parseFloat(e.target.value) || 0 })}
+                      style={inputStyle}
+                    />
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                      Prevents tiny payouts on short jobs. A crew must save at least this many hours for a bonus to apply.
+                    </div>
+                  </div>
+
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '12px', backgroundColor: theme.bg, borderRadius: '8px', cursor: 'pointer'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={payrollConfig.bonus_quality_gate}
+                      onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_quality_gate: e.target.checked })}
+                    />
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Quality gate</div>
+                      <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                        If a job has any callbacks or rework, the bonus is forfeited. Speed without quality doesn't count.
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Live example */}
+                  <div style={{ padding: '14px 16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '10px' }}>Live Example With Your Settings</div>
+                    <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: '1.8' }}>
+                      <div>A job is bid at <strong>40 hours</strong>. The crew finishes in <strong>32 hours</strong> — saving <strong>8 hours</strong>.</div>
+                      <div style={{ marginTop: '4px' }}>
+                        Bonus pool: 8h x <strong>${payrollConfig.efficiency_bonus_rate}</strong>/hr = <strong>${(8 * payrollConfig.efficiency_bonus_rate).toFixed(0)}</strong>
+                      </div>
+                      <div style={{ display: 'flex', gap: '16px', marginTop: '6px', flexWrap: 'wrap' }}>
+                        <div style={{ padding: '6px 10px', borderRadius: '6px', backgroundColor: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>Company keeps ({payrollConfig.company_bonus_cut_percent}%)</div>
+                          <div style={{ fontSize: '15px', fontWeight: '700', color: '#22c55e' }}>${(8 * payrollConfig.efficiency_bonus_rate * payrollConfig.company_bonus_cut_percent / 100).toFixed(0)}</div>
+                        </div>
+                        <div style={{ padding: '6px 10px', borderRadius: '6px', backgroundColor: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)' }}>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>Crew splits ({100 - payrollConfig.company_bonus_cut_percent}%)</div>
+                          <div style={{ fontSize: '15px', fontWeight: '700', color: '#8b5cf6' }}>${(8 * payrollConfig.efficiency_bonus_rate * (100 - payrollConfig.company_bonus_cut_percent) / 100).toFixed(0)}</div>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: '8px', color: theme.textMuted, fontStyle: 'italic' }}>
+                        The crew's ${(8 * payrollConfig.efficiency_bonus_rate * (100 - payrollConfig.company_bonus_cut_percent) / 100).toFixed(0)} is divided by skill-level weight — a Crew Lead (wt 3) earns 3x more than an Installer II (wt 1).
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

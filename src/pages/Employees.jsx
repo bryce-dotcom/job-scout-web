@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import {
   Plus, Pencil, X, User, Phone, Mail, Eye,
   DollarSign, Clock, Calendar, Briefcase, Lock,
-  Camera, FileText, Upload, Download, Settings, Trash2, Send, KeyRound
+  Camera, FileText, Upload, Download, Settings, Trash2, Send, KeyRound, Zap
 } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { employeesFields } from '../lib/importExportFields'
@@ -118,6 +118,7 @@ export default function Employees() {
   const [newJobTitle, setNewJobTitle] = useState('')
   const [newAccessLevel, setNewAccessLevel] = useState({ name: '', description: '' })
   const [newSkillLevel, setNewSkillLevel] = useState('')
+  const [newSkillWeight, setNewSkillWeight] = useState(1)
   const [savingSettings, setSavingSettings] = useState(false)
 
   // Invite employee state
@@ -198,7 +199,9 @@ export default function Employees() {
     if (skillData?.value) {
       try {
         const parsed = JSON.parse(skillData.value)
-        setSkillLevels(parsed)
+        // Migrate old string[] format to object[] with default weight 1
+        const normalized = parsed.map(s => typeof s === 'string' ? { name: s, weight: 1 } : s)
+        setSkillLevels(normalized)
       } catch {
         setSkillLevels([])
       }
@@ -274,20 +277,26 @@ export default function Employees() {
 
   const addSkillLevel = () => {
     if (!newSkillLevel.trim()) return
-    const updated = [...skillLevels, newSkillLevel.trim()]
+    const updated = [...skillLevels, { name: newSkillLevel.trim(), weight: newSkillWeight }]
     saveSkillLevels(updated)
     setNewSkillLevel('')
+    setNewSkillWeight(1)
   }
 
-  const removeSkillLevel = (level) => {
-    const updated = skillLevels.filter(l => l !== level)
+  const removeSkillLevel = (levelName) => {
+    const updated = skillLevels.filter(l => l.name !== levelName)
+    saveSkillLevels(updated)
+  }
+
+  const updateSkillWeight = (levelName, weight) => {
+    const updated = skillLevels.map(l => l.name === levelName ? { ...l, weight } : l)
     saveSkillLevels(updated)
   }
 
   // Use settings-driven values or defaults
   const ROLES = jobTitles.length > 0 ? jobTitles : DEFAULT_JOB_TITLES
   const USER_ROLES = accessLevels.length > 0 ? accessLevels.map(l => l.name) : DEFAULT_ACCESS_LEVELS.map(l => l.name)
-  const SKILL_LEVELS = skillLevels
+  const SKILL_LEVELS = skillLevels.map(s => typeof s === 'string' ? s : s.name)
 
   const loadEmployees = async () => {
     if (!companyId) return
@@ -2426,12 +2435,33 @@ export default function Employees() {
 
               {settingsTab === 'skill_levels' && (
                 <div>
-                  <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
-                    Skill levels define expertise tiers for your team (e.g., Apprentice, Journeyman, Master). These can be assigned to employees and used for payroll bonus calculations.
+                  <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
+                    Skill levels define expertise tiers for your team. Each level gets a <strong style={{ color: theme.text }}>bonus weight</strong> that determines how the crew bonus pool is split when a job finishes early.
                   </p>
+                  <div style={{
+                    padding: '14px 16px', marginBottom: '16px', borderRadius: '10px',
+                    backgroundColor: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.15)'
+                  }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Zap size={14} style={{ color: '#8b5cf6' }} />
+                      How Bonus Weights Work
+                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: '1.6' }}>
+                      <div style={{ marginBottom: '4px' }}>When a crew finishes a job under the allotted hours, the saved time becomes a <strong>bonus pool</strong> (hours saved x bonus rate). That pool is split based on each crew member's weight:</div>
+                      <div style={{ padding: '8px 0 4px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                        <span><strong>Weight 0</strong> — No bonus (e.g., trainees still learning)</span>
+                        <span><strong>Weight 1</strong> — Base share (entry-level installers)</span>
+                        <span><strong>Weight 2</strong> — 2x share (lead installers)</span>
+                        <span><strong>Weight 3</strong> — 3x share (crew leads / foremen)</span>
+                      </div>
+                      <div style={{ marginTop: '6px', fontStyle: 'italic', color: theme.textMuted }}>
+                        Example: If the crew pool is $160 and the crew is a Crew Lead (wt 3), a Lead (wt 2), and a Scout (wt 1) — the Lead gets $160 x 2/6 = $53.33.
+                      </div>
+                    </div>
+                  </div>
 
                   {/* Add new skill level */}
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
                     <input
                       type="text"
                       value={newSkillLevel}
@@ -2440,6 +2470,7 @@ export default function Employees() {
                       onKeyDown={(e) => e.key === 'Enter' && addSkillLevel()}
                       style={{
                         flex: 1,
+                        minWidth: '140px',
                         padding: '10px 12px',
                         backgroundColor: theme.bg,
                         border: `1px solid ${theme.border}`,
@@ -2448,6 +2479,27 @@ export default function Employees() {
                         fontSize: '14px'
                       }}
                     />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <label style={{ fontSize: '13px', color: theme.textMuted, whiteSpace: 'nowrap' }}>Bonus Weight</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="5"
+                        step="1"
+                        value={newSkillWeight}
+                        onChange={(e) => setNewSkillWeight(parseInt(e.target.value) || 0)}
+                        style={{
+                          width: '60px',
+                          padding: '10px 8px',
+                          backgroundColor: theme.bg,
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '8px',
+                          color: theme.text,
+                          fontSize: '14px',
+                          textAlign: 'center'
+                        }}
+                      />
+                    </div>
                     <button
                       onClick={addSkillLevel}
                       disabled={savingSettings || !newSkillLevel.trim()}
@@ -2465,12 +2517,15 @@ export default function Employees() {
                       Add
                     </button>
                   </div>
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
+                    Set each level's weight below. Installers see their weight on every job's Bonus Hours card, so they know exactly how the math works.
+                  </div>
 
                   {/* List of skill levels */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {skillLevels.length === 0 ? (
                       <p style={{ fontSize: '13px', color: theme.textMuted, textAlign: 'center', padding: '24px' }}>
-                        No skill levels defined yet. Add levels like "Apprentice", "Journeyman", or "Master" above.
+                        No skill levels defined yet. Add levels like "Installer I", "Lead Installer", or "Crew Lead" above.
                       </p>
                     ) : (
                       skillLevels.map((level, idx) => (
@@ -2483,30 +2538,53 @@ export default function Employees() {
                             padding: '10px 12px',
                             backgroundColor: theme.bg,
                             borderRadius: '8px',
-                            border: `1px solid ${theme.border}`
+                            border: `1px solid ${theme.border}`,
+                            gap: '10px'
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
                             <div style={{
                               width: '8px',
                               height: '8px',
                               borderRadius: '50%',
-                              backgroundColor: '#a855f7'
+                              backgroundColor: level.weight > 0 ? '#a855f7' : theme.textMuted,
+                              flexShrink: 0
                             }} />
-                            <span style={{ fontSize: '14px', color: theme.text }}>{level}</span>
+                            <span style={{ fontSize: '14px', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{level.name}</span>
                           </div>
-                          <button
-                            onClick={() => removeSkillLevel(level)}
-                            style={{
-                              padding: '4px',
-                              backgroundColor: 'transparent',
-                              border: 'none',
-                              color: theme.textMuted,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                            <label style={{ fontSize: '12px', color: theme.textMuted }}>Wt</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="5"
+                              step="1"
+                              value={level.weight}
+                              onChange={(e) => updateSkillWeight(level.name, parseInt(e.target.value) || 0)}
+                              style={{
+                                width: '50px',
+                                padding: '6px',
+                                backgroundColor: theme.bgCard,
+                                border: `1px solid ${theme.border}`,
+                                borderRadius: '6px',
+                                color: theme.text,
+                                fontSize: '13px',
+                                textAlign: 'center'
+                              }}
+                            />
+                            <button
+                              onClick={() => removeSkillLevel(level.name)}
+                              style={{
+                                padding: '4px',
+                                backgroundColor: 'transparent',
+                                border: 'none',
+                                color: theme.textMuted,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         </div>
                       ))
                     )}

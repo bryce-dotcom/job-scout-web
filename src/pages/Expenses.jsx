@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { EXPENSE_CATEGORIES } from '../lib/schema'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
-import { Plus, Pencil, Trash2, X, Receipt, Search, DollarSign, Upload, Download } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Receipt, Search, DollarSign, Upload, Download, Image, ExternalLink, Camera } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { expensesFields } from '../lib/importExportFields'
 
@@ -54,6 +54,9 @@ export default function Expenses() {
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
+  const [previewImage, setPreviewImage] = useState(null)
+  const [receiptUploading, setReceiptUploading] = useState(false)
+  const receiptInputRef = useRef(null)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -74,12 +77,15 @@ export default function Expenses() {
     return (
       expense.description?.toLowerCase().includes(s) ||
       expense.merchant?.toLowerCase().includes(s) ||
+      expense.vendor?.toLowerCase().includes(s) ||
       expense.client?.toLowerCase().includes(s) ||
       expense.business?.toLowerCase().includes(s) ||
       expense.account?.toLowerCase().includes(s) ||
       expense.source?.toLowerCase().includes(s) ||
       expense.category?.toLowerCase().includes(s) ||
-      expense.expense_id?.toLowerCase().includes(s)
+      expense.expense_id?.toLowerCase().includes(s) ||
+      expense.lead?.customer_name?.toLowerCase().includes(s) ||
+      expense.job?.job_title?.toLowerCase().includes(s)
     )
   })
 
@@ -127,6 +133,41 @@ export default function Expenses() {
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
+  const handleReceiptUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setReceiptUploading(true)
+
+    const timestamp = Date.now()
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const storagePath = `expenses/receipts/${timestamp}_${safeName}`
+
+    const { error: uploadErr } = await supabase.storage
+      .from('project-documents')
+      .upload(storagePath, file, { contentType: file.type })
+
+    if (uploadErr) {
+      setError('Receipt upload failed: ' + uploadErr.message)
+      setReceiptUploading(false)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
+
+    if (editingExpense) {
+      await supabase.from('expenses').update({
+        receipt_url: urlData.publicUrl,
+        receipt_storage_path: storagePath
+      }).eq('id', editingExpense.id)
+      setEditingExpense({ ...editingExpense, receipt_url: urlData.publicUrl, receipt_storage_path: storagePath })
+    } else {
+      setFormData(prev => ({ ...prev, _receipt_url: urlData.publicUrl, _receipt_storage_path: storagePath }))
+    }
+
+    setReceiptUploading(false)
+    if (receiptInputRef.current) receiptInputRef.current.value = ''
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -150,6 +191,12 @@ export default function Expenses() {
       status: formData.status || 'Pending',
       notes: formData.notes || null,
       updated_at: new Date().toISOString()
+    }
+
+    // Include receipt upload data for new expenses
+    if (!editingExpense && formData._receipt_url) {
+      payload.receipt_url = formData._receipt_url
+      payload.receipt_storage_path = formData._receipt_storage_path
     }
 
     let result
@@ -184,6 +231,16 @@ export default function Expenses() {
   const formatDate = (date) => {
     if (!date) return '-'
     return new Date(date).toLocaleDateString()
+  }
+
+  const getLinkedEntity = (expense) => {
+    if (expense.job) return { label: expense.job.job_title || `Job #${expense.job.job_id || expense.job.id}`, path: `/jobs/${expense.job_id}`, color: '#3b82f6' }
+    if (expense.quote) return { label: `Quote ${expense.quote.quote_id || '#' + expense.quote_id}`, path: `/quotes/${expense.quote_id}`, color: '#a855f7' }
+    if (expense.lead) return { label: expense.lead.customer_name || `Lead #${expense.lead_id}`, path: `/leads/${expense.lead_id}`, color: '#22c55e' }
+    if (expense.job_id) return { label: `Job #${expense.job_id}`, path: `/jobs/${expense.job_id}`, color: '#3b82f6' }
+    if (expense.quote_id) return { label: `Quote #${expense.quote_id}`, path: `/quotes/${expense.quote_id}`, color: '#a855f7' }
+    if (expense.lead_id) return { label: `Lead #${expense.lead_id}`, path: `/leads/${expense.lead_id}`, color: '#22c55e' }
+    return null
   }
 
   const inputStyle = {
@@ -350,10 +407,10 @@ export default function Expenses() {
           border: `1px solid ${theme.border}`,
           overflow: 'auto'
         }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
               <tr style={{ backgroundColor: theme.accentBg, borderBottom: `1px solid ${theme.border}` }}>
-                {['Category', 'Tax Category', '1065 Category', 'Account', 'Business', 'Client', 'Merchant', 'Source', 'Description', 'Receipt', 'Date', 'Amount', ''].map((col, i) => (
+                {['Receipt', 'Date', 'Description', 'Category', 'Merchant', 'Linked To', 'Source', 'Status', 'Amount', ''].map((col, i) => (
                   <th key={i} style={{
                     padding: '12px 10px',
                     fontSize: '11px',
@@ -369,74 +426,202 @@ export default function Expenses() {
               </tr>
             </thead>
             <tbody>
-              {filteredExpenses.map((expense) => (
-                <tr key={expense.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  <td style={{ padding: '10px', fontSize: '13px' }}>
-                    {expense.category ? (
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        backgroundColor: theme.accentBg,
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        color: theme.accent,
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {expense.category}
-                      </span>
-                    ) : '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
-                    {expense.tax_category || '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
-                    {expense.form_1065_category || '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
-                    {expense.account || '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.text }}>
-                    {expense.business || '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.text, fontWeight: '500' }}>
-                    {expense.client || '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
-                    {expense.merchant || '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {expense.source || '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {expense.description || '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textMuted }}>
-                    {expense.receipt || '-'}
-                  </td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
-                    {formatDate(expense.date)}
-                  </td>
-                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: '600', color: theme.text, whiteSpace: 'nowrap' }}>
-                    {formatCurrency(expense.amount)}
-                  </td>
-                  <td style={{ padding: '10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button
-                      onClick={() => openEditModal(expense)}
-                      style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(expense)}
-                      style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {filteredExpenses.map((expense) => {
+                const linked = getLinkedEntity(expense)
+                const receiptUrl = expense.receipt_url
+                return (
+                  <tr key={expense.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                    {/* Receipt thumbnail */}
+                    <td style={{ padding: '8px 10px', width: '56px' }}>
+                      {receiptUrl ? (
+                        <button
+                          onClick={() => setPreviewImage(receiptUrl)}
+                          style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '6px',
+                            border: `1px solid ${theme.border}`,
+                            padding: 0,
+                            cursor: 'pointer',
+                            overflow: 'hidden',
+                            backgroundColor: theme.bg,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <img
+                            src={receiptUrl}
+                            alt="Receipt"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }}
+                          />
+                          <div style={{ display: 'none', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                            <Image size={16} color={theme.textMuted} />
+                          </div>
+                        </button>
+                      ) : (
+                        <div style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '6px',
+                          border: `1px dashed ${theme.border}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: theme.bg
+                        }}>
+                          <Receipt size={14} color={theme.border} />
+                        </div>
+                      )}
+                    </td>
+                    {/* Date */}
+                    <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap' }}>
+                      {formatDate(expense.date)}
+                    </td>
+                    {/* Description */}
+                    <td style={{ padding: '10px', fontSize: '13px', color: theme.text, maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {expense.description || '-'}
+                    </td>
+                    {/* Category */}
+                    <td style={{ padding: '10px', fontSize: '13px' }}>
+                      {expense.category ? (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          backgroundColor: theme.accentBg,
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          color: theme.accent,
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {expense.category}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    {/* Merchant */}
+                    <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
+                      {expense.merchant || expense.vendor || '-'}
+                    </td>
+                    {/* Linked entity */}
+                    <td style={{ padding: '10px', fontSize: '13px' }}>
+                      {linked ? (
+                        <button
+                          onClick={() => navigate(linked.path)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '2px 8px',
+                            backgroundColor: linked.color + '15',
+                            color: linked.color,
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {linked.label}
+                          <ExternalLink size={10} />
+                        </button>
+                      ) : (
+                        <span style={{ color: theme.textMuted }}>-</span>
+                      )}
+                    </td>
+                    {/* Source */}
+                    <td style={{ padding: '10px', fontSize: '13px', color: theme.textSecondary }}>
+                      {expense.source || '-'}
+                    </td>
+                    {/* Status */}
+                    <td style={{ padding: '10px', fontSize: '13px' }}>
+                      {expense.status ? (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          backgroundColor: expense.status === 'Approved' ? '#22c55e15' : expense.status === 'Denied' ? '#ef444415' : expense.status === 'Paid' ? '#3b82f615' : theme.accentBg,
+                          color: expense.status === 'Approved' ? '#22c55e' : expense.status === 'Denied' ? '#ef4444' : expense.status === 'Paid' ? '#3b82f6' : theme.accent,
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {expense.status}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    {/* Amount */}
+                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '600', color: theme.text, whiteSpace: 'nowrap' }}>
+                      {formatCurrency(expense.amount)}
+                    </td>
+                    {/* Actions */}
+                    <td style={{ padding: '10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button
+                        onClick={() => openEditModal(expense)}
+                        style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(expense)}
+                        style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Receipt Preview Modal */}
+      {previewImage && (
+        <div
+          onClick={() => setPreviewImage(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            zIndex: 60,
+            cursor: 'pointer'
+          }}
+        >
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
+            <button
+              onClick={() => setPreviewImage(null)}
+              style={{
+                position: 'absolute',
+                top: '-12px',
+                right: '-12px',
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                backgroundColor: '#fff',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+              }}
+            >
+              <X size={16} color="#333" />
+            </button>
+            <img
+              src={previewImage}
+              alt="Receipt"
+              style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '8px', objectFit: 'contain' }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         </div>
       )}
 
@@ -492,6 +677,81 @@ export default function Expenses() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Receipt Upload */}
+                <div>
+                  <label style={labelStyle}>Receipt Photo</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    {(editingExpense?.receipt_url || formData._receipt_url) ? (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImage(editingExpense?.receipt_url || formData._receipt_url)}
+                        style={{
+                          width: '64px',
+                          height: '64px',
+                          borderRadius: '8px',
+                          border: `1px solid ${theme.border}`,
+                          padding: 0,
+                          cursor: 'pointer',
+                          overflow: 'hidden',
+                          backgroundColor: theme.bg,
+                          flexShrink: 0
+                        }}
+                      >
+                        <img
+                          src={editingExpense?.receipt_url || formData._receipt_url}
+                          alt="Receipt"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      </button>
+                    ) : (
+                      <div style={{
+                        width: '64px',
+                        height: '64px',
+                        borderRadius: '8px',
+                        border: `2px dashed ${theme.border}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: theme.bg,
+                        flexShrink: 0
+                      }}>
+                        <Camera size={20} color={theme.textMuted} />
+                      </div>
+                    )}
+                    <div style={{ flex: 1 }}>
+                      <input
+                        ref={receiptInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleReceiptUpload}
+                        style={{ display: 'none' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => receiptInputRef.current?.click()}
+                        disabled={receiptUploading}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '8px 14px',
+                          backgroundColor: theme.accentBg,
+                          color: theme.accent,
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          fontWeight: '500',
+                          cursor: receiptUploading ? 'not-allowed' : 'pointer',
+                          opacity: receiptUploading ? 0.6 : 1
+                        }}
+                      >
+                        <Upload size={14} />
+                        {receiptUploading ? 'Uploading...' : (editingExpense?.receipt_url || formData._receipt_url) ? 'Replace Photo' : 'Upload Receipt'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Row 1: Category, Tax Category, 1065 Category */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
@@ -549,11 +809,11 @@ export default function Expenses() {
                   </div>
                 </div>
 
-                {/* Row 5: Receipt, Date, Amount */}
+                {/* Row 5: Receipt text, Date, Amount */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Receipt</label>
-                    <input type="text" name="receipt" value={formData.receipt} onChange={handleChange} style={inputStyle} />
+                    <label style={labelStyle}>Receipt Ref</label>
+                    <input type="text" name="receipt" value={formData.receipt} onChange={handleChange} style={inputStyle} placeholder="Receipt number" />
                   </div>
                   <div>
                     <label style={labelStyle}>Date *</label>

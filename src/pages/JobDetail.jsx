@@ -207,6 +207,11 @@ function JobDetailInner() {
   const [submittalProgress, setSubmittalProgress] = useState('')
   const [submittalSections, setSubmittalSections] = useState({ documents: true, lineItems: true, verification: true, notes: true })
 
+  // Bonus hours state
+  const [bonusConfig, setBonusConfig] = useState(null) // payroll_config from settings
+  const [skillLevelSettings, setSkillLevelSettings] = useState([]) // skill_levels from settings
+  const currentUser = useStore((state) => state.user)
+
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -230,6 +235,21 @@ function JobDetailInner() {
     // Fetch product groups for line item picker
     supabase.from('product_groups').select('*').eq('company_id', companyId).order('sort_order')
       .then(({ data }) => setProductGroups(data || []))
+    // Load bonus hours config
+    Promise.all([
+      supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payroll_config').maybeSingle(),
+      supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'skill_levels').maybeSingle()
+    ]).then(([configRes, skillRes]) => {
+      if (configRes.data?.value) {
+        try { setBonusConfig(JSON.parse(configRes.data.value)) } catch {}
+      }
+      if (skillRes.data?.value) {
+        try {
+          const parsed = JSON.parse(skillRes.data.value)
+          setSkillLevelSettings(parsed.map(s => typeof s === 'string' ? { name: s, weight: 1 } : s))
+        } catch {}
+      }
+    })
   }, [companyId, id, navigate])
 
   useEffect(() => {
@@ -2770,6 +2790,220 @@ function JobDetailInner() {
               )}
             </div>
           </div>
+
+          {/* Bonus Hours Card */}
+          {(() => {
+            const showBonus = bonusConfig?.efficiency_bonus_enabled && allottedHours > 0 &&
+              (job.status === 'In Progress' || job.status === 'Complete' || job.status === 'Completed')
+            if (!showBonus) return null
+
+            const rate = bonusConfig.efficiency_bonus_rate || 25
+            const companyCut = bonusConfig.company_bonus_cut_percent || 0
+            const savedHours = Math.max(0, allottedHours - totalHoursWorked)
+            const hoursRemaining = allottedHours - totalHoursWorked
+            const isOverBudget = hoursRemaining < 0
+            const totalPool = savedHours * rate
+            const companyShare = totalPool * (companyCut / 100)
+            const crewPool = totalPool - companyShare
+
+            // Build crew from time logs
+            const crewMemberIds = [...new Set(jobTimeLogs.map(t => t.employee_id))]
+            const crewMembers = crewMemberIds.map(empId => {
+              const emp = employees.find(e => e.id === empId)
+              const skillLevel = emp?.skill_level || ''
+              const found = skillLevelSettings.find(s => s.name === skillLevel)
+              const weight = found ? found.weight : 1
+              return { id: empId, name: emp?.name || 'Unknown', skillLevel, weight }
+            })
+            const participating = crewMembers.filter(c => c.weight > 0)
+            const totalWeight = participating.reduce((sum, c) => sum + c.weight, 0)
+
+            // Current user's share
+            const currentEmp = employees.find(e => e.email === currentUser?.email)
+            const myMember = currentEmp ? crewMembers.find(c => c.id === currentEmp.id) : null
+            const myShare = myMember && totalWeight > 0 ? crewPool * (myMember.weight / totalWeight) : null
+
+            const progressPct = allottedHours > 0 ? Math.min(100, (totalHoursWorked / allottedHours) * 100) : 0
+            const barColor = progressPct >= 100 ? '#ef4444' : progressPct >= 80 ? '#eab308' : '#22c55e'
+            const isComplete = job.status === 'Complete' || job.status === 'Completed'
+
+            return (
+              <div style={{
+                backgroundColor: theme.bgCard,
+                borderRadius: '12px',
+                border: `1px solid ${isOverBudget ? '#ef444440' : '#22c55e40'}`,
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '16px 20px', borderBottom: `1px solid ${theme.border}`,
+                  background: isComplete && !isOverBudget ? 'linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(34,197,94,0.02) 100%)' : undefined
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Zap size={18} style={{ color: isOverBudget ? '#ef4444' : '#22c55e' }} />
+                    <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>
+                      {isComplete && !isOverBudget ? 'Bonus Earned' : 'Bonus Hours'}
+                    </h3>
+                  </div>
+                  {!isOverBudget && crewPool > 0 && (
+                    <div style={{
+                      padding: '4px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: '600',
+                      backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e'
+                    }}>
+                      ${crewPool.toFixed(0)} pool
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ padding: '16px 20px' }}>
+                  {/* How it works — always visible, one-liner with expandable detail */}
+                  <div style={{
+                    padding: '10px 14px', borderRadius: '8px', marginBottom: '16px',
+                    backgroundColor: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.12)',
+                    fontSize: '12px', color: theme.textSecondary, lineHeight: '1.6'
+                  }}>
+                    <strong style={{ color: theme.text }}>How this works:</strong> This job was bid at <strong>{allottedHours}h</strong>.
+                    Every hour your crew saves is worth <strong>${rate}/hr</strong>.
+                    {companyCut > 0
+                      ? <> The company keeps <strong>{companyCut}%</strong> and the crew splits <strong>{100 - companyCut}%</strong>, weighted by skill level — higher roles earn a bigger share.</>
+                      : <> The full bonus goes to the crew, weighted by skill level — higher roles earn a bigger share.</>
+                    }
+                    {bonusConfig.bonus_quality_gate && <> No bonus if the job has callbacks.</>}
+                    {' '}Finish early, get paid more.
+                  </div>
+
+                  {/* Progress bar */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px' }}>
+                      <span style={{ color: theme.textSecondary }}>{totalHoursWorked.toFixed(1)}h logged</span>
+                      <span style={{ color: theme.textMuted }}>{allottedHours}h allotted</span>
+                    </div>
+                    <div style={{ height: '10px', backgroundColor: theme.accentBg, borderRadius: '5px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${Math.min(progressPct, 100)}%`,
+                        backgroundColor: barColor,
+                        borderRadius: '5px',
+                        transition: 'width 0.3s'
+                      }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px' }}>
+                      <span style={{ color: isOverBudget ? '#ef4444' : '#22c55e', fontWeight: '600' }}>
+                        {isOverBudget ? `${Math.abs(hoursRemaining).toFixed(1)}h over budget` : `${hoursRemaining.toFixed(1)}h remaining`}
+                      </span>
+                      {!isOverBudget && savedHours > 0 && (
+                        <span style={{ color: theme.textMuted }}>
+                          {savedHours.toFixed(1)}h saved = ${totalPool.toFixed(0)} pool
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Pool breakdown — transparent math */}
+                  {!isOverBudget && crewPool > 0 && (
+                    <div style={{
+                      display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap'
+                    }}>
+                      <div style={{
+                        flex: 1, minWidth: '120px', padding: '10px 12px', borderRadius: '8px',
+                        backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.15)', textAlign: 'center'
+                      }}>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>Crew Pool</div>
+                        <div style={{ fontSize: '18px', fontWeight: '700', color: '#22c55e' }}>${crewPool.toFixed(0)}</div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{100 - companyCut}% of ${totalPool.toFixed(0)}</div>
+                      </div>
+                      {companyShare > 0 && (
+                        <div style={{
+                          flex: 1, minWidth: '120px', padding: '10px 12px', borderRadius: '8px',
+                          backgroundColor: theme.bg, border: `1px solid ${theme.border}`, textAlign: 'center'
+                        }}>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>Company</div>
+                          <div style={{ fontSize: '18px', fontWeight: '700', color: theme.textSecondary }}>${companyShare.toFixed(0)}</div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>{companyCut}% retention</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* My share callout */}
+                  {myShare !== null && myShare > 0 && !isOverBudget && (
+                    <div style={{
+                      padding: '12px 16px', borderRadius: '10px', marginBottom: '16px',
+                      background: 'linear-gradient(135deg, rgba(34,197,94,0.1) 0%, rgba(168,85,247,0.08) 100%)',
+                      border: '1px solid rgba(34,197,94,0.2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>Your Bonus</div>
+                        <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
+                          {myMember.skillLevel || 'Unassigned'} — weight {myMember.weight} of {totalWeight} total
+                        </div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                          ${crewPool.toFixed(0)} x {myMember.weight}/{totalWeight} = ${myShare.toFixed(2)}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#22c55e' }}>
+                        ${myShare.toFixed(2)}
+                      </div>
+                    </div>
+                  )}
+
+                  {isOverBudget && (
+                    <div style={{
+                      padding: '12px 16px', borderRadius: '10px', marginBottom: '16px',
+                      backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+                      fontSize: '13px', color: '#ef4444', textAlign: 'center'
+                    }}>
+                      Job is over allotted hours — no bonus available
+                    </div>
+                  )}
+
+                  {/* Crew breakdown */}
+                  {crewMembers.length > 0 && !isOverBudget && (
+                    <div>
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Crew Breakdown
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {crewMembers.map(member => {
+                          const share = totalWeight > 0 && member.weight > 0
+                            ? crewPool * (member.weight / totalWeight)
+                            : 0
+                          return (
+                            <div key={member.id} style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              padding: '8px 12px', backgroundColor: theme.bg, borderRadius: '8px',
+                              fontSize: '13px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                  width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                                  backgroundColor: member.weight > 0 ? '#a855f7' : theme.textMuted
+                                }} />
+                                <span style={{ color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.name}</span>
+                                <span style={{ color: theme.textMuted, fontSize: '12px', flexShrink: 0 }}>
+                                  wt {member.weight}
+                                </span>
+                              </div>
+                              <span style={{
+                                fontWeight: '600', flexShrink: 0, marginLeft: '8px',
+                                color: member.weight > 0 ? '#22c55e' : theme.textMuted
+                              }}>
+                                {member.weight > 0 ? `$${share.toFixed(2)}` : 'Not eligible'}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px', textAlign: 'center', fontStyle: 'italic' }}>
+                        Share = crew pool x (your weight / total weight). Higher skill level = higher weight = bigger share.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Time Tracking */}
           <div style={{

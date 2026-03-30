@@ -3729,6 +3729,7 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
           audit_data: auditData,
           audit_areas_data: auditAreasData,
           proposal_notes: proposalNotes,
+          include_tiers: localSettings.include_tiers || false,
         }
       })
       if (error) throw error
@@ -3878,6 +3879,22 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
                   ? `Layout generated ${new Date(localSettings.proposal_layout.generated_at).toLocaleDateString()}. Regenerate to update.`
                   : 'Generate compelling copy and layout sections using AI based on your line items and estimate details.'}
               </p>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '12px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={localSettings.include_tiers || false}
+                  onChange={e => setLocalSettings(prev => ({ ...prev, include_tiers: e.target.checked }))}
+                  style={{ width: '16px', height: '16px', accentColor: theme.accent, marginTop: '2px', flexShrink: 0 }}
+                />
+                <div>
+                  <span style={{ fontSize: '13px', color: theme.text, fontWeight: '500' }}>
+                    Include Good / Better / Best pricing tiers
+                  </span>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px', lineHeight: 1.4 }}>
+                    Optional — adds tiered pricing packages for upsell opportunities. Best for upgrades, retrofits, and projects with add-on options.
+                  </div>
+                </div>
+              </label>
               <button
                 onClick={handleGenerateProposal}
                 disabled={generatingProposal}
@@ -4272,6 +4289,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
           audit_data: auditData,
           audit_areas_data: auditAreasData,
           proposal_notes: proposalNotes,
+          include_tiers: settings.include_tiers || false,
         }
       })
       if (error) throw error

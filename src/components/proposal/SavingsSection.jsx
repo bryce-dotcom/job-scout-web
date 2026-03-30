@@ -1,4 +1,4 @@
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import ProposalSection from './ProposalSection'
 import proposalTheme from './proposalTheme'
 
@@ -12,7 +12,7 @@ function formatNumber(n) {
   return new Intl.NumberFormat('en-US').format(n)
 }
 
-export default function SavingsSection({ section, totalCost, annualSavings, auditSummary, certified, brandName }) {
+export default function SavingsSection({ section, totalCost, annualSavings, auditSummary, certified, brandName, incentive, discount }) {
   const years = section?.years || 5
   const savings = annualSavings || section?.annual_savings || 0
   const kwhSavings = section?.annual_kwh_savings || auditSummary?.annual_kwh_savings || 0
@@ -21,18 +21,22 @@ export default function SavingsSection({ section, totalCost, annualSavings, audi
 
   if (!savings || savings <= 0) return null
 
+  const netCost = (totalCost || 0) - (incentive || 0) - (discount || 0)
   const data = []
-  let cumulative = -(totalCost || 0)
-  data.push({ year: 'Now', savings: cumulative, label: formatCurrency(cumulative) })
+  let cumulative = -netCost
+  data.push({ year: 'Investment', value: cumulative, label: formatCurrency(cumulative) })
 
   for (let y = 1; y <= years; y++) {
     cumulative += savings
     data.push({
       year: `Year ${y}`,
-      savings: Math.round(cumulative),
+      value: Math.round(cumulative),
       label: formatCurrency(Math.round(cumulative)),
     })
   }
+
+  // Find payback year for annotation
+  const paybackYear = data.findIndex(d => d.value >= 0)
 
   return (
     <div style={{
@@ -62,7 +66,7 @@ export default function SavingsSection({ section, totalCost, annualSavings, audi
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
               <span style={{ fontSize: '12px', fontWeight: '700', color: proposalTheme.certGold, letterSpacing: '1px', textTransform: 'uppercase' }}>
-                Investment Grade Audit {brandName ? `— ${brandName}` : ''}
+                Investment Grade Audit {brandName ? `\u2014 ${brandName}` : ''}
               </span>
             </div>
           </div>
@@ -75,7 +79,7 @@ export default function SavingsSection({ section, totalCost, annualSavings, audi
           textAlign: 'center',
           fontFamily: proposalTheme.fontFamily,
         }}>
-          Savings Over Time
+          Cash Flow Analysis
         </h2>
         <p style={{
           color: proposalTheme.textMuted,
@@ -83,7 +87,7 @@ export default function SavingsSection({ section, totalCost, annualSavings, audi
           textAlign: 'center',
           margin: '0 0 24px',
         }}>
-          {section?.content || `Projected cumulative savings over ${years} years`}
+          {section?.content || `Projected cumulative cash flow over ${years} years`}
         </p>
       </ProposalSection>
 
@@ -128,16 +132,35 @@ export default function SavingsSection({ section, totalCost, annualSavings, audi
           border: `1px solid ${proposalTheme.border}`,
           padding: '24px 16px 16px',
         }}>
+          {/* Summary callout above chart */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '32px',
+            flexWrap: 'wrap',
+            marginBottom: '20px',
+            padding: '0 8px',
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', color: proposalTheme.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px' }}>Net Investment</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#c0392b' }}>{formatCurrency(netCost)}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', color: proposalTheme.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px' }}>Annual Savings</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: proposalTheme.success }}>{formatCurrency(savings)}/yr</div>
+            </div>
+            {paybackYear > 0 && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', color: proposalTheme.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px' }}>Payback</div>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: proposalTheme.accent }}>Year {paybackYear}</div>
+              </div>
+            )}
+          </div>
+
           <div style={{ width: '100%', height: '320px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 10, right: 20, left: 20, bottom: 5 }}>
-                <defs>
-                  <linearGradient id="savingsGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={proposalTheme.accent} stopOpacity={0.2} />
-                    <stop offset="95%" stopColor={proposalTheme.accent} stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={proposalTheme.border} />
+              <BarChart data={data} margin={{ top: 10, right: 20, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={proposalTheme.border} vertical={false} />
                 <XAxis
                   dataKey="year"
                   tick={{ fontSize: 12, fill: proposalTheme.textMuted }}
@@ -145,31 +168,72 @@ export default function SavingsSection({ section, totalCost, annualSavings, audi
                   tickLine={false}
                 />
                 <YAxis
-                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                  tickFormatter={(v) => {
+                    const abs = Math.abs(v)
+                    if (abs >= 1000) return `${v < 0 ? '-' : ''}$${(abs / 1000).toFixed(0)}k`
+                    return `${v < 0 ? '-' : ''}$${abs}`
+                  }}
                   tick={{ fontSize: 12, fill: proposalTheme.textMuted }}
                   axisLine={{ stroke: proposalTheme.border }}
                   tickLine={false}
                 />
                 <Tooltip
-                  formatter={(value) => [formatCurrency(value), 'Cumulative Savings']}
+                  formatter={(value) => [formatCurrency(value), 'Cumulative Cash Flow']}
                   contentStyle={{
                     backgroundColor: proposalTheme.bgCard,
                     border: `1px solid ${proposalTheme.border}`,
                     borderRadius: '8px',
                     fontSize: '13px',
                   }}
+                  cursor={{ fill: 'rgba(90,99,73,0.06)' }}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="savings"
-                  stroke={proposalTheme.accent}
-                  strokeWidth={3}
-                  fill="url(#savingsGradient)"
-                  animationDuration={1500}
-                  animationBegin={300}
-                />
-              </AreaChart>
+                <ReferenceLine y={0} stroke={proposalTheme.text} strokeWidth={1.5} strokeDasharray="4 4" />
+                <Bar
+                  dataKey="value"
+                  radius={[4, 4, 0, 0]}
+                  animationDuration={1200}
+                  animationBegin={200}
+                  maxBarSize={60}
+                >
+                  {data.map((entry, i) => (
+                    <Cell
+                      key={i}
+                      fill={entry.value >= 0 ? proposalTheme.success : '#c0392b'}
+                      fillOpacity={0.85}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
+          </div>
+
+          {/* Cash flow table below chart */}
+          <div style={{ marginTop: '16px', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ borderBottom: `2px solid ${proposalTheme.border}` }}>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', color: proposalTheme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase' }}>Period</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'right', color: proposalTheme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase' }}>Annual</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'right', color: proposalTheme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase' }}>Cumulative</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((d, i) => {
+                  const annual = i === 0 ? -netCost : savings
+                  return (
+                    <tr key={i} style={{ borderBottom: `1px solid ${proposalTheme.border}` }}>
+                      <td style={{ padding: '8px 12px', fontWeight: '500', color: proposalTheme.text }}>{d.year}</td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right', color: annual >= 0 ? proposalTheme.success : '#c0392b', fontWeight: '500' }}>
+                        {formatCurrency(annual)}
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right', color: d.value >= 0 ? proposalTheme.success : '#c0392b', fontWeight: '600' }}>
+                        {formatCurrency(d.value)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       </ProposalSection>

@@ -51,7 +51,8 @@ import {
   Database,
   Compass,
   RefreshCw,
-  HelpCircle
+  HelpCircle,
+  Eye
 } from 'lucide-react'
 
 // Theme context
@@ -410,6 +411,7 @@ export default function Layout() {
     sectionIcon: Settings,
     items: [
       { to: '/settings', icon: Settings, label: 'Settings', hint: 'Company and app settings' },
+      { to: '/admin/eos', icon: Eye, label: 'EOS', hint: 'Vision, traction, rocks, scorecard, and meetings' },
       { to: '/document-rules', icon: FileText, label: 'Document Rules', hint: 'Manage form templates and doc packages' },
       { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' }
     ]

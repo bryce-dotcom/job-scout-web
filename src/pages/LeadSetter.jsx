@@ -111,18 +111,26 @@ export default function LeadSetter() {
     setLoading(true)
 
     // Build query - setter board only shows leads without audits/quotes
+    // Use a single .or() to avoid PostgREST duplicate-param conflicts
     let leadsQuery = supabase
       .from('leads')
       .select('*, lead_owner:employees!leads_lead_owner_id_fkey(id, name), setter_owner:employees!leads_setter_owner_id_fkey(id, name)')
       .eq('company_id', companyId)
       .in('status', ['New', 'Assigned', 'Contacted', 'Callback'])
       .is('quote_id', null)
-      .or('quote_generated.is.null,quote_generated.eq.false')
       .order('created_at', { ascending: false })
 
     // Non-admins only see leads assigned to them (as setter or lead owner)
+    // Combine quote_generated filter with owner filter in a single .or() to avoid conflicts
     if (!isAdmin && user?.id) {
-      leadsQuery = leadsQuery.or(`setter_owner_id.eq.${user.id},lead_owner_id.eq.${user.id}`)
+      leadsQuery = leadsQuery.or(
+        `and(quote_generated.is.null,setter_owner_id.eq.${user.id}),` +
+        `and(quote_generated.is.null,lead_owner_id.eq.${user.id}),` +
+        `and(quote_generated.eq.false,setter_owner_id.eq.${user.id}),` +
+        `and(quote_generated.eq.false,lead_owner_id.eq.${user.id})`
+      )
+    } else {
+      leadsQuery = leadsQuery.or('quote_generated.is.null,quote_generated.eq.false')
     }
 
     // Fetch appointments for calendar

@@ -429,7 +429,7 @@ const STORY_SCENES = [
     title: 'Dave Opens His Phone',
     icon: Compass,
     color: '#22c55e',
-    arnieText: "Monday morning, 6:45 AM. Dave opens the app on his phone. Field Scout shows him exactly what's on his plate today — the Chen Warehouse retrofit. Address, scope, notes from the PM. He taps Navigate and his phone pulls up directions. No calling the office. No wondering where to go.",
+    arnieText: "Monday morning, 6:45 AM. Dave opens the app on his phone. Field Scout shows him exactly what's on his plate today — the Chen Warehouse retrofit. Address, scope, 24 hours allotted for the crew, notes from the PM. He taps Navigate and his phone pulls up directions. No calling the office. No wondering where to go. And hey — if the crew beats the allotted time, there's a bonus in it for everyone.",
     mockup: (theme) => (
       <div>
         <div style={{ fontSize: '11px', fontWeight: '600', color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>Today's Jobs</div>
@@ -537,7 +537,7 @@ const STORY_SCENES = [
     title: 'Job Complete',
     icon: CheckCircle,
     color: '#4a7c59',
-    arnieText: "Wednesday afternoon. Last fixture swapped, last photo taken. Dave marks the job 'Completed' right from his phone. The PM sees it move across the board. Total labor: 22.5 crew-hours across 3 days. All documented, all tagged, all tracked. Now the office can send the invoice without asking anyone a single question.",
+    arnieText: "Wednesday afternoon. Last fixture swapped, last photo taken. Before Dave calls it done, he opens Victor — the AI quality inspector. Uploads his photos, runs the checklist, hits Verify. Victor scores it a 94 — Grade A. Dave marks the job 'Completed' right from his phone. The job was allotted 24 hours and the crew of 3 knocked it out in 22.5. That's 1.5 hours saved — each guy gets a $12.50 efficiency bonus on their next paycheck. Not bad for working clean and fast.",
     mockup: (theme) => (
       <div style={{ textAlign: 'center' }}>
         <motion.div
@@ -548,20 +548,50 @@ const STORY_SCENES = [
           <CheckCircle size={40} color="#4a7c59" style={{ marginBottom: '8px' }} />
           <div style={{ fontSize: '16px', fontWeight: '700', color: '#4a7c59', marginBottom: '12px' }}>Job Completed</div>
         </motion.div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+        {/* Victor verification badge */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.9, duration: 0.4 }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '8px 14px', borderRadius: '8px', backgroundColor: '#22c55e10', border: '1px solid #22c55e25', marginBottom: '12px' }}
+        >
+          <Camera size={14} color="#22c55e" />
+          <span style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e' }}>Victor Verified — Grade A (94/100)</span>
+        </motion.div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '8px' }}>
           {[
-            { label: 'Crew Hours', value: '22.5', color: '#f97316' },
-            { label: 'Photos', value: '32', color: '#8b5cf6' },
-            { label: 'Fixtures', value: '200', color: '#22c55e' },
+            { label: 'Allotted', value: '24h', color: '#3b82f6' },
+            { label: 'Actual', value: '22.5h', color: '#f97316' },
+            { label: 'Saved', value: '1.5h', color: '#22c55e' },
           ].map(s => (
-            <div key={s.label} style={{ padding: '10px 6px', borderRadius: '8px', backgroundColor: s.color + '08', textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: '700', color: s.color }}>{s.value}</div>
-              <div style={{ fontSize: '10px', color: theme.textMuted }}>{s.label}</div>
+            <div key={s.label} style={{ padding: '8px 4px', borderRadius: '8px', backgroundColor: s.color + '08', textAlign: 'center' }}>
+              <div style={{ fontSize: '16px', fontWeight: '700', color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: '9px', color: theme.textMuted }}>{s.label}</div>
             </div>
           ))}
         </div>
-        <div style={{ fontSize: '12px', color: theme.textSecondary, padding: '8px', borderRadius: '6px', backgroundColor: theme.bg }}>
-          All hours, photos, and materials logged automatically. Ready for invoicing.
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.2, duration: 0.4 }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', backgroundColor: '#16a34a10', border: '1px solid #16a34a20', marginBottom: '8px', fontSize: '11px', fontWeight: '600', color: '#16a34a' }}
+        >
+          <DollarSign size={12} /> Efficiency Bonus: $12.50/tech (3 crew)
+        </motion.div>
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+          {[
+            { label: 'Photos', value: '32', color: '#8b5cf6' },
+            { label: 'Fixtures', value: '200', color: '#22c55e' },
+            { label: 'Victor', value: 'A', color: '#4a7c59' },
+          ].map(s => (
+            <div key={s.label} style={{ flex: 1, padding: '6px 4px', borderRadius: '6px', backgroundColor: s.color + '08', textAlign: 'center' }}>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: '9px', color: theme.textMuted }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: '11px', color: theme.textSecondary, padding: '6px 8px', borderRadius: '6px', backgroundColor: theme.bg, textAlign: 'center' }}>
+          Under budget, verified, and ready for invoicing.
         </div>
       </div>
     ),
@@ -642,24 +672,145 @@ function StoryMode({ theme, onClose }) {
   const [currentScene, setCurrentScene] = useState(0)
   const [direction, setDirection] = useState(1)
   const [textVisible, setTextVisible] = useState(false)
+  const [narrationOn, setNarrationOn] = useState(false)
+  const [autoPlay, setAutoPlay] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const utteranceRef = useRef(null)
+  const autoTimerRef = useRef(null)
   const scene = STORY_SCENES[currentScene]
   const Icon = scene.icon
 
+  // Speak the current scene's text
+  const speak = useCallback((text) => {
+    if (!window.speechSynthesis) return
+    window.speechSynthesis.cancel()
+    const utter = new SpeechSynthesisUtterance(text)
+    utter.rate = 1.05
+    utter.pitch = 1.0
+    // Pick a male, natural-sounding voice (Arnie is a guy)
+    const voices = window.speechSynthesis.getVoices()
+    const preferred = voices.find(v => v.name.includes('Google UK English Male') && v.lang.startsWith('en'))
+      || voices.find(v => /\b(male|guy|david|james|daniel|mark|george)\b/i.test(v.name) && v.lang.startsWith('en'))
+      || voices.find(v => v.name.includes('Google') && v.lang.startsWith('en') && !/female/i.test(v.name))
+      || voices.find(v => v.lang.startsWith('en') && v.localService && /\b(david|james|daniel|mark|george)\b/i.test(v.name))
+      || voices.find(v => v.lang.startsWith('en') && v.localService)
+      || voices.find(v => v.lang.startsWith('en'))
+    if (preferred) utter.voice = preferred
+    utter.onstart = () => { setIsSpeaking(true); speechStartedRef.current = true }
+    utter.onend = () => {
+      setIsSpeaking(false)
+      utteranceRef.current = null
+    }
+    utter.onerror = () => {
+      setIsSpeaking(false)
+      utteranceRef.current = null
+    }
+    utteranceRef.current = utter
+    window.speechSynthesis.speak(utter)
+  }, [])
+
+  const stopSpeaking = useCallback(() => {
+    if (window.speechSynthesis) window.speechSynthesis.cancel()
+    setIsSpeaking(false)
+    utteranceRef.current = null
+  }, [])
+
+  // Track whether speech has started for this scene (prevents premature advance)
+  const speechStartedRef = useRef(false)
+  useEffect(() => { speechStartedRef.current = false }, [currentScene])
+
+  // Auto-advance after speech ends (or after timer if narration off)
+  useEffect(() => {
+    if (!autoPlay || !textVisible || currentScene >= STORY_SCENES.length - 1) {
+      // Stop autoplay at last scene when done speaking
+      if (autoPlay && currentScene === STORY_SCENES.length - 1 && !isSpeaking && speechStartedRef.current) {
+        setAutoPlay(false)
+      }
+      return
+    }
+    if (narrationOn) {
+      // Wait for speech to start AND finish before advancing
+      if (!isSpeaking && speechStartedRef.current) {
+        autoTimerRef.current = setTimeout(() => {
+          setDirection(1)
+          setTextVisible(false)
+          setCurrentScene(prev => prev + 1)
+        }, 800)
+        return () => clearTimeout(autoTimerRef.current)
+      }
+    } else {
+      // No narration — estimate read time from text length (~140 words/min)
+      const words = scene.arnieText.split(/\s+/).length
+      const readMs = Math.max(4000, (words / 140) * 60000 + 1500)
+      autoTimerRef.current = setTimeout(() => {
+        setDirection(1)
+        setTextVisible(false)
+        setCurrentScene(prev => prev + 1)
+      }, readMs)
+      return () => clearTimeout(autoTimerRef.current)
+    }
+  }, [autoPlay, narrationOn, isSpeaking, textVisible, currentScene, scene.arnieText])
+
+  // Trigger narration when scene changes
+  useEffect(() => {
+    if (narrationOn && textVisible) {
+      speak(scene.arnieText)
+    }
+  }, [narrationOn, textVisible, currentScene]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stop speech on unmount or close
+  useEffect(() => {
+    return () => {
+      stopSpeaking()
+      clearTimeout(autoTimerRef.current)
+    }
+  }, [stopSpeaking])
+
+  // Load voices (Chrome fires voiceschanged async)
+  useEffect(() => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.getVoices()
+      const h = () => window.speechSynthesis.getVoices()
+      window.speechSynthesis.addEventListener?.('voiceschanged', h)
+      return () => window.speechSynthesis.removeEventListener?.('voiceschanged', h)
+    }
+  }, [])
+
+  const toggleNarration = useCallback(() => {
+    setNarrationOn(prev => {
+      if (prev) { stopSpeaking(); return false }
+      return true
+    })
+  }, [stopSpeaking])
+
+  const toggleAutoPlay = useCallback(() => {
+    setAutoPlay(prev => {
+      if (prev) { clearTimeout(autoTimerRef.current); return false }
+      // Starting autoplay — also turn on narration for the full experience
+      if (!narrationOn) setNarrationOn(true)
+      return true
+    })
+  }, [narrationOn])
+
   const next = useCallback(() => {
     if (currentScene < STORY_SCENES.length - 1) {
+      stopSpeaking()
+      clearTimeout(autoTimerRef.current)
       setDirection(1)
       setTextVisible(false)
       setCurrentScene(prev => prev + 1)
     }
-  }, [currentScene])
+  }, [currentScene, stopSpeaking])
 
   const prev = useCallback(() => {
     if (currentScene > 0) {
+      stopSpeaking()
+      clearTimeout(autoTimerRef.current)
       setDirection(-1)
       setTextVisible(false)
       setCurrentScene(prev => prev - 1)
     }
-  }, [currentScene])
+  }, [currentScene, stopSpeaking])
 
   useEffect(() => {
     const t = setTimeout(() => setTextVisible(true), 350)
@@ -670,11 +821,11 @@ function StoryMode({ theme, onClose }) {
     const handleKey = (e) => {
       if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next() }
       if (e.key === 'ArrowLeft') { e.preventDefault(); prev() }
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') { stopSpeaking(); onClose() }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [next, prev, onClose])
+  }, [next, prev, onClose, stopSpeaking])
 
   const variants = {
     enter: (d) => ({ x: d > 0 ? 300 : -300, opacity: 0 }),
@@ -698,11 +849,51 @@ function StoryMode({ theme, onClose }) {
           <img src="/Scout_LOGO_GUY.png" alt="Arnie" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
           <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Arnie's Walkthrough</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>
-            {currentScene + 1} / {STORY_SCENES.length}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {/* Autoplay toggle */}
+          <button
+            onClick={toggleAutoPlay}
+            title={autoPlay ? 'Stop autoplay' : 'Autoplay — Arnie reads the story'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px',
+              padding: '5px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
+              border: autoPlay ? 'none' : `1px solid ${theme.border}`,
+              backgroundColor: autoPlay ? scene.color : 'transparent',
+              color: autoPlay ? '#fff' : theme.textSecondary,
+              cursor: 'pointer', transition: 'all 0.2s',
+            }}
+          >
+            {autoPlay ? <Pause size={13} /> : <Play size={13} />}
+            {autoPlay ? 'Playing' : 'Play'}
+          </button>
+
+          {/* Narration toggle */}
+          <button
+            onClick={toggleNarration}
+            title={narrationOn ? 'Turn off narration' : 'Turn on narration'}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px', borderRadius: '6px',
+              border: `1px solid ${narrationOn ? scene.color + '40' : theme.border}`,
+              backgroundColor: narrationOn ? scene.color + '12' : 'transparent',
+              color: narrationOn ? scene.color : theme.textMuted,
+              cursor: 'pointer', position: 'relative',
+            }}
+          >
+            <Headphones size={15} />
+            {!narrationOn && (
+              <div style={{
+                position: 'absolute', width: '18px', height: '2px',
+                backgroundColor: theme.textMuted, transform: 'rotate(-45deg)',
+                borderRadius: '1px',
+              }} />
+            )}
+          </button>
+
+          <span style={{ fontSize: '12px', color: theme.textMuted, minWidth: '40px', textAlign: 'center' }}>
+            {currentScene + 1}/{STORY_SCENES.length}
           </span>
-          <button onClick={onClose} style={{
+          <button onClick={() => { stopSpeaking(); onClose() }} style={{
             padding: '6px', backgroundColor: 'transparent', border: 'none',
             cursor: 'pointer', color: theme.textMuted, borderRadius: '6px',
           }}>
@@ -735,13 +926,29 @@ function StoryMode({ theme, onClose }) {
           >
             {/* Arnie + Speech Bubble */}
             <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', alignItems: 'flex-start' }}>
-              <motion.img
-                src="/Scout_LOGO_GUY.png"
-                alt="Arnie"
-                animate={{ y: [0, -4, 0] }}
-                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-                style={{ width: '56px', height: '56px', objectFit: 'contain', flexShrink: 0 }}
-              />
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <motion.img
+                  src="/Scout_LOGO_GUY.png"
+                  alt="Arnie"
+                  animate={{ y: [0, -4, 0] }}
+                  transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ width: '56px', height: '56px', objectFit: 'contain' }}
+                />
+                {isSpeaking && (
+                  <motion.div
+                    animate={{ scale: [1, 1.4, 1], opacity: [0.6, 0.2, 0.6] }}
+                    transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{
+                      position: 'absolute', bottom: '-2px', right: '-2px',
+                      width: '16px', height: '16px', borderRadius: '50%',
+                      backgroundColor: scene.color, display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <Headphones size={9} color="#fff" />
+                  </motion.div>
+                )}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <SpeechBubble text={scene.arnieText} theme={theme} visible={textVisible} />
               </div>
@@ -1052,6 +1259,42 @@ const HELP_SECTIONS = [
           Nobody likes filling out timesheets at the end of the week trying to remember what they did on Tuesday. Clock in when you get there, clock out when you leave. It's two taps. Your hours are accurate, your pay is right, and nobody's arguing about it on Friday.
         </InfoBox>
 
+        {/* ─── Allotted Time & Efficiency Bonuses ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#16a34a', margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <TrendingUp size={18} /> Allotted Time & Efficiency Bonuses
+        </h4>
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '12px' }}>
+          Every job has an <strong>allotted time</strong> — the number of hours the company expects it to take. This gets calculated automatically from the product line items (each product has a built-in labor time), or the PM can set it manually. Techs see their allotted hours right on the Field Scout dashboard so they know what's expected.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+          {[
+            { icon: Clock, label: 'Hours Allotted', desc: 'Shows on Field Scout and the job card. "This job should take about 8 hours." Calculated from products or set by the PM.', color: '#3b82f6' },
+            { icon: TrendingUp, label: 'Actual vs Allotted', desc: 'The system tracks how many hours the crew actually clocked against the allotted time. Under budget? Over? The PM knows instantly.', color: '#f59e0b' },
+            { icon: DollarSign, label: 'Efficiency Bonus', desc: 'Finish under the allotted time? The saved hours get converted to bonus pay. Configurable rate (default $25/hr saved), split evenly between crew members.', color: '#16a34a' },
+            { icon: Users, label: 'Crew Split', desc: 'If 3 techs finish a 24-hour job in 18 hours, that\'s 6 saved hours. Each tech gets a bonus for their 2-hour share. Fair and automatic.', color: '#8b5cf6' },
+          ].map(item => (
+            <div key={item.label} style={{ padding: '14px', borderRadius: '10px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <item.icon size={16} color={item.color} />
+                <span style={{ fontSize: '13px', fontWeight: '600', color: item.color }}>{item.label}</span>
+              </div>
+              <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: 1.5 }}>{item.desc}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '14px 16px', borderRadius: '10px', backgroundColor: '#16a34a08', border: '1px solid #16a34a18', marginBottom: '16px' }}>
+          <div style={{ fontSize: '13px', fontWeight: '600', color: '#16a34a', marginBottom: '6px' }}>Example: Chen Warehouse Retrofit</div>
+          <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: 1.7 }}>
+            Allotted time: <strong>24 hours</strong> (from product line items: 200 fixtures x 0.12h each).<br />
+            Dave's crew of 3 finishes in <strong>22.5 hours</strong>.<br />
+            Saved hours: <strong>1.5 hours</strong>. At $25/hour, that's <strong>$37.50 bonus</strong> split 3 ways = <strong>$12.50 each</strong>.<br />
+            Not life-changing for this job — but across 20 jobs a month, it adds up fast. And the crew stays motivated to work clean and efficient.
+          </div>
+        </div>
+        <InfoBox title="Why this matters for the business" color="#16a34a" theme={theme}>
+          Allotted time turns every job into a mini budget. You quoted 24 hours of labor — if the crew takes 30, you're eating cost. If they take 20, you're ahead. This is how you go from "we're busy but never seem to make money" to actually knowing your margins per job. The bonus system aligns your crew's incentives with the company's — they want to be efficient because it pays them more too.
+        </InfoBox>
+
         {/* ─── Job Board (PM) ─── */}
         <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#3b82f6', margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ClipboardList size={18} /> Job Board — The PM's Command Center
@@ -1109,6 +1352,73 @@ const HELP_SECTIONS = [
           Instead of manually adding 8 line items every time you quote a bay retrofit, create a bundle once. Next estimate — one click, all 8 items added with correct quantities and pricing. Your estimates go out faster and nothing gets missed.
         </InfoBox>
 
+        {/* ─── Victor — AI Quality Verification ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#22c55e', margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Camera size={18} /> Victor — Your AI Quality Inspector
+        </h4>
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '12px' }}>
+          Before you call a job done, Victor takes a look. He's an AI agent that reviews your work photos, checks your completion checklist, and grades the job. Think of him as a foreman who never misses a detail — except he lives in the app.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+          {[
+            { icon: Camera, label: 'Photo Verification', desc: 'Upload up to 8 photos — before/after, completed work, cleanliness. Victor analyzes each one using AI vision and scores them individually.', color: '#8b5cf6' },
+            { icon: ClipboardList, label: 'Checklist Validation', desc: "Did you say you removed all old ballasts? Victor checks your photos against your checklist. If the photo doesn't match the claim, he'll flag it.", color: '#f59e0b' },
+            { icon: Target, label: 'Quality Scoring', desc: 'Every verification gets a score (1-100) and letter grade. Subscores for Work Quality, Cleanliness, Completeness, and Customer Readiness.', color: '#3b82f6' },
+            { icon: AlertCircle, label: 'Issue Detection', desc: 'Victor catches what humans miss — exposed wiring, ceiling tiles not replaced, debris left behind. Issues are tagged by severity: critical, major, or minor.', color: '#ef4444' },
+          ].map(item => (
+            <div key={item.label} style={{ padding: '14px', borderRadius: '10px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <item.icon size={16} color={item.color} />
+                <span style={{ fontSize: '13px', fontWeight: '600', color: item.color }}>{item.label}</span>
+              </div>
+              <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: 1.5 }}>{item.desc}</div>
+            </div>
+          ))}
+        </div>
+
+        <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>How It Works for the Crew</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+          {[
+            { num: '1', text: 'Job is done. Open Victor from the job or the AI Crew menu.', color: '#5a6349' },
+            { num: '2', text: 'Pick the job, run through the checklist (did you remove old fixtures? clean up? do a customer walkthrough?).', color: '#3b82f6' },
+            { num: '3', text: 'Upload your before/after photos and any shots of the finished work.', color: '#8b5cf6' },
+            { num: '4', text: 'Hit Verify. Victor analyzes everything in seconds and gives you a grade.', color: '#22c55e' },
+            { num: '5', text: 'Green A or B? You\'re golden. C or below? Fix the flagged issues and re-verify.', color: '#f59e0b' },
+          ].map(item => (
+            <div key={item.num} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <div style={{
+                width: '24px', height: '24px', borderRadius: '50%',
+                backgroundColor: item.color + '18', display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                fontSize: '12px', fontWeight: '700', color: item.color, flexShrink: 0,
+              }}>{item.num}</div>
+              <span style={{ fontSize: '13px', color: theme.text, lineHeight: 1.5 }}>{item.text}</span>
+            </div>
+          ))}
+        </div>
+
+        <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Two Modes</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '8px', backgroundColor: '#22c55e08', border: '1px solid #22c55e15' }}>
+            <CheckCircle size={16} color="#22c55e" style={{ flexShrink: 0 }} />
+            <div>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#22c55e' }}>Completion Verification</span>
+              <span style={{ fontSize: '12px', color: theme.textSecondary, marginLeft: '8px' }}>End-of-job inspection. Checks work quality, cleanliness, before/after photos, customer readiness.</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '8px', backgroundColor: '#3b82f608', border: '1px solid #3b82f615' }}>
+            <Truck size={16} color="#3b82f6" style={{ flexShrink: 0 }} />
+            <div>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#3b82f6' }}>Daily Verification</span>
+              <span style={{ fontSize: '12px', color: theme.textSecondary, marginLeft: '8px' }}>End-of-day housekeeping. Did you sweep the area? Tools loaded? Truck organized? Jobsite clear?</span>
+            </div>
+          </div>
+        </div>
+
+        <InfoBox title="Why Victor matters" color="#22c55e" theme={theme}>
+          Callbacks kill profit. A $50,000 retrofit that needs a $2,000 return trip because someone forgot to replace ceiling tiles? Victor catches that before your crew leaves the site. He also builds a verified record for utility rebate inspections — when the utility sends their inspector, you've got AI-graded photos of every bay, every fixture, every area. No scrambling.
+        </InfoBox>
+
         {/* ─── What techs need to know ─── */}
         <h4 style={{ fontSize: '16px', fontWeight: '700', color: theme.accent, margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Smartphone size={18} /> Bottom Line for Field Techs
@@ -1118,13 +1428,14 @@ const HELP_SECTIONS = [
           backgroundColor: theme.accent + '08', border: `2px solid ${theme.accent}20`,
         }}>
           <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.8, margin: 0 }}>
-            You don't need to learn the whole app. You need <strong>three things</strong>:
+            You don't need to learn the whole app. You need <strong>four things</strong>:
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
             {[
               { num: '1', text: 'Field Scout — see your jobs for today', color: '#22c55e' },
               { num: '2', text: 'Time Clock — clock in, pick the job, clock out when done', color: '#f97316' },
-              { num: '3', text: 'Camera — snap photos of the work', color: '#8b5cf6' },
+              { num: '3', text: 'Camera — snap before/after photos of the work', color: '#8b5cf6' },
+              { num: '4', text: 'Victor — run a quick verification before you leave the site', color: '#22c55e' },
             ].map(item => (
               <div key={item.num} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{
@@ -1138,7 +1449,7 @@ const HELP_SECTIONS = [
             ))}
           </div>
           <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '12px', marginBottom: 0, lineHeight: 1.6 }}>
-            Everything else — scheduling, estimates, invoicing — that's the office's job. You just do the work, track your time, and take photos. The app handles the rest.
+            Everything else — scheduling, estimates, invoicing — that's the office's job. You do the work, track your time, take photos, and let Victor verify it. The app handles the rest.
           </p>
         </div>
       </div>
@@ -1219,23 +1530,63 @@ const HELP_SECTIONS = [
     content: (theme) => (
       <div>
         <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '16px' }}>
-          AI agents are specialized assistants that plug into different parts of the business. They're recruited from Base Camp and appear in the sidebar under their relevant section.
+          AI agents are specialized assistants that plug into different parts of the business. They're recruited from Base Camp and appear in the sidebar under their relevant section. Each one is built for a specific job — and they get smarter the more you use them.
         </p>
 
+        {/* ─── Arnie Deep Dive ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#f97316', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <MessageCircle size={18} /> OG Arnie — Your Right-Hand Man
+        </h4>
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '12px' }}>
+          Arnie is the main AI assistant built into JobScout. He's not just a chatbot — he knows your company's data, your role, what page you're on, and what you're working on. Think of him as the guy in the office who always knows the answer.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+          {[
+            { icon: MessageCircle, label: 'Ask Anything', desc: '"How many jobs did we complete last month?" "What\'s Sarah Chen\'s balance?" "Which leads haven\'t been contacted in a week?" Arnie queries your data and gives you a straight answer.', color: '#f97316' },
+            { icon: Compass, label: 'Context-Aware', desc: "Arnie knows what page you're on. Ask him something on the Jobs page and he'll answer about jobs. Open him from a lead detail and he already has that lead's context.", color: '#3b82f6' },
+            { icon: Headphones, label: 'Voice Support', desc: 'Tap the mic and talk to him. He\'ll talk back. Useful when your hands are full on a jobsite or driving between appointments.', color: '#8b5cf6' },
+            { icon: Shield, label: 'Role-Aware', desc: "Arnie respects permissions. A field tech can ask about their own jobs and hours. Only admins can ask about financials, payroll, or company-wide data. He won't leak info above your access level.", color: '#22c55e' },
+          ].map(item => (
+            <div key={item.label} style={{ padding: '14px', borderRadius: '10px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <item.icon size={16} color={item.color} />
+                <span style={{ fontSize: '13px', fontWeight: '600', color: item.color }}>{item.label}</span>
+              </div>
+              <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: 1.5 }}>{item.desc}</div>
+            </div>
+          ))}
+        </div>
+        <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Where to Find Arnie</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+          {[
+            { label: 'Floating avatar (desktop)', desc: 'Bottom-right corner on every page. Click to open a chat panel without leaving your current screen. He sees what page you\'re on.', color: '#f97316' },
+            { label: 'Full chat page', desc: 'Open Arnie from the AI Crew section in the sidebar for a full-screen conversation. Better for longer questions or when you need detailed answers.', color: '#5a6349' },
+            { label: 'Field Scout', desc: 'Arnie is accessible from Field Scout too — techs can ask him questions about their current job without switching pages.', color: '#22c55e' },
+          ].map(item => (
+            <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '8px', backgroundColor: item.color + '08', border: `1px solid ${item.color}15` }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color, flexShrink: 0 }} />
+              <div>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: item.color }}>{item.label}</span>
+                <span style={{ fontSize: '12px', color: theme.textSecondary, marginLeft: '8px' }}>{item.desc}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <InfoBox title="What makes Arnie different from ChatGPT" color="#f97316" theme={theme}>
+          Arnie isn't a generic AI. He's connected to your actual business data — your leads, jobs, invoices, employees, inventory, everything. When you ask "how's my pipeline looking?" he pulls real numbers from your Supabase database. He knows who you are, what you have access to, and what you're working on right now. He's your employee, not a stranger on the internet.
+        </InfoBox>
+
+        {/* ─── Other Agents ─── */}
+        <h4 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: '24px 0 10px' }}>The Rest of the Crew</h4>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <EntityCard icon={MessageCircle} title="OG Arnie" color="#f97316" description="Your general business assistant. Ask questions about jobs, financials, team, pipeline — anything in the app. Knows your data and role permissions. Supports voice input/output." theme={theme} />
           <EntityCard icon={Lightbulb} title="Lenard" color="#eab308" description="Lighting audit specialist. Builds audit reports, calculates rebates from utility programs, generates investment-grade proposals with fixture schedules and energy savings. Standalone pages for AZ SRP and UT RMP." theme={theme} />
           <EntityCard icon={Truck} title="Freddy" color="#3b82f6" description="Fleet management agent. Tracks vehicles, maintenance schedules, mileage, and assignments." theme={theme} />
           <EntityCard icon={Mail} title="Conrad Connect" color="#8b5cf6" description="Email marketing agent. Build templates, create campaigns, set up automations, and manage contact lists." theme={theme} />
-          <EntityCard icon={Camera} title="Victor" color="#22c55e" description="Photo verification agent. Document before/after photos on jobs, verify work quality, and generate visual reports." theme={theme} />
+          <EntityCard icon={Camera} title="Victor" color="#22c55e" description="AI quality inspector. Analyzes work photos with computer vision, validates checklists against photographic evidence, scores jobs on quality/cleanliness/completeness, and catches issues before your crew leaves the site. Two modes: completion verification (end-of-job) and daily verification (end-of-day housekeeping)." theme={theme} />
         </div>
 
         <InfoBox title="Lenard Standalone" color="#eab308" theme={theme}>
           Lenard has standalone PWA pages (<strong>/agent/lenard-az-srp</strong> and <strong>/agent/lenard-ut-rmp</strong>) that salespeople install on their phone. Leads assigned to them from the main app appear automatically in their project folder with a "NEW LEAD" badge. They can build audits, generate proposals, and get customer signatures right on-site.
-        </InfoBox>
-
-        <InfoBox title="The floating Arnie" color="#f97316" theme={theme}>
-          On desktop, the Arnie avatar floats in the bottom-right corner. Click it to open a chat panel without leaving your current page. He can see what page you're on and what job you're clocked into.
         </InfoBox>
       </div>
     )

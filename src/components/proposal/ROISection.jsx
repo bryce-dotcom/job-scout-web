@@ -10,14 +10,23 @@ export default function ROISection({ section, totalCost, annualSavings, incentiv
   const paybackMonths = metrics.payback_months || (annual > 0 ? Math.round((netCost / annual) * 12) : 0)
   const roiPercent = metrics.roi_percent || (netCost > 0 && annual > 0 ? Math.round(((annual * 5 - netCost) / netCost) * 100) : 0)
 
+  const hasIncentive = (incentive || 0) + (discount || 0) > 0
+
   const cards = [
-    {
+    ...(hasIncentive ? [{
+      label: 'Net Investment',
+      value: netCost,
+      prefix: '$',
+      format: 'currency',
+      color: proposalTheme.text,
+      note: `after ${incentive > 0 ? 'rebate' : 'discount'}`,
+    }] : [{
       label: 'Total Investment',
       value: cost,
       prefix: '$',
       format: 'currency',
       color: proposalTheme.text,
-    },
+    }]),
     {
       label: 'Annual Savings',
       value: annual,
@@ -28,7 +37,7 @@ export default function ROISection({ section, totalCost, annualSavings, incentiv
     {
       label: 'Payback Period',
       value: paybackMonths,
-      suffix: ' months',
+      suffix: ' mo',
       color: proposalTheme.accent,
     },
     {
@@ -138,6 +147,11 @@ export default function ROISection({ section, totalCost, annualSavings, incentiv
                 }}>
                   {card.label}
                 </p>
+                {card.note && (
+                  <p style={{ color: proposalTheme.textMuted, fontSize: '11px', margin: '2px 0 0', fontStyle: 'italic' }}>
+                    {card.note}
+                  </p>
+                )}
               </div>
             </ProposalSection>
           ))}
