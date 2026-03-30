@@ -100,7 +100,7 @@ export default function CustomerDetail() {
     // Fetch jobs linked to this customer
     const { data: jobData } = await supabase
       .from('jobs')
-      .select('*, salesperson:employees(id, name)')
+      .select('*, salesperson:employees!jobs_salesperson_id_fkey(id, name)')
       .eq('customer_id', id)
       .order('created_at', { ascending: false })
     setJobs(jobData || [])

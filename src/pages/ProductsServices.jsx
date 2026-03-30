@@ -688,6 +688,7 @@ export default function ProductsServices() {
       fetchProductGroups()
       fetchSections()
       fetchProducts()
+      fetchProductComponents()
       fetchLaborRates()
     }
   }, [companyId])
