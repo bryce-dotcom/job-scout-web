@@ -271,6 +271,7 @@ export default function Layout() {
     {
       key: 'CUSTOMERS',
       title: 'CUSTOMERS',
+      description: 'People & businesses you serve',
       sectionIcon: Users,
       baseItems: [
         { to: '/customers', icon: Users, label: 'Customers', hint: 'View and manage all your customers' },
@@ -280,6 +281,7 @@ export default function Layout() {
     {
       key: 'OPERATIONS',
       title: 'OPERATIONS',
+      description: 'Scheduling, field work & inventory',
       sectionIcon: Wrench,
       baseItems: [
         { to: '/field-scout', icon: Compass, label: 'Field Scout', hint: 'Daily dashboard for field techs' },
@@ -291,17 +293,19 @@ export default function Layout() {
     {
       key: 'FINANCIAL',
       title: 'FINANCIAL',
+      description: 'Invoices, expenses & accounting',
       sectionIcon: DollarSign,
       baseItems: [
         { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Customer invoices and utility incentives' },
         { to: '/lead-payments', icon: CreditCard, label: 'Deposits', hint: 'Lead deposits and pre-job payments' },
-        { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and costs' },
+        { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and receipts' },
         { to: '/books', icon: BookOpen, label: 'Books', hint: 'Accounting and financial overview' }
       ]
     },
     {
       key: 'TEAM',
       title: 'TEAM',
+      description: 'Employees, time tracking & payroll',
       sectionIcon: Users,
       baseItems: [
         { to: '/employees', icon: UserCog, label: 'Employees', hint: 'Manage team members and roles' },
@@ -408,7 +412,9 @@ export default function Layout() {
   // Admin section - shown to Admin+ (level 3+)
   const adminSection = userIsAdmin ? {
     title: 'ADMIN',
+    description: 'Settings, reports & documents',
     sectionIcon: Settings,
+    isAdmin: true,
     items: [
       { to: '/settings', icon: Settings, label: 'Settings', hint: 'Company and app settings' },
       { to: '/admin/eos', icon: Eye, label: 'EOS', hint: 'Vision, traction, rocks, scorecard, and meetings' },
@@ -420,6 +426,7 @@ export default function Layout() {
   // Help section - visible to all employees
   const helpSection = {
     title: 'SUPPORT',
+    description: 'Guides & walkthroughs',
     sectionIcon: HelpCircle,
     items: [
       { to: '/admin/help', icon: HelpCircle, label: 'Help', hint: 'How the app works — guides and diagrams' }
@@ -429,6 +436,7 @@ export default function Layout() {
   // Dev section - Developer only (level 5)
   const devSection = userAccessLevel >= 5 ? {
     title: 'DEV & MAINT.',
+    description: 'Database, tools & diagnostics',
     sectionIcon: Wrench,
     items: [
       { to: '/advanced-tools', icon: Wrench, label: 'Advanced Tools', hint: 'Advanced system tools and configuration' },
@@ -528,29 +536,60 @@ export default function Layout() {
     )
   }
 
-  const NavSection = ({ section, mobile = false }) => {
+  // Alternating section tints — two earthy greens from the scout palette
+  const sectionTints = ['rgba(90,99,73,0.05)', 'rgba(74,124,89,0.05)']
+  // Special tints for non-standard sections
+  const getSectionTint = (section, idx) => {
+    if (section.isDev) return 'rgba(239,68,68,0.04)'
+    if (section.isAdmin) return 'rgba(245,158,11,0.04)'
+    if (section.isAiSection) return 'rgba(168,85,247,0.04)'
+    return sectionTints[idx % 2]
+  }
+
+  const NavSection = ({ section, mobile = false, sectionIndex = 0 }) => {
     const SectionIcon = section.sectionIcon
+    const tint = getSectionTint(section, sectionIndex)
     const getSectionColor = () => {
-      if (section.isDev) return '#ef4444' // Red for super admin
-      if (section.isAdmin) return '#f59e0b' // Orange/amber for admin
-      if (section.isAiSection) return '#a855f7' // Purple for AI
+      if (section.isDev) return '#ef4444'
+      if (section.isAdmin) return '#f59e0b'
+      if (section.isAiSection) return '#a855f7'
       return theme.textMuted
     }
     return (
-      <div style={{ marginBottom: '16px' }}>
+      <div style={{
+        marginBottom: '4px',
+        backgroundColor: tint,
+        borderRadius: '8px',
+        padding: '4px 0'
+      }}>
         <div style={{
-          fontSize: '10px',
-          fontWeight: '600',
-          color: getSectionColor(),
-          letterSpacing: '0.05em',
-          padding: (section.isDev || section.isAdmin) ? '16px 12px 4px' : '8px 12px 4px',
-          textTransform: 'uppercase',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px'
+          padding: (section.isDev || section.isAdmin) ? '12px 12px 4px' : '6px 12px 4px',
         }}>
-          {SectionIcon && <SectionIcon size={12} />}
-          {section.title}
+          <div style={{
+            fontSize: '10px',
+            fontWeight: '600',
+            color: getSectionColor(),
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            {SectionIcon && <SectionIcon size={12} />}
+            {section.title}
+          </div>
+          {section.description && (
+            <div style={{
+              fontSize: '10px',
+              color: theme.border,
+              marginTop: '2px',
+              paddingLeft: SectionIcon ? '18px' : 0,
+              fontWeight: '400',
+              lineHeight: 1.3
+            }}>
+              {section.description}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
           {section.items.map((item) => (
@@ -713,16 +752,31 @@ export default function Layout() {
             </div>
 
             {/* Sales Flow - Numbered Steps (hidden for Field Techs) */}
-            {!userIsFieldTech && <div style={{ marginBottom: '16px' }}>
-              <div style={{
-                fontSize: '10px',
-                fontWeight: '600',
-                color: theme.textMuted,
-                letterSpacing: '0.05em',
-                padding: '8px 12px 4px',
-                textTransform: 'uppercase'
-              }}>
-                Sales Flow
+            {!userIsFieldTech && <div style={{ marginBottom: '4px', backgroundColor: 'rgba(90,99,73,0.05)', borderRadius: '8px', padding: '4px 0' }}>
+              <div style={{ padding: '6px 12px 4px' }}>
+                <div style={{
+                  fontSize: '10px',
+                  fontWeight: '600',
+                  color: theme.textMuted,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <GitBranch size={12} />
+                  Sales Flow
+                </div>
+                <div style={{
+                  fontSize: '10px',
+                  color: theme.border,
+                  marginTop: '2px',
+                  paddingLeft: '18px',
+                  fontWeight: '400',
+                  lineHeight: 1.3
+                }}>
+                  Lead to estimate to job
+                </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                 {salesFlowItems.map((item) => (
@@ -796,8 +850,8 @@ export default function Layout() {
               </div>
             </div>}
 
-            {navSections.map((section) => (
-              <NavSection key={section.title} section={section} />
+            {navSections.map((section, idx) => (
+              <NavSection key={section.title} section={section} sectionIndex={idx} />
             ))}
 
             {/* AI CREW Section with Settings */}
@@ -807,22 +861,24 @@ export default function Layout() {
                 return !section || section === 'AI_CREW'
               })
               return (
-                <div style={{ marginBottom: '16px' }}>
+                <div style={{ marginBottom: '4px', backgroundColor: 'rgba(168,85,247,0.04)', borderRadius: '8px', padding: '4px 0' }}>
                   <div style={{
-                    fontSize: '10px',
-                    fontWeight: '600',
-                    color: '#a855f7',
-                    letterSpacing: '0.05em',
-                    padding: '8px 12px 4px',
-                    textTransform: 'uppercase',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
+                    padding: '6px 12px 4px',
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Bot size={12} />
-                      AI CREW
-                    </div>
+                    <div style={{
+                      fontSize: '10px',
+                      fontWeight: '600',
+                      color: '#a855f7',
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Bot size={12} />
+                        AI CREW
+                      </div>
                     {aiModules.length > 0 && (
                       <button
                         onClick={() => setShowAgentSettings(true)}
@@ -842,6 +898,17 @@ export default function Layout() {
                         <SettingsIcon size={12} />
                       </button>
                     )}
+                    </div>
+                    <div style={{
+                      fontSize: '10px',
+                      color: theme.border,
+                      marginTop: '2px',
+                      paddingLeft: '18px',
+                      fontWeight: '400',
+                      lineHeight: 1.3
+                    }}>
+                      Arnie, Lenard, Victor & more
+                    </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     <NavItem item={{ to: '/base-camp', icon: Tent, label: 'Base Camp', hint: 'Browse and recruit AI experts' }} />
@@ -875,9 +942,9 @@ export default function Layout() {
               )
             })()}
 
-            {adminSection && <NavSection section={adminSection} />}
-            {devSection && <NavSection section={devSection} />}
-            <NavSection section={helpSection} />
+            {adminSection && <NavSection section={adminSection} sectionIndex={10} />}
+            {devSection && <NavSection section={devSection} sectionIndex={11} />}
+            <NavSection section={helpSection} sectionIndex={12} />
           </nav>
 
           {/* User/Logout */}
@@ -1144,16 +1211,31 @@ export default function Layout() {
                 </div>
 
                 {/* Sales Flow - Mobile (Numbered Steps, hidden for Field Techs) */}
-                {!userIsFieldTech && <div style={{ marginBottom: '16px' }}>
-                  <div style={{
-                    fontSize: '10px',
-                    fontWeight: '600',
-                    color: theme.textMuted,
-                    letterSpacing: '0.05em',
-                    padding: '8px 12px 4px',
-                    textTransform: 'uppercase'
-                  }}>
-                    Sales Flow
+                {!userIsFieldTech && <div style={{ marginBottom: '4px', backgroundColor: 'rgba(90,99,73,0.05)', borderRadius: '8px', padding: '4px 0' }}>
+                  <div style={{ padding: '6px 12px 4px' }}>
+                    <div style={{
+                      fontSize: '10px',
+                      fontWeight: '600',
+                      color: theme.textMuted,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <GitBranch size={12} />
+                      Sales Flow
+                    </div>
+                    <div style={{
+                      fontSize: '10px',
+                      color: theme.border,
+                      marginTop: '2px',
+                      paddingLeft: '18px',
+                      fontWeight: '400',
+                      lineHeight: 1.3
+                    }}>
+                      Lead to estimate to job
+                    </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                     {salesFlowItems.map((item) => (
@@ -1233,8 +1315,8 @@ export default function Layout() {
                   </div>
                 </div>}
 
-                {navSections.map((section) => (
-                  <NavSection key={section.title} section={section} mobile />
+                {navSections.map((section, idx) => (
+                  <NavSection key={section.title} section={section} mobile sectionIndex={idx} />
                 ))}
 
                 {/* AI CREW Section with Settings - Mobile */}
@@ -1244,41 +1326,52 @@ export default function Layout() {
                     return !section || section === 'AI_CREW'
                   })
                   return (
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{
-                        fontSize: '10px',
-                        fontWeight: '600',
-                        color: '#a855f7',
-                        letterSpacing: '0.05em',
-                        padding: '8px 12px 4px',
-                        textTransform: 'uppercase',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Bot size={12} />
-                          AI CREW
+                    <div style={{ marginBottom: '4px', backgroundColor: 'rgba(168,85,247,0.04)', borderRadius: '8px', padding: '4px 0' }}>
+                      <div style={{ padding: '6px 12px 4px' }}>
+                        <div style={{
+                          fontSize: '10px',
+                          fontWeight: '600',
+                          color: '#a855f7',
+                          letterSpacing: '0.05em',
+                          textTransform: 'uppercase',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Bot size={12} />
+                            AI CREW
+                          </div>
+                          {aiModules.length > 0 && (
+                            <button
+                              onClick={() => setShowAgentSettings(true)}
+                              title="Configure AI agent menu placement"
+                              style={{
+                                padding: '4px',
+                                backgroundColor: 'transparent',
+                                border: 'none',
+                                color: '#a855f7',
+                                cursor: 'pointer',
+                                borderRadius: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <SettingsIcon size={12} />
+                            </button>
+                          )}
                         </div>
-                        {aiModules.length > 0 && (
-                          <button
-                            onClick={() => setShowAgentSettings(true)}
-                            title="Configure AI agent menu placement"
-                            style={{
-                              padding: '4px',
-                              backgroundColor: 'transparent',
-                              border: 'none',
-                              color: '#a855f7',
-                              cursor: 'pointer',
-                              borderRadius: '4px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}
-                          >
-                            <SettingsIcon size={12} />
-                          </button>
-                        )}
+                        <div style={{
+                          fontSize: '10px',
+                          color: theme.border,
+                          marginTop: '2px',
+                          paddingLeft: '18px',
+                          fontWeight: '400',
+                          lineHeight: 1.3
+                        }}>
+                          Arnie, Lenard, Victor & more
+                        </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                         <NavItem item={{ to: '/base-camp', icon: Tent, label: 'Base Camp', hint: 'Browse and recruit AI experts' }} mobile />
@@ -1313,9 +1406,9 @@ export default function Layout() {
                   )
                 })()}
 
-                {adminSection && <NavSection section={adminSection} mobile />}
-                {devSection && <NavSection section={devSection} mobile />}
-                <NavSection section={helpSection} mobile />
+                {adminSection && <NavSection section={adminSection} mobile sectionIndex={10} />}
+                {devSection && <NavSection section={devSection} mobile sectionIndex={11} />}
+                <NavSection section={helpSection} mobile sectionIndex={12} />
               </nav>
               <div style={{
                 padding: '16px',

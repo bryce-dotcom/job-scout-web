@@ -60,7 +60,7 @@ CERTIFIED ENERGY AUDIT DATA (use these EXACT numbers — do NOT estimate or gues
   Electric Rate: $${audit_data.electric_rate}/kWh
   Annual Energy Savings: ${audit_data.annual_savings_kwh.toLocaleString()} kWh
   Annual Dollar Savings: $${audit_data.annual_savings_dollars.toLocaleString()}
-  Estimated Utility Rebate: $${audit_data.estimated_rebate.toLocaleString()}`;
+  Estimated Utility Incentive: $${audit_data.estimated_rebate.toLocaleString()}`;
 
       if (audit_areas_data && audit_areas_data.length > 0) {
         auditBlock += '\n\n  Per-Area Breakdown:';
@@ -119,7 +119,7 @@ ${customer_address ? `Location: ${customer_address}` : ''}
 Line Items:
 ${lineItemsSummary || 'No line items provided'}
 Total: $${totalNum.toFixed(2)}
-${incentiveNum > 0 ? `Utility Incentive/Rebate: $${incentiveNum.toFixed(2)}` : ''}
+${incentiveNum > 0 ? `Utility Incentive: $${incentiveNum.toFixed(2)}` : ''}
 ${discountNum > 0 ? `Discount: $${discountNum.toFixed(2)}` : ''}
 ${auditBlock}
 ${notesBlock}
@@ -146,7 +146,7 @@ Line Items:
 ${lineItemsSummary || 'No line items provided'}
 
 Total Investment: $${totalNum.toFixed(2)}
-${incentiveNum > 0 ? `Utility Incentive/Rebate: $${incentiveNum.toFixed(2)} (FREE MONEY — hammer this)` : ''}
+${incentiveNum > 0 ? `Utility Incentive: $${incentiveNum.toFixed(2)} (FREE MONEY — hammer this)` : ''}
 ${discountNum > 0 ? `Discount Applied: $${discountNum.toFixed(2)}` : ''}
 ${auditBlock}
 ${notesBlock}
@@ -160,11 +160,20 @@ WRITING RULES:
 - The problem_statement should make them feel the pain of doing nothing — what's it costing them RIGHT NOW to keep the old equipment, skip the maintenance, or ignore the issue?
 - The executive_summary should read like a confident handshake — short, direct, "here's what we're going to do and why it's a no-brainer."
 - Highlights should be punchy one-liners that a CFO would underline.
-- The approval content should create urgency without being sleazy — pricing holds, scheduling windows, seasonal timing, rebate deadlines, etc.
+- The approval content should create urgency without being sleazy — pricing holds, scheduling windows, seasonal timing, incentive deadlines, etc.
+- NEVER use the word "rebate" — always say "incentive" or "utility incentive."
 - If COMPANY STRATEGY data is provided, use it to sell the company: weave core values into the executive summary, reference the proven process in solution_overview, use the guarantee in the approval section, and create a compelling "why_us" section from the 3 uniques and company purpose. Don't just list them — tell a story about why this company is different.
 ${include_tiers ? `
 PRICING TIERS (Good / Better / Best):
-Create 3 pricing tiers to give the customer options. The "good" tier is the base scope (roughly the estimate as-is). "Better" adds meaningful upgrades (controls, sensors, extended warranty, etc.). "Best" is the premium package. Each tier needs a name, price, net_price (after rebate proportionally), description, features list, annual_savings, and payback_months. The recommended tier should be "better".
+Create 3 pricing tiers. CRITICAL RULES:
+- The utility incentive amount is THE SAME across all 3 tiers. Incentives do NOT increase with tier level.
+- "Good" = the base scope (the estimate as-is). This is what the line items already cover.
+- "Better" = base scope + 2-year extended warranty + value-adds. Value-adds can include: recycling/disposal of old fixtures, priority scheduling, enhanced cleanup. If smart controls are in the scope, add app access.
+- "Best" = base scope + 3-year extended warranty + all Better value-adds + premium extras. Premium extras can include: remote monitoring, annual maintenance check, smart controls app access if applicable, fixture cleaning, emergency priority service.
+- Price increases between tiers come ONLY from the customer's net cost (after incentive). The incentive stays fixed.
+- net_price for ALL tiers = price - incentive (same incentive amount subtracted from each).
+- The recommended tier should be "better".
+- NEVER use the word "rebate" — always say "incentive."
 ` : ''}
 ${hasAudit ? `
 INVESTMENT GRADE AUDIT DATA (these are REAL certified numbers — use them EXACTLY):
@@ -198,12 +207,12 @@ Return ONLY valid JSON (no markdown fences):
     ${proposal_notes ? '{ "type": "warranty", "content": "write this based on the company notes above — make it feel like extra protection, not fine print" },' : ''}
     ${incentiveNum > 0 ? '{ "type": "utility_incentive", "content": "This is free money — explain why they need to claim it now" },' : ''}
     ${include_tiers ? `{ "type": "pricing_tiers", "heading": "Choose Your Package", "content": "compelling subheading about options", "recommended": "better", "tiers": [
-      { "id": "good", "name": "descriptive name", "price": <number>, "net_price": <number after proportional rebate>, "description": "what they get", "features": ["feature 1", "feature 2", "feature 3"], "annual_savings": <number>, "payback_months": <number> },
-      { "id": "better", "name": "descriptive name", "price": <number ~15-25% more>, "net_price": <number>, "description": "what they get — emphasize the value adds", "features": ["everything in good", "plus upgrade 1", "plus upgrade 2", "plus upgrade 3"], "annual_savings": <higher number>, "payback_months": <number> },
-      { "id": "best", "name": "descriptive name", "price": <number ~30-50% more>, "net_price": <number>, "description": "the premium experience", "features": ["everything in better", "plus premium 1", "plus premium 2", "plus premium 3"], "annual_savings": <highest number>, "payback_months": <number> }
+      { "id": "good", "name": "descriptive name", "price": ${totalNum.toFixed(2)}, "net_price": ${(totalNum - incentiveNum).toFixed(2)}, "description": "the base scope — everything in the estimate", "features": ["feature 1", "feature 2", "feature 3"], "annual_savings": <number>, "payback_months": <number> },
+      { "id": "better", "name": "descriptive name", "price": <good price + warranty & value-add cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "base scope + 2-year extended warranty + value-adds like recycling old fixtures, priority scheduling", "features": ["everything in Good", "2-Year Extended Warranty", "Old Fixture Recycling & Disposal", "Priority Scheduling"], "annual_savings": <number>, "payback_months": <number> },
+      { "id": "best", "name": "descriptive name", "price": <better price + premium extras cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "the premium experience — 3-year warranty, remote monitoring, everything in Better plus more", "features": ["everything in Better", "3-Year Extended Warranty", "Remote Monitoring", "Annual Maintenance Check", "Emergency Priority Service"], "annual_savings": <number>, "payback_months": <number> }
     ] },` : ''}
     { "type": "team" },
-    { "type": "approval", "cta_text": "Approve & Schedule", "content": "create urgency — pricing, scheduling, rebate deadlines, seasonal timing. Make them feel like waiting costs money." }
+    { "type": "approval", "cta_text": "Approve & Schedule", "content": "create urgency — pricing, scheduling, incentive deadlines, seasonal timing. Make them feel like waiting costs money." }
   ]${hasAudit ? `,
   "audit_certified": true,
   "audit_summary": {

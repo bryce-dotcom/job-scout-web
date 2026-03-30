@@ -94,7 +94,7 @@ function FinancialSummary({ totalCost, incentive, discount, annualSavings }) {
     { label: 'Gross Project Cost', value: formatCurrency(grossCost), color: proposalTheme.text, weight: '500' },
   ]
   if (rebateAmt > 0) {
-    rows.push({ label: 'Utility Rebate', value: `- ${formatCurrency(rebateAmt)}`, color: proposalTheme.success, weight: '500' })
+    rows.push({ label: 'Utility Incentive', value: `- ${formatCurrency(rebateAmt)}`, color: proposalTheme.success, weight: '500' })
   }
   if (discountAmt > 0) {
     rows.push({ label: 'Discount', value: `- ${formatCurrency(discountAmt)}`, color: proposalTheme.success, weight: '500' })
@@ -686,7 +686,7 @@ export default function CostBreakdownSection({
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead>
                       <tr style={{ borderBottom: `2px solid ${proposalTheme.border}` }}>
-                        {['Area', 'Fixtures', 'Existing W', 'LED W', 'Reduced', 'Rebate Est.'].map(h => (
+                        {['Area', 'Fixtures', 'Existing W', 'LED W', 'Reduced', 'Incentive Est.'].map(h => (
                           <th key={h} style={{ padding: '8px 12px', textAlign: 'left', color: proposalTheme.textMuted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
                             {h}
                           </th>

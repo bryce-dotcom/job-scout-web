@@ -19,7 +19,7 @@ export default function ROISection({ section, totalCost, annualSavings, incentiv
       prefix: '$',
       format: 'currency',
       color: proposalTheme.text,
-      note: `after ${incentive > 0 ? 'rebate' : 'discount'}`,
+      note: `after ${incentive > 0 ? 'incentive' : 'discount'}`,
     }] : [{
       label: 'Total Investment',
       value: cost,
@@ -168,7 +168,7 @@ export default function ROISection({ section, totalCost, annualSavings, incentiv
               borderRadius: '10px',
               border: `1px solid ${proposalTheme.border}`,
             }}>
-              <span style={{ color: proposalTheme.textMuted, fontSize: '14px' }}>Net investment after rebate: </span>
+              <span style={{ color: proposalTheme.textMuted, fontSize: '14px' }}>Net investment after incentive:</span>
               <span style={{ color: proposalTheme.success, fontSize: '20px', fontWeight: '700' }}>
                 {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(netCost)}
               </span>

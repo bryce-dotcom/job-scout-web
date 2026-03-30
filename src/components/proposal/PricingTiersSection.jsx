@@ -89,7 +89,7 @@ function TierCard({ tier, index, isRecommended, onSelect, selectedTier }) {
             </span>
             {tier.net_price != null && tier.net_price !== tier.price && (
               <div style={{ marginTop: '4px' }}>
-                <span style={{ fontSize: '13px', color: proposalTheme.textMuted }}>Net after rebate: </span>
+                <span style={{ fontSize: '13px', color: proposalTheme.textMuted }}>Net after incentive:</span>
                 <span style={{ fontSize: '16px', fontWeight: '700', color: proposalTheme.success }}>{formatCurrency(tier.net_price)}</span>
               </div>
             )}

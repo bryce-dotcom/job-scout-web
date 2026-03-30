@@ -407,7 +407,7 @@ export default function InteractiveProposal({
                   fontSize: '16px',
                   margin: '0 0 16px',
                 }}>
-                  {section?.content || 'Estimated rebate from your utility provider'}
+                  {section?.content || 'Estimated incentive from your utility provider'}
                 </p>
                 <div style={{
                   display: 'inline-block',
