@@ -238,8 +238,8 @@ Be specific to ${customer_name} and this project. Generic copy = lost deal. Sell
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 3000,
+        model: 'claude-sonnet-4-6',
+        max_tokens: 5000,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
