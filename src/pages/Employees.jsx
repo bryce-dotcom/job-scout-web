@@ -132,6 +132,12 @@ export default function Employees() {
   const [resettingPassword, setResettingPassword] = useState(false)
   const [resetMessage, setResetMessage] = useState(null)
   const [showImportExport, setShowImportExport] = useState(false)
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false)
+  const [credEmail, setCredEmail] = useState('')
+  const [credPassword, setCredPassword] = useState('')
+  const [credShowPassword, setCredShowPassword] = useState(false)
+  const [settingCredentials, setSettingCredentials] = useState(false)
+  const [credentialsResult, setCredentialsResult] = useState(null)
 
   // Use centralized access control
   const isAdmin = checkAdmin(currentUser)
@@ -578,6 +584,61 @@ export default function Employees() {
     }
 
     setResettingPassword(false)
+  }
+
+  // Set login credentials directly (for employees without email access)
+  const openCredentialsModal = (employee) => {
+    setCredEmail(employee.email || '')
+    setCredPassword('')
+    setCredShowPassword(false)
+    setCredentialsResult(null)
+    setShowCredentialsModal(true)
+  }
+
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+    let pw = ''
+    for (let i = 0; i < 10; i++) pw += chars[Math.floor(Math.random() * chars.length)]
+    setCredPassword(pw)
+    setCredShowPassword(true)
+  }
+
+  const handleSetCredentials = async () => {
+    if (!credEmail || !credPassword) return
+    if (credPassword.length < 6) {
+      setError('Password must be at least 6 characters')
+      return
+    }
+    setSettingCredentials(true)
+    setError(null)
+
+    try {
+      const res = await supabase.functions.invoke('set-employee-credentials', {
+        body: {
+          companyId,
+          employeeId: viewingEmployee.id,
+          email: credEmail,
+          password: credPassword,
+          callerEmployeeId: currentUser?.id
+        }
+      })
+
+      if (res.data?.success) {
+        setCredentialsResult({ email: credEmail, password: credPassword })
+        // Update local employee data if email changed
+        if (viewingEmployee.email !== credEmail) {
+          setViewingEmployee(prev => ({ ...prev, email: credEmail }))
+          await fetchEmployees()
+          await loadEmployees()
+        }
+      } else {
+        setError(res.data?.error || 'Failed to set credentials')
+      }
+    } catch (err) {
+      setError(err.message)
+    }
+
+    setSettingCredentials(false)
   }
 
   // Add employee and immediately send invite
@@ -1619,7 +1680,7 @@ export default function Employees() {
 
                     {/* Reset Password + Invite buttons */}
                     {viewingEmployee.email && (
-                      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
                         <button
                           type="button"
                           onClick={() => handleResetPassword(viewingEmployee.email)}
@@ -1654,6 +1715,22 @@ export default function Employees() {
                         </button>
                       </div>
                     )}
+
+                    {/* Set Login Credentials — works even without email */}
+                    <button
+                      type="button"
+                      onClick={() => openCredentialsModal(viewingEmployee)}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                        padding: '10px 16px', backgroundColor: theme.accentBg,
+                        border: 'none', borderRadius: '8px',
+                        color: theme.accent, fontSize: '13px', fontWeight: '500',
+                        cursor: 'pointer', marginBottom: '16px', minHeight: '44px'
+                      }}
+                    >
+                      <Lock size={14} />
+                      Set Login Credentials
+                    </button>
 
                     {/* Reset/Invite success message */}
                     {resetMessage && (
@@ -2607,6 +2684,163 @@ export default function Employees() {
           onImportComplete={() => fetchEmployees()}
           onClose={() => setShowImportExport(false)}
         />
+      )}
+
+      {/* Set Login Credentials Modal */}
+      {showCredentialsModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '16px'
+        }} onClick={() => setShowCredentialsModal(false)}>
+          <div style={{
+            backgroundColor: theme.bgCard, borderRadius: '16px', padding: '24px',
+            width: '100%', maxWidth: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: theme.text }}>
+                <Lock size={18} style={{ marginRight: '8px', verticalAlign: 'middle' }} />
+                Set Login Credentials
+              </h3>
+              <button onClick={() => setShowCredentialsModal(false)} style={{
+                background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px'
+              }}><X size={20} /></button>
+            </div>
+
+            {credentialsResult ? (
+              <>
+                <div style={{
+                  padding: '16px', backgroundColor: 'rgba(34,197,94,0.08)',
+                  border: '1px solid rgba(34,197,94,0.2)', borderRadius: '12px', marginBottom: '16px'
+                }}>
+                  <p style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: '600', color: '#16a34a' }}>
+                    Credentials Set Successfully
+                  </p>
+                  <p style={{ margin: 0, fontSize: '12px', color: theme.textSecondary }}>
+                    Share these credentials with the employee. They can log in immediately.
+                  </p>
+                </div>
+
+                <div style={{
+                  padding: '16px', backgroundColor: theme.bg, borderRadius: '12px',
+                  border: `1px solid ${theme.border}`, marginBottom: '16px'
+                }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Email / Username</span>
+                    <p style={{ margin: '4px 0 0', fontSize: '15px', color: theme.text, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      {credentialsResult.email}
+                    </p>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Password</span>
+                    <p style={{ margin: '4px 0 0', fontSize: '15px', color: theme.text, fontFamily: 'monospace' }}>
+                      {credentialsResult.password}
+                    </p>
+                  </div>
+                </div>
+
+                <button onClick={() => {
+                  navigator.clipboard?.writeText(`Email: ${credentialsResult.email}\nPassword: ${credentialsResult.password}`)
+                }} style={{
+                  width: '100%', padding: '12px', backgroundColor: theme.accent, color: '#fff',
+                  border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600',
+                  cursor: 'pointer', minHeight: '44px', marginBottom: '8px'
+                }}>
+                  Copy to Clipboard
+                </button>
+                <button onClick={() => setShowCredentialsModal(false)} style={{
+                  width: '100%', padding: '12px', backgroundColor: theme.bg,
+                  border: `1px solid ${theme.border}`, borderRadius: '10px', fontSize: '14px',
+                  color: theme.text, cursor: 'pointer', minHeight: '44px'
+                }}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '13px', color: theme.textSecondary, margin: '0 0 16px' }}>
+                  Set a username (email) and password for <strong>{viewingEmployee?.name}</strong>. They can use these to log in directly.
+                </p>
+
+                {error && (
+                  <div style={{
+                    padding: '10px 12px', backgroundColor: 'rgba(239,68,68,0.08)',
+                    border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px',
+                    color: '#ef4444', fontSize: '13px', marginBottom: '12px'
+                  }}>{error}</div>
+                )}
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginBottom: '6px', fontWeight: '500' }}>
+                    Email / Username
+                  </label>
+                  <input
+                    type="email"
+                    value={credEmail}
+                    onChange={e => setCredEmail(e.target.value)}
+                    placeholder="employee@example.com"
+                    style={{
+                      width: '100%', padding: '10px 12px', fontSize: '14px',
+                      border: `1px solid ${theme.border}`, borderRadius: '8px',
+                      backgroundColor: theme.bg, color: theme.text, outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginBottom: '6px', fontWeight: '500' }}>
+                    Password
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1, position: 'relative' }}>
+                      <input
+                        type={credShowPassword ? 'text' : 'password'}
+                        value={credPassword}
+                        onChange={e => setCredPassword(e.target.value)}
+                        placeholder="Min 6 characters"
+                        style={{
+                          width: '100%', padding: '10px 36px 10px 12px', fontSize: '14px',
+                          border: `1px solid ${theme.border}`, borderRadius: '8px',
+                          backgroundColor: theme.bg, color: theme.text, outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                      <button onClick={() => setCredShowPassword(!credShowPassword)} style={{
+                        position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px'
+                      }}>
+                        <Eye size={16} />
+                      </button>
+                    </div>
+                    <button onClick={generatePassword} style={{
+                      padding: '10px 14px', backgroundColor: theme.accentBg, color: theme.accent,
+                      border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600',
+                      cursor: 'pointer', whiteSpace: 'nowrap', minHeight: '44px',
+                      display: 'flex', alignItems: 'center', gap: '4px'
+                    }}>
+                      <Zap size={14} />
+                      Generate
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSetCredentials}
+                  disabled={settingCredentials || !credEmail || !credPassword}
+                  style={{
+                    width: '100%', padding: '12px', backgroundColor: theme.accent, color: '#fff',
+                    border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600',
+                    cursor: settingCredentials ? 'wait' : 'pointer', minHeight: '44px',
+                    opacity: (settingCredentials || !credEmail || !credPassword) ? 0.6 : 1
+                  }}
+                >
+                  {settingCredentials ? 'Setting Credentials...' : 'Set Credentials'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )
