@@ -152,6 +152,7 @@ export default function LightingAuditDetail() {
     const quoteData = {
       company_id: companyId,
       lead_id: audit.lead_id || null,
+      customer_id: audit.customer_id || null,
       audit_id: audit.id,
       audit_type: 'lighting',
       quote_amount: quoteAmount,

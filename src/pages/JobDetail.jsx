@@ -898,6 +898,9 @@ function JobDetailInner() {
       const customerIncentive = (audit.estimated_rebate || 0) - additionalOOP
       const customerOOP = (audit.net_cost || 0) + additionalOOP
 
+      // Resolve customer_id: prefer job, fall back to audit
+      const resolvedCustomerId = job.customer_id || audit.customer_id || null
+
       const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
 
       const { data: invoice, error } = await supabase
@@ -906,7 +909,7 @@ function JobDetailInner() {
           company_id: companyId,
           invoice_id: invoiceNumber,
           job_id: parseInt(id),
-          customer_id: job.customer_id,
+          customer_id: resolvedCustomerId,
           amount: customerOOP,
           discount_applied: customerIncentive,
           payment_status: 'Pending',
