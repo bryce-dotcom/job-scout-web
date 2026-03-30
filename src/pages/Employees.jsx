@@ -613,21 +613,27 @@ export default function Employees() {
     setError(null)
 
     try {
-      const res = await supabase.functions.invoke('set-employee-credentials', {
-        body: {
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/set-employee-credentials`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ANON_KEY}`,
+          'apikey': ANON_KEY
+        },
+        body: JSON.stringify({
           companyId,
           employeeId: viewingEmployee.id,
           email: credEmail,
           password: credPassword,
           callerEmployeeId: currentUser?.id
-        }
+        })
       })
 
-      if (res.error) {
-        // Edge function returned non-2xx or network error
-        const msg = typeof res.error === 'object' ? (res.error.message || JSON.stringify(res.error)) : String(res.error)
-        setError(msg)
-      } else if (res.data?.success) {
+      const data = await response.json()
+
+      if (data?.success) {
         setCredentialsResult({ email: credEmail, password: credPassword })
         // Update local employee data if email changed
         if (viewingEmployee.email !== credEmail) {
@@ -636,7 +642,7 @@ export default function Employees() {
           await loadEmployees()
         }
       } else {
-        setError(res.data?.error || 'Failed to set credentials')
+        setError(data?.error || 'Failed to set credentials')
       }
     } catch (err) {
       setError(err.message)
