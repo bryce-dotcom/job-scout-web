@@ -327,6 +327,27 @@
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 | salesperson | text | |
+| stripe_customer_id | text | |
+
+---
+
+## customer_payment_methods
+
+| Column | Type | Default |
+|--------|------|---------|
+| id | integer | PK |
+| company_id | integer | NOT NULL |
+| customer_id | integer | FK customers.id |
+| stripe_payment_method_id | text | NOT NULL |
+| stripe_customer_id | text | NOT NULL |
+| brand | text | |
+| last_four | text | |
+| exp_month | integer | |
+| exp_year | integer | |
+| is_default | boolean | false |
+| status | text | 'active' |
+| created_at | timestamptz | now() |
+| updated_at | timestamptz | |
 
 ---
 
@@ -782,6 +803,7 @@
 | company_id | integer | FK companies.id |
 | name | text | |
 | rate_per_hour | numeric | |
+| cost_per_hour | numeric | 0 |
 | description | text | |
 | multiplier | numeric | 1 |
 | active | boolean | true |

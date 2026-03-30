@@ -122,6 +122,59 @@ serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
+      // Check if save-card-on-file is enabled
+      const { data: saveCardSetting } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('company_id', tokenRow.company_id)
+        .eq('key', 'invoice_save_card_on_file')
+        .single();
+
+      let saveCardEnabled = false;
+      if (saveCardSetting?.value) {
+        try { saveCardEnabled = JSON.parse(saveCardSetting.value); } catch {}
+      }
+
+      // If save-card is enabled and we have a customer, get or create Stripe customer
+      let stripeCustomerId = '';
+      if (saveCardEnabled && tokenRow.customer_id) {
+        const { data: cust } = await supabase
+          .from('customers')
+          .select('id, name, email, stripe_customer_id')
+          .eq('id', tokenRow.customer_id)
+          .single();
+
+        if (cust) {
+          stripeCustomerId = cust.stripe_customer_id || '';
+
+          if (!stripeCustomerId) {
+            // Create Stripe customer
+            const custParams = new URLSearchParams();
+            custParams.append('name', cust.name || '');
+            if (cust.email) custParams.append('email', cust.email);
+            custParams.append('metadata[jobscout_customer_id]', String(cust.id));
+            custParams.append('metadata[company_id]', String(tokenRow.company_id));
+
+            const custRes = await fetch('https://api.stripe.com/v1/customers', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${stripeKey}`,
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: custParams.toString(),
+            });
+
+            if (custRes.ok) {
+              const stripeCust = await custRes.json();
+              stripeCustomerId = stripeCust.id;
+              await supabase.from('customers')
+                .update({ stripe_customer_id: stripeCustomerId })
+                .eq('id', cust.id);
+            }
+          }
+        }
+      }
+
       const params = new URLSearchParams();
       params.append('mode', 'payment');
       params.append('success_url', `${portalUrl}?payment=success`);
@@ -138,6 +191,14 @@ serve(async (req) => {
       params.append('metadata[company_id]', tokenRow.company_id);
       params.append('metadata[portal_token]', token);
       params.append('metadata[payment_type]', payment_type);
+
+      // If we have a Stripe customer, attach them and enable future usage
+      if (stripeCustomerId) {
+        params.append('customer', stripeCustomerId);
+        params.append('payment_intent_data[setup_future_usage]', 'off_session');
+        params.append('metadata[save_card]', 'true');
+        params.append('metadata[customer_id]', String(tokenRow.customer_id));
+      }
 
       // Check if CC fee is included and add to metadata
       const ccFeeSettings = await getCcFeeSettings(supabase, tokenRow.company_id);

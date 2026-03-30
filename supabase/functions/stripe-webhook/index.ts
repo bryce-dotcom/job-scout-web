@@ -70,14 +70,15 @@ serve(async (req) => {
     const amountTotal = session.amount_total; // cents
     const paymentIntent = session.payment_intent;
 
-    if (!documentId || !companyId) {
-      console.error('Missing metadata in checkout session');
+    if (!companyId) {
+      console.error('Missing company_id in checkout session metadata');
       return new Response(JSON.stringify({ error: 'Missing metadata' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
     // Look up per-company webhook secret from settings, fall back to global env
     let webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
+    let stripeKey = '';
     const { data: configRow } = await supabase
       .from('settings')
       .select('value')
@@ -89,6 +90,7 @@ serve(async (req) => {
       try {
         const cfg = JSON.parse(configRow.value);
         if (cfg.stripe_webhook_secret) webhookSecret = cfg.stripe_webhook_secret;
+        if (cfg.stripe_secret_key) stripeKey = cfg.stripe_secret_key;
       } catch { /* use env fallback */ }
     }
 
@@ -105,7 +107,139 @@ serve(async (req) => {
         { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
+    // ---- SETUP MODE: Save card from setup session ----
+    if (session.mode === 'setup') {
+      const customerId = metadata.customer_id;
+      const setupIntentId = session.setup_intent;
+
+      if (!setupIntentId || !stripeKey || !customerId) {
+        console.error('Setup session missing required data');
+        return new Response(JSON.stringify({ received: true }),
+          { headers: { 'Content-Type': 'application/json' } });
+      }
+
+      // Fetch the SetupIntent to get the payment method
+      const siRes = await fetch(`https://api.stripe.com/v1/setup_intents/${setupIntentId}`, {
+        headers: { 'Authorization': `Bearer ${stripeKey}` },
+      });
+      const setupIntent = await siRes.json();
+      const pmId = setupIntent.payment_method;
+
+      if (pmId) {
+        // Fetch payment method details
+        const pmRes = await fetch(`https://api.stripe.com/v1/payment_methods/${pmId}`, {
+          headers: { 'Authorization': `Bearer ${stripeKey}` },
+        });
+        const pmData = await pmRes.json();
+        const card = pmData.card || {};
+
+        // Check if this card already exists (same last4 + exp)
+        const { data: existing } = await supabase
+          .from('customer_payment_methods')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('customer_id', customerId)
+          .eq('last_four', card.last4 || '')
+          .eq('exp_month', card.exp_month || 0)
+          .eq('exp_year', card.exp_year || 0)
+          .eq('status', 'active')
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          // Check if customer has any existing methods (to set default)
+          const { data: existingMethods } = await supabase
+            .from('customer_payment_methods')
+            .select('id')
+            .eq('company_id', companyId)
+            .eq('customer_id', customerId)
+            .eq('status', 'active')
+            .limit(1);
+
+          const isFirst = !existingMethods || existingMethods.length === 0;
+
+          await supabase.from('customer_payment_methods').insert({
+            company_id: parseInt(companyId),
+            customer_id: parseInt(customerId),
+            stripe_payment_method_id: pmId,
+            stripe_customer_id: session.customer || '',
+            brand: card.brand || 'unknown',
+            last_four: card.last4 || '',
+            exp_month: card.exp_month || 0,
+            exp_year: card.exp_year || 0,
+            is_default: isFirst,
+          });
+        }
+      }
+
+      return new Response(JSON.stringify({ received: true }),
+        { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // ---- PAYMENT MODE: Handle normal payment checkout ----
+    if (!documentId) {
+      console.error('Missing document_id in payment checkout session');
+      return new Response(JSON.stringify({ received: true }),
+        { headers: { 'Content-Type': 'application/json' } });
+    }
+
     const amountDollars = amountTotal / 100;
+
+    // If setup_future_usage was set, save the payment method from this payment
+    if (paymentIntent && stripeKey && metadata.save_card === 'true' && metadata.customer_id) {
+      try {
+        // Fetch the PaymentIntent to get the payment method used
+        const piRes = await fetch(`https://api.stripe.com/v1/payment_intents/${paymentIntent}`, {
+          headers: { 'Authorization': `Bearer ${stripeKey}` },
+        });
+        const piData = await piRes.json();
+        const pmId = piData.payment_method;
+
+        if (pmId) {
+          const pmRes = await fetch(`https://api.stripe.com/v1/payment_methods/${pmId}`, {
+            headers: { 'Authorization': `Bearer ${stripeKey}` },
+          });
+          const pmData = await pmRes.json();
+          const card = pmData.card || {};
+
+          // Check if already saved
+          const { data: existing } = await supabase
+            .from('customer_payment_methods')
+            .select('id')
+            .eq('company_id', companyId)
+            .eq('customer_id', metadata.customer_id)
+            .eq('last_four', card.last4 || '')
+            .eq('exp_month', card.exp_month || 0)
+            .eq('exp_year', card.exp_year || 0)
+            .eq('status', 'active')
+            .limit(1);
+
+          if (!existing || existing.length === 0) {
+            const { data: existingMethods } = await supabase
+              .from('customer_payment_methods')
+              .select('id')
+              .eq('company_id', companyId)
+              .eq('customer_id', metadata.customer_id)
+              .eq('status', 'active')
+              .limit(1);
+
+            await supabase.from('customer_payment_methods').insert({
+              company_id: parseInt(companyId),
+              customer_id: parseInt(metadata.customer_id),
+              stripe_payment_method_id: pmId,
+              stripe_customer_id: session.customer || '',
+              brand: card.brand || 'unknown',
+              last_four: card.last4 || '',
+              exp_month: card.exp_month || 0,
+              exp_year: card.exp_year || 0,
+              is_default: !existingMethods || existingMethods.length === 0,
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Error saving card from payment:', e);
+        // Non-fatal — payment still recorded below
+      }
+    }
 
     if (paymentType === 'invoice_payment' && documentType === 'invoice') {
       const { data: invoice } = await supabase

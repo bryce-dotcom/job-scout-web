@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard } from 'lucide-react'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { toast } from '../lib/toast'
@@ -65,6 +65,12 @@ export default function InvoiceDetail() {
   const [showSendModal, setShowSendModal] = useState(false)
   const [sendEmail, setSendEmail] = useState('')
   const [sendingEmail, setSendingEmail] = useState(false)
+
+  // Charge saved card state
+  const [savedCards, setSavedCards] = useState([])
+  const [showChargeModal, setShowChargeModal] = useState(false)
+  const [selectedCardId, setSelectedCardId] = useState(null)
+  const [charging, setCharging] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -132,9 +138,49 @@ export default function InvoiceDetail() {
       } else {
         setLatestPdfSignedUrl(null)
       }
+
+      // Fetch saved cards for this customer
+      if (invoiceData.customer_id) {
+        const { data: cards } = await supabase
+          .from('customer_payment_methods')
+          .select('id, brand, last_four, exp_month, exp_year, is_default')
+          .eq('company_id', companyId)
+          .eq('customer_id', invoiceData.customer_id)
+          .eq('status', 'active')
+          .order('is_default', { ascending: false })
+        setSavedCards(cards || [])
+        if (cards?.length > 0) {
+          setSelectedCardId(cards.find(c => c.is_default)?.id || cards[0].id)
+        }
+      }
     }
 
     setLoading(false)
+  }
+
+  const chargeSavedCard = async () => {
+    if (!selectedCardId) return
+    setCharging(true)
+    try {
+      const res = await supabase.functions.invoke('charge-saved-card', {
+        body: {
+          company_id: companyId,
+          invoice_id: parseInt(id),
+          payment_method_id: selectedCardId
+        }
+      })
+      if (res.data?.success) {
+        toast.success(`Payment of $${res.data.amount_charged.toFixed(2)} processed successfully`)
+        setShowChargeModal(false)
+        await fetchInvoiceData()
+        await fetchInvoices()
+      } else {
+        toast.error(res.data?.error || 'Payment failed')
+      }
+    } catch (err) {
+      toast.error(err.message || 'Payment failed')
+    }
+    setCharging(false)
   }
 
   const addPayment = async () => {
@@ -1336,6 +1382,15 @@ export default function InvoiceDetail() {
                     <DollarSign size={18} />
                     Record Payment
                   </button>
+                  {savedCards.length > 0 && (
+                    <button
+                      onClick={() => setShowChargeModal(true)}
+                      style={actionBtnStyle('#3b82f6', '#ffffff')}
+                    >
+                      <CreditCard size={18} />
+                      Charge Saved Card
+                    </button>
+                  )}
                   <button
                     onClick={markAsPaid}
                     disabled={saving}
@@ -1579,6 +1634,106 @@ export default function InvoiceDetail() {
                   {saving ? 'Saving...' : 'Record Payment'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Charge Saved Card Modal */}
+      {showChargeModal && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px', zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard, borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)', width: '100%', maxWidth: '420px'
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '20px', borderBottom: `1px solid ${theme.border}`
+            }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
+                Charge Saved Card
+              </h2>
+              <button onClick={() => setShowChargeModal(false)} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                Select a card to charge for the remaining balance.
+              </div>
+
+              <div style={{
+                padding: '12px 16px', backgroundColor: theme.bg, borderRadius: '10px',
+                border: `1px solid ${theme.border}`, fontSize: '14px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.text }}>
+                  <span>Balance Due</span>
+                  <span style={{ fontWeight: '700', color: theme.accent }}>
+                    ${((parseFloat(invoice?.amount) || 0) - payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)).toFixed(2)}
+                  </span>
+                </div>
+                {ccFeeEnabled && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textMuted, fontSize: '12px', marginTop: '4px' }}>
+                    <span>CC processing fee ({ccFeePercent}%)</span>
+                    <span>
+                      +${(((parseFloat(invoice?.amount) || 0) - payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)) * ccFeePercent / 100).toFixed(2)}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {savedCards.map(card => (
+                  <label key={card.id} style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '12px 14px', backgroundColor: selectedCardId === card.id ? theme.accentBg : theme.bg,
+                    borderRadius: '10px', border: `1px solid ${selectedCardId === card.id ? theme.accent + '60' : theme.border}`,
+                    cursor: 'pointer', minHeight: '44px'
+                  }}>
+                    <input
+                      type="radio"
+                      name="chargeCard"
+                      checked={selectedCardId === card.id}
+                      onChange={() => setSelectedCardId(card.id)}
+                      style={{ accentColor: theme.accent }}
+                    />
+                    <CreditCard size={16} style={{ color: theme.accent }} />
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>
+                        {(card.brand || 'Card').charAt(0).toUpperCase() + (card.brand || 'card').slice(1)} **** {card.last_four}
+                      </span>
+                      {card.is_default && (
+                        <span style={{
+                          marginLeft: '6px', padding: '1px 5px', backgroundColor: theme.accentBg,
+                          color: theme.accent, borderRadius: '4px', fontSize: '9px', fontWeight: '600'
+                        }}>DEFAULT</span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>{card.exp_month}/{card.exp_year}</span>
+                  </label>
+                ))}
+              </div>
+
+              <button
+                onClick={chargeSavedCard}
+                disabled={charging || !selectedCardId}
+                style={{
+                  padding: '14px', backgroundColor: '#3b82f6', color: '#fff',
+                  border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600',
+                  cursor: (charging || !selectedCardId) ? 'not-allowed' : 'pointer',
+                  opacity: (charging || !selectedCardId) ? 0.6 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  minHeight: '44px'
+                }}
+              >
+                <CreditCard size={16} />
+                {charging ? 'Processing...' : 'Charge Card'}
+              </button>
             </div>
           </div>
         </div>

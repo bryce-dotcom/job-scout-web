@@ -42,6 +42,9 @@ export default function CustomerDetail() {
   const [leads, setLeads] = useState([])
   const [payments, setPayments] = useState([])
   const [communications, setCommunications] = useState([])
+  const [savedCards, setSavedCards] = useState([])
+  const [loadingCards, setLoadingCards] = useState(false)
+  const [removingCardId, setRemovingCardId] = useState(null)
   const [activeTab, setActiveTab] = useState('info')
   const [loading, setLoading] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
@@ -135,6 +138,16 @@ export default function CustomerDetail() {
       setPayments([])
     }
 
+    // Fetch saved payment methods
+    const { data: cardData } = await supabase
+      .from('customer_payment_methods')
+      .select('id, brand, last_four, exp_month, exp_year, is_default, created_at')
+      .eq('company_id', companyId)
+      .eq('customer_id', id)
+      .eq('status', 'active')
+      .order('is_default', { ascending: false })
+    setSavedCards(cardData || [])
+
     // Fetch communications for this customer
     const { data: commData } = await supabase
       .from('communications_log')
@@ -144,6 +157,64 @@ export default function CustomerDetail() {
     setCommunications(commData || [])
 
     setLoading(false)
+  }
+
+  const handleAddCard = async () => {
+    setLoadingCards(true)
+    try {
+      const res = await supabase.functions.invoke('manage-payment-methods', {
+        body: {
+          action: 'create_setup_session',
+          company_id: companyId,
+          customer_id: parseInt(id),
+          return_url: window.location.href
+        }
+      })
+      if (res.data?.checkout_url) {
+        window.open(res.data.checkout_url, '_blank')
+      } else {
+        toast.error(res.data?.error || 'Failed to start card setup')
+      }
+    } catch (err) {
+      toast.error(err.message)
+    }
+    setLoadingCards(false)
+  }
+
+  const handleRemoveCard = async (cardId) => {
+    if (!confirm('Remove this payment method?')) return
+    setRemovingCardId(cardId)
+    try {
+      await supabase.functions.invoke('manage-payment-methods', {
+        body: {
+          action: 'remove',
+          company_id: companyId,
+          customer_id: parseInt(id),
+          payment_method_id: cardId
+        }
+      })
+      setSavedCards(prev => prev.filter(c => c.id !== cardId))
+      toast.success('Card removed')
+    } catch (err) {
+      toast.error(err.message)
+    }
+    setRemovingCardId(null)
+  }
+
+  const handleSetDefault = async (cardId) => {
+    try {
+      await supabase.functions.invoke('manage-payment-methods', {
+        body: {
+          action: 'set_default',
+          company_id: companyId,
+          customer_id: parseInt(id),
+          payment_method_id: cardId
+        }
+      })
+      setSavedCards(prev => prev.map(c => ({ ...c, is_default: c.id === cardId })))
+    } catch (err) {
+      toast.error(err.message)
+    }
   }
 
   // Open quote creation modal
@@ -1390,6 +1461,91 @@ export default function CustomerDetail() {
         {/* PAYMENTS TAB */}
         {activeTab === 'payments' && (
           <div>
+            {/* Saved Payment Methods */}
+            <div style={{
+              marginBottom: '24px', padding: '16px', backgroundColor: theme.bg,
+              borderRadius: '12px', border: `1px solid ${theme.border}`
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: savedCards.length > 0 ? '12px' : '0' }}>
+                <div>
+                  <h4 style={{ margin: 0, color: theme.text, fontSize: '14px', fontWeight: '600' }}>Saved Payment Methods</h4>
+                  <p style={{ margin: '2px 0 0', color: theme.textMuted, fontSize: '12px' }}>
+                    Cards on file for recurring charges
+                  </p>
+                </div>
+                <button
+                  onClick={handleAddCard}
+                  disabled={loadingCards}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 14px', backgroundColor: theme.accentBg, color: theme.accent,
+                    border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500',
+                    cursor: loadingCards ? 'not-allowed' : 'pointer', opacity: loadingCards ? 0.7 : 1,
+                    minHeight: '44px'
+                  }}
+                >
+                  <Plus size={14} />
+                  {loadingCards ? 'Opening...' : 'Add Card'}
+                </button>
+              </div>
+
+              {savedCards.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {savedCards.map(card => (
+                    <div key={card.id} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '10px 14px', backgroundColor: theme.bgCard || '#ffffff',
+                      borderRadius: '8px', border: `1px solid ${card.is_default ? theme.accent + '40' : theme.border}`
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <CreditCard size={18} style={{ color: theme.accent }} />
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>
+                            {(card.brand || 'Card').charAt(0).toUpperCase() + (card.brand || 'card').slice(1)} **** {card.last_four}
+                            {card.is_default && (
+                              <span style={{
+                                marginLeft: '8px', padding: '2px 6px', backgroundColor: theme.accentBg,
+                                color: theme.accent, borderRadius: '4px', fontSize: '10px', fontWeight: '600'
+                              }}>
+                                DEFAULT
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                            Expires {card.exp_month}/{card.exp_year}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {!card.is_default && (
+                          <button
+                            onClick={() => handleSetDefault(card.id)}
+                            style={{
+                              padding: '6px 10px', backgroundColor: 'transparent', color: theme.textSecondary,
+                              border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '11px',
+                              cursor: 'pointer', minHeight: '32px'
+                            }}
+                          >
+                            Set Default
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleRemoveCard(card.id)}
+                          disabled={removingCardId === card.id}
+                          style={{
+                            padding: '6px', backgroundColor: 'transparent', color: theme.textMuted,
+                            border: 'none', borderRadius: '6px', cursor: 'pointer', minHeight: '32px'
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div style={{ marginBottom: '20px' }}>
               <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px' }}>Payments</h3>
               <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>

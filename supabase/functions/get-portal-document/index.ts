@@ -223,6 +223,19 @@ serve(async (req) => {
       }
     }
 
+    // Fetch saved payment methods for this customer (safe fields only)
+    let savedPaymentMethods: unknown[] = [];
+    if (tokenRow.customer_id && paymentConfig?.stripe_enabled) {
+      const { data: savedCards } = await supabase
+        .from('customer_payment_methods')
+        .select('id, brand, last_four, exp_month, exp_year, is_default')
+        .eq('company_id', tokenRow.company_id)
+        .eq('customer_id', tokenRow.customer_id)
+        .eq('status', 'active')
+        .order('is_default', { ascending: false });
+      savedPaymentMethods = savedCards || [];
+    }
+
     return new Response(JSON.stringify({
       token_id: tokenRow.id,
       document_type: tokenRow.document_type,
@@ -235,7 +248,8 @@ serve(async (req) => {
       payments: paymentsData,
       payment_config: paymentConfig,
       google_place_id: company?.google_place_id || null,
-      invoice_settings: invoiceSettings
+      invoice_settings: invoiceSettings,
+      saved_payment_methods: savedPaymentMethods
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
