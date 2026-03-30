@@ -1643,6 +1643,10 @@ export default function Employees() {
                 {viewingEmployee && isAdmin && !isEditing && (
                   <>
                     <div style={sectionHeaderStyle}>Account</div>
+                    <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px', lineHeight: '1.5' }}>
+                      Manage how this employee logs in. If they have a company email, use Reset Password or Resend Invite.
+                      If they don't have email access, use Set Login Credentials to create a username and password you can share with them directly.
+                    </p>
 
                     {/* Last Login */}
                     <div style={{
@@ -1731,6 +1735,9 @@ export default function Employees() {
                       <Lock size={14} />
                       Set Login Credentials
                     </button>
+                    <p style={{ fontSize: '11px', color: theme.textMuted, margin: '-8px 0 16px', textAlign: 'center', lineHeight: '1.4' }}>
+                      Create or update a username and password for employees who don't use company email to log in
+                    </p>
 
                     {/* Reset/Invite success message */}
                     {resetMessage && (
