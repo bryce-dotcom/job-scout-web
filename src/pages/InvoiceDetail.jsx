@@ -162,6 +162,7 @@ export default function InvoiceDetail() {
     if (!selectedCardId) return
     setCharging(true)
     try {
+      await supabase.auth.refreshSession()
       const res = await supabase.functions.invoke('charge-saved-card', {
         body: {
           company_id: companyId,
@@ -397,19 +398,34 @@ export default function InvoiceDetail() {
       return lines.length
     }
 
+    // ── Resolve business unit branding ──
+    let buInfo = null
+    if (invoice.business_unit) {
+      const buSetting = settings?.find(s => s.key === 'business_units')
+      if (buSetting?.value) {
+        try {
+          const units = JSON.parse(buSetting.value)
+          buInfo = units.find(u => u.name === invoice.business_unit)
+        } catch { /* ignore */ }
+      }
+    }
+    const headerName = buInfo?.name || invoice.business_unit || company?.name || 'Company'
+    const headerAddress = buInfo?.address || company?.address
+    const headerPhone = buInfo?.phone || company?.phone
+    const headerEmail = buInfo?.email || company?.owner_email || company?.email
+
     // ── Company header ──
-    const companyName = company?.name || 'Company'
     doc.setFontSize(20)
     doc.setFont('helvetica', 'bold')
-    doc.text(companyName, margin, y)
+    doc.text(headerName, margin, y)
     y += 8
 
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(100)
-    if (company?.address) { doc.text(company.address, margin, y); y += 5 }
-    if (company?.phone) { doc.text(company.phone, margin, y); y += 5 }
-    if (company?.email) { doc.text(company.email, margin, y); y += 5 }
+    if (headerAddress) { doc.text(headerAddress, margin, y); y += 5 }
+    if (headerPhone) { doc.text(headerPhone, margin, y); y += 5 }
+    if (headerEmail) { doc.text(headerEmail, margin, y); y += 5 }
     y += 5
 
     // ── Invoice title (right side, absolute position) ──
@@ -729,9 +745,17 @@ export default function InvoiceDetail() {
         } catch { /* ignore */ }
       }
 
-      // Call send-invoice edge function
-      const { error: fnError } = await supabase.functions.invoke('send-invoice', {
-        body: {
+      // Call send-invoice edge function via direct fetch (avoids JWT expiry issues)
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ANON_KEY}`,
+          'apikey': ANON_KEY
+        },
+        body: JSON.stringify({
           company_id: companyId,
           invoice_id: invoice.id,
           recipient_email: sendEmail,
@@ -744,10 +768,11 @@ export default function InvoiceDetail() {
           business_unit_phone: buObject?.phone || company?.phone || '',
           business_unit_email: buObject?.email || company?.owner_email || '',
           business_unit_address: buObject?.address || company?.address || ''
-        }
+        })
       })
 
-      if (fnError) throw fnError
+      const sendData = await sendRes.json()
+      if (!sendData.success) throw new Error(sendData.error || 'Failed to send invoice')
 
       // Update invoice
       await supabase.from('invoices').update({
