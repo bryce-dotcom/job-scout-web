@@ -146,7 +146,7 @@ serve(async (req) => {
 
     // Send via Resend API
     const emailPayload: Record<string, unknown> = {
-      from: `${displayName} <estimates@jobscout.appsannex.com>`,
+      from: `${displayName} <estimates@appsannex.com>`,
       to: [recipient_email],
       subject: isInteractive ? `Your Proposal from ${displayName}` : `Estimate ${estNum} from ${displayName}`,
       html: htmlBody,

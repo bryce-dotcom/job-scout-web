@@ -143,7 +143,7 @@ serve(async (req) => {
 
     // Send via Resend API
     const emailPayload: Record<string, unknown> = {
-      from: `${displayName} <invoices@jobscout.appsannex.com>`,
+      from: `${displayName} <invoices@appsannex.com>`,
       to: [recipient_email],
       subject: `Invoice ${invNum} from ${displayName}`,
       html: htmlBody,

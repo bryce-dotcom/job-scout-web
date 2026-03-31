@@ -264,7 +264,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: `${displayName} <estimates@jobscout.appsannex.com>`,
+          from: `${displayName} <estimates@appsannex.com>`,
           to: [est.sent_to_email],
           subject,
           html: htmlBody,
