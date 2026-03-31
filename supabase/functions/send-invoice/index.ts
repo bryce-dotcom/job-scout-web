@@ -31,11 +31,17 @@ serve(async (req) => {
       company_name,
       invoice_number,
       amount,
+      discount,
+      job_description,
+      customer_name,
       portal_url,
+      logo_url,
+      due_date,
       business_unit_name,
       business_unit_phone,
       business_unit_email,
       business_unit_address,
+      payment_methods,
     } = await req.json();
 
     if (!recipient_email || !invoice_id) {
@@ -71,26 +77,101 @@ serve(async (req) => {
     const contactEmail = business_unit_email || '';
     const contactAddress = business_unit_address || '';
     const invNum = invoice_number || `INV-${invoice_id}`;
-    const amountStr = amount ? `$${parseFloat(amount).toFixed(2)}` : '';
+    const amountNum = parseFloat(amount) || 0;
+    const discountNum = parseFloat(discount) || 0;
+    const balanceDue = amountNum - discountNum;
+    const amountStr = balanceDue > 0 ? `$${balanceDue.toFixed(2)}` : '';
+    const greeting = customer_name ? `Hi ${customer_name.split(' ')[0]},` : 'Hello,';
 
-    // Build contact info line for footer
+    // Format due date
+    let dueDateStr = '';
+    if (due_date) {
+      try {
+        dueDateStr = new Date(due_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      } catch { /* ignore */ }
+    }
+
+    // Logo HTML
+    const logoHtml = logo_url ? `
+      <div style="text-align:center;margin-bottom:16px;">
+        <img src="${logo_url}" alt="${displayName}" style="max-height:60px;max-width:200px;object-fit:contain;" />
+      </div>
+    ` : '';
+
+    // Build payment methods section
+    const methods = payment_methods || [];
+    let paymentMethodsHtml = '';
+    if (portal_url && methods.length > 0) {
+      const methodButtons = methods.map((m: string) => {
+        const icons: Record<string, string> = {
+          'Credit Card': '&#128179;',
+          'ACH / Bank Transfer': '&#127974;',
+          'PayPal': '&#128176;',
+          'Venmo': '&#128176;',
+        };
+        const icon = icons[m] || '&#128176;';
+        return `<td style="padding:4px 6px;">
+          <a href="${portal_url}" style="display:inline-block;padding:10px 20px;background-color:#f7f5ef;border:1px solid #d6cdb8;border-radius:8px;text-decoration:none;color:#2c3530;font-size:13px;font-weight:500;white-space:nowrap;">
+            ${icon}&nbsp; ${m}
+          </a>
+        </td>`;
+      }).join('');
+
+      paymentMethodsHtml = `
+        <div style="margin:24px 0 8px 0;">
+          <p style="color:#4d5a52;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 12px 0;">Payment Methods Accepted</p>
+          <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr>${methodButtons}</tr></table>
+        </div>
+      `;
+    }
+
+    // Invoice summary table
+    let summaryRows = '';
+    if (job_description) {
+      summaryRows += `
+        <tr>
+          <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">Description</td>
+          <td style="padding:10px 0;color:#2c3530;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">${job_description}</td>
+        </tr>`;
+    }
+    if (amountNum > 0) {
+      summaryRows += `
+        <tr>
+          <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">Subtotal</td>
+          <td style="padding:10px 0;color:#2c3530;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">$${amountNum.toFixed(2)}</td>
+        </tr>`;
+    }
+    if (discountNum > 0) {
+      summaryRows += `
+        <tr>
+          <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">Discount</td>
+          <td style="padding:10px 0;color:#16a34a;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">-$${discountNum.toFixed(2)}</td>
+        </tr>`;
+    }
+
+    const summaryTable = summaryRows ? `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;">
+        ${summaryRows}
+        <tr>
+          <td style="padding:14px 0;color:#2c3530;font-size:16px;font-weight:700;">Amount Due</td>
+          <td style="padding:14px 0;color:#2c3530;font-size:16px;font-weight:700;text-align:right;">${amountStr}</td>
+        </tr>
+      </table>
+    ` : '';
+
+    // Due date badge
+    const dueDateBadge = dueDateStr ? `
+      <div style="display:inline-block;background-color:#fff7ed;border:1px solid #fed7aa;padding:6px 14px;border-radius:6px;margin-bottom:16px;">
+        <span style="color:#c2410c;font-size:12px;font-weight:600;">Due: ${dueDateStr}</span>
+      </div>
+    ` : '';
+
+    // Contact info
     const contactParts: string[] = [];
     if (contactPhone) contactParts.push(contactPhone);
-    if (contactEmail) contactParts.push(contactEmail);
+    if (contactEmail) contactParts.push(`<a href="mailto:${contactEmail}" style="color:#5a6349;text-decoration:none;">${contactEmail}</a>`);
     if (contactAddress) contactParts.push(contactAddress);
-    const contactLine = contactParts.join(' &nbsp;|&nbsp; ');
-
-    // Portal CTA button
-    const portalButton = portal_url ? `
-      <div style="text-align:center;margin:28px 0 8px 0;">
-        <a href="${portal_url}" style="display:inline-block;padding:14px 36px;background-color:#5a6349;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;border-radius:8px;">
-          View &amp; Pay Invoice
-        </a>
-      </div>
-      <p style="text-align:center;color:#7d8a7f;font-size:12px;margin:8px 0 0 0;">
-        Click above to view your invoice online and make a payment.
-      </p>
-    ` : '';
+    const contactLine = contactParts.join(' &nbsp;&bull;&nbsp; ');
 
     const htmlBody = `
 <!DOCTYPE html>
@@ -99,44 +180,71 @@ serve(async (req) => {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background-color:#f7f5ef;">
-  <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background-color:#f3f1ea;">
+  <div style="max-width:600px;margin:0 auto;padding:24px 16px;">
 
-    <!-- Accent bar -->
-    <div style="height:4px;background-color:#5a6349;border-radius:4px 4px 0 0;"></div>
+    <!-- Main Card -->
+    <div style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);border:1px solid #e8e4db;">
 
-    <div style="background-color:#ffffff;border-radius:0 0 12px 12px;padding:40px 32px;border:1px solid #d6cdb8;border-top:none;">
+      <!-- Header with accent bar -->
+      <div style="background-color:#5a6349;padding:28px 32px;">
+        ${logo_url ? `<div style="text-align:center;margin-bottom:12px;"><img src="${logo_url}" alt="${displayName}" style="max-height:48px;max-width:180px;object-fit:contain;" /></div>` : ''}
+        <h1 style="color:#ffffff;font-size:22px;margin:0;font-weight:700;text-align:center;">${displayName}</h1>
+        ${contactAddress ? `<p style="color:rgba(255,255,255,0.7);font-size:12px;margin:6px 0 0;text-align:center;">${contactAddress}</p>` : ''}
+      </div>
 
-      <!-- Header -->
-      <div style="text-align:center;margin-bottom:28px;">
-        <h1 style="color:#3e4532;font-size:26px;margin:0 0 6px 0;font-weight:700;">${displayName}</h1>
-        <div style="display:inline-block;background-color:rgba(90,99,73,0.1);padding:6px 16px;border-radius:20px;">
-          <span style="color:#5a6349;font-size:14px;font-weight:600;">Invoice ${invNum}${amountStr ? ` &mdash; ${amountStr}` : ''}</span>
+      <!-- Invoice Badge -->
+      <div style="text-align:center;padding:20px 32px 0;">
+        <div style="display:inline-block;background-color:rgba(90,99,73,0.08);padding:8px 20px;border-radius:24px;">
+          <span style="color:#5a6349;font-size:14px;font-weight:600;letter-spacing:0.3px;">INVOICE ${invNum}</span>
         </div>
       </div>
 
       <!-- Body -->
-      <div style="border-top:1px solid #e8e4db;padding-top:24px;">
-        <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
-          Please find your invoice attached to this email as a PDF document.${amountStr ? ` The total amount due is <strong>${amountStr}</strong>.` : ''}
+      <div style="padding:24px 32px 0;">
+        ${dueDateBadge}
+
+        <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 6px 0;">
+          ${greeting}
         </p>
-        <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
-          If you have any questions about this invoice, please don't hesitate to reach out${contactPhone ? ` at <strong>${contactPhone}</strong>` : ''}.
+        <p style="color:#4d5a52;font-size:14px;line-height:1.7;margin:0 0 20px 0;">
+          Here is your invoice${amountStr ? ` for <strong style="color:#2c3530;">${amountStr}</strong>` : ''}. ${pdfBase64 ? 'A PDF copy is attached for your records.' : ''} You can also view and pay this invoice online using the button below.
         </p>
 
-        ${portalButton}
+        <!-- Summary -->
+        ${summaryTable}
       </div>
 
+      <!-- Pay Now CTA -->
+      ${portal_url ? `
+      <div style="padding:0 32px 24px;text-align:center;">
+        <a href="${portal_url}" style="display:inline-block;padding:16px 48px;background-color:#5a6349;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;border-radius:10px;letter-spacing:0.3px;">
+          View &amp; Pay Invoice
+        </a>
+      </div>
+      ` : ''}
+
+      <!-- Payment Methods -->
+      ${paymentMethodsHtml}
+
       <!-- Footer -->
-      <div style="margin-top:28px;padding-top:20px;border-top:1px solid #e8e4db;text-align:center;">
-        <p style="color:#5a6349;font-size:13px;font-weight:600;margin:0 0 4px 0;">${displayName}</p>
-        ${contactLine ? `<p style="color:#7d8a7f;font-size:11px;margin:0 0 8px 0;">${contactLine}</p>` : ''}
-        <p style="color:#b4b9af;font-size:10px;margin:0;">
-          Sent via Job Scout
-        </p>
+      <div style="background-color:#f9f8f4;padding:20px 32px;border-top:1px solid #e8e4db;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td>
+              <p style="color:#5a6349;font-size:13px;font-weight:600;margin:0 0 4px 0;">${displayName}</p>
+              ${contactLine ? `<p style="color:#7d8a7f;font-size:11px;margin:0;line-height:1.6;">${contactLine}</p>` : ''}
+            </td>
+          </tr>
+        </table>
       </div>
 
     </div>
+
+    <!-- Sub-footer -->
+    <p style="text-align:center;color:#b4b9af;font-size:10px;margin:16px 0 0;">
+      Questions? ${contactPhone ? `Call ${contactPhone} or ` : ''}${contactEmail ? `email ${contactEmail}` : 'contact us'}
+    </p>
   </div>
 </body>
 </html>`;
@@ -145,7 +253,7 @@ serve(async (req) => {
     const emailPayload: Record<string, unknown> = {
       from: `${displayName} <invoices@appsannex.com>`,
       to: [recipient_email],
-      subject: `Invoice ${invNum} from ${displayName}`,
+      subject: `Invoice ${invNum}${amountStr ? ` — ${amountStr}` : ''} from ${displayName}`,
       html: htmlBody,
     };
 

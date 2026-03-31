@@ -745,6 +745,32 @@ export default function InvoiceDetail() {
         } catch { /* ignore */ }
       }
 
+      // Resolve logo URL
+      let logoUrl = buObject?.logo_url || ''
+      if (!logoUrl) {
+        const logoSetting = settings.find(s => s.key === 'company_logo_url')
+        logoUrl = logoSetting?.value || company?.logo_url || ''
+      }
+
+      // Determine available payment methods for the email
+      const paymentConfig = settings.find(s => s.key === 'payment_config')
+      const payMethods = []
+      if (paymentConfig?.value) {
+        try {
+          const pc = JSON.parse(paymentConfig.value)
+          if (pc.stripe_enabled) payMethods.push('Credit Card')
+          if (pc.bank_transfer_enabled) payMethods.push('ACH / Bank Transfer')
+          if (pc.paypal_enabled) payMethods.push('PayPal')
+        } catch { /* ignore */ }
+      }
+
+      // Get customer name
+      let customerName = ''
+      if (invoice.customer_id) {
+        const { data: cust } = await supabase.from('customers').select('name').eq('id', invoice.customer_id).single()
+        customerName = cust?.name || ''
+      }
+
       // Call send-invoice edge function via direct fetch (avoids JWT expiry issues)
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -763,7 +789,12 @@ export default function InvoiceDetail() {
           company_name: company?.company_name || '',
           invoice_number: invoice.invoice_id || `INV-${invoice.id}`,
           amount: invoice.amount,
+          discount: invoice.discount_applied || 0,
+          job_description: invoice.job_description || '',
+          customer_name: customerName,
           portal_url: portalUrl,
+          logo_url: logoUrl,
+          payment_methods: payMethods,
           business_unit_name: buObject?.name || invoice.business_unit || '',
           business_unit_phone: buObject?.phone || company?.phone || '',
           business_unit_email: buObject?.email || company?.owner_email || '',
