@@ -1280,7 +1280,7 @@ export default function EstimateDetail() {
         .select('token')
         .single()
 
-      const siteUrl = import.meta.env.PROD ? 'https://jobscout.appsannex.com' : window.location.origin
+      const siteUrl = 'https://jobscout.appsannex.com'
       const portalUrl = portalToken?.token
         ? `${siteUrl}/portal/${portalToken.token}`
         : null
