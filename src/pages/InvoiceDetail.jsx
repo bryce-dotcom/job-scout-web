@@ -228,6 +228,54 @@ export default function InvoiceDetail() {
 
     await fetchInvoiceData()
     await fetchInvoices()
+
+    // Send receipt email if customer has email
+    try {
+      let receiptEmail = invoice.sent_to_email || ''
+      if (!receiptEmail && invoice.customer_id) {
+        const { data: cust } = await supabase.from('customers').select('email,name').eq('id', invoice.customer_id).single()
+        receiptEmail = cust?.email || ''
+      }
+      if (receiptEmail) {
+        const storeSettings = useStore.getState().settings
+        const buSetting = storeSettings.find(s => s.key === 'business_units')
+        let buObj = null
+        if (buSetting?.value && invoice.business_unit) {
+          try { buObj = JSON.parse(buSetting.value).find(u => u.name === invoice.business_unit) } catch {}
+        }
+        let rLogoUrl = buObj?.logo_url || ''
+        if (!rLogoUrl) {
+          const logoSetting = storeSettings.find(s => s.key === 'company_logo_url')
+          rLogoUrl = logoSetting?.value || company?.logo_url || ''
+        }
+
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+        const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+        fetch(`${SUPABASE_URL}/functions/v1/send-receipt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON_KEY}`, 'apikey': ANON_KEY },
+          body: JSON.stringify({
+            recipient_email: receiptEmail,
+            customer_name: invoice.customer?.name || '',
+            invoice_number: invoice.invoice_id || `INV-${invoice.id}`,
+            payment_amount: paymentAmount,
+            payment_method: paymentData.method,
+            payment_date: paymentData.date,
+            balance_remaining: Math.max(0, (parseFloat(invoice.amount) || 0) - totalPaid),
+            invoice_total: invoice.amount,
+            total_paid: totalPaid,
+            company_name: company?.company_name || '',
+            business_unit_name: buObj?.name || invoice.business_unit || '',
+            business_unit_phone: buObj?.phone || company?.phone || '',
+            business_unit_email: buObj?.email || company?.owner_email || '',
+            business_unit_address: buObj?.address || company?.address || '',
+            logo_url: rLogoUrl,
+            portal_url: invoice.portal_token ? `https://jobscout.appsannex.com/portal/${invoice.portal_token}` : null
+          })
+        }).catch(() => {}) // Fire and forget — don't block payment on receipt
+      }
+    } catch { /* receipt is non-critical */ }
+
     setPaymentData({
       amount: '',
       date: new Date().toISOString().split('T')[0],

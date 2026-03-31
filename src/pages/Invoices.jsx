@@ -6,6 +6,7 @@ import { useTheme } from '../components/Layout'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download, Settings as SettingsIcon, Sliders, CreditCard, Mail } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import SearchableSelect from '../components/SearchableSelect'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { invoicesFields, paymentsFields } from '../lib/importExportFields'
 import { toast } from '../lib/toast'
@@ -97,7 +98,17 @@ export default function Invoices() {
 
   // Customer invoice modal
   const [showModal, setShowModal] = useState(false)
+  // Parse business units from settings
+  const businessUnits = (() => {
+    const buSetting = settings?.find(s => s.key === 'business_units')
+    if (buSetting?.value) {
+      try { return JSON.parse(buSetting.value) } catch { /* ignore */ }
+    }
+    return []
+  })()
+
   const [formData, setFormData] = useState({
+    business_unit: businessUnits.length === 1 ? businessUnits[0].name : '',
     customer_id: '',
     job_id: '',
     amount: '',
@@ -207,6 +218,7 @@ export default function Invoices() {
       .insert([{
         company_id: companyId,
         invoice_id: invoiceNumber,
+        business_unit: formData.business_unit || null,
         customer_id: formData.customer_id || null,
         job_id: formData.job_id || null,
         amount: formData.amount || 0,
@@ -227,6 +239,7 @@ export default function Invoices() {
 
     setShowModal(false)
     setFormData({
+      business_unit: businessUnits.length === 1 ? businessUnits[0].name : '',
       customer_id: '',
       job_id: '',
       amount: '',
@@ -694,6 +707,14 @@ export default function Invoices() {
       default:
         return null
     }
+  }
+
+  if (!user) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '14px', color: '#7d8a7f' }}>Loading...</div>
+      </div>
+    )
   }
 
   if (!checkAdmin(user)) {
@@ -1294,34 +1315,44 @@ export default function Invoices() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {businessUnits.length > 0 && (
+                  <div>
+                    <label style={labelStyle}>Business Unit *</label>
+                    <select
+                      name="business_unit"
+                      value={formData.business_unit}
+                      onChange={handleChange}
+                      required
+                      style={inputStyle}
+                    >
+                      {businessUnits.length > 1 && <option value="">-- Select Business Unit --</option>}
+                      {businessUnits.map(bu => (
+                        <option key={bu.name} value={bu.name}>{bu.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
                   <label style={labelStyle}>Customer</label>
-                  <select
-                    name="customer_id"
+                  <SearchableSelect
+                    options={customers.map(c => ({ value: c.id, label: c.name }))}
                     value={formData.customer_id}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select Customer --</option>
-                    {customers.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setFormData(prev => ({ ...prev, customer_id: val }))}
+                    placeholder="Search customers..."
+                    theme={theme}
+                  />
                 </div>
 
                 <div>
                   <label style={labelStyle}>Job (optional)</label>
-                  <select
-                    name="job_id"
+                  <SearchableSelect
+                    options={jobs.map(j => ({ value: j.id, label: `${j.job_id} - ${j.job_title || j.customer?.name || ''}` }))}
                     value={formData.job_id}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select Job --</option>
-                    {jobs.map(j => (
-                      <option key={j.id} value={j.id}>{j.job_id} - {j.job_title || j.customer?.name}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setFormData(prev => ({ ...prev, job_id: val }))}
+                    placeholder="Search jobs..."
+                    theme={theme}
+                  />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
