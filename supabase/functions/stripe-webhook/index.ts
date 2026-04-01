@@ -244,21 +244,26 @@ serve(async (req) => {
     if (paymentType === 'invoice_payment' && documentType === 'invoice') {
       const { data: invoice } = await supabase
         .from('invoices')
-        .select('id, amount, customer_id')
+        .select('id, amount, customer_id, job_id')
         .eq('id', documentId)
         .single();
 
       if (invoice) {
+        // Determine payment method from Stripe session
+        const paymentMethodType = session.payment_method_types?.[0] === 'us_bank_account' ? 'ACH' : 'Credit Card';
+
         // Insert payment record
         await supabase.from('payments').insert({
           company_id: companyId,
           invoice_id: invoice.id,
           customer_id: invoice.customer_id,
+          job_id: invoice.job_id || null,
           amount: amountDollars,
           date: new Date().toISOString().split('T')[0],
-          method: 'Credit Card',
+          method: paymentMethodType,
           status: 'Completed',
           notes: `Stripe payment (${paymentIntent})`,
+          stripe_payment_intent_id: paymentIntent || null,
         });
 
         // Recalculate total paid
@@ -269,7 +274,7 @@ serve(async (req) => {
 
         const totalPaid = (allPayments || []).reduce((sum: number, p: { amount: number }) => sum + (p.amount || 0), 0);
         const invoiceAmount = parseFloat(String(invoice.amount)) || 0;
-        const newStatus = totalPaid >= invoiceAmount ? 'Paid' : 'Partial';
+        const newStatus = totalPaid >= invoiceAmount ? 'Paid' : 'Partially Paid';
 
         await supabase
           .from('invoices')

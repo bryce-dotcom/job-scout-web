@@ -51,8 +51,9 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const { token, payment_type, amount_cents, provider } = await req.json();
+    const { token, payment_type, amount_cents, provider, stripe_method } = await req.json();
     // provider: 'stripe' | 'paypal' (default: 'stripe')
+    // stripe_method: 'card' | 'us_bank_account' (default: both)
 
     if (!token || !payment_type || !amount_cents) {
       return new Response(JSON.stringify({ error: 'token, payment_type, and amount_cents are required' }),
@@ -135,9 +136,9 @@ serve(async (req) => {
         try { saveCardEnabled = JSON.parse(saveCardSetting.value); } catch {}
       }
 
-      // If save-card is enabled and we have a customer, get or create Stripe customer
+      // Always get or create a Stripe customer (required for ACH/us_bank_account)
       let stripeCustomerId = '';
-      if (saveCardEnabled && tokenRow.customer_id) {
+      if (tokenRow.customer_id) {
         const { data: cust } = await supabase
           .from('customers')
           .select('id, name, email, stripe_customer_id')
@@ -179,6 +180,18 @@ serve(async (req) => {
       params.append('mode', 'payment');
       params.append('success_url', `${portalUrl}?payment=success`);
       params.append('cancel_url', `${portalUrl}?payment=cancelled`);
+
+      // Set payment method types — ACH, card, or both
+      if (stripe_method === 'us_bank_account') {
+        params.append('payment_method_types[0]', 'us_bank_account');
+      } else if (stripe_method === 'card') {
+        params.append('payment_method_types[0]', 'card');
+      } else {
+        // Default: offer both card and ACH
+        params.append('payment_method_types[0]', 'card');
+        params.append('payment_method_types[1]', 'us_bank_account');
+      }
+
       params.append('line_items[0][price_data][currency]', 'usd');
       params.append('line_items[0][price_data][unit_amount]', String(amount_cents));
       params.append('line_items[0][price_data][product_data][name]', description);
@@ -192,12 +205,16 @@ serve(async (req) => {
       params.append('metadata[portal_token]', token);
       params.append('metadata[payment_type]', payment_type);
 
-      // If we have a Stripe customer, attach them and enable future usage
+      // Attach Stripe customer (required for ACH, also used for save-card)
       if (stripeCustomerId) {
         params.append('customer', stripeCustomerId);
-        params.append('payment_intent_data[setup_future_usage]', 'off_session');
-        params.append('metadata[save_card]', 'true');
         params.append('metadata[customer_id]', String(tokenRow.customer_id));
+
+        // Only save payment method for future use if save-card is enabled
+        if (saveCardEnabled) {
+          params.append('payment_intent_data[setup_future_usage]', 'off_session');
+          params.append('metadata[save_card]', 'true');
+        }
       }
 
       // Check if CC fee is included and add to metadata

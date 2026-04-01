@@ -178,7 +178,7 @@ function App() {
           const { data: employee } = await supabase
             .from('employees')
             .select('*, company:companies(*)')
-            .eq('email', session.user.email)
+            .ilike('email', session.user.email)
             .eq('active', true)
             .single()
 

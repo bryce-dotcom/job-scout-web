@@ -415,7 +415,7 @@ export function getFleet(role) {
 }
 
 export function getQuotes(role) {
-  if (!isAdmin(role)) return { restricted: true, message: 'Quote data requires admin access.' }
+  if (!isAdmin(role)) return { restricted: true, message: 'Estimate data requires admin access.' }
 
   const { quotes } = useStore.getState()
   const items = quotes || []
@@ -703,7 +703,7 @@ export function assembleDataContext(domains, role, userId) {
           sections.push({ label: 'Fleet', data: getFleet(role) })
           break
         case 'quotes':
-          sections.push({ label: 'Quotes', data: getQuotes(role) })
+          sections.push({ label: 'Estimates', data: getQuotes(role) })
           break
         case 'appointments':
           sections.push({ label: 'Appointments', data: getAppointments(role, userId) })
