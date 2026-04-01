@@ -933,7 +933,7 @@ export default function LeadDetail() {
   }
 
   return (
-    <div style={{ padding: isMobile ? '8px' : '24px', minHeight: '100vh', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -965,7 +965,7 @@ export default function LeadDetail() {
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <h1 style={{ fontSize: isMobile ? '16px' : '24px', fontWeight: '700', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {lead.customer_name}
               </h1>
               <select
@@ -1953,7 +1953,7 @@ export default function LeadDetail() {
                 padding: '12px', backgroundColor: theme.bg, borderRadius: '8px',
                 border: `1px solid ${theme.border}`, marginBottom: '12px'
               }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Amount</label>
                     <input
@@ -1973,7 +1973,7 @@ export default function LeadDetail() {
                     />
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: theme.text, marginBottom: '4px' }}>Category</label>
                     <select
@@ -3009,7 +3009,7 @@ export default function LeadDetail() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '380px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '380px',
             padding: '20px'
           }}>
             <div style={{
@@ -3115,7 +3115,7 @@ export default function LeadDetail() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '380px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '380px',
             padding: '20px'
           }}>
             <div style={{

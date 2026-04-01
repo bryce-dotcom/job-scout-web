@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, DollarSign, Plus, Edit, Trash2 } from 'lucide-react'
 
@@ -22,6 +23,7 @@ const locationTypes = ['Indoor', 'Outdoor', 'Parking', 'Warehouse', 'Office', 'R
 const calcMethods = ['per_watt', 'per_fixture', 'custom']
 
 export default function RebateRates() {
+  const isMobile = useIsMobile()
   const { id: programId } = useParams()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -122,21 +124,24 @@ export default function RebateRates() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: '16px', marginBottom: '24px', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <button onClick={() => navigate('/utility-programs')} style={{ padding: '10px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', cursor: 'pointer', color: theme.textSecondary }}>
           <ArrowLeft size={20} />
         </button>
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Rebate Rates</h1>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Rebate Rates</h1>
           {program && <div style={{ fontSize: '14px', color: theme.textMuted }}>{program.program_name}</div>}
         </div>
-        <button onClick={() => setShowModal(true)} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', backgroundColor: theme.accent, color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+        </div>
+        <button onClick={() => setShowModal(true)} style={{ marginLeft: isMobile ? '0' : 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', backgroundColor: theme.accent, color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
           <Plus size={18} /> Add Rate
         </button>
       </div>
 
-      <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, overflow: 'hidden', minWidth: isMobile ? '600px' : 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: theme.accentBg }}>
@@ -179,14 +184,15 @@ export default function RebateRates() {
           </tbody>
         </table>
       </div>
+      </div>
 
       {showModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '500px' }}>
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', padding: isMobile ? '16px' : '24px', width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px', maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '20px' }}>{editing ? 'Edit' : 'Add'} Rebate Rate</h2>
             <form onSubmit={handleSubmit}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>Location Type</label>
                     <select value={formData.location_type} onChange={(e) => setFormData({ ...formData, location_type: e.target.value })}
@@ -202,7 +208,7 @@ export default function RebateRates() {
                     </select>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>Calc Method</label>
                     <select value={formData.calc_method} onChange={(e) => setFormData({ ...formData, calc_method: e.target.value, rate_unit: e.target.value === 'per_watt' ? '$/watt' : e.target.value === 'per_fixture' ? '$/fixture' : '$/custom' })}
@@ -221,7 +227,7 @@ export default function RebateRates() {
                       style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }} />
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>Min Watts</label>
                     <input type="number" min="0" value={formData.min_watts} onChange={(e) => setFormData({ ...formData, min_watts: e.target.value })}

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { ChevronLeft, ChevronRight, List, Route } from 'lucide-react'
 
 const defaultTheme = {
@@ -23,6 +24,7 @@ const statusColors = {
 }
 
 export default function RoutesCalendar() {
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const routes = useStore((state) => state.routes)
@@ -84,17 +86,18 @@ export default function RoutesCalendar() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
         gap: '16px',
         marginBottom: '24px',
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
           Routes Calendar
         </h1>
         <button
@@ -126,7 +129,9 @@ export default function RoutesCalendar() {
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
         border: `1px solid ${theme.border}`,
-        padding: '16px'
+        padding: isMobile ? '12px' : '16px',
+        flexWrap: 'wrap',
+        gap: '8px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button onClick={prevMonth} style={{
@@ -168,11 +173,13 @@ export default function RoutesCalendar() {
       </div>
 
       {/* Calendar Grid */}
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <div style={{
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
         border: `1px solid ${theme.border}`,
-        overflow: 'hidden'
+        overflow: 'hidden',
+        minWidth: isMobile ? '600px' : 'auto'
       }}>
         {/* Weekday Headers */}
         <div style={{
@@ -259,6 +266,7 @@ export default function RoutesCalendar() {
             )
           })}
         </div>
+      </div>
       </div>
 
       {/* Legend */}

@@ -8,6 +8,7 @@ import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { quotesFields, quoteLinesFields } from '../lib/importExportFields'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 // Light theme fallback
 const defaultTheme = {
@@ -24,6 +25,7 @@ const defaultTheme = {
 
 export default function Quotes() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const quotes = useStore((state) => state.quotes)
   const leads = useStore((state) => state.leads)
@@ -51,7 +53,7 @@ export default function Quotes() {
       tableName: 'quote_lines',
       sheetName: 'Line Items',
       parentIdField: 'quote_id',
-      parentRefLabel: 'Quote ID',
+      parentRefLabel: 'Estimate ID',
       fields: quoteLinesFields,
       fetchData: async (parentIds) => {
         const { data } = await supabase.from('quote_lines').select('*, item:products_services(name)').in('quote_id', parentIds)
@@ -166,29 +168,29 @@ export default function Quotes() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        flexDirection: 'row',
-        alignItems: 'center',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'center',
         justifyContent: 'space-between',
         gap: '16px',
         marginBottom: '24px',
         flexWrap: 'wrap'
       }}>
         <h1 style={{
-          fontSize: '24px',
+          fontSize: isMobile ? '20px' : '24px',
           fontWeight: '700',
           color: theme.text
         }}>
-          Quotes
+          Estimates
         </h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
-          <button onClick={() => exportToXLSX(filteredQuotes, quotesFields, 'quotes_export', { relatedTables: quoteRelatedTables, parentRefField: 'quote_id', mainSheetName: 'Quotes', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+          <button onClick={() => exportToXLSX(filteredQuotes, quotesFields, 'quotes_export', { relatedTables: quoteRelatedTables, parentRefField: 'quote_id', mainSheetName: 'Estimates', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
           </button>
           <button
@@ -208,7 +210,7 @@ export default function Quotes() {
             }}
           >
             <Plus size={18} />
-            New Quote
+            New Estimate
           </button>
         </div>
       </div>
@@ -216,7 +218,7 @@ export default function Quotes() {
       {/* Stats Cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(140px, 1fr))',
         gap: '12px',
         marginBottom: '24px'
       }}>
@@ -265,7 +267,7 @@ export default function Quotes() {
       {/* Search and Filter */}
       <div style={{
         display: 'flex',
-        flexDirection: 'row',
+        flexDirection: isMobile ? 'column' : 'row',
         gap: '12px',
         marginBottom: '24px',
         flexWrap: 'wrap'
@@ -280,7 +282,7 @@ export default function Quotes() {
           }} />
           <input
             type="text"
-            placeholder="Search quotes..."
+            placeholder="Search estimates..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
@@ -313,15 +315,15 @@ export default function Quotes() {
           <FileText size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
           <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
             {searchTerm || statusFilter !== 'all'
-              ? 'No quotes match your search.'
-              : 'No quotes yet. Create your first quote.'}
+              ? 'No estimates match your search.'
+              : 'No estimates yet. Create your first estimate.'}
           </p>
         </div>
       ) : (
         <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px'
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: '16px'
         }}>
           {filteredQuotes.map((quote) => {
             const statusStyle = statusColors[quote.status] || statusColors['Draft']
@@ -333,76 +335,51 @@ export default function Quotes() {
                 name={customerName}
                 businessName={quote.customer?.business_name || quote.lead?.business_name}
                 onClick={() => navigate(`/quotes/${quote.id}`)}
-                style={{ padding: '16px 20px' }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                {/* Quote Number & Customer */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{
-                      fontWeight: '600',
-                      color: theme.accent,
-                      fontSize: '14px'
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '44px', height: '44px',
+                      backgroundColor: theme.accentBg,
+                      borderRadius: '10px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}>
-                      {quote.quote_id || `#${quote.id}`}
-                    </span>
-                    <span style={{
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: '500',
-                      backgroundColor: statusStyle.bg,
-                      color: statusStyle.text
-                    }}>
-                      {quote.status}
-                    </span>
-                  </div>
-                  <p style={{
-                    fontWeight: '500',
-                    color: theme.text,
-                    fontSize: '15px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {customerName}
-                  </p>
-                </div>
-
-                {/* Amount */}
-                <div style={{ textAlign: 'right', minWidth: '100px' }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'flex-end',
-                    gap: '4px',
-                    color: theme.text
-                  }}>
-                    <DollarSign size={14} style={{ color: theme.textMuted }} />
-                    <span style={{ fontWeight: '600', fontSize: '15px' }}>
-                      {formatCurrency(quote.quote_amount)}
-                    </span>
+                      <FileText size={22} style={{ color: theme.accent }} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
+                        {customerName}
+                      </h3>
+                      <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '500' }}>
+                        {quote.quote_id || `#${quote.id}`}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                {/* Salesperson */}
-                <div style={{ minWidth: '120px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <User size={14} style={{ color: theme.textMuted }} />
-                  <span style={{ fontSize: '13px', color: theme.textSecondary }}>
-                    {quote.salesperson?.name || '-'}
-                  </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                  {quote.salesperson?.name && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}>
+                      <User size={14} />
+                      <span>{quote.salesperson.name}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}>
+                    <Calendar size={14} />
+                    <span>{formatDate(quote.sent_date || quote.created_at)}</span>
+                  </div>
                 </div>
 
-                {/* Date */}
-                <div style={{ minWidth: '100px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Calendar size={14} style={{ color: theme.textMuted }} />
-                  <span style={{ fontSize: '13px', color: theme.textSecondary }}>
-                    {formatDate(quote.sent_date || quote.created_at)}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>
+                    {formatCurrency(quote.quote_amount)}
                   </span>
-                </div>
-
-                {/* Arrow */}
-                <ChevronRight size={20} style={{ color: theme.textMuted }} />
+                  <span style={{
+                    padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500',
+                    backgroundColor: statusStyle.bg, color: statusStyle.text
+                  }}>
+                    {quote.status}
+                  </span>
                 </div>
               </EntityCard>
             )
@@ -410,7 +387,7 @@ export default function Quotes() {
         </div>
       )}
 
-      {/* Create Quote Modal */}
+      {/* Create Estimate Modal */}
       {showModal && (
         <div style={{
           position: 'fixed',
@@ -427,7 +404,10 @@ export default function Quotes() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '450px'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '450px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
             <div style={{
               display: 'flex',
@@ -441,7 +421,7 @@ export default function Quotes() {
                 fontWeight: '600',
                 color: theme.text
               }}>
-                New Quote
+                New Estimate
               </h2>
               <button
                 onClick={() => setShowModal(false)}
@@ -458,7 +438,7 @@ export default function Quotes() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateQuote} style={{ padding: '20px' }}>
+            <form onSubmit={handleCreateQuote} style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               {error && (
                 <div style={{
                   marginBottom: '16px',
@@ -572,7 +552,7 @@ export default function Quotes() {
                     opacity: loading ? 0.6 : 1
                   }}
                 >
-                  {loading ? 'Creating...' : 'Create Quote'}
+                  {loading ? 'Creating...' : 'Create Estimate'}
                 </button>
               </div>
             </form>
@@ -583,13 +563,13 @@ export default function Quotes() {
       {showImportExport && (
         <ImportExportModal
           tableName="quotes"
-          entityName="Quotes"
+          entityName="Estimates"
           fields={quotesFields}
           companyId={companyId}
           defaultValues={{ company_id: companyId, status: 'Draft', quote_amount: 0 }}
           relatedTables={quoteRelatedTables}
           parentRefField="quote_id"
-          extraContext="Service quotes / proposals. Map as many columns as possible. Common aliases: quote_id=Quote #/Quote ID/Quote Number, service_type=Service/Type, status=Quote Status/Stage, quote_date=Date/Created, expiration_date=Expires/Valid Until, job_address=Site Address/Service Address/Location, job_city=City, job_state=State, job_zip=ZIP, quote_amount=Amount/Quote Amount/Price, subtotal=Subtotal, discount=Discount, discount_percent=Discount %, tax_rate=Tax Rate/Tax %, tax_amount=Tax/Sales Tax, total=Total/Grand Total, utility_incentive=Rebate/Incentive/Utility Incentive, out_of_pocket=Out of Pocket/Customer Cost, deposit_required=Deposit Required, payment_terms=Payment Terms/Terms, warranty_terms=Warranty, notes=Notes/Comments, internal_notes=Internal Notes"
+          extraContext="Service estimates / proposals. Map as many columns as possible. Common aliases: quote_id=Estimate #/Estimate ID/Estimate Number, service_type=Service/Type, status=Estimate Status/Stage, quote_date=Date/Created, expiration_date=Expires/Valid Until, job_address=Site Address/Service Address/Location, job_city=City, job_state=State, job_zip=ZIP, quote_amount=Amount/Estimate Amount/Price, subtotal=Subtotal, discount=Discount, discount_percent=Discount %, tax_rate=Tax Rate/Tax %, tax_amount=Tax/Sales Tax, total=Total/Grand Total, utility_incentive=Rebate/Incentive/Utility Incentive, out_of_pocket=Out of Pocket/Customer Cost, deposit_required=Deposit Required, payment_terms=Payment Terms/Terms, warranty_terms=Warranty, notes=Notes/Comments, internal_notes=Internal Notes"
           onImportComplete={() => fetchQuotes()}
           onClose={() => setShowImportExport(false)}
         />

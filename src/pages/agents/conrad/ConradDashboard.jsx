@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 import { Link2, Send, Users, BarChart3, MousePointerClick, Plus, RefreshCw, Sparkles } from 'lucide-react'
 
 const defaultTheme = {
@@ -27,6 +28,7 @@ export default function ConradDashboard() {
   const navigate = useNavigate()
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const ccIntegration = useStore(s => s.ccIntegration)
   const emailCampaigns = useStore(s => s.emailCampaigns)
@@ -87,8 +89,8 @@ export default function ConradDashboard() {
 
   if (!isConnected) {
     return (
-      <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, marginBottom: '24px' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1200px', margin: '0 auto' }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, marginBottom: '24px' }}>
           Email Marketing Dashboard
         </h1>
 
@@ -151,13 +153,13 @@ export default function ConradDashboard() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1200px', margin: '0 auto' }}>
+      <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, marginBottom: '24px' }}>
         Email Marketing Dashboard
       </h1>
 
       {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
         <div style={{
           background: theme.bgCard,
           borderRadius: '12px',
@@ -231,7 +233,7 @@ export default function ConradDashboard() {
         padding: '20px',
         marginBottom: '24px'
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
           <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>Recent Campaigns</h2>
           <button
             onClick={() => navigate('/agents/conrad-connect/campaigns')}
@@ -255,6 +257,7 @@ export default function ConradDashboard() {
             No campaigns yet. Create your first campaign to get started.
           </p>
         ) : (
+          <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
@@ -297,6 +300,7 @@ export default function ConradDashboard() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

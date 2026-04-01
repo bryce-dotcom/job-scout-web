@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 import { Zap, Plus, X, Play } from 'lucide-react'
 
 const defaultTheme = {
@@ -22,8 +23,8 @@ const PRESET_AUTOMATIONS = [
     trigger_config: { delay_days: 3 },
   },
   {
-    name: 'Quote Reminder',
-    description: 'Remind customers about outstanding quotes after 7 days with no response.',
+    name: 'Estimate Reminder',
+    description: 'Remind customers about outstanding estimates after 7 days with no response.',
     trigger_type: 'quote_no_response',
     trigger_config: { delay_days: 7 },
   },
@@ -49,8 +50,8 @@ const PRESET_AUTOMATIONS = [
 
 const TRIGGER_TYPES = [
   { value: 'audit_completed', label: 'Audit Completed' },
-  { value: 'quote_sent', label: 'Quote Sent' },
-  { value: 'quote_no_response', label: 'Quote No Response' },
+  { value: 'quote_sent', label: 'Estimate Sent' },
+  { value: 'quote_no_response', label: 'Estimate No Response' },
   { value: 'job_completed', label: 'Job Completed' },
   { value: 'customer_anniversary', label: 'Customer Anniversary' },
   { value: 'seasonal', label: 'Seasonal' },
@@ -59,6 +60,7 @@ const TRIGGER_TYPES = [
 export default function ConradAutomations() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const companyId = useStore(s => s.companyId)
   const emailAutomations = useStore(s => s.emailAutomations)
@@ -187,11 +189,11 @@ export default function ConradAutomations() {
   )
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1200px', margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Automations</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Automations</h1>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             onClick={handleRunNow}
             disabled={running}
@@ -305,7 +307,7 @@ export default function ConradAutomations() {
 
               {/* Config row (only show when active/existing) */}
               {existing && (
-                <div style={{ display: 'flex', gap: '12px', marginTop: '12px', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '12px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>Template</label>
                     <select
@@ -353,10 +355,12 @@ export default function ConradAutomations() {
                   padding: '16px',
                   display: 'flex',
                   justifyContent: 'space-between',
-                  alignItems: 'center'
+                  alignItems: isMobile ? 'flex-start' : 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px'
                 }}
               >
-                <div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{auto.name}</div>
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
                     Trigger: {auto.trigger_type} | Template: {auto.template?.name || 'None'} | Triggered {auto.times_triggered}x
@@ -422,11 +426,11 @@ export default function ConradAutomations() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '480px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px',
             maxHeight: '90vh',
             overflow: 'auto',
             zIndex: 51,
-            padding: '24px'
+            padding: isMobile ? '16px' : '24px'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>Create Custom Automation</h2>

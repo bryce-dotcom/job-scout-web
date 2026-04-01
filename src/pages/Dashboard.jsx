@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import {
   UserPlus,
@@ -44,13 +45,13 @@ const PIPELINE_STAGES = [
   { id: 'Appointment Set', name: 'Scheduled', color: '#22c55e' },
   { id: 'Appointment Scheduled', name: 'Scheduled', color: '#22c55e' },
   { id: 'Qualified', name: 'Qualified', color: '#f97316' },
-  { id: 'Quote Sent', name: 'Quote Sent', color: '#eab308' },
+  { id: 'Quote Sent', name: 'Estimate Sent', color: '#eab308' },
   { id: 'Negotiation', name: 'Negotiation', color: '#f59e0b' },
   { id: 'Won', name: 'Won', color: '#10b981' },
   { id: 'Lost', name: 'Lost', color: '#64748b' }
 ]
-const DISPLAY_STAGES = ['New', 'Contacted', 'Scheduled', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost']
-const STAGE_COLORS = { 'New': '#3b82f6', 'Contacted': '#8b5cf6', 'Scheduled': '#22c55e', 'Qualified': '#f97316', 'Quote Sent': '#eab308', 'Negotiation': '#f59e0b', 'Won': '#10b981', 'Lost': '#64748b' }
+const DISPLAY_STAGES = ['New', 'Contacted', 'Scheduled', 'Qualified', 'Estimate Sent', 'Negotiation', 'Won', 'Lost']
+const STAGE_COLORS = { 'New': '#3b82f6', 'Contacted': '#8b5cf6', 'Scheduled': '#22c55e', 'Qualified': '#f97316', 'Estimate Sent': '#eab308', 'Negotiation': '#f59e0b', 'Won': '#10b981', 'Lost': '#64748b' }
 
 // All available metric card definitions
 const METRIC_DEFS = [
@@ -132,6 +133,7 @@ export default function Dashboard() {
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const updatePrefs = (update) => {
     setPrefs(prev => {
@@ -375,14 +377,14 @@ export default function Dashboard() {
         </div>
         <span style={{ fontSize: '13px', color: theme.textMuted, fontWeight: '500' }}>{label}</span>
       </div>
-      <div style={{ fontSize: '32px', fontWeight: '700', color: theme.text }}>{value}</div>
+      <div style={{ fontSize: isMobile ? '26px' : '32px', fontWeight: '700', color: theme.text }}>{value}</div>
       {subtitle && (
-        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px', lineHeight: '1.4' }}>{subtitle}</div>
+        <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px', lineHeight: '1.4' }}>{subtitle}</div>
       )}
       {ytdValue !== undefined && (
         <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${theme.border}` }}>
-          <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{ytdLabel || 'YTD'}</div>
-          <div style={{ fontSize: '20px', fontWeight: '700', color: theme.text }}>{ytdValue}</div>
+          <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{ytdLabel || 'YTD'}</div>
+          <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text }}>{ytdValue}</div>
         </div>
       )}
     </div>
@@ -417,19 +419,19 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <img
           src="/Scout_LOGO_GUY.png"
           alt="Job Scout"
-          style={{ width: '56px', height: '56px', objectFit: 'contain', flexShrink: 0, opacity: 0.85 }}
+          style={{ width: isMobile ? '44px' : '56px', height: isMobile ? '44px' : '56px', objectFit: 'contain', flexShrink: 0, opacity: 0.85 }}
         />
-        <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: '28px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '28px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
             Welcome back, {user?.name || 'User'}
           </h1>
-          <div style={{ fontSize: '14px', color: theme.textMuted }}>
+          <div style={{ fontSize: isMobile ? '12px' : '14px', color: theme.textMuted }}>
             {company?.company_name} &middot; {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
           </div>
         </div>
@@ -462,7 +464,7 @@ export default function Dashboard() {
           <div
             ref={settingsRef}
             style={{
-              width: '380px', maxWidth: '90vw', height: '100%',
+              width: isMobile ? '100vw' : '380px', maxWidth: '90vw', height: '100%',
               backgroundColor: theme.bgCard,
               borderLeft: `1px solid ${theme.border}`,
               overflowY: 'auto',
@@ -606,7 +608,7 @@ export default function Dashboard() {
 
       {/* ═══ Row 1: Key Metrics ═══ */}
       {prefs.metrics.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           {prefs.metrics.map(id => {
             const def = METRIC_DEFS.find(m => m.id === id)
             if (!def) return null
@@ -638,7 +640,7 @@ export default function Dashboard() {
           padding: '20px',
           marginBottom: '24px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <TrendingUp size={20} style={{ color: theme.accent }} />
               Sales Pipeline
@@ -678,7 +680,7 @@ export default function Dashboard() {
                     }}
                     title={`${p.stage}: ${p.count} leads / ${formatCurrency(p.dollars)}`}
                   >
-                    <span style={{ color: '#fff', fontSize: '12px', fontWeight: '600' }}>
+                    <span style={{ color: '#fff', fontSize: isMobile ? '10px' : '12px', fontWeight: '600' }}>
                       {prefs.pipelineDisplay === 'dollars' ? formatCurrency(p.dollars) : p.count}
                     </span>
                   </div>
@@ -688,9 +690,9 @@ export default function Dashboard() {
           </div>
 
           {/* Pipeline Legend */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: isMobile ? '8px 12px' : '16px' }}>
             {pipelineData.filter(p => p.count > 0).map(p => (
-              <div key={p.stage} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div key={p.stage} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <div style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: STAGE_COLORS[p.stage] || '#6b7280' }} />
                 <span style={{ fontSize: '13px', color: theme.textSecondary }}>{p.stage}</span>
                 <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
@@ -704,21 +706,21 @@ export default function Dashboard() {
           {prefs.showRolling && (
             <div style={{
               marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${theme.border}`,
-              display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '16px'
+              display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', flexWrap: 'wrap', gap: isMobile ? '12px' : '16px'
             }}>
               <div>
                 <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>
                   {prefs.rollingDays}-Day Rolling Avg
                 </div>
-                <div style={{ fontSize: '22px', fontWeight: '700', color: '#16a34a' }}>
+                <div style={{ fontSize: isMobile ? '20px' : '22px', fontWeight: '700', color: '#16a34a' }}>
                   {formatCurrency(rollingAvgPerMonth)}<span style={{ fontSize: '13px', fontWeight: '400', color: theme.textMuted }}>/mo</span>
                 </div>
               </div>
-              <div style={{ borderLeft: `1px solid ${theme.border}`, paddingLeft: '16px' }}>
+              <div style={{ borderLeft: isMobile ? 'none' : `1px solid ${theme.border}`, paddingLeft: isMobile ? 0 : '16px', borderTop: isMobile ? `1px solid ${theme.border}` : 'none', paddingTop: isMobile ? '12px' : 0, width: isMobile ? '100%' : 'auto' }}>
                 <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>
                   Won Deals ({prefs.rollingDays}d)
                 </div>
-                <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>
+                <div style={{ fontSize: isMobile ? '20px' : '22px', fontWeight: '700', color: theme.text }}>
                   {rollingWonCount}
                   <span style={{ fontSize: '13px', fontWeight: '400', color: theme.textMuted }}> &middot; {formatCurrency(rollingWonTotal)} total</span>
                 </div>
@@ -730,11 +732,11 @@ export default function Dashboard() {
 
       {/* ═══ Row 3: Today's Schedule & Recent Activity ═══ */}
       {(prefs.sections.schedule || prefs.sections.activity) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(350px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           {/* Today's Schedule */}
           {prefs.sections.schedule && (
             <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
                 <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Calendar size={20} style={{ color: theme.accent }} />
                   Today's Schedule
@@ -843,16 +845,16 @@ export default function Dashboard() {
         <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px' }}>
           <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>Quick Actions</h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-            <button onClick={() => navigate('/leads')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <button onClick={() => navigate('/leads')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px 16px' : '12px 20px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', flex: isMobile ? '1 1 calc(50% - 6px)' : 'none', justifyContent: 'center', minHeight: '44px' }}>
               <Plus size={18} /> New Lead
             </button>
-            <button onClick={() => navigate('/jobs')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <button onClick={() => navigate('/jobs')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px 16px' : '12px 20px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', flex: isMobile ? '1 1 calc(50% - 6px)' : 'none', justifyContent: 'center', minHeight: '44px' }}>
               <Plus size={18} /> New Job
             </button>
-            <button onClick={() => navigate('/invoices')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <button onClick={() => navigate('/invoices')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px 16px' : '12px 20px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', flex: isMobile ? '1 1 calc(50% - 6px)' : 'none', justifyContent: 'center', minHeight: '44px' }}>
               <Plus size={18} /> New Invoice
             </button>
-            <button onClick={handleClockToggle} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', backgroundColor: clockedIn ? 'rgba(194,90,90,0.1)' : 'rgba(74,124,89,0.15)', color: clockedIn ? '#c25a5a' : '#4a7c59', border: `1px solid ${clockedIn ? '#c25a5a' : '#4a7c59'}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <button onClick={handleClockToggle} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px 16px' : '12px 20px', backgroundColor: clockedIn ? 'rgba(194,90,90,0.1)' : 'rgba(74,124,89,0.15)', color: clockedIn ? '#c25a5a' : '#4a7c59', border: `1px solid ${clockedIn ? '#c25a5a' : '#4a7c59'}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', flex: isMobile ? '1 1 calc(50% - 6px)' : 'none', justifyContent: 'center', minHeight: '44px' }}>
               <Clock size={18} /> {clockedIn ? 'Clock Out' : 'Clock In'}
             </button>
           </div>

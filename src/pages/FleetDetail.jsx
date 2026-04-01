@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Truck, Wrench, Calendar, Plus, AlertTriangle, DollarSign, Clock, Settings } from 'lucide-react'
 
@@ -85,6 +86,7 @@ export default function FleetDetail() {
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     if (!companyId) {
@@ -104,7 +106,7 @@ export default function FleetDetail() {
 
   if (!asset) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', color: defaultTheme.textMuted }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center', color: defaultTheme.textMuted }}>
         Asset not found
       </div>
     )
@@ -255,15 +257,18 @@ export default function FleetDetail() {
   const totalMaintenanceCost = assetMaintenance.reduce((sum, m) => sum + (m.cost || 0), 0)
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'space-between',
-        marginBottom: '24px'
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row',
+        gap: isMobile ? '12px' : '0'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '16px' }}>
           <button
             onClick={() => navigate('/fleet')}
             style={{
@@ -278,7 +283,7 @@ export default function FleetDetail() {
             <ArrowLeft size={20} />
           </button>
 
-          <div style={{
+          {!isMobile && <div style={{
             width: '56px',
             height: '56px',
             borderRadius: '12px',
@@ -288,11 +293,11 @@ export default function FleetDetail() {
             justifyContent: 'center'
           }}>
             <TypeIcon size={28} style={{ color: theme.accent }} />
-          </div>
+          </div>}
 
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
                 {asset.name}
               </h1>
               <span style={{
@@ -312,7 +317,7 @@ export default function FleetDetail() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             onClick={() => {
               setMaintenanceForm({ ...maintenanceForm, mileage_hours: asset.mileage_hours || '' })
@@ -383,7 +388,7 @@ export default function FleetDetail() {
       {/* Info Cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: '16px',
         marginBottom: '24px'
       }}>
@@ -515,7 +520,8 @@ export default function FleetDetail() {
         gap: '4px',
         marginBottom: '20px',
         borderBottom: `1px solid ${theme.border}`,
-        paddingBottom: '1px'
+        paddingBottom: '1px',
+        overflowX: isMobile ? 'auto' : 'visible'
       }}>
         <button
           onClick={() => setActiveTab('maintenance')}
@@ -565,9 +571,10 @@ export default function FleetDetail() {
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          overflowX: isMobile ? 'auto' : 'hidden'
         }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '600px' : 'auto' }}>
             <thead>
               <tr style={{ backgroundColor: theme.accentBg }}>
                 <th style={{
@@ -675,9 +682,10 @@ export default function FleetDetail() {
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          overflowX: isMobile ? 'auto' : 'hidden'
         }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '600px' : 'auto' }}>
             <thead>
               <tr style={{ backgroundColor: theme.accentBg }}>
                 <th style={{
@@ -790,7 +798,7 @@ export default function FleetDetail() {
             borderRadius: '16px',
             padding: '24px',
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '90vh',
             overflow: 'auto'
           }}>
@@ -805,7 +813,7 @@ export default function FleetDetail() {
 
             <form onSubmit={handleAddMaintenance}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{
                       display: 'block',
@@ -864,7 +872,7 @@ export default function FleetDetail() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{
                       display: 'block',
@@ -1013,7 +1021,9 @@ export default function FleetDetail() {
             borderRadius: '16px',
             padding: '24px',
             width: '100%',
-            maxWidth: '500px'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
+            maxHeight: '90vh',
+            overflow: 'auto'
           }}>
             <h2 style={{
               fontSize: '20px',
@@ -1054,7 +1064,7 @@ export default function FleetDetail() {
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{
                       display: 'block',
@@ -1109,7 +1119,7 @@ export default function FleetDetail() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{
                       display: 'block',
@@ -1231,7 +1241,9 @@ export default function FleetDetail() {
             borderRadius: '16px',
             padding: '24px',
             width: '100%',
-            maxWidth: '400px'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '400px',
+            maxHeight: '90vh',
+            overflow: 'auto'
           }}>
             <h2 style={{
               fontSize: '20px',

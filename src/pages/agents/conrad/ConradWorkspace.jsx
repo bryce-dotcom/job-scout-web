@@ -14,9 +14,9 @@ const CONRAD_TABS = [
 export default function ConradWorkspace() {
   return (
     <AgentRequired slug="conrad-connect">
-      <div className="flex flex-col h-full">
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <AgentHeader slug="conrad-connect" tabs={CONRAD_TABS} />
-        <div className="flex-1 overflow-auto">
+        <div style={{ flex: 1, overflow: 'auto' }}>
           <Outlet />
         </div>
       </div>

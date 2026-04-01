@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { useTheme } from '../components/Layout';
+import { useIsMobile } from '../hooks/useIsMobile';
 import * as Icons from 'lucide-react';
 import { Users, ArrowRight, Edit2, Check, X, Plus } from 'lucide-react';
 
@@ -36,6 +37,7 @@ const categoryColors = {
 };
 
 export default function MyCrew() {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const companyId = useStore((state) => state.companyId);
   const companyAgents = useStore((state) => state.companyAgents);
@@ -102,12 +104,15 @@ export default function MyCrew() {
   }, 0);
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
+        flexDirection: isMobile ? 'column' : 'row',
+        flexWrap: 'wrap',
+        gap: '12px',
         marginBottom: '24px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -123,7 +128,7 @@ export default function MyCrew() {
             <Users style={{ width: '24px', height: '24px', color: theme.accent }} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '600', color: theme.text }}>
+            <h1 style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', fontWeight: '600', color: theme.text }}>
               My Crew
             </h1>
             <p style={{ margin: '4px 0 0', color: theme.textMuted }}>
@@ -156,7 +161,7 @@ export default function MyCrew() {
       {/* Stats Row */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
         gap: '16px',
         marginBottom: '24px'
       }}>
@@ -201,10 +206,11 @@ export default function MyCrew() {
                   background: theme.bgCard,
                   border: `1px solid ${theme.border}`,
                   borderRadius: '12px',
-                  padding: '20px',
+                  padding: isMobile ? '16px' : '20px',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '16px'
+                  alignItems: isMobile ? 'flex-start' : 'center',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  gap: isMobile ? '12px' : '16px'
                 }}
               >
                 {/* Icon */}
@@ -339,6 +345,7 @@ export default function MyCrew() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
+                    justifyContent: 'center',
                     gap: '6px',
                     padding: '10px 16px',
                     background: categoryColor,
@@ -348,7 +355,8 @@ export default function MyCrew() {
                     cursor: 'pointer',
                     fontSize: '14px',
                     fontWeight: '500',
-                    flexShrink: 0
+                    flexShrink: 0,
+                    width: isMobile ? '100%' : 'auto'
                   }}
                 >
                   Open Workspace

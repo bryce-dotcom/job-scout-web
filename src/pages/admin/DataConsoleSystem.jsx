@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import AdminModal, { FormField, FormInput, FormTextarea, FormToggle, ModalFooter } from './components/AdminModal'
 import { Settings, Plus, Edit2, Trash2, Save, RefreshCw, Key, ToggleLeft, Type, Hash } from 'lucide-react'
 
@@ -12,6 +13,7 @@ const TYPE_ICONS = {
 }
 
 export default function DataConsoleSystem() {
+  const isMobile = useIsMobile()
   const [settings, setSettings] = useState([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
@@ -152,9 +154,9 @@ export default function DataConsoleSystem() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? '16px' : '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700' }}>
           System Settings
         </h1>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -269,11 +271,12 @@ export default function DataConsoleSystem() {
                     <div
                       key={setting.id}
                       style={{
-                        padding: '16px 20px',
+                        padding: isMobile ? '12px 16px' : '16px 20px',
                         borderBottom: `1px solid ${adminTheme.border}`,
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '16px'
+                        alignItems: isMobile ? 'flex-start' : 'center',
+                        gap: isMobile ? '12px' : '16px',
+                        flexWrap: 'wrap'
                       }}
                     >
                       {/* Type Icon */}

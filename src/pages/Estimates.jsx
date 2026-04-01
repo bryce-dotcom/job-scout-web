@@ -56,6 +56,14 @@ export default function Estimates() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   const estimateRelatedTables = [
     {
@@ -221,17 +229,17 @@ export default function Estimates() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <PageHeader
         title="Estimates"
         icon={FileText}
         actions={<>
-          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
-            <Upload size={18} /> Import
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Upload size={18} />{!isMobile && ' Import'}
           </button>
-          <button onClick={() => exportToXLSX(filteredEstimates, estimatesFields, 'estimates_export', { relatedTables: estimateRelatedTables, parentRefField: 'quote_id', mainSheetName: 'Estimates', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
-            <Download size={18} /> Export
+          <button onClick={() => exportToXLSX(filteredEstimates, estimatesFields, 'estimates_export', { relatedTables: estimateRelatedTables, parentRefField: 'quote_id', mainSheetName: 'Estimates', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+            <Download size={18} />{!isMobile && ' Export'}
           </button>
           <button
             onClick={() => setShowModal(true)}
@@ -239,7 +247,8 @@ export default function Estimates() {
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              padding: '10px 16px',
+              padding: isMobile ? '10px 14px' : '10px 16px',
+              minHeight: isMobile ? '44px' : 'auto',
               backgroundColor: theme.accent,
               color: '#ffffff',
               border: 'none',
@@ -250,7 +259,7 @@ export default function Estimates() {
             }}
           >
             <Plus size={18} />
-            New Estimate
+            {isMobile ? 'New' : 'New Estimate'}
           </button>
         </>}
       />
@@ -258,8 +267,8 @@ export default function Estimates() {
       {/* Stats Cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-        gap: '12px',
+        gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(140px, 1fr))',
+        gap: isMobile ? '8px' : '12px',
         marginBottom: '24px'
       }}>
         <div style={{
@@ -307,12 +316,11 @@ export default function Estimates() {
       {/* Search and Filter */}
       <div style={{
         display: 'flex',
-        flexDirection: 'row',
-        gap: '12px',
-        marginBottom: '24px',
-        flexWrap: 'wrap'
+        flexDirection: isMobile ? 'column' : 'row',
+        gap: isMobile ? '8px' : '12px',
+        marginBottom: '24px'
       }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+        <div style={{ position: 'relative', flex: 1 }}>
           <Search size={18} style={{
             position: 'absolute',
             left: '12px',
@@ -327,14 +335,16 @@ export default function Estimates() {
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
               ...inputStyle,
-              paddingLeft: '40px'
+              paddingLeft: '40px',
+              fontSize: isMobile ? '16px' : '14px',
+              minHeight: isMobile ? '44px' : 'auto'
             }}
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
+          style={{ ...inputStyle, width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 0 : '140px', fontSize: isMobile ? '16px' : '14px', minHeight: isMobile ? '44px' : 'auto' }}
         >
           <option value="all">All Status</option>
           <option value="Draft">Draft</option>
@@ -362,9 +372,9 @@ export default function Estimates() {
         </div>
       ) : (
         <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px'
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: '16px'
         }}>
           {filteredEstimates.map((estimate) => {
             const statusStyle = statusColors[estimate.status] || statusColors['Draft']
@@ -376,76 +386,51 @@ export default function Estimates() {
                 name={customerName}
                 businessName={estimate.customer?.business_name || estimate.lead?.business_name}
                 onClick={() => navigate(`/estimates/${estimate.id}`)}
-                style={{ padding: '16px 20px' }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                {/* Estimate Number & Customer */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{
-                      fontWeight: '600',
-                      color: theme.accent,
-                      fontSize: '14px'
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '44px', height: '44px',
+                      backgroundColor: theme.accentBg,
+                      borderRadius: '10px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}>
-                      {estimate.quote_id || `#${estimate.id}`}
-                    </span>
-                    <span style={{
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: '500',
-                      backgroundColor: statusStyle.bg,
-                      color: statusStyle.text
-                    }}>
-                      {estimate.status}
-                    </span>
-                  </div>
-                  <p style={{
-                    fontWeight: '500',
-                    color: theme.text,
-                    fontSize: '15px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {estimate.estimate_name || customerName}
-                  </p>
-                </div>
-
-                {/* Amount */}
-                <div style={{ textAlign: 'right', minWidth: '100px' }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'flex-end',
-                    gap: '4px',
-                    color: theme.text
-                  }}>
-                    <DollarSign size={14} style={{ color: theme.textMuted }} />
-                    <span style={{ fontWeight: '600', fontSize: '15px' }}>
-                      {formatCurrency(estimate.quote_amount)}
-                    </span>
+                      <FileText size={22} style={{ color: theme.accent }} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
+                        {estimate.estimate_name || customerName}
+                      </h3>
+                      <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '500' }}>
+                        {estimate.quote_id || `#${estimate.id}`}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                {/* Salesperson */}
-                <div style={{ minWidth: '120px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <User size={14} style={{ color: theme.textMuted }} />
-                  <span style={{ fontSize: '13px', color: theme.textSecondary }}>
-                    {estimate.salesperson?.name || '-'}
-                  </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                  {estimate.salesperson?.name && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}>
+                      <User size={14} />
+                      <span>{estimate.salesperson.name}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.textSecondary }}>
+                    <Calendar size={14} />
+                    <span>{formatDate(estimate.sent_date || estimate.created_at)}</span>
+                  </div>
                 </div>
 
-                {/* Date */}
-                <div style={{ minWidth: '100px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Calendar size={14} style={{ color: theme.textMuted }} />
-                  <span style={{ fontSize: '13px', color: theme.textSecondary }}>
-                    {formatDate(estimate.sent_date || estimate.created_at)}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>
+                    {formatCurrency(estimate.quote_amount)}
                   </span>
-                </div>
-
-                {/* Arrow */}
-                <ChevronRight size={20} style={{ color: theme.textMuted }} />
+                  <span style={{
+                    padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500',
+                    backgroundColor: statusStyle.bg, color: statusStyle.text
+                  }}>
+                    {estimate.status}
+                  </span>
                 </div>
               </EntityCard>
             )
@@ -467,10 +452,12 @@ export default function Estimates() {
         }}>
           <div style={{
             backgroundColor: theme.bgCard,
-            borderRadius: '16px',
+            borderRadius: isMobile ? '12px' : '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '450px'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '450px',
+            maxHeight: isMobile ? '90vh' : 'auto',
+            overflowY: 'auto'
           }}>
             <div style={{
               display: 'flex',
@@ -616,7 +603,7 @@ export default function Estimates() {
                         style={inputStyle}
                       />
                     </div>
-                    <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
                       <div style={{ flex: 1 }}>
                         <label style={labelStyle}>Email</label>
                         <input
@@ -624,7 +611,7 @@ export default function Estimates() {
                           value={newLeadData.email}
                           onChange={e => setNewLeadData(prev => ({ ...prev, email: e.target.value }))}
                           placeholder="email@example.com"
-                          style={inputStyle}
+                          style={{ ...inputStyle, fontSize: isMobile ? '16px' : '14px' }}
                         />
                       </div>
                       <div style={{ flex: 1 }}>
@@ -634,7 +621,7 @@ export default function Estimates() {
                           value={newLeadData.phone}
                           onChange={e => setNewLeadData(prev => ({ ...prev, phone: e.target.value }))}
                           placeholder="(555) 555-5555"
-                          style={inputStyle}
+                          style={{ ...inputStyle, fontSize: isMobile ? '16px' : '14px' }}
                         />
                       </div>
                     </div>
@@ -692,7 +679,8 @@ export default function Estimates() {
                   onClick={() => setShowModal(false)}
                   style={{
                     flex: 1,
-                    padding: '10px 16px',
+                    padding: isMobile ? '12px 16px' : '10px 16px',
+                    minHeight: isMobile ? '44px' : 'auto',
                     border: `1px solid ${theme.border}`,
                     backgroundColor: 'transparent',
                     color: theme.text,
@@ -708,7 +696,8 @@ export default function Estimates() {
                   disabled={loading}
                   style={{
                     flex: 1,
-                    padding: '10px 16px',
+                    padding: isMobile ? '12px 16px' : '10px 16px',
+                    minHeight: isMobile ? '44px' : 'auto',
                     backgroundColor: theme.accent,
                     color: '#ffffff',
                     border: 'none',

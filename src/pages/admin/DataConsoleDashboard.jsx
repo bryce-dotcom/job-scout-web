@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import {
   Building2, Users, Zap, Bot, Package, MessageSquare,
   TrendingUp, Clock, AlertCircle, CheckCircle, Database, Upload, Terminal
@@ -8,6 +9,7 @@ import {
 
 export default function DataConsoleDashboard({ theme }) {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [stats, setStats] = useState({
     companies: 0,
     users: 0,
@@ -156,10 +158,10 @@ export default function DataConsoleDashboard({ theme }) {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
       {/* Header */}
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ color: theme.text, fontSize: '24px', fontWeight: '700', marginBottom: '4px' }}>
+      <div style={{ marginBottom: isMobile ? '16px' : '24px' }}>
+        <h1 style={{ color: theme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700', marginBottom: '4px' }}>
           Data Console
         </h1>
         <p style={{ color: theme.textMuted, fontSize: '14px' }}>
@@ -170,9 +172,9 @@ export default function DataConsoleDashboard({ theme }) {
       {/* Stats Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '16px',
-        marginBottom: '24px'
+        gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: isMobile ? '12px' : '16px',
+        marginBottom: isMobile ? '16px' : '24px'
       }}>
         <StatCard
           icon={Building2}
@@ -219,9 +221,9 @@ export default function DataConsoleDashboard({ theme }) {
       {/* Quick Stats Row */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))',
         gap: '16px',
-        marginBottom: '24px'
+        marginBottom: isMobile ? '16px' : '24px'
       }}>
         <div style={{
           backgroundColor: theme.bgCard,

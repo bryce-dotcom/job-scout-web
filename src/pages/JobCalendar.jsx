@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { ChevronLeft, ChevronRight, ArrowLeft, Calendar, Loader } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
@@ -38,6 +39,7 @@ export default function JobCalendar() {
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const [dateRange, setDateRange] = useState('all')
   const [autoNavigated, setAutoNavigated] = useState(false)
@@ -217,15 +219,18 @@ export default function JobCalendar() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
-        marginBottom: '24px'
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        gap: '12px',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '10px' : '16px' }}>
           <button
             onClick={() => navigate('/jobs')}
             style={{
@@ -239,13 +244,13 @@ export default function JobCalendar() {
           >
             <ArrowLeft size={20} />
           </button>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             Job Calendar
-            {jobs.length > 0 && <span style={{ fontSize: '14px', fontWeight: '400', color: theme.textMuted, marginLeft: '8px' }}>({filteredJobs.length} jobs)</span>}
+            {jobs.length > 0 && <span style={{ fontSize: isMobile ? '12px' : '14px', fontWeight: '400', color: theme.textMuted, marginLeft: '8px' }}>({filteredJobs.length} jobs)</span>}
           </h1>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button
             onClick={goToToday}
             style={{
@@ -372,14 +377,15 @@ export default function JobCalendar() {
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
         border: `1px solid ${theme.border}`,
-        overflow: 'hidden'
+        overflow: isMobile ? 'auto' : 'hidden'
       }}>
         {/* Day Headers */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(7, 1fr)',
           backgroundColor: theme.accentBg,
-          borderBottom: `1px solid ${theme.border}`
+          borderBottom: `1px solid ${theme.border}`,
+          minWidth: isMobile ? '700px' : undefined
         }}>
           {dayNames.map(day => (
             <div key={day} style={{
@@ -397,7 +403,8 @@ export default function JobCalendar() {
         {/* Calendar Days */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)'
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          minWidth: isMobile ? '700px' : undefined
         }}>
           {calendarDays.map((day, index) => {
             const dayJobs = day ? getJobsForDate(day) : []

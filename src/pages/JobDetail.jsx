@@ -1556,7 +1556,7 @@ function JobDetailInner() {
 
   if (loading) {
     return (
-      <div style={{ padding: '24px' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px' }}>
         <p style={{ color: theme.textMuted }}>Loading job...</p>
       </div>
     )
@@ -1564,7 +1564,7 @@ function JobDetailInner() {
 
   if (!job) {
     return (
-      <div style={{ padding: '24px' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px' }}>
         <p style={{ color: '#dc2626', marginBottom: '16px' }}>Job not found</p>
         <button onClick={() => navigate('/jobs')} style={{ color: theme.accent, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
           Back to Jobs
@@ -1878,7 +1878,7 @@ function JobDetailInner() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Hidden photo file input */}
       <input type="file" ref={photoInputRef} accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUploadPhoto} />
 
@@ -1899,7 +1899,7 @@ function JobDetailInner() {
         </button>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600' }}>{job.job_id}</p>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             {job.job_title || 'Untitled Job'}
           </h1>
         </div>
@@ -4982,7 +4982,7 @@ function JobDetailInner() {
         }}>
           <div style={{
             backgroundColor: theme.bgCard, borderRadius: '16px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
-            width: '100%', maxWidth: '400px'
+            width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '400px', maxHeight: '90vh', overflowY: 'auto'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Add Time Entry</h2>
@@ -5001,7 +5001,7 @@ function JobDetailInner() {
                   theme={theme}
                 />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Hours</label>
                   <input type="number" value={newTime.hours} onChange={(e) => setNewTime(prev => ({ ...prev, hours: e.target.value }))} step="0.25" style={inputStyle} />
@@ -5044,7 +5044,7 @@ function JobDetailInner() {
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '480px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>

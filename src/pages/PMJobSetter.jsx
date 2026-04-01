@@ -1755,7 +1755,7 @@ export default function PMJobSetter() {
 
   if (loading) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center', color: theme.textMuted }}>
         Loading...
       </div>
     )
@@ -3901,7 +3901,7 @@ export default function PMJobSetter() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '80vh',
             display: 'flex',
             flexDirection: 'column'
@@ -4032,7 +4032,7 @@ export default function PMJobSetter() {
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '440px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '440px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -4497,7 +4497,7 @@ export default function PMJobSetter() {
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '440px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '440px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -4829,7 +4829,7 @@ export default function PMJobSetter() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '400px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '400px',
             padding: '20px'
           }}>
             <div style={{

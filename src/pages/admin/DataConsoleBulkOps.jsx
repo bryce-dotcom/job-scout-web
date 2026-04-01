@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { Upload, Download, FileText, CheckCircle, AlertCircle, X } from 'lucide-react'
 
 const TABLES = [
@@ -10,6 +11,7 @@ const TABLES = [
 ]
 
 export default function DataConsoleBulkOps() {
+  const isMobile = useIsMobile()
   // Import state
   const [importTable, setImportTable] = useState('leads')
   const [csvFile, setCsvFile] = useState(null)
@@ -189,12 +191,12 @@ export default function DataConsoleBulkOps() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700', marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700', marginBottom: isMobile ? '16px' : '24px' }}>
         Bulk Operations
       </h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '16px' : '24px' }}>
         {/* Import Section */}
         <div style={{
           backgroundColor: adminTheme.bgCard,

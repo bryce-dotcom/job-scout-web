@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { BOOKING_STATUS } from '../lib/schema'
 import { Plus, Pencil, Trash2, X, CalendarCheck, Search, Phone, Mail, MapPin } from 'lucide-react'
 
@@ -54,6 +55,7 @@ export default function Bookings() {
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     if (!companyId) {
@@ -180,17 +182,18 @@ export default function Bookings() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
         gap: '16px',
         marginBottom: '24px',
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
           Bookings
         </h1>
         <button
@@ -268,7 +271,7 @@ export default function Bookings() {
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(340px, 1fr))',
           gap: '16px'
         }}>
           {filteredBookings.map((booking) => {
@@ -406,7 +409,7 @@ export default function Bookings() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -425,7 +428,7 @@ export default function Bookings() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
+            <form onSubmit={handleSubmit} style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               {error && (
                 <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#dc2626', fontSize: '14px' }}>
                   {error}
@@ -438,7 +441,7 @@ export default function Bookings() {
                   <input type="text" name="customer_name" value={formData.customer_name} onChange={handleChange} required style={inputStyle} />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Email</label>
                     <input type="email" name="email" value={formData.email} onChange={handleChange} style={inputStyle} />
@@ -454,7 +457,7 @@ export default function Bookings() {
                   <input type="text" name="address" value={formData.address} onChange={handleChange} style={inputStyle} />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Service Type</label>
                     <select name="service_type" value={formData.service_type} onChange={handleChange} style={inputStyle}>

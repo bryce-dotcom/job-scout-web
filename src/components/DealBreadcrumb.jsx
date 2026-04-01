@@ -16,7 +16,7 @@ const defaultTheme = {
 
 const steps = [
   { key: 'lead', label: 'Lead', path: (id) => `/leads/${id}` },
-  { key: 'quote', label: 'Quote', path: (id) => `/quotes/${id}` },
+  { key: 'quote', label: 'Estimate', path: (id) => `/quotes/${id}` },
   { key: 'customer', label: 'Customer', path: (id) => `/customers/${id}` },
   { key: 'job', label: 'Job', path: (id) => `/jobs/${id}` },
   { key: 'invoice', label: 'Invoice', path: (id) => `/invoices/${id}` }

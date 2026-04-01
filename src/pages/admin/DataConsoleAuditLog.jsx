@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { Badge } from './components/AdminStats'
 import AdminModal from './components/AdminModal'
 import { ScrollText, Search, RefreshCw, ChevronLeft, ChevronRight, Eye, Plus, Edit2, Trash2, Key } from 'lucide-react'
@@ -13,6 +14,7 @@ const ACTION_CONFIG = {
 }
 
 export default function DataConsoleAuditLog() {
+  const isMobile = useIsMobile()
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
@@ -113,9 +115,9 @@ export default function DataConsoleAuditLog() {
   const totalPages = Math.ceil(total / pageSize)
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? '16px' : '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700' }}>
           Audit Log
         </h1>
         <button
@@ -256,7 +258,8 @@ export default function DataConsoleAuditLog() {
           <div style={{ padding: '40px', textAlign: 'center', color: adminTheme.textMuted }}>No audit logs found</div>
         ) : (
           <>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${adminTheme.border}` }}>
                   <th style={{ padding: '12px 16px', textAlign: 'left', color: adminTheme.textMuted, fontSize: '12px' }}>Timestamp</th>
@@ -308,6 +311,7 @@ export default function DataConsoleAuditLog() {
                 ))}
               </tbody>
             </table>
+            </div>
 
             {/* Pagination */}
             <div style={{
@@ -366,7 +370,7 @@ export default function DataConsoleAuditLog() {
             {/* Header Info */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
               gap: '16px',
               marginBottom: '24px',
               padding: '16px',

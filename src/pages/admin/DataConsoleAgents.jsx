@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import AdminStats from './components/AdminStats'
 import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, FormToggle, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
@@ -38,6 +39,7 @@ const STATUS_OPTIONS = [
 ]
 
 export default function DataConsoleAgents() {
+  const isMobile = useIsMobile()
   const [agents, setAgents] = useState([])
   const [recruitments, setRecruitments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -99,9 +101,9 @@ export default function DataConsoleAgents() {
   ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? '16px' : '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700' }}>
           AI Agents
         </h1>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -164,7 +166,8 @@ export default function DataConsoleAgents() {
           borderRadius: '10px',
           overflow: 'hidden'
         }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '500px' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${adminTheme.border}` }}>
                 <th style={{ padding: '12px 16px', textAlign: 'left', color: adminTheme.textMuted, fontSize: '12px' }}>Company</th>
@@ -192,12 +195,13 @@ export default function DataConsoleAgents() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ) : (
         /* Agents Grid */
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
           gap: '16px'
         }}>
           {agents.map(agent => {
@@ -308,7 +312,7 @@ export default function DataConsoleAgents() {
       <AdminModal isOpen={!!editingAgent} onClose={() => setEditingAgent(null)} title={editingAgent?.id ? 'Edit Agent' : 'Add Agent'} width="600px">
         {editingAgent && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Slug" required>
                 <FormInput
                   value={editingAgent.slug}
@@ -358,7 +362,7 @@ export default function DataConsoleAgents() {
               />
             </FormField>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Icon" required>
                 <FormSelect
                   value={editingAgent.icon}
@@ -383,7 +387,7 @@ export default function DataConsoleAgents() {
               />
             </FormField>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
               <FormField label="Monthly Price ($)">
                 <FormInput
                   type="number"

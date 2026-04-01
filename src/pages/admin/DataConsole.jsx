@@ -3,10 +3,11 @@ import { Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-d
 import { useStore } from '../../lib/store'
 import { supabase } from '../../lib/supabase'
 import { canAccessDevTools } from '../../lib/accessControl'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import {
   LayoutDashboard, MessageSquare, Building2, Users, Zap, Bot,
   Package, Database, Upload, Terminal, ScrollText, Settings, Sparkles,
-  ArrowLeft
+  ArrowLeft, Menu, X
 } from 'lucide-react'
 
 // Sub-pages
@@ -70,9 +71,11 @@ export default function DataConsole() {
   const user = useStore((state) => state.user)
   const isDeveloper = canAccessDevTools(user)
   const checkDeveloperStatus = useStore((state) => state.checkDeveloperStatus)
+  const isMobile = useIsMobile()
 
   const [loading, setLoading] = useState(true)
   const [feedbackCount, setFeedbackCount] = useState(0)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -122,14 +125,90 @@ export default function DataConsole() {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: theme.bg }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: theme.bg, position: 'relative' }}>
+      {/* Mobile Header Bar */}
+      {isMobile && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '56px',
+          backgroundColor: theme.bgCard,
+          borderBottom: `1px solid ${theme.border}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 16px',
+          zIndex: 1001
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              onClick={() => navigate('/dashboard')}
+              style={{
+                padding: '8px',
+                backgroundColor: theme.bgHover,
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                color: theme.textMuted,
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <div style={{ color: theme.accent, fontWeight: '700', fontSize: '16px' }}>
+              Data Console
+            </div>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            style={{
+              padding: '8px',
+              backgroundColor: theme.bgHover,
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              color: theme.textMuted,
+              display: 'flex',
+              alignItems: 'center'
+            }}
+          >
+            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
+      )}
+
+      {/* Mobile Overlay */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            zIndex: 1002
+          }}
+        />
+      )}
+
       {/* Sidebar */}
       <div style={{
         width: '240px',
         backgroundColor: theme.bgCard,
         borderRight: `1px solid ${theme.border}`,
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        ...(isMobile ? {
+          position: 'fixed',
+          top: 0,
+          left: sidebarOpen ? 0 : '-260px',
+          bottom: 0,
+          zIndex: 1003,
+          transition: 'left 0.25s ease',
+          boxShadow: sidebarOpen ? '4px 0 20px rgba(0,0,0,0.3)' : 'none'
+        } : {})
       }}>
         {/* Header */}
         <div style={{
@@ -172,6 +251,7 @@ export default function DataConsole() {
               <NavLink
                 key={item.path}
                 to={`/admin/data-console${item.path ? '/' + item.path : ''}`}
+                onClick={() => isMobile && setSidebarOpen(false)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -224,7 +304,7 @@ export default function DataConsole() {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ flex: 1, overflowY: 'auto', ...(isMobile ? { marginTop: '56px' } : {}) }}>
         <Routes>
           <Route index element={<DataConsoleDashboard theme={theme} />} />
           <Route path="feedback" element={<DataConsoleFeedback />} />

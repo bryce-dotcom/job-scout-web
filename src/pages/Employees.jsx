@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import {
   Plus, Pencil, X, User, Phone, Mail, Eye,
   DollarSign, Clock, Calendar, Briefcase, Lock,
@@ -88,6 +89,8 @@ export default function Employees() {
   const fetchEmployees = useStore((state) => state.fetchEmployees)
   const storeEmployeeRoles = useStore((state) => state.employeeRoles)
   const fetchSettings = useStore((state) => state.fetchSettings)
+
+  const isMobile = useIsMobile()
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || {
@@ -921,15 +924,16 @@ export default function Employees() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'stretch' : 'center',
+        flexDirection: isMobile ? 'column' : 'row',
         justifyContent: 'space-between',
         marginBottom: '24px',
         flexWrap: 'wrap',
-        gap: '16px'
+        gap: isMobile ? '12px' : '16px'
       }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Team</h1>
@@ -937,7 +941,7 @@ export default function Employees() {
             {displayedEmployees.length} {displayedEmployees.length === 1 ? 'employee' : 'employees'}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '16px', flexWrap: 'wrap' }}>
           <label style={{
             display: 'flex',
             alignItems: 'center',
@@ -1039,7 +1043,7 @@ export default function Employees() {
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
           gap: '16px'
         }}>
           {displayedEmployees.map((employee) => {
@@ -1253,7 +1257,7 @@ export default function Employees() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '640px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '640px',
             maxHeight: '90vh',
             overflow: 'hidden',
             display: 'flex',
@@ -1265,11 +1269,11 @@ export default function Employees() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '20px',
+              padding: isMobile ? '16px' : '20px',
               borderBottom: `1px solid ${theme.border}`,
               flexShrink: 0
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
                 {viewingEmployee && (
                   <div style={{
                     width: '48px',
@@ -1297,7 +1301,7 @@ export default function Employees() {
                   )}
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                 {viewingEmployee && isAdmin && !isEditing && viewingEmployee.email && (
                   <button
                     onClick={() => sendInviteToEmployee(viewingEmployee)}
@@ -1359,7 +1363,7 @@ export default function Employees() {
 
             {/* Form Content */}
             <form onSubmit={handleSubmit} style={{ flex: 1, overflow: 'auto' }}>
-              <div style={{ padding: '20px' }}>
+              <div style={{ padding: isMobile ? '16px' : '20px', maxHeight: '70vh', overflowY: 'auto' }}>
                 {error && (
                   <div style={{
                     marginBottom: '16px',
@@ -1395,8 +1399,9 @@ export default function Employees() {
                 {/* ===== PHOTO & TAX CLASSIFICATION ===== */}
                 <div style={{
                   display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '24px',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  alignItems: isMobile ? 'center' : 'flex-start',
+                  gap: isMobile ? '16px' : '24px',
                   marginBottom: '24px',
                   paddingBottom: '24px',
                   borderBottom: `1px solid ${theme.border}`
@@ -1543,7 +1548,7 @@ export default function Employees() {
                 {/* ===== BASIC INFO SECTION ===== */}
                 <div style={sectionHeaderStyle}>Contact & Role</div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                   <div>
                     <label style={labelStyle}>Email</label>
                     <input
@@ -1568,7 +1573,7 @@ export default function Employees() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                   <div>
                     <label style={labelStyle}>Job Title</label>
                     <select
@@ -1774,14 +1779,14 @@ export default function Employees() {
                     </p>
 
                     {/* Pay Type Toggles */}
-                    <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                       <PayTypeToggle label="Hourly" field="is_hourly" icon={Clock} disabled={!isEditing} />
                       <PayTypeToggle label="Salary" field="is_salary" icon={Briefcase} disabled={!isEditing} />
                       <PayTypeToggle label="Commission" field="is_commission" icon={DollarSign} disabled={!isEditing} />
                     </div>
 
                     {/* Conditional Rate Inputs */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                       {formData.is_hourly && (
                         <div>
                           <label style={labelStyle}>Hourly Rate</label>
@@ -1863,7 +1868,7 @@ export default function Employees() {
                           Use $ for flat amounts or % for percentage of sale.
                         </p>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                           <RateInput
                             label="Goods (Products)"
                             rateName="commission_goods_rate"
@@ -1887,7 +1892,7 @@ export default function Employees() {
                         <p style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginTop: '16px', marginBottom: '12px' }}>
                           LEAD GENERATION
                         </p>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                           <RateInput
                             label="Per Lead Sourced"
                             rateName="commission_leads_rate"
@@ -1907,7 +1912,7 @@ export default function Employees() {
                     {/* ===== PTO SECTION ===== */}
                     <div style={sectionHeaderStyle}>Paid Time Off</div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                       <div>
                         <label style={labelStyle}>Days Per Year</label>
                         <input
@@ -2016,8 +2021,9 @@ export default function Employees() {
               {isEditing && (
                 <div style={{
                   display: 'flex',
+                  flexDirection: isMobile ? 'column' : 'row',
                   gap: '12px',
-                  padding: '20px',
+                  padding: isMobile ? '16px' : '20px',
                   borderTop: `1px solid ${theme.border}`,
                   flexShrink: 0
                 }}>
@@ -2110,7 +2116,11 @@ export default function Employees() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '480px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px',
+            maxHeight: '90vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
             zIndex: 51
           }}>
             {/* Modal Header */}
@@ -2118,8 +2128,9 @@ export default function Employees() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '20px',
-              borderBottom: `1px solid ${theme.border}`
+              padding: isMobile ? '16px' : '20px',
+              borderBottom: `1px solid ${theme.border}`,
+              flexShrink: 0
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Send size={20} style={{ color: theme.accent }} />
@@ -2133,7 +2144,7 @@ export default function Employees() {
               </button>
             </div>
 
-            <form onSubmit={handleInviteEmployee} style={{ padding: '20px' }}>
+            <form onSubmit={handleInviteEmployee} style={{ padding: isMobile ? '16px' : '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               {inviteError && (
                 <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '8px', color: '#b91c1c', fontSize: '14px' }}>
                   {inviteError}
@@ -2173,7 +2184,7 @@ export default function Employees() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Job Title</label>
                   <select
@@ -2247,7 +2258,7 @@ export default function Employees() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '80vh',
             overflow: 'hidden',
             display: 'flex',
@@ -2259,7 +2270,7 @@ export default function Employees() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '16px 20px',
+              padding: isMobile ? '12px 16px' : '16px 20px',
               borderBottom: `1px solid ${theme.border}`
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2286,7 +2297,9 @@ export default function Employees() {
             <div style={{
               display: 'flex',
               borderBottom: `1px solid ${theme.border}`,
-              padding: '0 20px'
+              padding: isMobile ? '0 16px' : '0 20px',
+              overflowX: 'auto',
+              flexShrink: 0
             }}>
               <button
                 onClick={() => setSettingsTab('job_titles')}
@@ -2336,7 +2349,7 @@ export default function Employees() {
             </div>
 
             {/* Tab Content */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
+            <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               {settingsTab === 'job_titles' && (
                 <div>
                   <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
@@ -2711,8 +2724,9 @@ export default function Employees() {
           alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '16px'
         }} onClick={() => setShowCredentialsModal(false)}>
           <div style={{
-            backgroundColor: theme.bgCard, borderRadius: '16px', padding: '24px',
-            width: '100%', maxWidth: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+            backgroundColor: theme.bgCard, borderRadius: '16px', padding: isMobile ? '16px' : '24px',
+            width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            maxHeight: '90vh', overflowY: 'auto'
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '18px', color: theme.text }}>

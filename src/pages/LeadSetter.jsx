@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import {
   Plus, X, Phone, Mail, Calendar, Clock, User, Building2, MapPin,
   ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, XCircle,
@@ -97,6 +98,7 @@ export default function LeadSetter() {
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   // Persist calendar employee overlay selections
   useEffect(() => {
@@ -689,7 +691,7 @@ export default function LeadSetter() {
   const hourSlots = getHourSlots()
 
   return (
-    <div style={{ padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: '16px', height: isMobile ? 'auto' : '100%', minHeight: isMobile ? '100%' : undefined, display: 'flex', flexDirection: 'column', overflow: isMobile ? 'auto' : 'hidden', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -700,7 +702,7 @@ export default function LeadSetter() {
         gap: '12px'
       }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             Lead Setter
           </h1>
           <p style={{ fontSize: '13px', color: theme.textMuted }}>
@@ -712,12 +714,13 @@ export default function LeadSetter() {
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '12px',
-            padding: '8px 14px',
+            gap: isMobile ? '8px' : '12px',
+            padding: isMobile ? '6px 10px' : '8px 14px',
             backgroundColor: '#dcfce7',
             borderRadius: '8px',
-            fontSize: '13px',
-            color: '#166534'
+            fontSize: isMobile ? '12px' : '13px',
+            color: '#166534',
+            flexWrap: 'wrap'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <DollarSign size={14} />
@@ -775,7 +778,7 @@ export default function LeadSetter() {
               placeholder="Search leads..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ ...inputStyle, paddingLeft: '34px', width: '180px' }}
+              style={{ ...inputStyle, paddingLeft: '34px', width: isMobile ? '140px' : '180px' }}
             />
           </div>
           <button
@@ -816,14 +819,16 @@ export default function LeadSetter() {
       </div>
 
       {/* Main Content - Split View */}
-      <div style={{ display: 'flex', flex: 1, gap: '16px', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', flex: 1, gap: '16px', overflow: isMobile ? 'auto' : 'hidden' }}>
         {/* Left: Kanban Leads */}
-        <div style={{ width: '450px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ width: isMobile ? '100%' : '450px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: isMobile ? '300px' : undefined }}>
           {/* Stats Row */}
           <div style={{
             display: 'flex',
             gap: '8px',
-            marginBottom: '12px'
+            marginBottom: '12px',
+            overflowX: isMobile ? 'auto' : undefined,
+            flexWrap: isMobile ? 'nowrap' : undefined
           }}>
             {setterStages.slice(0, 3).map(stage => (
               <div
@@ -834,7 +839,8 @@ export default function LeadSetter() {
                   backgroundColor: theme.bgCard,
                   borderRadius: '8px',
                   border: `1px solid ${theme.border}`,
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  minWidth: isMobile ? '70px' : undefined
                 }}
               >
                 <div style={{ fontSize: '18px', fontWeight: '700', color: stage.color }}>
@@ -853,7 +859,8 @@ export default function LeadSetter() {
                   backgroundColor: '#dcfce7',
                   borderRadius: '8px',
                   border: `1px solid #86efac`,
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  minWidth: isMobile ? '70px' : undefined
                 }}
               >
                 <div style={{ fontSize: '18px', fontWeight: '700', color: stage.color }}>
@@ -865,13 +872,13 @@ export default function LeadSetter() {
           </div>
 
           {/* Kanban Columns */}
-          <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', gap: '8px', flex: 1, overflow: isMobile ? 'auto' : 'hidden', overflowX: isMobile ? 'auto' : undefined }}>
             {setterStages.map(stage => (
               <div
                 key={stage.id}
                 style={{
                   flex: 1,
-                  minWidth: 0,
+                  minWidth: isMobile ? '200px' : 0,
                   display: 'flex',
                   flexDirection: 'column',
                   overflow: 'hidden'
@@ -1040,15 +1047,18 @@ export default function LeadSetter() {
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          minHeight: isMobile ? '400px' : undefined
         }}>
           {/* Calendar Header */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '12px 16px',
-            borderBottom: `1px solid ${theme.border}`
+            padding: isMobile ? '10px 12px' : '12px 16px',
+            borderBottom: `1px solid ${theme.border}`,
+            flexWrap: 'wrap',
+            gap: isMobile ? '8px' : '0'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <button
@@ -1185,8 +1195,8 @@ export default function LeadSetter() {
           })()}
 
           {/* Calendar Grid */}
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <div style={{ flex: 1, overflow: 'auto', overflowX: 'auto' }}>
+            <table style={{ width: isMobile ? '700px' : '100%', minWidth: isMobile ? '700px' : undefined, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <thead>
                 <tr>
                   <th style={{
@@ -1368,7 +1378,7 @@ export default function LeadSetter() {
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '440px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '440px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -1404,7 +1414,7 @@ export default function LeadSetter() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateAppointment} style={{ padding: '20px' }}>
+            <form onSubmit={handleCreateAppointment} style={{ padding: isMobile ? '16px' : '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               {appointmentError && (
                 <div style={{
                   marginBottom: '16px',
@@ -1556,7 +1566,7 @@ export default function LeadSetter() {
         }} onClick={(e) => { if (e.target === e.currentTarget) { setShowLeadModal(false); setSelectedLead(null); setContactForm({ notes: '', callback_date: '', callback_time: '' }) } }}>
           <div style={{
             backgroundColor: theme.bgCard, borderRadius: '16px',
-            width: '100%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto'
+            width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '440px', maxHeight: '90vh', overflowY: 'auto'
           }}>
             {/* Header */}
             <div style={{
@@ -1590,7 +1600,7 @@ export default function LeadSetter() {
               </div>
             </div>
 
-            <div style={{ padding: '16px 20px' }}>
+            <div style={{ padding: '16px 20px', maxHeight: '70vh', overflowY: 'auto' }}>
               {/* Quick Contact Buttons */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                 {selectedLead.phone && (
@@ -1706,7 +1716,7 @@ export default function LeadSetter() {
                   />
 
                   {/* Callback Date/Time */}
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', marginBottom: '14px' }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>Callback Date</label>
                       <input
@@ -1860,7 +1870,7 @@ export default function LeadSetter() {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: '16px', zIndex: 50
         }} onClick={(e) => { if (e.target === e.currentTarget) { setShowEventModal(false); setSelectedEvent(null) } }}>
-          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '440px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ flex: 1 }}>
                 <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>{selectedEvent.lead?.customer_name || selectedEvent.title}</h2>
@@ -1876,10 +1886,10 @@ export default function LeadSetter() {
               </div>
             </div>
 
-            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '70vh', overflowY: 'auto' }}>
               {/* Quick Contact */}
               {(selectedEvent.lead?.phone || selectedEvent.lead?.address) && (
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px' }}>
                   {selectedEvent.lead?.phone && (
                     <a href={`tel:${selectedEvent.lead.phone}`} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', backgroundColor: '#dcfce7', borderRadius: '8px', color: '#166534', textDecoration: 'none', fontWeight: '600', fontSize: '13px', minHeight: '44px' }}>
                       <Phone size={16} />{selectedEvent.lead.phone}
@@ -1901,7 +1911,7 @@ export default function LeadSetter() {
               </div>
 
               {/* Duration & Assigned To */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Duration</label>
                   <select value={eventForm.duration_minutes} onChange={(e) => setEventForm(f => ({ ...f, duration_minutes: parseInt(e.target.value) }))} style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard, outline: 'none', boxSizing: 'border-box' }}>
@@ -2004,7 +2014,7 @@ export default function LeadSetter() {
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '480px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -2037,7 +2047,7 @@ export default function LeadSetter() {
               </button>
             </div>
 
-            <div style={{ padding: '20px' }}>
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               <div style={{ marginBottom: '20px' }}>
                 <label style={labelStyle}>Pay Per Appointment ($)</label>
                 <input

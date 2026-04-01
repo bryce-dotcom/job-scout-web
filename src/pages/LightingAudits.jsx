@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { ClipboardList, Search, Plus, Zap, DollarSign, TrendingDown, User } from 'lucide-react'
 import { auditStatusColors as statusColors } from '../lib/statusColors'
 import PageHeader from '../components/PageHeader'
@@ -31,6 +32,7 @@ export default function LightingAudits() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterProvider, setFilterProvider] = useState('all')
   const [showMyAudits, setShowMyAudits] = useState(false)
+  const isMobile = useIsMobile()
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -93,7 +95,7 @@ export default function LightingAudits() {
   }
 
   return (
-    <div className="page-padding audit-list-root" style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div className="page-padding audit-list-root" style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       <style>{`
         @media (max-width: 768px) {
           .audit-list-filters { gap: 8px !important; }
@@ -143,8 +145,8 @@ export default function LightingAudits() {
       {/* Stats Cards */}
       <div className="stat-grid" style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '16px',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: isMobile ? '12px' : '16px',
         marginBottom: '24px'
       }}>
         <div style={{
@@ -344,9 +346,12 @@ export default function LightingAudits() {
               >
                 <div className="audit-card-header" style={{
                   display: 'flex',
+                  flexDirection: isMobile ? 'column' : 'row',
                   justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  marginBottom: '12px'
+                  alignItems: isMobile ? 'flex-start' : 'flex-start',
+                  gap: isMobile ? '8px' : '0',
+                  marginBottom: '12px',
+                  flexWrap: 'wrap'
                 }}>
                   <div>
                     <div style={{
@@ -397,8 +402,8 @@ export default function LightingAudits() {
 
                 <div className="audit-card-stats" style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                  gap: '16px',
+                  gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(120px, 1fr))',
+                  gap: isMobile ? '8px' : '16px',
                   paddingTop: '12px',
                   borderTop: `1px solid ${theme.border}`
                 }}>

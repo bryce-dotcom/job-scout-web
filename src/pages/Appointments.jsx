@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { APPOINTMENT_STATUS } from '../lib/schema'
 import { SOURCE_COLORS, normalizeAppointment, normalizeJob, normalizeGoogleEvent } from '../lib/calendarUtils'
 import { Plus, X, Trash2, Upload, Download, ChevronLeft, ChevronRight, RefreshCw, Calendar, Unlink, Ban } from 'lucide-react'
@@ -89,6 +90,7 @@ export default function Appointments() {
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   // State
   const [showModal, setShowModal] = useState(false)
@@ -650,17 +652,18 @@ export default function Appointments() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header Row 1 */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
         marginBottom: '16px',
         flexWrap: 'wrap',
-        gap: '12px'
+        gap: '12px',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Calendar</h1>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Calendar</h1>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
@@ -899,14 +902,15 @@ export default function Appointments() {
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          overflow: 'hidden'
+          overflow: isMobile ? 'auto' : 'hidden'
         }}>
           {/* Day Headers */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(7, 1fr)',
             backgroundColor: theme.accentBg,
-            borderBottom: `1px solid ${theme.border}`
+            borderBottom: `1px solid ${theme.border}`,
+            minWidth: isMobile ? '700px' : undefined
           }}>
             {dayNames.map(day => (
               <div key={day} style={{
@@ -920,7 +924,7 @@ export default function Appointments() {
           </div>
 
           {/* Calendar Days */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', minWidth: isMobile ? '700px' : undefined }}>
             {calendarDays.map((day, index) => {
               const dayDate = day ? new Date(year, month, day) : null
               const dayEvents = dayDate ? getEventsForDate(dayDate) : []
@@ -1000,7 +1004,7 @@ export default function Appointments() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '550px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '550px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -1019,7 +1023,7 @@ export default function Appointments() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
+            <form onSubmit={handleSubmit} style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               {error && (
                 <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#dc2626', fontSize: '14px' }}>
                   {error}
@@ -1032,7 +1036,7 @@ export default function Appointments() {
                   <input type="text" name="title" value={formData.title} onChange={handleChange} required style={inputStyle} placeholder="Appointment title" />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Start Time *</label>
                     <input type="datetime-local" name="start_time" value={formData.start_time} onChange={handleChange} required style={inputStyle} />
@@ -1043,7 +1047,7 @@ export default function Appointments() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Lead</label>
                     <SearchableSelect
@@ -1066,7 +1070,7 @@ export default function Appointments() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Assigned To</label>
                     <SearchableSelect

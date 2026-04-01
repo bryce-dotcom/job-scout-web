@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useStore } from '../../lib/store'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import AdminStats from './components/AdminStats'
 import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
 import { Building2, Users, Bot, Search, Edit2, LogIn, ChevronDown, ChevronRight } from 'lucide-react'
 
 export default function DataConsoleCompanies() {
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   const setCompany = useStore((state) => state.setCompany)
 
@@ -112,8 +114,8 @@ export default function DataConsoleCompanies() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700', marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700', marginBottom: isMobile ? '16px' : '24px' }}>
         Companies
       </h1>
 
@@ -169,7 +171,8 @@ export default function DataConsoleCompanies() {
             No companies found
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${adminTheme.border}` }}>
                 <th style={{ padding: '12px 16px', textAlign: 'left', color: adminTheme.textMuted, fontSize: '12px', fontWeight: '500' }}>ID</th>
@@ -262,7 +265,7 @@ export default function DataConsoleCompanies() {
                   {expandedId === company.id && (
                     <tr>
                       <td colSpan={8} style={{ padding: '16px', backgroundColor: adminTheme.bg }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '16px' }}>
                           <div>
                             <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginBottom: '4px' }}>Created</div>
                             <div style={{ color: adminTheme.text, fontSize: '13px' }}>
@@ -289,6 +292,7 @@ export default function DataConsoleCompanies() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -315,7 +319,7 @@ export default function DataConsoleCompanies() {
               />
             </FormField>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Plan Type">
                 <FormSelect
                   value={editingCompany.plan_type}

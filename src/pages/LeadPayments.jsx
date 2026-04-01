@@ -8,6 +8,7 @@ import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { depositsFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import SearchableSelect from '../components/SearchableSelect'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -40,6 +41,7 @@ const emptyDeposit = {
 
 export default function LeadPayments() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const leadPayments = useStore((state) => state.leadPayments)
@@ -295,20 +297,21 @@ export default function LeadPayments() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'center',
         justifyContent: 'space-between',
         gap: '16px',
         marginBottom: '24px',
         flexWrap: 'wrap'
       }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
           Deposits
         </h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
@@ -340,7 +343,7 @@ export default function LeadPayments() {
       {/* Summary */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: '16px',
         marginBottom: '24px'
       }}>
@@ -507,7 +510,7 @@ export default function LeadPayments() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '600px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '600px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -629,7 +632,7 @@ export default function LeadPayments() {
                   )}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Business</label>
                     <input type="text" name="business" value={formData.business} onChange={handleChange} style={inputStyle} />
@@ -645,7 +648,7 @@ export default function LeadPayments() {
                   <input type="text" name="description" value={formData.description} onChange={handleChange} style={inputStyle} />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Account</label>
                     <input type="text" name="account" value={formData.account} onChange={handleChange} style={inputStyle} />
@@ -656,7 +659,7 @@ export default function LeadPayments() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Receipt #</label>
                     <input type="text" name="receipt" value={formData.receipt} onChange={handleChange} style={inputStyle} />
@@ -671,7 +674,7 @@ export default function LeadPayments() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Payment Method</label>
                     <select name="payment_method" value={formData.payment_method} onChange={handleChange} style={inputStyle}>
@@ -713,7 +716,7 @@ export default function LeadPayments() {
                   <label style={{ ...labelStyle, marginBottom: '10px', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Apply To
                   </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                     <div>
                       <label style={{ ...labelStyle, fontSize: '12px' }}>Invoice</label>
                       <SearchableSelect

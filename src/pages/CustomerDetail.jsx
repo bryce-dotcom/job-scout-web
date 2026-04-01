@@ -7,7 +7,7 @@ import { toast } from '../lib/toast'
 import {
   ArrowLeft, FileText, Briefcase, Plus, Send, Phone, Mail,
   MapPin, Building2, User, X, Save, Trash2, Package, UserPlus, Grid3X3,
-  DollarSign, TrendingUp, MessageCircle, CreditCard, ExternalLink, Edit2
+  DollarSign, TrendingUp, MessageCircle, CreditCard, ExternalLink, Edit2, Zap
 } from 'lucide-react'
 import ProductPickerModal from '../components/ProductPickerModal'
 import Tooltip from '../components/Tooltip'
@@ -28,6 +28,7 @@ const defaultTheme = {
 export default function CustomerDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const employees = useStore((state) => state.employees)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
@@ -39,6 +40,7 @@ export default function CustomerDetail() {
   const [quotes, setQuotes] = useState([])
   const [jobs, setJobs] = useState([])
   const [invoices, setInvoices] = useState([])
+  const [utilityInvoices, setUtilityInvoices] = useState([])
   const [leads, setLeads] = useState([])
   const [payments, setPayments] = useState([])
   const [communications, setCommunications] = useState([])
@@ -108,13 +110,31 @@ export default function CustomerDetail() {
       .order('created_at', { ascending: false })
     setJobs(jobData || [])
 
-    // Fetch invoices linked to this customer
+    // Fetch invoices linked to this customer (by customer_id or via job)
+    const jobIds = (jobData || []).map(j => j.id)
+    const invoiceFilter = jobIds.length > 0
+      ? `customer_id.eq.${id},job_id.in.(${jobIds.join(',')})`
+      : `customer_id.eq.${id}`
     const { data: invoiceData } = await supabase
       .from('invoices')
       .select('*')
-      .eq('customer_id', id)
+      .or(invoiceFilter)
       .order('created_at', { ascending: false })
-    setInvoices(invoiceData || [])
+    // Deduplicate in case an invoice matches both customer_id and job_id
+    const uniqueInvoices = invoiceData ? [...new Map(invoiceData.map(inv => [inv.id, inv])).values()] : []
+    setInvoices(uniqueInvoices)
+
+    // Fetch utility invoices via the customer's jobs
+    if (jobIds.length > 0) {
+      const { data: utilInvData } = await supabase
+        .from('utility_invoices')
+        .select('*')
+        .in('job_id', jobIds)
+        .order('created_at', { ascending: false })
+      setUtilityInvoices(utilInvData || [])
+    } else {
+      setUtilityInvoices([])
+    }
 
     // Fetch leads linked to this customer
     const { data: leadData } = await supabase
@@ -124,8 +144,7 @@ export default function CustomerDetail() {
       .order('created_at', { ascending: false })
     setLeads(leadData || [])
 
-    // Fetch payments via jobs linked to this customer
-    const jobIds = (jobData || []).map(j => j.id)
+    // Fetch payments via leads linked to this customer
     const leadIds = (leadData || []).map(l => l.id)
     if (leadIds.length > 0) {
       const { data: paymentData } = await supabase
@@ -302,7 +321,7 @@ export default function CustomerDetail() {
 
     if (quoteError) {
       console.error('Error creating quote:', quoteError)
-      alert('Error creating quote: ' + quoteError.message)
+      alert('Error creating estimate: ' + quoteError.message)
       setSavingQuote(false)
       return
     }
@@ -369,13 +388,13 @@ export default function CustomerDetail() {
 
   // Send customer to setter pipeline
   const handleSendToSetter = async () => {
-    const confirmed = window.confirm(
-      `Send ${customer.name} to the Lead Setter pipeline?\n\nThis will create a new lead from this customer's information so a setter can schedule a new appointment.`
-    )
+    const reason = window.prompt(`Why does ${customer.name} need a meeting?\n\nAdd a note for the setter:`)
+    if (reason === null) return
 
-    if (!confirmed) return
+    const senderName = user?.name || 'Someone'
+    const noteText = `Sent to setter by ${senderName} on ${new Date().toLocaleDateString()}${reason ? `: ${reason}` : ''}`
 
-    const { data: newLead, error } = await supabase
+    const { error } = await supabase
       .from('leads')
       .insert({
         company_id: companyId,
@@ -384,20 +403,20 @@ export default function CustomerDetail() {
         phone: customer.phone || null,
         address: customer.address || null,
         business_name: customer.business_name || null,
-        status: 'New',
+        status: 'Contacted',
         lead_source: 'Existing Customer',
-        customer_id: customer.id
+        customer_id: customer.id,
+        notes: noteText
       })
       .select()
       .single()
 
     if (error) {
-      console.error('Error creating lead:', error)
-      alert('Error creating lead: ' + error.message)
+      toast.error('Error creating lead: ' + error.message)
       return
     }
 
-    alert(`Lead created for ${customer.name}. Redirecting to Lead Setter...`)
+    toast.success(`${customer.name} sent to setter pipeline`)
     navigate('/lead-setter')
   }
 
@@ -509,7 +528,7 @@ export default function CustomerDetail() {
     { id: 'leads', label: `Leads (${leads.length})`, icon: TrendingUp, hint: 'Leads/deals for this customer' },
     { id: 'quotes', label: `Estimates (${quotes.length})`, icon: FileText, hint: 'Price estimates for this customer' },
     { id: 'jobs', label: `Jobs (${jobs.length})`, icon: Briefcase, hint: 'Work orders for this customer' },
-    { id: 'invoices', label: `Invoices (${invoices.length})`, icon: DollarSign, hint: 'Invoices for this customer' },
+    { id: 'invoices', label: `Invoices (${invoices.length + utilityInvoices.length})`, icon: DollarSign, hint: 'Invoices for this customer' },
     { id: 'payments', label: `Payments (${payments.length})`, icon: CreditCard, hint: 'Payments received from this customer' },
     ...(communications.length > 0 ? [{ id: 'comms', label: `Comms (${communications.length})`, icon: MessageCircle, hint: 'Communication history' }] : []),
   ]
@@ -648,7 +667,7 @@ export default function CustomerDetail() {
               const { error } = await supabase.from('customers').delete().eq('id', customer.id)
               if (error) {
                 if (error.code === '23503' || error.message?.includes('violates foreign key')) {
-                  toast.error(`Cannot delete — ${customer.name} has linked jobs, invoices, or quotes.`)
+                  toast.error(`Cannot delete — ${customer.name} has linked jobs, invoices, or estimates.`)
                 } else {
                   toast.error('Delete failed: ' + error.message)
                 }
@@ -1359,6 +1378,83 @@ export default function CustomerDetail() {
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {/* Utility Invoices */}
+            {utilityInvoices.length > 0 && (
+              <div style={{ marginTop: '28px' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Zap size={18} style={{ color: '#eab308' }} />
+                    Utility Invoices
+                  </h3>
+                  <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
+                    Utility invoices linked to this customer's jobs
+                  </p>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {utilityInvoices.map(uInv => {
+                    const uStatusStyle = invoiceStatusColors[uInv.payment_status] || invoiceStatusColors['Pending']
+                    return (
+                      <div key={`util-${uInv.id}`} style={{
+                        padding: isMobile ? '14px 16px' : '16px 20px',
+                        backgroundColor: theme.bg,
+                        borderRadius: '10px',
+                        border: `1px solid ${theme.border}`,
+                        display: 'flex',
+                        flexDirection: isMobile ? 'column' : 'row',
+                        justifyContent: 'space-between',
+                        alignItems: isMobile ? 'stretch' : 'center',
+                        gap: isMobile ? '12px' : '16px'
+                      }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: isMobile ? '15px' : '16px', fontWeight: '600', color: theme.text }}>
+                              {uInv.utility_invoice_id || `Utility #${uInv.id}`}
+                            </div>
+                            <span style={{
+                              padding: '4px 10px',
+                              backgroundColor: uStatusStyle.bg,
+                              color: uStatusStyle.text,
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: '600'
+                            }}>
+                              {uInv.payment_status || 'Pending'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
+                            {uInv.utility_name || ''}{uInv.job_description ? ` — ${uInv.job_description}` : ''}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '12px', color: theme.textMuted }}>
+                            <span style={{ fontWeight: '600', fontSize: '14px', color: theme.text }}>
+                              ${parseFloat(uInv.amount || 0).toFixed(2)}
+                            </span>
+                            {uInv.created_at && <span>{new Date(uInv.created_at).toLocaleDateString()}</span>}
+                            {uInv.business_unit && <span>{uInv.business_unit}</span>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => navigate(`/utility-invoices/${uInv.id}`)}
+                          style={{
+                            padding: isMobile ? '10px 14px' : '8px 14px',
+                            minHeight: isMobile ? '44px' : 'auto',
+                            backgroundColor: 'transparent',
+                            color: theme.accent,
+                            border: `1px solid ${theme.accent}`,
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          View
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>

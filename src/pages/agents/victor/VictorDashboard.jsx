@@ -7,6 +7,7 @@ import {
   Shield, Camera, CheckCircle2, AlertTriangle, TrendingUp,
   Star, ChevronRight, RefreshCw, Plus
 } from 'lucide-react'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -23,6 +24,7 @@ export default function VictorDashboard() {
   const companyId = useStore(s => s.companyId)
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
@@ -72,20 +74,21 @@ export default function VictorDashboard() {
   ]
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1200px', margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', marginBottom: isMobile ? '16px' : '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>Victor Dashboard</h1>
-          <p style={{ fontSize: '14px', color: theme.textMuted, marginTop: '4px' }}>AI-powered field verification & quality control</p>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>Victor Dashboard</h1>
+          <p style={{ fontSize: isMobile ? '13px' : '14px', color: theme.textMuted, marginTop: '4px' }}>AI-powered field verification & quality control</p>
         </div>
         <button
           onClick={() => navigate('/agents/victor/verify')}
           style={{
             display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '10px 20px', backgroundColor: theme.accent, color: '#fff',
+            padding: isMobile ? '10px 16px' : '10px 20px', backgroundColor: theme.accent, color: '#fff',
             border: 'none', borderRadius: '8px', cursor: 'pointer',
-            fontWeight: '600', fontSize: '14px'
+            fontWeight: '600', fontSize: '14px',
+            ...(isMobile ? { width: '100%', justifyContent: 'center' } : {})
           }}
         >
           <Plus size={16} /> New Verification
@@ -93,17 +96,17 @@ export default function VictorDashboard() {
       </div>
 
       {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: isMobile ? '10px' : '16px', marginBottom: isMobile ? '16px' : '24px' }}>
         {statCards.map(card => (
           <div key={card.label} style={{
             backgroundColor: theme.bgCard, borderRadius: '12px',
-            border: `1px solid ${theme.border}`, padding: '20px'
+            border: `1px solid ${theme.border}`, padding: isMobile ? '14px' : '20px'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
               <span style={{ fontSize: '13px', color: theme.textMuted }}>{card.label}</span>
               <card.icon size={18} style={{ color: card.color }} />
             </div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: theme.text }}>{card.value}</div>
+            <div style={{ fontSize: isMobile ? '22px' : '28px', fontWeight: '700', color: theme.text }}>{card.value}</div>
           </div>
         ))}
       </div>
@@ -146,8 +149,8 @@ export default function VictorDashboard() {
                 key={report.id}
                 onClick={() => navigate(`/agents/victor/report/${report.id}`)}
                 style={{
-                  padding: '14px 20px', borderBottom: `1px solid ${theme.border}`,
-                  display: 'flex', alignItems: 'center', gap: '16px',
+                  padding: isMobile ? '12px 14px' : '14px 20px', borderBottom: `1px solid ${theme.border}`,
+                  display: 'flex', alignItems: 'center', gap: isMobile ? '10px' : '16px',
                   cursor: 'pointer', transition: 'background-color 0.15s'
                 }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = theme.accentBg}
@@ -155,7 +158,7 @@ export default function VictorDashboard() {
               >
                 {/* Score */}
                 <div style={{
-                  width: '48px', height: '48px', borderRadius: '12px',
+                  width: isMobile ? '40px' : '48px', height: isMobile ? '40px' : '48px', borderRadius: '12px',
                   backgroundColor: report.grade ? `${gradeColors[report.grade]}15` : theme.accentBg,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontWeight: '700', fontSize: '18px',
@@ -176,15 +179,15 @@ export default function VictorDashboard() {
                 </div>
 
                 {/* Status */}
-                <div style={{
+                {!isMobile && <div style={{
                   padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600',
                   backgroundColor: report.status === 'complete' ? '#dcfce7' : report.status === 'analyzing' ? '#dbeafe' : '#fef3c7',
                   color: report.status === 'complete' ? '#16a34a' : report.status === 'analyzing' ? '#2563eb' : '#d97706'
                 }}>
                   {report.status === 'complete' ? 'Complete' : report.status === 'analyzing' ? 'Analyzing' : 'Pending'}
-                </div>
+                </div>}
 
-                <ChevronRight size={16} style={{ color: theme.textMuted }} />
+                <ChevronRight size={16} style={{ color: theme.textMuted, flexShrink: 0 }} />
               </div>
             ))}
           </div>

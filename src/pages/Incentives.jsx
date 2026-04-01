@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { Plus, Pencil, Trash2, X, Gift, Search, DollarSign, CheckCircle, Clock } from 'lucide-react'
 
 const defaultTheme = {
@@ -41,6 +42,7 @@ const emptyIncentive = {
 }
 
 export default function Incentives() {
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const incentives = useStore((state) => state.incentives)
@@ -185,17 +187,18 @@ export default function Incentives() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
         gap: '16px',
         marginBottom: '24px',
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
           Incentives & Rebates
         </h1>
         <button
@@ -332,11 +335,13 @@ export default function Incentives() {
           </p>
         </div>
       ) : (
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <div style={{
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          minWidth: isMobile ? '550px' : 'auto'
         }}>
           <div style={{
             display: 'grid',
@@ -429,6 +434,7 @@ export default function Incentives() {
             )
           })}
         </div>
+        </div>
       )}
 
       {/* Modal */}
@@ -448,7 +454,7 @@ export default function Incentives() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '550px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '550px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -475,7 +481,7 @@ export default function Incentives() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Job</label>
                     <select name="job_id" value={formData.job_id} onChange={handleChange} style={inputStyle}>
@@ -491,7 +497,7 @@ export default function Incentives() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Incentive Type</label>
                     <select name="incentive_type" value={formData.incentive_type} onChange={handleChange} style={inputStyle}>
@@ -509,7 +515,7 @@ export default function Incentives() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Status</label>
                     <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
@@ -524,7 +530,7 @@ export default function Incentives() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Submitted</label>
                     <input type="date" name="submission_date" value={formData.submission_date} onChange={handleChange} style={inputStyle} />

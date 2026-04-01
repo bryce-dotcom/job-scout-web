@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { FIXTURE_CATEGORIES, LAMP_TYPES } from '../lib/lightingConstants'
 import { Lightbulb, Plus, Edit, Search } from 'lucide-react'
@@ -40,6 +41,7 @@ export default function FixtureTypes() {
     visual_characteristics: ''
   })
 
+  const isMobile = useIsMobile()
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
@@ -112,25 +114,27 @@ export default function FixtureTypes() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: isMobile ? '12px' : '0', flexDirection: isMobile ? 'column' : 'row' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Lightbulb size={28} style={{ color: theme.accent }} />
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Fixture Types</h1>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Fixture Types</h1>
         </div>
         <button
           onClick={() => setShowModal(true)}
           style={{
             display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px',
             backgroundColor: theme.accent, color: '#ffffff', border: 'none',
-            borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+            borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer',
+            width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'center' : 'flex-start',
+            minHeight: isMobile ? '48px' : 'auto'
           }}
         >
           <Plus size={18} /> Add Fixture Type
         </button>
       </div>
 
-      <div style={{ position: 'relative', marginBottom: '20px', maxWidth: '400px' }}>
+      <div style={{ position: 'relative', marginBottom: '20px', maxWidth: isMobile ? '100%' : '400px' }}>
         <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
         <input
           type="text"
@@ -146,7 +150,8 @@ export default function FixtureTypes() {
       </div>
 
       <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '600px' : 'auto' }}>
           <thead>
             <tr style={{ backgroundColor: theme.accentBg }}>
               <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Fixture Name</th>
@@ -178,20 +183,21 @@ export default function FixtureTypes() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {showModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '500px' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '20px' }}>{editing ? 'Edit' : 'Add'} Fixture Type</h2>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: isMobile ? '16px' : '0' }}>
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', padding: isMobile ? '16px' : '24px', width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px' }}>
+            <h2 style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text, marginBottom: '20px' }}>{editing ? 'Edit' : 'Add'} Fixture Type</h2>
             <form onSubmit={handleSubmit}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>Fixture Name *</label>
                   <input type="text" value={formData.fixture_name} onChange={(e) => setFormData({ ...formData, fixture_name: e.target.value })} required
                     style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }} />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>Category</label>
                     <select value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })}
@@ -207,7 +213,7 @@ export default function FixtureTypes() {
                     </select>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>Lamp Count</label>
                     <input type="number" min="1" value={formData.lamp_count} onChange={(e) => setFormData({ ...formData, lamp_count: e.target.value })}
@@ -231,7 +237,7 @@ export default function FixtureTypes() {
                     style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }} />
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '24px', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px', justifyContent: 'flex-end', flexDirection: isMobile ? 'column' : 'row' }}>
                 <button type="button" onClick={() => { setShowModal(false); setEditing(null) }}
                   style={{ padding: '10px 20px', backgroundColor: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>Cancel</button>
                 <button type="submit" style={{ padding: '10px 20px', backgroundColor: theme.accent, color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>

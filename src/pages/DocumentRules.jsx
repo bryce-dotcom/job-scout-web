@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
 import { extractFormFields } from '../lib/pdfFormFiller'
@@ -192,7 +193,7 @@ const DATA_PATHS = [
   { value: 'w9.ein_2', label: 'W-9 EIN Part 2 (7 digits)' },
   { value: 'w9.signature_date', label: 'W-9 Signature Date' },
   // Quote
-  { value: 'quote.quote_amount', label: 'Quote Amount' },
+  { value: 'quote.quote_amount', label: 'Estimate Amount' },
   { value: 'quote.utility_incentive', label: 'Incentive Amount' },
   { value: 'quote.discount', label: 'Discount' },
   // Aggregations
@@ -221,6 +222,7 @@ const DATA_PATHS = [
 ]
 
 export default function DocumentRules() {
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const serviceTypes = useStore((state) => state.serviceTypes)
@@ -815,11 +817,11 @@ export default function DocumentRules() {
   const mappedFieldCount = Object.values(fieldMapping).filter(Boolean).length
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }} className="page-padding">
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1200px', margin: '0 auto' }} className="page-padding">
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }} className="page-header">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '12px', flexDirection: isMobile ? 'column' : 'row' }} className="page-header">
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
             Document Rules
           </h1>
           <p style={{ fontSize: '14px', color: theme.textMuted, marginTop: '4px' }}>
@@ -906,7 +908,7 @@ export default function DocumentRules() {
           {/* Stats Cards */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
             gap: '16px',
             marginBottom: '24px'
           }} className="stat-grid">
@@ -1017,11 +1019,13 @@ export default function DocumentRules() {
           </div>
 
           {/* Templates Table */}
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <div style={{
             backgroundColor: theme.bgCard,
             borderRadius: '10px',
             border: `1px solid ${theme.border}`,
-            overflow: 'hidden'
+            overflow: 'hidden',
+            minWidth: isMobile ? '600px' : 'auto'
           }}>
             {/* Table Header */}
             <div style={{
@@ -1169,6 +1173,7 @@ export default function DocumentRules() {
               })
             )}
           </div>
+          </div>
         </>
       ) : (
         /* Doc Packages Tab */
@@ -1219,7 +1224,7 @@ export default function DocumentRules() {
           ) : (
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))',
               gap: '16px'
             }} className="responsive-grid-2">
               {serviceTypes.map(st => {
@@ -1313,7 +1318,7 @@ export default function DocumentRules() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '90%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '80vh',
             overflow: 'hidden',
             zIndex: 101,
@@ -1459,7 +1464,7 @@ export default function DocumentRules() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '90%',
-            maxWidth: '700px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '700px',
             maxHeight: '85vh',
             overflow: 'hidden',
             zIndex: 101,

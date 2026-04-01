@@ -7,6 +7,7 @@ import {
   Shield, Star, CheckCircle2, X, AlertTriangle, Camera,
   ChevronLeft, Wrench, Sparkles, MapPin, User, Calendar
 } from 'lucide-react'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -21,6 +22,7 @@ export default function VictorReport() {
   const companyId = useStore(s => s.companyId)
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const [report, setReport] = useState(null)
   const [photos, setPhotos] = useState([])
@@ -66,29 +68,29 @@ export default function VictorReport() {
   const analysis = report.ai_analysis || {}
 
   return (
-    <div style={{ padding: '24px', maxWidth: '800px', margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '800px', margin: '0 auto' }}>
       <button onClick={() => navigate('/agents/victor/history')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '13px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '4px' }}>
         <ChevronLeft size={14} /> Back to History
       </button>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: isMobile ? '14px' : '20px', marginBottom: isMobile ? '16px' : '24px', flexWrap: 'wrap' }}>
         <div style={{
-          width: '72px', height: '72px', borderRadius: '16px',
+          width: isMobile ? '56px' : '72px', height: isMobile ? '56px' : '72px', borderRadius: '16px',
           backgroundColor: `${gradeColors[report.grade] || theme.accent}15`,
           border: `3px solid ${gradeColors[report.grade] || theme.accent}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '32px', fontWeight: '800', color: gradeColors[report.grade] || theme.text,
+          fontSize: isMobile ? '24px' : '32px', fontWeight: '800', color: gradeColors[report.grade] || theme.text,
           flexShrink: 0
         }}>
           {report.grade || '—'}
         </div>
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: '22px', fontWeight: '700', color: theme.text, margin: 0 }}>
+          <h1 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: '700', color: theme.text, margin: 0 }}>
             {report.job?.job_title || `Job #${report.job?.job_id}`}
           </h1>
-          <div style={{ fontSize: '36px', fontWeight: '800', color: theme.text }}>
-            {report.score}<span style={{ fontSize: '18px', color: theme.textMuted }}>/100</span>
+          <div style={{ fontSize: isMobile ? '28px' : '36px', fontWeight: '800', color: theme.text }}>
+            {report.score}<span style={{ fontSize: isMobile ? '14px' : '18px', color: theme.textMuted }}>/100</span>
           </div>
           <div style={{ fontSize: '13px', color: theme.textMuted, display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '4px' }}>
             {report.verifier?.name && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> {report.verifier.name}</span>}
@@ -108,7 +110,7 @@ export default function VictorReport() {
 
       {/* Sub-scores */}
       {(analysis.work_quality_score || analysis.cleanliness_score) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
           {[
             { label: 'Work Quality', score: analysis.work_quality_score, icon: Wrench },
             { label: 'Cleanliness', score: analysis.cleanliness_score, icon: Sparkles },
@@ -140,7 +142,7 @@ export default function VictorReport() {
             <Camera size={16} style={{ color: theme.accent }} />
             Verification Photos ({photos.length})
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
             {photos.map(photo => (
               <div key={photo.id} style={{ borderRadius: '8px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
                 {photo.url && <img src={photo.url} alt="" style={{ width: '100%', height: '160px', objectFit: 'cover' }} />}

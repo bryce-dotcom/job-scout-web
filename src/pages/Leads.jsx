@@ -598,7 +598,7 @@ export default function Leads() {
       {showModal && (
         <>
           <div onClick={closeModal} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '600px', maxHeight: '90vh', overflow: 'auto', zIndex: 51 }}>
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '600px', maxHeight: '90vh', overflow: 'auto', zIndex: 51 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, backgroundColor: theme.bgCard }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>{editingLead ? 'Edit Lead' : 'Add Lead'}</h2>
               <button onClick={closeModal} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
@@ -606,7 +606,7 @@ export default function Leads() {
             <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
               {error && <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '8px', color: '#b91c1c', fontSize: '14px' }}>{error}</div>}
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div><label style={labelStyle}>Customer Name *</label><input type="text" name="customer_name" value={formData.customer_name} onChange={handleChange} required style={inputStyle} /></div>
                 <div><label style={labelStyle}>Business Name</label><input type="text" name="business_name" value={formData.business_name} onChange={handleChange} style={inputStyle} /></div>
                 <div><label style={labelStyle}>Email</label><input type="email" name="email" value={formData.email} onChange={handleChange} style={inputStyle} /></div>
@@ -615,7 +615,7 @@ export default function Leads() {
 
               <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Address</label><textarea name="address" value={formData.address} onChange={handleChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div><label style={labelStyle}>Service Type</label><select name="service_type" value={formData.service_type} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
                 <div>
                   <label style={labelStyle}>Lead Source</label>
@@ -626,7 +626,7 @@ export default function Leads() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Source Person</label>
                   <SearchableSelect
@@ -649,7 +649,7 @@ export default function Leads() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Status</label>
                   <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
@@ -673,7 +673,7 @@ export default function Leads() {
       {showAssignModal && selectedLead && (
         <>
           <div onClick={() => setShowAssignModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '400px', zIndex: 51 }}>
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '400px', zIndex: 51 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Assign to Setter</h2>
               <button onClick={() => setShowAssignModal(false)} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
@@ -717,14 +717,14 @@ export default function Leads() {
       {showAppointmentModal && (
         <>
           <div onClick={() => setShowAppointmentModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '480px', zIndex: 51 }}>
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px', maxHeight: '90vh', overflow: 'auto', zIndex: 51 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Schedule Appointment</h2>
               <button onClick={() => setShowAppointmentModal(false)} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
             </div>
             <form onSubmit={handleCreateAppointment} style={{ padding: '20px' }}>
               <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Title</label><input type="text" value={appointmentData.title} onChange={(e) => setAppointmentData({ ...appointmentData, title: e.target.value })} required style={inputStyle} /></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div><label style={labelStyle}>Start Time *</label><input type="datetime-local" value={appointmentData.start_time} onChange={(e) => setAppointmentData({ ...appointmentData, start_time: e.target.value })} required style={inputStyle} /></div>
                 <div><label style={labelStyle}>End Time</label><input type="datetime-local" value={appointmentData.end_time} onChange={(e) => setAppointmentData({ ...appointmentData, end_time: e.target.value })} style={inputStyle} /></div>
               </div>

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import AdminStats from './components/AdminStats'
 import AdminModal, { FormField, FormInput, FormSelect, FormToggle, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
 import { Users, Shield, Code, Search, Edit2 } from 'lucide-react'
 
 export default function DataConsoleUsers() {
+  const isMobile = useIsMobile()
   const [users, setUsers] = useState([])
   const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
@@ -97,8 +99,8 @@ export default function DataConsoleUsers() {
   ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700', marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700', marginBottom: isMobile ? '16px' : '24px' }}>
         Users
       </h1>
 
@@ -112,7 +114,8 @@ export default function DataConsoleUsers() {
         padding: '16px',
         marginBottom: '16px',
         display: 'flex',
-        gap: '16px'
+        gap: isMobile ? '12px' : '16px',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <Search size={18} style={{
@@ -148,7 +151,7 @@ export default function DataConsoleUsers() {
             borderRadius: '8px',
             color: adminTheme.text,
             fontSize: '14px',
-            minWidth: '180px'
+            minWidth: isMobile ? 'auto' : '180px'
           }}
         >
           <option value="">All Companies</option>
@@ -174,7 +177,8 @@ export default function DataConsoleUsers() {
             No users found
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${adminTheme.border}` }}>
                 <th style={{ padding: '12px 16px', textAlign: 'left', color: adminTheme.textMuted, fontSize: '12px' }}>Name</th>
@@ -248,6 +252,7 @@ export default function DataConsoleUsers() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -259,7 +264,7 @@ export default function DataConsoleUsers() {
       >
         {editingUser && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="First Name" required>
                 <FormInput
                   value={editingUser.first_name}

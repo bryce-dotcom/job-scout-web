@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
 import { photoQueue } from '../lib/photoQueue'
@@ -183,6 +184,7 @@ export default function NewLightingAudit() {
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   // Audible click + haptic vibration for counter buttons
   const playClick = () => {
@@ -794,7 +796,7 @@ export default function NewLightingAudit() {
   }, [products, areaForm.fixture_category])
 
   return (
-    <div className="audit-root page-padding" style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div className="audit-root page-padding" style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       <style>{`
         @media (max-width: 768px) {
           .audit-root input, .audit-root select, .audit-root textarea { font-size: 16px !important; }
@@ -882,7 +884,7 @@ export default function NewLightingAudit() {
         >
           <ArrowLeft size={20} />
         </button>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
           New Lighting Audit
         </h1>
       </div>
@@ -935,7 +937,7 @@ export default function NewLightingAudit() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Customer and Salesperson */}
-            <div className="audit-form-grid-2 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div className="audit-form-grid-2 form-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <div style={{ position: 'relative' }}>
                 <label style={{
                   display: 'block',
@@ -1098,7 +1100,7 @@ export default function NewLightingAudit() {
               />
             </div>
 
-            <div className="audit-form-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
+            <div className="audit-form-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr', gap: '12px' }}>
               <div>
                 <label style={{
                   display: 'block',
@@ -1385,7 +1387,7 @@ export default function NewLightingAudit() {
             </div>
 
             {/* Electric Rate and Operating Schedule */}
-            <div className="audit-form-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            <div className="audit-form-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '12px' }}>
               <div>
                 <label style={{
                   display: 'block',
@@ -1627,7 +1629,7 @@ export default function NewLightingAudit() {
 
                   <div className="audit-area-stats" style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
                     gap: '12px'
                   }}>
                     <div>
@@ -1726,8 +1728,8 @@ export default function NewLightingAudit() {
           {/* Summary Stats */}
           <div className="stat-grid" style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-            gap: '16px',
+            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: isMobile ? '8px' : '16px',
             marginBottom: '24px'
           }}>
             <div style={{
@@ -1778,8 +1780,8 @@ export default function NewLightingAudit() {
 
           <div className="stat-grid" style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-            gap: '16px',
+            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: isMobile ? '8px' : '16px',
             marginBottom: '24px'
           }}>
             <div style={{
@@ -1840,7 +1842,7 @@ export default function NewLightingAudit() {
             <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
               Audit Details
             </h3>
-            <div className="audit-review-details" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
+            <div className="audit-review-details" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px', fontSize: '13px' }}>
               <div><span style={{ color: theme.textMuted }}>Customer:</span> {selectedCustomer?.name || 'None'}</div>
               <div><span style={{ color: theme.textMuted }}>Salesperson:</span> {employees.find(e => e.id === basicInfo.salesperson_id)?.name || 'None'}</div>
               <div><span style={{ color: theme.textMuted }}>Location:</span> {basicInfo.city}, {basicInfo.state}</div>
@@ -1934,19 +1936,20 @@ export default function NewLightingAudit() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000
+          zIndex: 1000,
+          padding: isMobile ? '16px' : '0'
         }}>
           <div className="audit-area-modal modal-content" style={{
             backgroundColor: theme.bgCard,
-            borderRadius: '16px',
-            padding: '24px',
+            borderRadius: isMobile ? '12px' : '16px',
+            padding: isMobile ? '16px' : '24px',
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '90vh',
             overflow: 'auto'
           }}>
             <h2 style={{
-              fontSize: '20px',
+              fontSize: isMobile ? '18px' : '20px',
               fontWeight: '700',
               color: theme.text,
               marginBottom: '20px'
@@ -1954,7 +1957,7 @@ export default function NewLightingAudit() {
               {editingAreaIndex !== null ? 'Edit Area' : 'Add Audit Area'}
             </h2>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
               {/* Lenard AI Photo Analysis */}
               {editingAreaIndex === null && (
                 <div className="lenard-photo" style={{
@@ -2107,7 +2110,7 @@ export default function NewLightingAudit() {
                 />
               </div>
 
-              <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -2275,7 +2278,7 @@ export default function NewLightingAudit() {
               </div>
 
               {/* Existing Watts / New Watts — side by side */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -2458,7 +2461,8 @@ export default function NewLightingAudit() {
               display: 'flex',
               gap: '12px',
               marginTop: '24px',
-              justifyContent: 'flex-end'
+              justifyContent: 'flex-end',
+              flexDirection: isMobile ? 'column' : 'row'
             }}>
               <button
                 onClick={() => {
@@ -2518,8 +2522,8 @@ export default function NewLightingAudit() {
           alignItems: 'center', justifyContent: 'center', zIndex: 1100
         }}>
           <div style={{
-            backgroundColor: theme.bgCard, borderRadius: '16px',
-            padding: '24px', width: '100%', maxWidth: '420px', margin: '16px'
+            backgroundColor: theme.bgCard, borderRadius: isMobile ? '12px' : '16px',
+            padding: isMobile ? '16px' : '24px', width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '420px', margin: '16px'
           }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: theme.text, marginBottom: '16px' }}>
               Add New Customer
@@ -2554,7 +2558,7 @@ export default function NewLightingAudit() {
                 />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px', marginTop: '20px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px', justifyContent: 'flex-end', flexDirection: isMobile ? 'column' : 'row' }}>
               <button onClick={() => setShowNewCustomerForm(false)}
                 style={{ padding: '10px 20px', backgroundColor: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
                 Cancel

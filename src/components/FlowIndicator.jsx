@@ -7,7 +7,7 @@ const stages = [
   { id: 'Contacted', label: 'Contacted', color: '#8b5cf6', phase: 'sales' },
   { id: 'Appointment Set', label: 'Appt Set', color: '#22c55e', phase: 'sales' },
   { id: 'Qualified', label: 'Qualified', color: '#3b82f6', phase: 'sales' },
-  { id: 'Quote Sent', label: 'Quote Sent', color: '#8b5cf6', phase: 'sales' },
+  { id: 'Quote Sent', label: 'Estimate Sent', color: '#8b5cf6', phase: 'sales' },
   { id: 'Negotiation', label: 'Negotiation', color: '#f59e0b', phase: 'sales' },
   { id: 'Won', label: 'Won', color: '#10b981', phase: 'sales' },
   // Delivery

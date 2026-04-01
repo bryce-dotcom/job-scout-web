@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Pencil, Trash2, X, FileText, Search, Zap, DollarSign } from 'lucide-react'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -31,6 +32,7 @@ const emptyInvoice = {
 
 export default function UtilityInvoices() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const utilityInvoices = useStore((state) => state.utilityInvoices)
   const customers = useStore((state) => state.customers)
@@ -182,17 +184,18 @@ export default function UtilityInvoices() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
-        gap: '16px',
+        gap: isMobile ? '12px' : '16px',
         marginBottom: '24px',
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
           Utility Bills
         </h1>
         <button
@@ -208,7 +211,9 @@ export default function UtilityInvoices() {
             borderRadius: '8px',
             fontSize: '14px',
             fontWeight: '500',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            width: isMobile ? '100%' : 'auto',
+            justifyContent: 'center'
           }}
         >
           <Plus size={18} />
@@ -219,7 +224,7 @@ export default function UtilityInvoices() {
       {/* Summary */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: '16px',
         marginBottom: '24px'
       }}>
@@ -279,7 +284,7 @@ export default function UtilityInvoices() {
 
       {/* Search */}
       <div style={{ marginBottom: '24px' }}>
-        <div style={{ position: 'relative', maxWidth: '400px' }}>
+        <div style={{ position: 'relative', maxWidth: isMobile ? '100%' : '400px' }}>
           <Search size={18} style={{
             position: 'absolute',
             left: '12px',
@@ -312,104 +317,155 @@ export default function UtilityInvoices() {
           </p>
         </div>
       ) : (
-        <div style={{
-          backgroundColor: theme.bgCard,
-          borderRadius: '12px',
-          border: `1px solid ${theme.border}`,
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
-            gap: '12px',
-            padding: '14px 20px',
-            backgroundColor: theme.accentBg,
-            borderBottom: `1px solid ${theme.border}`,
-            fontSize: '12px',
-            fontWeight: '600',
-            color: theme.textMuted,
-            textTransform: 'uppercase'
-          }}>
-            <div>Date</div>
-            <div>Customer</div>
-            <div>Utility</div>
-            <div>Status</div>
-            <div style={{ textAlign: 'right' }}>Job</div>
-            <div style={{ textAlign: 'right' }}>Project Cost</div>
-            <div style={{ textAlign: 'right' }}>Incentive</div>
-            <div style={{ textAlign: 'right' }}>Net Cost</div>
-            <div style={{ textAlign: 'right' }}>Actions</div>
+        {isMobile ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {filteredInvoices.map((invoice) => (
+              <div
+                key={invoice.id}
+                onClick={() => navigate(`/utility-invoices/${invoice.id}`)}
+                style={{
+                  backgroundColor: theme.bgCard,
+                  borderRadius: '12px',
+                  border: `1px solid ${theme.border}`,
+                  padding: '16px',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                  <div>
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>{invoice.customer_name || '-'}</div>
+                    <div style={{ fontSize: '13px', color: theme.textMuted }}>{invoice.utility_name || '-'} {invoice.job_id ? `· Job ${invoice.job_id}` : ''}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button onClick={(e) => { e.stopPropagation(); openEditModal(invoice) }} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}>
+                      <Pencil size={15} />
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(invoice) }} style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Project Cost</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{formatCurrency(invoice.project_cost || invoice.amount)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Incentive</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#d4940a' }}>{formatCurrency(invoice.incentive_amount)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Net Cost</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{formatCurrency(invoice.net_cost)}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', color: theme.textMuted }}>{formatDate(invoice.created_at)}</span>
+                  <span style={{ fontSize: '12px', color: theme.textSecondary }}>{invoice.payment_status || '-'}</span>
+                </div>
+              </div>
+            ))}
           </div>
-
-          {filteredInvoices.map((invoice) => (
-            <div
-              key={invoice.id}
-              onClick={() => navigate(`/utility-invoices/${invoice.id}`)}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
-                gap: '12px',
-                padding: '16px 20px',
-                borderBottom: `1px solid ${theme.border}`,
-                alignItems: 'center',
-                cursor: 'pointer'
-              }}
-            >
-              <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                {formatDate(invoice.created_at)}
-              </div>
-              <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {invoice.customer_name || '-'}
-              </div>
-              <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {invoice.utility_name || '-'}
-              </div>
-              <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                {invoice.payment_status || '-'}
-              </div>
-              <div style={{ textAlign: 'right', fontWeight: '500', color: theme.text }}>
-                {invoice.job_id || '-'}
-              </div>
-              <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
-                {formatCurrency(invoice.project_cost || invoice.amount)}
-              </div>
-              <div style={{ textAlign: 'right', fontWeight: '600', color: '#d4940a' }}>
-                {formatCurrency(invoice.incentive_amount)}
-              </div>
-              <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
-                {formatCurrency(invoice.net_cost)}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); openEditModal(invoice) }}
-                  style={{
-                    padding: '6px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    color: theme.textMuted
-                  }}
-                >
-                  <Pencil size={15} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(invoice) }}
-                  style={{
-                    padding: '6px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    color: theme.textMuted
-                  }}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
+        ) : (
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
+              gap: '12px',
+              padding: '14px 20px',
+              backgroundColor: theme.accentBg,
+              borderBottom: `1px solid ${theme.border}`,
+              fontSize: '12px',
+              fontWeight: '600',
+              color: theme.textMuted,
+              textTransform: 'uppercase'
+            }}>
+              <div>Date</div>
+              <div>Customer</div>
+              <div>Utility</div>
+              <div>Status</div>
+              <div style={{ textAlign: 'right' }}>Job</div>
+              <div style={{ textAlign: 'right' }}>Project Cost</div>
+              <div style={{ textAlign: 'right' }}>Incentive</div>
+              <div style={{ textAlign: 'right' }}>Net Cost</div>
+              <div style={{ textAlign: 'right' }}>Actions</div>
             </div>
-          ))}
-        </div>
+
+            {filteredInvoices.map((invoice) => (
+              <div
+                key={invoice.id}
+                onClick={() => navigate(`/utility-invoices/${invoice.id}`)}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
+                  gap: '12px',
+                  padding: '16px 20px',
+                  borderBottom: `1px solid ${theme.border}`,
+                  alignItems: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ fontSize: '14px', color: theme.textSecondary }}>
+                  {formatDate(invoice.created_at)}
+                </div>
+                <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {invoice.customer_name || '-'}
+                </div>
+                <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {invoice.utility_name || '-'}
+                </div>
+                <div style={{ fontSize: '14px', color: theme.textSecondary }}>
+                  {invoice.payment_status || '-'}
+                </div>
+                <div style={{ textAlign: 'right', fontWeight: '500', color: theme.text }}>
+                  {invoice.job_id || '-'}
+                </div>
+                <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
+                  {formatCurrency(invoice.project_cost || invoice.amount)}
+                </div>
+                <div style={{ textAlign: 'right', fontWeight: '600', color: '#d4940a' }}>
+                  {formatCurrency(invoice.incentive_amount)}
+                </div>
+                <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
+                  {formatCurrency(invoice.net_cost)}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openEditModal(invoice) }}
+                    style={{
+                      padding: '6px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      color: theme.textMuted
+                    }}
+                  >
+                    <Pencil size={15} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(invoice) }}
+                    style={{
+                      padding: '6px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      color: theme.textMuted
+                    }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       )}
 
       {/* Modal */}
@@ -429,7 +485,7 @@ export default function UtilityInvoices() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '550px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '550px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -456,7 +512,7 @@ export default function UtilityInvoices() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Utility Name *</label>
                     <input type="text" name="utility_name" value={formData.utility_name} onChange={handleChange} required style={inputStyle} placeholder="Utility name" />
@@ -467,7 +523,7 @@ export default function UtilityInvoices() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Job ID</label>
                     <input type="text" name="job_id" value={formData.job_id} onChange={handleChange} style={inputStyle} placeholder="Job ID" />
@@ -482,7 +538,7 @@ export default function UtilityInvoices() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Project Cost</label>
                     <input type="number" name="project_cost" value={formData.project_cost} onChange={handleChange} step="0.01" style={inputStyle} placeholder="0.00" />

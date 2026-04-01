@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { usePlaidLink } from 'react-plaid-link'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { supabase } from '../lib/supabase'
 import {
@@ -236,6 +237,7 @@ export default function Settings() {
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     if (!companyId) {
@@ -567,7 +569,7 @@ export default function Settings() {
       case 'users':
         return (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>User Management</h3>
               <button
                 onClick={() => navigate('/employees')}
@@ -908,24 +910,25 @@ export default function Settings() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: isMobile ? '16px' : '24px', flexWrap: 'wrap' }}>
         <SettingsIcon size={28} style={{ color: theme.accent }} />
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Settings</h1>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Settings</h1>
       </div>
 
       {/* Tabs and Content */}
-      <div style={{ display: 'flex', gap: '24px' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '16px' : '24px' }}>
         {/* Tab Navigation */}
         <div style={{
-          width: '220px',
+          width: isMobile ? '100%' : '220px',
           flexShrink: 0,
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
           padding: '8px',
-          height: 'fit-content'
+          height: 'fit-content',
+          ...(isMobile ? { display: 'flex', flexWrap: 'wrap', gap: '4px' } : {})
         }}>
           {tabs.map((tab) => (
             <button
@@ -934,21 +937,22 @@ export default function Settings() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px',
-                width: '100%',
-                padding: '12px 14px',
+                gap: isMobile ? '6px' : '10px',
+                width: isMobile ? 'auto' : '100%',
+                padding: isMobile ? '8px 12px' : '12px 14px',
                 backgroundColor: activeTab === tab.id ? theme.accentBg : 'transparent',
                 border: 'none',
                 borderRadius: '8px',
                 color: activeTab === tab.id ? theme.accent : theme.textMuted,
-                fontSize: '14px',
+                fontSize: isMobile ? '13px' : '14px',
                 fontWeight: activeTab === tab.id ? '500' : '400',
                 cursor: 'pointer',
                 textAlign: 'left',
-                transition: 'all 0.15s ease'
+                transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap'
               }}
             >
-              <tab.icon size={18} />
+              <tab.icon size={isMobile ? 16 : 18} />
               {tab.label}
             </button>
           ))}
@@ -957,10 +961,11 @@ export default function Settings() {
         {/* Content Area */}
         <div style={{
           flex: 1,
+          minWidth: 0,
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          padding: '24px'
+          padding: isMobile ? '16px' : '24px'
         }}>
           {renderContent()}
         </div>
@@ -1462,7 +1467,7 @@ function BusinessUnitsEditor({ items, setItems, saveSetting, companyId, theme })
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
         <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>Business Units</h3>
         {!showForm && (
           <button
@@ -3658,7 +3663,7 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
                     borderRadius: '10px',
                     border: `1px solid rgba(74,124,89,0.15)`
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                       <p style={{ fontSize: '13px', fontWeight: '600', color: theme.text, margin: 0 }}>Connected Accounts</p>
                       <button
                         onClick={handlePlaidSyncAll}

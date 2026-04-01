@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { useTheme } from '../components/Layout';
+import { useIsMobile } from '../hooks/useIsMobile';
 import * as Icons from 'lucide-react';
 import { Search, Filter, CheckCircle, Clock, ArrowRight } from 'lucide-react';
 
@@ -42,6 +43,7 @@ const categoryColors = {
 };
 
 export default function BaseCamp() {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const companyId = useStore((state) => state.companyId);
   const agents = useStore((state) => state.agents);
@@ -135,12 +137,15 @@ export default function BaseCamp() {
   const comingSoonAgents = agents.filter(a => a.status === 'coming_soon').length;
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
+        flexDirection: isMobile ? 'column' : 'row',
+        flexWrap: 'wrap',
+        gap: '12px',
         marginBottom: '24px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -156,7 +161,7 @@ export default function BaseCamp() {
             <Icons.Tent style={{ width: '24px', height: '24px', color: theme.accent }} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '600', color: theme.text }}>
+            <h1 style={{ margin: 0, fontSize: isMobile ? '20px' : '24px', fontWeight: '600', color: theme.text }}>
               Base Camp
             </h1>
             <p style={{ margin: '4px 0 0', color: theme.textMuted }}>
@@ -178,7 +183,9 @@ export default function BaseCamp() {
             borderRadius: '8px',
             cursor: 'pointer',
             fontSize: '14px',
-            fontWeight: '500'
+            fontWeight: '500',
+            width: isMobile ? '100%' : 'auto',
+            justifyContent: 'center'
           }}
         >
           <Icons.Users style={{ width: '18px', height: '18px' }} />
@@ -189,7 +196,7 @@ export default function BaseCamp() {
       {/* Stats Row */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
         gap: '16px',
         marginBottom: '24px'
       }}>
@@ -302,7 +309,7 @@ export default function BaseCamp() {
       {/* Agent Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
         gap: '20px'
       }}>
         {filteredAgents.map(agent => {

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin, isManager as checkManager } from '../lib/accessControl'
 import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
@@ -18,6 +19,7 @@ const AVATAR_COLORS = [
 
 export default function Payroll() {
   const { theme } = useTheme()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
@@ -758,7 +760,7 @@ export default function Payroll() {
 
   if (loading) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center', color: theme.textMuted }}>
         <div style={{ width: '40px', height: '40px', border: `3px solid ${theme.border}`, borderTopColor: theme.accent, borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '80px auto 16px' }} />
         Loading payroll data...
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
@@ -773,7 +775,7 @@ export default function Payroll() {
     const ptoBalance = (emp.pto_accrued || 0) - (emp.pto_used || 0)
 
     return (
-      <div style={{ padding: '24px', maxWidth: '900px' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '900px' }}>
         {/* Back button */}
         <button
           onClick={() => setSelectedEmployee(null)}
@@ -787,20 +789,20 @@ export default function Payroll() {
         </button>
 
         {/* Employee Header */}
-        <div style={{ ...cardStyle, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '20px' }}>
+        <div style={{ ...cardStyle, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '20px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
           <div style={{
-            width: '64px', height: '64px', borderRadius: '14px',
+            width: isMobile ? '48px' : '64px', height: isMobile ? '48px' : '64px', borderRadius: '14px',
             backgroundColor: getAvatarColor(emp.name), display: 'flex', alignItems: 'center',
-            justifyContent: 'center', color: '#fff', fontWeight: '700', fontSize: '24px', flexShrink: 0,
+            justifyContent: 'center', color: '#fff', fontWeight: '700', fontSize: isMobile ? '18px' : '24px', flexShrink: 0,
             overflow: 'hidden'
           }}>
             {emp.headshot_url ? (
-              <img src={emp.headshot_url} alt="" style={{ width: '64px', height: '64px', objectFit: 'cover' }} />
+              <img src={emp.headshot_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (emp.name || '?').charAt(0).toUpperCase()}
           </div>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text }}>{emp.name}</h2>
-            <div style={{ fontSize: '14px', color: theme.textMuted, display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '4px' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text }}>{emp.name}</h2>
+            <div style={{ fontSize: isMobile ? '12px' : '14px', color: theme.textMuted, display: 'flex', gap: isMobile ? '8px' : '12px', flexWrap: 'wrap', marginTop: '4px' }}>
               <span>{emp.role}</span>
               {emp.skill_level && <span style={{ color: '#a855f7' }}>{emp.skill_level}</span>}
               {emp.is_hourly && <span>${emp.hourly_rate}/hr</span>}
@@ -808,14 +810,14 @@ export default function Payroll() {
               <span style={{ color: '#8b5cf6' }}>PTO: {ptoBalance.toFixed(1)} days</span>
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ textAlign: isMobile ? 'left' : 'right', width: isMobile ? '100%' : 'auto' }}>
             <div style={{ fontSize: '14px', color: theme.textMuted }}>Gross Pay</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#22c55e' }}>{fmt(data.grossPay)}</div>
+            <div style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: '700', color: '#22c55e' }}>{fmt(data.grossPay)}</div>
           </div>
         </div>
 
         {/* Pay Breakdown */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
           {emp.is_hourly && (
             <div style={cardStyle}>
               <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -986,7 +988,7 @@ export default function Payroll() {
                                 <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
                                   Adjust Time Entry — {clockIn.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px' }}>
                                   <div>
                                     <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '2px' }}>Clock In</label>
                                     <input type="datetime-local" value={editingEntry.clock_in}
@@ -1179,10 +1181,10 @@ export default function Payroll() {
 
   // ── Main Payroll View ────────────────────────────────────
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Payroll</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px', flexDirection: isMobile ? 'column' : 'row' }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Payroll</h1>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           {/* Role filter (admin only) */}
           {isAdmin && (
@@ -1227,7 +1229,7 @@ export default function Payroll() {
       </div>
 
       {/* Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: isMobile ? '12px' : '16px', marginBottom: '24px' }}>
         {/* Pay Period */}
         <div style={cardStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
@@ -1294,8 +1296,9 @@ export default function Payroll() {
         borderRadius: '12px', overflow: 'hidden', marginBottom: '24px'
       }}>
         <div style={{
-          padding: '16px 20px', borderBottom: `1px solid ${theme.border}`,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          padding: isMobile ? '12px 16px' : '16px 20px', borderBottom: `1px solid ${theme.border}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '4px' : '0'
         }}>
           <div style={{ fontWeight: '600', color: theme.text }}>
             Employees ({filteredEmployees.length})
@@ -1307,6 +1310,7 @@ export default function Payroll() {
           </div>
         </div>
 
+        <div style={{ overflowX: 'auto' }}>
         {/* Table Header */}
         <div style={{
           display: 'grid',
@@ -1318,6 +1322,7 @@ export default function Payroll() {
           letterSpacing: '0.5px',
           borderBottom: `1px solid ${theme.border}`,
           backgroundColor: theme.bg,
+          minWidth: isMobile ? '700px' : 'auto',
         }}>
           <span>Employee</span>
           <span style={{ textAlign: 'center' }}>Hours</span>
@@ -1346,6 +1351,7 @@ export default function Payroll() {
                   alignItems: 'center',
                   cursor: 'pointer',
                   transition: 'background-color 0.15s',
+                  minWidth: isMobile ? '700px' : 'auto',
                 }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover || theme.bg}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -1438,7 +1444,8 @@ export default function Payroll() {
             gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr',
             padding: '16px 20px',
             backgroundColor: theme.bg,
-            alignItems: 'center'
+            alignItems: 'center',
+            minWidth: isMobile ? '700px' : 'auto',
           }}>
             <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
             <span />
@@ -1452,6 +1459,7 @@ export default function Payroll() {
             <div style={{ textAlign: 'right', fontSize: '20px', fontWeight: '700', color: '#22c55e' }}>{fmt(totalPayroll)}</div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Pending Time Off Requests */}
@@ -1470,8 +1478,9 @@ export default function Payroll() {
 
           {timeOffRequests.map(request => (
             <div key={request.id} style={{
-              padding: '16px 20px', borderBottom: `1px solid ${theme.border}`,
-              display: 'flex', alignItems: 'center', gap: '16px'
+              padding: isMobile ? '12px 16px' : '16px 20px', borderBottom: `1px solid ${theme.border}`,
+              display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '16px',
+              flexDirection: isMobile ? 'column' : 'row'
             }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: '600', color: theme.text }}>{request.employee?.name || request.employee?.email}</div>
@@ -1509,7 +1518,7 @@ export default function Payroll() {
         }}>
           <div style={{
             backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%',
-            maxWidth: '520px', maxHeight: '90vh', overflow: 'auto'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '520px', maxHeight: '90vh', overflow: 'auto'
           }}>
             <div style={{
               padding: '20px', borderBottom: `1px solid ${theme.border}`,
@@ -1544,7 +1553,7 @@ export default function Payroll() {
               </div>
 
               {(payrollConfig.pay_frequency === 'bi-weekly' || payrollConfig.pay_frequency === 'semi-monthly') && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                   <div>
                     <label style={labelStyle}>First Pay Day</label>
                     <input type="number" min="1" max="28" value={payrollConfig.pay_day_1}
@@ -1561,7 +1570,7 @@ export default function Payroll() {
               )}
 
               {/* Overtime */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                 <div>
                   <label style={labelStyle}>OT Threshold (hrs/week)</label>
                   <input type="number" min="0" value={payrollConfig.overtime_threshold}
@@ -1798,7 +1807,7 @@ export default function Payroll() {
         }}>
           <div style={{
             backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%',
-            maxWidth: '440px', overflow: 'hidden'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '440px', overflow: 'hidden'
           }}>
             <div style={{
               padding: '20px', borderBottom: `1px solid ${theme.border}`,
@@ -1811,8 +1820,8 @@ export default function Payroll() {
               }}><X size={18} /></button>
             </div>
 
-            <div style={{ padding: '20px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                 <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', textAlign: 'center' }}>
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Period</div>
                   <div style={{ fontWeight: '600', color: theme.text }}>

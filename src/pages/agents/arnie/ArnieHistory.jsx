@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { loadSessions, deleteSession } from './arnieEngine'
 import { MessageCircle, Trash2, Clock, ChevronRight } from 'lucide-react'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 
 const dark = {
   bg: '#1a1d21',
@@ -16,6 +17,7 @@ const dark = {
 
 export default function ArnieHistory() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(null)
@@ -65,9 +67,9 @@ export default function ArnieHistory() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 700, margin: '0 auto', backgroundColor: dark.bg, minHeight: '100%' }}>
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ color: dark.text, fontSize: 18, fontWeight: 600, margin: 0 }}>
+    <div style={{ padding: isMobile ? 16 : 24, maxWidth: 700, margin: '0 auto', backgroundColor: dark.bg, minHeight: '100%' }}>
+      <div style={{ marginBottom: isMobile ? 14 : 20 }}>
+        <h2 style={{ color: dark.text, fontSize: isMobile ? 16 : 18, fontWeight: 600, margin: 0 }}>
           Conversation History
         </h2>
         <p style={{ color: dark.textMuted, fontSize: 14, margin: '4px 0 0' }}>
@@ -98,7 +100,7 @@ export default function ArnieHistory() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 12,
-                padding: '12px 16px',
+                padding: isMobile ? '10px 12px' : '12px 16px',
                 backgroundColor: dark.bgCard,
                 borderRadius: 10,
                 border: `1px solid ${dark.border}`,

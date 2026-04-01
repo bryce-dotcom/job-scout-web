@@ -4,6 +4,7 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import { Search, ChevronRight, RefreshCw } from 'lucide-react'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -17,6 +18,7 @@ export default function VictorHistory() {
   const companyId = useStore(s => s.companyId)
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
@@ -53,8 +55,8 @@ export default function VictorHistory() {
   })
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
-      <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '16px' }}>Verification History</h2>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1000px', margin: '0 auto' }}>
+      <h2 style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text, marginBottom: '16px' }}>Verification History</h2>
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
@@ -93,8 +95,8 @@ export default function VictorHistory() {
               key={report.id}
               onClick={() => navigate(`/agents/victor/report/${report.id}`)}
               style={{
-                padding: '14px 20px', borderBottom: `1px solid ${theme.border}`,
-                display: 'flex', alignItems: 'center', gap: '16px',
+                padding: isMobile ? '12px 14px' : '14px 20px', borderBottom: `1px solid ${theme.border}`,
+                display: 'flex', alignItems: 'center', gap: isMobile ? '10px' : '16px',
                 cursor: 'pointer', transition: 'background-color 0.15s'
               }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = theme.accentBg}
@@ -119,14 +121,14 @@ export default function VictorHistory() {
                   {report.industry && ` · ${report.industry}`}
                 </div>
               </div>
-              <div style={{
+              {!isMobile && <div style={{
                 padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600',
                 backgroundColor: report.status === 'complete' ? '#dcfce7' : '#fef3c7',
                 color: report.status === 'complete' ? '#16a34a' : '#d97706'
               }}>
                 {report.status === 'complete' ? 'Complete' : 'Pending'}
-              </div>
-              <ChevronRight size={16} style={{ color: theme.textMuted }} />
+              </div>}
+              <ChevronRight size={16} style={{ color: theme.textMuted, flexShrink: 0 }} />
             </div>
           ))
         )}

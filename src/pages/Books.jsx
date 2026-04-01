@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import HelpBadge from '../components/HelpBadge'
 import EmptyState from '../components/EmptyState'
 import {
@@ -37,6 +38,7 @@ export default function Books() {
     border: '#d6cdb8', text: '#2c3530', textSecondary: '#4d5a52',
     textMuted: '#7d8a7f', accent: '#5a6349', accentBg: 'rgba(90,99,73,0.12)'
   }
+  const isMobile = useIsMobile()
 
   const [activeTab, setActiveTab] = useState('overview')
   const [bankAccounts, setBankAccounts] = useState([])
@@ -410,6 +412,14 @@ export default function Books() {
     return true
   })
 
+  if (!user) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '14px', color: '#7d8a7f' }}>Loading...</div>
+      </div>
+    )
+  }
+
   if (!checkAdmin(user)) {
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
@@ -420,12 +430,12 @@ export default function Books() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+      <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <BookOpen size={28} style={{ color: theme.accent }} />
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>Books</h1>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>Books</h1>
         </div>
 
         {/* Tab Navigation */}
@@ -457,7 +467,7 @@ export default function Books() {
       {activeTab === 'overview' && (
         <>
           {/* Metric Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
             <div style={statCardStyle}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(34,197,94,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -523,7 +533,7 @@ export default function Books() {
                   View All
                 </button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
                 <div style={{ padding: '12px', backgroundColor: theme.bg, borderRadius: '8px', textAlign: 'center' }}>
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Pending</div>
                   <div style={{ fontSize: '22px', fontWeight: '700', color: '#c28b38' }}>{formatCurrency(pendingIncentiveTotal)}</div>
@@ -633,7 +643,7 @@ export default function Books() {
       {activeTab === 'transactions' && (
         <>
           {/* Actions bar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px', flexDirection: isMobile ? 'column' : 'row' }}>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
               <button onClick={handleSync} disabled={syncing} style={{
                 display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px',
@@ -987,7 +997,7 @@ export default function Books() {
                         )}
 
                         {/* Category + Tax Category */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginTop: '12px' }}>
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
                               <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Expense Category</label>
@@ -1244,7 +1254,7 @@ export default function Books() {
           )}
 
           {/* Assets & Liabilities */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px', marginBottom: '24px' }}>
             <div style={{ ...statCardStyle }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1316,7 +1326,7 @@ export default function Books() {
       {activeTab === 'tax' && (
         <>
           {/* Date range */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', alignItems: isMobile ? 'stretch' : 'center', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }}>
             <div>
               <label style={{ ...labelStyle, fontSize: '12px' }}>From</label>
               <input type="date" value={taxDateFrom} onChange={(e) => setTaxDateFrom(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
@@ -1362,13 +1372,14 @@ export default function Books() {
             const lineEntries = Object.entries(byLine).sort((a, b) => a[0].localeCompare(b[0]))
 
             return (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
                 {/* Tax Category Summary */}
                 <div style={statCardStyle}>
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>Tax Category Summary</h3>
                   {catEntries.length === 0 ? (
                     <p style={{ color: theme.textMuted, fontSize: '14px' }}>No confirmed transactions in this date range.</p>
                   ) : (
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
@@ -1387,6 +1398,7 @@ export default function Books() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )}
                 </div>
 
@@ -1397,6 +1409,7 @@ export default function Books() {
                   {lineEntries.length === 0 ? (
                     <p style={{ color: theme.textMuted, fontSize: '14px' }}>No 1065 data yet.</p>
                   ) : (
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
@@ -1415,6 +1428,7 @@ export default function Books() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )}
                 </div>
 
@@ -1489,7 +1503,7 @@ export default function Books() {
             }
 
             return (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
                 {categoryEntries.map(([category, items]) => {
                   const totalAmount = items.reduce((s, i) => s + i.amount, 0)
                   return (
@@ -1527,17 +1541,17 @@ export default function Books() {
       {showExpenseModal && (
         <>
           <div onClick={closeExpenseModal} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '480px', zIndex: 51 }}>
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px', zIndex: 51 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>{editingItem ? 'Edit Expense' : 'Add Manual Expense'}</h2>
               <button onClick={closeExpenseModal} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
             </div>
-            <div style={{ padding: '20px' }}>
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Description *</label>
                 <input type="text" value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} style={inputStyle} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Amount *</label>
                   <input type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} style={inputStyle} />
@@ -1547,7 +1561,7 @@ export default function Books() {
                   <input type="date" value={expenseForm.expense_date} onChange={(e) => setExpenseForm({ ...expenseForm, expense_date: e.target.value })} style={inputStyle} />
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
                 <div>
                   <label style={labelStyle}>Category</label>
                   <select value={expenseForm.category_id} onChange={(e) => setExpenseForm({ ...expenseForm, category_id: e.target.value })} style={inputStyle}>
@@ -1575,12 +1589,12 @@ export default function Books() {
       {showAssetModal && (
         <>
           <div onClick={() => setShowAssetModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '480px', zIndex: 51 }}>
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px', zIndex: 51 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>{editingItem ? 'Edit Asset' : 'Add Asset'}</h2>
               <button onClick={() => setShowAssetModal(false)} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
             </div>
-            <div style={{ padding: '20px' }}>
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Name *</label>
                 <input type="text" value={assetForm.name} onChange={(e) => setAssetForm({ ...assetForm, name: e.target.value })} style={inputStyle} />
@@ -1596,7 +1610,7 @@ export default function Books() {
                   <option value="Other">Other</option>
                 </select>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
                 <div>
                   <label style={labelStyle}>Purchase Price</label>
                   <input type="number" step="0.01" value={assetForm.purchase_price} onChange={(e) => setAssetForm({ ...assetForm, purchase_price: e.target.value })} style={inputStyle} />
@@ -1619,17 +1633,17 @@ export default function Books() {
       {showLiabilityModal && (
         <>
           <div onClick={() => setShowLiabilityModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '480px', zIndex: 51 }}>
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px', zIndex: 51 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>{editingItem ? 'Edit Liability' : 'Add Liability'}</h2>
               <button onClick={() => setShowLiabilityModal(false)} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
             </div>
-            <div style={{ padding: '20px' }}>
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Name *</label>
                 <input type="text" value={liabilityForm.name} onChange={(e) => setLiabilityForm({ ...liabilityForm, name: e.target.value })} style={inputStyle} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Type</label>
                   <select value={liabilityForm.liability_type} onChange={(e) => setLiabilityForm({ ...liabilityForm, liability_type: e.target.value })} style={inputStyle}>
@@ -1646,7 +1660,7 @@ export default function Books() {
                   <input type="text" value={liabilityForm.lender} onChange={(e) => setLiabilityForm({ ...liabilityForm, lender: e.target.value })} style={inputStyle} />
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
                 <div>
                   <label style={labelStyle}>Current Balance</label>
                   <input type="number" step="0.01" value={liabilityForm.current_balance} onChange={(e) => setLiabilityForm({ ...liabilityForm, current_balance: e.target.value })} style={inputStyle} />

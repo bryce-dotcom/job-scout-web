@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download } from 'lucide-react'
 import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, ARNIE_VOICES, unlockAudio } from './arnieVoice'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 
 // Dark Arnie theme
 const dark = {
@@ -68,6 +69,7 @@ function ArnieAvatar({ size = 36 }) {
 
 export default function ArnieChat({ isPanel = false, onClose, sessionId: externalSessionId }) {
   const { theme } = useTheme()
+  const isMobile = useIsMobile()
   const user = useStore(s => s.user)
   const company = useStore(s => s.company)
 
@@ -452,7 +454,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       {/* Messages area */}
       <div style={{
         flex: 1, overflowY: 'auto',
-        padding: isPanel ? '16px 14px' : '24px 16px',
+        padding: isPanel ? '16px 14px' : (isMobile ? '16px 10px' : '24px 16px'),
         display: 'flex', flexDirection: 'column', gap: 18, backgroundColor: dark.bg,
       }}>
         {/* Welcome state */}
@@ -505,7 +507,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
             gap: 10, alignItems: 'flex-start',
           }}>
             {msg.role === 'assistant' && <ArnieAvatar size={32} />}
-            <div className="arnie-msg-wrapper" style={{ maxWidth: isPanel ? '85%' : '70%', position: 'relative' }}>
+            <div className="arnie-msg-wrapper" style={{ maxWidth: isPanel ? '85%' : (isMobile ? '88%' : '70%'), position: 'relative' }}>
               <div style={{
                 padding: '10px 14px',
                 borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
@@ -592,7 +594,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
       {/* Input area */}
       <div style={{
-        padding: isPanel ? '10px 14px 14px' : '12px 16px 20px',
+        padding: isPanel ? '10px 14px 14px' : (isMobile ? '10px 10px 16px' : '12px 16px 20px'),
         backgroundColor: dark.bg, borderTop: `1px solid ${dark.border}`, flexShrink: 0,
       }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>

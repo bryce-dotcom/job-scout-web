@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { Building2, Briefcase, Settings, Upload, Check, ChevronRight, ChevronLeft } from 'lucide-react'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 const theme = {
   bg: '#f7f5ef',
@@ -61,6 +62,7 @@ const STEPS = [
 
 export default function Onboarding() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const company = useStore((state) => state.company)
   const setCompany = useStore((state) => state.setCompany)
 
@@ -197,12 +199,12 @@ export default function Onboarding() {
 
   return (
     <div style={{
-      minHeight: '100vh',
+      minHeight: '100dvh',
       backgroundColor: theme.bg,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '24px',
+      padding: isMobile ? '16px' : '24px',
       position: 'relative'
     }}>
       <TopoBackground />
@@ -211,34 +213,34 @@ export default function Onboarding() {
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <img src="/Scout_LOGO_GUY.png" alt="Job Scout" style={{ width: '80px', height: '80px', objectFit: 'contain', marginBottom: '12px' }} />
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.accent, marginBottom: '8px' }}>Welcome to Job Scout</h1>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.accent, marginBottom: '8px' }}>Welcome to Job Scout</h1>
           <p style={{ fontSize: '14px', color: theme.textMuted }}>Let's set up your company in a few quick steps</p>
         </div>
 
         {/* Step Progress */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', marginBottom: '32px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? '2px' : '4px', marginBottom: isMobile ? '20px' : '32px' }}>
           {STEPS.map((s, i) => {
             const Icon = s.icon
             const isActive = i === step
             const isComplete = i < step
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '2px' : '4px' }}>
                 <div style={{
-                  display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px',
+                  display: 'flex', alignItems: 'center', gap: isMobile ? '4px' : '8px', padding: isMobile ? '6px 10px' : '8px 16px',
                   backgroundColor: isActive ? theme.accentBg : isComplete ? theme.accent : 'transparent',
                   borderRadius: '20px', border: `1px solid ${isActive ? theme.accent : isComplete ? theme.accent : theme.border}`,
                   transition: 'all 0.2s ease'
                 }}>
-                  {isComplete ? <Check size={16} style={{ color: '#fff' }} /> : <Icon size={16} style={{ color: isActive ? theme.accent : theme.textMuted }} />}
+                  {isComplete ? <Check size={isMobile ? 14 : 16} style={{ color: '#fff' }} /> : <Icon size={isMobile ? 14 : 16} style={{ color: isActive ? theme.accent : theme.textMuted }} />}
                   <span style={{
-                    fontSize: '13px', fontWeight: isActive ? '600' : '400',
+                    fontSize: isMobile ? '11px' : '13px', fontWeight: isActive ? '600' : '400',
                     color: isComplete ? '#fff' : isActive ? theme.accent : theme.textMuted,
                     display: isActive ? 'inline' : 'none'
                   }}>
                     {s.label}
                   </span>
                 </div>
-                {i < STEPS.length - 1 && <div style={{ width: '24px', height: '1px', backgroundColor: theme.border }} />}
+                {i < STEPS.length - 1 && <div style={{ width: isMobile ? '12px' : '24px', height: '1px', backgroundColor: theme.border }} />}
               </div>
             )
           })}
@@ -248,7 +250,7 @@ export default function Onboarding() {
         <div style={{
           backgroundColor: theme.bgCard,
           borderRadius: '16px',
-          padding: '32px',
+          padding: isMobile ? '20px' : '32px',
           border: `1px solid ${theme.border}`,
           boxShadow: theme.shadowLg,
           minHeight: '300px'
@@ -280,7 +282,7 @@ export default function Onboarding() {
                 <input type="text" name="address" value={formData.address} onChange={handleChange} placeholder="123 Main St" style={inputStyle} />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>City</label>
                   <input type="text" name="city" value={formData.city} onChange={handleChange} placeholder="Denver" style={inputStyle} />
@@ -308,7 +310,7 @@ export default function Onboarding() {
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Your Industry</h2>
               <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '24px' }}>Select the industry that best describes your business</p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                 {INDUSTRIES.map(ind => (
                   <button
                     key={ind}

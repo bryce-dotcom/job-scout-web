@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 import { Link2, Save } from 'lucide-react'
 
 const defaultTheme = {
@@ -23,6 +24,7 @@ const statusBadge = {
 export default function ConradSettings() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const companyId = useStore(s => s.companyId)
   const company = useStore(s => s.company)
@@ -141,8 +143,8 @@ export default function ConradSettings() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '800px', margin: '0 auto' }}>
-      <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '800px', margin: '0 auto' }}>
+      <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, marginBottom: '24px' }}>
         Settings
       </h1>
 
@@ -158,7 +160,7 @@ export default function ConradSettings() {
           Constant Contact Connection
         </h2>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: '12px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
               <span style={{

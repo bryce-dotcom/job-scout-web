@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Clock, Play, Square, Plus, Search, Filter, Calendar } from 'lucide-react'
 
@@ -27,6 +28,7 @@ const categoryColors = {
 
 export default function TimeLog() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const timeLogs = useStore((state) => state.timeLogs)
   const employees = useStore((state) => state.employees)
@@ -234,13 +236,16 @@ export default function TimeLog() {
   const activeJobs = jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled')
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: '24px'
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row',
+        gap: isMobile ? '12px' : '0'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button
@@ -256,7 +261,7 @@ export default function TimeLog() {
           >
             <ArrowLeft size={20} />
           </button>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             Time Tracking
           </h1>
         </div>
@@ -274,7 +279,9 @@ export default function TimeLog() {
             borderRadius: '8px',
             fontSize: '14px',
             fontWeight: '500',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            width: isMobile ? '100%' : 'auto',
+            justifyContent: 'center'
           }}
         >
           <Plus size={18} />
@@ -285,8 +292,8 @@ export default function TimeLog() {
       {/* Stats Cards */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '16px',
+        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: isMobile ? '12px' : '16px',
         marginBottom: '24px'
       }}>
         <div style={{
@@ -630,7 +637,8 @@ export default function TimeLog() {
         border: `1px solid ${theme.border}`,
         overflow: 'hidden'
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '700px' : 'auto' }}>
           <thead>
             <tr style={{ backgroundColor: theme.accentBg }}>
               <th style={{
@@ -816,6 +824,7 @@ export default function TimeLog() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Manual Entry Modal */}
@@ -835,9 +844,9 @@ export default function TimeLog() {
           <div style={{
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
-            padding: '24px',
+            padding: isMobile ? '16px' : '24px',
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '90vh',
             overflow: 'auto'
           }}>
@@ -917,7 +926,7 @@ export default function TimeLog() {
                   </select>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{
                       display: 'block',
@@ -1006,7 +1015,7 @@ export default function TimeLog() {
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{
                       display: 'block',

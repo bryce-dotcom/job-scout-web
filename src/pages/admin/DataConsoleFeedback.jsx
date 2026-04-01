@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import AdminStats from './components/AdminStats'
 import { Badge } from './components/AdminStats'
 import AdminModal, { FormField, FormTextarea, ModalFooter } from './components/AdminModal'
-import { MessageSquare, Check, X, Clock, Bug, Lightbulb, HelpCircle, Star, Trash2 } from 'lucide-react'
+import { MessageSquare, Check, X, Clock, Bug, Lightbulb, HelpCircle, Star, Trash2, Reply, Send, ChevronDown, ChevronUp } from 'lucide-react'
 
 const TYPE_CONFIG = {
   bug: { label: 'Bug Report', icon: Bug, color: adminTheme.error },
@@ -16,12 +17,16 @@ const TYPE_CONFIG = {
 const STATUS_OPTIONS = ['new', 'in_progress', 'resolved', 'wont_fix']
 
 export default function DataConsoleFeedback() {
+  const isMobile = useIsMobile()
   const [feedback, setFeedback] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [selected, setSelected] = useState(null)
   const [adminNotes, setAdminNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [showReply, setShowReply] = useState(false)
+  const [replyMessage, setReplyMessage] = useState('')
+  const [sendingReply, setSendingReply] = useState(false)
 
   useEffect(() => {
     fetchFeedback()
@@ -73,6 +78,52 @@ export default function DataConsoleFeedback() {
     }
   }
 
+  const sendReply = async () => {
+    if (!selected || !replyMessage.trim() || !selected.user_email) return
+    setSendingReply(true)
+    try {
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-feedback-reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON_KEY}`, 'apikey': ANON_KEY },
+        body: JSON.stringify({
+          recipient_email: selected.user_email,
+          subject: selected.subject || selected.feedback_type,
+          original_message: selected.message,
+          reply_message: replyMessage.trim(),
+          feedback_type: selected.feedback_type
+        })
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to send reply')
+      }
+
+      // Save reply to feedback record
+      const existingReplies = selected.reply_history || []
+      const newReply = { message: replyMessage.trim(), sent_at: new Date().toISOString() }
+      await supabase.from('feedback').update({
+        reply_message: replyMessage.trim(),
+        replied_at: new Date().toISOString(),
+        reply_history: [...existingReplies, newReply],
+        status: selected.status === 'new' ? 'in_progress' : selected.status
+      }).eq('id', selected.id)
+
+      setReplyMessage('')
+      setShowReply(false)
+      await fetchFeedback()
+      setSelected({ ...selected, reply_message: replyMessage.trim(), replied_at: new Date().toISOString(), status: selected.status === 'new' ? 'in_progress' : selected.status })
+      alert('Reply sent!')
+    } catch (err) {
+      alert('Error sending reply: ' + err.message)
+    } finally {
+      setSendingReply(false)
+    }
+  }
+
   const deleteFeedback = async (id) => {
     if (!confirm('Delete this feedback?')) return
 
@@ -112,8 +163,8 @@ export default function DataConsoleFeedback() {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700', marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700', marginBottom: isMobile ? '16px' : '24px' }}>
         Feedback Management
       </h1>
 
@@ -123,7 +174,8 @@ export default function DataConsoleFeedback() {
       <div style={{
         display: 'flex',
         gap: '8px',
-        marginBottom: '16px'
+        marginBottom: '16px',
+        flexWrap: 'wrap'
       }}>
         {['all', ...STATUS_OPTIONS].map(status => (
           <button
@@ -157,7 +209,8 @@ export default function DataConsoleFeedback() {
         ) : filteredFeedback.length === 0 ? (
           <div style={{ padding: '40px', textAlign: 'center', color: adminTheme.textMuted }}>No feedback found</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${adminTheme.border}` }}>
                 <th style={{ padding: '12px 16px', textAlign: 'left', color: adminTheme.textMuted, fontSize: '12px', width: '40px' }}>Type</th>
@@ -166,7 +219,7 @@ export default function DataConsoleFeedback() {
                 <th style={{ padding: '12px 16px', textAlign: 'left', color: adminTheme.textMuted, fontSize: '12px' }}>Company</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', color: adminTheme.textMuted, fontSize: '12px' }}>Status</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', color: adminTheme.textMuted, fontSize: '12px' }}>Date</th>
-                <th style={{ padding: '12px 16px', width: '120px' }}></th>
+                <th style={{ padding: '12px 16px', width: '150px' }}></th>
               </tr>
             </thead>
             <tbody>
@@ -196,6 +249,15 @@ export default function DataConsoleFeedback() {
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', gap: '4px' }}>
+                      {f.user_email && (
+                        <button
+                          onClick={() => { setSelected(f); setAdminNotes(f.notes || ''); setShowReply(true); setReplyMessage(''); }}
+                          title="Reply"
+                          style={{ padding: '6px', background: 'none', border: 'none', color: adminTheme.accent, cursor: 'pointer' }}
+                        >
+                          <Reply size={16} />
+                        </button>
+                      )}
                       {f.status !== 'resolved' && (
                         <button
                           onClick={() => updateStatus(f.id, 'resolved')}
@@ -227,6 +289,7 @@ export default function DataConsoleFeedback() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -248,7 +311,7 @@ export default function DataConsoleFeedback() {
                 {getStatusBadge(selected.status)}
               </div>
 
-              <div style={{ display: 'flex', gap: '24px', color: adminTheme.textMuted, fontSize: '13px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', gap: isMobile ? '8px' : '24px', color: adminTheme.textMuted, fontSize: '13px', marginBottom: '16px', flexWrap: 'wrap' }}>
                 <span>From: {selected.user_email || 'Unknown'}</span>
                 <span>Company ID: {selected.company_id || '-'}</span>
                 <span>{new Date(selected.created_at).toLocaleString()}</span>
@@ -305,8 +368,79 @@ export default function DataConsoleFeedback() {
               </div>
             </div>
 
+            {/* Previous Replies */}
+            {selected.reply_history?.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginBottom: '8px' }}>Reply History</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {selected.reply_history.map((r, i) => (
+                    <div key={i} style={{
+                      padding: '12px',
+                      backgroundColor: 'rgba(249,115,22,0.08)',
+                      border: `1px solid rgba(249,115,22,0.2)`,
+                      borderRadius: '8px'
+                    }}>
+                      <div style={{ fontSize: '13px', color: adminTheme.text, whiteSpace: 'pre-wrap', marginBottom: '6px' }}>{r.message}</div>
+                      <div style={{ fontSize: '11px', color: adminTheme.textMuted }}>{new Date(r.sent_at).toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Reply Section */}
+            {selected.user_email && (
+              <div style={{ marginBottom: '20px' }}>
+                <button
+                  onClick={() => { setShowReply(!showReply); if (!showReply) setReplyMessage(''); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    padding: '10px 16px',
+                    backgroundColor: showReply ? adminTheme.accentBg : adminTheme.bgHover,
+                    border: `1px solid ${showReply ? adminTheme.accent : adminTheme.border}`,
+                    borderRadius: '8px',
+                    color: showReply ? adminTheme.accent : adminTheme.text,
+                    fontSize: '14px', fontWeight: '500',
+                    cursor: 'pointer', width: '100%'
+                  }}
+                >
+                  <Reply size={16} />
+                  Reply to {selected.user_email}
+                  {showReply ? <ChevronUp size={16} style={{ marginLeft: 'auto' }} /> : <ChevronDown size={16} style={{ marginLeft: 'auto' }} />}
+                </button>
+
+                {showReply && (
+                  <div style={{ marginTop: '12px' }}>
+                    <FormTextarea
+                      value={replyMessage}
+                      onChange={setReplyMessage}
+                      rows={4}
+                      placeholder="Type your reply to the user..."
+                    />
+                    <button
+                      onClick={sendReply}
+                      disabled={sendingReply || !replyMessage.trim()}
+                      style={{
+                        marginTop: '10px',
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '10px 20px',
+                        backgroundColor: (!replyMessage.trim() || sendingReply) ? adminTheme.border : adminTheme.accent,
+                        color: '#fff', border: 'none', borderRadius: '8px',
+                        fontSize: '14px', fontWeight: '500',
+                        cursor: (!replyMessage.trim() || sendingReply) ? 'not-allowed' : 'pointer',
+                        marginLeft: 'auto'
+                      }}
+                    >
+                      <Send size={16} />
+                      {sendingReply ? 'Sending...' : 'Send Reply'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Admin Notes */}
-            <FormField label="Admin Notes">
+            <FormField label="Admin Notes (internal)">
               <FormTextarea
                 value={adminNotes}
                 onChange={setAdminNotes}

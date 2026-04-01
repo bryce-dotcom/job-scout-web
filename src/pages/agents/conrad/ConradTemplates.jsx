@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 import { Plus, Sparkles, Pencil, Trash2, X, FileText, Save } from 'lucide-react'
 
 const defaultTheme = {
@@ -17,7 +18,7 @@ const defaultTheme = {
 const CATEGORIES = [
   { value: 'all', label: 'All' },
   { value: 'follow_up', label: 'Follow Up' },
-  { value: 'quote_reminder', label: 'Quote Reminder' },
+  { value: 'quote_reminder', label: 'Estimate Reminder' },
   { value: 'seasonal', label: 'Seasonal' },
   { value: 'newsletter', label: 'Newsletter' },
   { value: 'win_back', label: 'Win Back' },
@@ -46,6 +47,7 @@ const emptyForm = {
 export default function ConradTemplates() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const companyId = useStore(s => s.companyId)
   const emailTemplates = useStore(s => s.emailTemplates)
@@ -204,10 +206,10 @@ export default function ConradTemplates() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1200px', margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Email Templates</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Email Templates</h1>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
             onClick={openGenerateModal}
@@ -285,7 +287,7 @@ export default function ConradTemplates() {
           <p style={{ color: theme.textSecondary }}>No templates yet. Create one or generate with AI.</p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '16px' }}>
           {filteredTemplates.map(t => {
             const cc = categoryColors[t.category] || categoryColors.custom
             return (
@@ -358,11 +360,11 @@ export default function ConradTemplates() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '600px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '600px',
             maxHeight: '90vh',
             overflow: 'auto',
             zIndex: 51,
-            padding: '24px'
+            padding: isMobile ? '16px' : '24px'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>
@@ -394,9 +396,9 @@ export default function ConradTemplates() {
               </div>
 
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '4px' }}>
                   <label style={{ ...labelStyle, marginBottom: 0 }}>HTML Content</label>
-                  <div style={{ display: 'flex', gap: '4px' }}>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {MERGE_FIELDS.map(field => (
                       <button
                         key={field}
@@ -500,11 +502,11 @@ export default function ConradTemplates() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '520px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '520px',
             maxHeight: '90vh',
             overflow: 'auto',
             zIndex: 51,
-            padding: '24px'
+            padding: isMobile ? '16px' : '24px'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>Generate Email with AI</h2>
@@ -518,7 +520,7 @@ export default function ConradTemplates() {
                 <label style={labelStyle}>Email Type</label>
                 <select value={generateType} onChange={(e) => setGenerateType(e.target.value)} style={inputStyle}>
                   <option value="follow_up">Follow Up</option>
-                  <option value="quote_reminder">Quote Reminder</option>
+                  <option value="quote_reminder">Estimate Reminder</option>
                   <option value="seasonal">Seasonal</option>
                   <option value="newsletter">Newsletter</option>
                   <option value="win_back">Win Back</option>

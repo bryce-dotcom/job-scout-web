@@ -86,20 +86,20 @@ export const jobsFields = [
 // estimate_name, summary, expiration_date, service_date, estimate_message,
 // deposit_amount, deposit_method, deposit_date, deposit_notes, job_id, pdf_url
 export const quotesFields = [
-  { field: 'quote_id', label: 'Quote ID', type: 'text', desc: 'Unique quote identifier (e.g. QUO-ABC123). Auto-generated if blank.' },
+  { field: 'quote_id', label: 'Estimate ID', type: 'text', desc: 'Unique estimate identifier (e.g. QUO-ABC123). Auto-generated if blank.' },
   { field: 'customer_name', label: 'Customer Name', type: 'text', virtual: true, desc: 'Customer or client name (matched to customer_id on import)' },
-  { field: 'status', label: 'Status', type: 'text', desc: 'Quote status (Draft, Sent, Approved, Rejected)' },
-  { field: 'sent_date', label: 'Sent Date', type: 'date', desc: 'Date the quote was sent' },
-  { field: 'job_title', label: 'Job Title', type: 'text', desc: 'Job title for the quote' },
+  { field: 'status', label: 'Status', type: 'text', desc: 'Estimate status (Draft, Sent, Approved, Rejected)' },
+  { field: 'sent_date', label: 'Sent Date', type: 'date', desc: 'Date the estimate was sent' },
+  { field: 'job_title', label: 'Job Title', type: 'text', desc: 'Job title for the estimate' },
   { field: 'business_unit', label: 'Business Unit', type: 'text', desc: 'Business unit or division' },
-  { field: 'quote_amount', label: 'Quote Amount', type: 'number', desc: 'Total quote amount' },
+  { field: 'quote_amount', label: 'Estimate Amount', type: 'number', desc: 'Total estimate amount' },
   { field: 'utility_incentive', label: 'Utility Incentive', type: 'number', desc: 'Utility rebate / incentive amount' },
   { field: 'discount', label: 'Discount', type: 'number', desc: 'Discount amount' },
   { field: 'discount_description', label: 'Discount Description', type: 'text', desc: 'Description of the discount' },
   { field: 'contract_required', label: 'Contract Required', type: 'boolean', desc: 'Whether a contract is required' },
   { field: 'contract_signed', label: 'Contract Signed', type: 'boolean', desc: 'Whether the contract has been signed' },
   { field: 'service_type', label: 'Service Type', type: 'text', desc: 'Type of service' },
-  { field: 'notes', label: 'Notes', type: 'text', desc: 'Quote notes or description' },
+  { field: 'notes', label: 'Notes', type: 'text', desc: 'Estimate notes or description' },
 ]
 
 // Same table as quotes — uses estimate-specific columns

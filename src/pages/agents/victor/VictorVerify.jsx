@@ -8,6 +8,7 @@ import {
   Shield, Star, AlertTriangle, Trash2, Image, Briefcase,
   RefreshCw, MapPin, Lightbulb, Wrench, Sparkles
 } from 'lucide-react'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -85,6 +86,7 @@ export default function VictorVerify({
   const fetchJobs = useStore(s => s.fetchJobs)
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
   const fileInputRef = useRef(null)
 
   const verificationType = verificationTypeProp || 'completion'
@@ -427,7 +429,7 @@ export default function VictorVerify({
     : 'Tap to select or take photos of completed work'
 
   return (
-    <div style={{ padding: embeddedMode ? '0' : '24px', maxWidth: embeddedMode ? '100%' : '800px', margin: '0 auto' }}>
+    <div style={{ padding: embeddedMode ? '0' : (isMobile ? '16px' : '24px'), maxWidth: embeddedMode ? '100%' : '800px', margin: '0 auto' }}>
 
       {/* Step 1: Select Job (skipped for daily and preselected) */}
       {step === 1 && (
@@ -806,7 +808,7 @@ export default function VictorVerify({
             }}>
               {result.grade}
             </div>
-            <div style={{ fontSize: '42px', fontWeight: '800', color: theme.text }}>{result.score}<span style={{ fontSize: '20px', color: theme.textMuted }}>/100</span></div>
+            <div style={{ fontSize: isMobile ? '32px' : '42px', fontWeight: '800', color: theme.text }}>{result.score}<span style={{ fontSize: isMobile ? '16px' : '20px', color: theme.textMuted }}>/100</span></div>
             <p style={{ fontSize: '15px', color: theme.textSecondary, marginTop: '8px', maxWidth: '500px', margin: '8px auto 0' }}>
               {result.summary || 'Verification complete.'}
             </p>
@@ -814,7 +816,7 @@ export default function VictorVerify({
 
           {/* Sub-scores */}
           {(result.work_quality_score || result.cleanliness_score || result.completeness_score || result.customer_readiness_score) && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
               {[
                 { label: isDaily ? 'Vehicle/Site' : 'Work Quality', score: result.work_quality_score, icon: Wrench },
                 { label: 'Cleanliness', score: result.cleanliness_score, icon: Sparkles },
@@ -900,7 +902,7 @@ export default function VictorVerify({
           )}
 
           {/* Actions */}
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', flexDirection: isMobile ? 'column' : 'row' }}>
             <button
               onClick={() => {
                 if (embeddedMode && onComplete) {

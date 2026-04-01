@@ -46,6 +46,7 @@ const DEFAULT_SETTINGS = {
 export default function EstimateDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const products = useStore((state) => state.products)
@@ -613,6 +614,38 @@ export default function EstimateDetail() {
   const rejectEstimate = async () => {
     await updateEstimateField('status', 'Rejected')
     await fetchQuotes()
+  }
+
+  // Send to setter pipeline
+  const handleSendToSetter = async () => {
+    const name = estimate.estimate_name || customerInfo?.name || customerInfo?.customer_name || 'this estimate'
+    const reason = window.prompt(`Why does ${name} need a meeting?\n\nAdd a note for the setter:`)
+    if (reason === null) return
+    const senderName = user?.name || 'Someone'
+    const noteText = `Sent to setter by ${senderName} on ${new Date().toLocaleDateString()}${reason ? `: ${reason}` : ''}`
+
+    if (estimate.lead_id) {
+      const { data: leadData } = await supabase.from('leads').select('notes').eq('id', estimate.lead_id).single()
+      const existingNotes = leadData?.notes ? `${leadData.notes}\n${noteText}` : noteText
+      const { error } = await supabase.from('leads').update({ status: 'Contacted', notes: existingNotes, updated_at: new Date().toISOString() }).eq('id', estimate.lead_id)
+      if (error) { toast.error('Error: ' + error.message); return }
+    } else {
+      const { error } = await supabase.from('leads').insert({
+        company_id: companyId,
+        customer_name: customerInfo?.name || customerInfo?.customer_name || name,
+        email: customerInfo?.email || null,
+        phone: customerInfo?.phone || null,
+        address: customerInfo?.address || null,
+        status: 'Contacted',
+        lead_source: 'Existing Estimate',
+        customer_id: estimate.customer_id || null,
+        quote_id: estimate.id,
+        notes: noteText
+      })
+      if (error) { toast.error('Error: ' + error.message); return }
+    }
+    toast.success('Sent to setter pipeline')
+    navigate('/lead-setter')
   }
 
   // Approval + Deposit flow (approval only - no auto job creation)
@@ -1451,7 +1484,7 @@ export default function EstimateDetail() {
 
   if (loading) {
     return (
-      <div style={{ padding: '24px' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px' }}>
         <p style={{ color: theme.textMuted }}>Loading estimate...</p>
       </div>
     )
@@ -1459,7 +1492,7 @@ export default function EstimateDetail() {
 
   if (!estimate) {
     return (
-      <div style={{ padding: '24px' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px' }}>
         <p style={{ color: '#dc2626', marginBottom: '16px' }}>Estimate not found</p>
         <button
           onClick={() => navigate('/estimates')}
@@ -1487,7 +1520,7 @@ export default function EstimateDetail() {
   const statusStyle = statusColors[estimate.status] || statusColors['Draft']
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Hidden photo input for before/after/notes uploads */}
       <input type="file" ref={photoInputRef} accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUploadPhoto} />
 
@@ -1513,7 +1546,7 @@ export default function EstimateDetail() {
         </button>
         <div style={{ flex: 1 }}>
           <h1 style={{
-            fontSize: '24px',
+            fontSize: isMobile ? '20px' : '24px',
             fontWeight: '700',
             color: theme.text
           }}>
@@ -1576,6 +1609,12 @@ export default function EstimateDetail() {
             }}
           >
             <Settings size={18} />
+          </button>
+          <button
+            onClick={handleSendToSetter}
+            style={{ padding: '8px 14px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' }}
+          >
+            <UserPlus size={16} /> Send to Setter
           </button>
         </div>
       </div>
@@ -3271,7 +3310,9 @@ export default function EstimateDetail() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '450px'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '450px',
+            maxHeight: '90vh',
+            overflowY: 'auto'
           }}>
             <div style={{
               display: 'flex',
@@ -3501,7 +3542,7 @@ export default function EstimateDetail() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '480px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px',
             maxHeight: '90vh',
             overflow: 'auto'
           }}>

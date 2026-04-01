@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { Plus, Pencil, Trash2, X, Route, Search, Calendar, Truck, User, MapPin } from 'lucide-react'
 
 const defaultTheme = {
@@ -26,6 +27,7 @@ const emptyRoute = {
 }
 
 export default function RoutesPage() {
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const routes = useStore((state) => state.routes)
@@ -154,17 +156,18 @@ export default function RoutesPage() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
         gap: '16px',
         marginBottom: '24px',
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
           Routes
         </h1>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -252,7 +255,7 @@ export default function RoutesPage() {
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(340px, 1fr))',
           gap: '16px'
         }}>
           {filteredRoutes.map((route) => {
@@ -355,7 +358,7 @@ export default function RoutesPage() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '550px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '550px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -407,7 +410,7 @@ export default function RoutesPage() {
                   <input type="text" name="end_location" value={formData.end_location} onChange={handleChange} style={inputStyle} placeholder="Ending address" />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Est. Distance (miles)</label>
                     <input type="number" name="estimated_distance" value={formData.estimated_distance} onChange={handleChange} step="0.1" style={inputStyle} />

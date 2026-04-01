@@ -42,7 +42,7 @@ const defaultStages = [
   { id: 'Contacted', name: 'Contacted', color: '#8b5cf6' },
   { id: 'Appointment Set', name: 'Scheduled', color: '#22c55e' },
   { id: 'Qualified', name: 'Qualified', color: '#3b82f6' },
-  { id: 'Quote Sent', name: 'Quote Sent', color: '#8b5cf6' },
+  { id: 'Quote Sent', name: 'Estimate Sent', color: '#8b5cf6' },
   { id: 'Negotiation', name: 'Negotiation', color: '#f59e0b' },
   { id: 'Won', name: 'Won', color: '#10b981', isWon: true },
   // Delivery funnel
@@ -68,7 +68,7 @@ const availableStats = [
   { id: 'wonValue', label: 'Won Value', color: '#22c55e' },
   { id: 'appointments', label: 'Appointments', color: '#3b82f6' },
   { id: 'todayAppointments', label: 'Today\'s Appts', color: '#16a34a' },
-  { id: 'quoteSent', label: 'Quotes Sent', color: '#8b5cf6' },
+  { id: 'quoteSent', label: 'Estimates Sent', color: '#8b5cf6' },
   { id: 'jobScheduled', label: 'Job Scheduled', color: '#0ea5e9' },
   { id: 'inProgress', label: 'In Progress', color: '#f97316' },
   { id: 'completed', label: 'Completed', color: '#22c55e' },
@@ -259,14 +259,14 @@ export default function SalesPipeline() {
     })
   }
 
-  // Attach quotes data to leads (best quote_amount wins)
+  // Attach quotes data to leads (total revenue = quote_amount + utility_incentive)
   const attachQuotes = (normalized, quotesData) => {
     if (!quotesData?.length) return
     const quotesByLeadId = {}
     quotesData.forEach(q => {
-      const amt = parseFloat(q.quote_amount) || 0
-      if (!quotesByLeadId[q.lead_id] || amt > quotesByLeadId[q.lead_id]) {
-        quotesByLeadId[q.lead_id] = amt
+      const revenue = (parseFloat(q.quote_amount) || 0) + (parseFloat(q.utility_incentive) || 0)
+      if (!quotesByLeadId[q.lead_id] || revenue > quotesByLeadId[q.lead_id]) {
+        quotesByLeadId[q.lead_id] = revenue
       }
     })
     normalized.forEach(lead => {
@@ -352,7 +352,7 @@ export default function SalesPipeline() {
           const batch = allLeadIds.slice(i, i + batchSize)
           const { data: quotesData } = await supabase
             .from('quotes')
-            .select('lead_id, quote_amount')
+            .select('lead_id, quote_amount, utility_incentive')
             .in('lead_id', batch)
           if (quotesData) allQuotes.push(...quotesData)
         }
@@ -754,7 +754,7 @@ export default function SalesPipeline() {
       wonValue: { value: formatCurrency(sumAmount(wonLeadsList)), label: 'Won Value', color: '#22c55e', isFormatted: true },
       appointments: { value: leadsWithAppointments.length, label: 'Appts', color: '#3b82f6' },
       todayAppointments: { value: todayAppointments.length, label: 'Today', color: '#16a34a' },
-      quoteSent: { value: leads.filter(l => l.status === 'Quote Sent').length, label: 'Quotes', color: '#8b5cf6' },
+      quoteSent: { value: leads.filter(l => l.status === 'Quote Sent').length, label: 'Estimates', color: '#8b5cf6' },
       jobScheduled: { value: leads.filter(l => stages.find(s => s.id === l.status)?.isDelivery && l.status !== 'Invoiced').length, label: 'In Delivery', color: '#0ea5e9' },
       inProgress: { value: leads.filter(l => l.status === 'In Progress' || l.status === 'Scheduled').length, label: 'In Progress', color: '#f97316' },
       completed: { value: leads.filter(l => l.status === 'Completed' || l.status === 'Verified Complete').length, label: 'Complete', color: '#22c55e' },
@@ -765,7 +765,7 @@ export default function SalesPipeline() {
 
   if (loading && pipelineLeads.length === 0) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center', color: theme.textMuted }}>
         Loading pipeline...
       </div>
     )
@@ -1204,7 +1204,7 @@ export default function SalesPipeline() {
                               )}
                               {!lead.lead_owner && <span style={{ flex: 1 }} />}
                               <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', backgroundColor: sc + '26', color: sc, fontWeight: '500' }}>
-                                {lead.status}
+                                {lead.status === 'Quote Sent' ? 'Estimate Sent' : lead.status}
                               </span>
                               {getLeadAmount(lead) > 0 && (
                                 <span style={{ fontSize: '14px', fontWeight: '700', color: '#22c55e' }}>
@@ -1452,7 +1452,7 @@ export default function SalesPipeline() {
                             {stage.id === 'Contacted' && 'Drag leads here after first contact'}
                             {stage.id === 'Appointment Set' && 'Leads with scheduled appointments'}
                             {stage.id === 'Qualified' && 'Leads confirmed as good fit'}
-                            {stage.id === 'Quote Sent' && 'Leads with quotes sent to them'}
+                            {stage.id === 'Quote Sent' && 'Leads with estimates sent to them'}
                             {stage.id === 'Negotiation' && 'Leads in active negotiation'}
                             {stage.isWon && 'Drag a lead here when you close a deal'}
                             {stage.isLost && 'Drag here if a deal falls through'}
@@ -1873,7 +1873,7 @@ export default function SalesPipeline() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '80vh',
             display: 'flex',
             flexDirection: 'column'
@@ -2140,7 +2140,7 @@ export default function SalesPipeline() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '380px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '380px',
             padding: '20px'
           }}>
             <div style={{
@@ -2240,7 +2240,7 @@ export default function SalesPipeline() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '380px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '380px',
             padding: '20px'
           }}>
             <div style={{

@@ -4,6 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { Building, Plus, Edit, Search, ExternalLink, Check, X } from 'lucide-react'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -19,6 +20,7 @@ const defaultTheme = {
 
 export default function UtilityProviders() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const utilityProviders = useStore((state) => state.utilityProviders)
   const fetchUtilityProviders = useStore((state) => state.fetchUtilityProviders)
@@ -99,87 +101,126 @@ export default function UtilityProviders() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Building size={28} style={{ color: theme.accent }} />
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Utility Providers</h1>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Utility Providers</h1>
         </div>
-        <button onClick={() => setShowModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', backgroundColor: theme.accent, color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+        <button onClick={() => setShowModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', backgroundColor: theme.accent, color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', width: isMobile ? '100%' : 'auto', justifyContent: 'center' }}>
           <Plus size={18} /> Add Provider
         </button>
       </div>
 
-      <div style={{ position: 'relative', marginBottom: '20px', maxWidth: '400px' }}>
+      <div style={{ position: 'relative', marginBottom: '20px', maxWidth: isMobile ? '100%' : '400px' }}>
         <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
         <input type="text" placeholder="Search providers..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
           style={{ width: '100%', padding: '10px 12px 10px 40px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text, fontSize: '14px' }} />
       </div>
 
-      <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ backgroundColor: theme.accentBg }}>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Provider Name</th>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>State</th>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Service Territory</th>
-              <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Rebate Program</th>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Contact</th>
-              <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProviders.length === 0 ? (
-              <tr><td colSpan="6" style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>No utility providers found</td></tr>
-            ) : (
-              filteredProviders.map(provider => (
-                <tr key={provider.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  <td style={{ padding: '14px 16px', fontSize: '14px', fontWeight: '500', color: theme.text }}>{provider.provider_name}</td>
-                  <td style={{ padding: '14px 16px', fontSize: '14px', color: theme.textSecondary }}>{provider.state}</td>
-                  <td style={{ padding: '14px 16px', fontSize: '14px', color: theme.textSecondary }}>{provider.service_territory || '-'}</td>
-                  <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                    {provider.has_rebate_program ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', backgroundColor: 'rgba(74,124,89,0.15)', color: '#4a7c59' }}>
-                        <Check size={12} /> Yes
-                      </span>
-                    ) : (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', backgroundColor: 'rgba(125,138,127,0.15)', color: '#7d8a7f' }}>
-                        <X size={12} /> No
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '14px 16px', fontSize: '14px', color: theme.textSecondary }}>
-                    {provider.contact_phone || '-'}
-                    {provider.rebate_program_url && (
-                      <a href={provider.rebate_program_url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '8px', color: theme.accent }}>
-                        <ExternalLink size={14} />
-                      </a>
-                    )}
-                  </td>
-                  <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                    <button onClick={() => handleEdit(provider)} style={{ padding: '6px 10px', backgroundColor: theme.accentBg, color: theme.accent, border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
-                      <Edit size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {isMobile ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {filteredProviders.length === 0 ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted, backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}` }}>No utility providers found</div>
+          ) : (
+            filteredProviders.map(provider => (
+              <div key={provider.id} style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                  <div>
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>{provider.provider_name}</div>
+                    <div style={{ fontSize: '13px', color: theme.textMuted }}>{provider.state} {provider.service_territory ? `· ${provider.service_territory}` : ''}</div>
+                  </div>
+                  <button onClick={() => handleEdit(provider)} style={{ padding: '6px 10px', backgroundColor: theme.accentBg, color: theme.accent, border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                    <Edit size={14} />
+                  </button>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  {provider.has_rebate_program ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', backgroundColor: 'rgba(74,124,89,0.15)', color: '#4a7c59' }}>
+                      <Check size={12} /> Rebate Program
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', backgroundColor: 'rgba(125,138,127,0.15)', color: '#7d8a7f' }}>
+                      <X size={12} /> No Rebate
+                    </span>
+                  )}
+                  {provider.contact_phone && <span style={{ fontSize: '13px', color: theme.textSecondary }}>{provider.contact_phone}</span>}
+                  {provider.rebate_program_url && (
+                    <a href={provider.rebate_program_url} target="_blank" rel="noopener noreferrer" style={{ color: theme.accent }}>
+                      <ExternalLink size={14} />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ backgroundColor: theme.accentBg }}>
+                <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Provider Name</th>
+                <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>State</th>
+                <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Service Territory</th>
+                <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Rebate Program</th>
+                <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Contact</th>
+                <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProviders.length === 0 ? (
+                <tr><td colSpan="6" style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>No utility providers found</td></tr>
+              ) : (
+                filteredProviders.map(provider => (
+                  <tr key={provider.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                    <td style={{ padding: '14px 16px', fontSize: '14px', fontWeight: '500', color: theme.text }}>{provider.provider_name}</td>
+                    <td style={{ padding: '14px 16px', fontSize: '14px', color: theme.textSecondary }}>{provider.state}</td>
+                    <td style={{ padding: '14px 16px', fontSize: '14px', color: theme.textSecondary }}>{provider.service_territory || '-'}</td>
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                      {provider.has_rebate_program ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', backgroundColor: 'rgba(74,124,89,0.15)', color: '#4a7c59' }}>
+                          <Check size={12} /> Yes
+                        </span>
+                      ) : (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', backgroundColor: 'rgba(125,138,127,0.15)', color: '#7d8a7f' }}>
+                          <X size={12} /> No
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '14px 16px', fontSize: '14px', color: theme.textSecondary }}>
+                      {provider.contact_phone || '-'}
+                      {provider.rebate_program_url && (
+                        <a href={provider.rebate_program_url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '8px', color: theme.accent }}>
+                          <ExternalLink size={14} />
+                        </a>
+                      )}
+                    </td>
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                      <button onClick={() => handleEdit(provider)} style={{ padding: '6px 10px', backgroundColor: theme.accentBg, color: theme.accent, border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                        <Edit size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '500px' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', padding: '24px', width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px' }}>
             <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '20px' }}>{editing ? 'Edit' : 'Add'} Utility Provider</h2>
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>Provider Name *</label>
                   <input type="text" value={formData.provider_name} onChange={(e) => setFormData({ ...formData, provider_name: e.target.value })} required
                     style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }} />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>State</label>
                     <input type="text" value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })}

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { ChevronLeft, ChevronRight, ArrowLeft, Calendar, Wrench, AlertTriangle } from 'lucide-react'
 
 // Light theme fallback
@@ -30,6 +31,7 @@ export default function FleetCalendar() {
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     if (!companyId) {
@@ -126,7 +128,8 @@ export default function FleetCalendar() {
     'July', 'August', 'September', 'October', 'November', 'December'
   ]
 
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const dayNamesFull = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const dayNamesShort = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
   const today = new Date()
   const isToday = (day) => {
@@ -160,13 +163,16 @@ export default function FleetCalendar() {
   const activeRentals = fleetRentals.filter(r => r.status === 'Active').length
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
-        marginBottom: '24px'
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row',
+        gap: isMobile ? '12px' : '0'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button
@@ -182,12 +188,12 @@ export default function FleetCalendar() {
           >
             <ArrowLeft size={20} />
           </button>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             Fleet Calendar
           </h1>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button
             onClick={goToToday}
             style={{
@@ -243,8 +249,10 @@ export default function FleetCalendar() {
       {/* Stats */}
       <div style={{
         display: 'flex',
-        gap: '16px',
-        marginBottom: '16px'
+        gap: isMobile ? '8px' : '16px',
+        marginBottom: '16px',
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
         <div style={{
           display: 'flex',
@@ -327,11 +335,11 @@ export default function FleetCalendar() {
           backgroundColor: theme.accentBg,
           borderBottom: `1px solid ${theme.border}`
         }}>
-          {dayNames.map(day => (
-            <div key={day} style={{
-              padding: '12px 8px',
+          {(isMobile ? dayNamesShort : dayNamesFull).map((day, idx) => (
+            <div key={idx} style={{
+              padding: isMobile ? '8px 4px' : '12px 8px',
               textAlign: 'center',
-              fontSize: '13px',
+              fontSize: isMobile ? '12px' : '13px',
               fontWeight: '600',
               color: theme.textMuted
             }}>
@@ -360,10 +368,10 @@ export default function FleetCalendar() {
               <div
                 key={index}
                 style={{
-                  minHeight: '100px',
+                  minHeight: isMobile ? '60px' : '100px',
                   borderBottom: `1px solid ${theme.border}`,
                   borderRight: (index + 1) % 7 !== 0 ? `1px solid ${theme.border}` : 'none',
-                  padding: '8px',
+                  padding: isMobile ? '4px' : '8px',
                   backgroundColor: day ? (isToday(day) ? 'rgba(90,99,73,0.08)' : 'transparent') : theme.accentBg
                 }}
               >

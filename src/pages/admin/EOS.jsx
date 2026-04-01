@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useStore } from '../../lib/store'
 import { useTheme } from '../../components/Layout'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { toast } from '../../lib/toast'
 import HelpBadge from '../../components/HelpBadge'
 import {
@@ -338,7 +339,7 @@ function CountdownTimer({ targetDate, theme }) {
 // V/TO — VISION / TRACTION ORGANIZER
 // ════════════════════════════════════════════════════════════════════
 
-function VTOTab({ data, save, theme, employees }) {
+function VTOTab({ data, save, theme, employees, isMobile }) {
   const coreValues = data.core_values || []
   const coreFocus = data.core_focus || { purpose: '', niche: '' }
   const tenYear = data.ten_year || ''
@@ -417,14 +418,14 @@ function VTOTab({ data, save, theme, employees }) {
           })}
         </div>
         {coreValues.length < 7 && (
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', alignItems: isMobile ? 'stretch' : 'flex-end' }}>
             <div style={{ flex: 1 }}>
               <InlineInput value={newValue.value} onChange={v => setNewValue(p => ({ ...p, value: v }))} placeholder="New core value..." theme={theme} />
             </div>
-            <div style={{ flex: 2 }}>
+            <div style={{ flex: isMobile ? 1 : 2 }}>
               <InlineInput value={newValue.description} onChange={v => setNewValue(p => ({ ...p, description: v }))} placeholder="Description (optional)" theme={theme} />
             </div>
-            <SmallBtn onClick={addCoreValue} color="#ef4444" theme={theme}><Plus size={14} /> Add</SmallBtn>
+            <SmallBtn onClick={addCoreValue} color="#ef4444" theme={theme} style={isMobile ? { justifyContent: 'center' } : undefined}><Plus size={14} /> Add</SmallBtn>
           </div>
         )}
       </Card>
@@ -432,7 +433,7 @@ function VTOTab({ data, save, theme, employees }) {
       {/* ─── Core Focus ─── */}
       <Card theme={theme}>
         <SectionHeader icon={Compass} title="Core Focus" subtitle="Why you exist and what you're best at" color="#8b5cf6" theme={theme} help="Core Focus has two parts: your Purpose/Cause/Passion (why you exist beyond making money) and your Niche (what you do better than anyone). When you stay true to your Core Focus, you avoid distractions and 'shiny objects.'" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
           <div>
             <label style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Purpose / Cause / Passion</label>
             <InlineInput value={coreFocus.purpose} onChange={v => save('core_focus', { ...coreFocus, purpose: v })} placeholder="Why does this company exist?" theme={theme} multiline />
@@ -522,7 +523,7 @@ function VTOTab({ data, save, theme, employees }) {
       {/* ─── 3-Year Picture ─── */}
       <Card theme={theme}>
         <SectionHeader icon={Eye} title="3-Year Picture" subtitle="What the company looks like in 3 years" color="#22c55e" theme={theme} help="Paint a vivid picture of your company 3 years from now — revenue, profit, headcount, key metrics. Make it specific enough that every team member can see it. This bridges the gap between your 10-Year Target and this year's goals." />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
           <div>
             <label style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Revenue Target</label>
             <InlineInput value={threeYear.revenue} onChange={v => save('three_year', { ...threeYear, revenue: v })} placeholder="$5,000,000" theme={theme} />
@@ -542,7 +543,7 @@ function VTOTab({ data, save, theme, employees }) {
       <Card theme={theme}>
         <SectionHeader icon={Flag} title="1-Year Plan" subtitle="This year's goals and targets" color="#6366f1" theme={theme} help="Your 1-Year Plan breaks down the 3-Year Picture into this year's goals — revenue, profit, and 3-7 specific goals. These should be measurable, and your quarterly Rocks should ladder up to achieving them."
           action={<SmallBtn onClick={addOneYearGoal} color="#6366f1" theme={theme}><Plus size={12} /> Goal</SmallBtn>} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
           <div>
             <label style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Revenue Goal</label>
             <InlineInput value={oneYear.revenue} onChange={v => save('one_year', { ...oneYear, revenue: v })} placeholder="$2,000,000" theme={theme} />
@@ -594,7 +595,7 @@ function VTOTab({ data, save, theme, employees }) {
 // ROCKS — QUARTERLY PRIORITIES
 // ════════════════════════════════════════════════════════════════════
 
-function RocksTab({ data, save, theme, employees, entities }) {
+function RocksTab({ data, save, theme, employees, entities, isMobile }) {
   const rocks = data.rocks || []
   const [quarter, setQuarter] = useState(getCurrentQuarter())
   const [year, setYear] = useState(getCurrentYear())
@@ -735,7 +736,7 @@ function RocksTab({ data, save, theme, employees, entities }) {
         <Card theme={theme} style={{ border: `2px solid ${theme.accent}40` }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <InlineInput value={newRock.title} onChange={v => setNewRock(p => ({ ...p, title: v }))} placeholder="What's the rock? Be specific and measurable..." theme={theme} />
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px' }}>
               <select value={newRock.owner_id} onChange={e => setNewRock(p => ({ ...p, owner_id: e.target.value }))} style={{
                 flex: 1, padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`,
                 fontSize: '13px', color: theme.textSecondary, backgroundColor: theme.bg,
@@ -776,7 +777,7 @@ function RocksTab({ data, save, theme, employees, entities }) {
 // SCORECARD — WEEKLY METRICS
 // ════════════════════════════════════════════════════════════════════
 
-function ScorecardTab({ data, save, theme, employees, storeData, entities }) {
+function ScorecardTab({ data, save, theme, employees, storeData, entities, isMobile }) {
   const scorecard = data.scorecard || []
   const [adding, setAdding] = useState(false)
   const [newMetric, setNewMetric] = useState({ metric: '', owner_id: '', goal: '', type: 'gte', source: 'manual', entity: '' })
@@ -835,61 +836,65 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities }) {
         <SectionHeader icon={BarChart3} title="Weekly Scorecard" subtitle="Track 5-15 activity metrics every week" color="#3b82f6" theme={theme} help="The Scorecard is a weekly pulse on your business — 5 to 15 numbers that tell you if you're on track. Each metric has an owner and a goal. Review these every week in your L10 meeting to catch problems early before they become crises. Use 'auto-sourced' metrics to pull data directly from your system."
           action={!adding && <SmallBtn onClick={() => setAdding(true)} color="#3b82f6" theme={theme}><Plus size={12} /> Metric</SmallBtn>} />
 
-        {scorecard.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 90px 90px 40px', gap: '8px', padding: '8px 12px', fontSize: '10px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            <span>Metric</span><span>Owner</span><span>Goal</span><span>This Week</span><span>Last Week</span><span></span>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {scorecard.map(m => {
-            const owner = employees.find(e => String(e.id) === String(m.owner_id))
-            const color = getColor(m)
-            const actual = getActual(m)
-            const isAuto = m.source && m.source !== 'manual'
-            const lastWeek = getLastWeek(m)
-            const fmt = isAuto ? AUTO_SOURCES[m.source]?.format : null
-            return (
-              <div key={m.id} style={{
-                display: 'grid', gridTemplateColumns: '2fr 1fr 80px 90px 90px 40px', gap: '8px',
-                padding: '10px 12px', borderRadius: '8px', backgroundColor: theme.bg,
-                alignItems: 'center', border: `1px solid ${theme.border}`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                  {isAuto && <Database size={11} color="#3b82f6" style={{ flexShrink: 0 }} />}
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.metric}</span>
-                  {m.entity && <span style={{ fontSize: '9px', fontWeight: '700', padding: '1px 5px', borderRadius: '3px', backgroundColor: '#6366f115', color: '#6366f1', flexShrink: 0 }}>{m.entity}</span>}
-                </div>
-                <span style={{ fontSize: '12px', color: theme.textSecondary }}>{owner?.name || '—'}</span>
-                <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '600' }}>{m.goal || '—'}</span>
-                {isAuto ? (
-                  <div style={{
-                    padding: '4px 8px', borderRadius: '6px', fontSize: '13px', fontWeight: '700',
-                    backgroundColor: color + '08', color, textAlign: 'center',
-                    border: `2px solid ${color}30`,
-                  }}>
-                    {formatMetricValue(actual, fmt)}
-                  </div>
-                ) : (
-                  <LocalInput value={actual} onChange={v => updateMetric(m.id, { current: v })}
-                    placeholder="—" style={{
-                      width: '100%', padding: '4px 8px', borderRadius: '6px', fontSize: '13px', fontWeight: '700',
-                      border: `2px solid ${color}30`, backgroundColor: color + '08', color,
-                      outline: 'none', textAlign: 'center',
-                    }} />
-                )}
-                <div style={{
-                  padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
-                  color: theme.textMuted, textAlign: 'center', backgroundColor: theme.bgCard || '#fff',
-                }}>
-                  {lastWeek != null ? formatMetricValue(lastWeek, fmt) : (m.current ? '—' : '—')}
-                </div>
-                <button onClick={() => removeMetric(m.id)} style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
-                  <Trash2 size={13} />
-                </button>
+        <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ minWidth: isMobile ? '600px' : 'auto' }}>
+            {scorecard.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 90px 90px 40px', gap: '8px', padding: '8px 12px', fontSize: '10px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <span>Metric</span><span>Owner</span><span>Goal</span><span>This Week</span><span>Last Week</span><span></span>
               </div>
-            )
-          })}
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {scorecard.map(m => {
+                const owner = employees.find(e => String(e.id) === String(m.owner_id))
+                const color = getColor(m)
+                const actual = getActual(m)
+                const isAuto = m.source && m.source !== 'manual'
+                const lastWeek = getLastWeek(m)
+                const fmt = isAuto ? AUTO_SOURCES[m.source]?.format : null
+                return (
+                  <div key={m.id} style={{
+                    display: 'grid', gridTemplateColumns: '2fr 1fr 80px 90px 90px 40px', gap: '8px',
+                    padding: '10px 12px', borderRadius: '8px', backgroundColor: theme.bg,
+                    alignItems: 'center', border: `1px solid ${theme.border}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                      {isAuto && <Database size={11} color="#3b82f6" style={{ flexShrink: 0 }} />}
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.metric}</span>
+                      {m.entity && <span style={{ fontSize: '9px', fontWeight: '700', padding: '1px 5px', borderRadius: '3px', backgroundColor: '#6366f115', color: '#6366f1', flexShrink: 0 }}>{m.entity}</span>}
+                    </div>
+                    <span style={{ fontSize: '12px', color: theme.textSecondary }}>{owner?.name || '—'}</span>
+                    <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '600' }}>{m.goal || '—'}</span>
+                    {isAuto ? (
+                      <div style={{
+                        padding: '4px 8px', borderRadius: '6px', fontSize: '13px', fontWeight: '700',
+                        backgroundColor: color + '08', color, textAlign: 'center',
+                        border: `2px solid ${color}30`,
+                      }}>
+                        {formatMetricValue(actual, fmt)}
+                      </div>
+                    ) : (
+                      <LocalInput value={actual} onChange={v => updateMetric(m.id, { current: v })}
+                        placeholder="—" style={{
+                          width: '100%', padding: '4px 8px', borderRadius: '6px', fontSize: '13px', fontWeight: '700',
+                          border: `2px solid ${color}30`, backgroundColor: color + '08', color,
+                          outline: 'none', textAlign: 'center',
+                        }} />
+                    )}
+                    <div style={{
+                      padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
+                      color: theme.textMuted, textAlign: 'center', backgroundColor: theme.bgCard || '#fff',
+                    }}>
+                      {lastWeek != null ? formatMetricValue(lastWeek, fmt) : (m.current ? '—' : '—')}
+                    </div>
+                    <button onClick={() => removeMetric(m.id)} style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
 
         {scorecard.length === 0 && !adding && (
@@ -948,14 +953,14 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities }) {
             {newMetric.source === 'manual' && (
               <InlineInput value={newMetric.metric} onChange={v => setNewMetric(p => ({ ...p, metric: v }))} placeholder='e.g., "Revenue Booked", "Proposals Sent"' theme={theme} />
             )}
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px' }}>
               <select value={newMetric.owner_id} onChange={e => setNewMetric(p => ({ ...p, owner_id: e.target.value }))} style={{
                 flex: 1, padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, fontSize: '13px', color: theme.textSecondary, backgroundColor: theme.bg,
               }}>
                 <option value="">Owner...</option>
                 {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
-              <InlineInput value={newMetric.goal} onChange={v => setNewMetric(p => ({ ...p, goal: v }))} placeholder="Weekly goal" theme={theme} style={{ width: '120px' }} />
+              <InlineInput value={newMetric.goal} onChange={v => setNewMetric(p => ({ ...p, goal: v }))} placeholder="Weekly goal" theme={theme} style={{ width: isMobile ? '100%' : '120px' }} />
               <select value={newMetric.type} onChange={e => setNewMetric(p => ({ ...p, type: e.target.value }))} style={{
                 padding: '8px', borderRadius: '8px', border: `1px solid ${theme.border}`, fontSize: '12px', color: theme.textSecondary, backgroundColor: theme.bg,
               }}>
@@ -978,7 +983,7 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities }) {
 // ISSUES — IDENTIFY, DISCUSS, SOLVE
 // ════════════════════════════════════════════════════════════════════
 
-function IssuesTab({ data, save, theme, employees }) {
+function IssuesTab({ data, save, theme, employees, isMobile }) {
   const issues = data.issues || []
   const todos = data.todos || []
   const [filter, setFilter] = useState('open')
@@ -1202,16 +1207,18 @@ function IssuesTab({ data, save, theme, employees }) {
                   <div style={{ fontSize: '11px', fontWeight: '700', color: '#22c55e', marginBottom: '8px', textTransform: 'uppercase' }}>
                     Solve — Create action item (optional)
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', alignItems: isMobile ? 'stretch' : 'center' }}>
                     <InlineInput value={todoText} onChange={setTodoText} placeholder="To-do from solving this issue..." theme={theme} style={{ flex: 1 }} />
-                    <select value={todoOwner} onChange={e => setTodoOwner(e.target.value)} style={{
-                      padding: '8px', borderRadius: '8px', border: `1px solid ${theme.border}`, fontSize: '12px', backgroundColor: theme.bg, color: theme.textSecondary,
-                    }}>
-                      <option value="">Who...</option>
-                      {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                    </select>
-                    <SmallBtn onClick={() => resolveIssue(issue.id)} color="#22c55e" theme={theme}><Check size={12} /> Solve</SmallBtn>
-                    <SmallBtn onClick={() => setResolvingId(null)} theme={theme}><X size={12} /></SmallBtn>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <select value={todoOwner} onChange={e => setTodoOwner(e.target.value)} style={{
+                        padding: '8px', borderRadius: '8px', border: `1px solid ${theme.border}`, fontSize: '12px', backgroundColor: theme.bg, color: theme.textSecondary, flex: isMobile ? 1 : undefined,
+                      }}>
+                        <option value="">Who...</option>
+                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                      </select>
+                      <SmallBtn onClick={() => resolveIssue(issue.id)} color="#22c55e" theme={theme}><Check size={12} /> Solve</SmallBtn>
+                      <SmallBtn onClick={() => setResolvingId(null)} theme={theme}><X size={12} /></SmallBtn>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1229,7 +1236,7 @@ function IssuesTab({ data, save, theme, employees }) {
         <Card theme={theme} style={{ border: `2px solid #ef444440` }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <InlineInput value={newIssue.title} onChange={v => setNewIssue(p => ({ ...p, title: v }))} placeholder="What's the issue? State it clearly in one sentence." theme={theme} />
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px' }}>
               <select value={newIssue.priority} onChange={e => setNewIssue(p => ({ ...p, priority: e.target.value }))} style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, fontSize: '13px', backgroundColor: theme.bg, color: theme.textSecondary }}>
                 <option value="high">High Priority</option>
                 <option value="medium">Medium Priority</option>
@@ -1259,7 +1266,7 @@ function IssuesTab({ data, save, theme, employees }) {
 // MEETINGS — L10, QUARTERLY, ANNUAL
 // ════════════════════════════════════════════════════════════════════
 
-function L10Tab({ data, save, theme, employees, storeData, entities }) {
+function L10Tab({ data, save, theme, employees, storeData, entities, isMobile }) {
   const meetings = data.meetings || { l10_day: '', l10_time: '', quarterly_next: '', annual_next: '' }
   const scorecard = data.scorecard || []
   const rocks = data.rocks || []
@@ -1370,7 +1377,7 @@ function L10Tab({ data, save, theme, employees, storeData, entities }) {
           {Object.entries(groupedMetrics).map(([ownerName, metrics]) => (
             <div key={ownerName} style={{ marginBottom: '14px' }}>
               <div style={{ fontSize: '12px', fontWeight: '700', color: theme.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{ownerName}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 80px 80px', gap: '4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 70px 70px' : '2fr 80px 80px', gap: '4px' }}>
                 <div style={{ fontSize: '9px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', padding: '0 8px' }}>Metric</div>
                 <div style={{ fontSize: '9px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>This Wk</div>
                 <div style={{ fontSize: '9px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>Last Wk</div>
@@ -1464,9 +1471,9 @@ function L10Tab({ data, save, theme, employees, storeData, entities }) {
         {/* 6. Conclude */}
         <Card theme={theme}>
           <SectionHeader icon={Check} title="Conclude" subtitle="5 min — recap to-dos, cascading messages, rate 1-10" color="#8b5cf6" theme={theme} help="Wrap up: recap new to-dos so everyone is clear, agree on cascading messages (what to communicate to your teams), and rate the meeting 1-10. A great L10 averages 8+. If it's consistently low, IDS the meeting itself." />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: '12px', marginTop: '8px' }}>
             <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>Rate this meeting:</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
                 <button key={n} onClick={() => setMeetingRating(n)} style={{
                   width: '32px', height: '32px', borderRadius: '6px', border: 'none', cursor: 'pointer',
@@ -1493,7 +1500,7 @@ function L10Tab({ data, save, theme, employees, storeData, entities }) {
             Every {meetings.l10_day} at {meetings.l10_time}
           </div>
         )}
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, auto)', gap: '8px', justifyContent: 'center', marginBottom: '16px' }}>
           <div style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: '#3b82f610', textAlign: 'center' }}>
             <div style={{ fontSize: '20px', fontWeight: '800', color: '#3b82f6' }}>{scorecard.length}</div>
             <div style={{ fontSize: '10px', color: theme.textMuted }}>Metrics</div>
@@ -1543,7 +1550,7 @@ function L10Tab({ data, save, theme, employees, storeData, entities }) {
       </Card>
 
       {/* Quarterly & Annual */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
         <Card theme={theme}>
           <SectionHeader icon={Calendar} title="Quarterly" subtitle="Full-day every 90 days" color="#22c55e" theme={theme} help="Every 90 days, the leadership team steps back for a full-day session to review last quarter's Rocks, set new ones, update the V/TO, and clear the big Issues. This is where strategic decisions happen." />
           <input type="date" value={meetings.quarterly_next || ''} onChange={e => save('meetings', { ...meetings, quarterly_next: e.target.value })} style={{
@@ -1577,7 +1584,7 @@ function L10Tab({ data, save, theme, employees, storeData, entities }) {
 // DASHBOARD — 90-DAY ROLLING METRICS
 // ════════════════════════════════════════════════════════════════════
 
-function DashboardTab({ data, theme, employees, storeData, entities }) {
+function DashboardTab({ data, theme, employees, storeData, entities, isMobile }) {
   const scorecard = data.scorecard || []
   const [dashEntity, setDashEntity] = useState('')
 
@@ -1643,7 +1650,7 @@ function DashboardTab({ data, theme, employees, storeData, entities }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
         {autoMetrics.map(({ metric: m, values, avg, format }) => {
           const current = values[values.length - 1]?.value || 0
           const prev = values[values.length - 2]?.value || 0
@@ -1771,7 +1778,7 @@ function SeatCard({ seat, employees, theme, color, onUpdate, onRemove }) {
   )
 }
 
-function PeopleTab({ data, save, theme, employees }) {
+function PeopleTab({ data, save, theme, employees, isMobile }) {
   const chart = data.accountability || []
   const analyzer = data.people_analyzer || {}
   const coreValues = data.core_values || []
@@ -1852,7 +1859,7 @@ function PeopleTab({ data, save, theme, employees }) {
   return (
     <div>
       {/* Sub-tabs */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', flexWrap: 'wrap' }}>
         {subTabs.map(st => (
           <button key={st.id} onClick={() => setSubTab(st.id)} style={{
             padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
@@ -1861,7 +1868,7 @@ function PeopleTab({ data, save, theme, employees }) {
             color: subTab === st.id ? '#fff' : theme.textMuted,
             cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px',
           }}>
-            <st.icon size={13} /> {st.label}
+            <st.icon size={13} /> {isMobile ? st.label.split(' ')[0] : st.label}
           </button>
         ))}
       </div>
@@ -2164,7 +2171,7 @@ function PeopleTab({ data, save, theme, employees }) {
 // TOOLBOX — EOS FRAMEWORKS & TOOLS
 // ════════════════════════════════════════════════════════════════════
 
-function ToolboxTab({ theme }) {
+function ToolboxTab({ theme, isMobile }) {
   const [expanded, setExpanded] = useState('smart')
 
   const tools = [
@@ -2393,15 +2400,8 @@ export default function EOS() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [loading, setLoading] = useState(true)
   const [eosData, setEosData] = useState({})
-  const [isMobile, setIsMobile] = useState(false)
+  const isMobile = useIsMobile()
   const saveTimerRef = useRef({})
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
 
   // Load all EOS settings
   useEffect(() => {
@@ -2457,7 +2457,7 @@ export default function EOS() {
   const healthPct = Math.round((healthChecks.filter(Boolean).length / healthChecks.length) * 100)
 
   return (
-    <div style={{ padding: isMobile ? '12px' : '24px', maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '900px', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
@@ -2506,14 +2506,14 @@ export default function EOS() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'dashboard' && <DashboardTab data={eosData} theme={theme} employees={employees} storeData={storeData} entities={entities} />}
-      {activeTab === 'vto' && <VTOTab data={eosData} save={save} theme={theme} employees={employees} />}
-      {activeTab === 'rocks' && <RocksTab data={eosData} save={save} theme={theme} employees={employees} entities={entities} />}
-      {activeTab === 'scorecard' && <ScorecardTab data={eosData} save={save} theme={theme} employees={employees} storeData={storeData} entities={entities} />}
-      {activeTab === 'issues' && <IssuesTab data={eosData} save={save} theme={theme} employees={employees} />}
-      {activeTab === 'l10' && <L10Tab data={eosData} save={save} theme={theme} employees={employees} storeData={storeData} entities={entities} />}
-      {activeTab === 'people' && <PeopleTab data={eosData} save={save} theme={theme} employees={employees} />}
-      {activeTab === 'toolbox' && <ToolboxTab theme={theme} />}
+      {activeTab === 'dashboard' && <DashboardTab data={eosData} theme={theme} employees={employees} storeData={storeData} entities={entities} isMobile={isMobile} />}
+      {activeTab === 'vto' && <VTOTab data={eosData} save={save} theme={theme} employees={employees} isMobile={isMobile} />}
+      {activeTab === 'rocks' && <RocksTab data={eosData} save={save} theme={theme} employees={employees} entities={entities} isMobile={isMobile} />}
+      {activeTab === 'scorecard' && <ScorecardTab data={eosData} save={save} theme={theme} employees={employees} storeData={storeData} entities={entities} isMobile={isMobile} />}
+      {activeTab === 'issues' && <IssuesTab data={eosData} save={save} theme={theme} employees={employees} isMobile={isMobile} />}
+      {activeTab === 'l10' && <L10Tab data={eosData} save={save} theme={theme} employees={employees} storeData={storeData} entities={entities} isMobile={isMobile} />}
+      {activeTab === 'people' && <PeopleTab data={eosData} save={save} theme={theme} employees={employees} isMobile={isMobile} />}
+      {activeTab === 'toolbox' && <ToolboxTab theme={theme} isMobile={isMobile} />}
     </div>
   )
 }

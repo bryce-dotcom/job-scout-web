@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import { Settings, Save, CheckCircle2 } from 'lucide-react'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -14,6 +15,7 @@ export default function VictorSettings() {
   const companyId = useStore(s => s.companyId)
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const [thresholds, setThresholds] = useState({ A: 90, B: 80, C: 70, D: 60 })
   const [passingScore, setPassingScore] = useState(70)
@@ -66,8 +68,8 @@ export default function VictorSettings() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '600px', margin: '0 auto' }}>
-      <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '600px', margin: '0 auto' }}>
+      <h2 style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text, marginBottom: isMobile ? '16px' : '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <Settings size={20} /> Victor Settings
       </h2>
 

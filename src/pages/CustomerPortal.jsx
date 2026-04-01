@@ -1,5 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 
@@ -51,6 +52,7 @@ export default function CustomerPortal() {
   const { token } = useParams()
   const [searchParams] = useSearchParams()
   const paymentResult = searchParams.get('payment')
+  const isMobile = useIsMobile()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -275,11 +277,11 @@ export default function CustomerPortal() {
         {/* Header card */}
         <div style={{ ...styles.card, marginBottom: '16px' }}>
           <div style={{ height: '4px', backgroundColor: theme.accent, borderRadius: '12px 12px 0 0' }} />
-          <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center' }}>
             {logoUrl && (
-              <img src={logoUrl} alt={displayName} style={{ maxHeight: '60px', maxWidth: '200px', objectFit: 'contain', marginBottom: '12px' }} />
+              <img src={logoUrl} alt={displayName} style={{ maxHeight: isMobile ? '48px' : '60px', maxWidth: isMobile ? '160px' : '200px', objectFit: 'contain', marginBottom: '12px' }} />
             )}
-            <h1 style={{ fontSize: '22px', fontWeight: '700', color: theme.text, margin: '0 0 6px' }}>{displayName}</h1>
+            <h1 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: '700', color: theme.text, margin: '0 0 6px' }}>{displayName}</h1>
             <div style={{ display: 'inline-block', backgroundColor: theme.accentBg, padding: '6px 16px', borderRadius: '20px' }}>
               <span style={{ color: theme.accent, fontSize: '14px', fontWeight: '600' }}>
                 {isEstimate ? `Estimate ${doc.quote_id || ''}` : `Invoice ${doc.invoice_id || ''}`}
@@ -679,15 +681,15 @@ export default function CustomerPortal() {
       {/* Approve Modal */}
       {showApproveModal && (
         <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <div style={{ padding: '24px 24px 0' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '700', color: theme.text, margin: '0 0 4px' }}>Approve Estimate</h2>
+          <div style={{ ...styles.modal, maxWidth: isMobile ? '100%' : '440px' }}>
+            <div style={{ padding: isMobile ? '20px 20px 0' : '24px 24px 0' }}>
+              <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '700', color: theme.text, margin: '0 0 4px' }}>Approve Estimate</h2>
               <p style={{ color: theme.textMuted, fontSize: '14px', margin: '0 0 20px' }}>
                 Confirm your information to approve this estimate.
               </p>
             </div>
 
-            <div style={{ padding: '0 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ padding: isMobile ? '0 20px' : '0 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={styles.label}>Your Name</label>
                 <input
@@ -722,10 +724,10 @@ export default function CustomerPortal() {
               </div>
             </div>
 
-            <div style={{ padding: '20px 24px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            <div style={{ padding: isMobile ? '16px 20px' : '20px 24px', display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', gap: '12px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setShowApproveModal(false)}
-                style={styles.secondaryButton}
+                style={{ ...styles.secondaryButton, ...(isMobile ? { width: '100%', textAlign: 'center' } : {}) }}
               >
                 Cancel
               </button>
@@ -735,7 +737,7 @@ export default function CustomerPortal() {
                 style={{
                   ...styles.primaryButton,
                   opacity: approving || !approverName ? 0.6 : 1,
-                  width: 'auto',
+                  width: isMobile ? '100%' : 'auto',
                   padding: '12px 28px',
                 }}
               >
@@ -752,7 +754,7 @@ export default function CustomerPortal() {
 // ---- Styles ----
 const styles = {
   pageWrapper: {
-    minHeight: '100vh',
+    minHeight: '100dvh',
     backgroundColor: theme.bg,
     padding: '16px',
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import AdminModal, { FormField, FormInput, FormTextarea, ModalFooter } from './components/AdminModal'
 import { RefreshCw, Download, X, ChevronLeft, ChevronRight, Edit2, Trash2 } from 'lucide-react'
 
@@ -18,6 +19,7 @@ const OPERATORS = [
 ]
 
 export default function DataConsoleBrowser() {
+  const isMobile = useIsMobile()
   const [table, setTable] = useState('companies')
   const [data, setData] = useState([])
   const [columns, setColumns] = useState([])
@@ -188,8 +190,8 @@ export default function DataConsoleBrowser() {
   const totalPages = Math.ceil(total / pageSize)
 
   return (
-    <div style={{ padding: '24px' }}>
-      <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700', marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700', marginBottom: isMobile ? '16px' : '24px' }}>
         Data Browser
       </h1>
 
@@ -452,7 +454,9 @@ export default function DataConsoleBrowser() {
           borderTop: `1px solid ${adminTheme.border}`,
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center'
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '8px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ color: adminTheme.textMuted, fontSize: '13px' }}>Rows per page:</span>

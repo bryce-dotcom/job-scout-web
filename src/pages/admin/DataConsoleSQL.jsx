@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { Play, Save, Clock, Trash2, Download, AlertCircle, CheckCircle } from 'lucide-react'
 
 export default function DataConsoleSQL() {
+  const isMobile = useIsMobile()
   const [query, setQuery] = useState('SELECT * FROM companies LIMIT 10;')
   const [results, setResults] = useState(null)
   const [columns, setColumns] = useState([])
@@ -153,9 +155,9 @@ export default function DataConsoleSQL() {
   }
 
   return (
-    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 48px)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 48px)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+        <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700' }}>
           SQL Runner
         </h1>
         <div style={{ color: adminTheme.warning, fontSize: '12px', backgroundColor: 'rgba(234, 179, 8, 0.1)', padding: '6px 12px', borderRadius: '6px' }}>
@@ -163,7 +165,7 @@ export default function DataConsoleSQL() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '16px', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px', flex: 1, minHeight: 0 }}>
         {/* Query Editor */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           {/* Query Input */}
@@ -197,7 +199,7 @@ export default function DataConsoleSQL() {
               }}
             />
 
-            <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
               <button
                 onClick={runQuery}
                 disabled={running}
@@ -370,13 +372,14 @@ export default function DataConsoleSQL() {
 
         {/* Saved Queries Sidebar */}
         <div style={{
-          width: '280px',
+          width: isMobile ? '100%' : '280px',
           backgroundColor: adminTheme.bgCard,
           border: `1px solid ${adminTheme.border}`,
           borderRadius: '10px',
           padding: '16px',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          ...(isMobile ? { maxHeight: '200px' } : {})
         }}>
           <div style={{ color: adminTheme.text, fontSize: '16px', fontWeight: '600', marginBottom: '16px' }}>
             Saved Queries
@@ -440,8 +443,10 @@ export default function DataConsoleSQL() {
           <div style={{
             backgroundColor: adminTheme.bgCard,
             borderRadius: '12px',
-            padding: '24px',
-            width: '400px'
+            padding: isMobile ? '16px' : '24px',
+            width: isMobile ? '90vw' : '400px',
+            maxWidth: '400px',
+            margin: '0 16px'
           }}>
             <div style={{ color: adminTheme.text, fontSize: '18px', fontWeight: '600', marginBottom: '16px' }}>
               Save Query

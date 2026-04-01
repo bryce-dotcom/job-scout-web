@@ -37,7 +37,7 @@ export default function AuthCallback() {
     const { data: employee, error: empError } = await supabase
       .from('employees')
       .select('*, company:companies(*)')
-      .eq('email', userEmail)
+      .ilike('email', userEmail)
       .eq('active', true)
       .single()
 

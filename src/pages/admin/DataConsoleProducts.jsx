@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import AdminStats from './components/AdminStats'
 import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, FormToggle, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
@@ -14,6 +15,7 @@ const PRODUCT_CATEGORIES = [
 const COLOR_TEMPS = ['2700K', '3000K', '3500K', '4000K', '5000K', '6500K']
 
 export default function DataConsoleProducts() {
+  const isMobile = useIsMobile()
   const [products, setProducts] = useState([])
   const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
@@ -81,9 +83,9 @@ export default function DataConsoleProducts() {
   ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? '16px' : '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700' }}>
           Products Library
         </h1>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -134,10 +136,11 @@ export default function DataConsoleProducts() {
         padding: '16px',
         marginBottom: '16px',
         display: 'flex',
-        gap: '16px',
-        alignItems: 'center'
+        gap: isMobile ? '12px' : '16px',
+        alignItems: 'center',
+        flexWrap: 'wrap'
       }}>
-        <div style={{ flex: 1, position: 'relative' }}>
+        <div style={{ flex: 1, minWidth: isMobile ? '100%' : '200px', position: 'relative' }}>
           <Search size={18} style={{
             position: 'absolute',
             left: '12px',
@@ -171,7 +174,7 @@ export default function DataConsoleProducts() {
             borderRadius: '8px',
             color: adminTheme.text,
             fontSize: '14px',
-            minWidth: '160px'
+            minWidth: isMobile ? 'auto' : '160px'
           }}
         >
           <option value="">All Categories</option>
@@ -222,7 +225,8 @@ export default function DataConsoleProducts() {
           {filtered.length === 0 ? (
             <div style={{ padding: '40px', textAlign: 'center', color: adminTheme.textMuted }}>No products found</div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${adminTheme.border}` }}>
                   <th style={{ padding: '12px 16px', textAlign: 'left', color: adminTheme.textMuted, fontSize: '12px' }}>Product</th>
@@ -320,12 +324,13 @@ export default function DataConsoleProducts() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(240px, 1fr))',
           gap: '16px'
         }}>
           {filtered.map(product => (
@@ -390,7 +395,7 @@ export default function DataConsoleProducts() {
               <FormTextarea value={editingProduct.description} onChange={(v) => setEditingProduct({ ...editingProduct, description: v })} />
             </FormField>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Category" required>
                 <FormSelect
                   value={editingProduct.category}
@@ -403,7 +408,7 @@ export default function DataConsoleProducts() {
               </FormField>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Replaces Fixture Type">
                 <FormInput value={editingProduct.replaces_fixture_type} onChange={(v) => setEditingProduct({ ...editingProduct, replaces_fixture_type: v })} placeholder="e.g., 4ft 4-lamp T8" />
               </FormField>
@@ -412,7 +417,7 @@ export default function DataConsoleProducts() {
               </FormField>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
               <FormField label="Lumens">
                 <FormInput type="number" value={editingProduct.lumens} onChange={(v) => setEditingProduct({ ...editingProduct, lumens: parseInt(v) })} />
               </FormField>
@@ -429,7 +434,7 @@ export default function DataConsoleProducts() {
               </FormField>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Unit Price ($)">
                 <FormInput type="number" step="0.01" value={editingProduct.unit_price} onChange={(v) => setEditingProduct({ ...editingProduct, unit_price: parseFloat(v) })} />
               </FormField>

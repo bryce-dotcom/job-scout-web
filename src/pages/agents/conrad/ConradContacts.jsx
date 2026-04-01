@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 import { RefreshCw, Users, AlertTriangle, Search } from 'lucide-react'
 
 const defaultTheme = {
@@ -30,6 +31,7 @@ const FILTERS = [
 export default function ConradContacts() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const companyId = useStore(s => s.companyId)
   const ccContactMap = useStore(s => s.ccContactMap)
@@ -106,8 +108,8 @@ export default function ConradContacts() {
   })
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, marginBottom: '24px' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1200px', margin: '0 auto' }}>
+      <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, marginBottom: '24px' }}>
         Contacts
       </h1>
 
@@ -120,7 +122,9 @@ export default function ConradContacts() {
         marginBottom: '16px',
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center'
+        alignItems: isMobile ? 'flex-start' : 'center',
+        flexWrap: 'wrap',
+        gap: '12px'
       }}>
         <div>
           <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
@@ -175,7 +179,7 @@ export default function ConradContacts() {
       )}
 
       {/* Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
         <div style={{ background: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '16px', textAlign: 'center' }}>
           <div style={{ fontSize: '28px', fontWeight: '700', color: theme.accent }}>{ccContactMap.length}</div>
           <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>Total Contacts</div>
@@ -254,7 +258,8 @@ export default function ConradContacts() {
             </p>
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
             <thead>
               <tr>
                 <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}`, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Name</th>
@@ -313,6 +318,7 @@ export default function ConradContacts() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

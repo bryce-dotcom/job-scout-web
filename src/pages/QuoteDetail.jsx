@@ -8,6 +8,7 @@ import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calcula
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 // Light theme fallback
 const defaultTheme = {
@@ -25,6 +26,7 @@ const defaultTheme = {
 export default function QuoteDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const products = useStore((state) => state.products)
   const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
@@ -263,14 +265,14 @@ export default function QuoteDetail() {
   }
 
   const convertToJob = async () => {
-    if (!confirm('Convert this quote to a job?')) return
+    if (!confirm('Convert this estimate to a job?')) return
     await approveQuote()
-    alert('Quote approved! Jobs module ready for conversion.')
+    alert('Estimate approved! Jobs module ready for conversion.')
   }
 
   const calculateIncentive = async () => {
     if (!quote.audit_id) {
-      alert('This quote is not linked to a lighting audit. Link an audit first to auto-calculate incentives.')
+      alert('This estimate is not linked to a lighting audit. Link an audit first to auto-calculate incentives.')
       return
     }
     if (!prescriptiveMeasures || prescriptiveMeasures.length === 0) {
@@ -387,7 +389,7 @@ export default function QuoteDetail() {
   if (loading) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: theme.textMuted }}>Loading quote...</p>
+        <p style={{ color: theme.textMuted }}>Loading estimate...</p>
       </div>
     )
   }
@@ -395,7 +397,7 @@ export default function QuoteDetail() {
   if (!quote) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: '#dc2626', marginBottom: '16px' }}>Quote not found</p>
+        <p style={{ color: '#dc2626', marginBottom: '16px' }}>Estimate not found</p>
         <button
           onClick={() => navigate('/quotes')}
           style={{
@@ -406,7 +408,7 @@ export default function QuoteDetail() {
             textDecoration: 'underline'
           }}
         >
-          Back to Quotes
+          Back to Estimates
         </button>
       </div>
     )
@@ -422,13 +424,14 @@ export default function QuoteDetail() {
   const statusStyle = statusColors[quote.status] || statusColors['Draft']
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        gap: '16px',
-        marginBottom: '24px'
+        alignItems: isMobile ? 'flex-start' : 'center',
+        gap: isMobile ? '12px' : '16px',
+        marginBottom: '24px',
+        flexWrap: 'wrap'
       }}>
         <button
           onClick={() => navigate('/quotes')}
@@ -443,13 +446,13 @@ export default function QuoteDetail() {
         >
           <ArrowLeft size={20} />
         </button>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{
-            fontSize: '24px',
+            fontSize: isMobile ? '20px' : '24px',
             fontWeight: '700',
             color: theme.text
           }}>
-            Quote {quote.quote_id || `#${quote.id}`}
+            Estimate {quote.quote_id || `#${quote.id}`}
           </h1>
           <p style={{ fontSize: '14px', color: theme.textSecondary }}>
             {customerInfo?.name || customerInfo?.customer_name || 'No customer'}
@@ -469,8 +472,8 @@ export default function QuoteDetail() {
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 360px',
-        gap: '24px'
+        gridTemplateColumns: isMobile ? '1fr' : '1fr 360px',
+        gap: isMobile ? '16px' : '24px'
       }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -491,7 +494,7 @@ export default function QuoteDetail() {
             </h3>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
               gap: '16px'
             }}>
               <div>
@@ -569,16 +572,16 @@ export default function QuoteDetail() {
                 textAlign: 'center',
                 color: theme.textMuted
               }}>
-                No line items yet. Add products or services to this quote.
+                No line items yet. Add products or services to this estimate.
               </div>
             ) : (
               <>
                 {/* Table Header */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 80px 100px 100px 40px',
-                  gap: '12px',
-                  padding: '12px 20px',
+                  gridTemplateColumns: isMobile ? '2fr 60px 80px 40px' : '2fr 80px 100px 100px 40px',
+                  gap: isMobile ? '8px' : '12px',
+                  padding: isMobile ? '10px 12px' : '12px 20px',
                   backgroundColor: theme.accentBg,
                   fontSize: '12px',
                   fontWeight: '600',
@@ -587,7 +590,7 @@ export default function QuoteDetail() {
                   letterSpacing: '0.5px'
                 }}>
                   <div>Item</div>
-                  <div style={{ textAlign: 'right' }}>Qty</div>
+                  {!isMobile && <div style={{ textAlign: 'right' }}>Qty</div>}
                   <div style={{ textAlign: 'right' }}>Price</div>
                   <div style={{ textAlign: 'right' }}>Total</div>
                   <div></div>
@@ -599,18 +602,18 @@ export default function QuoteDetail() {
                     key={line.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '2fr 80px 100px 100px 40px',
-                      gap: '12px',
-                      padding: '14px 20px',
+                      gridTemplateColumns: isMobile ? '2fr 60px 80px 40px' : '2fr 80px 100px 100px 40px',
+                      gap: isMobile ? '8px' : '12px',
+                      padding: isMobile ? '10px 12px' : '14px 20px',
                       borderBottom: `1px solid ${theme.border}`,
                       alignItems: 'center'
                     }}
                   >
                     <div>
-                      <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
+                      <p style={{ fontWeight: '500', color: theme.text, fontSize: isMobile ? '13px' : '14px' }}>
                         {line.item?.name || 'Unknown'}
                       </p>
-                      {line.item?.description && (
+                      {line.item?.description && !isMobile && (
                         <p style={{
                           fontSize: '12px',
                           color: theme.textMuted,
@@ -622,13 +625,15 @@ export default function QuoteDetail() {
                         </p>
                       )}
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>
-                      {line.quantity}
-                    </div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>
+                    {!isMobile && (
+                      <div style={{ textAlign: 'right', fontSize: '14px', color: theme.textSecondary }}>
+                        {line.quantity}
+                      </div>
+                    )}
+                    <div style={{ textAlign: 'right', fontSize: isMobile ? '13px' : '14px', color: theme.textSecondary }}>
                       {formatCurrency(line.price)}
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                    <div style={{ textAlign: 'right', fontSize: isMobile ? '13px' : '14px', fontWeight: '500', color: theme.text }}>
                       {formatCurrency(line.line_total)}
                     </div>
                     <div style={{ textAlign: 'right' }}>
@@ -703,7 +708,7 @@ export default function QuoteDetail() {
               color: theme.text,
               marginBottom: '16px'
             }}>
-              Quote Summary
+              Estimate Summary
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -856,7 +861,7 @@ export default function QuoteDetail() {
                   }}
                 >
                   <Send size={18} />
-                  Send Quote
+                  Send Estimate
                 </button>
               )}
 

@@ -5,6 +5,7 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { toast } from '../lib/toast'
 import {
   Compass, Clock, MapPin, Play, Square, Coffee,
@@ -101,9 +102,11 @@ function StripeCardForm({ theme, amount, onSuccess, onError }) {
 }
 
 export default function FieldScout() {
+  const isMobile = useIsMobile()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const companyId = useStore((s) => s.companyId)
+  const company = useStore((s) => s.company)
   const user = useStore((s) => s.user)
   const jobs = useStore((s) => s.jobs)
   const employees = useStore((s) => s.employees)
@@ -124,6 +127,7 @@ export default function FieldScout() {
 
   // Payment collection
   const [paymentJob, setPaymentJob] = useState(null)
+  const [paymentInvoice, setPaymentInvoice] = useState(null) // linked invoice for payment
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', reference: '', notes: '' })
   const [paymentSaving, setPaymentSaving] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
@@ -263,32 +267,23 @@ export default function FieldScout() {
     setInvoiceLoading(true)
     setInvoiceData(null)
     try {
-      const { data: inv } = await supabase
+      const { data: invArr } = await supabase
         .from('invoices')
         .select('*')
         .eq('company_id', companyId)
         .eq('job_id', job.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
-      if (inv) {
-        const { data: lines } = await supabase
-          .from('invoice_lines')
-          .select('*, item:products_services(id, name, description)')
-          .eq('invoice_id', inv.id)
-          .order('sort_order')
-        setInvoiceData({ invoice: inv, lines: lines || [] })
-      } else {
-        // No invoice — build from job lines
-        const { data: jobLines } = await supabase
-          .from('job_lines')
-          .select('*, item:products_services(id, name, description)')
-          .eq('job_id', job.id)
-          .order('sort_order')
-        setInvoiceData({ invoice: null, lines: jobLines || [], fromJob: true })
-      }
+      const inv = invArr?.[0] || null
+      // Get job lines (work order items)
+      const { data: jobLines } = await supabase
+        .from('job_lines')
+        .select('*, item:products_services(id, name, description)')
+        .eq('job_id', job.id)
+      setInvoiceData({ invoice: inv, lines: jobLines || [], fromJob: !inv })
     } catch (err) {
       console.error('Error fetching invoice:', err)
+      setInvoiceData(null)
     }
     setInvoiceLoading(false)
   }
@@ -454,77 +449,116 @@ export default function FieldScout() {
     await fetchEntries()
   }
 
-  // Initialize Stripe when Card is selected and amount is entered
-  const initStripePayment = async () => {
-    if (!paymentJob || !paymentForm.amount || parseFloat(paymentForm.amount) <= 0) return
+  // Collect Payment — find or create invoice, then open portal for card/ACH payment
+  const openPaymentModal = async (job) => {
+    setPaymentJob(job)
+    setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
+    setPaymentSuccess(false)
+    setPaymentInvoice(null)
     setStripeLoading(true)
-    setStripeError(null)
-    setClientSecret(null)
 
     try {
-      const res = await supabase.functions.invoke('create-field-payment', {
-        body: {
-          companyId,
-          jobId: paymentJob.id,
-          customerId: paymentJob.customer_id,
-          amount_cents: Math.round(parseFloat(paymentForm.amount) * 100),
-          description: `${paymentJob.job_title || paymentJob.job_id} — Collected on-site by ${firstName}`
+      // 1. Find existing invoice for this job
+      const { data: invArr } = await supabase
+        .from('invoices')
+        .select('id, invoice_id, amount, payment_status, job_id')
+        .eq('company_id', companyId)
+        .eq('job_id', job.id)
+        .in('payment_status', ['Pending', 'Partial', 'Partially Paid', 'Sent', 'Open'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      let invoice = invArr?.[0] || null
+
+      // 2. If no invoice, auto-create one from the job
+      if (!invoice) {
+        const jobTotal = parseFloat(job.job_total) || 0
+        // Get business unit from settings
+        const storeSettings = useStore.getState().settings
+        const buSetting = storeSettings.find(s => s.key === 'business_units')
+        let buName = ''
+        if (buSetting?.value) {
+          try {
+            const units = JSON.parse(buSetting.value)
+            if (units.length === 1) buName = units[0].name
+          } catch {}
         }
-      })
 
-      if (res.error || !res.data?.clientSecret) {
-        setStripeError(res.data?.error || res.error?.message || 'Failed to initialize payment')
-        setStripeLoading(false)
-        return
+        const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+        const { data: newInv } = await supabase
+          .from('invoices')
+          .insert({
+            company_id: companyId,
+            invoice_id: invoiceNumber,
+            job_id: job.id,
+            customer_id: job.customer_id || null,
+            amount: jobTotal,
+            payment_status: 'Pending',
+            business_unit: buName || null,
+            job_description: job.job_title || null
+          })
+          .select()
+          .single()
+        invoice = newInv
       }
 
-      const { clientSecret: secret, publishableKey, paymentIntentId: piId } = res.data
+      if (invoice) {
+        setPaymentInvoice(invoice)
 
-      if (!publishableKey) {
-        setStripeError('Stripe publishable key not configured. Go to Settings → Payments.')
-        setStripeLoading(false)
-        return
+        // Calculate balance
+        const { data: existingPayments } = await supabase
+          .from('payments')
+          .select('amount')
+          .eq('invoice_id', invoice.id)
+          .eq('status', 'Completed')
+        const paid = (existingPayments || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+        const balance = Math.max(0, (parseFloat(invoice.amount) || 0) - paid)
+        if (balance > 0) {
+          setPaymentForm(f => ({ ...f, amount: balance.toFixed(2) }))
+        }
       }
-
-      setClientSecret(secret)
-      setPaymentIntentId(piId)
-      setStripePromise(loadStripe(publishableKey))
     } catch (err) {
-      setStripeError(err.message || 'Failed to connect to payment service')
+      console.error('Error setting up payment:', err)
     }
     setStripeLoading(false)
   }
 
-  // Handle successful Stripe payment
-  const handleStripeSuccess = async (paymentIntent) => {
-    // Record in our payments table
+  // Open portal for card/ACH payment — customer pays on their phone
+  const handlePayWithPortal = async () => {
+    if (!paymentInvoice) return
+    setStripeLoading(true)
     try {
-      await supabase.from('payments').insert({
-        company_id: companyId,
-        job_id: paymentJob.id,
-        customer_id: paymentJob.customer_id,
-        amount: parseFloat(paymentForm.amount),
-        method: 'Card',
-        status: 'Completed',
-        date: new Date().toISOString(),
-        notes: `Collected on-site by ${firstName} — Stripe ${paymentIntent.id}`,
-        stripe_payment_intent_id: paymentIntent.id
-      })
+      // Create portal token for this invoice
+      const { data: portalToken } = await supabase
+        .from('customer_portal_tokens')
+        .insert({
+          document_type: 'invoice',
+          document_id: paymentInvoice.id,
+          company_id: companyId,
+          customer_id: paymentInvoice.customer_id || paymentJob?.customer_id || null,
+          expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+        })
+        .select('token')
+        .single()
+
+      if (portalToken?.token) {
+        const portalUrl = `https://jobscout.appsannex.com/portal/${portalToken.token}`
+        window.open(portalUrl, '_blank')
+        // Update invoice with portal token
+        await supabase.from('invoices').update({ portal_token: portalToken.token }).eq('id', paymentInvoice.id)
+      }
     } catch (err) {
-      // Non-fatal — the Stripe payment went through even if our record fails
-      console.error('Error recording payment in DB:', err)
+      alert('Failed to open payment page: ' + err.message)
     }
-    setPaymentSuccess(true)
-    setClientSecret(null)
-    setPaymentIntentId(null)
+    setStripeLoading(false)
   }
 
-  // Record non-card payment (cash, check, venmo, zelle, etc.)
+  // Record cash/check payment (manual, tied to invoice)
   const handleRecordPayment = async () => {
     if (!paymentJob || !paymentForm.amount) return
     setPaymentSaving(true)
     try {
-      await supabase.from('payments').insert({
+      const paymentData = {
         company_id: companyId,
         job_id: paymentJob.id,
         customer_id: paymentJob.customer_id,
@@ -533,15 +567,30 @@ export default function FieldScout() {
         status: 'Completed',
         date: new Date().toISOString(),
         notes: paymentForm.notes || `Collected on-site by ${firstName}${paymentForm.reference ? ` — Ref: ${paymentForm.reference}` : ''}`
-      })
+      }
+      if (paymentInvoice?.id) paymentData.invoice_id = paymentInvoice.id
+      await supabase.from('payments').insert(paymentData)
+
+      // Update invoice payment status + amount if it was $0
+      if (paymentInvoice?.id) {
+        let invAmt = parseFloat(paymentInvoice.amount) || 0
+        // If invoice was auto-created with $0 amount, update it to the payment amount
+        if (invAmt === 0 && parseFloat(paymentForm.amount) > 0) {
+          invAmt = parseFloat(paymentForm.amount)
+          await supabase.from('invoices').update({ amount: invAmt }).eq('id', paymentInvoice.id)
+        }
+        const { data: allPayments } = await supabase
+          .from('payments')
+          .select('amount')
+          .eq('invoice_id', paymentInvoice.id)
+          .eq('status', 'Completed')
+        const totalPaid = (allPayments || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+        const newStatus = totalPaid >= invAmt ? 'Paid' : 'Partially Paid'
+        await supabase.from('invoices').update({ payment_status: newStatus }).eq('id', paymentInvoice.id)
+      }
+
       setPaymentSuccess(true)
-      setTimeout(() => {
-        setPaymentJob(null)
-        setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
-        setPaymentSuccess(false)
-        setClientSecret(null)
-        setPaymentIntentId(null)
-      }, 1500)
+      setTimeout(() => closePaymentModal(), 1500)
     } catch (err) {
       alert('Error recording payment: ' + err.message)
     } finally {
@@ -552,6 +601,7 @@ export default function FieldScout() {
   // Clean up stripe state when modal closes
   const closePaymentModal = () => {
     setPaymentJob(null)
+    setPaymentInvoice(null)
     setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
     setPaymentSuccess(false)
     setClientSecret(null)
@@ -861,7 +911,7 @@ export default function FieldScout() {
       <div style={{ marginBottom: '20px', textAlign: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '4px' }}>
           <Compass size={24} style={{ color: theme.accent }} />
-          <h1 style={{ fontSize: '22px', fontWeight: '700', color: theme.text, margin: 0 }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '22px', fontWeight: '700', color: theme.text, margin: 0 }}>
             {getGreeting()}, {firstName}
           </h1>
         </div>
@@ -1393,81 +1443,6 @@ export default function FieldScout() {
                       )}
                     </div>
 
-                    {/* Quick action row — always visible */}
-                    {!isExpanded && (
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
-                        {job.status !== 'Completed' && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleMarkComplete(job.id) }}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: '5px',
-                              padding: '6px 12px',
-                              background: verifiedJobs.has(job.id)
-                                ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                                : 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                              border: 'none', borderRadius: '20px', color: '#fff',
-                              fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap'
-                            }}
-                          >
-                            {verifiedJobs.has(job.id) ? <><CheckCircle size={13} /> Verified</> : <><Shield size={13} /> Complete Job</>}
-                          </button>
-                        )}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); fetchInvoice(job) }}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '5px',
-                            padding: '6px 12px',
-                            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                            border: 'none', borderRadius: '20px', color: '#fff',
-                            fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap'
-                          }}
-                        >
-                          <FileText size={13} /> Invoice
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setPaymentJob(job); setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' }); setPaymentSuccess(false) }}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '5px',
-                            padding: '6px 12px',
-                            background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                            border: 'none', borderRadius: '20px', color: '#fff',
-                            fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap'
-                          }}
-                        >
-                          <DollarSign size={13} /> Payment
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); triggerReceiptCapture(job.id) }}
-                          disabled={receiptUploading === job.id}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '5px',
-                            padding: '6px 12px',
-                            background: receiptUploading === job.id
-                              ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)'
-                              : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                            border: 'none', borderRadius: '20px', color: '#fff',
-                            fontSize: '12px', fontWeight: '600', cursor: receiptUploading === job.id ? 'wait' : 'pointer', whiteSpace: 'nowrap'
-                          }}
-                        >
-                          <Camera size={13} /> {receiptUploading === job.id ? 'Uploading...' : 'Receipt'}
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); shareReviewLink(job) }}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '5px',
-                            padding: '6px 12px',
-                            background: reviewSent.has(job.id)
-                              ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                              : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                            border: 'none', borderRadius: '20px', color: '#fff',
-                            fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap'
-                          }}
-                        >
-                          <Star size={13} /> {reviewSent.has(job.id) ? 'Sent!' : 'Review'}
-                        </button>
-                      </div>
-                    )}
-
                     {/* Notes preview */}
                     {job.notes && !isExpanded && (
                       <div style={{
@@ -1551,28 +1526,21 @@ export default function FieldScout() {
                         </div>
                       )}
 
-                      {/* Action buttons */}
+                      {/* ── Actions ── */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {/* Clock In to This Job — only show if not already clocked in */}
+
+                        {/* Primary: Clock In (if not clocked in) */}
                         {!activeEntry && (
                           <button
                             onClick={() => handleClockIn(job.id)}
                             disabled={clockingIn}
                             style={{
-                              width: '100%',
-                              padding: '16px',
-                              height: '54px',
+                              width: '100%', padding: '16px', height: '54px',
                               background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                              border: 'none',
-                              borderRadius: '12px',
-                              color: '#fff',
-                              fontSize: '16px',
-                              fontWeight: '700',
+                              border: 'none', borderRadius: '12px', color: '#fff',
+                              fontSize: '16px', fontWeight: '700',
                               cursor: clockingIn ? 'wait' : 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '10px'
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
                             }}
                           >
                             <Play size={20} />
@@ -1580,187 +1548,113 @@ export default function FieldScout() {
                           </button>
                         )}
 
+                        {/* Row: Navigate + Work Order */}
                         <div style={{ display: 'flex', gap: '8px' }}>
                           {address && (
                             <button
                               onClick={() => openMaps(address)}
                               style={{
-                                flex: 1,
-                                padding: '12px',
+                                flex: 1, padding: '12px',
                                 backgroundColor: theme.accentBg,
                                 border: `1px solid ${theme.accent}`,
-                                borderRadius: '10px',
-                                color: theme.accent,
-                                fontSize: '14px',
-                                fontWeight: '500',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px',
+                                borderRadius: '10px', color: theme.accent,
+                                fontSize: '14px', fontWeight: '500', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                                 minHeight: '44px'
                               }}
                             >
-                              <Navigation size={16} />
-                              Navigate
+                              <Navigation size={16} /> Navigate
                             </button>
                           )}
                           <button
                             onClick={() => navigate(`/jobs/${job.id}`)}
                             style={{
-                              flex: 1,
-                              padding: '12px',
+                              flex: 1, padding: '12px',
                               backgroundColor: 'transparent',
                               border: `1px solid ${theme.border}`,
-                              borderRadius: '10px',
-                              color: theme.textSecondary,
-                              fontSize: '14px',
-                              fontWeight: '500',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
+                              borderRadius: '10px', color: theme.textSecondary,
+                              fontSize: '14px', fontWeight: '500', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                               minHeight: '44px'
                             }}
                           >
-                            <ExternalLink size={16} />
-                            View Job
+                            <FileText size={16} /> Work Order
                           </button>
                         </div>
 
-                        {/* Mark Complete (requires Victor) */}
+                        {/* Primary: Collect Payment */}
+                        <button
+                          onClick={() => openPaymentModal(job)}
+                          style={{
+                            width: '100%', padding: '14px',
+                            background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                            border: 'none', borderRadius: '10px', color: '#fff',
+                            fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                            minHeight: '48px'
+                          }}
+                        >
+                          <DollarSign size={18} /> Collect Payment
+                        </button>
+
+                        {/* Complete Job */}
                         {job.status !== 'Completed' && (
                           <button
                             onClick={() => handleMarkComplete(job.id)}
                             style={{
-                              width: '100%',
-                              padding: '14px',
+                              width: '100%', padding: '12px',
                               background: verifiedJobs.has(job.id)
                                 ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
                                 : 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                              border: 'none',
-                              borderRadius: '10px',
-                              color: '#fff',
-                              fontSize: '15px',
-                              fontWeight: '700',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '8px',
-                              minHeight: '48px'
+                              border: 'none', borderRadius: '10px', color: '#fff',
+                              fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                              minHeight: '44px'
                             }}
                           >
-                            {verifiedJobs.has(job.id) ? (
-                              <><CheckCircle size={18} /> Verified — Job Complete</>
-                            ) : (
-                              <><Shield size={18} /> Complete Job (Verify First)</>
-                            )}
+                            {verifiedJobs.has(job.id)
+                              ? <><CheckCircle size={16} /> Verified — Complete</>
+                              : <><Shield size={16} /> Complete Job</>}
                           </button>
                         )}
 
-                        {/* Show Invoice & Collect Payment */}
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                        {/* Secondary row: Receipt + Review */}
+                        <div style={{ display: 'flex', gap: '8px' }}>
                           <button
-                            onClick={() => fetchInvoice(job)}
+                            onClick={() => triggerReceiptCapture(job.id)}
+                            disabled={receiptUploading === job.id}
                             style={{
-                              flex: 1,
-                              padding: '12px',
-                              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                              border: 'none',
+                              flex: 1, padding: '10px',
+                              backgroundColor: 'transparent',
+                              border: `1px solid ${theme.border}`,
                               borderRadius: '10px',
-                              color: '#fff',
-                              fontSize: '14px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
+                              color: theme.textSecondary,
+                              fontSize: '13px', fontWeight: '500',
+                              cursor: receiptUploading === job.id ? 'wait' : 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                               minHeight: '44px'
                             }}
                           >
-                            <FileText size={16} />
-                            Show Invoice
+                            <Camera size={14} />
+                            {receiptUploading === job.id ? 'Uploading...' : 'Receipt Photo'}
                           </button>
                           <button
-                            onClick={() => { setPaymentJob(job); setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' }); setPaymentSuccess(false) }}
+                            onClick={() => shareReviewLink(job)}
                             style={{
-                              flex: 1,
-                              padding: '12px',
-                              background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                              border: 'none',
+                              flex: 1, padding: '10px',
+                              backgroundColor: reviewSent.has(job.id) ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
+                              border: `1px solid ${reviewSent.has(job.id) ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
                               borderRadius: '10px',
-                              color: '#fff',
-                              fontSize: '14px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
+                              color: reviewSent.has(job.id) ? '#16a34a' : '#d97706',
+                              fontSize: '13px', fontWeight: '500', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                               minHeight: '44px'
                             }}
                           >
-                            <DollarSign size={16} />
-                            Collect Payment
+                            <Star size={14} />
+                            {reviewSent.has(job.id) ? 'Review Sent' : 'Get Review'}
                           </button>
                         </div>
-
-                        {/* Capture Receipt */}
-                        <button
-                          onClick={() => triggerReceiptCapture(job.id)}
-                          disabled={receiptUploading === job.id}
-                          style={{
-                            width: '100%',
-                            padding: '12px',
-                            background: receiptUploading === job.id
-                              ? theme.bg
-                              : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                            border: 'none',
-                            borderRadius: '10px',
-                            color: receiptUploading === job.id ? theme.textMuted : '#fff',
-                            fontSize: '14px',
-                            fontWeight: '600',
-                            cursor: receiptUploading === job.id ? 'wait' : 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
-                            minHeight: '44px'
-                          }}
-                        >
-                          <Camera size={16} />
-                          {receiptUploading === job.id ? 'Uploading Receipt...' : 'Capture Receipt'}
-                        </button>
-
-                        {/* Get Review */}
-                        <button
-                          onClick={() => shareReviewLink(job)}
-                          style={{
-                            width: '100%',
-                            padding: '12px',
-                            background: reviewSent.has(job.id)
-                              ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                              : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                            border: 'none',
-                            borderRadius: '10px',
-                            color: '#fff',
-                            fontSize: '14px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
-                            minHeight: '44px',
-                            marginTop: '4px'
-                          }}
-                        >
-                          <Star size={16} />
-                          {reviewSent.has(job.id) ? 'Review Sent!' : 'Ask for a Review'}
-                        </button>
                       </div>
                     </div>
                   )}
@@ -2274,6 +2168,11 @@ export default function FieldScout() {
                   Done
                 </button>
               </div>
+            ) : stripeLoading ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: theme.textMuted }}>
+                <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
+                <div style={{ fontSize: '15px' }}>Setting up invoice...</div>
+              </div>
             ) : (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -2283,234 +2182,148 @@ export default function FieldScout() {
                   </button>
                 </div>
 
-                <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px', padding: '10px 14px', backgroundColor: theme.bg, borderRadius: '10px' }}>
-                  <div style={{ fontWeight: '600', color: theme.text }}>{paymentJob.job_title || paymentJob.job_id}</div>
-                  <div style={{ fontSize: '13px' }}>{paymentJob.customer?.name}</div>
-                  {paymentJob.job_total && <div style={{ fontSize: '13px', color: '#16a34a', fontWeight: '600', marginTop: '4px' }}>Job Total: ${parseFloat(paymentJob.job_total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>}
+                {/* Job + Invoice info */}
+                <div style={{ marginBottom: '16px', padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '10px' }}>
+                  <div style={{ fontWeight: '600', color: theme.text, fontSize: '15px' }}>{paymentJob.job_title || paymentJob.job_id}</div>
+                  <div style={{ fontSize: '13px', color: theme.textSecondary }}>{paymentJob.customer?.name}</div>
+                  {paymentInvoice && (
+                    <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', color: theme.textSecondary }}>{paymentInvoice.invoice_id}</span>
+                      <span style={{ fontSize: '16px', fontWeight: '700', color: '#16a34a' }}>
+                        ${paymentForm.amount ? parseFloat(paymentForm.amount).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Amount */}
-                <div style={{ marginBottom: '14px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>Amount</label>
+                {/* Option 1: Pay with Card or Bank Account (opens portal) */}
+                <button
+                  onClick={handlePayWithPortal}
+                  disabled={!paymentInvoice || stripeLoading}
+                  style={{
+                    width: '100%',
+                    padding: '18px',
+                    background: paymentInvoice
+                      ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)'
+                      : theme.bg,
+                    border: 'none',
+                    borderRadius: '14px',
+                    color: paymentInvoice ? '#fff' : theme.textMuted,
+                    fontSize: '17px',
+                    fontWeight: '700',
+                    cursor: paymentInvoice ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    minHeight: '56px',
+                    marginBottom: '6px'
+                  }}
+                >
+                  <CreditCard size={20} />
+                  Pay with Card or Bank
+                </button>
+                <p style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'center', margin: '0 0 20px', lineHeight: '1.4' }}>
+                  Opens secure payment page — hand phone to customer
+                </p>
+
+                {/* Amount input */}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: theme.textSecondary, marginBottom: '6px' }}>Amount</label>
                   <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '20px', fontWeight: '700', color: theme.textMuted }}>$</span>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, fontSize: '16px', fontWeight: '600' }}>$</span>
                     <input
                       type="number"
-                      inputMode="decimal"
                       value={paymentForm.amount}
-                      onChange={(e) => { setPaymentForm(f => ({ ...f, amount: e.target.value })); setClientSecret(null); setStripeError(null) }}
+                      onChange={(e) => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
                       placeholder="0.00"
-                      autoFocus
-                      disabled={!!clientSecret}
+                      step="0.01"
                       style={{
-                        width: '100%',
-                        padding: '16px 16px 16px 32px',
-                        fontSize: '24px',
-                        fontWeight: '700',
-                        backgroundColor: clientSecret ? theme.bgCard : theme.bg,
-                        border: `2px solid ${theme.border}`,
-                        borderRadius: '12px',
-                        color: theme.text,
-                        textAlign: 'left',
-                        boxSizing: 'border-box',
-                        opacity: clientSecret ? 0.7 : 1
+                        width: '100%', padding: '12px 12px 12px 28px',
+                        backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+                        borderRadius: '10px', color: theme.text, fontSize: '18px', fontWeight: '700',
+                        boxSizing: 'border-box'
                       }}
                     />
                   </div>
                 </div>
 
-                {/* Payment method pills */}
-                <div style={{ marginBottom: '14px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>Method</label>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {[
-                      { id: 'Cash', icon: Banknote, label: 'Cash' },
-                      { id: 'Check', icon: CreditCard, label: 'Check' },
-                      { id: 'Card', icon: CreditCard, label: 'Card' },
-                      { id: 'Venmo', icon: Smartphone, label: 'Venmo' },
-                      { id: 'Zelle', icon: Smartphone, label: 'Zelle' },
-                      { id: 'Other', icon: DollarSign, label: 'Other' }
-                    ].map(m => (
-                      <button
-                        key={m.id}
-                        onClick={() => { setPaymentForm(f => ({ ...f, method: m.id })); setClientSecret(null); setStripeError(null) }}
-                        disabled={!!clientSecret}
-                        style={{
-                          padding: '10px 16px',
-                          backgroundColor: paymentForm.method === m.id ? theme.accent : theme.bg,
-                          color: paymentForm.method === m.id ? '#fff' : theme.textSecondary,
-                          border: `1px solid ${paymentForm.method === m.id ? theme.accent : theme.border}`,
-                          borderRadius: '10px',
-                          cursor: clientSecret ? 'not-allowed' : 'pointer',
-                          fontSize: '13px',
-                          fontWeight: '600',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          minHeight: '44px',
-                          opacity: clientSecret && paymentForm.method !== m.id ? 0.5 : 1
-                        }}
-                      >
-                        <m.icon size={14} />
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
+                {/* Divider */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '0 0 16px' }}>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase' }}>or record manually</span>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
                 </div>
 
-                {/* === CARD PAYMENT (Stripe) === */}
-                {paymentForm.method === 'Card' && (
-                  <div style={{ marginBottom: '14px' }}>
-                    {!clientSecret && !stripeLoading && (
-                      <>
-                        {stripeError && (
-                          <div style={{
-                            marginBottom: '12px', padding: '10px 14px', backgroundColor: 'rgba(239,68,68,0.1)',
-                            border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', color: '#ef4444',
-                            fontSize: '13px', fontWeight: '500'
-                          }}>
-                            {stripeError}
-                          </div>
-                        )}
-                        <button
-                          onClick={initStripePayment}
-                          disabled={!paymentForm.amount || parseFloat(paymentForm.amount) <= 0}
-                          style={{
-                            width: '100%', padding: '18px',
-                            background: paymentForm.amount && parseFloat(paymentForm.amount) > 0
-                              ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : theme.bg,
-                            border: 'none', borderRadius: '14px',
-                            color: paymentForm.amount && parseFloat(paymentForm.amount) > 0 ? '#fff' : theme.textMuted,
-                            fontSize: '17px', fontWeight: '700',
-                            cursor: paymentForm.amount && parseFloat(paymentForm.amount) > 0 ? 'pointer' : 'not-allowed',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                            minHeight: '56px'
-                          }}
-                        >
-                          <CreditCard size={20} />
-                          {paymentForm.amount ? `Charge $${parseFloat(paymentForm.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })} — Enter Card` : 'Enter amount first'}
-                        </button>
-                      </>
-                    )}
+                {/* Cash/Check method pills */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  {[
+                    { id: 'Cash', label: 'Cash' },
+                    { id: 'Check', label: 'Check' },
+                    { id: 'Venmo', label: 'Venmo' },
+                    { id: 'Zelle', label: 'Zelle' },
+                    { id: 'Other', label: 'Other' }
+                  ].map(m => (
+                    <button
+                      key={m.id}
+                      onClick={() => setPaymentForm(f => ({ ...f, method: m.id }))}
+                      style={{
+                        padding: '8px 14px',
+                        backgroundColor: paymentForm.method === m.id ? theme.accent : theme.bg,
+                        color: paymentForm.method === m.id ? '#fff' : theme.textSecondary,
+                        border: `1px solid ${paymentForm.method === m.id ? theme.accent : theme.border}`,
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        minHeight: '40px'
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
 
-                    {stripeLoading && (
-                      <div style={{ textAlign: 'center', padding: '24px', color: theme.textMuted }}>
-                        <Loader2 size={24} style={{ animation: 'spin 1s linear infinite', marginBottom: '8px' }} />
-                        <div style={{ fontSize: '14px' }}>Setting up secure payment...</div>
-                      </div>
-                    )}
-
-                    {clientSecret && stripePromise && (
-                      <Elements stripe={stripePromise} options={{
-                        clientSecret,
-                        appearance: {
-                          theme: 'flat',
-                          variables: {
-                            colorPrimary: '#16a34a',
-                            colorBackground: theme.bg,
-                            colorText: theme.text,
-                            colorDanger: '#ef4444',
-                            borderRadius: '10px',
-                            fontFamily: 'system-ui, -apple-system, sans-serif',
-                            spacingUnit: '4px'
-                          },
-                          rules: {
-                            '.Input': {
-                              border: `1px solid ${theme.border}`,
-                              padding: '12px',
-                              fontSize: '16px'
-                            },
-                            '.Label': {
-                              fontSize: '13px',
-                              fontWeight: '600',
-                              color: theme.textMuted
-                            }
-                          }
-                        }
-                      }}>
-                        <StripeCardForm
-                          theme={theme}
-                          amount={paymentForm.amount}
-                          onSuccess={handleStripeSuccess}
-                          onError={(msg) => setStripeError(msg)}
-                        />
-                      </Elements>
-                    )}
+                {/* Check # / Reference */}
+                {['Check', 'Other'].includes(paymentForm.method) && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <input
+                      value={paymentForm.reference}
+                      onChange={(e) => setPaymentForm(f => ({ ...f, reference: e.target.value }))}
+                      placeholder={paymentForm.method === 'Check' ? 'Check #' : 'Reference'}
+                      style={{
+                        width: '100%', padding: '10px 12px',
+                        backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+                        borderRadius: '8px', color: theme.text, fontSize: '14px', boxSizing: 'border-box'
+                      }}
+                    />
                   </div>
                 )}
 
-                {/* === NON-CARD PAYMENT === */}
-                {paymentForm.method !== 'Card' && (
-                  <>
-                    {/* Reference (check number, etc.) */}
-                    {['Check', 'Other'].includes(paymentForm.method) && (
-                      <div style={{ marginBottom: '14px' }}>
-                        <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>
-                          {paymentForm.method === 'Check' ? 'Check #' : 'Reference'}
-                        </label>
-                        <input
-                          value={paymentForm.reference}
-                          onChange={(e) => setPaymentForm(f => ({ ...f, reference: e.target.value }))}
-                          style={{
-                            width: '100%',
-                            padding: '12px',
-                            backgroundColor: theme.bg,
-                            border: `1px solid ${theme.border}`,
-                            borderRadius: '10px',
-                            color: theme.text,
-                            fontSize: '14px',
-                            boxSizing: 'border-box'
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    {/* Notes */}
-                    <div style={{ marginBottom: '20px' }}>
-                      <label style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, display: 'block', marginBottom: '6px' }}>Notes (optional)</label>
-                      <input
-                        value={paymentForm.notes}
-                        onChange={(e) => setPaymentForm(f => ({ ...f, notes: e.target.value }))}
-                        placeholder="e.g., Partial payment, tip included"
-                        style={{
-                          width: '100%',
-                          padding: '12px',
-                          backgroundColor: theme.bg,
-                          border: `1px solid ${theme.border}`,
-                          borderRadius: '10px',
-                          color: theme.text,
-                          fontSize: '14px',
-                          boxSizing: 'border-box'
-                        }}
-                      />
-                    </div>
-
-                    {/* Submit */}
-                    <button
-                      onClick={handleRecordPayment}
-                      disabled={!paymentForm.amount || paymentSaving}
-                      style={{
-                        width: '100%',
-                        padding: '18px',
-                        background: paymentForm.amount ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : theme.bg,
-                        border: 'none',
-                        borderRadius: '14px',
-                        color: paymentForm.amount ? '#fff' : theme.textMuted,
-                        fontSize: '17px',
-                        fontWeight: '700',
-                        cursor: paymentForm.amount ? 'pointer' : 'not-allowed',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '10px',
-                        minHeight: '56px'
-                      }}
-                    >
-                      <DollarSign size={20} />
-                      {paymentSaving ? 'Recording...' : `Record ${paymentForm.method} Payment`}
-                    </button>
-                  </>
-                )}
+                {/* Record button */}
+                <button
+                  onClick={handleRecordPayment}
+                  disabled={!paymentForm.amount || paymentSaving}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    backgroundColor: paymentForm.amount ? theme.accent : theme.bg,
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: paymentForm.amount ? '#fff' : theme.textMuted,
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    cursor: paymentForm.amount ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    minHeight: '48px'
+                  }}
+                >
+                  <DollarSign size={18} />
+                  {paymentSaving ? 'Recording...' : `Record ${paymentForm.method} — $${paymentForm.amount || '0.00'}`}
+                </button>
               </>
             )}
           </div>

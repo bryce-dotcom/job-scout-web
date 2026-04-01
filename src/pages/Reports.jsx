@@ -5,6 +5,7 @@ import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { isAdmin as checkAdmin, isManager as checkManager } from '../lib/accessControl'
 import { toast } from '../lib/toast'
+import { useIsMobile } from '../hooks/useIsMobile'
 import {
   BarChart3,
   TrendingUp,
@@ -86,6 +87,7 @@ const reportTypes = [
 export default function Reports() {
   const { reportType } = useParams()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
   const leads = useStore((state) => state.leads)
@@ -271,7 +273,7 @@ export default function Reports() {
     const d = financialReportData
     return (
       <div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <StatCard label="Total Invoiced" value={formatCurrency(d.totalInvoiced)} />
           <StatCard label="Total Collected" value={formatCurrency(d.totalCollected)} color="#4a7c59" />
           <StatCard label="Outstanding" value={formatCurrency(d.outstanding)} color={d.outstanding > 0 ? '#c25a5a' : theme.text} />
@@ -279,7 +281,7 @@ export default function Reports() {
           <StatCard label="Total Expenses" value={formatCurrency(d.totalExpenses)} color="#c25a5a" />
           <StatCard label="Net Income" value={formatCurrency(d.netIncome)} color={d.netIncome >= 0 ? '#4a7c59' : '#c25a5a'} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '24px' }}>
           <BreakdownTable title="Revenue by Month" entries={Object.entries(d.revenueByMonth).sort((a, b) => a[0].localeCompare(b[0]))} valueFormatter={formatCurrency} valueColor="#4a7c59" />
           <BreakdownTable title="Expenses by Category" entries={Object.entries(d.expensesByCategory).sort((a, b) => b[1] - a[1])} valueFormatter={formatCurrency} valueColor="#c25a5a" />
           <BreakdownTable title="Top Customers" entries={d.topCustomers.map(([n, a], i) => [`${i + 1}. ${n}`, a])} valueFormatter={formatCurrency} valueColor="#4a7c59" />
@@ -292,12 +294,12 @@ export default function Reports() {
     const d = employeeReportData
     return (
       <div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <StatCard label="Total Hours Logged" value={d.totalHours.toFixed(1)} subvalue="hours" />
           <StatCard label="Active Employees" value={employees.length} />
         </div>
         <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Hours by Employee</h3>
-        <div style={{ backgroundColor: theme.bg, borderRadius: '8px', overflow: 'hidden' }}>
+        <div style={{ backgroundColor: theme.bg, borderRadius: '8px', overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ backgroundColor: theme.accentBg }}>
@@ -325,12 +327,12 @@ export default function Reports() {
     const d = inventoryReportData
     return (
       <div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <StatCard label="Total Items" value={d.totalItems} />
           <StatCard label="Low Stock Items" value={d.lowStock.length} color={d.lowStock.length > 0 ? '#c25a5a' : theme.text} />
           <StatCard label="Total Inventory Value" value={formatCurrency(d.totalValue)} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px' }}>
           <BreakdownTable title="Items by Location" entries={Object.entries(d.byLocation)} />
           <div>
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#c25a5a', marginBottom: '12px' }}>Low Stock Items</h3>
@@ -354,12 +356,12 @@ export default function Reports() {
     const d = fleetReportData
     return (
       <div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <StatCard label="Total Assets" value={d.totalAssets} />
           <StatCard label="Maintenance Due" value={d.maintenanceDue.length} color={d.maintenanceDue.length > 0 ? '#d4940a' : theme.text} />
           <StatCard label="Maintenance Cost" value={formatCurrency(d.maintenanceCost)} subvalue="this period" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '24px' }}>
           <BreakdownTable title="Assets by Status" entries={Object.entries(d.byStatus)} />
           <div>
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#d4940a', marginBottom: '12px' }}>Maintenance Due</h3>
@@ -434,13 +436,13 @@ export default function Reports() {
   // ── Report Selector View ──────────────────────────────────────────
   if (!reportType) {
     return (
-      <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
           <BarChart3 size={28} style={{ color: theme.accent }} />
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Reports</h1>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Reports</h1>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
           {visibleReports.map(report => (
             <div
               key={report.id}
@@ -488,13 +490,13 @@ export default function Reports() {
   const showDateRange = !['custom', 'products-needed'].includes(reportType)
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {currentReport && <currentReport.icon size={28} style={{ color: theme.accent }} />}
+          {currentReport && <currentReport.icon size={isMobile ? 24 : 28} style={{ color: theme.accent }} />}
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>{currentReport?.label || 'Report'}</h1>
+            <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>{currentReport?.label || 'Report'}</h1>
             <button onClick={() => navigate('/reports')} style={{ padding: 0, backgroundColor: 'transparent', border: 'none', color: theme.accent, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <ArrowLeft size={14} /> Back to Reports
             </button>
@@ -503,7 +505,7 @@ export default function Reports() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           {showDateRange && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <Calendar size={16} style={{ color: theme.textMuted }} />
               <input type="date" value={dateRange.start} onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))} style={inputStyle} />
               <span style={{ color: theme.textMuted, fontSize: '13px' }}>to</span>
@@ -524,7 +526,7 @@ export default function Reports() {
       </div>
 
       {/* Report Content */}
-      <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '24px' }}>
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: isMobile ? '16px' : '24px', overflowX: 'auto' }}>
         {renderReport()}
       </div>
     </div>

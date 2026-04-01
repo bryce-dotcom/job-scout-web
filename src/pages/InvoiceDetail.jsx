@@ -8,6 +8,7 @@ import DealBreadcrumb from '../components/DealBreadcrumb'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 // Light theme fallback
 const defaultTheme = {
@@ -23,6 +24,7 @@ const defaultTheme = {
 }
 
 export default function InvoiceDetail() {
+  const isMobile = useIsMobile()
   const { id } = useParams()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -215,7 +217,7 @@ export default function InvoiceDetail() {
 
     // Update payment status based on total paid vs invoice amount + CC fees
     const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) + paymentAmount
-    const invoiceAmount = parseFloat(invoice.amount) || 0
+    const invoiceAmount = (parseFloat(invoice.amount) || 0) + (parseFloat(invoice.credit_card_fee) || 0) + ccFeeAmount
     if (totalPaid >= invoiceAmount) {
       await supabase.from('invoices').update({
         payment_status: 'Paid',
@@ -306,6 +308,17 @@ export default function InvoiceDetail() {
     setSaving(true)
     await supabase.from('payments').delete().eq('id', payment.id)
 
+    // If this was a CC payment, subtract its CC fee from the invoice
+    if (payment.method === 'Credit Card' && ccFeeEnabled) {
+      const feePortion = Math.round(parseFloat(payment.amount) * (ccFeePercent / 100) * 100) / 100
+      const currentFee = parseFloat(invoice.credit_card_fee) || 0
+      const newFee = Math.max(0, currentFee - feePortion)
+      await supabase.from('invoices').update({
+        credit_card_fee: newFee,
+        updated_at: new Date().toISOString()
+      }).eq('id', id)
+    }
+
     // Recalculate remaining total
     const remainingPaid = payments
       .filter(p => p.id !== payment.id)
@@ -332,6 +345,7 @@ export default function InvoiceDetail() {
     setEditForm({
       amount: invoice.amount || '',
       discount_applied: invoice.discount_applied || '',
+      credit_card_fee: invoice.credit_card_fee || '',
       job_description: invoice.job_description || '',
       notes: invoice.notes || ''
     })
@@ -340,7 +354,7 @@ export default function InvoiceDetail() {
 
   const cancelEditing = () => {
     setIsEditing(false)
-    setEditForm({ amount: '', discount_applied: '', job_description: '', notes: '' })
+    setEditForm({ amount: '', discount_applied: '', credit_card_fee: '', job_description: '', notes: '' })
   }
 
   const saveEdits = async () => {
@@ -348,6 +362,7 @@ export default function InvoiceDetail() {
     const { error } = await supabase.from('invoices').update({
       amount: parseFloat(editForm.amount) || 0,
       discount_applied: parseFloat(editForm.discount_applied) || 0,
+      credit_card_fee: parseFloat(editForm.credit_card_fee) || 0,
       job_description: editForm.job_description || null,
       notes: editForm.notes || null,
       updated_at: new Date().toISOString()
@@ -941,13 +956,14 @@ export default function InvoiceDetail() {
   }
 
   const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-  const balanceDue = (parseFloat(invoice.amount) || 0) - totalPaid
+  const ccFeeOnInvoice = parseFloat(invoice.credit_card_fee) || 0
+  const balanceDue = (parseFloat(invoice.amount) || 0) + ccFeeOnInvoice - totalPaid
   const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <button
           onClick={() => navigate('/invoices')}
           style={{
@@ -971,7 +987,7 @@ export default function InvoiceDetail() {
               </span>
             )}
           </p>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             {invoice.customer?.name || 'Invoice'}
           </h1>
         </div>
@@ -997,7 +1013,7 @@ export default function InvoiceDetail() {
         jobId={invoice.job_id}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 360px', gap: '24px' }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Customer Info */}
@@ -1010,7 +1026,7 @@ export default function InvoiceDetail() {
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>
               Bill To
             </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <div>
                 <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Customer</p>
                 {invoice.customer?.id ? (
@@ -1047,7 +1063,7 @@ export default function InvoiceDetail() {
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>
                 Job Details
               </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Job ID</p>
                   <button
@@ -1407,10 +1423,20 @@ export default function InvoiceDetail() {
                 )}
               </div>
 
-              {invoice.credit_card_fee > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+              {(invoice.credit_card_fee > 0 || isEditing) && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>
                   <span style={{ color: theme.textSecondary }}>CC Fee</span>
-                  <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.credit_card_fee)}</span>
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.credit_card_fee ?? invoice.credit_card_fee ?? ''}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, credit_card_fee: e.target.value }))}
+                      style={{ ...inputStyle, width: '120px', textAlign: 'right' }}
+                    />
+                  ) : (
+                    <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.credit_card_fee)}</span>
+                  )}
                 </div>
               )}
 
@@ -1642,7 +1668,7 @@ export default function InvoiceDetail() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '400px'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '400px'
           }}>
             <div style={{
               display: 'flex',
@@ -1662,7 +1688,7 @@ export default function InvoiceDetail() {
               </button>
             </div>
 
-            <div style={{ padding: '20px' }}>
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
                   <label style={labelStyle}>Amount</label>
@@ -1676,7 +1702,7 @@ export default function InvoiceDetail() {
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Date</label>
                     <input
@@ -1793,7 +1819,7 @@ export default function InvoiceDetail() {
         }}>
           <div style={{
             backgroundColor: theme.bgCard, borderRadius: '16px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.15)', width: '100%', maxWidth: '420px'
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)', width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '420px'
           }}>
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1807,7 +1833,7 @@ export default function InvoiceDetail() {
               </button>
             </div>
 
-            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '70vh', overflowY: 'auto' }}>
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
                 Select a card to charge for the remaining balance.
               </div>
@@ -1901,7 +1927,7 @@ export default function InvoiceDetail() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '450px'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '450px'
           }}>
             <div style={{
               display: 'flex',
@@ -1918,7 +1944,7 @@ export default function InvoiceDetail() {
               </button>
             </div>
 
-            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '70vh', overflowY: 'auto' }}>
               <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
                 Send this invoice via email. A PDF will be attached and a payment portal link will be included.
               </p>
@@ -1932,7 +1958,7 @@ export default function InvoiceDetail() {
                   style={inputStyle}
                 />
               </div>
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => setShowSendModal(false)}
                   style={{
@@ -1985,7 +2011,7 @@ export default function InvoiceDetail() {
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '900px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '900px',
             height: '90vh',
             display: 'flex',
             flexDirection: 'column',
@@ -1997,14 +2023,17 @@ export default function InvoiceDetail() {
               padding: '16px 20px',
               borderBottom: `1px solid ${theme.border}`,
               display: 'flex',
-              alignItems: 'center',
+              alignItems: isMobile ? 'stretch' : 'center',
+              flexDirection: isMobile ? 'column' : 'row',
               justifyContent: 'space-between',
-              flexShrink: 0
+              flexShrink: 0,
+              gap: isMobile ? '8px' : undefined,
+              flexWrap: 'wrap'
             }}>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
                 PDF Preview
               </h3>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   onClick={handleDiscardPreview}
                   style={{

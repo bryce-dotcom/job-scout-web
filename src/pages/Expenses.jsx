@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { EXPENSE_CATEGORIES } from '../lib/schema'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { Plus, Pencil, Trash2, X, Receipt, Search, DollarSign, Upload, Download, Image, ExternalLink, Camera } from 'lucide-react'
@@ -60,6 +61,7 @@ export default function Expenses() {
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     if (!companyId) {
@@ -235,10 +237,10 @@ export default function Expenses() {
 
   const getLinkedEntity = (expense) => {
     if (expense.job) return { label: expense.job.job_title || `Job #${expense.job.job_id || expense.job.id}`, path: `/jobs/${expense.job_id}`, color: '#3b82f6' }
-    if (expense.quote) return { label: `Quote ${expense.quote.quote_id || '#' + expense.quote_id}`, path: `/quotes/${expense.quote_id}`, color: '#a855f7' }
+    if (expense.quote) return { label: `Estimate ${expense.quote.quote_id || '#' + expense.quote_id}`, path: `/quotes/${expense.quote_id}`, color: '#a855f7' }
     if (expense.lead) return { label: expense.lead.customer_name || `Lead #${expense.lead_id}`, path: `/leads/${expense.lead_id}`, color: '#22c55e' }
     if (expense.job_id) return { label: `Job #${expense.job_id}`, path: `/jobs/${expense.job_id}`, color: '#3b82f6' }
-    if (expense.quote_id) return { label: `Quote #${expense.quote_id}`, path: `/quotes/${expense.quote_id}`, color: '#a855f7' }
+    if (expense.quote_id) return { label: `Estimate #${expense.quote_id}`, path: `/quotes/${expense.quote_id}`, color: '#a855f7' }
     if (expense.lead_id) return { label: `Lead #${expense.lead_id}`, path: `/leads/${expense.lead_id}`, color: '#22c55e' }
     return null
   }
@@ -262,6 +264,14 @@ export default function Expenses() {
     marginBottom: '6px'
   }
 
+  if (!user) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '14px', color: '#7d8a7f' }}>Loading...</div>
+      </div>
+    )
+  }
+
   if (!checkAdmin(user)) {
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
@@ -272,20 +282,21 @@ export default function Expenses() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-start' : 'center',
         justifyContent: 'space-between',
         gap: '16px',
         marginBottom: '24px',
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
           Expenses
         </h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
@@ -317,7 +328,7 @@ export default function Expenses() {
       {/* Summary Card */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: '16px',
         marginBottom: '24px'
       }}>
@@ -405,7 +416,8 @@ export default function Expenses() {
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
-          overflow: 'auto'
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch'
         }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
             <thead>
@@ -642,9 +654,10 @@ export default function Expenses() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '700px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '700px',
             maxHeight: '90vh',
-            overflowY: 'auto'
+            display: 'flex',
+            flexDirection: 'column'
           }}>
             <div style={{
               display: 'flex',
@@ -661,7 +674,7 @@ export default function Expenses() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
+            <form onSubmit={handleSubmit} style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               {error && (
                 <div style={{
                   marginBottom: '16px',
@@ -753,7 +766,7 @@ export default function Expenses() {
                 </div>
 
                 {/* Row 1: Category, Tax Category, 1065 Category */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Category</label>
                     <select name="category" value={formData.category} onChange={handleChange} style={inputStyle}>
@@ -774,7 +787,7 @@ export default function Expenses() {
                 </div>
 
                 {/* Row 2: Account, Business */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Account</label>
                     <input type="text" name="account" value={formData.account} onChange={handleChange} style={inputStyle} />
@@ -786,7 +799,7 @@ export default function Expenses() {
                 </div>
 
                 {/* Row 3: Client, Merchant */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Client</label>
                     <input type="text" name="client" value={formData.client} onChange={handleChange} style={inputStyle} />
@@ -798,7 +811,7 @@ export default function Expenses() {
                 </div>
 
                 {/* Row 4: Source, Description */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Source</label>
                     <input type="text" name="source" value={formData.source} onChange={handleChange} style={inputStyle} />
@@ -810,7 +823,7 @@ export default function Expenses() {
                 </div>
 
                 {/* Row 5: Receipt text, Date, Amount */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Receipt Ref</label>
                     <input type="text" name="receipt" value={formData.receipt} onChange={handleChange} style={inputStyle} placeholder="Receipt number" />
@@ -826,7 +839,7 @@ export default function Expenses() {
                 </div>
 
                 {/* Row 6: Expense ID, Status */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Expense ID</label>
                     <input type="text" name="expense_id" value={formData.expense_id} onChange={handleChange} style={inputStyle} />

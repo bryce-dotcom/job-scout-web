@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { toast } from '../lib/toast'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
 import { photoQueue } from '../lib/photoQueue'
 import { ArrowLeft, Plus, Minus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText, Copy, UserPlus } from 'lucide-react'
@@ -75,6 +76,7 @@ export default function LightingAuditDetail() {
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   // Audible click + haptic vibration for counter buttons
   const playClick = () => {
@@ -527,7 +529,7 @@ export default function LightingAuditDetail() {
   }
 
   return (
-    <div className="audit-detail-root page-padding" style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div className="audit-detail-root page-padding" style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       <style>{`
         @media (max-width: 768px) {
           .audit-detail-root input, .audit-detail-root select, .audit-detail-root textarea { font-size: 16px !important; }
@@ -563,9 +565,12 @@ export default function LightingAuditDetail() {
       {/* Header */}
       <div className="audit-detail-header page-header" style={{
         display: 'flex',
-        alignItems: 'flex-start',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'flex-start',
         justifyContent: 'space-between',
-        marginBottom: '24px'
+        marginBottom: '24px',
+        gap: isMobile ? '12px' : '0',
+        flexWrap: 'wrap'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button
@@ -584,7 +589,7 @@ export default function LightingAuditDetail() {
 
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-              <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+              <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
                 {audit.customer?.name || customers.find(c => c.id === audit.customer_id)?.name || 'Lighting Audit'}
               </h1>
               <span style={{
@@ -604,7 +609,7 @@ export default function LightingAuditDetail() {
           </div>
         </div>
 
-        <div className="audit-detail-actions button-group" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="audit-detail-actions button-group" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row', width: isMobile ? '100%' : 'auto' }}>
           <button
             onClick={handleSendToSetter}
             style={{ padding: '10px 16px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '500' }}
@@ -753,8 +758,8 @@ export default function LightingAuditDetail() {
       }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '16px'
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: isMobile ? '12px' : '16px'
         }}>
           <div>
             <div style={{ fontSize: '12px', color: theme.textMuted }}>Address</div>
@@ -787,13 +792,13 @@ export default function LightingAuditDetail() {
       {/* Summary Cards */}
       <div className="stat-grid" style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-        gap: '16px',
+        gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(150px, 1fr))',
+        gap: isMobile ? '8px' : '16px',
         marginBottom: '24px'
       }}>
         <div style={{
           backgroundColor: theme.bgCard,
-          padding: '20px',
+          padding: isMobile ? '14px' : '20px',
           borderRadius: '12px',
           border: `1px solid ${theme.border}`,
           textAlign: 'center'
@@ -1022,7 +1027,7 @@ export default function LightingAuditDetail() {
 
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+                  gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(100px, 1fr))',
                   gap: '12px'
                 }}>
                   <div>
@@ -1087,19 +1092,20 @@ export default function LightingAuditDetail() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000
+          zIndex: 1000,
+          padding: isMobile ? '16px' : '0'
         }}>
           <div className="audit-area-modal modal-content" style={{
             backgroundColor: theme.bgCard,
-            borderRadius: '16px',
-            padding: '24px',
+            borderRadius: isMobile ? '12px' : '16px',
+            padding: isMobile ? '16px' : '24px',
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '90vh',
             overflow: 'auto'
           }}>
             <h2 style={{
-              fontSize: '20px',
+              fontSize: isMobile ? '18px' : '20px',
               fontWeight: '700',
               color: theme.text,
               marginBottom: '20px'
@@ -1107,7 +1113,7 @@ export default function LightingAuditDetail() {
               {editingArea ? 'Edit Area' : 'Add Audit Area'}
             </h2>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
               {/* Lenard AI Photo Analysis */}
               {!editingArea && (
                 <div className="lenard-photo" style={{
@@ -1268,7 +1274,7 @@ export default function LightingAuditDetail() {
                 />
               </div>
 
-              <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1436,7 +1442,7 @@ export default function LightingAuditDetail() {
               </div>
 
               {/* Existing Watts / New Watts — side by side */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{
                     display: 'flex',
@@ -1618,7 +1624,8 @@ export default function LightingAuditDetail() {
               display: 'flex',
               gap: '12px',
               marginTop: '24px',
-              justifyContent: 'flex-end'
+              justifyContent: 'flex-end',
+              flexDirection: isMobile ? 'column' : 'row'
             }}>
               <button
                 onClick={() => {
@@ -1677,6 +1684,7 @@ export default function LightingAuditDetail() {
           customers={customers}
           utilityProviders={utilityProviders}
           theme={theme}
+          isMobile={isMobile}
           onSave={handleSaveAudit}
           onClose={() => setShowEditModal(false)}
         />
@@ -1685,7 +1693,7 @@ export default function LightingAuditDetail() {
   )
 }
 
-function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onClose }) {
+function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onClose, isMobile }) {
   const [form, setForm] = useState({
     customer_id: audit.customer_id || '',
     address: audit.address || '',
@@ -1732,22 +1740,23 @@ function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onC
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.5)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 1000
+      zIndex: 1000,
+      padding: isMobile ? '16px' : '0'
     }}>
       <div className="audit-area-modal modal-content" style={{
         backgroundColor: theme.bgCard,
-        borderRadius: '16px',
-        padding: '24px',
+        borderRadius: isMobile ? '12px' : '16px',
+        padding: isMobile ? '16px' : '24px',
         width: '100%',
-        maxWidth: '560px',
+        maxWidth: isMobile ? 'calc(100vw - 32px)' : '560px',
         maxHeight: '90vh',
         overflow: 'auto'
       }}>
-        <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '20px' }}>
+        <h2 style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text, marginBottom: '20px' }}>
           Edit Audit
         </h2>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
           <div>
             <label style={labelStyle}>Customer</label>
             <SearchableSelect
@@ -1764,7 +1773,7 @@ function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onC
             <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} style={inputStyle} />
           </div>
 
-          <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
+          <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr', gap: '12px' }}>
             <div>
               <label style={labelStyle}>City</label>
               <input type="text" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} style={inputStyle} />
@@ -1792,7 +1801,7 @@ function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onC
             />
           </div>
 
-          <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+          <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '12px' }}>
             <div>
               <label style={labelStyle}>Electric Rate ($/kWh)</label>
               <input type="number" step="0.01" min="0" value={form.electric_rate} onChange={(e) => setForm({ ...form, electric_rate: e.target.value })} style={inputStyle} />
@@ -1808,7 +1817,7 @@ function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onC
           </div>
         </div>
 
-        <div className="audit-modal-footer button-group" style={{ display: 'flex', gap: '12px', marginTop: '24px', justifyContent: 'flex-end' }}>
+        <div className="audit-modal-footer button-group" style={{ display: 'flex', gap: '12px', marginTop: '24px', justifyContent: 'flex-end', flexDirection: isMobile ? 'column' : 'row' }}>
           <button
             onClick={onClose}
             style={{

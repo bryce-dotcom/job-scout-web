@@ -1689,7 +1689,7 @@ export default function Jobs() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '600px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '600px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -1738,7 +1738,7 @@ export default function Jobs() {
                   <input type="text" name="job_address" value={formData.job_address} onChange={handleChange} style={inputStyle} placeholder="123 Main St, City, State" />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div style={{ position: 'relative' }}>
                     <label style={labelStyle}>Customer</label>
                     <div style={{ position: 'relative' }} ref={customerInputRef}>
@@ -1847,7 +1847,7 @@ export default function Jobs() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Status</label>
                     <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
@@ -1871,7 +1871,7 @@ export default function Jobs() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Assigned Team</label>
                     <input type="text" name="assigned_team" value={formData.assigned_team} onChange={handleChange} style={inputStyle} placeholder="Team A" />
@@ -1891,7 +1891,7 @@ export default function Jobs() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Start Date/Time</label>
                     <input type="datetime-local" name="start_date" value={formData.start_date} onChange={handleChange} style={inputStyle} />
@@ -1902,7 +1902,7 @@ export default function Jobs() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Allotted Hours</label>
                     <input type="number" name="allotted_time_hours" value={formData.allotted_time_hours} onChange={handleChange} step="0.25" style={inputStyle} />
@@ -1918,7 +1918,7 @@ export default function Jobs() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Utility Incentive</label>
                     <input type="number" name="utility_incentive" value={formData.utility_incentive} onChange={handleChange} step="0.01" style={inputStyle} />

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import {
   MessageSquare,
@@ -52,6 +53,7 @@ const statusColors = {
 }
 
 export default function CommunicationsLog() {
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
@@ -148,12 +150,12 @@ export default function CommunicationsLog() {
   const hasActiveFilters = filterType || filterDateStart || filterDateEnd || searchTerm
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', flexDirection: isMobile ? 'column' : 'row', flexWrap: 'wrap', gap: '12px', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <MessageSquare size={28} style={{ color: theme.accent }} />
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Communications Log</h1>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Communications Log</h1>
         </div>
         <button
           onClick={() => setShowModal(true)}
@@ -279,11 +281,13 @@ export default function CommunicationsLog() {
       </div>
 
       {/* Table */}
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <div style={{
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
         border: `1px solid ${theme.border}`,
-        overflow: 'hidden'
+        overflow: 'hidden',
+        minWidth: isMobile ? '600px' : 'auto'
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -353,6 +357,7 @@ export default function CommunicationsLog() {
           </tbody>
         </table>
       </div>
+      </div>
 
       {/* Add Modal */}
       {showModal && (
@@ -371,9 +376,9 @@ export default function CommunicationsLog() {
           <div style={{
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
-            padding: '24px',
+            padding: isMobile ? '16px' : '24px',
             width: '100%',
-            maxWidth: '500px'
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px'
           }}>
             <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '20px' }}>
               Log Communication
@@ -403,7 +408,7 @@ export default function CommunicationsLog() {
                   </select>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>
                       Type *

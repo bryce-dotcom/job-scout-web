@@ -10,6 +10,7 @@ import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { customersFields } from '../lib/importExportFields'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 const emptyCustomer = {
   name: '',
@@ -31,6 +32,7 @@ const emptyCustomer = {
 
 export default function Customers() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
@@ -233,15 +235,15 @@ export default function Customers() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       <PageHeader
         title="Customers"
         icon={User}
         actions={<>
-          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+          <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', minHeight: '44px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
-          <button onClick={() => exportToCSV(filteredCustomers, customersFields, 'customers_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+          <button onClick={() => exportToCSV(filteredCustomers, customersFields, 'customers_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', minHeight: '44px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
           </button>
           <button
@@ -251,6 +253,7 @@ export default function Customers() {
               alignItems: 'center',
               gap: '8px',
               padding: '10px 16px',
+              minHeight: '44px',
               backgroundColor: theme.accent,
               color: '#fff',
               border: 'none',
@@ -360,7 +363,7 @@ export default function Customers() {
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
           gap: '16px'
         }}>
           {filteredCustomers.map((customer) => (
@@ -524,9 +527,9 @@ export default function Customers() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '640px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '640px',
             maxHeight: '90vh',
-            overflow: 'auto',
+            overflow: 'hidden',
             zIndex: 51
           }}>
             <div style={{
@@ -561,7 +564,7 @@ export default function Customers() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
+            <form onSubmit={handleSubmit} style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
               {error && (
                 <div style={{
                   marginBottom: '16px',
@@ -590,7 +593,7 @@ export default function Customers() {
 
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
                 gap: '16px',
                 marginBottom: '16px'
               }}>
@@ -685,7 +688,7 @@ export default function Customers() {
 
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
                 gap: '16px',
                 marginBottom: '24px'
               }}>
@@ -745,7 +748,7 @@ export default function Customers() {
 
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
                 gap: '16px',
                 marginBottom: '16px'
               }}>
@@ -815,6 +818,7 @@ export default function Customers() {
                   style={{
                     flex: 1,
                     padding: '12px',
+                    minHeight: '44px',
                     backgroundColor: 'transparent',
                     border: `1px solid ${theme.border}`,
                     borderRadius: '8px',
@@ -832,6 +836,7 @@ export default function Customers() {
                   style={{
                     flex: 1,
                     padding: '12px',
+                    minHeight: '44px',
                     backgroundColor: theme.accent,
                     border: 'none',
                     borderRadius: '8px',

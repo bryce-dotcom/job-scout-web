@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin, isTeamLead as checkTeamLead } from '../lib/accessControl'
 import {
   Clock, Play, Square, Coffee, MapPin, Calendar, AlertTriangle,
@@ -15,6 +16,7 @@ const AVATAR_COLORS = [
 
 export default function TimeClock() {
   const { theme } = useTheme()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
@@ -467,23 +469,26 @@ export default function TimeClock() {
 
   if (loading) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center', color: theme.textMuted }}>
         Loading...
       </div>
     )
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '24px'
+        alignItems: isMobile ? 'flex-start' : 'center',
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        flexDirection: isMobile ? 'column' : 'row',
+        gap: isMobile ? '8px' : '0'
       }}>
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
             Time Clock
           </h1>
           <p style={{ color: theme.textMuted, fontSize: '14px' }}>
@@ -491,7 +496,7 @@ export default function TimeClock() {
           </p>
         </div>
         <div style={{
-          fontSize: '32px',
+          fontSize: isMobile ? '24px' : '32px',
           fontWeight: '700',
           fontFamily: 'monospace',
           color: theme.accent
@@ -503,8 +508,8 @@ export default function TimeClock() {
       {/* Employee Cards Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-        gap: '20px'
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
+        gap: isMobile ? '16px' : '20px'
       }}>
         {employees.filter(e => e.active && (isTeamLeadPlus || e.id === user?.id)).map(employee => {
           const activeEntry = getActiveEntry(employee.id)
@@ -985,7 +990,7 @@ export default function TimeClock() {
             backgroundColor: theme.bgCard,
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '440px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '440px',
             overflow: 'hidden'
           }}>
             {/* Header */}
@@ -1021,7 +1026,7 @@ export default function TimeClock() {
 
             {/* Form */}
             <form onSubmit={handlePTOSubmit} style={{ padding: '20px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', color: theme.textMuted, marginBottom: '6px' }}>
                     Start Date

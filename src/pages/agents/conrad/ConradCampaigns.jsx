@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
+import { useIsMobile } from '../../../hooks/useIsMobile'
 import { Plus, Send, Trash2, X, Eye, RefreshCw, Sparkles } from 'lucide-react'
 
 const defaultTheme = {
@@ -35,6 +36,7 @@ const emptyForm = {
 export default function ConradCampaigns() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
 
   const companyId = useStore(s => s.companyId)
   const emailCampaigns = useStore(s => s.emailCampaigns)
@@ -203,10 +205,10 @@ export default function ConradCampaigns() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1200px', margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>Campaigns</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Campaigns</h1>
         <button
           onClick={openNewCampaign}
           style={{
@@ -241,7 +243,8 @@ export default function ConradCampaigns() {
             <p style={{ color: theme.textSecondary }}>No campaigns yet. Create your first campaign to start reaching your audience.</p>
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
             <thead>
               <tr>
                 <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}`, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Name</th>
@@ -331,6 +334,7 @@ export default function ConradCampaigns() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -347,11 +351,11 @@ export default function ConradCampaigns() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '560px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '560px',
             maxHeight: '90vh',
             overflow: 'auto',
             zIndex: 51,
-            padding: '24px'
+            padding: isMobile ? '16px' : '24px'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>New Campaign</h2>
@@ -371,7 +375,7 @@ export default function ConradCampaigns() {
                 <input name="subject" value={formData.subject} onChange={handleChange} style={inputStyle} placeholder="Email subject" />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={labelStyle}>From Name</label>
                   <input name="from_name" value={formData.from_name} onChange={handleChange} style={inputStyle} placeholder="Your Name" />
@@ -443,7 +447,7 @@ export default function ConradCampaigns() {
               )}
 
               {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px', flexWrap: 'wrap' }}>
                 <button
                   onClick={handlePreview}
                   style={{
@@ -504,11 +508,11 @@ export default function ConradCampaigns() {
             borderRadius: '16px',
             border: `1px solid ${theme.border}`,
             width: '100%',
-            maxWidth: '640px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '640px',
             maxHeight: '80vh',
             overflow: 'auto',
             zIndex: 61,
-            padding: '24px'
+            padding: isMobile ? '16px' : '24px'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>Email Preview</h2>

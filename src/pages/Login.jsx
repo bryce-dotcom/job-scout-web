@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { Eye, EyeOff } from 'lucide-react'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 // Job Scout Theme - Light Topo
 const theme = {
@@ -63,6 +64,7 @@ const GoogleIcon = () => (
 
 export default function Login() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const setUser = useStore((state) => state.setUser)
   const setCompany = useStore((state) => state.setCompany)
   const checkDeveloperStatus = useStore((state) => state.checkDeveloperStatus)
@@ -83,7 +85,7 @@ export default function Login() {
     const { data: employee, error: empError } = await supabase
       .from('employees')
       .select('*, company:companies(*)')
-      .eq('email', userEmail)
+      .ilike('email', userEmail)
       .eq('active', true)
       .single()
 
@@ -217,7 +219,7 @@ export default function Login() {
       return
     }
 
-    setMessage('Check your email for password reset instructions.')
+    setMessage('Password reset link sent! Check your email (and spam folder) for instructions.')
     setLoading(false)
   }
 
@@ -286,12 +288,12 @@ export default function Login() {
 
   return (
     <div style={{
-      minHeight: '100vh',
+      minHeight: '100dvh',
       backgroundColor: theme.bg,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '24px',
+      padding: isMobile ? '16px' : '24px',
       position: 'relative'
     }}>
       <TopoBackground />
@@ -309,7 +311,7 @@ export default function Login() {
             alt="Job Scout"
             style={{ width: '100px', height: '100px', objectFit: 'contain', marginBottom: '16px' }}
           />
-          <h1 style={{ fontSize: '28px', fontWeight: '700', color: theme.accent, marginBottom: '8px', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: '700', color: theme.accent, marginBottom: '8px', letterSpacing: '-0.02em' }}>
             Job Scout
           </h1>
           <p style={{ fontSize: '15px', color: theme.textMuted }}>
@@ -321,7 +323,7 @@ export default function Login() {
         <div style={{
           backgroundColor: theme.bgCard,
           borderRadius: '16px',
-          padding: '32px',
+          padding: isMobile ? '20px' : '32px',
           border: `1px solid ${theme.border}`,
           boxShadow: theme.shadowLg
         }}>
@@ -352,6 +354,9 @@ export default function Login() {
                 <div style={{ marginBottom: '20px' }}>
                   <label style={labelStyle}>Email</label>
                   <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                    Use the email your admin invited you with
+                  </div>
                 </div>
 
                 <div style={{ marginBottom: '12px' }}>
@@ -476,6 +481,9 @@ export default function Login() {
           {/* ============ FORGOT PASSWORD MODE ============ */}
           {mode === 'forgot-password' && (
             <>
+              <div style={{ marginBottom: '16px', fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5' }}>
+                Enter the email address you use to sign in. First time? Use "Forgot password" to set one up.
+              </div>
               <form onSubmit={handleForgotPassword}>
                 <div style={{ marginBottom: '20px' }}>
                   <label style={labelStyle}>Email</label>

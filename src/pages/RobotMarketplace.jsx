@@ -1,6 +1,8 @@
 import { useTheme } from '../components/Layout'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 export default function RobotMarketplace() {
+  const isMobile = useIsMobile()
   const themeContext = useTheme()
   const theme = themeContext?.theme || {
     bg: '#f7f5ef',
@@ -22,11 +24,11 @@ export default function RobotMarketplace() {
   ]
 
   return (
-    <div style={{ padding: '24px', minHeight: '100vh' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh' }}>
       {/* Header */}
-      <div style={{ marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: '700', color: theme.text, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '32px' }}>🤖</span>
+      <div style={{ marginBottom: isMobile ? '20px' : '32px' }}>
+        <h1 style={{ fontSize: isMobile ? '22px' : '28px', fontWeight: '700', color: theme.text, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: isMobile ? '26px' : '32px' }}>🤖</span>
           Robot Marketplace
         </h1>
         <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
@@ -39,12 +41,12 @@ export default function RobotMarketplace() {
         backgroundColor: theme.bgCard,
         border: `1px solid ${theme.border}`,
         borderRadius: '16px',
-        padding: '60px 40px',
+        padding: isMobile ? '32px 20px' : '60px 40px',
         textAlign: 'center',
-        marginBottom: '32px'
+        marginBottom: isMobile ? '20px' : '32px'
       }}>
-        <div style={{ fontSize: '72px', marginBottom: '20px' }}>🚀</div>
-        <h2 style={{ color: theme.text, fontSize: '28px', fontWeight: '700', marginBottom: '16px' }}>
+        <div style={{ fontSize: isMobile ? '48px' : '72px', marginBottom: '20px' }}>🚀</div>
+        <h2 style={{ color: theme.text, fontSize: isMobile ? '22px' : '28px', fontWeight: '700', marginBottom: '16px' }}>
           Coming Soon
         </h2>
         <p style={{ color: theme.textMuted, maxWidth: '500px', margin: '0 auto', lineHeight: '1.6', fontSize: '15px' }}>
@@ -71,11 +73,11 @@ export default function RobotMarketplace() {
       </div>
 
       {/* How It Works */}
-      <div style={{ marginBottom: '32px' }}>
-        <h3 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>
+      <div style={{ marginBottom: isMobile ? '20px' : '32px' }}>
+        <h3 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>
           How It Works
         </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: isMobile ? '10px' : '16px' }}>
           {[
             { step: '1', title: 'Choose Robot', desc: 'Select from drones, bots, and automated systems' },
             { step: '2', title: 'Add Training', desc: 'Pick job-specific training programs' },
@@ -115,7 +117,7 @@ export default function RobotMarketplace() {
         <h3 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>
           Preview: Available Robots
         </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: isMobile ? '12px' : '20px' }}>
           {previewRobots.map((robot, i) => (
             <div key={i} style={{
               backgroundColor: theme.bgCard,

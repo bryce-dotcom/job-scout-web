@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTheme } from '../../components/Layout'
 import { useStore } from '../../lib/store'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { STATUS } from '../../lib/schema'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -376,7 +377,7 @@ const STORY_SCENES = [
         <div style={{ fontSize: '18px', fontWeight: '700', color: '#22c55e', marginBottom: '4px' }}>Deal Won!</div>
         <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>Sarah Chen approved the proposal</div>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          {['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Won'].map((s, i) => (
+          {['New', 'Contacted', 'Appointment Set', 'Qualified', 'Estimate Sent', 'Won'].map((s, i) => (
             <span key={s} style={{
               padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '600',
               backgroundColor: s === 'Won' ? 'rgba(34,197,94,0.15)' : 'rgba(0,0,0,0.04)',
@@ -1159,7 +1160,7 @@ const HELP_SECTIONS = [
           {[
             { label: 'Info', desc: 'Contact details, address, notes' },
             { label: 'Leads', desc: 'All sales opportunities' },
-            { label: 'Estimates', desc: 'Price quotes sent' },
+            { label: 'Estimates', desc: 'Price estimates sent' },
             { label: 'Jobs', desc: 'Work orders linked' },
             { label: 'Invoices', desc: 'Bills issued' },
             { label: 'Payments', desc: 'Money received' },
@@ -1477,7 +1478,7 @@ const HELP_SECTIONS = [
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
           <EntityCard icon={Receipt} title="Invoices" color="#3b82f6" description="Generate invoices from completed jobs. Tracks payment status (Draft, Sent, Paid). Includes utility incentive tracking for lighting jobs." theme={theme} />
           <EntityCard icon={CreditCard} title="Deposits" color="#8b5cf6" description="Pre-job payments and deposits received from leads/deals. Linked to the lead record so you can track partial payments through the pipeline." theme={theme} />
-          <EntityCard icon={DollarSign} title="Expenses" color="#ef4444" description="Business expenses — materials, fuel, subcontractors, meals, etc. Add expenses directly on Lead, Estimate, or Job detail pages with optional receipt photo capture. Photos upload to storage and display as thumbnails on the Expenses admin page. Each expense links to its source entity (lead, quote, or job) with clickable navigation. When a deal converts to a job, expenses follow automatically. Connects to Plaid for auto-import from bank accounts." theme={theme} />
+          <EntityCard icon={DollarSign} title="Expenses" color="#ef4444" description="Business expenses — materials, fuel, subcontractors, meals, etc. Add expenses directly on Lead, Estimate, or Job detail pages with optional receipt photo capture. Photos upload to storage and display as thumbnails on the Expenses admin page. Each expense links to its source entity (lead, estimate, or job) with clickable navigation. When a deal converts to a job, expenses follow automatically. Connects to Plaid for auto-import from bank accounts." theme={theme} />
           <EntityCard icon={BookOpen} title="Books" color="#16a34a" description="Full accounting view. Revenue vs expenses, P&L, bank connections, transaction categorization. Your financial command center." theme={theme} />
         </div>
 
@@ -1688,7 +1689,7 @@ const HELP_SECTIONS = [
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {[
             { tip: 'Use Global Search (top of sidebar) to find any customer, job, or lead instantly.', color: '#3b82f6' },
-            { tip: 'The Deal Breadcrumb at the top of Lead, Quote, and Job detail pages lets you trace the full history of a deal.', color: '#8b5cf6' },
+            { tip: 'The Deal Breadcrumb at the top of Lead, Estimate, and Job detail pages lets you trace the full history of a deal.', color: '#8b5cf6' },
             { tip: 'Click the status badge on a Job to change its stage without going to the board.', color: '#22c55e' },
             { tip: 'Settings are accessed via the gear icon on each page — there\'s no separate settings page.', color: '#f59e0b' },
             { tip: 'Ask Arnie! Click the floating avatar to ask questions about your data in natural language.', color: '#f97316' },
@@ -1910,6 +1911,7 @@ function PresentationMode({ sections, theme, onClose }) {
 export default function Help() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const isMobile = useIsMobile()
   const [expandedSections, setExpandedSections] = useState({ overview: true })
   const [showPresentation, setShowPresentation] = useState(false)
   const [showStory, setShowStory] = useState(false)
@@ -1941,12 +1943,12 @@ export default function Help() {
 
   return (
     <>
-      <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '900px', margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
-          <img src="/Scout_LOGO_GUY.png" alt="Job Scout" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '16px', marginBottom: '8px' }}>
+          <img src="/Scout_LOGO_GUY.png" alt="Job Scout" style={{ width: isMobile ? '36px' : '48px', height: isMobile ? '36px' : '48px', objectFit: 'contain' }} />
           <div style={{ flex: 1 }}>
-            <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
+            <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
               How JobScout Works
             </h1>
             <p style={{ fontSize: '14px', color: theme.textMuted, margin: '4px 0 0' }}>

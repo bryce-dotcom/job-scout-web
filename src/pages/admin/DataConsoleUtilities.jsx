@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, FormToggle, ModalFooter } from './components/AdminModal'
 import { Badge } from './components/AdminStats'
 import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader, ExternalLink, FileUp, RefreshCw, Check, X, StopCircle, Map, Sparkles, FileText } from 'lucide-react'
@@ -46,6 +47,7 @@ const CUSTOMER_CATEGORIES = [
 ]
 
 export default function DataConsoleUtilities() {
+  const isMobile = useIsMobile()
   const [providers, setProviders] = useState([])
   const [programs, setPrograms] = useState([])
   const [incentives, setIncentives] = useState([])
@@ -186,7 +188,7 @@ export default function DataConsoleUtilities() {
     { value: 'w9.ein_2', label: 'W-9 EIN Part 2 (7 digits)' },
     { value: 'w9.signature_date', label: 'W-9 Signature Date' },
     // Quote
-    { value: 'quote.quote_amount', label: 'Quote Amount' },
+    { value: 'quote.quote_amount', label: 'Estimate Amount' },
     { value: 'quote.utility_incentive', label: 'Incentive Amount' },
     { value: 'quote.discount', label: 'Discount' },
     // Aggregations
@@ -1569,9 +1571,9 @@ export default function DataConsoleUtilities() {
   )
 
   return (
-    <div style={{ padding: '24px', height: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h1 style={{ color: adminTheme.text, fontSize: '24px', fontWeight: '700' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', height: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700' }}>
           Utilities & Rebates
         </h1>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -2460,7 +2462,7 @@ export default function DataConsoleUtilities() {
             <FormField label="Program Name" required>
               <FormInput value={editingProgram.program_name} onChange={(v) => setEditingProgram({ ...editingProgram, program_name: v })} />
             </FormField>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Program Type" required>
                 <FormSelect
                   value={editingProgram.program_type}
@@ -2485,7 +2487,7 @@ export default function DataConsoleUtilities() {
                 />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
               <FormField label="Effective Date">
                 <FormInput type="date" value={editingProgram.effective_date?.split('T')[0]} onChange={(v) => setEditingProgram({ ...editingProgram, effective_date: v })} />
               </FormField>
@@ -2496,7 +2498,7 @@ export default function DataConsoleUtilities() {
                 <FormInput type="number" value={editingProgram.source_year} onChange={(v) => setEditingProgram({ ...editingProgram, source_year: v ? parseInt(v) : null })} placeholder="e.g. 2026" />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Max Cap %">
                 <FormInput type="number" value={editingProgram.max_cap_percent} onChange={(v) => setEditingProgram({ ...editingProgram, max_cap_percent: parseFloat(v) })} />
               </FormField>
@@ -2520,7 +2522,7 @@ export default function DataConsoleUtilities() {
       <AdminModal isOpen={!!editingIncentive} onClose={() => setEditingIncentive(null)} title={editingIncentive?.id ? 'Edit Incentive' : 'Add Incentive'} width="600px">
         {editingIncentive && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Fixture Category" required>
                 <FormSelect
                   value={editingIncentive.fixture_category}
@@ -2560,7 +2562,7 @@ export default function DataConsoleUtilities() {
                 ]}
               />
             </FormField>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Rate Value" required>
                 <FormInput type="number" step="0.01" value={editingIncentive.rate_value} onChange={(v) => setEditingIncentive({ ...editingIncentive, rate_value: parseFloat(v) })} />
               </FormField>
@@ -2568,7 +2570,7 @@ export default function DataConsoleUtilities() {
                 <FormInput value={editingIncentive.rate_unit} onChange={(v) => setEditingIncentive({ ...editingIncentive, rate_unit: v })} placeholder="e.g., /watt, /fixture" />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Cap Amount ($)">
                 <FormInput type="number" step="0.01" value={editingIncentive.cap_amount} onChange={(v) => setEditingIncentive({ ...editingIncentive, cap_amount: v ? parseFloat(v) : null })} />
               </FormField>
@@ -2576,7 +2578,7 @@ export default function DataConsoleUtilities() {
                 <FormInput type="number" step="0.1" value={editingIncentive.cap_percent} onChange={(v) => setEditingIncentive({ ...editingIncentive, cap_percent: v ? parseFloat(v) : null })} />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Min Watts">
                 <FormInput type="number" value={editingIncentive.min_watts} onChange={(v) => setEditingIncentive({ ...editingIncentive, min_watts: parseInt(v) })} />
               </FormField>
@@ -2610,7 +2612,7 @@ export default function DataConsoleUtilities() {
                 placeholder="Select category"
               />
             </FormField>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Rate ($/kWh)" required>
                 <FormInput type="number" step="0.0001" value={editingRateSchedule.rate_per_kwh} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, rate_per_kwh: parseFloat(v) })} placeholder="e.g. 0.0845" />
               </FormField>
@@ -2618,7 +2620,7 @@ export default function DataConsoleUtilities() {
                 <FormInput type="number" step="0.01" value={editingRateSchedule.demand_charge} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, demand_charge: v ? parseFloat(v) : null })} />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Effective Date">
                 <FormInput type="date" value={editingRateSchedule.effective_date?.split('T')[0]} onChange={(v) => setEditingRateSchedule({ ...editingRateSchedule, effective_date: v || null })} />
               </FormField>
@@ -2648,7 +2650,7 @@ export default function DataConsoleUtilities() {
             <FormField label="Measure Name" required>
               <FormInput value={editingPrescriptive.measure_name} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, measure_name: v })} placeholder="e.g. T8 4ft Linear to LED Tube" />
             </FormField>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
               <FormField label="Category" required>
                 <FormSelect
                   value={editingPrescriptive.measure_category}
@@ -2663,7 +2665,7 @@ export default function DataConsoleUtilities() {
                 <FormInput value={editingPrescriptive.measure_code} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, measure_code: v })} />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Baseline Equipment">
                 <FormInput value={editingPrescriptive.baseline_equipment} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, baseline_equipment: v })} placeholder="e.g. T8 4ft 32W 2-lamp" />
               </FormField>
@@ -2671,7 +2673,7 @@ export default function DataConsoleUtilities() {
                 <FormInput value={editingPrescriptive.replacement_equipment} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, replacement_equipment: v })} placeholder="e.g. DLC LED Tube 18W" />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Baseline Wattage">
                 <FormInput type="number" value={editingPrescriptive.baseline_wattage} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, baseline_wattage: v ? parseFloat(v) : null })} />
               </FormField>
@@ -2679,7 +2681,7 @@ export default function DataConsoleUtilities() {
                 <FormInput type="number" value={editingPrescriptive.replacement_wattage} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, replacement_wattage: v ? parseFloat(v) : null })} />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
               <FormField label="Incentive Amount" required>
                 <FormInput type="number" step="0.01" value={editingPrescriptive.incentive_amount} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, incentive_amount: parseFloat(v) })} />
               </FormField>
@@ -2701,7 +2703,7 @@ export default function DataConsoleUtilities() {
                 <FormInput type="number" step="0.01" value={editingPrescriptive.max_incentive} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, max_incentive: v ? parseFloat(v) : null })} />
               </FormField>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Application Type">
                 <FormSelect
                   value={editingPrescriptive.application_type}
@@ -2731,7 +2733,7 @@ export default function DataConsoleUtilities() {
               <FormToggle checked={editingPrescriptive.dlc_required} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, dlc_required: v })} label="DLC Required" />
               <FormToggle checked={editingPrescriptive.energy_star_required} onChange={(v) => setEditingPrescriptive({ ...editingPrescriptive, energy_star_required: v })} label="ENERGY STAR Required" />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="DLC Tier">
                 <FormSelect
                   value={editingPrescriptive.dlc_tier}
@@ -2768,7 +2770,7 @@ export default function DataConsoleUtilities() {
             <FormField label="Form Name" required>
               <FormInput value={editingForm.form_name} onChange={(v) => setEditingForm({ ...editingForm, form_name: v })} placeholder="e.g. Prescriptive Rebate Application" />
             </FormField>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <FormField label="Form Type" required>
                 <FormSelect
                   value={editingForm.form_type}

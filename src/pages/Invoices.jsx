@@ -12,6 +12,7 @@ import { invoicesFields, paymentsFields } from '../lib/importExportFields'
 import { toast } from '../lib/toast'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import PageHeader from '../components/PageHeader'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 // Light theme fallback
 const defaultTheme = {
@@ -76,6 +77,7 @@ const invoiceSettingsTabs = [
 ]
 
 export default function Invoices() {
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const user = useStore((state) => state.user)
@@ -559,7 +561,7 @@ export default function Invoices() {
 
               {getSetting('invoice_reminders_enabled') && (
                 <div style={{ marginTop: '16px', padding: '16px', backgroundColor: theme.bg, borderRadius: '10px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                     <div>
                       <label style={settingsLabelStyle}>Frequency (days after due date)</label>
                       <input type="number" defaultValue={getSetting('invoice_reminder_frequency_days')} onBlur={(e) => saveInvoiceSetting('invoice_reminder_frequency_days', parseInt(e.target.value) || 30)} min="1" style={settingsInputStyle} />
@@ -727,7 +729,7 @@ export default function Invoices() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       <PageHeader
         title="Invoices"
         icon={FileText}
@@ -804,7 +806,7 @@ export default function Invoices() {
       {/* Stats */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(140px, 1fr))',
         gap: '12px',
         marginBottom: '24px'
       }}>
@@ -911,7 +913,6 @@ export default function Invoices() {
 
       {/* ===== ALL INVOICES VIEW ===== */}
       {typeFilter === 'all' && (() => {
-        // Build unified list
         const allItems = [
           ...filteredCustomerInvoices.map(inv => ({ ...inv, _type: 'customer' })),
           ...filteredUtilityInvoices.map(inv => ({ ...inv, _type: 'utility' }))
@@ -936,33 +937,10 @@ export default function Invoices() {
 
         return (
           <div style={{
-            backgroundColor: theme.bgCard,
-            borderRadius: '12px',
-            border: `1px solid ${theme.border}`,
-            overflow: 'hidden'
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
+            gap: '16px'
           }}>
-            {/* Header row */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '90px 100px 1fr 1fr 120px 100px 100px',
-              gap: '12px',
-              padding: '14px 20px',
-              backgroundColor: theme.accentBg,
-              borderBottom: `1px solid ${theme.border}`,
-              fontSize: '12px',
-              fontWeight: '600',
-              color: theme.textMuted,
-              textTransform: 'uppercase'
-            }}>
-              <div>Type</div>
-              <div>Reference</div>
-              <div>Name</div>
-              <div>Description</div>
-              <div style={{ textAlign: 'right' }}>Amount</div>
-              <div style={{ textAlign: 'center' }}>Status</div>
-              <div>Date</div>
-            </div>
-
             {allItems.map((item) => {
               const isCustomer = item._type === 'customer'
               const statusStyle = statusColors[item.payment_status] || statusColors['Pending']
@@ -972,62 +950,59 @@ export default function Invoices() {
               const amount = isCustomer ? item.amount : (item.incentive_amount || item.amount)
 
               return (
-                <div
+                <EntityCard
                   key={`${item._type}-${item.id}`}
+                  name={isCustomer ? item.customer?.name : item.customer_name}
+                  businessName={isCustomer ? item.customer?.business_name : item.utility_name}
                   onClick={() => navigate(isCustomer ? `/invoices/${item.id}` : `/utility-invoices/${item.id}`)}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '90px 100px 1fr 1fr 120px 100px 100px',
-                    gap: '12px',
-                    padding: '14px 20px',
-                    borderBottom: `1px solid ${theme.border}`,
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    transition: 'background-color 0.1s ease'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
-                  <div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '44px', height: '44px',
+                        backgroundColor: isCustomer ? 'rgba(59,130,246,0.12)' : 'rgba(20,184,166,0.12)',
+                        borderRadius: '10px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
+                        {isCustomer ? <FileText size={22} style={{ color: '#3b82f6' }} /> : <Zap size={22} style={{ color: '#14b8a6' }} />}
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
+                          {name}
+                        </h3>
+                        <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '500' }}>{ref}</p>
+                      </div>
+                    </div>
                     <span style={{
-                      padding: '3px 8px',
-                      borderRadius: '6px',
-                      fontSize: '11px',
-                      fontWeight: '600',
+                      padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
                       backgroundColor: isCustomer ? 'rgba(59,130,246,0.12)' : 'rgba(20,184,166,0.12)',
                       color: isCustomer ? '#3b82f6' : '#14b8a6'
                     }}>
                       {isCustomer ? 'Customer' : 'Utility'}
                     </span>
                   </div>
-                  <div style={{ fontWeight: '600', color: theme.accent, fontSize: '13px' }}>
-                    {ref}
-                  </div>
-                  <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {name}
-                  </div>
-                  <div style={{ fontSize: '13px', color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {desc}
-                  </div>
-                  <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
-                    {formatCurrency(amount)}
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <span style={{
-                      padding: '4px 10px',
-                      borderRadius: '12px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      backgroundColor: statusStyle.bg,
-                      color: statusStyle.text
-                    }}>
-                      {item.payment_status}
+
+                  {desc && (
+                    <p style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {desc}
+                    </p>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>
+                      {formatCurrency(amount)}
                     </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{
+                        padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500',
+                        backgroundColor: statusStyle.bg, color: statusStyle.text
+                      }}>
+                        {item.payment_status}
+                      </span>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>{formatDate(item.created_at)}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '13px', color: theme.textSecondary }}>
-                    {formatDate(item.created_at)}
-                  </div>
-                </div>
+                </EntityCard>
               )
             })}
           </div>
@@ -1051,7 +1026,11 @@ export default function Invoices() {
               </p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
+              gap: '16px'
+            }}>
               {filteredCustomerInvoices.map((invoice) => {
                 const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
@@ -1061,73 +1040,59 @@ export default function Invoices() {
                     name={invoice.customer?.name}
                     businessName={invoice.customer?.business_name}
                     onClick={() => navigate(`/invoices/${invoice.id}`)}
-                    style={{ padding: '16px 20px' }}
                   >
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 2fr 1fr 120px 100px 80px',
-                      gap: '16px',
-                      alignItems: 'center'
-                    }}>
-                    <div>
-                      <p style={{ fontWeight: '600', color: theme.accent, fontSize: '14px' }}>
-                        {invoice.invoice_id}
-                      </p>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '44px', height: '44px',
+                          backgroundColor: theme.accentBg,
+                          borderRadius: '10px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                          <FileText size={22} style={{ color: theme.accent }} />
+                        </div>
+                        <div>
+                          <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
+                            {invoice.customer?.name || 'No customer'}
+                          </h3>
+                          <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '500' }}>{invoice.invoice_id}</p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+                        {invoice.payment_status === 'Pending' && (
+                          <button
+                            onClick={() => markAsPaid(invoice)}
+                            style={{
+                              padding: '6px', backgroundColor: '#4a7c59', color: '#ffffff',
+                              border: 'none', borderRadius: '6px', cursor: 'pointer'
+                            }}
+                            title="Mark as Paid"
+                          >
+                            <CheckCircle size={16} />
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    <div>
-                      <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
-                        {invoice.customer?.name || 'No customer'}
+                    {invoice.job && (
+                      <p style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {invoice.job.job_title || invoice.job.job_id}
                       </p>
-                      {invoice.job && (
-                        <p style={{ fontSize: '12px', color: theme.textMuted }}>
-                          {invoice.job.job_title || invoice.job.job_id}
-                        </p>
-                      )}
-                    </div>
+                    )}
 
-                    <div style={{ textAlign: 'right' }}>
-                      <p style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>
                         {formatCurrency(invoice.amount)}
-                      </p>
-                    </div>
-
-                    <div style={{ textAlign: 'center' }}>
-                      <span style={{
-                        padding: '4px 10px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        backgroundColor: statusStyle.bg,
-                        color: statusStyle.text
-                      }}>
-                        {invoice.payment_status}
                       </span>
-                    </div>
-
-                    <div style={{ fontSize: '13px', color: theme.textSecondary }}>
-                      {formatDate(invoice.created_at)}
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
-                      {invoice.payment_status === 'Pending' && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); markAsPaid(invoice); }}
-                          style={{
-                            padding: '6px',
-                            backgroundColor: '#4a7c59',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '6px',
-                            cursor: 'pointer'
-                          }}
-                          title="Mark as Paid"
-                        >
-                          <CheckCircle size={16} />
-                        </button>
-                      )}
-                      <ChevronRight size={20} style={{ color: theme.textMuted }} />
-                    </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{
+                          padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500',
+                          backgroundColor: statusStyle.bg, color: statusStyle.text
+                        }}>
+                          {invoice.payment_status}
+                        </span>
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>{formatDate(invoice.created_at)}</span>
+                      </div>
                     </div>
                   </EntityCard>
                 )
@@ -1155,102 +1120,82 @@ export default function Invoices() {
             </div>
           ) : (
             <div style={{
-              backgroundColor: theme.bgCard,
-              borderRadius: '12px',
-              border: `1px solid ${theme.border}`,
-              overflow: 'hidden'
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
+              gap: '16px'
             }}>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
-                gap: '12px',
-                padding: '14px 20px',
-                backgroundColor: theme.accentBg,
-                borderBottom: `1px solid ${theme.border}`,
-                fontSize: '12px',
-                fontWeight: '600',
-                color: theme.textMuted,
-                textTransform: 'uppercase'
-              }}>
-                <div>Date</div>
-                <div>Customer</div>
-                <div>Utility</div>
-                <div>Status</div>
-                <div style={{ textAlign: 'right' }}>Job</div>
-                <div style={{ textAlign: 'right' }}>Project Cost</div>
-                <div style={{ textAlign: 'right' }}>Incentive</div>
-                <div style={{ textAlign: 'right' }}>Net Cost</div>
-                <div style={{ textAlign: 'right' }}>Actions</div>
-              </div>
+              {filteredUtilityInvoices.map((invoice) => {
+                const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
-              {filteredUtilityInvoices.map((invoice) => (
-                <div
-                  key={invoice.id}
-                  onClick={() => navigate(`/utility-invoices/${invoice.id}`)}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
-                    gap: '12px',
-                    padding: '16px 20px',
-                    borderBottom: `1px solid ${theme.border}`,
-                    alignItems: 'center',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                    {formatDate(invoice.created_at)}
-                  </div>
-                  <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {invoice.customer_name || '-'}
-                  </div>
-                  <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {invoice.utility_name || '-'}
-                  </div>
-                  <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                    {invoice.payment_status || '-'}
-                  </div>
-                  <div style={{ textAlign: 'right', fontWeight: '500', color: theme.text }}>
-                    {invoice.job_id || '-'}
-                  </div>
-                  <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
-                    {formatCurrency(invoice.project_cost || invoice.amount)}
-                  </div>
-                  <div style={{ textAlign: 'right', fontWeight: '600', color: '#d4940a' }}>
-                    {formatCurrency(invoice.incentive_amount)}
-                  </div>
-                  <div style={{ textAlign: 'right', fontWeight: '600', color: theme.text }}>
-                    {formatCurrency(invoice.net_cost)}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); openUtilityEditModal(invoice) }}
-                      style={{
-                        padding: '6px',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        color: theme.textMuted
-                      }}
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleUtilityDelete(invoice) }}
-                      style={{
-                        padding: '6px',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        color: theme.textMuted
-                      }}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                return (
+                  <EntityCard
+                    key={invoice.id}
+                    name={invoice.customer_name}
+                    businessName={invoice.utility_name}
+                    onClick={() => navigate(`/utility-invoices/${invoice.id}`)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '44px', height: '44px',
+                          backgroundColor: 'rgba(20,184,166,0.12)',
+                          borderRadius: '10px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                          <Zap size={22} style={{ color: '#14b8a6' }} />
+                        </div>
+                        <div>
+                          <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
+                            {invoice.customer_name || '-'}
+                          </h3>
+                          <p style={{ fontSize: '13px', color: theme.textSecondary }}>{invoice.utility_name || '-'}</p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => openUtilityEditModal(invoice)}
+                          style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleUtilityDelete(invoice)}
+                          style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', fontSize: '13px' }}>
+                      <div>
+                        <span style={{ color: theme.textMuted }}>Project </span>
+                        <span style={{ fontWeight: '600', color: theme.text }}>{formatCurrency(invoice.project_cost || invoice.amount)}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: theme.textMuted }}>Incentive </span>
+                        <span style={{ fontWeight: '600', color: '#d4940a' }}>{formatCurrency(invoice.incentive_amount)}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>Net </span>
+                        <span style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>{formatCurrency(invoice.net_cost)}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{
+                          padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500',
+                          backgroundColor: statusStyle.bg, color: statusStyle.text
+                        }}>
+                          {invoice.payment_status || 'Pending'}
+                        </span>
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>{formatDate(invoice.created_at)}</span>
+                      </div>
+                    </div>
+                  </EntityCard>
+                )
+              })}
             </div>
           )}
         </>
@@ -1273,7 +1218,7 @@ export default function Invoices() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -1355,7 +1300,7 @@ export default function Invoices() {
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Amount</label>
                     <input
@@ -1466,7 +1411,7 @@ export default function Invoices() {
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
             width: '100%',
-            maxWidth: '550px',
+            maxWidth: isMobile ? 'calc(100vw - 32px)' : '550px',
             maxHeight: '90vh',
             overflowY: 'auto'
           }}>
@@ -1493,7 +1438,7 @@ export default function Invoices() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Utility Name *</label>
                     <input type="text" name="utility_name" value={utilityFormData.utility_name} onChange={handleUtilityChange} required style={inputStyle} placeholder="Utility name" />
@@ -1504,7 +1449,7 @@ export default function Invoices() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Job ID</label>
                     <input type="text" name="job_id" value={utilityFormData.job_id} onChange={handleUtilityChange} style={inputStyle} placeholder="Job ID" />
@@ -1519,7 +1464,7 @@ export default function Invoices() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Project Cost</label>
                     <input type="number" name="project_cost" value={utilityFormData.project_cost} onChange={handleUtilityChange} step="0.01" style={inputStyle} placeholder="0.00" />
@@ -1570,7 +1515,7 @@ export default function Invoices() {
           <div style={{
             backgroundColor: theme.bgCard, borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
-            width: '100%', maxWidth: '900px', maxHeight: '90vh',
+            width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '900px', maxHeight: '90vh',
             display: 'flex', flexDirection: 'column', overflow: 'hidden'
           }}>
             {/* Header */}
@@ -1588,11 +1533,13 @@ export default function Invoices() {
             </div>
 
             {/* Body: sidebar + content */}
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', flex: 1, overflow: 'hidden', flexWrap: 'wrap' }}>
               {/* Sidebar */}
               <div style={{
-                width: '180px', flexShrink: 0, borderRight: `1px solid ${theme.border}`,
-                padding: '8px', overflowY: 'auto', backgroundColor: theme.bg
+                width: isMobile ? '100%' : '180px', flexShrink: 0, borderRight: isMobile ? 'none' : `1px solid ${theme.border}`,
+                borderBottom: isMobile ? `1px solid ${theme.border}` : 'none',
+                padding: '8px', overflowY: 'auto', overflowX: isMobile ? 'auto' : 'hidden',
+                backgroundColor: theme.bg, display: isMobile ? 'flex' : 'block', gap: isMobile ? '4px' : undefined
               }}>
                 {invoiceSettingsTabs.map((tab) => (
                   <button
@@ -1616,7 +1563,7 @@ export default function Invoices() {
               </div>
 
               {/* Content */}
-              <div style={{ flex: 1, padding: '24px', overflowY: 'auto', minWidth: 0 }}>
+              <div style={{ flex: 1, padding: isMobile ? '16px' : '24px', overflowY: 'auto', maxHeight: '70vh', minWidth: 0 }}>
                 {renderSettingsContent()}
               </div>
             </div>

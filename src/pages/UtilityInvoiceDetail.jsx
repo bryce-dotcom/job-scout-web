@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { ArrowLeft, CheckCircle, Pencil, Trash2 } from 'lucide-react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 
 const defaultTheme = {
@@ -21,6 +22,7 @@ const defaultTheme = {
 export default function UtilityInvoiceDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const fetchUtilityInvoices = useStore((state) => state.fetchUtilityInvoices)
 
@@ -201,9 +203,9 @@ export default function UtilityInvoiceDetail() {
   const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
   return (
-    <div style={{ padding: '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <button
           onClick={() => navigate('/invoices?type=utility')}
           style={{
@@ -221,7 +223,7 @@ export default function UtilityInvoiceDetail() {
           <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600' }}>
             UTL-{invoice.id}
           </p>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             {invoice.customer_name || 'Utility Incentive'}
           </h1>
         </div>
@@ -237,7 +239,7 @@ export default function UtilityInvoiceDetail() {
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 360px', gap: isMobile ? '16px' : '24px' }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Utility Info */}
@@ -250,7 +252,7 @@ export default function UtilityInvoiceDetail() {
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>
               Utility Info
             </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <div>
                 <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Utility Name</p>
                 {isEditing ? (

@@ -848,7 +848,7 @@ export default function Inventory() {
         marginBottom: '20px',
         flexWrap: 'wrap'
       }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: isMobile ? '100%' : '200px' }}>
           <Search size={18} style={{
             position: 'absolute',
             left: '12px',
@@ -868,7 +868,7 @@ export default function Inventory() {
         <select
           value={filterLocation}
           onChange={(e) => setFilterLocation(e.target.value)}
-          style={{ ...inputStyle, minWidth: '150px', flex: 'none' }}
+          style={{ ...inputStyle, minWidth: isMobile ? 'auto' : '150px', flex: isMobile ? 1 : 'none' }}
         >
           <option value="all">All Locations</option>
           {allLocations.map(loc => (
@@ -967,7 +967,7 @@ export default function Inventory() {
                 </div>
 
                 {/* ID and Location */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={labelStyle}>Item ID</label>
                     <input
@@ -995,7 +995,7 @@ export default function Inventory() {
 
                 {/* Quantity fields (for Material and Consumable) */}
                 {formData.inventory_type !== 'Tool' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                     <div>
                       <label style={labelStyle}>Quantity</label>
                       <input
@@ -1022,7 +1022,7 @@ export default function Inventory() {
                 {/* Tool-specific fields */}
                 {formData.inventory_type === 'Tool' && (
                   <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                       <div>
                         <label style={labelStyle}>Condition</label>
                         <select
