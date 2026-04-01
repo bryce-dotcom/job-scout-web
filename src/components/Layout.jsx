@@ -263,7 +263,7 @@ export default function Layout() {
     { to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 2, hint: 'Call leads and schedule appointments', color: '#8b5cf6' },
     { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 3, hint: 'Track leads through sales process', color: '#f59e0b' },
     { to: '/estimates', icon: FileText, label: 'Estimates', step: 4, hint: 'Create and send estimates', color: '#3b82f6' },
-    { to: '/jobs', icon: Briefcase, label: 'Jobs', step: 5, hint: 'Won quotes become jobs', color: '#22c55e' }
+    { to: '/jobs', icon: Briefcase, label: 'Jobs', step: 5, hint: 'Won estimates become jobs', color: '#22c55e' }
   ]
 
   // Base navigation sections (without dynamically placed agents)
@@ -417,9 +417,18 @@ export default function Layout() {
     isAdmin: true,
     items: [
       { to: '/settings', icon: Settings, label: 'Settings', hint: 'Company and app settings' },
-      { to: '/admin/eos', icon: Eye, label: 'EOS', hint: 'Vision, traction, rocks, scorecard, and meetings' },
       { to: '/document-rules', icon: FileText, label: 'Document Rules', hint: 'Manage form templates and doc packages' },
-      { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' }
+    ]
+  } : null
+
+  // Management section - shown to Manager+ (level 2+)
+  const managementSection = userAccessLevel >= 2 ? {
+    title: 'MANAGEMENT',
+    description: 'Reports, EOS & analytics',
+    sectionIcon: BarChart3,
+    items: [
+      { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' },
+      { to: '/admin/eos', icon: Eye, label: 'EOS', hint: 'Vision, traction, rocks, scorecard, and meetings' },
     ]
   } : null
 
@@ -942,6 +951,7 @@ export default function Layout() {
               )
             })()}
 
+            {managementSection && <NavSection section={managementSection} sectionIndex={9} />}
             {adminSection && <NavSection section={adminSection} sectionIndex={10} />}
             {devSection && <NavSection section={devSection} sectionIndex={11} />}
             <NavSection section={helpSection} sectionIndex={12} />
@@ -1406,6 +1416,7 @@ export default function Layout() {
                   )
                 })()}
 
+                {managementSection && <NavSection section={managementSection} mobile sectionIndex={9} />}
                 {adminSection && <NavSection section={adminSection} mobile sectionIndex={10} />}
                 {devSection && <NavSection section={devSection} mobile sectionIndex={11} />}
                 <NavSection section={helpSection} mobile sectionIndex={12} />

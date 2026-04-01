@@ -101,7 +101,8 @@ function DraggableModal({ children, theme, isMobile, maxWidth = '600px', onClose
 }
 
 // ============ PRODUCT CARD ============
-function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborCost, draggable, isAdmin, isManagerPlus, onView, productComponents, products }) {
+function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborData, draggable, isAdmin, isManagerPlus, onView, productComponents, products }) {
+  const laborCost = laborData?.price || 0
   const components = (productComponents || []).filter(pc => pc.parent_product_id === product.id)
   const isBundle = components.length > 0
   return (
@@ -267,9 +268,11 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
 }
 
 // ============ PRODUCT DETAIL MODAL (read-only) ============
-function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborCost, laborRates, productComponents, products, onClose, onEdit, isManagerPlus }) {
+function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborData, laborRates, productComponents, products, onClose, onEdit, isManagerPlus }) {
   if (!product) return null
 
+  const laborPrice = laborData?.price || 0
+  const laborActualCost = laborData?.cost || 0
   const cost = parseFloat(product.cost) || 0
   const markup = parseFloat(product.markup_percent) || 0
   const components = productComponents.filter(pc => pc.parent_product_id === product.id)
@@ -277,8 +280,16 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborCos
     const p = products.find(pr => pr.id === c.component_product_id)
     return sum + ((parseFloat(p?.unit_price) || parseFloat(p?.cost) || 0) * c.quantity)
   }, 0)
+  const compCost = components.reduce((sum, c) => {
+    const p = products.find(pr => pr.id === c.component_product_id)
+    return sum + ((parseFloat(p?.cost) || 0) * c.quantity)
+  }, 0)
   const markedUpDirectCost = cost * (1 + markup / 100)
   const productSubtotal = markedUpDirectCost + compValue
+  const totalCost = cost + compCost + laborActualCost
+  const totalPrice = parseFloat(product.unit_price) || 0
+  const profit = totalPrice - totalCost
+  const profitMargin = totalPrice > 0 ? (profit / totalPrice * 100) : 0
   const datasheet = product.datasheet_json || {}
   const hasSpecs = product.manufacturer || product.model_number || product.product_category || Object.keys(datasheet).length > 0
 
@@ -361,13 +372,20 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborCos
           {/* Pricing */}
           <div style={sectionStyle}>
             <div style={sectionTitleStyle}>Pricing</div>
-            <div style={{ fontSize: '24px', fontWeight: '700', color: theme.accent, marginBottom: '8px' }}>
-              {formatCurrency(product.unit_price)}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '8px' }}>
+              <div style={{ fontSize: '24px', fontWeight: '700', color: theme.accent }}>
+                {formatCurrency(product.unit_price)}
+              </div>
+              {totalCost > 0 && (
+                <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                  sells for
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               {cost > 0 && (
                 <div style={detailRow}>
-                  <span style={{ color: theme.textMuted }}>Direct cost</span>
+                  <span style={{ color: theme.textMuted }}>Material cost</span>
                   <span style={{ color: theme.text }}>{formatCurrency(cost)}</span>
                 </div>
               )}
@@ -379,17 +397,60 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborCos
               )}
               {compValue > 0 && (
                 <div style={detailRow}>
-                  <span style={{ color: theme.textMuted }}>Components</span>
+                  <span style={{ color: theme.textMuted }}>Components (sell)</span>
                   <span style={{ color: theme.text }}>{formatCurrency(compValue)}</span>
                 </div>
               )}
-              {laborCost > 0 && (
+              {laborPrice > 0 && (
                 <div style={detailRow}>
                   <span style={{ color: theme.textMuted }}>Labor ({product.allotted_time_hours}h)</span>
-                  <span style={{ color: '#8b5cf6', fontWeight: '500' }}>{formatCurrency(laborCost)}</span>
+                  <span style={{ color: '#8b5cf6', fontWeight: '500' }}>{formatCurrency(laborPrice)}</span>
                 </div>
               )}
             </div>
+
+            {/* Cost Breakdown */}
+            {totalCost > 0 && (
+              <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${theme.border}` }}>
+                <div style={{ ...sectionTitleStyle, marginBottom: '6px', fontSize: '10px' }}>Cost Breakdown</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {cost > 0 && (
+                    <div style={detailRow}>
+                      <span style={{ color: theme.textMuted }}>Material cost</span>
+                      <span style={{ color: theme.text }}>{formatCurrency(cost)}</span>
+                    </div>
+                  )}
+                  {compCost > 0 && (
+                    <div style={detailRow}>
+                      <span style={{ color: theme.textMuted }}>Components cost</span>
+                      <span style={{ color: theme.text }}>{formatCurrency(compCost)}</span>
+                    </div>
+                  )}
+                  {laborActualCost > 0 ? (
+                    <div style={detailRow}>
+                      <span style={{ color: theme.textMuted }}>Labor cost ({product.allotted_time_hours}h)</span>
+                      <span style={{ color: '#8b5cf6' }}>{formatCurrency(laborActualCost)}</span>
+                    </div>
+                  ) : laborPrice > 0 ? (
+                    <div style={detailRow}>
+                      <span style={{ color: '#eab308', fontSize: '12px' }}>Labor cost not set — update labor rate</span>
+                      <span />
+                    </div>
+                  ) : null}
+                  <div style={{ ...detailRow, paddingTop: '6px', borderTop: `1px solid ${theme.border}`, marginTop: '4px' }}>
+                    <span style={{ color: theme.text, fontWeight: '600' }}>Total cost</span>
+                    <span style={{ color: theme.text, fontWeight: '600' }}>{formatCurrency(totalCost)}</span>
+                  </div>
+                  <div style={detailRow}>
+                    <span style={{ color: profit >= 0 ? '#4a7c59' : '#ef4444', fontWeight: '600' }}>Profit</span>
+                    <span style={{ color: profit >= 0 ? '#4a7c59' : '#ef4444', fontWeight: '600' }}>
+                      {formatCurrency(profit)} ({profitMargin.toFixed(1)}%)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
               {product.taxable && <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '8px', backgroundColor: theme.accentBg, color: theme.accent }}>Taxable</span>}
               <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '8px', backgroundColor: product.active ? 'rgba(74,124,89,0.12)' : 'rgba(0,0,0,0.06)', color: product.active ? '#4a7c59' : theme.textMuted }}>
@@ -606,7 +667,7 @@ export default function ProductsServices() {
   const [showLaborRates, setShowLaborRates] = useState(false)
   const [editingRate, setEditingRate] = useState(null)
   const [rateForm, setRateForm] = useState({
-    name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false
+    name: '', rate_per_hour: '', cost_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false
   })
 
   const [saving, setSaving] = useState(false)
@@ -633,10 +694,14 @@ export default function ProductsServices() {
   const defaultLaborRate = laborRates.find(r => r.is_default) || laborRates[0]
 
   const getLaborCost = (product) => {
-    if (!product.allotted_time_hours) return 0
+    if (!product.allotted_time_hours) return { price: 0, cost: 0 }
     const rate = product.labor_rate_id ? laborRates.find(r => r.id === product.labor_rate_id) : defaultLaborRate
-    if (!rate) return 0
-    return product.allotted_time_hours * rate.rate_per_hour * (rate.multiplier || 1)
+    if (!rate) return { price: 0, cost: 0 }
+    const mult = rate.multiplier || 1
+    return {
+      price: product.allotted_time_hours * rate.rate_per_hour * mult,
+      cost: product.allotted_time_hours * (parseFloat(rate.cost_per_hour) || 0) * mult
+    }
   }
 
   const syncProductToInventory = async (productId, productName, isActive) => {
@@ -717,7 +782,7 @@ export default function ProductsServices() {
       .select('value')
       .eq('company_id', companyId)
       .eq('key', 'product_sections')
-      .single()
+      .maybeSingle()
     if (data?.value) {
       try { setSections(JSON.parse(data.value)) } catch { setSections([]) }
     } else {
@@ -735,7 +800,7 @@ export default function ProductsServices() {
 
   const saveSections = async (newSections) => {
     setSections(newSections)
-    const { data: existing } = await supabase.from('settings').select('id').eq('company_id', companyId).eq('key', 'product_sections').single()
+    const { data: existing } = await supabase.from('settings').select('id').eq('company_id', companyId).eq('key', 'product_sections').maybeSingle()
     if (existing) {
       await supabase.from('settings').update({ value: JSON.stringify(newSections), updated_at: new Date().toISOString() }).eq('id', existing.id)
     } else {
@@ -743,10 +808,17 @@ export default function ProductsServices() {
     }
   }
 
-  const openSectionForm = (index = null) => {
-    if (index !== null && sections[index]) {
-      setEditingSectionIndex(index)
-      setSectionForm({ name: sections[index].name, image_url: sections[index].image_url || '' })
+  const openSectionForm = async (indexOrName = null) => {
+    if (typeof indexOrName === 'string') {
+      // Orphan section — add it to stored sections first so it becomes editable
+      const newSection = { name: indexOrName, image_url: '' }
+      const updated = [...sections, newSection]
+      await saveSections(updated)
+      setEditingSectionIndex(updated.length - 1)
+      setSectionForm({ ...newSection })
+    } else if (indexOrName !== null && sections[indexOrName]) {
+      setEditingSectionIndex(indexOrName)
+      setSectionForm({ name: sections[indexOrName].name, image_url: sections[indexOrName].image_url || '' })
     } else {
       setEditingSectionIndex(null)
       setSectionForm({ name: '', image_url: '' })
@@ -775,26 +847,35 @@ export default function ProductsServices() {
     setSaving(false)
   }
 
-  const handleDeleteSection = async (index) => {
-    const section = sections[index]
-    if (!confirm(`Delete section "${section.name}"? Groups and items in this section will still exist but won't be in a section.`)) return
-    const updated = sections.filter((_, i) => i !== index)
+  const handleDeleteSection = async (indexOrName) => {
+    const sectionName = typeof indexOrName === 'string' ? indexOrName : sections[indexOrName]?.name
+    if (!sectionName) return
+    if (!confirm(`Delete section "${sectionName}"? Groups and items in this section will still exist but won't be in a section.`)) return
+    const updated = typeof indexOrName === 'string'
+      ? sections.filter(s => s.name !== indexOrName)
+      : sections.filter((_, i) => i !== indexOrName)
     await saveSections(updated)
-    if (activeSection === section.name) { setActiveSection(null) }
+    if (activeSection === sectionName) { setActiveSection(null) }
   }
 
+  const sectionFileRef = useRef(null)
   const handleSectionImageUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${companyId}/sections/${Date.now()}.${fileExt}`
-    const { error } = await supabase.storage.from('product-images').upload(fileName, file)
-    if (!error) {
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${companyId}/sections/${Date.now()}.${fileExt}`
+      const { error } = await supabase.storage.from('product-images').upload(fileName, file)
+      if (error) { alert('Image upload failed: ' + error.message); return }
       const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(fileName)
       setSectionForm(prev => ({ ...prev, image_url: publicUrl }))
+    } catch (err) {
+      alert('Image upload failed: ' + (err.message || 'Unknown error'))
+    } finally {
+      setUploading(false)
+      if (sectionFileRef.current) sectionFileRef.current.value = ''
     }
-    setUploading(false)
   }
 
   // Build section names list from stored sections + any orphan groups
@@ -1170,13 +1251,13 @@ export default function ProductsServices() {
     if (rate) {
       setEditingRate(rate)
       setRateForm({
-        name: rate.name || '', rate_per_hour: rate.rate_per_hour || '',
+        name: rate.name || '', rate_per_hour: rate.rate_per_hour || '', cost_per_hour: rate.cost_per_hour || '',
         description: rate.description || '', multiplier: rate.multiplier || '1.0',
         active: rate.active ?? true, is_default: rate.is_default ?? false
       })
     } else {
       setEditingRate(null)
-      setRateForm({ name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: laborRates.length === 0 })
+      setRateForm({ name: '', rate_per_hour: '', cost_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: laborRates.length === 0 })
     }
   }
 
@@ -1193,7 +1274,9 @@ export default function ProductsServices() {
     }
     const payload = {
       company_id: companyId, name: rateForm.name,
-      rate_per_hour: parseFloat(rateForm.rate_per_hour), description: rateForm.description || null,
+      rate_per_hour: parseFloat(rateForm.rate_per_hour),
+      cost_per_hour: parseFloat(rateForm.cost_per_hour) || 0,
+      description: rateForm.description || null,
       multiplier: parseFloat(rateForm.multiplier) || 1.0, active: rateForm.active,
       is_default: rateForm.is_default, updated_at: new Date().toISOString()
     }
@@ -1207,7 +1290,7 @@ export default function ProductsServices() {
     else {
       await fetchLaborRates()
       setEditingRate(null)
-      setRateForm({ name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false })
+      setRateForm({ name: '', rate_per_hour: '', cost_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false })
     }
     setSaving(false)
   }
@@ -1267,6 +1350,7 @@ export default function ProductsServices() {
   // ============ RENDER ============
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', minHeight: '100vh', maxWidth: '100%', overflowX: 'hidden' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       {/* Header */}
       <div style={{
         display: 'flex', flexDirection: isMobile ? 'column' : 'row',
@@ -1480,12 +1564,12 @@ export default function ProductsServices() {
                       </div>
                     </div>
                     {/* Edit/Delete buttons on section card */}
-                    {isManagerPlus && storedIndex !== -1 && (
+                    {isManagerPlus && (
                       <div style={{
                         position: 'absolute', top: '8px', right: '8px',
                         display: 'flex', gap: '4px'
                       }}>
-                        <button onClick={(e) => { e.stopPropagation(); openSectionForm(storedIndex) }} style={{
+                        <button onClick={(e) => { e.stopPropagation(); openSectionForm(storedIndex !== -1 ? storedIndex : section) }} style={{
                           width: '32px', height: '32px', borderRadius: '8px',
                           backgroundColor: 'rgba(255,255,255,0.9)', border: 'none',
                           cursor: 'pointer', display: 'flex', alignItems: 'center',
@@ -1494,7 +1578,7 @@ export default function ProductsServices() {
                         }}>
                           <Pencil size={14} />
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(storedIndex) }} style={{
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(storedIndex !== -1 ? storedIndex : section) }} style={{
                           width: '32px', height: '32px', borderRadius: '8px',
                           backgroundColor: 'rgba(255,255,255,0.9)', border: 'none',
                           cursor: 'pointer', display: 'flex', alignItems: 'center',
@@ -1574,7 +1658,7 @@ export default function ProductsServices() {
                     <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile}
                       formatCurrency={formatCurrency} openProductForm={openProductForm}
                       handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
-                      inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
+                      inventoryCount={getInventoryCount(product.id)} laborData={getLaborCost(product)}
                       draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus}
                       onView={setViewingProduct} productComponents={productComponents} products={products} />
                   ))}
@@ -1703,7 +1787,7 @@ export default function ProductsServices() {
                         <ProductCard key={product.id} product={product} theme={theme} isMobile={isMobile}
                           formatCurrency={formatCurrency} openProductForm={openProductForm}
                           handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
-                          inventoryCount={getInventoryCount(product.id)} laborCost={getLaborCost(product)}
+                          inventoryCount={getInventoryCount(product.id)} laborData={getLaborCost(product)}
                           draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus}
                           onView={setViewingProduct} productComponents={productComponents} products={products} />
                       ))}
@@ -1770,13 +1854,20 @@ export default function ProductsServices() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={labelStyle}>Rate/Hour *</label>
+                  <label style={labelStyle}>Sell Rate/Hour *</label>
                   <input type="number" name="rate_per_hour" value={rateForm.rate_per_hour} onChange={handleRateChange} step="0.01" style={inputStyle} placeholder="75.00" />
                 </div>
+                <div>
+                  <label style={labelStyle}>Cost/Hour</label>
+                  <input type="number" name="cost_per_hour" value={rateForm.cost_per_hour} onChange={handleRateChange} step="0.01" style={inputStyle} placeholder="35.00" />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={labelStyle}>Multiplier</label>
                   <input type="number" name="multiplier" value={rateForm.multiplier} onChange={handleRateChange} step="0.1" style={inputStyle} placeholder="1.0" />
                 </div>
+                <div />
               </div>
               <div>
                 <label style={labelStyle}>Description</label>
@@ -1794,7 +1885,7 @@ export default function ProductsServices() {
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 {editingRate && (
-                  <button onClick={() => { setEditingRate(null); setRateForm({ name: '', rate_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false }) }} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+                  <button onClick={() => { setEditingRate(null); setRateForm({ name: '', rate_per_hour: '', cost_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false }) }} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
                     Cancel
                   </button>
                 )}
@@ -1824,6 +1915,14 @@ export default function ProductsServices() {
                         ${parseFloat(rate.rate_per_hour).toFixed(2)}/hr
                         {rate.multiplier && rate.multiplier !== 1 && <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: '6px' }}>x{rate.multiplier}</span>}
                       </div>
+                      {parseFloat(rate.cost_per_hour) > 0 && (
+                        <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                          Cost: ${parseFloat(rate.cost_per_hour).toFixed(2)}/hr
+                          <span style={{ marginLeft: '8px', color: '#4a7c59', fontWeight: '500' }}>
+                            ({((1 - parseFloat(rate.cost_per_hour) / parseFloat(rate.rate_per_hour)) * 100).toFixed(0)}% margin)
+                          </span>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                         {!rate.is_default && (
                           <button onClick={() => handleSetDefault(rate)} style={{ flex: 1, ...buttonStyle, backgroundColor: 'rgba(139,92,246,0.12)', color: '#8b5cf6', padding: '6px', fontSize: '11px' }}>
@@ -1951,6 +2050,7 @@ export default function ProductsServices() {
               <div>
                 <label style={labelStyle}>Image</label>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input ref={sectionFileRef} type="file" accept="image/*" onChange={handleSectionImageUpload} style={{ display: 'none' }} />
                   {sectionForm.image_url ? (
                     <div style={{ position: 'relative' }}>
                       <img src={sectionForm.image_url} alt="" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} />
@@ -1963,14 +2063,16 @@ export default function ProductsServices() {
                       </button>
                     </div>
                   ) : (
-                    <label style={{
-                      width: '60px', height: '60px', borderRadius: '8px', border: `2px dashed ${theme.border}`,
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                      cursor: 'pointer', color: theme.textMuted, backgroundColor: theme.bg
-                    }}>
-                      <Upload size={16} />
-                      <input type="file" accept="image/*" onChange={handleSectionImageUpload} style={{ display: 'none' }} />
-                    </label>
+                    <div
+                      onClick={() => sectionFileRef.current?.click()}
+                      style={{
+                        width: '60px', height: '60px', borderRadius: '8px', border: `2px dashed ${theme.border}`,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        cursor: uploading ? 'wait' : 'pointer', color: theme.textMuted, backgroundColor: theme.bg
+                      }}
+                    >
+                      {uploading ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={16} />}
+                    </div>
                   )}
                   <input
                     type="url"
@@ -1987,8 +2089,8 @@ export default function ProductsServices() {
             <button onClick={() => { setShowSectionModal(false); setEditingSectionIndex(null) }} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
               Cancel
             </button>
-            <button onClick={handleSaveSection} disabled={saving} style={{ ...buttonStyle, flex: 1, backgroundColor: theme.accent, color: '#fff', opacity: saving ? 0.7 : 1 }}>
-              <Save size={16} /> {saving ? 'Saving...' : (editingSectionIndex !== null ? 'Update' : 'Create Section')}
+            <button onClick={handleSaveSection} disabled={saving || uploading} style={{ ...buttonStyle, flex: 1, backgroundColor: theme.accent, color: '#fff', opacity: (saving || uploading) ? 0.7 : 1 }}>
+              <Save size={16} /> {uploading ? 'Uploading...' : saving ? 'Saving...' : (editingSectionIndex !== null ? 'Update' : 'Create Section')}
             </button>
           </div>
         </DraggableModal>
@@ -2001,7 +2103,7 @@ export default function ProductsServices() {
           theme={theme}
           isMobile={isMobile}
           formatCurrency={formatCurrency}
-          laborCost={getLaborCost(viewingProduct)}
+          laborData={getLaborCost(viewingProduct)}
           laborRates={laborRates}
           productComponents={productComponents}
           products={products}
@@ -2129,10 +2231,16 @@ export default function ProductsServices() {
                     const rate = productForm.labor_rate_id
                       ? laborRates.find(r => r.id === productForm.labor_rate_id)
                       : defaultLaborRate
-                    const laborCost = hours > 0 && rate ? hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1) : 0
+                    const laborSell = hours > 0 && rate ? hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1) : 0
+                    const laborCostAmt = hours > 0 && rate ? hours * (parseFloat(rate.cost_per_hour) || 0) * (rate.multiplier || 1) : 0
                     return hours > 0 && rate ? (
-                      <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted }}>
-                        {hours}h x ${parseFloat(rate.rate_per_hour).toFixed(2)}/hr{rate.multiplier && rate.multiplier !== 1 ? ` x ${rate.multiplier}` : ''} = <strong style={{ color: theme.text }}>${laborCost.toFixed(2)}</strong> labor
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span>{hours}h x ${parseFloat(rate.rate_per_hour).toFixed(2)}/hr{rate.multiplier && rate.multiplier !== 1 ? ` x ${rate.multiplier}` : ''} = <strong style={{ color: theme.text }}>${laborSell.toFixed(2)}</strong> sell</span>
+                        {laborCostAmt > 0 ? (
+                          <span>{hours}h x ${parseFloat(rate.cost_per_hour).toFixed(2)}/hr{rate.multiplier && rate.multiplier !== 1 ? ` x ${rate.multiplier}` : ''} = <strong style={{ color: theme.text }}>${laborCostAmt.toFixed(2)}</strong> cost</span>
+                        ) : (
+                          <span style={{ color: '#eab308' }}>Set cost/hour on labor rate to track labor cost</span>
+                        )}
                       </div>
                     ) : null
                   })()}

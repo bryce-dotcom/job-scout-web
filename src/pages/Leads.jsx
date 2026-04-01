@@ -9,8 +9,10 @@ import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { leadsFields } from '../lib/importExportFields'
 import { leadStatusColors } from '../lib/statusColors'
 import PageHeader from '../components/PageHeader'
+import SearchableSelect from '../components/SearchableSelect'
 
 const LEAD_STATUSES = ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost']
+const STATUS_LABELS = { 'Quote Sent': 'Estimate Sent' }
 
 const emptyLead = {
   customer_name: '',
@@ -384,14 +386,22 @@ export default function Leads() {
           <Search size={20} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
           <input type="text" placeholder="Search leads..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle, paddingLeft: '40px', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }} />
         </div>
-        <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: isMobile ? 'auto' : '140px', flex: isMobile ? 1 : 'none', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }}>
-          <option value="all">All Owners</option>
-          <option value="unassigned">Unassigned</option>
-          {activeEmployees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-        </select>
+        <div style={{ width: 'auto', minWidth: isMobile ? 'auto' : '140px', flex: isMobile ? 1 : 'none' }}>
+          <SearchableSelect
+            options={[
+              { value: 'all', label: 'All Owners' },
+              { value: 'unassigned', label: 'Unassigned' },
+              ...activeEmployees.map(emp => ({ value: emp.id, label: emp.name }))
+            ]}
+            value={ownerFilter}
+            onChange={(val) => setOwnerFilter(val || 'all')}
+            placeholder="Filter by owner..."
+            theme={theme}
+          />
+        </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: isMobile ? 'auto' : '140px', flex: isMobile ? 1 : 'none', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }}>
           <option value="all">All Status</option>
-          {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+          {LEAD_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
         </select>
         <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: isMobile ? 'auto' : '140px', flex: isMobile ? 1 : 'none', backgroundColor: theme.bgCard, minHeight: isMobile ? '44px' : 'auto' }}>
           <option value="all">All Sources</option>
@@ -429,7 +439,7 @@ export default function Leads() {
                   flexShrink: 0,
                   ...getStatusStyle(lead.status)
                 }}>
-                  {lead.status}
+                  {STATUS_LABELS[lead.status] || lead.status}
                 </span>
               </div>
 
@@ -619,22 +629,23 @@ export default function Leads() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Source Person</label>
-                  <select name="lead_source_employee_id" value={formData.lead_source_employee_id} onChange={handleChange} style={inputStyle}>
-                    <option value="">-- None --</option>
-                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                  </select>
+                  <SearchableSelect
+                    options={employees.map(e => ({ value: e.id, label: e.name }))}
+                    value={formData.lead_source_employee_id}
+                    onChange={(val) => setFormData(prev => ({ ...prev, lead_source_employee_id: val }))}
+                    placeholder="Search employees..."
+                    theme={theme}
+                  />
                 </div>
                 <div>
                   <label style={labelStyle}>Lead Owner</label>
-                  <select
-                    name="lead_owner_id"
+                  <SearchableSelect
+                    options={employees.map(e => ({ value: e.id, label: e.name }))}
                     value={formData.lead_owner_id}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select --</option>
-                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                  </select>
+                    onChange={(val) => setFormData(prev => ({ ...prev, lead_owner_id: val }))}
+                    placeholder="Search employees..."
+                    theme={theme}
+                  />
                 </div>
               </div>
 
@@ -642,7 +653,7 @@ export default function Leads() {
                 <div>
                   <label style={labelStyle}>Status</label>
                   <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
-                    {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    {LEAD_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
                   </select>
                 </div>
               </div>
@@ -673,16 +684,13 @@ export default function Leads() {
               </p>
               <div style={{ marginBottom: '24px' }}>
                 <label style={labelStyle}>Select Setter</label>
-                <select
+                <SearchableSelect
+                  options={setterEmployees.map(e => ({ value: e.id, label: `${e.name}${e.role ? ` (${e.role})` : ''}` }))}
                   value={assignSetterId}
-                  onChange={(e) => setAssignSetterId(e.target.value)}
-                  style={inputStyle}
-                >
-                  <option value="">-- Select Setter --</option>
-                  {setterEmployees.map(e => (
-                    <option key={e.id} value={e.id}>{e.name} {e.role ? `(${e.role})` : ''}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setAssignSetterId(val)}
+                  placeholder="Search setters..."
+                  theme={theme}
+                />
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button

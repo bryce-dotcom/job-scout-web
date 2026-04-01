@@ -1,12 +1,15 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { toast } from '../lib/toast'
 import { useTheme } from '../components/Layout'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
 import { photoQueue } from '../lib/photoQueue'
-import { ArrowLeft, Plus, Minus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText, Copy } from 'lucide-react'
+import { ArrowLeft, Plus, Minus, Edit, Trash2, Check, Send, Zap, DollarSign, Clock, TrendingDown, Sparkles, FileText, Copy, UserPlus } from 'lucide-react'
 import { auditStatusColors as statusColors } from '../lib/statusColors'
 import DealBreadcrumb from '../components/DealBreadcrumb'
+import SearchableSelect from '../components/SearchableSelect'
 
 // Light theme fallback
 const defaultTheme = {
@@ -26,6 +29,7 @@ const defaultTheme = {
 export default function LightingAuditDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const lightingAudits = useStore((state) => state.lightingAudits)
   const auditAreas = useStore((state) => state.auditAreas)
@@ -244,6 +248,36 @@ export default function LightingAuditDetail() {
     }
     await deleteLightingAudit(id)
     navigate('/lighting-audits')
+  }
+
+  // Send to setter pipeline
+  const handleSendToSetter = async () => {
+    const name = audit.customer?.name || customers.find(c => c.id === audit.customer_id)?.name || 'this audit'
+    const reason = window.prompt(`Why does ${name} need a meeting?\n\nAdd a note for the setter:`)
+    if (reason === null) return
+    const senderName = user?.name || 'Someone'
+    const noteText = `Sent to setter by ${senderName} on ${new Date().toLocaleDateString()}${reason ? `: ${reason}` : ''}`
+
+    if (audit.lead_id) {
+      const { data: leadData } = await supabase.from('leads').select('notes').eq('id', audit.lead_id).single()
+      const existingNotes = leadData?.notes ? `${leadData.notes}\n${noteText}` : noteText
+      const { error } = await supabase.from('leads').update({ status: 'Contacted', notes: existingNotes, updated_at: new Date().toISOString() }).eq('id', audit.lead_id)
+      if (error) { toast.error('Error: ' + error.message); return }
+    } else {
+      const customerName = audit.customer?.name || customers.find(c => c.id === audit.customer_id)?.name || name
+      const { error } = await supabase.from('leads').insert({
+        company_id: companyId,
+        customer_name: customerName,
+        address: audit.address ? `${audit.address}, ${audit.city || ''} ${audit.state || ''}`.trim() : null,
+        status: 'Contacted',
+        lead_source: 'Lighting Audit',
+        customer_id: audit.customer_id || null,
+        notes: noteText
+      })
+      if (error) { toast.error('Error: ' + error.message); return }
+    }
+    toast.success('Sent to setter pipeline')
+    navigate('/lead-setter')
   }
 
   const handleAddArea = async () => {
@@ -570,7 +604,13 @@ export default function LightingAuditDetail() {
           </div>
         </div>
 
-        <div className="audit-detail-actions button-group" style={{ display: 'flex', gap: '8px' }}>
+        <div className="audit-detail-actions button-group" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleSendToSetter}
+            style={{ padding: '10px 16px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '500' }}
+          >
+            <UserPlus size={16} /> Send to Setter
+          </button>
           <button
             onClick={openEditModal}
             style={{
@@ -1710,10 +1750,13 @@ function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onC
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <label style={labelStyle}>Customer</label>
-            <select value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value })} style={inputStyle}>
-              <option value="">Select Customer</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={customers.map(c => ({ value: c.id, label: c.name }))}
+              value={form.customer_id}
+              onChange={(val) => setForm({ ...form, customer_id: val })}
+              placeholder="Select Customer"
+              theme={theme}
+            />
           </div>
 
           <div>
@@ -1740,10 +1783,13 @@ function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onC
             <label style={labelStyle}>
               Utility Provider {form.state && <span style={{ color: theme.textMuted, fontWeight: '400' }}>({form.state})</span>}
             </label>
-            <select value={form.utility_provider_id} onChange={(e) => setForm({ ...form, utility_provider_id: e.target.value })} style={inputStyle}>
-              <option value="">{form.state ? `Select Provider in ${form.state}` : 'Select Utility Provider'}</option>
-              {filteredProviders.map(p => <option key={p.id} value={p.id}>{p.provider_name}</option>)}
-            </select>
+            <SearchableSelect
+              options={filteredProviders.map(p => ({ value: p.id, label: p.provider_name }))}
+              value={form.utility_provider_id}
+              onChange={(val) => setForm({ ...form, utility_provider_id: val })}
+              placeholder={form.state ? `Select Provider in ${form.state}` : 'Select Utility Provider'}
+              theme={theme}
+            />
           </div>
 
           <div className="audit-modal-grid-3 form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>

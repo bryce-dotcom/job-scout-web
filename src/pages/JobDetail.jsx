@@ -12,10 +12,11 @@ import {
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
   Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image, Copy,
-  Shield, Star, Receipt, Link2, TrendingUp, Search, PackageCheck
+  Shield, Star, Receipt, Link2, TrendingUp, Search, PackageCheck, UserPlus
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import JobCostingModal from '../components/JobCostingModal'
+import SearchableSelect from '../components/SearchableSelect'
 
 const CATEGORY_COLORS = {
   CONTRACT: { bg: '#dcfce7', text: '#166534' },
@@ -84,7 +85,8 @@ function JobDetailInner() {
   const timeLogs = useStore((state) => state.timeLogs)
   const fetchJobs = useStore((state) => state.fetchJobs)
   const fetchTimeLogs = useStore((state) => state.fetchTimeLogs)
-  const isAdmin = checkAdmin(useStore((state) => state.user))
+  const user = useStore((state) => state.user)
+  const isAdmin = checkAdmin(user)
   const customers = useStore((state) => state.customers)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
   const businessUnits = useStore((state) => state.businessUnits)
@@ -345,6 +347,16 @@ function JobDetailInner() {
           setJob(prev => ({ ...prev, allotted_time_hours: calcRounded, calculated_allotted_time: calcRounded }))
           setFormData(prev => ({ ...prev, allotted_time_hours: calcRounded }))
         }
+      }
+
+      // Sync job_total from line items so pipeline/reports stay accurate
+      const linesTotal = (lines || []).reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
+      const discount = parseFloat(jobData.discount) || 0
+      const computedJobTotal = Math.round((linesTotal - discount) * 100) / 100
+      const storedJobTotal = Math.round((parseFloat(jobData.job_total) || 0) * 100) / 100
+      if ((lines || []).length > 0 && computedJobTotal !== storedJobTotal) {
+        await supabase.from('jobs').update({ job_total: computedJobTotal }).eq('id', id)
+        setJob(prev => ({ ...prev, job_total: computedJobTotal }))
       }
 
       // Fetch sections
@@ -730,7 +742,7 @@ function JobDetailInner() {
 
   const copyFromQuote = async () => {
     if (!job.quote_id) return
-    if (!confirm('Copy line items from the linked quote?')) return
+    if (!confirm('Copy line items from the linked estimate?')) return
 
     setSaving(true)
 
@@ -820,6 +832,35 @@ function JobDetailInner() {
     await fetchJobs()
     setEditMode(false)
     setSaving(false)
+  }
+
+  // Send to setter pipeline
+  const handleSendToSetter = async () => {
+    const reason = window.prompt(`Why does ${job.customer_name || job.job_title} need a meeting?\n\nAdd a note for the setter:`)
+    if (reason === null) return
+    const { toast } = await import('../lib/toast')
+    const senderName = user?.name || 'Someone'
+    const noteText = `Sent to setter by ${senderName} on ${new Date().toLocaleDateString()}${reason ? `: ${reason}` : ''}`
+
+    if (job.lead_id) {
+      const { data: leadData } = await supabase.from('leads').select('notes').eq('id', job.lead_id).single()
+      const existingNotes = leadData?.notes ? `${leadData.notes}\n${noteText}` : noteText
+      const { error } = await supabase.from('leads').update({ status: 'Contacted', notes: existingNotes, updated_at: new Date().toISOString() }).eq('id', job.lead_id)
+      if (error) { toast.error('Error: ' + error.message); return }
+    } else {
+      const { error } = await supabase.from('leads').insert({
+        company_id: companyId,
+        customer_name: job.customer_name || job.job_title,
+        address: job.address || null,
+        status: 'Contacted',
+        lead_source: 'Existing Job',
+        customer_id: job.customer_id || null,
+        notes: noteText
+      })
+      if (error) { toast.error('Error: ' + error.message); return }
+    }
+    toast.success('Sent to setter pipeline')
+    navigate('/lead-setter')
   }
 
   const generateInvoice = async () => {
@@ -1941,6 +1982,12 @@ function JobDetailInner() {
             </div>
           )}
         </div>
+        <button
+          onClick={handleSendToSetter}
+          style={{ padding: '8px 14px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' }}
+        >
+          <UserPlus size={16} /> Send to Setter
+        </button>
       </div>
 
       {/* Deal Breadcrumb */}
@@ -2330,16 +2377,13 @@ function JobDetailInner() {
                 </div>
                 <div>
                   <label style={labelStyle}>Sales Owner</label>
-                  <select
+                  <SearchableSelect
+                    options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
                     value={formData.salesperson_id || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, salesperson_id: e.target.value ? parseInt(e.target.value) : null }))}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select --</option>
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.name}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setFormData(prev => ({ ...prev, salesperson_id: val ? parseInt(val) : null }))}
+                    placeholder="-- Select --"
+                    theme={theme}
+                  />
                 </div>
                 <div>
                   <label style={labelStyle}>Address</label>
@@ -4949,12 +4993,13 @@ function JobDetailInner() {
             <div style={{ padding: '20px' }}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Employee</label>
-                <select value={newTime.employee_id} onChange={(e) => setNewTime(prev => ({ ...prev, employee_id: e.target.value }))} style={inputStyle}>
-                  <option value="">-- Select --</option>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.name}</option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
+                  value={newTime.employee_id}
+                  onChange={(val) => setNewTime(prev => ({ ...prev, employee_id: val }))}
+                  placeholder="-- Select --"
+                  theme={theme}
+                />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div>
@@ -5119,16 +5164,13 @@ function JobDetailInner() {
 
                 <div>
                   <label style={labelStyle}>Assign To</label>
-                  <select
+                  <SearchableSelect
+                    options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
                     value={sectionForm.assigned_to}
-                    onChange={(e) => setSectionForm(prev => ({ ...prev, assigned_to: e.target.value }))}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select Employee --</option>
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.name}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSectionForm(prev => ({ ...prev, assigned_to: val }))}
+                    placeholder="-- Select Employee --"
+                    theme={theme}
+                  />
                 </div>
 
                 <div>

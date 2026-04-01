@@ -19,6 +19,7 @@ import FlowIndicator from '../components/FlowIndicator'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import EmptyState from '../components/EmptyState'
 import ProductPickerModal from '../components/ProductPickerModal'
+import SearchableSelect from '../components/SearchableSelect'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -46,6 +47,7 @@ const getPackageKey = (p) => p.source_table === 'utility_forms' ? `uf_${p.templa
 export default function LeadDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const employees = useStore((state) => state.employees)
   const createQuote = useStore((state) => state.createQuote)
@@ -283,7 +285,7 @@ export default function LeadDetail() {
     if (receiptInputRef.current) receiptInputRef.current.value = ''
   }
 
-  // Create quote from audit
+  // Create estimate from audit
   const handleCreateQuoteFromAudit = async (audit) => {
     const quoteTempId = await createQuote({
       company_id: companyId,
@@ -296,10 +298,11 @@ export default function LeadDetail() {
       status: 'Draft'
     })
 
-    // Update lead with quote and amount so pipeline shows the value
+    // Update lead with quote and amount, advance to Qualified since quote was created
     await updateLead(lead.id, {
       quote_id: quoteTempId,
-      quote_amount: audit.est_project_cost || 0
+      quote_amount: audit.est_project_cost || 0,
+      status: 'Qualified'
     })
 
     // Use audit areas from store instead of fetching from supabase
@@ -331,7 +334,7 @@ export default function LeadDetail() {
     navigate(`/estimates/${quoteTempId}`)
   }
 
-  // Open quote creation modal
+  // Open estimate creation modal
   const openQuoteModal = () => {
     setQuoteLines([])
     setQuoteDiscount(0)
@@ -391,7 +394,7 @@ export default function LeadDetail() {
   const quoteSubtotal = quoteLines.reduce((sum, line) => sum + (line.line_total || 0), 0)
   const quoteTotal = quoteSubtotal - (parseFloat(quoteDiscount) || 0)
 
-  // Save quote
+  // Save estimate
   const handleSaveQuote = async () => {
     if (quoteLines.length === 0) {
       alert('Please add at least one line item')
@@ -434,12 +437,12 @@ export default function LeadDetail() {
     await fetchLeadData()
   }
 
-  // Mark quote as sent
+  // Mark estimate as sent
   const handleSendQuote = async (quoteId) => {
     await updateQuote(quoteId, { status: 'Sent', sent_at: new Date().toISOString() })
     await updateLead(lead.id, { status: 'Quote Sent' })
     await fetchLeadData()
-    alert('Quote marked as sent!')
+    alert('Estimate marked as sent!')
   }
 
   // Start new audit
@@ -696,10 +699,14 @@ export default function LeadDetail() {
 
   // Send lead to the setter pipeline
   const handleSendToSetter = async () => {
-    if (!confirm(`Send ${lead.customer_name} to the Lead Setter pipeline?\n\nThis will reset the lead status to "New" so a setter can schedule an appointment.`)) return
+    const reason = window.prompt(`Why does ${lead.customer_name} need a meeting?\n\nAdd a note for the setter:`)
+    if (reason === null) return // cancelled
+    const senderName = user?.name || 'Someone'
+    const noteText = `Sent to setter by ${senderName} on ${new Date().toLocaleDateString()}${reason ? `: ${reason}` : ''}`
+    const existingNotes = lead.notes ? `${lead.notes}\n${noteText}` : noteText
     const { error } = await supabase
       .from('leads')
-      .update({ status: 'New', setter_owner_id: null, appointment_id: null, appointment_time: null })
+      .update({ status: 'Contacted', notes: existingNotes, updated_at: new Date().toISOString() })
       .eq('id', lead.id)
     if (error) {
       toast.error('Error: ' + error.message)
@@ -983,7 +990,7 @@ export default function LeadDetail() {
                 }}
               >
                 {STATUS.lead.map(s => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>{s === 'Quote Sent' ? 'Estimate Sent' : s}</option>
                 ))}
               </select>
             </div>
@@ -1025,13 +1032,11 @@ export default function LeadDetail() {
                 <Mail size={16} /> Email
               </a>
             )}
-            {!['Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed', 'Lost'].includes(lead.status) && (
-              <Tooltip text="Send this lead to the setter pipeline for appointment scheduling">
-                <button onClick={handleSendToSetter} style={{ padding: '10px 14px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '500' }}>
-                  <UserPlus size={16} /> Send to Setter
-                </button>
-              </Tooltip>
-            )}
+            <Tooltip text="Send this lead to the setter pipeline for appointment scheduling">
+              <button onClick={handleSendToSetter} style={{ padding: '10px 14px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '500' }}>
+                <UserPlus size={16} /> Send to Setter
+              </button>
+            </Tooltip>
             {lead.status === 'Won' && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                 <button onClick={handleConvertToJob} disabled={convertingToJob} style={{ padding: '10px 14px', backgroundColor: convertingToJob ? '#9ca3af' : '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', cursor: convertingToJob ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: '600' }}>
@@ -1044,7 +1049,7 @@ export default function LeadDetail() {
         )}
 
         {/* Mobile: Send to Setter + Convert to Job buttons */}
-        {isMobile && !['Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed', 'Lost'].includes(lead.status) && (
+        {isMobile && (
           <button onClick={handleSendToSetter} style={{ padding: '10px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '13px', fontWeight: '500', width: '100%' }}>
             <UserPlus size={14} /> Send to Setter
           </button>
@@ -1271,10 +1276,13 @@ export default function LeadDetail() {
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Source Person</div>
                     {isEditing ? (
-                      <select value={editForm.lead_source_employee_id} onChange={(e) => setEditForm({ ...editForm, lead_source_employee_id: e.target.value })} style={inputStyle}>
-                        <option value="">-- None --</option>
-                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                      </select>
+                      <SearchableSelect
+                        options={employees.map(e => ({ value: e.id, label: e.name }))}
+                        value={editForm.lead_source_employee_id}
+                        onChange={(val) => setEditForm({ ...editForm, lead_source_employee_id: val })}
+                        placeholder="-- None --"
+                        theme={theme}
+                      />
                     ) : (
                       <div style={{ fontSize: '14px', color: theme.text }}>{lead.source_employee?.name || '-'}</div>
                     )}
@@ -1313,10 +1321,13 @@ export default function LeadDetail() {
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Lead Owner</div>
                     {isEditing ? (
-                      <select value={editForm.lead_owner_id} onChange={(e) => setEditForm({ ...editForm, lead_owner_id: e.target.value })} style={inputStyle}>
-                        <option value="">-- Select --</option>
-                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                      </select>
+                      <SearchableSelect
+                        options={employees.map(e => ({ value: e.id, label: e.name }))}
+                        value={editForm.lead_owner_id}
+                        onChange={(val) => setEditForm({ ...editForm, lead_owner_id: val })}
+                        placeholder="-- Select --"
+                        theme={theme}
+                      />
                     ) : (
                       <div style={{ fontSize: '14px', color: theme.text }}>{lead.lead_owner?.name || '-'}</div>
                     )}
@@ -1324,10 +1335,13 @@ export default function LeadDetail() {
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Setter</div>
                     {isEditing ? (
-                      <select value={editForm.setter_owner_id} onChange={(e) => setEditForm({ ...editForm, setter_owner_id: e.target.value })} style={inputStyle}>
-                        <option value="">-- Select --</option>
-                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                      </select>
+                      <SearchableSelect
+                        options={employees.map(e => ({ value: e.id, label: e.name }))}
+                        value={editForm.setter_owner_id}
+                        onChange={(val) => setEditForm({ ...editForm, setter_owner_id: val })}
+                        placeholder="-- Select --"
+                        theme={theme}
+                      />
                     ) : (
                       <div style={{ fontSize: '14px', color: theme.text }}>{lead.setter_owner?.name || '-'}</div>
                     )}
@@ -1444,26 +1458,18 @@ export default function LeadDetail() {
                     {/* Salesperson dropdown */}
                     <div>
                       <div style={{ fontSize: '12px', color: sc.text, marginBottom: '4px', fontWeight: '600' }}>Salesperson</div>
-                      <select
+                      <SearchableSelect
+                        options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
                         value={appointment.salesperson_id || ''}
-                        onChange={async (e) => {
-                          const newId = e.target.value || null
+                        onChange={async (val) => {
+                          const newId = val || null
                           await supabase.from('appointments').update({ salesperson_id: newId, updated_at: new Date().toISOString() }).eq('id', appointment.id)
                           const emp = employees.find(em => em.id === newId)
                           setAppointment(prev => ({ ...prev, salesperson_id: newId, salesperson: emp ? { id: emp.id, name: emp.name } : null }))
                         }}
-                        style={{
-                          width: '100%', padding: '8px 10px', fontSize: '14px',
-                          backgroundColor: 'rgba(255,255,255,0.7)', color: sc.text,
-                          border: `1px solid ${sc.border}`, borderRadius: '8px',
-                          cursor: 'pointer', outline: 'none', minHeight: '44px'
-                        }}
-                      >
-                        <option value="">Unassigned</option>
-                        {employees.map(emp => (
-                          <option key={emp.id} value={emp.id}>{emp.name}</option>
-                        ))}
-                      </select>
+                        placeholder="Unassigned"
+                        theme={theme}
+                      />
                     </div>
 
                     {/* Appointment Type */}
@@ -1652,7 +1658,7 @@ export default function LeadDetail() {
                 icon={Lightbulb}
                 iconColor="#8b5cf6"
                 title="No audits yet"
-                message="Create a lighting audit to calculate energy savings, find rebates, and generate a professional quote automatically."
+                message="Create a lighting audit to calculate energy savings, find rebates, and generate a professional estimate automatically."
                 actionLabel="Start Lighting Audit"
                 onAction={handleNewAudit}
               />
@@ -1708,7 +1714,7 @@ export default function LeadDetail() {
                       >
                         View
                       </button>
-                      <Tooltip text="Generate a quote with line items from this audit">
+                      <Tooltip text="Generate an estimate with line items from this audit">
                         <button
                           onClick={() => handleCreateQuoteFromAudit(audit)}
                           style={{
@@ -1735,7 +1741,7 @@ export default function LeadDetail() {
           </div>
         )}
 
-        {/* QUOTES TAB */}
+        {/* ESTIMATES TAB */}
         {activeTab === 'quotes' && (
           <div>
             <div style={{
@@ -1828,7 +1834,7 @@ export default function LeadDetail() {
                           </div>
                         )}
                         <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
-                          {quote.audit_id ? 'Generated from audit' : 'Manual quote'}
+                          {quote.audit_id ? 'Generated from audit' : 'Manual estimate'}
                           {quote.quote_lines?.length > 0 && ` • ${quote.quote_lines.length} line items`}
                         </div>
                         <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
@@ -1855,7 +1861,7 @@ export default function LeadDetail() {
                           View/Edit
                         </button>
                         {quote.status === 'Draft' && (
-                          <Tooltip text="Mark this quote as sent to the customer">
+                          <Tooltip text="Mark this estimate as sent to the customer">
                             <button
                               onClick={() => handleSendQuote(quote.id)}
                               style={{
@@ -2518,7 +2524,7 @@ export default function LeadDetail() {
         </>
       )}
 
-      {/* Quote Creation Modal */}
+      {/* Estimate Creation Modal */}
       {showQuoteModal && (
         <>
           <div
@@ -2918,7 +2924,7 @@ export default function LeadDetail() {
                 <textarea
                   value={quoteNotes}
                   onChange={(e) => setQuoteNotes(e.target.value)}
-                  placeholder="Optional notes for this quote..."
+                  placeholder="Optional notes for this estimate..."
                   rows={3}
                   style={{
                     width: '100%',

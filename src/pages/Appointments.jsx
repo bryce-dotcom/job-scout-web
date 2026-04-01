@@ -7,6 +7,7 @@ import { APPOINTMENT_STATUS } from '../lib/schema'
 import { SOURCE_COLORS, normalizeAppointment, normalizeJob, normalizeGoogleEvent } from '../lib/calendarUtils'
 import { Plus, X, Trash2, Upload, Download, ChevronLeft, ChevronRight, RefreshCw, Calendar, Unlink, Ban } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
+import SearchableSelect from '../components/SearchableSelect'
 import { appointmentsFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 
@@ -750,23 +751,23 @@ export default function Appointments() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Employee filter */}
-          <select
+          <SearchableSelect
+            options={[
+              { value: 'all', label: 'All Calendars' },
+              { value: 'my', label: 'My Events' },
+              ...(isAdmin ? employees : connectedEmployees)
+                .filter(emp => emp.id !== user?.id)
+                .map(emp => {
+                  const hasGcal = connectedEmployees.some(ce => ce.id === emp.id)
+                  return { value: emp.id, label: `${emp.name}${hasGcal ? ' (cal)' : ''}` }
+                })
+            ]}
             value={employeeFilter}
-            onChange={(e) => setEmployeeFilter(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', minWidth: '160px', padding: '6px 10px', fontSize: '13px' }}
-          >
-            <option value="all">All Calendars</option>
-            <option value="my">My Events</option>
-            {(isAdmin ? employees : connectedEmployees).map(emp => {
-              if (emp.id === user?.id) return null
-              const hasGcal = connectedEmployees.some(ce => ce.id === emp.id)
-              return (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name}{hasGcal ? ' (cal)' : ''}
-                </option>
-              )
-            })}
-          </select>
+            onChange={(val) => setEmployeeFilter(val)}
+            placeholder="Filter calendar..."
+            theme={theme}
+            style={{ width: 'auto', minWidth: '160px', fontSize: '13px' }}
+          />
 
           {/* View toggle */}
           <div style={{ display: 'flex', gap: '2px' }}>
@@ -1045,33 +1046,36 @@ export default function Appointments() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Lead</label>
-                    <select name="lead_id" value={formData.lead_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select lead</option>
-                      {leads.map(lead => (
-                        <option key={lead.id} value={lead.id}>{lead.customer_name}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={leads.map(lead => ({ value: lead.id, label: lead.customer_name }))}
+                      value={formData.lead_id}
+                      onChange={(val) => setFormData(prev => ({ ...prev, lead_id: val }))}
+                      placeholder="Search leads..."
+                      theme={theme}
+                    />
                   </div>
                   <div>
                     <label style={labelStyle}>Customer</label>
-                    <select name="customer_id" value={formData.customer_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select customer</option>
-                      {customers.map(cust => (
-                        <option key={cust.id} value={cust.id}>{cust.name}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={customers.map(cust => ({ value: cust.id, label: cust.name }))}
+                      value={formData.customer_id}
+                      onChange={(val) => setFormData(prev => ({ ...prev, customer_id: val }))}
+                      placeholder="Search customers..."
+                      theme={theme}
+                    />
                   </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Assigned To</label>
-                    <select name="employee_id" value={formData.employee_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">Select employee</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
+                      value={formData.employee_id}
+                      onChange={(val) => setFormData(prev => ({ ...prev, employee_id: val }))}
+                      placeholder="Search employees..."
+                      theme={theme}
+                    />
                   </div>
                   <div>
                     <label style={labelStyle}>Status</label>

@@ -106,15 +106,17 @@ export default function CustomerPortal() {
     }
   }
 
-  const handlePay = async (paymentType, amountDollars, provider = 'stripe') => {
+  const handlePay = async (paymentType, amountDollars, provider = 'stripe', stripeMethod) => {
     setPaying(true)
     try {
-      const result = await invokeEdgeFunction('create-checkout-session', {
+      const body = {
         token,
         payment_type: paymentType,
         amount_cents: Math.round(amountDollars * 100),
         provider,
-      })
+      }
+      if (stripeMethod) body.stripe_method = stripeMethod
+      const result = await invokeEdgeFunction('create-checkout-session', body)
       if (result.checkout_url) {
         window.location.href = result.checkout_url
       }
@@ -469,8 +471,57 @@ export default function CustomerPortal() {
                     )}
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {/* Bank transfer — promoted first (no fee) */}
-                      {payment_config.bank_enabled && (
+                      {/* Stripe — two buttons: Card and ACH */}
+                      {payment_config.stripe_enabled && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {/* Card payment button */}
+                          <div>
+                            <button
+                              onClick={() => handlePay(payType, ccFeeEnabled ? (payAmt + Math.round(payAmt * (ccFeePercent / 100) * 100) / 100) : payAmt, 'stripe', 'card')}
+                              disabled={paying}
+                              style={{
+                                ...styles.primaryButton,
+                                background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                                fontSize: '17px',
+                                padding: '16px 24px',
+                                minHeight: '56px',
+                              }}
+                            >
+                              {paying ? 'Setting up payment...' : ccFeeEnabled
+                                ? `Pay with Card — ${formatCurrency(payAmt + Math.round(payAmt * (ccFeePercent / 100) * 100) / 100)}`
+                                : `Pay with Card — ${formatCurrency(payAmt)}`}
+                            </button>
+                            {ccFeeEnabled && (
+                              <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', textAlign: 'center', lineHeight: '1.4' }}>
+                                Credit or debit card · {ccFeePercent}% processing fee included
+                              </p>
+                            )}
+                          </div>
+
+                          {/* ACH / Bank Account button */}
+                          <div>
+                            <button
+                              onClick={() => handlePay(payType, payAmt, 'stripe', 'us_bank_account')}
+                              disabled={paying}
+                              style={{
+                                ...styles.primaryButton,
+                                background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                                fontSize: '17px',
+                                padding: '16px 24px',
+                                minHeight: '56px',
+                              }}
+                            >
+                              {paying ? 'Setting up payment...' : `Pay with Bank Account — ${formatCurrency(payAmt)}`}
+                            </button>
+                            <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', textAlign: 'center', lineHeight: '1.4' }}>
+                              ACH bank transfer · No processing fee
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Manual bank transfer info — only if no Stripe */}
+                      {payment_config.bank_enabled && !payment_config.stripe_enabled && (
                         <div style={{
                           padding: '16px',
                           backgroundColor: theme.accentBg,
@@ -504,26 +555,6 @@ export default function CustomerPortal() {
                           {payment_config.bank_instructions && (
                             <p style={{ fontSize: '12px', color: theme.textMuted, margin: '10px 0 0', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
                               {payment_config.bank_instructions}
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Stripe — card payments (with CC fee) */}
-                      {payment_config.stripe_enabled && (
-                        <div>
-                          <button
-                            onClick={() => handlePay(payType, ccFeeEnabled ? (payAmt + Math.round(payAmt * (ccFeePercent / 100) * 100) / 100) : payAmt, 'stripe')}
-                            disabled={paying}
-                            style={styles.primaryButton}
-                          >
-                            {paying ? 'Setting up payment...' : ccFeeEnabled
-                              ? `Pay with Card — ${formatCurrency(payAmt + Math.round(payAmt * (ccFeePercent / 100) * 100) / 100)}`
-                              : `Pay with Card (${formatCurrency(payAmt)})`}
-                          </button>
-                          {ccFeeEnabled && (
-                            <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0', textAlign: 'center' }}>
-                              Includes {ccFeePercent}% processing fee ({formatCurrency(Math.round(payAmt * (ccFeePercent / 100) * 100) / 100)})
                             </p>
                           )}
                         </div>

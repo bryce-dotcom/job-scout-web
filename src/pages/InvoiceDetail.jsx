@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard } from 'lucide-react'
+import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard, ExternalLink } from 'lucide-react'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { toast } from '../lib/toast'
@@ -204,6 +204,8 @@ export default function InvoiceDetail() {
     await supabase.from('payments').insert([{
       company_id: companyId,
       invoice_id: parseInt(id),
+      customer_id: invoice.customer_id || null,
+      job_id: invoice.job_id || null,
       amount: paymentAmount,
       date: paymentData.date,
       method: paymentData.method,
@@ -1537,7 +1539,40 @@ export default function InvoiceDetail() {
                 Send Invoice
               </button>
 
-              {/* Portal Link */}
+              {/* Payment Portal — open portal to take payment over the phone */}
+              {invoice.payment_status !== 'Paid' && (
+                <button
+                  onClick={async () => {
+                    let portalTk = invoice.portal_token
+                    if (!portalTk) {
+                      const { data: newToken } = await supabase
+                        .from('customer_portal_tokens')
+                        .insert({
+                          document_type: 'invoice',
+                          document_id: invoice.id,
+                          company_id: companyId,
+                          customer_id: invoice.customer_id || null,
+                          expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+                        })
+                        .select('token')
+                        .single()
+                      if (newToken?.token) {
+                        portalTk = newToken.token
+                        await supabase.from('invoices').update({ portal_token: portalTk }).eq('id', invoice.id)
+                      }
+                    }
+                    if (portalTk) {
+                      window.open(`https://jobscout.appsannex.com/portal/${portalTk}`, '_blank')
+                    }
+                  }}
+                  style={actionBtnStyle('#3b82f6', '#ffffff')}
+                >
+                  <ExternalLink size={18} />
+                  Payment Portal
+                </button>
+              )}
+
+              {/* Portal Link — copy link to share */}
               {invoice.portal_token && (
                 <div style={{
                   padding: '10px 12px',
@@ -1553,7 +1588,7 @@ export default function InvoiceDetail() {
                   </span>
                   <button
                     onClick={() => {
-                      const url = `${window.location.origin}/portal/${invoice.portal_token}`
+                      const url = `https://jobscout.appsannex.com/portal/${invoice.portal_token}`
                       navigator.clipboard.writeText(url)
                       toast.success('Portal link copied!')
                     }}
@@ -1661,7 +1696,12 @@ export default function InvoiceDetail() {
                       <option value="Cash">Cash</option>
                       <option value="Check">Check</option>
                       <option value="Credit Card">Credit Card</option>
-                      <option value="ACH">ACH</option>
+                      <option value="ACH">ACH / Bank Transfer</option>
+                      <option value="Venmo">Venmo</option>
+                      <option value="Zelle">Zelle</option>
+                      <option value="PayPal">PayPal</option>
+                      <option value="Financing">Financing</option>
+                      <option value="Other">Other</option>
                     </select>
                   </div>
                 </div>

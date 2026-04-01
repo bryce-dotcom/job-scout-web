@@ -60,8 +60,8 @@ const REPORT_TABLES = [
   { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'time_log', label: 'Time Logs', icon: Calendar },
   { id: 'time_clock', label: 'Time Clock', icon: Calendar },
-  { id: 'quotes', label: 'Quotes', icon: ClipboardList },
-  { id: 'quote_lines', label: 'Quote Lines', icon: Table2 },
+  { id: 'quotes', label: 'Estimates', icon: ClipboardList },
+  { id: 'quote_lines', label: 'Estimate Lines', icon: Table2 },
   { id: 'job_lines', label: 'Job Lines', icon: Table2 },
   { id: 'fleet', label: 'Fleet', icon: Truck },
   { id: 'fleet_maintenance', label: 'Fleet Maintenance', icon: Truck },
@@ -670,7 +670,7 @@ function SalesReport({ theme, companyId, leads, employees, salesPipeline, format
 
   const handleExport = () => {
     exportCSV(
-      ['Lead ID', 'Customer', 'Business', 'Status', 'Source', 'BU', 'Created', 'Quote Amount', 'Salesperson', 'Setter', 'Phone', 'Email', 'Address', 'Contact Attempts', 'Days Since Created'],
+      ['Lead ID', 'Customer', 'Business', 'Status', 'Source', 'BU', 'Created', 'Estimate Amount', 'Salesperson', 'Setter', 'Phone', 'Email', 'Address', 'Contact Attempts', 'Days Since Created'],
       sortedLeads.map(l => [
         l.lead_id || '', l.customer_name || '', l.business_name || '', l.status || '', l.lead_source || '',
         l.business_unit || '', (l.created_at || l.created_date || '').split('T')[0] || '',
@@ -766,7 +766,7 @@ function SalesReport({ theme, companyId, leads, employees, salesPipeline, format
           <div style={{ fontSize: '22px', fontWeight: '700', color: conversionRate >= 30 ? '#22c55e' : conversionRate >= 15 ? '#eab308' : '#ef4444' }}>{conversionRate.toFixed(1)}%</div>
         </div>
         <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
-          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Quote Value</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Estimate Value</div>
           <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{formatCurrency(totalQuoteValue)}</div>
         </div>
         <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
@@ -789,7 +789,7 @@ function SalesReport({ theme, companyId, leads, employees, salesPipeline, format
               <SortHeader field="customer" align="left">Lead / Customer</SortHeader>
               <th style={{ padding: '10px 12px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textAlign: 'left' }}>Status</th>
               <SortHeader field="source" align="left">Source</SortHeader>
-              <SortHeader field="amount">Quote $</SortHeader>
+              <SortHeader field="amount">Estimate $</SortHeader>
               <SortHeader field="salesperson" align="left">Salesperson</SortHeader>
               <SortHeader field="age">Age</SortHeader>
             </tr>
@@ -875,8 +875,8 @@ function SalesReport({ theme, companyId, leads, employees, salesPipeline, format
                             <div>
                               <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Deal Info</div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '12px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Quote Value</span><span style={{ fontWeight: '600' }}>{l.quoteAmount > 0 ? formatCurrency(l.quoteAmount) : '—'}</span></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Quote Generated</span><span>{l.quote_generated ? 'Yes' : 'No'}</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Estimate Value</span><span style={{ fontWeight: '600' }}>{l.quoteAmount > 0 ? formatCurrency(l.quoteAmount) : '—'}</span></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Estimate Generated</span><span>{l.quote_generated ? 'Yes' : 'No'}</span></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: theme.textSecondary }}>Service Type</span><span>{l.service_type || '—'}</span></div>
                                 {l.converted_at && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#22c55e' }}>Converted</span><span style={{ color: '#22c55e' }}>{fmtDate(l.converted_at)}</span></div>}
                                 {l.notes && <div style={{ marginTop: '4px', padding: '6px 8px', backgroundColor: theme.bgCard, borderRadius: '6px', fontSize: '11px', color: theme.textSecondary }}>{l.notes}</div>}

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
+import SearchableSelect from '../components/SearchableSelect'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -110,27 +111,19 @@ export default function LeadSetter() {
     if (!companyId) return
     setLoading(true)
 
-    // Build query - setter board only shows leads without audits/quotes
-    // Use a single .or() to avoid PostgREST duplicate-param conflicts
+    // Build query - setter board shows all leads in early stages
     let leadsQuery = supabase
       .from('leads')
       .select('*, lead_owner:employees!leads_lead_owner_id_fkey(id, name), setter_owner:employees!leads_setter_owner_id_fkey(id, name)')
       .eq('company_id', companyId)
       .in('status', ['New', 'Assigned', 'Contacted', 'Callback'])
-      .is('quote_id', null)
       .order('created_at', { ascending: false })
 
     // Non-admins only see leads assigned to them (as setter or lead owner)
-    // Combine quote_generated filter with owner filter in a single .or() to avoid conflicts
     if (!isAdmin && user?.id) {
       leadsQuery = leadsQuery.or(
-        `and(quote_generated.is.null,setter_owner_id.eq.${user.id}),` +
-        `and(quote_generated.is.null,lead_owner_id.eq.${user.id}),` +
-        `and(quote_generated.eq.false,setter_owner_id.eq.${user.id}),` +
-        `and(quote_generated.eq.false,lead_owner_id.eq.${user.id})`
+        `setter_owner_id.eq.${user.id},lead_owner_id.eq.${user.id},setter_owner_id.is.null`
       )
-    } else {
-      leadsQuery = leadsQuery.or('quote_generated.is.null,quote_generated.eq.false')
     }
 
     // Fetch appointments for calendar
@@ -149,6 +142,7 @@ export default function LeadSetter() {
         .eq('company_id', companyId)
         .gte('start_time', weekStart.toISOString())
         .lte('start_time', weekEnd.toISOString())
+        .or('lead_id.not.is.null,appointment_type.eq.Block,appointment_type.is.null')
         .order('start_time'),
 
       supabase
@@ -759,17 +753,18 @@ export default function LeadSetter() {
 
           {/* Setter Filter (Admin only) */}
           {isAdmin && (
-            <select
+            <SearchableSelect
+              options={[
+                { value: '', label: 'All Setters' },
+                { value: 'unassigned', label: 'Unassigned' },
+                ...employees.filter(e => e.role === 'Setter' || e.role === 'Sales' || e.role === 'Admin' || e.role === 'Manager').map(emp => ({ value: emp.id, label: emp.name }))
+              ]}
               value={filterSetter}
-              onChange={(e) => setFilterSetter(e.target.value)}
-              style={{ ...inputStyle, width: 'auto', minWidth: '140px', minHeight: '44px' }}
-            >
-              <option value="">All Setters</option>
-              <option value="unassigned">Unassigned</option>
-              {employees.filter(e => e.role === 'Setter' || e.role === 'Sales' || e.role === 'Admin' || e.role === 'Manager').map(emp => (
-                <option key={emp.id} value={emp.id}>{emp.name}</option>
-              ))}
-            </select>
+              onChange={(val) => setFilterSetter(val)}
+              placeholder="All Setters"
+              theme={theme}
+              style={{ minWidth: '180px' }}
+            />
           )}
 
           {/* Search */}
@@ -1451,16 +1446,13 @@ export default function LeadSetter() {
 
                 <div>
                   <label style={labelStyle}>Assign Salesperson</label>
-                  <select
+                  <SearchableSelect
+                    options={employees.filter(e => e.role === 'Sales' || e.role === 'Manager' || e.role === 'Admin').map(emp => ({ value: emp.id, label: emp.name }))}
                     value={appointmentForm.salesperson_id}
-                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, salesperson_id: e.target.value }))}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select Salesperson --</option>
-                    {employees.filter(e => e.role === 'Sales' || e.role === 'Manager' || e.role === 'Admin').map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.name}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setAppointmentForm(prev => ({ ...prev, salesperson_id: val }))}
+                    placeholder="-- Select Salesperson --"
+                    theme={theme}
+                  />
                 </div>
 
                 <div>
@@ -1918,10 +1910,13 @@ export default function LeadSetter() {
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned To</label>
-                  <select value={eventForm.salesperson_id} onChange={(e) => setEventForm(f => ({ ...f, salesperson_id: e.target.value }))} style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard, outline: 'none', boxSizing: 'border-box' }}>
-                    <option value="">Unassigned</option>
-                    {employees.filter(emp => ['Sales', 'Manager', 'Admin'].includes(emp.role)).map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}
-                  </select>
+                  <SearchableSelect
+                    options={employees.filter(emp => ['Sales', 'Manager', 'Admin'].includes(emp.role)).map(emp => ({ value: emp.id, label: emp.name }))}
+                    value={eventForm.salesperson_id}
+                    onChange={(val) => setEventForm(f => ({ ...f, salesperson_id: val }))}
+                    placeholder="Unassigned"
+                    theme={theme}
+                  />
                 </div>
               </div>
 
@@ -2115,8 +2110,8 @@ export default function LeadSetter() {
                 <ul style={{ fontSize: '13px', color: theme.textSecondary, margin: 0, paddingLeft: '20px' }}>
                   <li style={{ marginBottom: '4px' }}>Setter schedules appointment → Lead moves to "Scheduled"</li>
                   <li style={{ marginBottom: '4px' }}>Lead sourced by employee → Setter schedules appointment → Source commission created</li>
-                  <li style={{ marginBottom: '4px' }}>Salesperson meets with lead → Creates quote</li>
-                  <li style={{ marginBottom: '4px' }}>Quote generated → Lead moves to "Qualified"</li>
+                  <li style={{ marginBottom: '4px' }}>Salesperson meets with lead → Creates estimate</li>
+                  <li style={{ marginBottom: '4px' }}>Estimate generated → Lead moves to "Qualified"</li>
                   <li>Commission approved and paid to setter</li>
                 </ul>
               </div>

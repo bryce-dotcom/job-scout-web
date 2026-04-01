@@ -14,6 +14,7 @@ import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/Impo
 import { jobsFields, jobLinesFields, jobSectionsFields } from '../lib/importExportFields'
 import { jobStatusColors as statusColors, invoiceStatusColors } from '../lib/statusColors'
 import PageHeader from '../components/PageHeader'
+import SearchableSelect from '../components/SearchableSelect'
 
 // Light theme fallback
 const defaultTheme = {
@@ -1024,16 +1025,14 @@ export default function Jobs() {
           </select>
         )}
         {teams.length > 0 && (
-          <select
+          <SearchableSelect
+            options={[{ value: 'all', label: 'All Teams' }, ...teams.map(team => ({ value: team, label: team }))]}
             value={teamFilter}
-            onChange={(e) => setTeamFilter(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
-          >
-            <option value="all">All Teams</option>
-            {teams.map(team => (
-              <option key={team} value={team}>{team}</option>
-            ))}
-          </select>
+            onChange={(val) => setTeamFilter(val)}
+            placeholder="All Teams"
+            theme={theme}
+            style={{ width: 'auto', minWidth: '140px' }}
+          />
         )}
       </div>
 
@@ -1838,10 +1837,13 @@ export default function Jobs() {
                   </div>
                   <div>
                     <label style={labelStyle}>Salesperson</label>
-                    <select name="salesperson_id" value={formData.salesperson_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">-- Select --</option>
-                      {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                    </select>
+                    <SearchableSelect
+                      options={employees.map(e => ({ value: e.id, label: e.name }))}
+                      value={formData.salesperson_id}
+                      onChange={(val) => setFormData(prev => ({ ...prev, salesperson_id: val }))}
+                      placeholder="Search salesperson..."
+                      theme={theme}
+                    />
                   </div>
                 </div>
 
@@ -1858,13 +1860,14 @@ export default function Jobs() {
                     </select>
                   </div>
                   <div>
-                    <label style={labelStyle}>Quote (optional)</label>
-                    <select name="quote_id" value={formData.quote_id} onChange={handleChange} style={inputStyle}>
-                      <option value="">-- None --</option>
-                      {quotes.filter(q => q.status === 'Approved').map(q => (
-                        <option key={q.id} value={q.id}>{q.quote_id} - {q.customer?.name || q.lead?.customer_name}</option>
-                      ))}
-                    </select>
+                    <label style={labelStyle}>Estimate (optional)</label>
+                    <SearchableSelect
+                      options={quotes.filter(q => q.status === 'Approved').map(q => ({ value: q.id, label: `${q.quote_id} - ${q.customer?.name || q.lead?.customer_name}` }))}
+                      value={formData.quote_id}
+                      onChange={(val) => setFormData(prev => ({ ...prev, quote_id: val }))}
+                      placeholder="Search estimates..."
+                      theme={theme}
+                    />
                   </div>
                 </div>
 
@@ -1875,13 +1878,16 @@ export default function Jobs() {
                   </div>
                   <div>
                     <label style={labelStyle}>Business Unit</label>
-                    <select name="business_unit" value={formData.business_unit} onChange={handleChange} style={inputStyle}>
-                      <option value="">-- Select --</option>
-                      {businessUnits.map(bu => {
+                    <SearchableSelect
+                      options={businessUnits.map(bu => {
                         const buName = typeof bu === 'object' ? bu.name : bu
-                        return <option key={buName} value={buName}>{buName}</option>
+                        return { value: buName, label: buName }
                       })}
-                    </select>
+                      value={formData.business_unit}
+                      onChange={(val) => setFormData(prev => ({ ...prev, business_unit: val }))}
+                      placeholder="Search business units..."
+                      theme={theme}
+                    />
                   </div>
                 </div>
 

@@ -9,6 +9,7 @@ import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { customersFields } from '../lib/importExportFields'
 import PageHeader from '../components/PageHeader'
+import SearchableSelect from '../components/SearchableSelect'
 
 const emptyCustomer = {
   name: '',
@@ -763,17 +764,13 @@ export default function Customers() {
                 </div>
                 <div>
                   <label style={labelStyle}>Salesperson</label>
-                  <select
-                    name="salesperson_id"
+                  <SearchableSelect
+                    options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
                     value={formData.salesperson_id}
-                    onChange={handleChange}
-                    style={inputStyle}
-                  >
-                    <option value="">-- Select --</option>
-                    {employees.map((emp) => (
-                      <option key={emp.id} value={emp.id}>{emp.name}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setFormData(prev => ({ ...prev, salesperson_id: val }))}
+                    placeholder="-- Select --"
+                    theme={theme}
+                  />
                 </div>
               </div>
 

@@ -7,6 +7,7 @@ import { Plus, Pencil, Trash2, X, CreditCard, Search, DollarSign, Upload, Downlo
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { depositsFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
+import SearchableSelect from '../components/SearchableSelect'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -274,6 +275,14 @@ export default function LeadPayments() {
     fontWeight: '500',
     color: theme.textSecondary,
     marginBottom: '6px'
+  }
+
+  if (!user) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '14px', color: '#7d8a7f' }}>Loading...</div>
+      </div>
+    )
   }
 
   if (!checkAdmin(user)) {
@@ -707,25 +716,23 @@ export default function LeadPayments() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
                       <label style={{ ...labelStyle, fontSize: '12px' }}>Invoice</label>
-                      <select name="invoice_id" value={formData.invoice_id} onChange={handleChange} style={{ ...inputStyle, fontSize: '13px' }}>
-                        <option value="">None</option>
-                        {invoices.map(inv => (
-                          <option key={inv.id} value={inv.id}>
-                            #{inv.invoice_number || inv.id} - {inv.customer_name || 'Unknown'} ({formatCurrency(inv.total)})
-                          </option>
-                        ))}
-                      </select>
+                      <SearchableSelect
+                        options={invoices.map(inv => ({ value: inv.id, label: `#${inv.invoice_number || inv.id} - ${inv.customer_name || 'Unknown'} (${formatCurrency(inv.total)})` }))}
+                        value={formData.invoice_id}
+                        onChange={(val) => setFormData(prev => ({ ...prev, invoice_id: val }))}
+                        placeholder="None"
+                        theme={theme}
+                      />
                     </div>
                     <div>
                       <label style={{ ...labelStyle, fontSize: '12px' }}>Job</label>
-                      <select name="job_id" value={formData.job_id} onChange={handleChange} style={{ ...inputStyle, fontSize: '13px' }}>
-                        <option value="">None</option>
-                        {jobs.map(job => (
-                          <option key={job.id} value={job.id}>
-                            #{job.id} - {job.title || job.customer_name || 'Untitled'}
-                          </option>
-                        ))}
-                      </select>
+                      <SearchableSelect
+                        options={jobs.map(job => ({ value: job.id, label: `#${job.id} - ${job.title || job.customer_name || 'Untitled'}` }))}
+                        value={formData.job_id}
+                        onChange={(val) => setFormData(prev => ({ ...prev, job_id: val }))}
+                        placeholder="None"
+                        theme={theme}
+                      />
                     </div>
                   </div>
                 </div>

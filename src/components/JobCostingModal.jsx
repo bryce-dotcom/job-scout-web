@@ -32,7 +32,7 @@ export default function JobCostingModal({ job, theme, onClose }) {
       const [invoicesRes, expensesRes, plaidRes, timeRes, configRes, skillRes] = await Promise.all([
         supabase
           .from('invoices')
-          .select('id, amount, status')
+          .select('id, amount, payment_status')
           .eq('job_id', job.id)
           .eq('company_id', companyId),
         supabase
@@ -360,7 +360,7 @@ export default function JobCostingModal({ job, theme, onClose }) {
             <div>
               <div style={{ fontWeight: 700, fontSize: '16px' }}>Job Costing</div>
               <div style={{ fontSize: '13px', color: theme.textMuted || '#7d8a7f' }}>
-                {job.name || job.title || `Job #${job.id?.slice(0, 8)}`}
+                {job.name || job.title || `Job #${String(job.id || '').slice(0, 8)}`}
               </div>
             </div>
           </div>
