@@ -1089,33 +1089,61 @@ export default function FieldScout() {
                     ? 'Complete a Victor verification on your active job before clocking out.'
                     : 'Field crew must complete a daily Victor verification before clocking out.'}
                 </div>
-                <button
-                  onClick={() => {
-                    setClockOutBlocked(false)
-                    if (activeEntry.job_id) {
-                      handleMarkComplete(activeEntry.job_id)
-                    } else {
-                      setVictorModal({ type: 'daily', jobId: null })
-                    }
-                  }}
-                  style={{
-                    padding: '10px 16px',
-                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                    border: 'none',
-                    borderRadius: '10px',
-                    color: '#fff',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    minHeight: '44px'
-                  }}
-                >
-                  <Shield size={16} />
-                  {activeEntry.job_id ? 'Verify Now' : 'Run Daily Check'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => {
+                      setClockOutBlocked(false)
+                      if (activeEntry.job_id) {
+                        handleMarkComplete(activeEntry.job_id)
+                      } else {
+                        setVictorModal({ type: 'daily', jobId: null })
+                      }
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                      border: 'none',
+                      borderRadius: '10px',
+                      color: '#fff',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      minHeight: '44px'
+                    }}
+                  >
+                    <Shield size={16} />
+                    {activeEntry.job_id ? 'Verify Now' : 'Run Daily Check'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('Clock out without verification? This will be flagged for review.')) {
+                        setClockOutBlocked(false)
+                        setVerifiedJobs(prev => { const s = new Set(prev); if (activeEntry.job_id) s.add(activeEntry.job_id); return s })
+                        setHasDailyVerification(true)
+                        handleClockOut()
+                      }
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '10px',
+                      color: theme.textSecondary,
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      minHeight: '44px'
+                    }}
+                  >
+                    Force Clock Out
+                  </button>
+                </div>
               </div>
             </div>
           )}
