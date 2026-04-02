@@ -257,10 +257,11 @@ export default function PMJobSetter() {
     if (!companyId) return
     setLoading(true)
 
-    // Always exclude terminal statuses via negative filter (works even if jobStatuses hasn't loaded yet)
+    // Fetch active (non-terminal) jobs
+    const jobCols = '*, customer:customers(id, name, business_name, address, phone, email), pm:employees!jobs_pm_id_fkey(id, name)'
     let query = supabase
       .from('jobs')
-      .select('*, customer:customers(id, name, business_name, address, phone, email), pm:employees!jobs_pm_id_fkey(id, name)')
+      .select(jobCols)
       .eq('company_id', companyId)
       .not('status', 'in', '("Completed","Complete","Verified","Verified Complete","Cancelled")')
       .order('start_date', { ascending: true })
@@ -274,6 +275,20 @@ export default function PMJobSetter() {
         .order('start_date', { ascending: true }).limit(5000)
       const res = await fallbackQuery
       jobsData = res.data
+    }
+
+    // Also fetch Completed jobs from current year so they show on the board
+    const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString()
+    const { data: completedYTD } = await supabase
+      .from('jobs')
+      .select(jobCols)
+      .eq('company_id', companyId)
+      .in('status', ['Completed', 'Complete', 'Verified', 'Verified Complete'])
+      .gte('created_at', yearStart)
+      .order('start_date', { ascending: true })
+      .limit(2000)
+    if (completedYTD?.length) {
+      jobsData = [...(jobsData || []), ...completedYTD]
     }
 
     // Fetch all job sections
@@ -2971,50 +2986,67 @@ export default function PMJobSetter() {
                               </div>
                             )
                           })}
-                          {/* Render sections */}
-                          {slotSections.map(section => {
-                            const job = jobs.find(j => j.id === section.job_id)
-                            const calendar = job ? getCalendarForJob(job) : null
-                            const statusColor = getSectionStatusColor(section.status)
-                            const calColor = calendar?.color || theme.accent
+                          {/* Render sections — grouped by job so multiple users show as one event */}
+                          {(() => {
+                            const grouped = {}
+                            slotSections.forEach(section => {
+                              const key = section.job_id
+                              if (!grouped[key]) grouped[key] = []
+                              grouped[key].push(section)
+                            })
+                            return Object.entries(grouped).map(([jobId, sections]) => {
+                              const job = jobs.find(j => j.id === parseInt(jobId))
+                              const calendar = job ? getCalendarForJob(job) : null
+                              const calColor = calendar?.color || theme.accent
+                              const assignedNames = sections
+                                .map(s => s.assigned_employee?.name)
+                                .filter(Boolean)
+                              const uniqueNames = [...new Set(assignedNames)]
+                              const sectionNames = sections.map(s => s.name).join(', ')
 
-                            return (
-                              <div
-                                key={section.id}
-                                draggable
-                                onDragStart={(e) => handleSectionDragStart(e, section, job)}
-                                onDragEnd={handleDragEnd}
-                                style={{
-                                  backgroundColor: calendar ? `${calColor}15` : statusColor.bg,
-                                  borderRadius: '4px',
-                                  padding: '4px 6px',
-                                  marginBottom: '2px',
-                                  cursor: 'grab',
-                                  fontSize: '10px',
-                                  color: calendar ? calColor : statusColor.text,
-                                  fontWeight: '500',
-                                  borderLeft: `3px solid ${calColor}`,
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis'
-                                }}
-                                title={`${section.name} - ${job?.job_title || 'Unknown Job'}${calendar ? ` (${calendar.name})` : ''}`}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  {calendar && (
-                                    <div style={{
-                                      width: '6px',
-                                      height: '6px',
-                                      borderRadius: '50%',
-                                      backgroundColor: calColor,
-                                      flexShrink: 0
-                                    }} />
+                              return (
+                                <div
+                                  key={`job-sections-${jobId}`}
+                                  draggable
+                                  onDragStart={(e) => handleSectionDragStart(e, sections[0], job)}
+                                  onDragEnd={handleDragEnd}
+                                  style={{
+                                    backgroundColor: calendar ? `${calColor}15` : theme.accentBg,
+                                    borderRadius: '4px',
+                                    padding: '4px 6px',
+                                    marginBottom: '2px',
+                                    cursor: 'grab',
+                                    fontSize: '10px',
+                                    color: calendar ? calColor : theme.text,
+                                    fontWeight: '500',
+                                    borderLeft: `3px solid ${calColor}`,
+                                    overflow: 'hidden'
+                                  }}
+                                  title={`${job?.job_title || 'Unknown Job'} — ${sectionNames}${uniqueNames.length > 0 ? ` (${uniqueNames.join(', ')})` : ''}${calendar ? ` [${calendar.name}]` : ''}`}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    {calendar && (
+                                      <div style={{
+                                        width: '6px',
+                                        height: '6px',
+                                        borderRadius: '50%',
+                                        backgroundColor: calColor,
+                                        flexShrink: 0
+                                      }} />
+                                    )}
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {job?.job_title || sectionNames}
+                                    </span>
+                                  </div>
+                                  {uniqueNames.length > 0 && (
+                                    <div style={{ fontSize: '9px', opacity: 0.8, marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {uniqueNames.join(', ')}
+                                    </div>
                                   )}
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{section.name}</span>
                                 </div>
-                              </div>
-                            )
-                          })}
+                              )
+                            })
+                          })()}
                           {/* Render appointments */}
                           {slotAppointments.map(apt => {
                             const aptColor = appointmentStatusColors[apt.status] || '#0ea5e9'
@@ -3127,13 +3159,58 @@ export default function PMJobSetter() {
           if (needsScheduling.length < 2) return null
 
           const getArea = (job) => {
-            const addr = job.job_address || job.customer?.address || ''
-            const parts = addr.split(',').map(s => s.trim())
-            if (parts.length >= 2) {
-              const cityPart = parts.length >= 3 ? parts[parts.length - 2] : parts[1]
-              return cityPart.replace(/\d{5}(-\d{4})?/, '').replace(/\b[A-Z]{2}\b/, '').trim() || 'Unknown Area'
+            const addr = (job.job_address || job.customer?.address || '').trim()
+            if (!addr) return 'No Address'
+
+            // Strategy 1: Comma-separated — pick the city part (second-to-last segment)
+            const parts = addr.split(',').map(s => s.trim()).filter(Boolean)
+            if (parts.length >= 3) {
+              // "123 Main St, Phoenix, AZ 85001" → "Phoenix"
+              const cityPart = parts[parts.length - 2]
+                .replace(/\d{5}(-\d{4})?/g, '').replace(/\b[A-Z]{2}\b/, '').trim()
+              if (cityPart) return cityPart
             }
-            return addr.slice(0, 20) || 'No Address'
+            if (parts.length === 2) {
+              // "Phoenix, AZ 85001" → try first part as city
+              const first = parts[0].replace(/\d{5}(-\d{4})?/g, '').replace(/\b[A-Z]{2}\b/, '').trim()
+              // Only use if it doesn't look like a street address (starts with a number)
+              if (first && !/^\d/.test(first)) return first
+              // "123 Main St, Phoenix AZ 85001" → parse second part
+              const second = parts[1].replace(/\d{5}(-\d{4})?/g, '').replace(/\b[A-Z]{2}\s*$/,'').trim()
+              if (second) return second
+            }
+
+            // Strategy 2: No commas — extract city from common address patterns
+            // US addresses: "123 Main St Phoenix AZ 85001" or "456 Broadway Tucson AZ 85701"
+            // Match everything between street-type word and state abbreviation
+            const streetTypes = /\b(?:st|street|ave|avenue|blvd|boulevard|dr|drive|rd|road|ln|lane|way|ct|court|cir|circle|pl|place|pkwy|parkway|hwy|highway|trl|trail|broadway)\b/i
+            const stMatch = addr.match(streetTypes)
+            if (stMatch) {
+              // Everything after the street type and before the state+zip
+              const afterStreet = addr.slice(stMatch.index + stMatch[0].length).trim()
+              // Strip suite/unit numbers, then grab city before state+zip
+              const cleaned = afterStreet.replace(/^[,\s]*((?:ste|suite|unit|apt|#)\s*\S+[,\s]*)/i, '').trim()
+              const cityMatch = cleaned.match(/^([A-Za-z][A-Za-z\s.'-]+?)(?:\s+[A-Z]{2}\s*\d{5}|\s+[A-Z]{2}\s*$|\s*$)/)
+              if (cityMatch && cityMatch[1].trim()) return cityMatch[1].trim()
+            }
+
+            // Strategy 3: Try "City ST 12345" at end of string
+            // Skip leading single-letter directional words (N/S/E/W)
+            const endMatch = addr.match(/([A-Za-z][A-Za-z\s.'-]+?)\s+[A-Z]{2}\s*\d{5}(-\d{4})?\s*$/)
+            if (endMatch && endMatch[1].trim() && !/^\d/.test(endMatch[1].trim())) {
+              const city = endMatch[1].trim().replace(/^[NSEW]\s+/, '')
+              if (city) return city
+            }
+
+            // Strategy 4: Strip zip+state, take last word as probable city
+            const stripped = addr.replace(/\d{5}(-\d{4})?/g, '').replace(/\b[A-Z]{2}\s*$/, '').trim()
+            const words = stripped.split(/\s+/)
+            if (words.length >= 2) {
+              const lastWord = words[words.length - 1]
+              if (!/^\d/.test(lastWord) && lastWord.length > 2) return lastWord
+            }
+
+            return addr.slice(0, 25) || 'Unknown Area'
           }
 
           const areaGroups = {}
@@ -3737,11 +3814,11 @@ export default function PMJobSetter() {
                     </div>
                   </div>
                 )}
-                {detailJob.total_amount != null && (
+                {detailJob.job_total != null && (
                   <div style={{ padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Job Amount</div>
                     <div style={{ fontSize: '13px', fontWeight: '700', color: '#16a34a' }}>
-                      ${parseFloat(detailJob.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      ${parseFloat(detailJob.job_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </div>
                   </div>
                 )}
