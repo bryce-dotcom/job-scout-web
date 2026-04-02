@@ -73,6 +73,7 @@ export default function DataConsole() {
   const checkDeveloperStatus = useStore((state) => state.checkDeveloperStatus)
   const company = useStore((state) => state.company)
   const setCompany = useStore((state) => state.setCompany)
+  const setUser = useStore((state) => state.setUser)
   const fetchAllData = useStore((state) => state.fetchAllData)
   const isMobile = useIsMobile()
 
@@ -102,6 +103,19 @@ export default function DataConsole() {
     const { data } = await supabase.from('companies').select('*').eq('id', companyId).single()
     if (data) {
       setCompany(data)
+      // Switch user to matching employee in the new company
+      const currentEmail = user?.email
+      if (currentEmail) {
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('company_id', companyId)
+          .ilike('email', currentEmail)
+          .eq('active', true)
+          .limit(1)
+          .single()
+        if (emp) setUser(emp)
+      }
       await fetchAllData()
     }
     setSwitching(false)
