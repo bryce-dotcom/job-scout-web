@@ -7,7 +7,7 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import {
   LayoutDashboard, MessageSquare, Building2, Users, Zap, Bot,
   Package, Database, Upload, Terminal, ScrollText, Settings, Sparkles,
-  ArrowLeft, Menu, X
+  ArrowLeft, Menu, X, RefreshCw
 } from 'lucide-react'
 
 // Sub-pages
@@ -71,20 +71,41 @@ export default function DataConsole() {
   const user = useStore((state) => state.user)
   const isDeveloper = canAccessDevTools(user)
   const checkDeveloperStatus = useStore((state) => state.checkDeveloperStatus)
+  const company = useStore((state) => state.company)
+  const setCompany = useStore((state) => state.setCompany)
+  const fetchAllData = useStore((state) => state.fetchAllData)
   const isMobile = useIsMobile()
 
   const [loading, setLoading] = useState(true)
   const [feedbackCount, setFeedbackCount] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [allCompanies, setAllCompanies] = useState([])
+  const [switching, setSwitching] = useState(false)
 
   useEffect(() => {
     const init = async () => {
       await checkDeveloperStatus?.()
       await fetchFeedbackCount()
+      // Fetch all companies for the switcher
+      const { data } = await supabase.from('companies').select('id, company_name, active').order('id')
+      if (data) setAllCompanies(data)
       setLoading(false)
     }
     init()
   }, [])
+
+  const switchCompany = async (companyId) => {
+    const target = allCompanies.find(c => c.id === companyId)
+    if (!target || target.id === company?.id) return
+    setSwitching(true)
+    // Fetch full company record
+    const { data } = await supabase.from('companies').select('*').eq('id', companyId).single()
+    if (data) {
+      setCompany(data)
+      await fetchAllData()
+    }
+    setSwitching(false)
+  }
 
   useEffect(() => {
     if (!loading && !isDeveloper) {
@@ -241,6 +262,46 @@ export default function DataConsole() {
               Developer Only
             </div>
           </div>
+        </div>
+
+        {/* Company Switcher */}
+        <div style={{
+          padding: '12px 16px',
+          borderBottom: `1px solid ${theme.border}`,
+        }}>
+          <div style={{ color: theme.textMuted, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+            Viewing as
+          </div>
+          <select
+            value={company?.id || ''}
+            onChange={(e) => switchCompany(Number(e.target.value))}
+            disabled={switching}
+            style={{
+              width: '100%',
+              padding: '8px 10px',
+              backgroundColor: theme.bgHover,
+              color: theme.text,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '6px',
+              fontSize: '12px',
+              cursor: 'pointer',
+              outline: 'none',
+              opacity: switching ? 0.5 : 1,
+            }}
+          >
+            {allCompanies.map(c => (
+              <option key={c.id} value={c.id} style={{ backgroundColor: theme.bg }}>
+                {c.company_name} (#{c.id}){!c.active ? ' [inactive]' : ''}
+              </option>
+            ))}
+          </select>
+          {switching && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', color: theme.accent, fontSize: '11px' }}>
+              <RefreshCw size={12} className="animate-spin" />
+              Loading company data...
+            </div>
+          )}
+          <style>{`@keyframes spin { to { transform: rotate(360deg) } } .animate-spin { animation: spin 1s linear infinite; }`}</style>
         </div>
 
         {/* Navigation */}
