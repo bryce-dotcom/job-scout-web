@@ -431,11 +431,16 @@ export default function Jobs() {
       { id: 'Completed', name: 'Completed', color: '#4a7c59', icon: CheckCircle },
     ]
     if (!storeJobStatuses || storeJobStatuses.length === 0) return defaultCols
-    return storeJobStatuses.map(s => {
+    const cols = storeJobStatuses.map(s => {
       const name = typeof s === 'string' ? s : s.name
       const color = typeof s === 'string' ? '#94a3b8' : (s.color || '#94a3b8')
       return { id: name, name, color, icon: Briefcase }
     })
+    // Always ensure Completed column exists so jobs don't vanish
+    if (!cols.some(c => c.id === 'Completed')) {
+      cols.push({ id: 'Completed', name: 'Completed', color: '#4a7c59', icon: CheckCircle })
+    }
+    return cols
   })()
 
   const jobRelatedTables = [
