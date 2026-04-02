@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import JobCostingModal from '../components/JobCostingModal'
+import { companyNotify } from '../lib/companyNotify'
 import SearchableSelect from '../components/SearchableSelect'
 
 const CATEGORY_COLORS = {
@@ -276,7 +277,7 @@ function JobDetailInner() {
 
     const { data: jobData } = await supabase
       .from('jobs')
-      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id, audit_id, customer_id), pm:employees!jobs_pm_id_fkey(id, name)')
+      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id, audit_id, customer_id), pm:employees!jobs_pm_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)')
       .eq('id', id)
       .single()
 
@@ -638,9 +639,10 @@ function JobDetailInner() {
     const discount = parseFloat(line.discount) || 0
     const newTotal = (unitPrice * qty) - discount
 
-    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, quantity: qty, total: newTotal } : l))
+    const updatedLines = lineItems.map(l => l.id === line.id ? { ...l, quantity: qty, total: newTotal } : l)
+    setLineItems(updatedLines)
     await supabase.from('job_lines').update({ quantity: qty, total: newTotal }).eq('id', line.id)
-    await fetchJobData()
+    await updateJobTotalFromLines(updatedLines)
   }
 
   const handleJobLinePriceChange = async (line, newPrice) => {
@@ -649,9 +651,10 @@ function JobDetailInner() {
     const discount = parseFloat(line.discount) || 0
     const newTotal = (price * (line.quantity || 1)) - discount
 
-    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, price, total: newTotal } : l))
+    const updatedLines = lineItems.map(l => l.id === line.id ? { ...l, price, total: newTotal } : l)
+    setLineItems(updatedLines)
     await supabase.from('job_lines').update({ price, total: newTotal }).eq('id', line.id)
-    await fetchJobData()
+    await updateJobTotalFromLines(updatedLines)
   }
 
   const handleJobLineDiscountChange = async (line, newDiscount) => {
@@ -661,9 +664,19 @@ function JobDetailInner() {
     const cappedDiscount = Math.min(discount, lineSubtotal)
     const newTotal = lineSubtotal - cappedDiscount
 
-    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, discount: cappedDiscount, total: newTotal } : l))
+    const updatedLines = lineItems.map(l => l.id === line.id ? { ...l, discount: cappedDiscount, total: newTotal } : l)
+    setLineItems(updatedLines)
     await supabase.from('job_lines').update({ discount: cappedDiscount, total: newTotal }).eq('id', line.id)
-    await fetchJobData()
+    await updateJobTotalFromLines(updatedLines)
+  }
+
+  // Compute job_total from local line items (avoids race condition from full refetch during rapid edits)
+  const updateJobTotalFromLines = async (lines) => {
+    const linesTotal = lines.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
+    const discount = parseFloat(job?.discount) || 0
+    const computedJobTotal = Math.round((linesTotal - discount) * 100) / 100
+    setJob(prev => prev ? { ...prev, job_total: computedJobTotal } : prev)
+    await supabase.from('jobs').update({ job_total: computedJobTotal }).eq('id', id)
   }
 
   const handleJobLineNotesChange = async (lineId, newNotes) => {
@@ -803,6 +816,20 @@ function JobDetailInner() {
       }
     }
 
+    if (newStatus === 'Completed') {
+      const customerName = job.customer?.name || job.customer_name || 'Unknown'
+      const amount = parseFloat(job.job_total) || 0
+      const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
+      companyNotify({
+        companyId,
+        type: 'job_completed',
+        title: 'Job Completed!',
+        message: `${customerName}${amountStr} (${job.job_id})`,
+        metadata: { job_id: job.id, customer_name: customerName, amount },
+        createdBy: user?.id
+      })
+    }
+
     await fetchJobData()
     await fetchJobs()
     setSaving(false)
@@ -824,6 +851,7 @@ function JobDetailInner() {
       details: formData.details,
       notes: formData.notes,
       salesperson_id: formData.salesperson_id || null,
+      job_lead_id: formData.job_lead_id || null,
       business_unit: formData.business_unit,
       updated_at: new Date().toISOString()
     }
@@ -1643,6 +1671,42 @@ function JobDetailInner() {
     )
   }
 
+  // Receipt thumbnail — generates signed URL for private bucket
+  const ReceiptThumbnail = ({ exp, theme: t, onView }) => {
+    const [src, setSrc] = useState(null)
+    useEffect(() => {
+      let cancelled = false
+      // Determine storage path: use receipt_storage_path, or extract from receipt_url
+      let storagePath = exp.receipt_storage_path
+      if (!storagePath && exp.receipt_url) {
+        const match = exp.receipt_url.match(/\/storage\/v1\/object\/public\/project-documents\/(.+)/)
+        if (match) storagePath = decodeURIComponent(match[1])
+      }
+      if (storagePath) {
+        supabase.storage.from('project-documents')
+          .createSignedUrl(storagePath, 3600)
+          .then(({ data, error }) => {
+            if (error) console.warn('[ReceiptThumbnail] signedUrl error:', storagePath, error.message)
+            if (!cancelled && data?.signedUrl) setSrc(data.signedUrl)
+          })
+      }
+      return () => { cancelled = true }
+    }, [exp.id])
+    if (!src) return (
+      <div style={{ width: '48px', height: '48px', borderRadius: '6px', backgroundColor: t.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Camera size={16} color={t.textMuted} />
+      </div>
+    )
+    return (
+      <img
+        src={src}
+        alt="receipt"
+        onClick={() => onView({ url: src, name: 'Receipt' })}
+        style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: `1px solid ${t.border}`, flexShrink: 0 }}
+      />
+    )
+  }
+
   const AddPhotoButton = ({ theme: t, onClick }) => (
     <button onClick={onClick} style={{ width: '64px', height: '64px', borderRadius: '8px', border: `2px dashed ${t.border}`, backgroundColor: 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', color: t.textMuted, flexShrink: 0 }}>
       <Camera size={18} />
@@ -2393,11 +2457,27 @@ function JobDetailInner() {
                   <label style={labelStyle}>Address</label>
                   <input type="text" value={formData.job_address || ''} onChange={(e) => setFormData(prev => ({ ...prev, job_address: e.target.value }))} style={inputStyle} />
                 </div>
+                <div>
+                  <label style={labelStyle}>Assigned To</label>
+                  <SearchableSelect
+                    options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
+                    value={formData.job_lead_id || ''}
+                    onChange={(val) => setFormData(prev => ({ ...prev, job_lead_id: val ? parseInt(val) : null }))}
+                    placeholder="-- Select --"
+                    theme={theme}
+                  />
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Start Date</label>
                     <input type="datetime-local" value={formData.start_date ? formData.start_date.slice(0, 16) : ''} onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))} style={inputStyle} />
                   </div>
+                  <div>
+                    <label style={labelStyle}>End Date</label>
+                    <input type="datetime-local" value={formData.end_date ? formData.end_date.slice(0, 16) : ''} onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))} style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Allotted Hours</label>
                     <input type="number" value={formData.allotted_time_hours || ''} onChange={(e) => setFormData(prev => ({ ...prev, allotted_time_hours: e.target.value }))} step="0.25" style={inputStyle} />
@@ -2460,8 +2540,16 @@ function JobDetailInner() {
                   </div>
                 )}
                 <div>
+                  <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Assigned To</p>
+                  <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{job.job_lead?.name || '-'}</p>
+                </div>
+                <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Start Date</p>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatDateTime(job.start_date)}</p>
+                </div>
+                <div>
+                  <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>End Date</p>
+                  <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{formatDateTime(job.end_date)}</p>
                 </div>
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Sales Owner</p>
@@ -2584,13 +2672,12 @@ function JobDetailInner() {
                         <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                           <input
                             type="number" step="0.01"
-                            min={parseFloat(line.item?.price || line.item?.unit_price) || parseFloat(line.price) || 0}
+                            min="0"
                             defaultValue={line.price}
                             key={`price-${line.id}-${line.price}`}
                             onBlur={(e) => {
                               const val = parseFloat(e.target.value)
-                              const basePrice = parseFloat(line.item?.price || line.item?.unit_price) || parseFloat(line.price) || 0
-                              if (val < basePrice) { e.target.value = line.price; return }
+                              if (isNaN(val) || val < 0) { e.target.value = line.price; return }
                               if (val !== parseFloat(line.price)) handleJobLinePriceChange(line, val)
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
@@ -3526,13 +3613,8 @@ function JobDetailInner() {
                     padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
                     border: `1px solid ${theme.border}`
                   }}>
-                    {exp.receipt_url && (
-                      <img
-                        src={exp.receipt_url}
-                        alt="receipt"
-                        onClick={() => setViewingPhoto({ url: exp.receipt_url, name: 'Receipt' })}
-                        style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: `1px solid ${theme.border}`, flexShrink: 0 }}
-                      />
+                    {(exp.receipt_storage_path || exp.receipt_url) && (
+                      <ReceiptThumbnail exp={exp} theme={theme} onView={setViewingPhoto} />
                     )}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
@@ -5243,7 +5325,13 @@ function JobDetailInner() {
           <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#fff', fontSize: '22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2001 }}>
             {'\u2715'}
           </button>
-          <img src={viewingPhoto.url} alt={viewingPhoto.name || 'Photo'} style={{ maxWidth: '95vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
+          <img
+            src={viewingPhoto.url}
+            alt={viewingPhoto.name || 'Photo'}
+            onClick={(e) => e.stopPropagation()}
+            onError={(e) => { e.target.style.display = 'none'; e.target.insertAdjacentHTML('afterend', '<div style="color:#fff;font-size:16px;text-align:center">Image failed to load</div>') }}
+            style={{ maxWidth: '95vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px', cursor: 'default' }}
+          />
         </div>
       )}
 
