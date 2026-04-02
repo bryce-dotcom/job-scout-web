@@ -27,6 +27,13 @@ const statusColors = {
   'On Hold': '#7d8a7f'
 }
 
+// Resolve display name based on customer calendar_display preference
+const getJobDisplayName = (job) => {
+  const cust = job.customer
+  if (cust?.calendar_display === 'business' && cust.business_name) return cust.business_name
+  return job.job_title || cust?.name || job.customer_name || 'Untitled'
+}
+
 export default function JobCalendar() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -57,7 +64,7 @@ export default function JobCalendar() {
         const allJobs = []
         let offset = 0
         const pageSize = 1000
-        const selectFields = 'id, job_title, status, start_date, business_unit, customer_name'
+        const selectFields = 'id, job_title, status, start_date, business_unit, customer_name, customer:customers(name, business_name, calendar_display)'
 
         while (true) {
           console.log(`[JobCalendar] Fetching page at offset ${offset}...`)
@@ -446,9 +453,9 @@ export default function JobCalendar() {
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
                           }}
-                          title={job.job_title || job.customer?.name || job.customer_name || 'Untitled'}
+                          title={getJobDisplayName(job)}
                         >
-                          {job.job_title || job.customer?.name || job.customer_name || 'Untitled'}
+                          {getJobDisplayName(job)}
                         </div>
                       ))}
                       {dayJobs.length > 3 && (

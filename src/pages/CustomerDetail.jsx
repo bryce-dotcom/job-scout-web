@@ -43,6 +43,7 @@ export default function CustomerDetail() {
   const [utilityInvoices, setUtilityInvoices] = useState([])
   const [leads, setLeads] = useState([])
   const [payments, setPayments] = useState([])
+  const [invoicePayments, setInvoicePayments] = useState([])
   const [communications, setCommunications] = useState([])
   const [savedCards, setSavedCards] = useState([])
   const [loadingCards, setLoadingCards] = useState(false)
@@ -155,6 +156,27 @@ export default function CustomerDetail() {
       setPayments(paymentData || [])
     } else {
       setPayments([])
+    }
+
+    // Fetch invoice payments (from payments table — includes Stripe transactions)
+    const invoiceIds = uniqueInvoices.map(inv => inv.id)
+    if (invoiceIds.length > 0) {
+      const { data: invPayData } = await supabase
+        .from('payments')
+        .select('*')
+        .in('invoice_id', invoiceIds)
+        .order('created_at', { ascending: false })
+      setInvoicePayments(invPayData || [])
+    } else if (parseInt(id)) {
+      // Fallback: fetch by customer_id if available
+      const { data: invPayData } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('customer_id', parseInt(id))
+        .order('created_at', { ascending: false })
+      setInvoicePayments(invPayData || [])
+    } else {
+      setInvoicePayments([])
     }
 
     // Fetch saved payment methods
@@ -452,6 +474,7 @@ export default function CustomerDetail() {
       preferred_contact: customer?.preferred_contact || '',
       salesperson_id: customer?.salesperson_id || '',
       marketing_opt_in: customer?.marketing_opt_in || false,
+      calendar_display: customer?.calendar_display || 'person',
       secondary_contact_name: customer?.secondary_contact_name || '',
       secondary_contact_role: customer?.secondary_contact_role || '',
       secondary_contact_phone: customer?.secondary_contact_phone || '',
@@ -529,7 +552,7 @@ export default function CustomerDetail() {
     { id: 'quotes', label: `Estimates (${quotes.length})`, icon: FileText, hint: 'Price estimates for this customer' },
     { id: 'jobs', label: `Jobs (${jobs.length})`, icon: Briefcase, hint: 'Work orders for this customer' },
     { id: 'invoices', label: `Invoices (${invoices.length + utilityInvoices.length})`, icon: DollarSign, hint: 'Invoices for this customer' },
-    { id: 'payments', label: `Payments (${payments.length})`, icon: CreditCard, hint: 'Payments received from this customer' },
+    { id: 'payments', label: `Payments (${payments.length + invoicePayments.length})`, icon: CreditCard, hint: 'Payments received from this customer' },
     ...(communications.length > 0 ? [{ id: 'comms', label: `Comms (${communications.length})`, icon: MessageCircle, hint: 'Communication history' }] : []),
   ]
 
@@ -922,6 +945,13 @@ export default function CustomerDetail() {
                         <option value="no">No</option>
                       </select>
                     </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Calendar Display</label>
+                      <select style={selectStyle} value={editForm.calendar_display || 'person'} onChange={e => editField('calendar_display', e.target.value)}>
+                        <option value="person">Person Name</option>
+                        <option value="business">Business Name</option>
+                      </select>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -940,6 +970,10 @@ export default function CustomerDetail() {
                     <div>
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Marketing Opt-in</div>
                       <div style={{ fontSize: '14px', color: theme.text }}>{customer.marketing_opt_in ? 'Yes' : 'No'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Calendar Display</div>
+                      <div style={{ fontSize: '14px', color: theme.text }}>{customer.calendar_display === 'business' ? 'Business Name' : 'Person Name'}</div>
                     </div>
                   </div>
                 )}
@@ -1359,22 +1393,68 @@ export default function CustomerDetail() {
                           {inv.business_unit && <span>{inv.business_unit}</span>}
                         </div>
                       </div>
-                      <button
-                        onClick={() => navigate(`/invoices/${inv.id}`)}
-                        style={{
-                          padding: isMobile ? '10px 14px' : '8px 14px',
-                          minHeight: isMobile ? '44px' : 'auto',
-                          backgroundColor: 'transparent',
-                          color: theme.accent,
-                          border: `1px solid ${theme.accent}`,
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          fontWeight: '500'
-                        }}
-                      >
-                        View
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        {inv.payment_status !== 'Paid' && (
+                          <button
+                            onClick={async () => {
+                              let portalTk = inv.portal_token
+                              if (!portalTk) {
+                                const { data: newToken } = await supabase
+                                  .from('customer_portal_tokens')
+                                  .insert({
+                                    document_type: 'invoice',
+                                    document_id: inv.id,
+                                    company_id: companyId,
+                                    customer_id: inv.customer_id || parseInt(id),
+                                    expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+                                  })
+                                  .select('token')
+                                  .single()
+                                if (newToken?.token) {
+                                  portalTk = newToken.token
+                                  await supabase.from('invoices').update({ portal_token: portalTk }).eq('id', inv.id)
+                                }
+                              }
+                              if (portalTk) {
+                                window.open(`https://jobscout.appsannex.com/portal/${portalTk}`, '_blank')
+                              }
+                            }}
+                            style={{
+                              padding: isMobile ? '10px 14px' : '8px 14px',
+                              minHeight: isMobile ? '44px' : 'auto',
+                              backgroundColor: '#3b82f620',
+                              color: '#3b82f6',
+                              border: `1px solid #3b82f640`,
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <ExternalLink size={14} />
+                            Portal
+                          </button>
+                        )}
+                        <button
+                          onClick={() => navigate(`/invoices/${inv.id}`)}
+                          style={{
+                            padding: isMobile ? '10px 14px' : '8px 14px',
+                            minHeight: isMobile ? '44px' : 'auto',
+                            backgroundColor: 'transparent',
+                            color: theme.accent,
+                            border: `1px solid ${theme.accent}`,
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          View
+                        </button>
+                      </div>
                     </div>
                   )
                 })}
@@ -1654,13 +1734,159 @@ export default function CustomerDetail() {
               )}
             </div>
 
+            {/* Invoice Payments / Stripe Transactions */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px'
+              }}>
+                <DollarSign size={18} style={{ color: '#3b82f6' }} />
+                <div>
+                  <h4 style={{ margin: 0, color: theme.text, fontSize: '15px', fontWeight: '600' }}>Invoice Payments</h4>
+                  <p style={{ margin: '2px 0 0', color: theme.textMuted, fontSize: '12px' }}>
+                    Payments recorded against invoices, including Stripe transactions
+                  </p>
+                </div>
+                {invoicePayments.length > 0 && (
+                  <div style={{ marginLeft: 'auto', fontSize: '15px', fontWeight: '600', color: '#16a34a' }}>
+                    ${invoicePayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toFixed(2)}
+                  </div>
+                )}
+              </div>
+
+              {invoicePayments.length === 0 ? (
+                <div style={{
+                  padding: '20px', textAlign: 'center', color: theme.textMuted, fontSize: '13px',
+                  backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}`
+                }}>
+                  No invoice payments recorded yet
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {invoicePayments.map(pmt => {
+                    const isPaid = pmt.status === 'Completed' || pmt.status === 'Paid' || pmt.status === 'succeeded'
+                    const pColor = isPaid ? '#16a34a' : pmt.status === 'Failed' ? '#ef4444' : '#f59e0b'
+                    const matchingInvoice = invoices.find(inv => inv.id === pmt.invoice_id)
+                    return (
+                      <div key={`inv-pmt-${pmt.id}`} style={{
+                        padding: isMobile ? '14px 16px' : '16px 20px',
+                        backgroundColor: theme.bg,
+                        borderRadius: '10px',
+                        border: `1px solid ${theme.border}`,
+                      }}>
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: isMobile ? 'column' : 'row',
+                          justifyContent: 'space-between',
+                          alignItems: isMobile ? 'stretch' : 'center',
+                          gap: isMobile ? '8px' : '16px'
+                        }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: isMobile ? '15px' : '16px', fontWeight: '600', color: theme.text }}>
+                                ${parseFloat(pmt.amount || 0).toFixed(2)}
+                              </span>
+                              <span style={{
+                                padding: '4px 10px',
+                                backgroundColor: pColor + '20',
+                                color: pColor,
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                fontWeight: '600'
+                              }}>
+                                {pmt.status || 'Pending'}
+                              </span>
+                              {pmt.method && (
+                                <span style={{
+                                  padding: '4px 8px',
+                                  backgroundColor: theme.accentBg,
+                                  color: theme.accent,
+                                  borderRadius: '5px',
+                                  fontSize: '11px',
+                                  fontWeight: '500'
+                                }}>
+                                  {pmt.method}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px', fontSize: '12px', color: theme.textMuted, flexWrap: 'wrap' }}>
+                              {pmt.date && <span>{new Date(pmt.date).toLocaleDateString()}</span>}
+                              {matchingInvoice && (
+                                <span
+                                  onClick={() => navigate(`/invoices/${matchingInvoice.id}`)}
+                                  style={{ color: theme.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                                >
+                                  {matchingInvoice.invoice_id || `Invoice #${matchingInvoice.id}`}
+                                </span>
+                              )}
+                              {pmt.payment_id && <span>Ref: {pmt.payment_id}</span>}
+                            </div>
+                            {pmt.stripe_payment_intent_id && (
+                              <div style={{
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                marginTop: '6px', fontSize: '11px', color: theme.textMuted
+                              }}>
+                                <CreditCard size={12} />
+                                <span>Stripe: {pmt.stripe_payment_intent_id.slice(0, 27)}...</span>
+                              </div>
+                            )}
+                            {pmt.notes && (
+                              <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px' }}>
+                                {pmt.notes.length > 80 ? pmt.notes.substring(0, 80) + '...' : pmt.notes}
+                              </div>
+                            )}
+                          </div>
+                          {matchingInvoice && (
+                            <button
+                              onClick={() => navigate(`/invoices/${matchingInvoice.id}`)}
+                              style={{
+                                padding: isMobile ? '10px 14px' : '8px 14px',
+                                minHeight: isMobile ? '44px' : 'auto',
+                                backgroundColor: 'transparent',
+                                color: theme.accent,
+                                border: `1px solid ${theme.accent}`,
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '500',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              View Invoice
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Lead Payments (Sales Deposits) */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px'
+              }}>
+                <TrendingUp size={18} style={{ color: '#f59e0b' }} />
+                <h4 style={{ margin: 0, color: theme.text, fontSize: '15px', fontWeight: '600' }}>Lead/Deal Payments</h4>
+              </div>
+              <p style={{ margin: '0 0 4px', color: theme.textMuted, fontSize: '12px' }}>
+                Deposits and payments from sales deals
+              </p>
+              {payments.length > 0 && (
+                <div style={{ marginTop: '4px', fontSize: '15px', fontWeight: '600', color: '#16a34a' }}>
+                  Total: ${payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0).toFixed(2)}
+                </div>
+              )}
+            </div>
+
             {payments.length === 0 ? (
-              <EmptyState
-                icon={CreditCard}
-                iconColor="#16a34a"
-                title="No payments yet"
-                message="Payments will appear here once received for this customer's deals."
-              />
+              <div style={{
+                padding: '20px', textAlign: 'center', color: theme.textMuted, fontSize: '13px',
+                backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}`
+              }}>
+                No lead/deal payments recorded
+              </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {payments.map(pmt => {

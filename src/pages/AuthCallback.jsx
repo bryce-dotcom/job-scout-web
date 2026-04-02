@@ -34,20 +34,23 @@ export default function AuthCallback() {
   const [message, setMessage] = useState(null)
 
   const lookupEmployeeAndCompany = async (userEmail) => {
-    const { data: employee, error: empError } = await supabase
+    const { data: employees, error: empError } = await supabase
       .from('employees')
       .select('*, company:companies(*)')
       .ilike('email', userEmail)
       .eq('active', true)
-      .single()
 
-    if (empError || !employee) {
+    if (empError || !employees || employees.length === 0) {
       return { success: false, error: 'No account found for this email. Ask your admin to invite you, or start a beta trial.' }
     }
 
-    if (!employee.company) {
+    const withCompany = employees.filter(e => e.company)
+    if (withCompany.length === 0) {
       return { success: false, error: 'Company not found. Contact your administrator.' }
     }
+
+    // Default to the earliest company (the one actively in use)
+    const employee = withCompany.sort((a, b) => a.company_id - b.company_id)[0]
 
     return { success: true, employee, company: employee.company }
   }

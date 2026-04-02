@@ -1,0 +1,4 @@
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS city text;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS state text;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS zip text;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS website text;

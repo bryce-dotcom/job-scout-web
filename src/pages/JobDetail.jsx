@@ -521,37 +521,38 @@ function JobDetailInner() {
   }
 
   const handleReceiptCapture = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file || !job) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0 || !job) return
     setReceiptUploading(true)
 
-    const timestamp = Date.now()
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const storagePath = `jobs/${id}/receipts/${timestamp}_${safeName}`
+    for (const file of files) {
+      const timestamp = Date.now()
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const storagePath = `jobs/${id}/receipts/${timestamp}_${safeName}`
 
-    const { error: uploadErr } = await supabase.storage
-      .from('project-documents')
-      .upload(storagePath, file, { contentType: file.type })
+      const { error: uploadErr } = await supabase.storage
+        .from('project-documents')
+        .upload(storagePath, file, { contentType: file.type })
 
-    if (uploadErr) {
-      console.error('Receipt upload failed:', uploadErr)
-      setReceiptUploading(false)
-      return
+      if (uploadErr) {
+        console.error('Receipt upload failed:', uploadErr)
+        continue
+      }
+
+      const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
+
+      await supabase.from('expenses').insert([{
+        company_id: companyId,
+        job_id: parseInt(id),
+        amount: 0,
+        category: 'Materials',
+        date: new Date().toISOString().split('T')[0],
+        description: 'Receipt capture',
+        receipt_url: urlData.publicUrl,
+        receipt_storage_path: storagePath,
+        source: 'receipt'
+      }])
     }
-
-    const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
-
-    await supabase.from('expenses').insert([{
-      company_id: companyId,
-      job_id: parseInt(id),
-      amount: 0,
-      category: 'Materials',
-      date: new Date().toISOString().split('T')[0],
-      description: 'Receipt capture',
-      receipt_url: urlData.publicUrl,
-      receipt_storage_path: storagePath,
-      source: 'receipt'
-    }])
 
     await fetchJobExpenses()
     setReceiptUploading(false)
@@ -1227,44 +1228,46 @@ function JobDetailInner() {
 
   // Photo upload handler
   const handleUploadPhoto = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file || !photoUploadTarget) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0 || !photoUploadTarget) return
     e.target.value = ''
 
     const { lineId, context } = photoUploadTarget
     setPhotoUploadTarget(null)
 
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const subPath = context === 'notes' ? 'notes' : `${context}/${lineId}`
-    const filePath = `jobs/${id}/photos/${subPath}/${Date.now()}_${safeName}`
+    let failCount = 0
+    for (const file of files) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const subPath = context === 'notes' ? 'notes' : `${context}/${lineId}`
+      const filePath = `jobs/${id}/photos/${subPath}/${Date.now()}_${safeName}`
 
-    const { error: uploadError } = await supabase.storage
-      .from('project-documents')
-      .upload(filePath, file)
+      const { error: uploadError } = await supabase.storage
+        .from('project-documents')
+        .upload(filePath, file)
 
-    if (uploadError) {
-      alert('Upload failed: ' + uploadError.message)
-      return
+      if (uploadError) {
+        failCount++
+        continue
+      }
+
+      const insertData = {
+        company_id: companyId,
+        job_id: parseInt(id),
+        lead_id: job.lead_id || null,
+        file_name: file.name,
+        file_path: filePath,
+        file_type: file.type || null,
+        file_size: file.size,
+        storage_bucket: 'project-documents',
+        photo_context: context,
+      }
+      if (lineId && context !== 'notes') insertData.job_line_id = lineId
+
+      const { error: dbError } = await supabase.from('file_attachments').insert(insertData)
+      if (dbError) failCount++
     }
 
-    const insertData = {
-      company_id: companyId,
-      job_id: parseInt(id),
-      lead_id: job.lead_id || null,
-      file_name: file.name,
-      file_path: filePath,
-      file_type: file.type || null,
-      file_size: file.size,
-      storage_bucket: 'project-documents',
-      photo_context: context,
-    }
-    if (lineId && context !== 'notes') insertData.job_line_id = lineId
-
-    const { error: dbError } = await supabase.from('file_attachments').insert(insertData)
-    if (dbError) {
-      alert('Failed to save photo record: ' + dbError.message)
-      return
-    }
+    if (failCount > 0) alert(`${failCount} of ${files.length} photo(s) failed to upload`)
     await fetchJobData()
   }
 
@@ -1295,40 +1298,41 @@ function JobDetailInner() {
     setShowSectionModal(true)
   }
 
-  // Upload a document
+  // Upload document(s)
   const handleUploadDocument = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
     e.target.value = ''
 
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const filePath = `jobs/${id}/${Date.now()}_${safeName}`
+    let failCount = 0
+    for (const file of files) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const filePath = `jobs/${id}/${Date.now()}_${safeName}`
 
-    const { error: uploadError } = await supabase.storage
-      .from('project-documents')
-      .upload(filePath, file)
+      const { error: uploadError } = await supabase.storage
+        .from('project-documents')
+        .upload(filePath, file)
 
-    if (uploadError) {
-      alert('Upload failed: ' + uploadError.message)
-      return
+      if (uploadError) {
+        failCount++
+        continue
+      }
+
+      const { error: dbError } = await supabase.from('file_attachments').insert({
+        company_id: companyId,
+        job_id: parseInt(id),
+        lead_id: job.lead_id || null,
+        file_name: file.name,
+        file_path: filePath,
+        file_type: file.type || null,
+        file_size: file.size,
+        storage_bucket: 'project-documents'
+      })
+
+      if (dbError) failCount++
     }
 
-    const { error: dbError } = await supabase.from('file_attachments').insert({
-      company_id: companyId,
-      job_id: parseInt(id),
-      lead_id: job.lead_id || null,
-      file_name: file.name,
-      file_path: filePath,
-      file_type: file.type || null,
-      file_size: file.size,
-      storage_bucket: 'project-documents'
-    })
-
-    if (dbError) {
-      alert('Failed to save attachment record: ' + dbError.message)
-      return
-    }
-
+    if (failCount > 0) alert(`${failCount} of ${files.length} file(s) failed to upload`)
     await fetchJobData()
   }
 
@@ -1880,7 +1884,7 @@ function JobDetailInner() {
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Hidden photo file input */}
-      <input type="file" ref={photoInputRef} accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUploadPhoto} />
+      <input type="file" ref={photoInputRef} accept="image/*" multiple style={{ display: 'none' }} onChange={handleUploadPhoto} />
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
@@ -3408,7 +3412,7 @@ function JobDetailInner() {
                   type="file"
                   ref={receiptInputRef}
                   accept="image/*"
-                  capture="environment"
+                  multiple
                   style={{ display: 'none' }}
                   onChange={handleReceiptCapture}
                 />
@@ -3814,7 +3818,7 @@ function JobDetailInner() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
               <Paperclip size={16} color={theme.textMuted} />
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, flex: 1 }}>Documents ({attachments.length})</h3>
-              <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleUploadDocument} />
+              <input type="file" ref={fileInputRef} multiple style={{ display: 'none' }} onChange={handleUploadDocument} />
               <button
                 onClick={handleOpenGenerateModal}
                 style={{

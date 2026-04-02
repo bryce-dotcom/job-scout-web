@@ -26,10 +26,14 @@ const statusToJobColor = {
 export function normalizeAppointment(apt) {
   const isBlock = apt.appointment_type === 'Block'
   const color = isBlock ? '#9ca3af' : (statusToAppointmentColor[apt.status] || SOURCE_COLORS.appointment.bg)
+  const cust = apt.customer
+  const calTitle = cust?.calendar_display === 'business' && cust.business_name
+    ? cust.business_name
+    : apt.lead?.customer_name || cust?.name || apt.title || 'Appointment'
   return {
     id: apt.id,
     source: 'appointment',
-    title: apt.lead?.customer_name || apt.title || 'Appointment',
+    title: calTitle,
     start: apt.start_time ? new Date(apt.start_time) : null,
     end: apt.end_time ? new Date(apt.end_time) : null,
     allDay: false,
@@ -44,10 +48,14 @@ export function normalizeAppointment(apt) {
 
 export function normalizeJob(job) {
   const color = statusToJobColor[job.status] || SOURCE_COLORS.job.bg
+  const cust = job.customer
+  const calTitle = cust?.calendar_display === 'business' && cust.business_name
+    ? cust.business_name
+    : job.job_title || cust?.name || job.customer_name || `Job #${job.job_id}`
   return {
     id: `job-${job.id}`,
     source: 'job',
-    title: job.job_title || `Job #${job.job_id}`,
+    title: calTitle,
     start: job.start_date ? new Date(job.start_date) : null,
     end: job.end_date ? new Date(job.end_date) : null,
     allDay: true,

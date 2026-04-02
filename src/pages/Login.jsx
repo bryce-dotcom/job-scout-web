@@ -82,22 +82,27 @@ export default function Login() {
   const [message, setMessage] = useState(null)
 
   const lookupEmployeeAndCompany = async (userEmail) => {
-    const { data: employee, error: empError } = await supabase
+    const { data: employees, error: empError } = await supabase
       .from('employees')
       .select('*, company:companies(*)')
       .ilike('email', userEmail)
       .eq('active', true)
-      .single()
 
-    if (empError || !employee) {
+    if (empError || !employees || employees.length === 0) {
       await supabase.auth.signOut()
       return { success: false, error: 'No account found for this email. Contact your administrator.' }
     }
 
-    if (!employee.company) {
+    // Filter to those with valid companies
+    const withCompany = employees.filter(e => e.company)
+    if (withCompany.length === 0) {
       await supabase.auth.signOut()
       return { success: false, error: 'Company not found. Contact your administrator.' }
     }
+
+    // If multiple companies, use the most recent (highest id)
+    // Default to the earliest company (the one actively in use)
+    const employee = withCompany.sort((a, b) => a.company_id - b.company_id)[0]
 
     return { success: true, employee, company: employee.company }
   }
