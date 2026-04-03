@@ -5,7 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import {
-  Plus, Pencil, X, User, Phone, Mail, Eye,
+  Plus, Minus, Pencil, X, User, Phone, Mail, Eye,
   DollarSign, Clock, Calendar, Briefcase, Lock,
   Camera, FileText, Upload, Download, Settings, Trash2, Send, KeyRound, Zap
 } from 'lucide-react'
@@ -1980,6 +1980,17 @@ export default function Employees() {
                         }} />
                       </div>
                     </div>
+
+                    {/* ===== PAYROLL ADJUSTMENTS SECTION ===== */}
+                    {viewingEmployee && (
+                      <PayrollAdjustmentsSection
+                        employee={viewingEmployee}
+                        companyId={companyId}
+                        isEditing={isEditing}
+                        theme={theme}
+                        isMobile={isMobile}
+                      />
+                    )}
                   </>
                 )}
 
@@ -2874,5 +2885,168 @@ export default function Employees() {
         </div>
       )}
     </div>
+  )
+}
+
+// ── Payroll Adjustments Section (inline in employee detail) ──
+function PayrollAdjustmentsSection({ employee, companyId, isEditing, theme, isMobile }) {
+  const [adjustments, setAdjustments] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(null) // 'deduction' | 'addition'
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [recurring, setRecurring] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const user = useStore((state) => state.user)
+  const employees = useStore((state) => state.employees)
+
+  const fetchAdjustments = async () => {
+    const { data } = await supabase
+      .from('payroll_adjustments')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('employee_id', employee.id)
+      .order('created_at', { ascending: false })
+    setAdjustments(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    if (employee?.id && companyId) fetchAdjustments()
+  }, [employee?.id, companyId])
+
+  const handleAdd = async () => {
+    if (!amount || !reason.trim()) return
+    setSaving(true)
+    try {
+      const adminEmp = employees.find(e => e.email === user?.email)
+      const { error } = await supabase.from('payroll_adjustments').insert({
+        company_id: companyId,
+        employee_id: employee.id,
+        type: showAdd,
+        amount: parseFloat(amount) || 0,
+        reason: reason.trim(),
+        recurring,
+        created_by: adminEmp?.id || null,
+      })
+      if (error) throw error
+      setShowAdd(null); setAmount(''); setReason(''); setRecurring(false)
+      await fetchAdjustments()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setSaving(false) }
+  }
+
+  const handleDelete = async (id) => {
+    if (!confirm('Remove this adjustment?')) return
+    await supabase.from('payroll_adjustments').delete().eq('id', id)
+    await fetchAdjustments()
+  }
+
+  const fmt = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
+  const sectionHeaderStyle = { fontSize: '14px', fontWeight: '700', color: theme.text, marginTop: '24px', marginBottom: '12px', letterSpacing: '0.3px', display: 'flex', alignItems: 'center', gap: '8px' }
+  const inputStyle = { width: '100%', padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', boxSizing: 'border-box' }
+  const labelStyle = { display: 'block', fontSize: '13px', color: theme.textMuted, marginBottom: '6px' }
+
+  return (
+    <>
+      <div style={sectionHeaderStyle}>
+        <FileText size={16} style={{ color: theme.accent }} />
+        Payroll Adjustments
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize: '13px', color: theme.textMuted }}>Loading...</div>
+      ) : (
+        <>
+          {adjustments.length === 0 && !showAdd && (
+            <div style={{ fontSize: '13px', color: theme.textMuted, padding: '12px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+              No payroll adjustments. Use buttons below to add deductions (e.g. fleet vehicle) or additions (e.g. phone allowance).
+            </div>
+          )}
+
+          {adjustments.map(adj => (
+            <div key={adj.id} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px', marginBottom: '6px',
+              border: `1px solid ${adj.type === 'addition' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`
+            }}>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{adj.reason}</div>
+                <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                  {adj.recurring ? 'Recurring' : 'One-time'}
+                  {adj.pay_period_start && !adj.recurring ? ` — ${new Date(adj.pay_period_start).toLocaleDateString()}` : ''}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '600', color: adj.type === 'addition' ? '#22c55e' : '#ef4444' }}>
+                  {adj.type === 'addition' ? '+' : '-'}{fmt(adj.amount)}
+                </span>
+                {isEditing && (
+                  <button onClick={() => handleDelete(adj.id)} style={{
+                    padding: '4px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '4px',
+                    cursor: 'pointer', color: theme.textMuted, display: 'flex', alignItems: 'center'
+                  }}><X size={12} /></button>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* Add form */}
+          {showAdd && (
+            <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', marginTop: '8px', border: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
+                New {showAdd === 'deduction' ? 'Deduction' : 'Addition'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div>
+                  <label style={labelStyle}>Amount</label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }}>$</span>
+                    <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)} style={{ ...inputStyle, paddingLeft: '28px' }} placeholder="0.00" />
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Reason</label>
+                  <input type="text" value={reason} onChange={e => setReason(e.target.value)}
+                    placeholder={showAdd === 'deduction' ? 'e.g. Fleet vehicle' : 'e.g. Phone allowance'}
+                    style={inputStyle} />
+                </div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '13px', color: theme.text, cursor: 'pointer' }}>
+                <input type="checkbox" checked={recurring} onChange={e => setRecurring(e.target.checked)} />
+                Recurring (every pay period)
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => { setShowAdd(null); setAmount(''); setReason(''); setRecurring(false) }} style={{
+                  padding: '8px 14px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px',
+                  color: theme.textSecondary, fontSize: '13px', cursor: 'pointer'
+                }}>Cancel</button>
+                <button onClick={handleAdd} disabled={saving || !amount || !reason.trim()} style={{
+                  padding: '8px 14px', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600',
+                  cursor: saving || !amount || !reason.trim() ? 'default' : 'pointer',
+                  opacity: saving || !amount || !reason.trim() ? 0.5 : 1,
+                  background: showAdd === 'deduction' ? '#ef4444' : '#22c55e'
+                }}>{saving ? 'Saving...' : 'Save'}</button>
+              </div>
+            </div>
+          )}
+
+          {isEditing && !showAdd && (
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <button onClick={() => setShowAdd('addition')} style={{
+                padding: '8px 14px', backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)',
+                borderRadius: '8px', color: '#22c55e', fontSize: '13px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '6px'
+              }}><Plus size={14} /> Addition</button>
+              <button onClick={() => setShowAdd('deduction')} style={{
+                padding: '8px 14px', backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+                borderRadius: '8px', color: '#ef4444', fontSize: '13px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '6px'
+              }}><Minus size={14} /> Deduction</button>
+            </div>
+          )}
+        </>
+      )}
+    </>
   )
 }

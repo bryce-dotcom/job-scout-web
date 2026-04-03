@@ -140,7 +140,7 @@ export async function seedSampleData(companyId) {
           customer_id: insertedCustomers[0].id,
           status: 'In Progress',
           start_date: new Date().toISOString().split('T')[0],
-          total_amount: 12500.00,
+          job_total: 12500.00,
           time_allotted_hours: 40,
           time_tracked_hours: 16
         },
@@ -150,7 +150,7 @@ export async function seedSampleData(companyId) {
           customer_id: insertedCustomers[1].id,
           status: 'Scheduled',
           start_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          total_amount: 4800.00,
+          job_total: 4800.00,
           time_allotted_hours: 16
         },
         {
@@ -160,7 +160,7 @@ export async function seedSampleData(companyId) {
           status: 'Completed',
           start_date: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           end_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          total_amount: 8200.00,
+          job_total: 8200.00,
           time_allotted_hours: 24,
           time_tracked_hours: 22
         }
@@ -186,7 +186,7 @@ export async function seedSampleData(companyId) {
           customer_id: insertedCustomers[2].id,
           invoice_date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           due_date: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          total_amount: 8200.00,
+          amount: 8200.00,
           payment_status: 'Pending'
         })
       }

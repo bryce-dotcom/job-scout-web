@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { Building2, Briefcase, Settings, Upload, Check, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Building2, Briefcase, Settings, Upload, Check, ChevronRight, ChevronLeft, Tent, Bot } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 const theme = {
@@ -39,8 +39,21 @@ const INDUSTRIES = [
   'HVAC',
   'Plumbing',
   'General Contracting',
-  'Landscaping',
-  'Cleaning',
+  'Roofing',
+  'Solar / Renewable Energy',
+  'Painting',
+  'Landscaping / Lawn Care',
+  'Pest Control',
+  'Cleaning / Janitorial',
+  'Fleet / Transportation',
+  'Fire Protection',
+  'Security / Alarm Systems',
+  'Flooring',
+  'Fencing',
+  'Pool / Spa Services',
+  'Garage Doors',
+  'Handyman Services',
+  'Property Management',
   'Other'
 ]
 
@@ -56,6 +69,7 @@ const TIMEZONES = [
 const STEPS = [
   { label: 'Company Info', icon: Building2 },
   { label: 'Industry', icon: Briefcase },
+  { label: 'AI Agents', icon: Bot },
   { label: 'Preferences', icon: Settings },
   { label: 'Logo', icon: Upload }
 ]
@@ -310,34 +324,89 @@ export default function Onboarding() {
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Your Industry</h2>
               <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '24px' }}>Select the industry that best describes your business</p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
-                {INDUSTRIES.map(ind => (
-                  <button
-                    key={ind}
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, industry: ind }))}
-                    style={{
-                      padding: '20px 16px',
-                      backgroundColor: formData.industry === ind ? theme.accentBg : theme.bg,
-                      border: `2px solid ${formData.industry === ind ? theme.accent : theme.border}`,
-                      borderRadius: '12px',
-                      color: formData.industry === ind ? theme.accent : theme.textSecondary,
-                      fontSize: '15px',
-                      fontWeight: formData.industry === ind ? '600' : '400',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      textAlign: 'center'
-                    }}
-                  >
-                    {ind}
-                  </button>
-                ))}
+              <div style={{ maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px' }}>
+                  {INDUSTRIES.map(ind => (
+                    <button
+                      key={ind}
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, industry: ind }))}
+                      style={{
+                        padding: '14px 16px',
+                        backgroundColor: formData.industry === ind ? theme.accentBg : theme.bg,
+                        border: `2px solid ${formData.industry === ind ? theme.accent : theme.border}`,
+                        borderRadius: '12px',
+                        color: formData.industry === ind ? theme.accent : theme.textSecondary,
+                        fontSize: '14px',
+                        fontWeight: formData.industry === ind ? '600' : '400',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        textAlign: 'center'
+                      }}
+                    >
+                      {ind}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
-          {/* Step 3: Preferences */}
+          {/* Step 3: AI Agents */}
           {step === 2 && (
+            <div>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>AI Agents</h2>
+              <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '24px' }}>
+                Job Scout has AI agents specialized for different trades. After setup, visit Base Camp to recruit agents for your team.
+              </p>
+
+              <div style={{
+                padding: '20px',
+                backgroundColor: theme.accentBg,
+                borderRadius: '12px',
+                border: `1px solid ${theme.accent}`,
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                  <Tent size={20} style={{ color: theme.accent }} />
+                  <span style={{ fontSize: '15px', fontWeight: '600', color: theme.accent }}>Base Camp</span>
+                </div>
+                <p style={{ fontSize: '14px', color: theme.textSecondary, lineHeight: '1.5', margin: 0 }}>
+                  Browse and recruit AI specialists trained for your industry. Each agent brings expertise in areas like energy audits, fleet management, verification, email marketing, and more.
+                </p>
+              </div>
+
+              <div style={{ display: 'grid', gap: '10px' }}>
+                {[
+                  { name: 'Lenard', desc: 'Lighting & energy audit specialist', trade: 'Lighting / Electrical' },
+                  { name: 'Freddy', desc: 'Fleet management & vehicle tracking', trade: 'Fleet / Transportation' },
+                  { name: 'Victor', desc: 'Job verification & quality assurance', trade: 'All industries' },
+                  { name: 'Conrad', desc: 'Email marketing & customer outreach', trade: 'All industries' },
+                  { name: 'Arnie', desc: 'AI assistant for operations & insights', trade: 'All industries' },
+                  { name: 'Frankie', desc: 'Business analytics & reporting', trade: 'All industries' }
+                ].map(agent => (
+                  <div key={agent.name} style={{
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                    padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '10px',
+                    border: `1px solid ${theme.border}`
+                  }}>
+                    <Bot size={18} style={{ color: theme.accent, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{agent.name}</span>
+                      <span style={{ fontSize: '13px', color: theme.textMuted, marginLeft: '8px' }}>{agent.desc}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '16px', textAlign: 'center' }}>
+                You can recruit agents anytime from the Base Camp menu
+              </p>
+            </div>
+          )}
+
+          {/* Step 4: Preferences */}
+          {step === 3 && (
             <div>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Preferences</h2>
               <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '24px' }}>Customize your experience</p>
@@ -370,8 +439,8 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* Step 4: Logo Upload */}
-          {step === 3 && (
+          {/* Step 5: Logo Upload */}
+          {step === 4 && (
             <div>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Company Logo</h2>
               <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '24px' }}>Upload your company logo (optional)</p>

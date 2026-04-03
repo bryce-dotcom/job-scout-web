@@ -4,7 +4,7 @@ import { useStore } from '../lib/store';
 import { useTheme } from '../components/Layout';
 import { useIsMobile } from '../hooks/useIsMobile';
 import * as Icons from 'lucide-react';
-import { Users, ArrowRight, Edit2, Check, X, Plus } from 'lucide-react';
+import { Users, ArrowRight, Edit2, Check, X, Plus, UserMinus } from 'lucide-react';
 
 // Light theme fallback
 const defaultTheme = {
@@ -42,11 +42,14 @@ export default function MyCrew() {
   const companyId = useStore((state) => state.companyId);
   const companyAgents = useStore((state) => state.companyAgents);
   const updateAgentNickname = useStore((state) => state.updateAgentNickname);
+  const dismissAgent = useStore((state) => state.dismissAgent);
   const fetchCompanyAgents = useStore((state) => state.fetchCompanyAgents);
 
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [dismissingId, setDismissingId] = useState(null);
+  const [confirmDismiss, setConfirmDismiss] = useState(null);
 
   // Theme with fallback
   const themeContext = useTheme();
@@ -79,13 +82,23 @@ export default function MyCrew() {
   };
 
   const navigateToWorkspace = (agent) => {
-    if (agent.slug === 'lenard-lighting') {
-      navigate('/agents/lenard');
-    } else if (agent.slug === 'freddy-fleet') {
-      navigate('/agents/freddy');
-    } else if (agent.slug === 'arnie-og') {
-      navigate('/agents/arnie');
-    }
+    const slugToRoute = {
+      'lenard-lighting': '/agents/lenard',
+      'freddy-fleet': '/agents/freddy',
+      'conrad-connect': '/agents/conrad-connect',
+      'victor-verify': '/agents/victor',
+      'arnie-og': '/agents/arnie',
+      'frankie-finance': '/agents/frankie',
+    };
+    const route = slugToRoute[agent.slug];
+    if (route) navigate(route);
+  };
+
+  const handleDismiss = async (companyAgentId) => {
+    setDismissingId(companyAgentId);
+    await dismissAgent(companyAgentId);
+    setDismissingId(null);
+    setConfirmDismiss(null);
   };
 
   const formatDate = (dateStr) => {
@@ -97,8 +110,11 @@ export default function MyCrew() {
     });
   };
 
+  // Only show active agents
+  const activeAgents = companyAgents.filter(ca => ca.subscription_status === 'active');
+
   // Calculate monthly cost
-  const monthlyCost = companyAgents.reduce((sum, ca) => {
+  const monthlyCost = activeAgents.reduce((sum, ca) => {
     if (ca.agent?.is_free) return sum;
     return sum + (parseFloat(ca.agent?.price_monthly) || 0);
   }, 0);
@@ -172,7 +188,7 @@ export default function MyCrew() {
           padding: '16px'
         }}>
           <div style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '4px' }}>Crew Size</div>
-          <div style={{ fontSize: '28px', fontWeight: '600', color: theme.text }}>{companyAgents.length}</div>
+          <div style={{ fontSize: '28px', fontWeight: '600', color: theme.text }}>{activeAgents.length}</div>
         </div>
         <div style={{
           background: theme.bgCard,
@@ -188,9 +204,9 @@ export default function MyCrew() {
       </div>
 
       {/* Crew List */}
-      {companyAgents.length > 0 ? (
+      {activeAgents.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {companyAgents.map(companyAgent => {
+          {activeAgents.map(companyAgent => {
             const agent = companyAgent.agent;
             if (!agent) return null;
 
@@ -339,29 +355,73 @@ export default function MyCrew() {
                   )}
                 </div>
 
-                {/* Action */}
-                <button
-                  onClick={() => navigateToWorkspace(agent)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    padding: '10px 16px',
-                    background: categoryColor,
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    flexShrink: 0,
-                    width: isMobile ? '100%' : 'auto'
-                  }}
-                >
-                  Open Workspace
-                  <ArrowRight style={{ width: '16px', height: '16px' }} />
-                </button>
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '8px', flexShrink: 0, width: isMobile ? '100%' : 'auto' }}>
+                  {confirmDismiss === companyAgent.id ? (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '8px 12px', background: 'rgba(239,68,68,0.08)',
+                      borderRadius: '8px', border: '1px solid rgba(239,68,68,0.2)'
+                    }}>
+                      <span style={{ fontSize: '13px', color: '#ef4444', fontWeight: '500' }}>Dismiss?</span>
+                      <button
+                        onClick={() => handleDismiss(companyAgent.id)}
+                        disabled={dismissingId === companyAgent.id}
+                        style={{
+                          padding: '6px 12px', background: '#ef4444', color: '#fff',
+                          border: 'none', borderRadius: '6px', cursor: 'pointer',
+                          fontSize: '13px', fontWeight: '500',
+                          opacity: dismissingId === companyAgent.id ? 0.6 : 1
+                        }}
+                      >
+                        {dismissingId === companyAgent.id ? 'Dismissing...' : 'Yes'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDismiss(null)}
+                        style={{
+                          padding: '6px 12px', background: theme.border, color: theme.textSecondary,
+                          border: 'none', borderRadius: '6px', cursor: 'pointer',
+                          fontSize: '13px', fontWeight: '500'
+                        }}
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setConfirmDismiss(companyAgent.id)}
+                        title="Dismiss agent"
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          padding: '10px',
+                          background: 'transparent',
+                          color: theme.textMuted,
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          flexShrink: 0
+                        }}
+                      >
+                        <UserMinus style={{ width: '16px', height: '16px' }} />
+                      </button>
+                      <button
+                        onClick={() => navigateToWorkspace(agent)}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          gap: '6px', padding: '10px 16px',
+                          background: categoryColor, color: '#fff',
+                          border: 'none', borderRadius: '8px', cursor: 'pointer',
+                          fontSize: '14px', fontWeight: '500',
+                          flex: isMobile ? 1 : 'none'
+                        }}
+                      >
+                        Open Workspace
+                        <ArrowRight style={{ width: '16px', height: '16px' }} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })}

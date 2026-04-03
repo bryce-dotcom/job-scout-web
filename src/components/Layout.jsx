@@ -1527,7 +1527,8 @@ export default function Layout() {
             backgroundAttachment: 'fixed',
             backgroundColor: theme.bg,
             minWidth: 0,
-            maxWidth: '100%'
+            maxWidth: '100%',
+            overflowX: 'hidden'
           }}
           className="main-content md:ml-[260px] ml-0 mt-[64px] md:mt-0"
         >

@@ -37,19 +37,10 @@ export default defineConfig({
             }
           },
           {
-            // Cache Supabase auth calls
+            // Auth calls must NEVER be cached — always hit the network.
+            // Cached auth responses cause "Authentication Failed" on iOS PWA.
             urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'supabase-auth-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
+            handler: 'NetworkOnly'
           },
           {
             // Cache Google Fonts

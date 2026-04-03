@@ -12,7 +12,7 @@ import {
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
   Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image, Copy,
-  Shield, Star, Receipt, Link2, TrendingUp, Search, PackageCheck, UserPlus
+  Shield, Star, Receipt, Link2, TrendingUp, Search, PackageCheck, UserPlus, Send, Mail
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import JobCostingModal from '../components/JobCostingModal'
@@ -208,7 +208,11 @@ function JobDetailInner() {
   const [submittalSelected, setSubmittalSelected] = useState(new Set())
   const [submittalDownloading, setSubmittalDownloading] = useState(false)
   const [submittalProgress, setSubmittalProgress] = useState('')
-  const [submittalSections, setSubmittalSections] = useState({ documents: true, lineItems: true, verification: true, notes: true })
+  const [submittalSections, setSubmittalSections] = useState({ documents: true, lineItems: true, verification: true, notes: true, invoices: true })
+  const [submittalEmail, setSubmittalEmail] = useState('')
+  const [submittalMessage, setSubmittalMessage] = useState('')
+  const [submittalSending, setSubmittalSending] = useState(false)
+  const [submittalHistory, setSubmittalHistory] = useState([])
 
   // Bonus hours state
   const [bonusConfig, setBonusConfig] = useState(null) // payroll_config from settings
@@ -373,10 +377,19 @@ function JobDetailInner() {
       // Fetch invoices linked to this job
       const { data: invoicesData } = await supabase
         .from('invoices')
-        .select('id, invoice_id, amount, payment_status, created_at')
+        .select('id, invoice_id, amount, payment_status, created_at, pdf_url')
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobInvoices(invoicesData || [])
+
+      // Fetch submittal history
+      const { data: submittalData } = await supabase
+        .from('file_attachments')
+        .select('id, file_name, file_path, storage_bucket, created_at')
+        .eq('job_id', id)
+        .eq('photo_context', 'submittal')
+        .order('created_at', { ascending: false })
+      setSubmittalHistory(submittalData || [])
 
       // Fetch utility invoices linked to this job
       const { data: utilInvoicesData } = await supabase
@@ -1871,6 +1884,22 @@ function JobDetailInner() {
           const ext = photo.url.split('.').pop()?.split('?')[0] || 'jpg'
           items.push({ type: 'public', url: photo.url, folder: '04_notes', filename: `audit_${idx + 1}.${ext}` })
         }
+      } else if (type === 'invoice') {
+        const invId = parseInt(rest[0])
+        const inv = jobInvoices.find(i => i.id === invId)
+        if (inv?.pdf_url) {
+          items.push({ type: 'signed_path', bucket: 'project-documents', path: inv.pdf_url, folder: '05_invoices', filename: `${inv.invoice_id || `invoice_${invId}`}.pdf` })
+        }
+      } else if (type === 'utilinvoice') {
+        const invId = parseInt(rest[0])
+        const inv = jobUtilityInvoices.find(i => i.id === invId)
+        if (inv) {
+          items.push({ type: 'text', content: `Utility Invoice UTL-${inv.id}\nUtility: ${inv.utility_name || '-'}\nAmount: $${(inv.amount || 0).toFixed(2)}\nStatus: ${inv.payment_status}\nDate: ${new Date(inv.created_at).toLocaleDateString()}`, folder: '05_invoices', filename: `UTL-${inv.id}.txt` })
+        }
+      } else if (type === 'jobnotes') {
+        if (job?.notes) {
+          items.push({ type: 'text', content: `Job Notes — ${job.job_title || job.job_id}\n${'—'.repeat(40)}\n\n${job.notes}`, folder: '04_notes', filename: 'job_notes.txt' })
+        }
       }
     })
     return items
@@ -1907,6 +1936,14 @@ function JobDetailInner() {
             const resp = await fetch(signedData.signedUrl)
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
             data = await resp.blob()
+          } else if (item.type === 'signed_path') {
+            const { data: signedData } = await supabase.storage
+              .from(item.bucket)
+              .createSignedUrl(item.path, 300)
+            if (signedData?.signedUrl) {
+              const resp = await fetch(signedData.signedUrl)
+              if (resp.ok) data = await resp.blob()
+            }
           } else if (item.type === 'doc') {
             // Documents may be in public or private buckets
             if (item.att.storage_bucket) {
@@ -1935,12 +1972,133 @@ function JobDetailInner() {
 
       setSubmittalProgress('Building ZIP...')
       const blob = await zip.generateAsync({ type: 'blob' })
-      saveAs(blob, `${jobName}_submittal_package.zip`)
+
+      // Save a record of the submittal to storage + file_attachments
+      const timestamp = Date.now()
+      const zipFilename = `${jobName}_submittal_package.zip`
+      const storagePath = `jobs/${id}/submittals/${timestamp}_submittal.zip`
+      await supabase.storage.from('project-documents').upload(storagePath, blob, { contentType: 'application/zip' })
+      await supabase.from('file_attachments').insert({
+        company_id: companyId,
+        job_id: parseInt(id),
+        file_name: zipFilename,
+        file_path: storagePath,
+        file_type: 'application/zip',
+        file_size: blob.size,
+        storage_bucket: 'project-documents',
+        photo_context: 'submittal'
+      })
+
+      saveAs(blob, zipFilename)
+      toast.success('Submittal package downloaded')
+      await fetchJobData()
     } catch (err) {
       console.error('Submittal download failed:', err)
-      alert('Download failed: ' + err.message)
+      toast.error('Download failed: ' + err.message)
     } finally {
       setSubmittalDownloading(false)
+      setSubmittalProgress('')
+    }
+  }
+
+  const handleSendSubmittal = async () => {
+    if (!submittalEmail) {
+      toast.error('Enter a recipient email')
+      return
+    }
+    const manifest = buildSubmittalManifest()
+    if (manifest.length === 0) {
+      toast.error('Select at least one item')
+      return
+    }
+    setSubmittalSending(true)
+    setSubmittalProgress('Building package...')
+    try {
+      const [{ default: JSZip }] = await Promise.all([import('jszip')])
+      const zip = new JSZip()
+      const jobName = sanitizeFilename(job.job_title || job.job_id || 'job')
+      let completed = 0
+
+      for (const item of manifest) {
+        try {
+          let data
+          if (item.type === 'text') {
+            data = item.content
+          } else if (item.type === 'public') {
+            const resp = await fetch(item.url)
+            if (resp.ok) data = await resp.blob()
+          } else if (item.type === 'signed') {
+            const { data: signedData } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
+            if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) data = await resp.blob() }
+          } else if (item.type === 'signed_path') {
+            const { data: signedData } = await supabase.storage.from(item.bucket).createSignedUrl(item.path, 300)
+            if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) data = await resp.blob() }
+          } else if (item.type === 'doc' && item.att.storage_bucket) {
+            const { data: signedData } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
+            if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) data = await resp.blob() }
+          }
+          if (data) zip.file(`${jobName}_submittal_package/${item.folder}/${item.filename}`, data)
+        } catch (err) { console.warn('Submittal email: skipping', item.filename, err.message) }
+        completed++
+        setSubmittalProgress(`Preparing ${completed}/${manifest.length}...`)
+      }
+
+      setSubmittalProgress('Uploading...')
+      const blob = await zip.generateAsync({ type: 'blob' })
+
+      // Upload to storage
+      const timestamp = Date.now()
+      const storagePath = `jobs/${id}/submittals/${timestamp}_submittal.zip`
+      await supabase.storage.from('project-documents').upload(storagePath, blob, { contentType: 'application/zip' })
+
+      // Create signed URL for the email (7 days)
+      const { data: signedData } = await supabase.storage.from('project-documents').createSignedUrl(storagePath, 7 * 24 * 3600)
+      const downloadUrl = signedData?.signedUrl
+
+      // Save record
+      await supabase.from('file_attachments').insert({
+        company_id: companyId,
+        job_id: parseInt(id),
+        file_name: `${jobName}_submittal_package.zip`,
+        file_path: storagePath,
+        file_type: 'application/zip',
+        file_size: blob.size,
+        storage_bucket: 'project-documents',
+        photo_context: 'submittal'
+      })
+
+      // Send email via edge function
+      setSubmittalProgress('Sending email...')
+      const companyName = company?.name || 'Our Company'
+      const customerName = job.customer?.name || job.customer?.business_name || ''
+      await supabase.functions.invoke('send-email', {
+        body: {
+          to: submittalEmail,
+          subject: `Submittal Package — ${job.job_title || job.job_id}${customerName ? ` — ${customerName}` : ''}`,
+          html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+            <h2 style="color:#2c3530;">Submittal Package</h2>
+            ${submittalMessage ? `<p style="white-space:pre-line;">${submittalMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : `<p>Please find the submittal package for <strong>${job.job_title || job.job_id}</strong>.</p>`}
+            ${customerName ? `<p>Customer: ${customerName}</p>` : ''}
+            <p><strong>${manifest.length} item${manifest.length !== 1 ? 's' : ''}</strong> included in this package.</p>
+            ${downloadUrl ? `<p><a href="${downloadUrl}" style="display:inline-block;padding:12px 24px;background:#5a6349;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Download Submittal Package</a></p>` : ''}
+            <p style="color:#7d8a7f;font-size:13px;margin-top:24px;">This link expires in 7 days.</p>
+            <hr style="border:none;border-top:1px solid #d6cdb8;margin:24px 0;" />
+            <p style="color:#7d8a7f;font-size:12px;">${companyName}</p>
+          </div>`
+        }
+      })
+
+      toast.success(`Submittal sent to ${submittalEmail}`)
+      setShowSubmittalModal(false)
+      setSubmittalEmail('')
+      setSubmittalMessage('')
+      setSubmittalSelected(new Set())
+      await fetchJobData()
+    } catch (err) {
+      console.error('Send submittal failed:', err)
+      toast.error('Failed to send: ' + err.message)
+    } finally {
+      setSubmittalSending(false)
       setSubmittalProgress('')
     }
   }
@@ -3921,7 +4079,13 @@ function JobDetailInner() {
                 Generate
               </button>
               <button
-                onClick={() => setShowSubmittalModal(true)}
+                onClick={() => {
+                  setShowSubmittalModal(true)
+                  setSubmittalEmail(job.customer?.email || '')
+                  const jobTitle = job.job_title || job.job_id || 'your project'
+                  const svcType = job.service_type ? ` for ${job.service_type} services` : ''
+                  setSubmittalMessage(`Please find the attached submittal package for ${jobTitle}${svcType}. Let us know if you have any questions.`)
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -4815,32 +4979,250 @@ function JobDetailInner() {
                   )}
                 </div>
               )}
+
+              {/* Section 5: Invoices */}
+              {(jobInvoices.length > 0 || jobUtilityInvoices.length > 0) && (
+                <div style={{ border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+                  <div
+                    onClick={() => setSubmittalSections(p => ({ ...p, invoices: !p.invoices }))}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '12px 16px', backgroundColor: theme.bg, cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {submittalSections.invoices ? <ChevronDown size={16} color={theme.textMuted} /> : <ChevronRight size={16} color={theme.textMuted} />}
+                      <Receipt size={14} color={theme.textMuted} />
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
+                        Invoices ({jobInvoices.length + jobUtilityInvoices.length})
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const allKeys = [
+                          ...jobInvoices.filter(i => i.pdf_url).map(i => `invoice:${i.id}`),
+                          ...jobUtilityInvoices.map(i => `utilinvoice:${i.id}`)
+                        ]
+                        selectAllInGroup(allKeys)
+                      }}
+                      style={{
+                        padding: '4px 10px', fontSize: '11px', fontWeight: '500',
+                        backgroundColor: theme.accentBg, color: theme.accent,
+                        border: `1px solid ${theme.accent}`, borderRadius: '6px', cursor: 'pointer'
+                      }}
+                    >
+                      {[...jobInvoices.filter(i => i.pdf_url).map(i => `invoice:${i.id}`), ...jobUtilityInvoices.map(i => `utilinvoice:${i.id}`)].every(k => submittalSelected.has(k)) ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+                  {submittalSections.invoices && (
+                    <div style={{ padding: '8px 16px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {jobInvoices.map(inv => {
+                        const key = `invoice:${inv.id}`
+                        const hasPdf = !!inv.pdf_url
+                        return (
+                          <div
+                            key={key}
+                            onClick={() => hasPdf && toggleSubmittalItem(key)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '10px',
+                              padding: '10px 12px', borderRadius: '8px',
+                              backgroundColor: submittalSelected.has(key) ? 'rgba(59,130,246,0.08)' : theme.bg,
+                              border: submittalSelected.has(key) ? '1px solid #3b82f6' : `1px solid ${theme.border}`,
+                              cursor: hasPdf ? 'pointer' : 'default',
+                              opacity: hasPdf ? 1 : 0.5
+                            }}
+                          >
+                            <div style={{
+                              width: '20px', height: '20px', borderRadius: '4px',
+                              backgroundColor: submittalSelected.has(key) ? '#3b82f6' : 'rgba(0,0,0,0.1)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                              {submittalSelected.has(key) && <Check size={12} color="#fff" />}
+                            </div>
+                            <FileText size={16} color="#3b82f6" />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>{inv.invoice_id}</div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                {formatCurrency(inv.amount)} — {inv.payment_status} — {new Date(inv.created_at).toLocaleDateString()}
+                              </div>
+                            </div>
+                            {!hasPdf && <span style={{ fontSize: '10px', color: theme.textMuted }}>No PDF</span>}
+                          </div>
+                        )
+                      })}
+                      {jobUtilityInvoices.map(inv => {
+                        const key = `utilinvoice:${inv.id}`
+                        return (
+                          <div
+                            key={key}
+                            onClick={() => toggleSubmittalItem(key)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '10px',
+                              padding: '10px 12px', borderRadius: '8px',
+                              backgroundColor: submittalSelected.has(key) ? 'rgba(59,130,246,0.08)' : theme.bg,
+                              border: submittalSelected.has(key) ? '1px solid #3b82f6' : `1px solid ${theme.border}`,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <div style={{
+                              width: '20px', height: '20px', borderRadius: '4px',
+                              backgroundColor: submittalSelected.has(key) ? '#3b82f6' : 'rgba(0,0,0,0.1)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                            }}>
+                              {submittalSelected.has(key) && <Check size={12} color="#fff" />}
+                            </div>
+                            <Zap size={16} color="#14b8a6" />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>UTL-{inv.id}</div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                {inv.utility_name} — {formatCurrency(inv.amount)} — {inv.payment_status}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Section 6: Job Notes */}
+              {job?.notes && (
+                <div style={{ border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+                  <div
+                    onClick={() => toggleSubmittalItem('jobnotes:1')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '12px 16px', backgroundColor: submittalSelected.has('jobnotes:1') ? 'rgba(59,130,246,0.08)' : theme.bg,
+                      border: submittalSelected.has('jobnotes:1') ? '1px solid #3b82f6' : 'none',
+                      cursor: 'pointer', borderRadius: '10px'
+                    }}
+                  >
+                    <div style={{
+                      width: '20px', height: '20px', borderRadius: '4px',
+                      backgroundColor: submittalSelected.has('jobnotes:1') ? '#3b82f6' : 'rgba(0,0,0,0.1)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                    }}>
+                      {submittalSelected.has('jobnotes:1') && <Check size={12} color="#fff" />}
+                    </div>
+                    <Edit2 size={14} color={theme.textMuted} />
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
+                      Job Notes
+                    </span>
+                    <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}>
+                      {job.notes.length > 60 ? job.notes.substring(0, 60) + '...' : job.notes}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Submittal History */}
+              {submittalHistory.length > 0 && (
+                <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '12px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Previous Submittals
+                  </div>
+                  {submittalHistory.map(s => (
+                    <div key={s.id} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 12px', backgroundColor: theme.bg, borderRadius: '6px',
+                      border: `1px solid ${theme.border}`, marginBottom: '4px', fontSize: '12px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.text }}>
+                        <PackageCheck size={14} color={theme.accent} />
+                        {s.file_name}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: theme.textMuted }}>{new Date(s.created_at).toLocaleDateString()}</span>
+                        <button
+                          onClick={async () => {
+                            const { data } = await supabase.storage.from(s.storage_bucket).createSignedUrl(s.file_path, 300)
+                            if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                          }}
+                          style={{ padding: '4px 8px', fontSize: '11px', backgroundColor: theme.accentBg, color: theme.accent, border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                        >
+                          <Download size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Footer */}
             <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              display: 'flex', flexDirection: 'column', gap: '10px',
               padding: isMobile ? '16px' : '16px 20px',
               borderTop: `1px solid ${theme.border}`
             }}>
-              <span style={{ fontSize: '13px', color: theme.textMuted }}>
-                {submittalSelected.size} item{submittalSelected.size !== 1 ? 's' : ''} selected
-              </span>
-              <button
-                onClick={handleDownloadSubmittal}
-                disabled={submittalDownloading || submittalSelected.size === 0}
+              {/* Email row */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <Mail size={16} color={theme.textMuted} style={{ flexShrink: 0 }} />
+                <input
+                  type="email"
+                  placeholder="Email to send submittal..."
+                  value={submittalEmail}
+                  onChange={(e) => setSubmittalEmail(e.target.value)}
+                  style={{
+                    flex: 1, padding: '8px 12px', border: `1px solid ${theme.border}`,
+                    borderRadius: '8px', fontSize: '13px', color: theme.text,
+                    backgroundColor: theme.bgCard, outline: 'none', minWidth: 0
+                  }}
+                />
+              </div>
+              {/* Message */}
+              <textarea
+                placeholder="Message to recipient..."
+                value={submittalMessage}
+                onChange={(e) => setSubmittalMessage(e.target.value)}
+                rows={3}
                 style={{
-                  padding: '10px 20px', backgroundColor: '#3b82f6', color: '#fff',
-                  border: 'none', borderRadius: '8px',
-                  cursor: submittalDownloading || submittalSelected.size === 0 ? 'not-allowed' : 'pointer',
-                  fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px',
-                  opacity: submittalDownloading || submittalSelected.size === 0 ? 0.6 : 1,
-                  minHeight: '44px'
+                  width: '100%', padding: '8px 12px', border: `1px solid ${theme.border}`,
+                  borderRadius: '8px', fontSize: '13px', color: theme.text,
+                  backgroundColor: theme.bgCard, outline: 'none', resize: 'vertical',
+                  fontFamily: 'inherit', lineHeight: '1.4'
                 }}
-              >
-                {submittalDownloading ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={16} />}
-                {submittalDownloading ? 'Downloading...' : 'Download Package'}
-              </button>
+              />
+              {/* Action row */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <span style={{ fontSize: '13px', color: theme.textMuted }}>
+                  {submittalSelected.size} item{submittalSelected.size !== 1 ? 's' : ''} selected
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={handleDownloadSubmittal}
+                    disabled={submittalDownloading || submittalSending || submittalSelected.size === 0}
+                    style={{
+                      padding: '10px 16px', backgroundColor: '#3b82f6', color: '#fff',
+                      border: 'none', borderRadius: '8px',
+                      cursor: submittalDownloading || submittalSending || submittalSelected.size === 0 ? 'not-allowed' : 'pointer',
+                      fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px',
+                      opacity: submittalDownloading || submittalSending || submittalSelected.size === 0 ? 0.6 : 1,
+                      minHeight: '44px'
+                    }}
+                  >
+                    {submittalDownloading ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={16} />}
+                    {submittalDownloading ? submittalProgress : 'Download'}
+                  </button>
+                  <button
+                    onClick={handleSendSubmittal}
+                    disabled={submittalSending || submittalDownloading || submittalSelected.size === 0 || !submittalEmail}
+                    style={{
+                      padding: '10px 16px', backgroundColor: '#5a6349', color: '#fff',
+                      border: 'none', borderRadius: '8px',
+                      cursor: submittalSending || submittalDownloading || submittalSelected.size === 0 || !submittalEmail ? 'not-allowed' : 'pointer',
+                      fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px',
+                      opacity: submittalSending || submittalDownloading || submittalSelected.size === 0 || !submittalEmail ? 0.6 : 1,
+                      minHeight: '44px'
+                    }}
+                  >
+                    {submittalSending ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={16} />}
+                    {submittalSending ? submittalProgress : 'Send'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </>

@@ -184,6 +184,19 @@ const AUTO_SOURCES = {
       return exps.filter(x => x.date >= sd && x.date <= ed).reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0)
     },
   },
+  submittals_sent: {
+    label: 'Submittals Sent',
+    category: 'Operations',
+    format: 'number',
+    compute: (d, s, e, sd, ed, ent) => {
+      let subs = d.submittals || []
+      if (ent) {
+        const jobIds = new Set(filterByEntity(d.jobs, ent).map(j => j.id))
+        subs = subs.filter(x => x.job_id && jobIds.has(x.job_id))
+      }
+      return subs.filter(x => x.created_at >= s && x.created_at <= e).length
+    },
+  },
 }
 
 function computeAutoValue(sourceKey, storeData, entity) {
@@ -2383,9 +2396,20 @@ export default function EOS() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
+  // Fetch submittal records for scorecard
+  const [submittals, setSubmittals] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    supabase.from('file_attachments')
+      .select('id, job_id, created_at')
+      .eq('company_id', companyId)
+      .eq('photo_context', 'submittal')
+      .then(({ data }) => setSubmittals(data || []))
+  }, [companyId])
+
   const storeData = useMemo(() => ({
-    jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments,
-  }), [jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments])
+    jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments, submittals,
+  }), [jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments, submittals])
 
   // Build entity list from service types + business units (deduplicated)
   const entities = useMemo(() => {

@@ -13,6 +13,7 @@ import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf } from '../lib/estimatePdf'
 import { toast } from '../lib/toast'
+import { companyNotify } from '../lib/companyNotify'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 
@@ -169,12 +170,13 @@ export default function EstimateDetail() {
   const fetchEstimateData = async () => {
     setLoading(true)
 
+    try {
     // Try with technician join first; if the column doesn't exist yet fall back
     let estimateData = null
     const baseSelect = '*, lead:leads(id, customer_name, phone, email, address, status), customer:customers(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name)'
     const { data: d1, error: e1 } = await supabase
       .from('quotes')
-      .select(baseSelect + ', technician:employees!technician_id(id, name)')
+      .select(baseSelect + ', technician:employees!quotes_technician_id_fkey(id, name)')
       .eq('id', id)
       .single()
 
@@ -182,11 +184,12 @@ export default function EstimateDetail() {
       estimateData = d1
     } else {
       // Fallback without technician join (column may not exist yet)
-      const { data: d2 } = await supabase
+      const { data: d2, error: e2 } = await supabase
         .from('quotes')
         .select(baseSelect)
         .eq('id', id)
         .single()
+      if (e2) console.error('[EstimateDetail] Fallback query also failed:', e2.message, e2)
       estimateData = d2
     }
 
@@ -303,6 +306,9 @@ export default function EstimateDetail() {
       }
     }
 
+    } catch (err) {
+      console.error('[EstimateDetail] fetchEstimateData crashed:', err)
+    }
     setLoading(false)
   }
 
@@ -417,15 +423,15 @@ export default function EstimateDetail() {
     const discount = parseFloat(line.discount) || 0
     const newTotal = (unitPrice * qty) - discount
 
-    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, quantity: qty, line_total: newTotal } : l))
+    const updatedLines = lineItems.map(l => l.id === line.id ? { ...l, quantity: qty, line_total: newTotal } : l)
+    setLineItems(updatedLines)
 
     await supabase.from('quote_lines').update({
       quantity: qty,
       line_total: newTotal
     }).eq('id', line.id)
 
-    await updateEstimateTotal()
-    await fetchEstimateData()
+    await updateEstimateTotalFromLines(updatedLines)
   }
 
   const handlePriceChange = async (line, newPrice) => {
@@ -433,15 +439,15 @@ export default function EstimateDetail() {
     const discount = parseFloat(line.discount) || 0
     const newTotal = (price * (line.quantity || 1)) - discount
 
-    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, price, line_total: newTotal } : l))
+    const updatedLines = lineItems.map(l => l.id === line.id ? { ...l, price, line_total: newTotal } : l)
+    setLineItems(updatedLines)
 
     await supabase.from('quote_lines').update({
       price,
       line_total: newTotal
     }).eq('id', line.id)
 
-    await updateEstimateTotal()
-    await fetchEstimateData()
+    await updateEstimateTotalFromLines(updatedLines)
   }
 
   const handleDiscountChange = async (line, newDiscount) => {
@@ -451,15 +457,15 @@ export default function EstimateDetail() {
     const cappedDiscount = Math.min(discount, lineSubtotal)
     const newTotal = lineSubtotal - cappedDiscount
 
-    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, discount: cappedDiscount, line_total: newTotal } : l))
+    const updatedLines = lineItems.map(l => l.id === line.id ? { ...l, discount: cappedDiscount, line_total: newTotal } : l)
+    setLineItems(updatedLines)
 
     await supabase.from('quote_lines').update({
       discount: cappedDiscount,
       line_total: newTotal
     }).eq('id', line.id)
 
-    await updateEstimateTotal()
-    await fetchEstimateData()
+    await updateEstimateTotalFromLines(updatedLines)
   }
 
   const handleLinePhotoUpload = async (lineId, e) => {
@@ -591,6 +597,13 @@ export default function EstimateDetail() {
     await updateQuote(id, { quote_amount: total, updated_at: new Date().toISOString() })
   }
 
+  // Compute total from local line items (avoids stale Zustand store reads during rapid edits)
+  const updateEstimateTotalFromLines = async (lines) => {
+    const total = lines.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
+    setEstimate(prev => prev ? { ...prev, quote_amount: total } : prev)
+    await updateQuote(id, { quote_amount: total, updated_at: new Date().toISOString() })
+  }
+
   const updateEstimateField = async (field, value) => {
     setSaving(true)
     setEstimate(prev => ({ ...prev, [field]: value }))
@@ -703,6 +716,19 @@ export default function EstimateDetail() {
       }
 
       toast.success('Estimate approved! Ready to convert to a Job.', { duration: 5000 })
+
+      const customerName = estimate.customer?.name || estimate.lead?.customer_name || 'Unknown'
+      const amount = parseFloat(estimate.total) || 0
+      const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
+      companyNotify({
+        companyId,
+        type: 'estimate_won',
+        title: 'Estimate Won!',
+        message: `${customerName}${amountStr} (${estimate.quote_id})`,
+        metadata: { quote_id: id, customer_name: customerName, amount },
+        createdBy: user?.id
+      })
+
       setShowDepositModal(false)
       setDepositPhoto(null)
       await fetchEstimateData()
@@ -728,6 +754,19 @@ export default function EstimateDetail() {
       }
 
       toast.success('Estimate approved! Ready to convert to a Job.', { duration: 5000 })
+
+      const customerName = estimate.customer?.name || estimate.lead?.customer_name || 'Unknown'
+      const amount = parseFloat(estimate.total) || 0
+      const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
+      companyNotify({
+        companyId,
+        type: 'estimate_won',
+        title: 'Estimate Won!',
+        message: `${customerName}${amountStr} (${estimate.quote_id})`,
+        metadata: { quote_id: id, customer_name: customerName, amount },
+        createdBy: user?.id
+      })
+
       setShowDepositModal(false)
       await fetchEstimateData()
       await fetchQuotes()
@@ -1590,7 +1629,7 @@ export default function EstimateDetail() {
               minHeight: '32px'
             }}
           >
-            {['Draft', 'Sent', 'Approved', 'Rejected'].map(s => (
+            {['Draft', 'Sent', 'Negotiation', 'Approved', 'Rejected'].map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -3769,7 +3808,13 @@ export default function EstimateDetail() {
           <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#fff', fontSize: '22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2001 }}>
             <X size={22} />
           </button>
-          <img src={viewingPhoto.url} alt={viewingPhoto.name} style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
+          <img
+            src={viewingPhoto.url}
+            alt={viewingPhoto.name}
+            onClick={(e) => e.stopPropagation()}
+            onError={(e) => { e.target.style.display = 'none'; e.target.insertAdjacentHTML('afterend', '<div style="color:#fff;font-size:16px;text-align:center">Image failed to load</div>') }}
+            style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px', cursor: 'default' }}
+          />
         </div>
       )}
     </div>

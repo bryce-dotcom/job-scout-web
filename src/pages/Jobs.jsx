@@ -4,10 +4,11 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
+import { companyNotify } from '../lib/companyNotify'
 import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin, Map,
   Play, CheckCircle, FileText, ChevronRight, User, Upload, Download,
-  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, Navigation
+  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, Navigation, ExternalLink
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
@@ -38,6 +39,7 @@ const emptyJob = {
   quote_id: '',
   status: 'Chillin',
   assigned_team: '',
+  job_lead_id: '',
   business_unit: '',
   start_date: '',
   end_date: '',
@@ -297,7 +299,10 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span style={{ fontSize: '11px', fontWeight: '600', color: color }}>{job.job_id}</span>
+                <span style={{ fontSize: '11px', fontWeight: '600', color: color, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {job.job_id}
+                  <ExternalLink size={10} color={theme.textMuted} />
+                </span>
                 {job.job_total > 0 && (
                   <span style={{ fontSize: '12px', fontWeight: '600', color: theme.accent }}>
                     {formatCurrency(job.job_total)}
@@ -324,10 +329,10 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                       {formatDate(job.start_date)}
                     </span>
                   )}
-                  {job.assigned_team && (
+                  {(job.job_lead?.name || job.assigned_team) && (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                       <User size={10} />
-                      {job.assigned_team}
+                      {job.job_lead?.name || job.assigned_team}
                     </span>
                   )}
                 </div>
@@ -391,6 +396,7 @@ export default function Jobs() {
   const navigate = useNavigate()
   const location = useLocation()
   const companyId = useStore((state) => state.companyId)
+  const user = useStore((state) => state.user)
   const jobs = useStore((state) => state.jobs)
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
@@ -431,8 +437,12 @@ export default function Jobs() {
       { id: 'Completed', name: 'Completed', color: '#4a7c59', icon: CheckCircle },
     ]
     if (!storeJobStatuses || storeJobStatuses.length === 0) return defaultCols
+    // Use DB order — apply known colors/icons for core statuses
+    const coreMap = Object.fromEntries(defaultCols.map(c => [c.id, c]))
     const cols = storeJobStatuses.map(s => {
       const name = typeof s === 'string' ? s : s.name
+      const core = coreMap[name]
+      if (core) return core
       const color = typeof s === 'string' ? '#94a3b8' : (s.color || '#94a3b8')
       return { id: name, name, color, icon: Briefcase }
     })
@@ -539,7 +549,7 @@ export default function Jobs() {
   const jobsByStatus = {}
   boardColumns.forEach(col => {
     jobsByStatus[col.id] = filteredJobs.filter(j => j.status === col.id)
-      .sort((a, b) => new Date(a.start_date || a.created_at || 0) - new Date(b.start_date || b.created_at || 0))
+      .sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0))
   })
   // Jobs not in any board column (e.g. Cancelled, On Hold, or statuses not in the board)
   const otherJobs = filteredJobs.filter(j => !boardColumnIds.has(j.status))
@@ -719,6 +729,7 @@ export default function Jobs() {
       quote_id: formData.quote_id || null,
       status: formData.status,
       assigned_team: formData.assigned_team || null,
+      job_lead_id: formData.job_lead_id || null,
       business_unit: formData.business_unit || null,
       start_date: formData.start_date || null,
       end_date: formData.end_date || null,
@@ -839,6 +850,18 @@ export default function Jobs() {
     if (job.lead_id) {
       await supabase.from('leads').update({ status: 'Job Complete', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
     }
+
+    const customerName = job.customer?.name || job.customer_name || 'Unknown'
+    const amount = parseFloat(job.job_total) || 0
+    const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
+    companyNotify({
+      companyId,
+      type: 'job_completed',
+      title: 'Job Completed!',
+      message: `${customerName}${amountStr} (${job.job_id})`,
+      metadata: { job_id: job.id, customer_name: customerName, amount },
+      createdBy: user?.id
+    })
 
     await fetchJobs()
   }
@@ -998,7 +1021,7 @@ export default function Jobs() {
         marginBottom: '24px',
         flexWrap: 'wrap'
       }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: isMobile ? '100%' : '200px' }}>
           <Search size={18} style={{
             position: 'absolute',
             left: '12px',
@@ -1018,7 +1041,7 @@ export default function Jobs() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
+            style={{ ...inputStyle, width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'auto' : '140px' }}
           >
             <option value="all">All Status</option>
             <option value="Chillin">Chillin</option>
@@ -1036,7 +1059,7 @@ export default function Jobs() {
             onChange={(val) => setTeamFilter(val)}
             placeholder="All Teams"
             theme={theme}
-            style={{ width: 'auto', minWidth: '140px' }}
+            style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'auto' : '140px' }}
           />
         )}
       </div>
@@ -1874,6 +1897,17 @@ export default function Jobs() {
                       theme={theme}
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Assigned To</label>
+                  <SearchableSelect
+                    options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
+                    value={formData.job_lead_id || ''}
+                    onChange={(val) => setFormData(prev => ({ ...prev, job_lead_id: val ? parseInt(val) : null }))}
+                    placeholder="-- Select Employee --"
+                    theme={theme}
+                  />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>

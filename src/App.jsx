@@ -56,6 +56,12 @@ import RobotMarketplace from './pages/RobotMarketplace'
 import MyCrew from './pages/MyCrew'
 import LenardWorkspace from './pages/agents/lenard/LenardWorkspace'
 import FreddyWorkspace from './pages/agents/freddy/FreddyWorkspace'
+import FreddySettings from './pages/agents/freddy/FreddySettings'
+import FreddyTracking from './pages/agents/freddy/FreddyTracking'
+import FreddyTrips from './pages/agents/freddy/FreddyTrips'
+import FreddyCosts from './pages/agents/freddy/FreddyCosts'
+import FreddyDrivers from './pages/agents/freddy/FreddyDrivers'
+import FreddyAlerts from './pages/agents/freddy/FreddyAlerts'
 import ConradWorkspace from './pages/agents/conrad/ConradWorkspace'
 import ConradDashboard from './pages/agents/conrad/ConradDashboard'
 import ConradCampaigns from './pages/agents/conrad/ConradCampaigns'
@@ -72,6 +78,12 @@ import VictorVerify from './pages/agents/victor/VictorVerify'
 import VictorReport from './pages/agents/victor/VictorReport'
 import VictorHistory from './pages/agents/victor/VictorHistory'
 import VictorSettings from './pages/agents/victor/VictorSettings'
+import FrankieWorkspace from './pages/agents/frankie/FrankieWorkspace'
+import FrankieDashboard from './pages/agents/frankie/FrankieDashboard'
+import FrankieAsk from './pages/agents/frankie/FrankieAsk'
+import FrankieCollections from './pages/agents/frankie/FrankieCollections'
+import FrankieInsights from './pages/agents/frankie/FrankieInsights'
+import FrankieSettings from './pages/agents/frankie/FrankieSettings'
 import CustomerPortal from './pages/CustomerPortal'
 import LenardAZSRP from './pages/agents/LenardAZSRP'
 import LenardUTRMP from './pages/agents/LenardUTRMP'
@@ -79,7 +91,9 @@ import DataConsole from './pages/admin/DataConsole'
 import Help from './pages/admin/Help'
 import EOS from './pages/admin/EOS'
 import Layout from './components/Layout'
+import AgentRequired from './components/AgentRequired'
 import ToastContainer from './components/Toast'
+import CompanyNotifications from './components/CompanyNotifications'
 import OfflineBanner from './components/OfflineBanner'
 import { syncQueue } from './lib/syncQueue'
 import { photoQueue } from './lib/photoQueue'
@@ -202,10 +216,10 @@ function App() {
 
     initializeAuth()
 
-    // Listen for auth state changes (sign out from another tab, etc.)
+    // Listen for auth state changes (sign out, token refresh failure, etc.)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') {
-        // Clear store on sign out
+      if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
+        // Clear store on sign out or failed token refresh (common on iOS PWA)
         setUser(null)
         setCompany(null)
       }
@@ -250,6 +264,7 @@ function App() {
     <BrowserRouter>
       <OfflineBanner />
       <ToastContainer />
+      <CompanyNotifications />
       <Routes>
         {/* Public agent routes - NO auth required */}
         <Route path="/agent/lenard-az-srp" element={<LenardAZSRP />} />
@@ -292,16 +307,16 @@ function App() {
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/time-log" element={<TimeLog />} />
           <Route path="/inventory" element={<Inventory />} />
-          <Route path="/fleet" element={<Fleet />} />
-          <Route path="/fleet/calendar" element={<FleetCalendar />} />
-          <Route path="/fleet/:id" element={<FleetDetail />} />
-          <Route path="/lighting-audits" element={<LightingAudits />} />
-          <Route path="/lighting-audits/new" element={<NewLightingAudit />} />
-          <Route path="/lighting-audits/:id" element={<LightingAuditDetail />} />
-          <Route path="/fixture-types" element={<FixtureTypes />} />
-          <Route path="/utility-providers" element={<UtilityProviders />} />
-          <Route path="/utility-programs" element={<UtilityPrograms />} />
-          <Route path="/utility-programs/:id/rates" element={<RebateRates />} />
+          <Route path="/fleet" element={<AgentRequired slug="freddy-fleet"><Fleet /></AgentRequired>} />
+          <Route path="/fleet/calendar" element={<AgentRequired slug="freddy-fleet"><FleetCalendar /></AgentRequired>} />
+          <Route path="/fleet/:id" element={<AgentRequired slug="freddy-fleet"><FleetDetail /></AgentRequired>} />
+          <Route path="/lighting-audits" element={<AgentRequired slug="lenard-lighting"><LightingAudits /></AgentRequired>} />
+          <Route path="/lighting-audits/new" element={<AgentRequired slug="lenard-lighting"><NewLightingAudit /></AgentRequired>} />
+          <Route path="/lighting-audits/:id" element={<AgentRequired slug="lenard-lighting"><LightingAuditDetail /></AgentRequired>} />
+          <Route path="/fixture-types" element={<AgentRequired slug="lenard-lighting"><FixtureTypes /></AgentRequired>} />
+          <Route path="/utility-providers" element={<AgentRequired slug="lenard-lighting"><UtilityProviders /></AgentRequired>} />
+          <Route path="/utility-programs" element={<AgentRequired slug="lenard-lighting"><UtilityPrograms /></AgentRequired>} />
+          <Route path="/utility-programs/:id/rates" element={<AgentRequired slug="lenard-lighting"><RebateRates /></AgentRequired>} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/document-rules" element={<DocumentRules />} />
           <Route path="/reports" element={<Reports />} />
@@ -341,7 +356,13 @@ function App() {
           {/* Freddy Workspace (Fleet) */}
           <Route path="/agents/freddy" element={<FreddyWorkspace />}>
             <Route index element={<Fleet />} />
+            <Route path="tracking" element={<FreddyTracking />} />
+            <Route path="trips" element={<FreddyTrips />} />
+            <Route path="costs" element={<FreddyCosts />} />
+            <Route path="drivers" element={<FreddyDrivers />} />
+            <Route path="alerts" element={<FreddyAlerts />} />
             <Route path="calendar" element={<FleetCalendar />} />
+            <Route path="settings" element={<FreddySettings />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path=":id" element={<FleetDetail />} />
           </Route>
@@ -370,6 +391,15 @@ function App() {
           <Route path="/agents/arnie" element={<ArnieWorkspace />}>
             <Route index element={<ArnieChatPage />} />
             <Route path="history" element={<ArnieHistory />} />
+          </Route>
+
+          {/* Frankie Workspace (AI CFO) */}
+          <Route path="/agents/frankie" element={<FrankieWorkspace />}>
+            <Route index element={<FrankieDashboard />} />
+            <Route path="ask" element={<FrankieAsk />} />
+            <Route path="collections" element={<FrankieCollections />} />
+            <Route path="insights" element={<FrankieInsights />} />
+            <Route path="settings" element={<FrankieSettings />} />
           </Route>
 
           {/* Admin */}

@@ -2525,12 +2525,14 @@ export default function ProductsServices() {
               const currentProductId = editingProduct?.id
               const componentProductIds = modalComponents.map(c => c.component_product_id)
               const searchResults = componentSearch.trim()
-                ? products.filter(p =>
-                    p.active !== false &&
-                    p.id !== currentProductId &&
-                    !componentProductIds.includes(p.id) &&
-                    p.name.toLowerCase().includes(componentSearch.toLowerCase())
-                  ).slice(0, 8)
+                ? products.filter(p => {
+                    if (p.active === false) return false
+                    if (p.id === currentProductId) return false
+                    if (componentProductIds.includes(p.id)) return false
+                    const term = componentSearch.toLowerCase()
+                    const searchable = [p.name, p.type, p.category, p.description, p.item_id, p.product_category, p.manufacturer].filter(Boolean).join(' ').toLowerCase()
+                    return searchable.includes(term)
+                  }).slice(0, 20)
                 : []
 
               // Calculate totals — use each component's own unit_price (their markup is baked in)
@@ -2575,8 +2577,13 @@ export default function ProductsServices() {
                             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <Package size={14} style={{ color: theme.textMuted, flexShrink: 0 }} />
-                            <span style={{ flex: 1 }}>{p.name}</span>
-                            <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                              {(p.type || p.product_category) && (
+                                <div style={{ fontSize: '11px', color: theme.textMuted }}>{p.type}{p.product_category ? ` · ${p.product_category}` : ''}</div>
+                              )}
+                            </div>
+                            <span style={{ color: theme.textMuted, fontSize: '12px', flexShrink: 0 }}>
                               ${(parseFloat(p.unit_price) || parseFloat(p.cost) || 0).toFixed(2)}
                             </span>
                           </button>

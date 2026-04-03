@@ -55,18 +55,18 @@ const STAGE_COLORS = { 'New': '#3b82f6', 'Contacted': '#8b5cf6', 'Scheduled': '#
 
 // All available metric card definitions
 const METRIC_DEFS = [
-  { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline' },
-  { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads' },
-  { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs' },
-  { id: 'pendingInvoices', label: 'Pending Invoices', icon: Receipt, color: null, nav: '/invoices' },
-  { id: 'mtdRevenue', label: 'MTD Revenue', icon: DollarSign, color: '#4a7c59', nav: null },
-  { id: 'mtdDeposits', label: 'MTD Deposits', icon: TrendingUp, color: '#4a7c59', nav: '/lead-payments' },
-  { id: 'mtdExpenses', label: 'MTD Expenses', icon: CreditCard, color: '#c25a5a', nav: '/expenses' },
-  { id: 'completedJobs', label: 'Completed Jobs (MTD)', icon: Briefcase, color: '#10b981', nav: '/jobs' },
-  { id: 'totalLeads', label: 'Total Leads', icon: UserPlus, color: '#8b5cf6', nav: '/leads' },
-  { id: 'netIncome', label: 'MTD Net Income', icon: DollarSign, color: '#16a34a', nav: null },
-  { id: 'avgJobValue', label: 'Avg Job Value', icon: DollarSign, color: '#3b82f6', nav: null },
-  { id: 'conversionRate', label: 'Win Rate', icon: TrendingUp, color: '#10b981', nav: '/pipeline' },
+  { id: 'mtdSalesWon', label: 'MTD Jobs Won', icon: TrendingUp, color: '#16a34a', nav: '/jobs', hint: 'Total value of completed jobs this month (from job_total). Same number as Pipeline Jobs Won when set to MTD.' },
+  { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads', hint: 'Leads currently in the pipeline (not Won, Lost, or Closed). These are prospects being worked.' },
+  { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs', hint: 'Jobs that are Scheduled, In Progress, or Chillin. Does not include Completed or Archived.' },
+  { id: 'pendingInvoices', label: 'Pending Invoices', icon: Receipt, color: null, nav: '/invoices', hint: 'Invoices sent but not yet paid. The dollar amount is what customers owe you (accounts receivable).' },
+  { id: 'mtdRevenue', label: 'MTD Revenue', icon: DollarSign, color: '#4a7c59', nav: null, hint: 'Cash received this month = Paid Invoices (from Invoices page) + Deposits (from Lead Payments page) + Bank Deposits (from Plaid/Books) + Collected Incentives. This is actual money in, not estimates.' },
+  { id: 'mtdDeposits', label: 'MTD Deposits', icon: TrendingUp, color: '#4a7c59', nav: '/lead-payments', hint: 'Lead and job deposits collected this month within JobScout. These are pre-job payments logged in the system.' },
+  { id: 'mtdExpenses', label: 'MTD Expenses', icon: CreditCard, color: '#c25a5a', nav: '/expenses', hint: 'Money spent this month: manually logged expenses + bank outflows from Plaid. Does not include transfers between accounts.' },
+  { id: 'completedJobs', label: 'Completed Jobs (MTD)', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Number of jobs marked Completed this month. YTD shows the full year count.' },
+  { id: 'totalLeads', label: 'Total Leads', icon: UserPlus, color: '#8b5cf6', nav: '/leads', hint: 'All leads in the system across all statuses including Closed.' },
+  { id: 'netIncome', label: 'MTD Net Income', icon: DollarSign, color: '#16a34a', nav: null, hint: 'Revenue minus expenses this month. Positive = profit, negative = loss. Based on actual cash flow, not estimates.' },
+  { id: 'avgJobValue', label: 'Avg Job Value', icon: DollarSign, color: '#3b82f6', nav: null, hint: 'Average dollar amount per completed job across all time. Calculated from job totals.' },
+  { id: 'conversionRate', label: 'Win Rate', icon: TrendingUp, color: '#10b981', nav: '/pipeline', hint: 'Percentage of decided leads (Won + Lost) that were Won. Higher is better.' },
 ]
 
 // Alert type definitions
@@ -207,17 +207,15 @@ export default function Dashboard() {
   const thisMonthExpenses = manualExpensesMTD + plaidOutMTD
 
   const wonOrDeliveryStatuses = ['Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed']
-  const mtdWonLeads = leads.filter(l => {
-    if (!wonOrDeliveryStatuses.includes(l.status)) return false
-    const wonDate = l.converted_at || l.updated_at
-    return wonDate && new Date(wonDate) >= firstOfMonth
+  // Sales Won = completed jobs value (every completed job is a win)
+  // Uses job start_date for date filtering (most reliable date from HCP)
+  const mtdCompletedJobsForSales = jobs.filter(j => {
+    if (j.status !== 'Completed') return false
+    const jobDate = j.start_date || j.updated_at
+    return jobDate && new Date(jobDate) >= firstOfMonth
   })
-  const quoteByLead = {}
-  ;(quotes || []).forEach(q => {
-    const amt = parseFloat(q.quote_amount) || 0
-    if (q.lead_id && amt > (quoteByLead[q.lead_id] || 0)) quoteByLead[q.lead_id] = amt
-  })
-  const mtdSalesWon = mtdWonLeads.reduce((sum, l) => sum + (quoteByLead[l.id] || 0), 0)
+  const mtdSalesWon = mtdCompletedJobsForSales.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
+  const mtdWonLeads = { length: mtdCompletedJobsForSales.length }
 
   // Extra metrics
   const completedJobsMTD = jobs.filter(j => j.status === 'Completed' && j.updated_at && new Date(j.updated_at) >= firstOfMonth).length
@@ -225,7 +223,7 @@ export default function Dashboard() {
   const netIncome = thisMonthRevenue - thisMonthExpenses
   const completedJobsAll = jobs.filter(j => j.status === 'Completed')
   const avgJobValue = completedJobsAll.length > 0
-    ? completedJobsAll.reduce((sum, j) => sum + (parseFloat(j.total_amount) || 0), 0) / completedJobsAll.length
+    ? completedJobsAll.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0) / completedJobsAll.length
     : 0
   const wonLeads = leads.filter(l => wonOrDeliveryStatuses.includes(l.status)).length
   const decidedLeads = leads.filter(l => [...wonOrDeliveryStatuses, 'Lost'].includes(l.status)).length
@@ -246,14 +244,16 @@ export default function Dashboard() {
   const ytdExpenses = manualExpensesYTD + plaidOutYTD
   const ytdNetIncome = ytdRevenue - ytdExpenses
 
-  const ytdSalesWon = leads.filter(l => {
-    if (!wonOrDeliveryStatuses.includes(l.status)) return false
-    const wonDate = l.converted_at || l.updated_at
-    return wonDate && new Date(wonDate) >= firstOfYear
-  }).reduce((sum, l) => sum + (quoteByLead[l.id] || 0), 0)
+  // YTD Sales Won = completed jobs this year (same logic as MTD)
+  const ytdCompletedJobsForSales = jobs.filter(j => {
+    if (j.status !== 'Completed') return false
+    const jobDate = j.start_date || j.updated_at
+    return jobDate && new Date(jobDate) >= firstOfYear
+  })
+  const ytdSalesWon = ytdCompletedJobsForSales.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
 
   const ytdDeposits = depositsYTD
-  const completedJobsYTD = jobs.filter(j => j.status === 'Completed' && j.updated_at && isThisYear(j.updated_at)).length
+  const completedJobsYTD = ytdCompletedJobsForSales.length
 
   // ── Build revenue/expense breakdown descriptions ──
   const revenueParts = []
@@ -268,23 +268,30 @@ export default function Dashboard() {
   if (plaidOutMTD > 0) expenseParts.push(`${formatCurrency(plaidOutMTD)} bank`)
   const expenseSubtitle = expenseParts.length > 0 ? expenseParts.join(' + ') : 'No expenses this month'
 
-  // Metric values map
+  // Metric values map — subtitles explain exactly where each number comes from
   const metricValues = {
-    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonLeads.length} deal${mtdWonLeads.length !== 1 ? 's' : ''} won this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won' },
-    activeLeads: { value: activeLeads },
-    openJobs: { value: openJobs },
-    pendingInvoices: { value: pendingInvoices, subtitle: `${formatCurrency(accountsReceivable)} accounts receivable` },
-    mtdRevenue: { value: formatCurrency(thisMonthRevenue), subtitle: revenueSubtitle, ytdValue: formatCurrency(ytdRevenue), ytdLabel: 'YTD Revenue' },
-    mtdDeposits: { value: formatCurrency(thisMonthDeposits), subtitle: 'Lead/job deposits collected', ytdValue: formatCurrency(ytdDeposits), ytdLabel: 'YTD Deposits' },
-    mtdExpenses: { value: formatCurrency(thisMonthExpenses), subtitle: expenseSubtitle, ytdValue: formatCurrency(ytdExpenses), ytdLabel: 'YTD Expenses' },
-    completedJobs: { value: completedJobsMTD, ytdValue: completedJobsYTD, ytdLabel: 'YTD Completed' },
-    totalLeads: { value: totalLeadsCount },
-    netIncome: { value: formatCurrency(netIncome), subtitle: 'Revenue minus expenses', ytdValue: formatCurrency(ytdNetIncome), ytdLabel: 'YTD Net Income' },
-    avgJobValue: { value: formatCurrency(avgJobValue), subtitle: `Across ${completedJobsAll.length} completed job${completedJobsAll.length !== 1 ? 's' : ''}` },
+    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonLeads.length} completed job${mtdWonLeads.length !== 1 ? 's' : ''} (from Jobs)`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Jobs Won' },
+    activeLeads: { value: activeLeads, subtitle: 'Leads in pipeline (not Won/Lost)' },
+    openJobs: { value: openJobs, subtitle: 'Scheduled + In Progress + Chillin' },
+    pendingInvoices: { value: pendingInvoices, subtitle: `${formatCurrency(accountsReceivable)} owed (from Invoices)` },
+    mtdRevenue: { value: formatCurrency(thisMonthRevenue), subtitle: revenueSubtitle || 'Paid invoices + deposits + bank', ytdValue: formatCurrency(ytdRevenue), ytdLabel: 'YTD Revenue' },
+    mtdDeposits: { value: formatCurrency(thisMonthDeposits), subtitle: 'From Lead Payments page', ytdValue: formatCurrency(ytdDeposits), ytdLabel: 'YTD Deposits' },
+    mtdExpenses: { value: formatCurrency(thisMonthExpenses), subtitle: expenseSubtitle || 'Manual expenses + bank outflows', ytdValue: formatCurrency(ytdExpenses), ytdLabel: 'YTD Expenses' },
+    completedJobs: { value: completedJobsMTD, subtitle: 'From Job Board (Completed status)', ytdValue: completedJobsYTD, ytdLabel: 'YTD Completed' },
+    totalLeads: { value: totalLeadsCount, subtitle: 'All leads in pipeline' },
+    netIncome: { value: formatCurrency(netIncome), subtitle: 'Revenue - Expenses (cash basis)', ytdValue: formatCurrency(ytdNetIncome), ytdLabel: 'YTD Net Income' },
+    avgJobValue: { value: formatCurrency(avgJobValue), subtitle: `Across ${completedJobsAll.length} completed jobs` },
     conversionRate: { value: `${conversionRate}%`, subtitle: `${wonLeads} won / ${decidedLeads} decided` },
   }
 
   // Pipeline
+  // Quote amounts by lead (for pipeline mini-chart)
+  const quoteByLead = {}
+  ;(quotes || []).forEach(q => {
+    const amt = parseFloat(q.quote_amount) || 0
+    if (q.lead_id && amt > (quoteByLead[q.lead_id] || 0)) quoteByLead[q.lead_id] = amt
+  })
+
   const mapLeadToDisplay = (status) => {
     const stage = PIPELINE_STAGES.find(s => s.id === status || s.id === (status || '').trim())
     return stage?.name || null
@@ -300,15 +307,15 @@ export default function Dashboard() {
   const totalPipelineCount = pipelineData.reduce((sum, p) => sum + p.count, 0)
   const totalPipelineDollars = pipelineData.reduce((sum, p) => sum + p.dollars, 0)
 
-  // Rolling average
+  // Rolling average — based on completed jobs
   const rollingCutoff = new Date(today.getTime() - prefs.rollingDays * 24 * 60 * 60 * 1000)
-  const rollingWonLeads = leads.filter(l => {
-    if (!wonOrDeliveryStatuses.includes(l.status)) return false
-    const wonDate = l.converted_at || l.updated_at
-    return wonDate && new Date(wonDate) >= rollingCutoff
+  const rollingCompletedJobs = jobs.filter(j => {
+    if (j.status !== 'Completed') return false
+    const jobDate = j.start_date || j.updated_at
+    return jobDate && new Date(jobDate) >= rollingCutoff
   })
-  const rollingWonTotal = rollingWonLeads.reduce((sum, l) => sum + (quoteByLead[l.id] || 0), 0)
-  const rollingWonCount = rollingWonLeads.length
+  const rollingWonTotal = rollingCompletedJobs.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
+  const rollingWonCount = rollingCompletedJobs.length
   const rollingAvgPerMonth = prefs.rollingDays > 0 ? (rollingWonTotal / prefs.rollingDays) * 30 : 0
 
   // Today's jobs
@@ -353,9 +360,10 @@ export default function Dashboard() {
   }
 
   // ── Reusable components ──
-  const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue }) => (
+  const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue, hint }) => (
     <div
       onClick={onClick}
+      title={hint || ''}
       style={{
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
@@ -625,6 +633,7 @@ export default function Dashboard() {
                 subtitle={mv.subtitle}
                 ytdValue={mv.ytdValue}
                 ytdLabel={mv.ytdLabel}
+                hint={def.hint}
               />
             )
           })}

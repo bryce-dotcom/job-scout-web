@@ -84,6 +84,8 @@ export default function SalesPipeline() {
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
   const updateLead = useStore((state) => state.updateLead)
+  const updateQuote = useStore((state) => state.updateQuote)
+  const storeJobs = useStore((state) => state.jobs)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
 
   // Pipeline state
@@ -105,6 +107,9 @@ export default function SalesPipeline() {
   // Section expand/collapse (default collapsed so both sections visible)
   const [salesExpanded, setSalesExpanded] = useState(false)
   const [deliveryExpanded, setDeliveryExpanded] = useState(false)
+
+  // Search
+  const [searchTerm, setSearchTerm] = useState('')
 
   // Won/Lost handling
   const [wonNotes, setWonNotes] = useState('')
@@ -259,19 +264,21 @@ export default function SalesPipeline() {
     })
   }
 
-  // Attach quotes data to leads (total revenue = quote_amount + utility_incentive)
+  // Attach ALL quotes to leads (for estimate-based pipeline)
   const attachQuotes = (normalized, quotesData) => {
     if (!quotesData?.length) return
     const quotesByLeadId = {}
     quotesData.forEach(q => {
-      const revenue = (parseFloat(q.quote_amount) || 0) + (parseFloat(q.utility_incentive) || 0)
-      if (!quotesByLeadId[q.lead_id] || revenue > quotesByLeadId[q.lead_id]) {
-        quotesByLeadId[q.lead_id] = revenue
-      }
+      if (!q.lead_id) return
+      if (!quotesByLeadId[q.lead_id]) quotesByLeadId[q.lead_id] = []
+      quotesByLeadId[q.lead_id].push(q)
     })
     normalized.forEach(lead => {
-      if (quotesByLeadId[lead.id]) {
-        lead._quoteTotal = quotesByLeadId[lead.id]
+      lead._quotes = quotesByLeadId[lead.id] || []
+      if (lead._quotes.length > 0) {
+        lead._quoteTotal = Math.max(...lead._quotes.map(q =>
+          (parseFloat(q.quote_amount) || 0) + (parseFloat(q.utility_incentive) || 0)
+        ))
       }
     })
   }
@@ -352,7 +359,7 @@ export default function SalesPipeline() {
           const batch = allLeadIds.slice(i, i + batchSize)
           const { data: quotesData } = await supabase
             .from('quotes')
-            .select('lead_id, quote_amount, utility_incentive')
+            .select('id, lead_id, quote_amount, utility_incentive, status, estimate_name, quote_id, approved_date, rejected_date, created_at, updated_at, salesperson_id')
             .in('lead_id', batch)
           if (quotesData) allQuotes.push(...quotesData)
         }
@@ -447,8 +454,26 @@ export default function SalesPipeline() {
     return [...bus].sort()
   }, [pipelineLeads])
 
-  // Filter leads by owner and business unit
+  // Filter leads by search, owner, and business unit
   const filteredPipelineLeads = pipelineLeads.filter(lead => {
+    // Search filter — match name, phone, email, address, notes
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase()
+      const searchable = [
+        lead.customer_name,
+        lead.business_name,
+        lead.phone,
+        lead.email,
+        lead.address,
+        lead.city,
+        lead.notes,
+        lead.lead_owner?.name,
+        lead.source_employee?.name,
+        lead.lead_source,
+      ].filter(Boolean).join(' ').toLowerCase()
+      if (!searchable.includes(term)) return false
+    }
+
     // Standalone jobs don't have lead owners — skip owner filter for them
     if (ownerFilter !== 'all' && !lead._isJob) {
       if (ownerFilter === 'unassigned') {
@@ -465,12 +490,93 @@ export default function SalesPipeline() {
   })
 
   // Get leads for a stage
+  // Pre-estimate stages show lead cards; estimate stages show one card per quote
+  const PRE_ESTIMATE_STAGES = ['New', 'Contacted', 'Appointment Set', 'Qualified']
+  const QUOTE_STATUS_MAP = { 'Quote Sent': 'Sent', 'Negotiation': 'Negotiation', 'Won': 'Approved', 'Lost': 'Rejected' }
+
   const getLeadsForStage = (stageId) => {
-    return filteredPipelineLeads.filter(l => l.status === stageId)
+    // PRE-ESTIMATE STAGES: return lead cards (same as before)
+    if (PRE_ESTIMATE_STAGES.includes(stageId)) {
+      return filteredPipelineLeads
+        .filter(l => l.status === stageId)
+        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+    }
+
+    // ESTIMATE STAGES: return one card per quote with matching status
+    const quoteStatus = QUOTE_STATUS_MAP[stageId]
+    if (quoteStatus) {
+      const estimateCards = []
+      filteredPipelineLeads.forEach(lead => {
+        if (!lead._quotes || lead._quotes.length === 0) {
+          // Fallback: if lead has no quotes but status matches, show as lead card
+          if (lead.status === stageId) {
+            estimateCards.push(lead)
+          }
+          return
+        }
+        lead._quotes
+          .filter(q => q.status === quoteStatus)
+          .forEach(q => {
+            estimateCards.push({
+              ...lead,
+              _isEstimate: true,
+              _quoteId: q.id,
+              _quoteName: q.estimate_name || q.quote_id || `EST-${q.id}`,
+              _quoteAmount: (parseFloat(q.quote_amount) || 0) + (parseFloat(q.utility_incentive) || 0),
+              _quoteStatus: q.status,
+              _quoteApprovedDate: q.approved_date,
+              _quoteRejectedDate: q.rejected_date,
+              _quoteCreatedAt: q.created_at,
+              id: `quote-${q.id}`,
+              _originalLeadId: lead.id,
+            })
+          })
+      })
+
+      // Won column: also include quotes approved THIS MONTH that may have moved to delivery
+      if (stageId === 'Won') {
+        const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+        filteredPipelineLeads.forEach(lead => {
+          if (!lead._quotes) return
+          lead._quotes
+            .filter(q => q.status === 'Approved' && q.approved_date && new Date(q.approved_date) >= firstOfMonth)
+            .forEach(q => {
+              // Don't duplicate if already in the list
+              if (!estimateCards.find(c => c._quoteId === q.id)) {
+                estimateCards.push({
+                  ...lead,
+                  _isEstimate: true,
+                  _quoteId: q.id,
+                  _quoteName: q.estimate_name || q.quote_id || `EST-${q.id}`,
+                  _quoteAmount: (parseFloat(q.quote_amount) || 0) + (parseFloat(q.utility_incentive) || 0),
+                  _quoteStatus: q.status,
+                  _quoteApprovedDate: q.approved_date,
+                  _quoteCreatedAt: q.created_at,
+                  id: `quote-${q.id}`,
+                  _originalLeadId: lead.id,
+                })
+              }
+            })
+        })
+      }
+
+      return estimateCards.sort((a, b) =>
+        new Date(b._quoteCreatedAt || b.created_at || 0) - new Date(a._quoteCreatedAt || a.created_at || 0)
+      )
+    }
+
+    // DELIVERY / OTHER STAGES: lead cards by status (unchanged)
+    return filteredPipelineLeads
+      .filter(l => l.status === stageId)
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
   }
 
-  // Get effective dollar amount for a lead (project total = job_total + utility_incentive)
+  // Get effective dollar amount for a lead or estimate card
   const getLeadAmount = (l) => {
+    // Estimate card: use the specific quote amount
+    if (l._isEstimate) return l._quoteAmount || 0
+
+    // Lead card with jobs: use job total
     const job = l.jobs?.[0]
     if (job) {
       const jobTotal = parseFloat(job.job_total) || 0
@@ -522,14 +628,46 @@ export default function SalesPipeline() {
     e.preventDefault()
     setDragOverStage(null)
 
-    if (!draggedLead || draggedLead.status === targetStageId) return
+    if (!draggedLead) return
 
     const stage = stages.find(s => s.id === targetStageId)
 
     // Block drag-drop into delivery stages (they auto-advance via job sync)
     if (stage?.isDelivery || stage?.isClosed) return
 
-    // Handle Won/Lost stages
+    // ESTIMATE CARD being dragged
+    if (draggedLead._isEstimate) {
+      // Block estimate cards from going back to pre-estimate stages
+      if (PRE_ESTIMATE_STAGES.includes(targetStageId)) return
+
+      if (stage?.isWon) {
+        setSelectedLead(draggedLead)
+        setShowWonModal(true)
+        return
+      }
+      if (stage?.isLost) {
+        setSelectedLead(draggedLead)
+        setShowLostModal(true)
+        return
+      }
+
+      // Move estimate between Quote Sent / Negotiation
+      const newQuoteStatus = QUOTE_STATUS_MAP[targetStageId]
+      if (newQuoteStatus) {
+        await updateQuote(draggedLead._quoteId, {
+          status: newQuoteStatus,
+          updated_at: new Date().toISOString()
+        })
+      }
+      setDraggedLead(null)
+      await fetchPipelineLeads()
+      return
+    }
+
+    // LEAD CARD being dragged (pre-estimate stages)
+    if (draggedLead.status === targetStageId) return
+
+    // Handle Won/Lost stages for lead cards
     if (stage?.isWon) {
       setSelectedLead(draggedLead)
       setShowWonModal(true)
@@ -568,13 +706,35 @@ export default function SalesPipeline() {
   const handleMarkAsWon = async () => {
     if (!selectedLead) return
 
-    await updateLead(selectedLead.id, {
-      status: 'Won',
-      converted_at: new Date().toISOString(),
-      notes: selectedLead.notes
-        ? `${selectedLead.notes}\n\nWON: ${wonNotes}`
-        : `WON: ${wonNotes}`
-    })
+    if (selectedLead._isEstimate) {
+      // Update the specific QUOTE to Approved
+      await updateQuote(selectedLead._quoteId, {
+        status: 'Approved',
+        approved_date: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+
+      // Check if ALL quotes for this lead are now Approved → auto-win the lead
+      const leadId = selectedLead._originalLeadId
+      const parentLead = pipelineLeads.find(l => l.id === leadId)
+      if (parentLead && parentLead._quotes) {
+        const allApproved = parentLead._quotes.every(q =>
+          q.id === selectedLead._quoteId ? true : q.status === 'Approved'
+        )
+        if (allApproved) {
+          await updateLead(leadId, { status: 'Won', converted_at: new Date().toISOString() })
+        }
+      }
+    } else {
+      // Lead card (pre-estimate) dragged to Won
+      await updateLead(selectedLead.id, {
+        status: 'Won',
+        converted_at: new Date().toISOString(),
+        notes: selectedLead.notes
+          ? `${selectedLead.notes}\n\nWON: ${wonNotes}`
+          : `WON: ${wonNotes}`
+      })
+    }
 
     setShowWonModal(false)
     setWonNotes('')
@@ -587,12 +747,34 @@ export default function SalesPipeline() {
   const handleMarkAsLost = async () => {
     if (!selectedLead || !lostReason) return
 
-    await updateLead(selectedLead.id, {
-      status: 'Lost',
-      notes: selectedLead.notes
-        ? `${selectedLead.notes}\n\nLOST: ${lostReason}`
-        : `LOST: ${lostReason}`
-    })
+    if (selectedLead._isEstimate) {
+      // Update the specific QUOTE to Rejected
+      await updateQuote(selectedLead._quoteId, {
+        status: 'Rejected',
+        rejected_date: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+
+      // Check if ALL quotes for this lead are now Rejected → auto-lose the lead
+      const leadId = selectedLead._originalLeadId
+      const parentLead = pipelineLeads.find(l => l.id === leadId)
+      if (parentLead && parentLead._quotes) {
+        const allRejected = parentLead._quotes.every(q =>
+          q.id === selectedLead._quoteId ? true : q.status === 'Rejected'
+        )
+        if (allRejected) {
+          await updateLead(leadId, { status: 'Lost' })
+        }
+      }
+    } else {
+      // Lead card dragged to Lost
+      await updateLead(selectedLead.id, {
+        status: 'Lost',
+        notes: selectedLead.notes
+          ? `${selectedLead.notes}\n\nLOST: ${lostReason}`
+          : `LOST: ${lostReason}`
+      })
+    }
 
     setShowLostModal(false)
     setLostReason('')
@@ -730,23 +912,21 @@ export default function SalesPipeline() {
     const todayAppointments = leadsWithAppointments.filter(l => new Date(l.appointment_time).toDateString() === today)
     const sumAmount = (arr) => arr.reduce((sum, l) => sum + getLeadAmount(l), 0)
 
-    // "Sales Won" — all leads that were converted (won) within the date range,
-    // regardless of current status (so deals in delivery still count as sales wins)
+    // "Sales Won" — completed jobs value (matches Dashboard)
+    // This is the most concrete number: work done = money earned
     const rangeCutoff = getDateCutoff(dateRange)
-    const deliveryStageIds = stages.filter(s => s.isDelivery || s.isClosed || s.isWon).map(s => s.id)
-    const wonOrDeliveryStatuses = new Set(['Won', ...deliveryStageIds])
-    const salesWonLeads = leads.filter(l => {
-      // Must be in a won or delivery stage
-      if (!wonOrDeliveryStatuses.has(l.status)) return false
-      // Use converted_at if available, fall back to updated_at, then job start_date
-      const wonDate = l.converted_at || l.updated_at || l.jobs?.[0]?.start_date || l.created_at
-      if (!wonDate) return false
-      if (rangeCutoff && wonDate < rangeCutoff) return false
+    const completedJobsInRange = (storeJobs || []).filter(j => {
+      if (j.status !== 'Completed') return false
+      const jobDate = j.start_date || j.updated_at
+      if (!jobDate) return false
+      if (rangeCutoff && new Date(jobDate) < new Date(rangeCutoff)) return false
       return true
     })
+    const salesWonTotal = completedJobsInRange.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
+    const salesWonCount = completedJobsInRange.length
 
     return {
-      salesWon: { value: formatCurrency(sumAmount(salesWonLeads)), label: `Sales Won`, sublabel: `${salesWonLeads.length} deals`, color: '#16a34a', isFormatted: true },
+      salesWon: { value: formatCurrency(salesWonTotal), label: `Jobs Won`, sublabel: `${salesWonCount} completed`, color: '#16a34a', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
       lost: { value: lostLeadsList.length, label: 'Lost', color: '#64748b' },
@@ -795,6 +975,38 @@ export default function SalesPipeline() {
             <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
               Track leads through the sales process. Drag to move between stages.
             </p>
+          </div>
+
+          <div style={{ position: 'relative', minWidth: '220px' }}>
+            <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
+            <input
+              type="text"
+              placeholder="Search leads... name, phone, email, address"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '9px 12px 9px 34px',
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                fontSize: '13px',
+                color: theme.text,
+                backgroundColor: theme.bgCard,
+                outline: 'none',
+              }}
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                style={{
+                  position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '2px',
+                  display: 'flex', alignItems: 'center'
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1023,6 +1235,32 @@ export default function SalesPipeline() {
               </div>
             </div>
 
+            {/* Search Bar */}
+            <div style={{ padding: '8px 16px', backgroundColor: m.bg, borderBottom: `1px solid ${m.border}`, flexShrink: 0 }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: m.textMuted }} />
+                <input
+                  type="text"
+                  placeholder="Search leads..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px 36px 10px 34px', border: `1px solid ${m.border}`,
+                    borderRadius: '10px', fontSize: '14px', color: m.text,
+                    backgroundColor: m.bgCard, outline: 'none', minHeight: '44px'
+                  }}
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: m.textMuted, padding: '4px', display: 'flex', alignItems: 'center' }}
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Scrollable content */}
             <div
               style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', WebkitOverflowScrolling: 'touch' }}
@@ -1144,6 +1382,7 @@ export default function SalesPipeline() {
                 >
                   <ChevronRight size={14} color={m.textMuted} style={{ transform: mobileSalesExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
                   <span style={{ fontSize: '11px', fontWeight: '700', color: m.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
+                  <span style={{ fontSize: '10px', color: m.textMuted }}>Leads & Customers W/Estimates</span>
                   <div style={{ flex: 1, height: '1px', backgroundColor: m.border }} />
                   <span style={{ fontSize: '11px', color: m.textMuted, backgroundColor: m.bgCard, padding: '2px 8px', borderRadius: '10px', border: `1px solid ${m.border}` }}>
                     {mobileLeads.length}
@@ -1179,12 +1418,17 @@ export default function SalesPipeline() {
                               transition: 'background-color 0.1s'
                             }}
                           >
-                            {/* Row 1: Name + Source */}
+                            {/* Row 1: Name + Estimate badge + Source */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                               <span style={{ flex: 1, fontSize: '16px', fontWeight: '700', color: m.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {lead.customer_name}
                               </span>
-                              {lead.lead_source && (
+                              {lead._isEstimate && (
+                                <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '6px', backgroundColor: 'rgba(90,99,73,0.12)', color: '#5a6349', fontWeight: '600', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                  {lead._quoteName}
+                                </span>
+                              )}
+                              {lead.lead_source && !lead._isEstimate && (
                                 <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', backgroundColor: srcStyle.bg, color: srcStyle.color, border: srcStyle.border, flexShrink: 0, whiteSpace: 'nowrap' }}>
                                   {lead.lead_source}
                                 </span>
@@ -1318,6 +1562,7 @@ export default function SalesPipeline() {
                 <ChevronRight size={16} color={theme.textMuted} />
               </div>
               <span style={{ fontSize: '12px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
+              <span style={{ fontSize: '10px', color: theme.textMuted }}>Leads & Customers W/Estimates</span>
               <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
               {(() => {
                 const salesLeads = filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed })
@@ -1404,13 +1649,18 @@ export default function SalesPipeline() {
                             <EntityCard
                               name={lead.customer_name}
                               businessName={lead.business_name}
-                              onClick={() => navigate(`/leads/${lead.id}`)}
+                              onClick={() => lead._isEstimate ? navigate(`/estimates/${lead._quoteId}`) : navigate(`/leads/${lead.id}`)}
                               style={{ cursor: 'grab', padding: '8px' }}
                             >
                               <div style={{ fontWeight: '600', color: theme.text, fontSize: '12px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {lead.customer_name}
                               </div>
-                              {lead.business_name && (
+                              {lead._isEstimate && (
+                                <div style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(90,99,73,0.12)', color: '#5a6349', fontWeight: '600', display: 'inline-block', marginBottom: '3px' }}>
+                                  {lead._quoteName}
+                                </div>
+                              )}
+                              {lead.business_name && !lead._isEstimate && (
                                 <div style={{ color: theme.textMuted, fontSize: '10px', marginBottom: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {lead.business_name}
                                 </div>

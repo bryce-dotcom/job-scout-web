@@ -27,6 +27,14 @@ const statusColors = {
   'On Hold': '#7d8a7f'
 }
 
+// Distinct, readable palette for per-rep coloring
+const REP_PALETTE = [
+  '#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed',
+  '#db2777', '#0891b2', '#65a30d', '#ea580c', '#4f46e5',
+  '#0d9488', '#b91c1c', '#1d4ed8', '#ca8a04', '#9333ea',
+  '#be185d', '#0e7490', '#4d7c0f', '#c2410c', '#6d28d9'
+]
+
 // Resolve display name based on customer calendar_display preference
 const getJobDisplayName = (job) => {
   const cust = job.customer
@@ -49,6 +57,7 @@ export default function JobCalendar() {
   const isMobile = useIsMobile()
 
   const [dateRange, setDateRange] = useState('all')
+  const [colorBy, setColorBy] = useState('rep')
   const [autoNavigated, setAutoNavigated] = useState(false)
 
   useEffect(() => {
@@ -64,7 +73,7 @@ export default function JobCalendar() {
         const allJobs = []
         let offset = 0
         const pageSize = 1000
-        const selectFields = 'id, job_title, status, start_date, business_unit, customer_name, customer:customers(name, business_name, calendar_display)'
+        const selectFields = 'id, job_title, status, start_date, business_unit, customer_name, salesperson_id, customer:customers(name, business_name, calendar_display), salesperson:employees!jobs_salesperson_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)'
 
         while (true) {
           console.log(`[JobCalendar] Fetching page at offset ${offset}...`)
@@ -161,6 +170,30 @@ export default function JobCalendar() {
     })
     return [...bus].sort()
   }, [filteredJobs])
+
+  // Build a stable color map for each salesperson
+  const repColorMap = useMemo(() => {
+    const map = {}
+    const seen = []
+    filteredJobs.forEach(j => {
+      const repId = j.salesperson?.id || j.salesperson_id
+      const repName = j.salesperson?.name
+      if (repId && !map[repId]) {
+        map[repId] = { name: repName || `Rep ${repId}`, color: REP_PALETTE[seen.length % REP_PALETTE.length] }
+        seen.push(repId)
+      }
+    })
+    return map
+  }, [filteredJobs])
+
+  const getJobColor = (job) => {
+    if (colorBy === 'rep') {
+      const repId = job.salesperson?.id || job.salesperson_id
+      if (repId && repColorMap[repId]) return repColorMap[repId].color
+      return '#9ca3af' // unassigned
+    }
+    return statusColors[job.status] || statusColors['Scheduled']
+  }
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
@@ -351,24 +384,55 @@ export default function JobCalendar() {
         </div>
       </div>
 
-      {/* Legend */}
-      <div style={{
-        display: 'flex',
-        gap: '16px',
-        marginBottom: '16px',
-        flexWrap: 'wrap'
-      }}>
-        {Object.entries(statusColors).map(([status, color]) => (
-          <div key={status} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{
-              width: '12px',
-              height: '12px',
-              borderRadius: '4px',
-              backgroundColor: color
-            }} />
-            <span style={{ fontSize: '13px', color: theme.textSecondary }}>{status}</span>
-          </div>
-        ))}
+      {/* Color By toggle + Legend */}
+      <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: '16px', marginBottom: '16px', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }}>
+        <div style={{ display: 'flex', gap: '2px', backgroundColor: theme.bgCard, borderRadius: '8px', border: `1px solid ${theme.border}`, padding: '2px' }}>
+          {[
+            { id: 'rep', label: 'By Rep' },
+            { id: 'status', label: 'By Status' }
+          ].map(opt => (
+            <button
+              key={opt.id}
+              onClick={() => setColorBy(opt.id)}
+              style={{
+                padding: '4px 12px',
+                fontSize: '12px',
+                fontWeight: colorBy === opt.id ? '600' : '400',
+                backgroundColor: colorBy === opt.id ? theme.accent : 'transparent',
+                color: colorBy === opt.id ? '#fff' : theme.textMuted,
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                minHeight: '32px'
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {colorBy === 'status' ? (
+            Object.entries(statusColors).map(([status, color]) => (
+              <div key={status} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '12px', height: '12px', borderRadius: '4px', backgroundColor: color }} />
+                <span style={{ fontSize: '13px', color: theme.textSecondary }}>{status}</span>
+              </div>
+            ))
+          ) : (
+            <>
+              {Object.values(repColorMap).map(rep => (
+                <div key={rep.name} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ width: '12px', height: '12px', borderRadius: '4px', backgroundColor: rep.color }} />
+                  <span style={{ fontSize: '13px', color: theme.textSecondary }}>{rep.name}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '12px', height: '12px', borderRadius: '4px', backgroundColor: '#9ca3af' }} />
+                <span style={{ fontSize: '13px', color: theme.textSecondary }}>Unassigned</span>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Loading indicator */}
@@ -443,7 +507,7 @@ export default function JobCalendar() {
                           key={job.id}
                           onClick={() => navigate(`/jobs/${job.id}`)}
                           style={{
-                            backgroundColor: statusColors[job.status] || statusColors['Scheduled'],
+                            backgroundColor: getJobColor(job),
                             color: '#ffffff',
                             fontSize: '11px',
                             padding: '4px 6px',

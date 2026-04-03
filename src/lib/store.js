@@ -12,7 +12,7 @@ export const useStore = create(
       companyId: null,
       company: null,
       user: null,
-      isLoading: false,
+      isLoading: true,
       isDeveloper: false,
       isAdmin: false,
 
@@ -637,8 +637,8 @@ export const useStore = create(
       // ========================================
 
       fetchFleet: async () => {
-        const { companyId } = get();
-        if (!companyId) return;
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('freddy-fleet')) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('fleet');
@@ -662,8 +662,8 @@ export const useStore = create(
       },
 
       fetchFleetMaintenance: async () => {
-        const { companyId } = get();
-        if (!companyId) return;
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('freddy-fleet')) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('fleetMaintenance');
@@ -687,8 +687,8 @@ export const useStore = create(
       },
 
       fetchFleetRentals: async () => {
-        const { companyId } = get();
-        if (!companyId) return;
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('freddy-fleet')) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('fleetRentals');
@@ -745,8 +745,8 @@ export const useStore = create(
       // ========================================
 
       fetchLightingAudits: async () => {
-        const { companyId } = get();
-        if (!companyId) return;
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('lenard-lighting')) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('lightingAudits');
@@ -770,8 +770,8 @@ export const useStore = create(
       },
 
       fetchAuditAreas: async () => {
-        const { companyId } = get();
-        if (!companyId) return;
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('lenard-lighting')) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('auditAreas');
@@ -805,8 +805,8 @@ export const useStore = create(
       },
 
       fetchFixtureTypes: async () => {
-        const { companyId } = get();
-        if (!companyId) return;
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('lenard-lighting')) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('fixtureTypes');
@@ -830,8 +830,8 @@ export const useStore = create(
       },
 
       fetchUtilityProviders: async () => {
-        const { companyId } = get();
-        if (!companyId) return;
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('lenard-lighting')) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('utilityProviders');
@@ -855,8 +855,8 @@ export const useStore = create(
       },
 
       fetchUtilityPrograms: async () => {
-        const { companyId } = get();
-        if (!companyId) return;
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('lenard-lighting')) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('utilityPrograms');
@@ -880,8 +880,8 @@ export const useStore = create(
       },
 
       fetchRebateRates: async () => {
-        const { companyId } = get();
-        if (!companyId) return;
+        const { companyId, hasAgent } = get();
+        if (!companyId || !hasAgent('lenard-lighting')) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('rebateRates');
@@ -1278,6 +1278,23 @@ export const useStore = create(
             subscription_status: 'active'
           })
           .select('*, agent:agents(*)')
+          .single();
+
+        if (!error) {
+          await fetchCompanyAgents();
+        }
+
+        return { data, error };
+      },
+
+      dismissAgent: async (companyAgentId) => {
+        const { fetchCompanyAgents } = get();
+
+        const { data, error } = await supabase
+          .from('company_agents')
+          .update({ subscription_status: 'inactive', updated_at: new Date().toISOString() })
+          .eq('id', companyAgentId)
+          .select()
           .single();
 
         if (!error) {
@@ -1808,7 +1825,7 @@ export const useStore = create(
         set(state => ({ lightingAudits: [record, ...state.lightingAudits] }))
         await offlineDb.put('lightingAudits', record)
         await syncQueue.enqueue({ table: 'lightingAudits', operation: 'insert', data: auditData, tempId })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
       updateLightingAudit: async (id, changes) => {
@@ -1816,14 +1833,14 @@ export const useStore = create(
         const full = get().lightingAudits.find(a => String(a.id) === String(id))
         if (full) await offlineDb.put('lightingAudits', full)
         await syncQueue.enqueue({ table: 'lightingAudits', operation: 'update', data: { id, ...changes } })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
       },
       deleteLightingAudit: async (id) => {
         set(state => ({ lightingAudits: state.lightingAudits.filter(a => String(a.id) !== String(id)) }))
         await offlineDb.remove('lightingAudits', id)
         if (!String(id).startsWith('temp_')) {
           await syncQueue.enqueue({ table: 'lightingAudits', operation: 'delete', data: { id } })
-          if (navigator.onLine) syncQueue.processQueue()
+          if (navigator.onLine) await syncQueue.processQueue()
         }
       },
 
@@ -1835,7 +1852,7 @@ export const useStore = create(
         await offlineDb.put('auditAreas', record)
         const parentTempId = typeof areaData.audit_id === 'string' && areaData.audit_id.startsWith('temp_') ? areaData.audit_id : null
         await syncQueue.enqueue({ table: 'auditAreas', operation: 'insert', data: areaData, tempId, parentTempId, parentFkField: 'audit_id' })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
       updateAuditArea: async (id, changes) => {
@@ -1843,14 +1860,14 @@ export const useStore = create(
         const full = get().auditAreas.find(a => String(a.id) === String(id))
         if (full) await offlineDb.put('auditAreas', full)
         await syncQueue.enqueue({ table: 'auditAreas', operation: 'update', data: { id, ...changes } })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
       },
       deleteAuditArea: async (id) => {
         set(state => ({ auditAreas: state.auditAreas.filter(a => String(a.id) !== String(id)) }))
         await offlineDb.remove('auditAreas', id)
         if (!String(id).startsWith('temp_')) {
           await syncQueue.enqueue({ table: 'auditAreas', operation: 'delete', data: { id } })
-          if (navigator.onLine) syncQueue.processQueue()
+          if (navigator.onLine) await syncQueue.processQueue()
         }
       },
 
@@ -1878,7 +1895,7 @@ export const useStore = create(
         set(state => ({ customers: [...state.customers, record] }))
         await offlineDb.put('customers', record)
         await syncQueue.enqueue({ table: 'customers', operation: 'insert', data: custData, tempId })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
       updateCustomer: async (id, changes) => {
@@ -1886,7 +1903,7 @@ export const useStore = create(
         const full = get().customers.find(c => String(c.id) === String(id))
         if (full) await offlineDb.put('customers', full)
         await syncQueue.enqueue({ table: 'customers', operation: 'update', data: { id, ...changes } })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
       },
 
       // --- Leads ---
@@ -1896,7 +1913,7 @@ export const useStore = create(
         set(state => ({ leads: [record, ...state.leads] }))
         await offlineDb.put('leads', record)
         await syncQueue.enqueue({ table: 'leads', operation: 'insert', data: leadData, tempId })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
       updateLead: async (id, changes) => {
@@ -1904,7 +1921,7 @@ export const useStore = create(
         const full = get().leads.find(l => String(l.id) === String(id))
         if (full) await offlineDb.put('leads', full)
         await syncQueue.enqueue({ table: 'leads', operation: 'update', data: { id, ...changes } })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
       },
       deleteLead: async (id) => {
         set(state => ({ leads: state.leads.filter(l => String(l.id) !== String(id)) }))
@@ -1943,7 +1960,7 @@ export const useStore = create(
         await offlineDb.put('salesPipeline', record)
         const parentTempId = typeof pipeData.lead_id === 'string' && pipeData.lead_id.startsWith('temp_') ? pipeData.lead_id : null
         await syncQueue.enqueue({ table: 'salesPipeline', operation: 'insert', data: pipeData, tempId, parentTempId, parentFkField: 'lead_id' })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
       updateSalesPipeline: async (id, changes) => {
@@ -1951,7 +1968,7 @@ export const useStore = create(
         const full = get().salesPipeline.find(p => String(p.id) === String(id))
         if (full) await offlineDb.put('salesPipeline', full)
         await syncQueue.enqueue({ table: 'salesPipeline', operation: 'update', data: { id, ...changes } })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
       },
 
       // --- Quotes ---
@@ -1961,7 +1978,7 @@ export const useStore = create(
         set(state => ({ quotes: [record, ...state.quotes] }))
         await offlineDb.put('quotes', record)
         await syncQueue.enqueue({ table: 'quotes', operation: 'insert', data: quoteData, tempId })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
       updateQuote: async (id, changes) => {
@@ -1969,14 +1986,14 @@ export const useStore = create(
         const full = get().quotes.find(q => String(q.id) === String(id))
         if (full) await offlineDb.put('quotes', full)
         await syncQueue.enqueue({ table: 'quotes', operation: 'update', data: { id, ...changes } })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
       },
       deleteQuote: async (id) => {
         set(state => ({ quotes: state.quotes.filter(q => String(q.id) !== String(id)) }))
         await offlineDb.remove('quotes', id)
         if (!String(id).startsWith('temp_')) {
           await syncQueue.enqueue({ table: 'quotes', operation: 'delete', data: { id } })
-          if (navigator.onLine) syncQueue.processQueue()
+          if (navigator.onLine) await syncQueue.processQueue()
         }
       },
 
@@ -1988,7 +2005,7 @@ export const useStore = create(
         await offlineDb.put('quoteLines', record)
         const parentTempId = typeof lineData.quote_id === 'string' && lineData.quote_id.startsWith('temp_') ? lineData.quote_id : null
         await syncQueue.enqueue({ table: 'quoteLines', operation: 'insert', data: lineData, tempId, parentTempId, parentFkField: 'quote_id' })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
       updateQuoteLine: async (id, changes) => {
@@ -1996,14 +2013,14 @@ export const useStore = create(
         const full = (get().quoteLines || []).find(l => String(l.id) === String(id))
         if (full) await offlineDb.put('quoteLines', full)
         await syncQueue.enqueue({ table: 'quoteLines', operation: 'update', data: { id, ...changes } })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
       },
       deleteQuoteLine: async (id) => {
         set(state => ({ quoteLines: (state.quoteLines || []).filter(l => String(l.id) !== String(id)) }))
         await offlineDb.remove('quoteLines', id)
         if (!String(id).startsWith('temp_')) {
           await syncQueue.enqueue({ table: 'quoteLines', operation: 'delete', data: { id } })
-          if (navigator.onLine) syncQueue.processQueue()
+          if (navigator.onLine) await syncQueue.processQueue()
         }
       },
 
@@ -2014,7 +2031,7 @@ export const useStore = create(
         set(state => ({ appointments: [...state.appointments, record] }))
         await offlineDb.put('appointments', record)
         await syncQueue.enqueue({ table: 'appointments', operation: 'insert', data: apptData, tempId })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
       updateAppointment: async (id, changes) => {
@@ -2022,14 +2039,14 @@ export const useStore = create(
         const full = get().appointments.find(a => String(a.id) === String(id))
         if (full) await offlineDb.put('appointments', full)
         await syncQueue.enqueue({ table: 'appointments', operation: 'update', data: { id, ...changes } })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
       },
       deleteAppointment: async (id) => {
         set(state => ({ appointments: state.appointments.filter(a => String(a.id) !== String(id)) }))
         await offlineDb.remove('appointments', id)
         if (!String(id).startsWith('temp_')) {
           await syncQueue.enqueue({ table: 'appointments', operation: 'delete', data: { id } })
-          if (navigator.onLine) syncQueue.processQueue()
+          if (navigator.onLine) await syncQueue.processQueue()
         }
       },
 
@@ -2040,7 +2057,7 @@ export const useStore = create(
         set(state => ({ jobSections: [...(state.jobSections || []), record] }))
         await offlineDb.put('jobSections', record)
         await syncQueue.enqueue({ table: 'jobSections', operation: 'insert', data: sectionData, tempId })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
       updateJobSection: async (id, changes) => {
@@ -2048,14 +2065,14 @@ export const useStore = create(
         const full = (get().jobSections || []).find(s => String(s.id) === String(id))
         if (full) await offlineDb.put('jobSections', full)
         await syncQueue.enqueue({ table: 'jobSections', operation: 'update', data: { id, ...changes } })
-        if (navigator.onLine) syncQueue.processQueue()
+        if (navigator.onLine) await syncQueue.processQueue()
       },
       deleteJobSection: async (id) => {
         set(state => ({ jobSections: (state.jobSections || []).filter(s => String(s.id) !== String(id)) }))
         await offlineDb.remove('jobSections', id)
         if (!String(id).startsWith('temp_')) {
           await syncQueue.enqueue({ table: 'jobSections', operation: 'delete', data: { id } })
-          if (navigator.onLine) syncQueue.processQueue()
+          if (navigator.onLine) await syncQueue.processQueue()
         }
       },
 
@@ -2116,7 +2133,10 @@ export const useStore = create(
           fetchCategoryRules
         } = get();
 
-        // Fetch core data in parallel — use allSettled so one failure doesn't block all
+        // Phase 1: Fetch agents/companyAgents first so hasAgent() works for gated fetches
+        await Promise.allSettled([fetchAgents(), fetchCompanyAgents()]);
+
+        // Phase 2: Fetch all data in parallel (agent-gated fetches now have companyAgents loaded)
         // Wrap each fetch with a label so we can log which ones are slow/hanging
         const namedFetches = [
           ['employees', fetchEmployees()],
@@ -2150,8 +2170,6 @@ export const useStore = create(
           ['leadPayments', fetchLeadPayments()],
           ['utilityInvoices', fetchUtilityInvoices()],
           ['incentives', fetchIncentives()],
-          ['agents', fetchAgents()],
-          ['companyAgents', fetchCompanyAgents()],
           ['laborRates', fetchLaborRates()],
           ['aiModules', fetchAiModules()],
           ['ccIntegration', fetchCcIntegration()],

@@ -44,5 +44,8 @@ export const toast = {
   },
   warning(message, options = {}) {
     return toastStore.addToast({ type: 'warning', message, ...options })
+  },
+  announcement(title, message, options = {}) {
+    return toastStore.addToast({ type: 'announcement', title, message, duration: 8000, ...options })
   }
 }

@@ -3,9 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, CheckCircle, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Pencil, Trash2, Download, Send, FileText } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
+import { jsPDF } from 'jspdf'
+import { toast } from '../lib/toast'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -24,11 +26,15 @@ export default function UtilityInvoiceDetail() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
+  const company = useStore((state) => state.company)
   const fetchUtilityInvoices = useStore((state) => state.fetchUtilityInvoices)
 
   const [invoice, setInvoice] = useState(null)
+  const [jobLines, setJobLines] = useState([])
+  const [jobData, setJobData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [generatingPdf, setGeneratingPdf] = useState(false)
 
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -62,6 +68,23 @@ export default function UtilityInvoiceDetail() {
 
     if (data) {
       setInvoice(data)
+
+      // Fetch linked job and its line items for product/labor breakdown
+      if (data.job_id) {
+        const { data: jd } = await supabase
+          .from('jobs')
+          .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name)')
+          .eq('id', data.job_id)
+          .single()
+        if (jd) setJobData(jd)
+
+        const { data: lines } = await supabase
+          .from('job_lines')
+          .select('*, item:products_services(id, name, description, unit_price, cost)')
+          .eq('job_id', data.job_id)
+          .order('id')
+        setJobLines(lines || [])
+      }
     }
     setLoading(false)
   }
@@ -133,6 +156,166 @@ export default function UtilityInvoiceDetail() {
       toast.success('Utility incentive deleted')
       await fetchUtilityInvoices()
       navigate('/invoices?type=utility')
+    }
+  }
+
+  // Computed totals — just Material and Labor, no line item detail
+  const projectCost = parseFloat(invoice?.project_cost) || parseFloat(invoice?.amount) || 0
+  const rawProductTotal = jobLines.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
+  const rawLaborTotal = jobLines.reduce((sum, l) => sum + (parseFloat(l.labor_cost) || 0), 0)
+  const hasLaborData = rawLaborTotal > 0
+  // If no labor data on line items, default 70% material / 30% labor
+  const totalBase = rawProductTotal > 0 ? rawProductTotal + rawLaborTotal : projectCost
+  const materialTotal = hasLaborData ? rawProductTotal : Math.round(totalBase * 0.7 * 100) / 100
+  const laborTotal = hasLaborData ? rawLaborTotal : Math.round(totalBase * 0.3 * 100) / 100
+
+  const generateUtilityPDF = () => {
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const margin = 20
+    const rightEdge = pageWidth - margin
+    const contentWidth = pageWidth - margin * 2
+    let y = 20
+
+    // Company header
+    doc.setFontSize(20)
+    doc.setFont('helvetica', 'bold')
+    doc.text(company?.name || 'Company', margin, y)
+    y += 8
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100)
+    if (company?.address) { doc.text(company.address, margin, y); y += 5 }
+    if (company?.phone) { doc.text(company.phone, margin, y); y += 5 }
+    if (company?.owner_email || company?.email) { doc.text(company.owner_email || company.email, margin, y); y += 5 }
+    y += 5
+
+    // Title
+    doc.setTextColor(90, 99, 73)
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.text('UTILITY INVOICE', rightEdge, 20, { align: 'right' })
+    doc.setTextColor(80)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    let iy = 30
+    doc.text(`Invoice #: UTL-${invoice.id}`, rightEdge, iy, { align: 'right' }); iy += 5
+    doc.text(`Date: ${formatDate(invoice.created_at)}`, rightEdge, iy, { align: 'right' }); iy += 5
+    doc.text(`Utility: ${invoice.utility_name || '-'}`, rightEdge, iy, { align: 'right' })
+
+    // Divider
+    doc.setDrawColor(214, 205, 184)
+    doc.line(margin, y, rightEdge, y)
+    y += 10
+
+    // Customer info
+    doc.setTextColor(0)
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Customer:', margin, y)
+    y += 6
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    const custName = invoice.customer_name || jobData?.customer?.name || '-'
+    doc.text(custName, margin, y); y += 5
+    if (jobData?.customer?.address) { doc.text(jobData.customer.address, margin, y); y += 5 }
+    if (jobData?.customer?.phone) { doc.text(jobData.customer.phone, margin, y); y += 5 }
+    y += 8
+
+    // Cost breakdown table — Material and Labor only
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Cost Breakdown', margin, y)
+    y += 8
+
+    // Table header
+    doc.setFillColor(247, 245, 239)
+    doc.rect(margin, y - 4, contentWidth, 8, 'F')
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(80)
+    doc.text('Description', margin + 2, y)
+    doc.text('Amount', rightEdge - 2, y, { align: 'right' })
+    y += 8
+
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0)
+    doc.setFontSize(10)
+    doc.text('Material', margin + 2, y)
+    doc.text(formatCurrency(materialTotal), rightEdge - 2, y, { align: 'right' })
+    y += 7
+    doc.text('Labor', margin + 2, y)
+    doc.text(formatCurrency(laborTotal), rightEdge - 2, y, { align: 'right' })
+    y += 4
+
+    // Divider
+    doc.setDrawColor(214, 205, 184)
+    doc.line(margin, y, rightEdge, y)
+    y += 10
+
+    // Financial summary
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0)
+
+    const summaryX = margin + 100
+    const valX = rightEdge
+
+    doc.setFont('helvetica', 'bold')
+    doc.text('Project Cost:', summaryX, y)
+    doc.text(formatCurrency(invoice.project_cost || invoice.amount || (materialTotal + laborTotal)), valX, y, { align: 'right' }); y += 6
+
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(212, 148, 10)
+    doc.text('Utility Incentive:', summaryX, y)
+    doc.text(`- ${formatCurrency(invoice.incentive_amount)}`, valX, y, { align: 'right' }); y += 8
+
+    doc.setDrawColor(214, 205, 184)
+    doc.line(summaryX, y - 2, rightEdge, y - 2)
+
+    doc.setTextColor(0)
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Net Cost:', summaryX, y + 4)
+    doc.text(formatCurrency(invoice.net_cost), valX, y + 4, { align: 'right' })
+    y += 14
+
+    // Notes
+    if (invoice.notes) {
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(100)
+      doc.text('Notes:', margin, y); y += 5
+      const noteLines = doc.splitTextToSize(invoice.notes, contentWidth)
+      for (const line of noteLines) {
+        doc.text(line, margin, y); y += 5
+      }
+    }
+
+    return doc
+  }
+
+  const handleDownloadPDF = () => {
+    setGeneratingPdf(true)
+    try {
+      const doc = generateUtilityPDF()
+      doc.save(`UTL-${invoice.id}_${invoice.customer_name || 'utility'}.pdf`)
+      toast.success('PDF downloaded')
+    } catch (err) {
+      toast.error('Failed to generate PDF: ' + err.message)
+    }
+    setGeneratingPdf(false)
+  }
+
+  const handlePreviewPDF = () => {
+    try {
+      const doc = generateUtilityPDF()
+      const blob = doc.output('blob')
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+    } catch (err) {
+      toast.error('Failed to preview PDF: ' + err.message)
     }
   }
 
@@ -315,6 +498,35 @@ export default function UtilityInvoiceDetail() {
             </div>
           )}
 
+          {/* Cost Breakdown — Material & Labor */}
+          {(materialTotal > 0 || laborTotal > 0) && (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              padding: '20px'
+            }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>
+                Cost Breakdown
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                  <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Material</span>
+                  <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{formatCurrency(materialTotal)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                  <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Labor</span>
+                  <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{formatCurrency(laborTotal)}</span>
+                </div>
+                {!hasLaborData && (
+                  <p style={{ fontSize: '11px', color: theme.textMuted, fontStyle: 'italic', margin: 0 }}>
+                    Estimated at 70% material / 30% labor
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Notes */}
           <div style={{
             backgroundColor: theme.bgCard,
@@ -394,6 +606,19 @@ export default function UtilityInvoiceDetail() {
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {(materialTotal > 0 || laborTotal > 0) && (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                    <span style={{ color: theme.textSecondary }}>Material</span>
+                    <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(materialTotal)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                    <span style={{ color: theme.textSecondary }}>Labor</span>
+                    <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(laborTotal)}</span>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: theme.border }} />
+                </>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
                 <span style={{ color: theme.textSecondary }}>Project Cost</span>
                 {isEditing ? (
@@ -480,6 +705,25 @@ export default function UtilityInvoiceDetail() {
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={handlePreviewPDF}
+                style={actionBtnStyle(theme.accentBg, theme.accent)}
+              >
+                <FileText size={18} />
+                Preview PDF
+              </button>
+
+              <button
+                onClick={handleDownloadPDF}
+                disabled={generatingPdf}
+                style={actionBtnStyle(theme.accentBg, theme.accent)}
+              >
+                <Download size={18} />
+                {generatingPdf ? 'Generating...' : 'Download PDF'}
+              </button>
+
+              <div style={{ borderTop: `1px solid ${theme.border}`, margin: '2px 0' }} />
+
               {invoice.payment_status !== 'Paid' && (
                 <button
                   onClick={markAsPaid}

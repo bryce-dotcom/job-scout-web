@@ -40,6 +40,63 @@ const emptyExpense = {
   notes: ''
 }
 
+// Resolve signed URL for receipt images in private bucket
+const useReceiptUrl = (expense) => {
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    // Determine storage path: use receipt_storage_path, or extract from receipt_url
+    let storagePath = expense?.receipt_storage_path
+    if (!storagePath && expense?.receipt_url) {
+      const match = expense.receipt_url.match(/\/storage\/v1\/object\/public\/project-documents\/(.+)/)
+      if (match) storagePath = decodeURIComponent(match[1])
+    }
+    if (storagePath) {
+      supabase.storage.from('project-documents')
+        .createSignedUrl(storagePath, 3600)
+        .then(({ data }) => { if (!cancelled && data?.signedUrl) setUrl(data.signedUrl) })
+    } else {
+      setUrl(null)
+    }
+    return () => { cancelled = true }
+  }, [expense?.id, expense?.receipt_storage_path, expense?.receipt_url])
+  return url
+}
+
+// Wrapper to render a receipt thumbnail with signed URL
+const ReceiptCell = ({ expense, theme, onPreview }) => {
+  const url = useReceiptUrl(expense)
+  if (!url) return (
+    <div style={{ width: '40px', height: '40px', borderRadius: '6px', border: `1px dashed ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg }}>
+      <Receipt size={14} color={theme.textMuted} />
+    </div>
+  )
+  return (
+    <button
+      onClick={() => onPreview(url)}
+      style={{ width: '40px', height: '40px', borderRadius: '6px', border: `1px solid ${theme.border}`, padding: 0, cursor: 'pointer', overflow: 'hidden', backgroundColor: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <img src={url} alt="Receipt" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.style.display = 'none' }} />
+    </button>
+  )
+}
+
+// Preview button for receipt in edit modal
+const EditReceiptPreview = ({ expense, fallbackUrl, theme, onPreview }) => {
+  const signedUrl = useReceiptUrl(expense)
+  const url = signedUrl || fallbackUrl
+  if (!url) return null
+  return (
+    <button
+      type="button"
+      onClick={() => onPreview(url)}
+      style={{ width: '64px', height: '64px', borderRadius: '8px', border: `1px solid ${theme.border}`, padding: 0, cursor: 'pointer', overflow: 'hidden', backgroundColor: theme.bg, flexShrink: 0 }}
+    >
+      <img src={url} alt="Receipt" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+    </button>
+  )
+}
+
 export default function Expenses() {
   const navigate = useNavigate()
   const user = useStore((state) => state.user)
@@ -440,38 +497,12 @@ export default function Expenses() {
             <tbody>
               {filteredExpenses.map((expense) => {
                 const linked = getLinkedEntity(expense)
-                const receiptUrl = expense.receipt_url
                 return (
                   <tr key={expense.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
                     {/* Receipt thumbnail */}
                     <td style={{ padding: '8px 10px', width: '56px' }}>
-                      {receiptUrl ? (
-                        <button
-                          onClick={() => setPreviewImage(receiptUrl)}
-                          style={{
-                            width: '40px',
-                            height: '40px',
-                            borderRadius: '6px',
-                            border: `1px solid ${theme.border}`,
-                            padding: 0,
-                            cursor: 'pointer',
-                            overflow: 'hidden',
-                            backgroundColor: theme.bg,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          <img
-                            src={receiptUrl}
-                            alt="Receipt"
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }}
-                          />
-                          <div style={{ display: 'none', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
-                            <Image size={16} color={theme.textMuted} />
-                          </div>
-                        </button>
+                      {(expense.receipt_storage_path || expense.receipt_url) ? (
+                        <ReceiptCell expense={expense} theme={theme} onPreview={setPreviewImage} />
                       ) : (
                         <div style={{
                           width: '40px',
@@ -694,28 +725,8 @@ export default function Expenses() {
                 <div>
                   <label style={labelStyle}>Receipt Photo</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    {(editingExpense?.receipt_url || formData._receipt_url) ? (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewImage(editingExpense?.receipt_url || formData._receipt_url)}
-                        style={{
-                          width: '64px',
-                          height: '64px',
-                          borderRadius: '8px',
-                          border: `1px solid ${theme.border}`,
-                          padding: 0,
-                          cursor: 'pointer',
-                          overflow: 'hidden',
-                          backgroundColor: theme.bg,
-                          flexShrink: 0
-                        }}
-                      >
-                        <img
-                          src={editingExpense?.receipt_url || formData._receipt_url}
-                          alt="Receipt"
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      </button>
+                    {(editingExpense?.receipt_storage_path || editingExpense?.receipt_url || formData._receipt_url) ? (
+                      <EditReceiptPreview expense={editingExpense} fallbackUrl={formData._receipt_url} theme={theme} onPreview={setPreviewImage} />
                     ) : (
                       <div style={{
                         width: '64px',

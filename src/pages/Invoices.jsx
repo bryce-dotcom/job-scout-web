@@ -881,7 +881,7 @@ export default function Invoices() {
         marginBottom: '24px',
         flexWrap: 'wrap'
       }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: isMobile ? '100%' : '200px' }}>
           <Search size={18} style={{
             position: 'absolute',
             left: '12px',
@@ -900,7 +900,7 @@ export default function Invoices() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ ...inputStyle, width: 'auto', minWidth: '140px' }}
+          style={{ ...inputStyle, width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'auto' : '140px' }}
         >
           <option value="all">All Status</option>
           <option value="Pending">Pending</option>

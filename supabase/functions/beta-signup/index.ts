@@ -214,7 +214,7 @@ async function seedSampleData(supabase: any, companyId: number, ownerEmail: stri
         customer_id: insertedCustomers[0].id,
         status: 'In Progress',
         start_date: now.toISOString().split('T')[0],
-        total_amount: 12500.00,
+        job_total: 12500.00,
         time_allotted_hours: 40,
         time_tracked_hours: 16
       },
@@ -224,7 +224,7 @@ async function seedSampleData(supabase: any, companyId: number, ownerEmail: stri
         customer_id: insertedCustomers[1].id,
         status: 'Scheduled',
         start_date: new Date(now.getTime() + 7 * 86400000).toISOString().split('T')[0],
-        total_amount: 4800.00,
+        job_total: 4800.00,
         time_allotted_hours: 16
       },
       {
@@ -234,7 +234,7 @@ async function seedSampleData(supabase: any, companyId: number, ownerEmail: stri
         status: 'Completed',
         start_date: new Date(now.getTime() - 14 * 86400000).toISOString().split('T')[0],
         end_date: new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0],
-        total_amount: 8200.00,
+        job_total: 8200.00,
         time_allotted_hours: 24,
         time_tracked_hours: 22
       }

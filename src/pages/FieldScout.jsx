@@ -181,9 +181,15 @@ export default function FieldScout() {
   const todaysJobs = jobs.filter(j => {
     if (!j.start_date) return false
     if (new Date(j.start_date).toDateString() !== todayStr) return false
-    // Show if assigned to this employee, or unassigned
-    if (!j.assigned_team) return true
-    return j.assigned_team.toLowerCase().includes(employeeName.toLowerCase())
+    // Assigned directly to this employee via job_lead_id
+    if (currentEmployee?.id && j.job_lead_id === currentEmployee.id) return true
+    // Assigned as salesperson or PM
+    if (currentEmployee?.id && (j.salesperson_id === currentEmployee.id || j.pm_id === currentEmployee.id)) return true
+    // No assignment at all — show to everyone
+    if (!j.assigned_team && !j.job_lead_id) return true
+    // Assigned via team text match
+    if (j.assigned_team && employeeName && j.assigned_team.toLowerCase().includes(employeeName.toLowerCase())) return true
+    return false
   })
 
   // Sort: working first, then upcoming (Scheduled/In Progress), then completed
@@ -2452,7 +2458,6 @@ export default function FieldScout() {
                   <span style={{ fontSize: '18px', fontWeight: '700', color: '#166534' }}>Total</span>
                   <span style={{ fontSize: '24px', fontWeight: '800', color: '#166534' }}>
                     ${parseFloat(
-                      invoiceData.invoice?.total_amount ||
                       invoiceData.invoice?.amount ||
                       invoiceJob.job_total ||
                       invoiceData.lines.reduce((sum, l) => sum + parseFloat(l.total || l.amount || (l.quantity || 1) * (l.unit_price || l.price || 0)), 0)
@@ -2467,7 +2472,7 @@ export default function FieldScout() {
                       setInvoiceJob(null); setInvoiceData(null)
                       setPaymentJob(invoiceJob)
                       setPaymentForm({
-                        amount: String(invoiceData.invoice?.total_amount || invoiceData.invoice?.amount || invoiceJob.job_total || invoiceData.lines.reduce((sum, l) => sum + parseFloat(l.total || l.amount || (l.quantity || 1) * (l.unit_price || l.price || 0)), 0)),
+                        amount: String(invoiceData.invoice?.amount || invoiceJob.job_total || invoiceData.lines.reduce((sum, l) => sum + parseFloat(l.total || l.amount || (l.quantity || 1) * (l.unit_price || l.price || 0)), 0)),
                         method: 'Card', reference: '', notes: ''
                       })
                       setPaymentSuccess(false)

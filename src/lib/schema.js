@@ -173,7 +173,7 @@ export const QUERIES = {
   appointments: '*, lead:leads!lead_id(id, customer_name, phone, address, service_type), customer:customers!customer_id(id, name, business_name, calendar_display), employee:employees!employee_id(id, name), setter:employees!setter_id(id, name), salesperson:employees!salesperson_id(id, name), lead_owner:employees!lead_owner_id(id, name)',
   quotes: '*, lead:leads!lead_id(id, customer_name), customer:customers!customer_id(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name)',
   quoteLines: '*, item:products_services(id, name, description)',
-  jobs: '*, customer:customers!customer_id(id, name, email, phone, address, business_name, calendar_display), salesperson:employees!salesperson_id(id, name)',
+  jobs: '*, customer:customers!customer_id(id, name, email, phone, address, business_name, calendar_display), salesperson:employees!salesperson_id(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)',
   jobLines: '*, item:products_services(id, name, description)',
   invoices: '*, customer:customers!customer_id(id, name), job:jobs!job_id(id, job_id, job_title)',
   invoiceLines: '*, item:products_services(id, name)',

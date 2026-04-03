@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Truck, Wrench, Calendar, Plus, AlertTriangle, DollarSign, Clock, Settings } from 'lucide-react'
+import { ArrowLeft, Truck, Wrench, Calendar, Plus, AlertTriangle, DollarSign, Clock, Settings, MapPin, Wifi, WifiOff, Fuel, Battery, Gauge, Link2, Unlink, Lock } from 'lucide-react'
 
 // Light theme fallback
 const defaultTheme = {
@@ -83,6 +83,14 @@ export default function FleetDetail() {
 
   const [newMileage, setNewMileage] = useState('')
 
+  // GPS Tracking state
+  const getCompanyAgent = useStore((state) => state.getCompanyAgent)
+  const hasAgent = useStore((state) => state.hasAgent)
+  const [watchdogDevices, setWatchdogDevices] = useState([])
+  const [gpsLoading, setGpsLoading] = useState(false)
+  const [gpsLiveData, setGpsLiveData] = useState(null)
+  const [linkingDevice, setLinkingDevice] = useState(false)
+
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -97,6 +105,93 @@ export default function FleetDetail() {
     fetchFleetMaintenance()
     fetchFleetRentals()
   }, [companyId, navigate, fetchFleet, fetchFleetMaintenance, fetchFleetRentals])
+
+  // Fetch GPS devices and live data
+  const freddyAgent = getCompanyAgent('freddy-fleet')
+  const authToken = freddyAgent?.settings?.watchdog_auth_token
+  const trackerSlots = freddyAgent?.settings?.tracker_slots || 0
+  const linkedDevices = freddyAgent?.settings?.linked_devices || []
+
+  useEffect(() => {
+    if (!authToken) return
+    fetchWatchdogDevices()
+  }, [authToken])
+
+  const fetchWatchdogDevices = async () => {
+    if (!authToken) return
+    setGpsLoading(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('watchdog-proxy', {
+        body: { action: 'devices', auth_token: authToken }
+      })
+      if (!error && data) {
+        const devices = Array.isArray(data) ? data : data?.devices || data?.data || []
+        setWatchdogDevices(devices)
+      }
+    } catch (e) {
+      console.error('Error fetching watchdog devices:', e)
+    } finally {
+      setGpsLoading(false)
+    }
+  }
+
+  // Fetch live GPS data for this asset's linked device
+  useEffect(() => {
+    if (!authToken || !fleet.length) return
+    const currentAsset = fleet.find(a => a.id === parseInt(id))
+    if (!currentAsset?.gps_device_id) return
+
+    const device = watchdogDevices.find(d =>
+      String(d.id) === String(currentAsset.gps_device_id) ||
+      String(d.nickname) === String(currentAsset.gps_device_id)
+    )
+    if (device) setGpsLiveData(device)
+  }, [watchdogDevices, fleet, id])
+
+  const handleLinkDevice = async (deviceId) => {
+    if (!deviceId) return
+    // Check tracker slot limit
+    if (linkedDevices.length >= trackerSlots) {
+      alert(`All ${trackerSlots} tracker slots are in use. Purchase more slots in Freddy Settings ($8/mo each).`)
+      return
+    }
+    setLinkingDevice(true)
+    try {
+      // Update fleet record with GPS device ID
+      await supabase.from('fleet').update({ gps_device_id: deviceId }).eq('id', parseInt(id))
+      // Update linked devices in company agent settings
+      const newLinked = [...linkedDevices, deviceId]
+      await supabase.from('company_agents')
+        .update({ settings: { ...freddyAgent.settings, linked_devices: newLinked } })
+        .eq('id', freddyAgent.id)
+      fetchFleet()
+      fetchWatchdogDevices()
+    } catch (e) {
+      console.error('Error linking device:', e)
+    } finally {
+      setLinkingDevice(false)
+    }
+  }
+
+  const handleUnlinkDevice = async () => {
+    setLinkingDevice(true)
+    try {
+      const currentAsset = fleet.find(a => a.id === parseInt(id))
+      const deviceId = currentAsset?.gps_device_id
+      await supabase.from('fleet').update({ gps_device_id: null }).eq('id', parseInt(id))
+      // Remove from linked devices
+      const newLinked = linkedDevices.filter(d => String(d) !== String(deviceId))
+      await supabase.from('company_agents')
+        .update({ settings: { ...freddyAgent.settings, linked_devices: newLinked } })
+        .eq('id', freddyAgent.id)
+      setGpsLiveData(null)
+      fetchFleet()
+    } catch (e) {
+      console.error('Error unlinking device:', e)
+    } finally {
+      setLinkingDevice(false)
+    }
+  }
 
   const asset = fleet.find(a => a.id === parseInt(id))
 
@@ -513,6 +608,171 @@ export default function FleetDetail() {
           </button>
         ))}
       </div>
+
+      {/* GPS Tracking Section */}
+      {hasAgent('freddy-fleet') && authToken && (
+        <div style={{
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`,
+          padding: '20px',
+          marginBottom: '24px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <MapPin size={20} style={{ color: theme.accent }} />
+              <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0 }}>GPS Tracking</h2>
+            </div>
+            <div style={{ fontSize: '12px', color: theme.textMuted }}>
+              {linkedDevices.length}/{trackerSlots} slots used
+            </div>
+          </div>
+
+          {asset.gps_device_id && gpsLiveData ? (
+            /* Linked device — show live data */
+            <div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+                gap: '12px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {gpsLiveData.is_online ? (
+                    <Wifi size={16} style={{ color: '#22c55e' }} />
+                  ) : (
+                    <WifiOff size={16} style={{ color: '#7d8a7f' }} />
+                  )}
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Status</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: gpsLiveData.is_online ? '#22c55e' : theme.textMuted }}>
+                      {gpsLiveData.engine_on ? 'Engine On' : gpsLiveData.is_online ? 'Online' : 'Offline'}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Gauge size={16} style={{ color: theme.accent }} />
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Speed</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
+                      {gpsLiveData.last_speed || 0} mph
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Fuel size={16} style={{ color: gpsLiveData.fuel_low ? '#ef4444' : theme.accent }} />
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Fuel</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: gpsLiveData.fuel_low ? '#ef4444' : theme.text }}>
+                      {gpsLiveData.fuel_percent != null ? `${gpsLiveData.fuel_percent}%` : '—'}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Battery size={16} style={{ color: theme.accent }} />
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Battery</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
+                      {gpsLiveData.battery_percent != null ? `${gpsLiveData.battery_percent}%` : '—'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '12px' }}>
+                <MapPin size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                {gpsLiveData.last_address || 'Location unavailable'}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                  Updated: {gpsLiveData.location_last_updated ? new Date(gpsLiveData.location_last_updated).toLocaleString() : '—'}
+                  {gpsLiveData.total_miles != null && ` · ${parseFloat(gpsLiveData.total_miles).toLocaleString()} miles`}
+                </div>
+                <button
+                  onClick={handleUnlinkDevice}
+                  disabled={linkingDevice}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    padding: '6px 12px', background: 'rgba(239,68,68,0.08)',
+                    color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)',
+                    borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
+                  }}
+                >
+                  <Unlink size={12} /> Unlink Tracker
+                </button>
+              </div>
+            </div>
+          ) : asset.gps_device_id && !gpsLiveData ? (
+            /* Linked but no data yet */
+            <div style={{ textAlign: 'center', padding: '16px', color: theme.textMuted, fontSize: '14px' }}>
+              {gpsLoading ? 'Loading GPS data...' : 'GPS device linked but no data received yet.'}
+            </div>
+          ) : (
+            /* Not linked — show device picker */
+            <div>
+              {linkedDevices.length >= trackerSlots ? (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '12px',
+                  padding: '16px', background: 'rgba(245,158,11,0.08)',
+                  borderRadius: '8px', border: '1px solid rgba(245,158,11,0.2)'
+                }}>
+                  <Lock size={20} style={{ color: '#f59e0b' }} />
+                  <div>
+                    <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>All tracker slots used</div>
+                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                      Purchase more slots in Freddy Settings ($8/mo each) to link this vehicle.
+                    </div>
+                  </div>
+                </div>
+              ) : gpsLoading ? (
+                <div style={{ textAlign: 'center', padding: '16px', color: theme.textMuted }}>
+                  Loading available devices...
+                </div>
+              ) : watchdogDevices.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '16px', color: theme.textMuted, fontSize: '14px' }}>
+                  No GPS devices found. Make sure your Moto Watchdog trackers are set up.
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '12px' }}>
+                    Select a GPS tracker to link to this vehicle:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {watchdogDevices
+                      .filter(d => !linkedDevices.includes(String(d.id)))
+                      .map(device => (
+                        <button
+                          key={device.id}
+                          onClick={() => handleLinkDevice(String(device.id))}
+                          disabled={linkingDevice}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '12px 16px', background: theme.bg,
+                            border: `1px solid ${theme.border}`, borderRadius: '8px',
+                            cursor: 'pointer', textAlign: 'left',
+                            opacity: linkingDevice ? 0.6 : 1
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
+                              {device.nickname || `Device ${device.id}`}
+                            </div>
+                            <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                              {[device.make, device.model, device.year].filter(Boolean).join(' ') || 'GPS Tracker'}
+                              {device.is_online ? ' · Online' : ' · Offline'}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: theme.accent, fontSize: '13px', fontWeight: '500' }}>
+                            <Link2 size={14} /> Link
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{

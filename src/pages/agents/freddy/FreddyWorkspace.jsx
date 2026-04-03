@@ -4,8 +4,13 @@ import AgentHeader from '../../../components/AgentHeader';
 
 const FREDDY_TABS = [
   { path: '/agents/freddy', label: 'Fleet', icon: 'Truck', end: true },
+  { path: '/agents/freddy/tracking', label: 'Tracking', icon: 'MapPin' },
+  { path: '/agents/freddy/trips', label: 'Trips', icon: 'Route' },
+  { path: '/agents/freddy/costs', label: 'Costs', icon: 'DollarSign' },
+  { path: '/agents/freddy/drivers', label: 'Drivers', icon: 'UserCheck' },
+  { path: '/agents/freddy/alerts', label: 'Alerts', icon: 'Bell' },
   { path: '/agents/freddy/calendar', label: 'Calendar', icon: 'Calendar' },
-  { path: '/agents/freddy/inventory', label: 'Inventory', icon: 'Package' },
+  { path: '/agents/freddy/settings', label: 'Settings', icon: 'Settings' },
 ];
 
 export default function FreddyWorkspace() {

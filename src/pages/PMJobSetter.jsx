@@ -13,6 +13,7 @@ import {
   Palette, Edit2, Layers, ChevronUp, MessageSquare, Mail, Phone, ExternalLink
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import { companyNotify } from '../lib/companyNotify'
 
 // Default calendar colors for visual distinction
 const calendarColors = [
@@ -1236,6 +1237,21 @@ export default function PMJobSetter() {
         .from('jobs')
         .update(updateData)
         .eq('id', draggedJob.id)
+
+      // Send company-wide notification when job is completed
+      if (statusId === 'Complete' || statusId === 'Completed') {
+        const customerName = draggedJob.customer?.name || draggedJob.customer_name || 'Unknown'
+        const amount = parseFloat(draggedJob.job_total) || 0
+        const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
+        companyNotify({
+          companyId,
+          type: 'job_completed',
+          title: 'Job Completed!',
+          message: `${customerName}${amountStr} (${draggedJob.job_id || ''})`,
+          metadata: { job_id: draggedJob.id, customer_name: customerName, amount },
+          createdBy: user?.id
+        })
+      }
 
       // Auto-create invoice when job is marked Completed
       if (statusId === 'Complete' || statusId === 'Completed') {

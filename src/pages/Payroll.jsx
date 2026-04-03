@@ -6,9 +6,9 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin, isManager as checkManager } from '../lib/accessControl'
 import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
-  ChevronRight, ChevronDown, AlertTriangle, TrendingUp, Zap,
+  ChevronRight, ChevronDown, ChevronLeft, AlertTriangle, TrendingUp, Zap,
   Award, Filter, ArrowLeft, Eye, Briefcase, MapPin, FileText,
-  Edit3, Save, Map
+  Edit3, Save, Map, Plus, Minus, Printer, Mail, Send
 } from 'lucide-react'
 import LocationTrailModal from '../components/LocationTrailModal'
 
@@ -48,6 +48,13 @@ export default function Payroll() {
   const [editingEntry, setEditingEntry] = useState(null) // { id, clock_in, clock_out, reason }
   const [savingEntry, setSavingEntry] = useState(false)
   const [locationTrailEntry, setLocationTrailEntry] = useState(null) // entry to show on map
+  const [periodOffset, setPeriodOffset] = useState(0) // 0 = current, -1 = previous, etc.
+  const [adjustments, setAdjustments] = useState([])
+  const [showAddTimeModal, setShowAddTimeModal] = useState(null) // employee object
+  const [showAddCommissionModal, setShowAddCommissionModal] = useState(null) // employee object
+  const [showAddAdjustmentModal, setShowAddAdjustmentModal] = useState(null) // { employee, type: 'deduction'|'addition' }
+  const [showCheckStub, setShowCheckStub] = useState(null) // employee object
+  const [savingModal, setSavingModal] = useState(false)
 
   // Payroll settings from settings table
   const [payrollConfig, setPayrollConfig] = useState({
@@ -74,7 +81,7 @@ export default function Payroll() {
       loadPayrollConfig()
       fetchData()
     }
-  }, [companyId])
+  }, [companyId, periodOffset])
 
   // Sync company pay settings into local config
   useEffect(() => {
@@ -196,7 +203,10 @@ export default function Payroll() {
       const { periodStart, periodEnd } = getCurrentPeriod()
 
       // Parallel fetches for all data
-      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes] = await Promise.all([
+      const periodStartStr = periodStart.toISOString().split('T')[0]
+      const periodEndStr = periodEnd.toISOString().split('T')[0]
+
+      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes] = await Promise.all([
         // Time clock entries for current period
         supabase
           .from('time_clock')
@@ -227,8 +237,8 @@ export default function Payroll() {
           .from('payments')
           .select('*')
           .eq('company_id', companyId)
-          .gte('date', periodStart.toISOString().split('T')[0])
-          .lte('date', periodEnd.toISOString().split('T')[0]),
+          .gte('date', periodStartStr)
+          .lte('date', periodEndStr),
 
         // All invoices (need for commission chain)
         supabase
@@ -248,7 +258,14 @@ export default function Payroll() {
           .select('*, employee:employees(name, email)')
           .eq('company_id', companyId)
           .eq('status', 'pending')
-          .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false }),
+
+        // Payroll adjustments for this period (matching period OR recurring)
+        supabase
+          .from('payroll_adjustments')
+          .select('*')
+          .eq('company_id', companyId)
+          .or(`and(pay_period_start.eq.${periodStartStr},pay_period_end.eq.${periodEndStr}),recurring.eq.true`)
       ])
 
       setTimeEntries(entriesRes.data || [])
@@ -258,6 +275,7 @@ export default function Payroll() {
       setInvoices(invoicesRes.data || [])
       setJobs(jobsRes.data || [])
       setTimeOffRequests(requestsRes.data || [])
+      setAdjustments(adjRes.data || [])
     } catch (err) {
       console.error('Error:', err)
     } finally {
@@ -277,6 +295,11 @@ export default function Payroll() {
       periodStart.setDate(today.getDate() - (day === 0 ? 6 : day - 1))
       periodEnd = new Date(periodStart)
       periodEnd.setDate(periodStart.getDate() + 6)
+      // Apply offset
+      if (periodOffset !== 0) {
+        periodStart.setDate(periodStart.getDate() + periodOffset * 7)
+        periodEnd.setDate(periodEnd.getDate() + periodOffset * 7)
+      }
     } else if (frequency === 'bi-weekly' || frequency === 'semi-monthly') {
       if (today.getDate() <= 15) {
         periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
@@ -285,9 +308,40 @@ export default function Payroll() {
         periodStart = new Date(today.getFullYear(), today.getMonth(), 16)
         periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
       }
+      // Apply offset (each offset = one half-month period)
+      if (periodOffset !== 0) {
+        let m = periodStart.getMonth()
+        let y = periodStart.getFullYear()
+        let isFirstHalf = periodStart.getDate() === 1
+        let steps = Math.abs(periodOffset)
+        let dir = periodOffset > 0 ? 1 : -1
+        for (let i = 0; i < steps; i++) {
+          if (dir > 0) {
+            if (isFirstHalf) { isFirstHalf = false }
+            else { isFirstHalf = true; m++ }
+          } else {
+            if (!isFirstHalf) { isFirstHalf = true }
+            else { isFirstHalf = false; m-- }
+          }
+          if (m > 11) { m = 0; y++ }
+          if (m < 0) { m = 11; y-- }
+        }
+        if (isFirstHalf) {
+          periodStart = new Date(y, m, 1)
+          periodEnd = new Date(y, m, 15)
+        } else {
+          periodStart = new Date(y, m, 16)
+          periodEnd = new Date(y, m + 1, 0)
+        }
+      }
     } else {
       periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
       periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      // Apply offset (each offset = one month)
+      if (periodOffset !== 0) {
+        periodStart = new Date(today.getFullYear(), today.getMonth() + periodOffset, 1)
+        periodEnd = new Date(today.getFullYear(), today.getMonth() + periodOffset + 1, 0)
+      }
     }
 
     periodStart.setHours(0, 0, 0, 0)
@@ -606,6 +660,12 @@ export default function Payroll() {
 
     const grossPay = hourlyPay + salaryPay + commissionPay + efficiencyBonus.bonus
 
+    // Payroll adjustments
+    const empAdjustments = adjustments.filter(a => a.employee_id === employee.id)
+    const totalAdditions = empAdjustments.filter(a => a.type === 'addition').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
+    const totalDeductions = empAdjustments.filter(a => a.type === 'deduction').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
+    const netPay = grossPay + totalAdditions - totalDeductions
+
     return {
       hourlyPay,
       salaryPay,
@@ -617,6 +677,10 @@ export default function Payroll() {
       leadCommissions: leadComm,
       efficiencyBonus,
       grossPay: Math.round(grossPay * 100) / 100,
+      totalAdditions: Math.round(totalAdditions * 100) / 100,
+      totalDeductions: Math.round(totalDeductions * 100) / 100,
+      netPay: Math.round(netPay * 100) / 100,
+      adjustments: empAdjustments,
     }
   }
 
@@ -632,7 +696,7 @@ export default function Payroll() {
       data[emp.id] = calculateFullPay(emp)
     })
     return data
-  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leadCommissions, payrollConfig, skillLevelSettings])
+  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leadCommissions, payrollConfig, skillLevelSettings, adjustments])
 
   const totalPayroll = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),
@@ -694,6 +758,84 @@ export default function Payroll() {
     } catch (err) { alert('Error: ' + err.message) }
   }
 
+  // Add manual time entry
+  const handleAddTimeEntry = async (formData) => {
+    setSavingModal(true)
+    try {
+      const clockIn = new Date(formData.date + 'T' + formData.startTime)
+      const clockOut = new Date(formData.date + 'T' + formData.endTime)
+      const totalHours = Math.round((clockOut - clockIn) / 36e5 * 100) / 100
+      if (totalHours <= 0) { alert('End time must be after start time'); setSavingModal(false); return }
+      const adminEmp = employees.find(e => e.email === user?.email)
+      const { error } = await supabase.from('time_clock').insert({
+        company_id: companyId,
+        employee_id: formData.employeeId,
+        clock_in: clockIn.toISOString(),
+        clock_out: clockOut.toISOString(),
+        total_hours: totalHours,
+        adjusted_by: adminEmp?.id || null,
+        adjusted_at: new Date().toISOString(),
+        adjustment_reason: formData.reason || 'Manual entry by admin',
+      })
+      if (error) throw error
+      setShowAddTimeModal(null)
+      await fetchData()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setSavingModal(false) }
+  }
+
+  // Add manual commission
+  const handleAddCommission = async (formData) => {
+    setSavingModal(true)
+    try {
+      const { error } = await supabase.from('lead_commissions').insert({
+        company_id: companyId,
+        employee_id: formData.employeeId,
+        amount: parseFloat(formData.amount) || 0,
+        commission_type: formData.commissionType || 'manual',
+        description: formData.description || 'Manual commission entry',
+        created_at: new Date().toISOString(),
+      })
+      if (error) throw error
+      setShowAddCommissionModal(null)
+      await fetchData()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setSavingModal(false) }
+  }
+
+  // Add payroll adjustment (deduction or addition)
+  const handleAddAdjustment = async (formData) => {
+    setSavingModal(true)
+    try {
+      const { periodStart: ps, periodEnd: pe } = getCurrentPeriod()
+      const adminEmp = employees.find(e => e.email === user?.email)
+      const { error } = await supabase.from('payroll_adjustments').insert({
+        company_id: companyId,
+        employee_id: formData.employeeId,
+        type: formData.type,
+        amount: parseFloat(formData.amount) || 0,
+        reason: formData.reason || '',
+        recurring: formData.recurring || false,
+        pay_period_start: ps.toISOString().split('T')[0],
+        pay_period_end: pe.toISOString().split('T')[0],
+        created_by: adminEmp?.id || null,
+      })
+      if (error) throw error
+      setShowAddAdjustmentModal(null)
+      await fetchData()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setSavingModal(false) }
+  }
+
+  // Delete a payroll adjustment
+  const handleDeleteAdjustment = async (adjId) => {
+    if (!confirm('Remove this adjustment?')) return
+    try {
+      await supabase.from('payroll_adjustments').delete().eq('id', adjId)
+      await fetchData()
+    } catch (err) { alert('Error: ' + err.message) }
+  }
+
   const handleRunPayroll = async () => {
     setRunningPayroll(true)
     const payDate = getNextPayDate()
@@ -727,7 +869,7 @@ export default function Payroll() {
           overtime_hours: data.overtimeHours,
           hourly_rate: data.hourlyRate,
           salary_amount: data.salaryPay,
-          gross_pay: data.grossPay
+          gross_pay: data.grossPay,
         }
       })
 
@@ -811,10 +953,44 @@ export default function Payroll() {
             </div>
           </div>
           <div style={{ textAlign: isMobile ? 'left' : 'right', width: isMobile ? '100%' : 'auto' }}>
-            <div style={{ fontSize: '14px', color: theme.textMuted }}>Gross Pay</div>
-            <div style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: '700', color: '#22c55e' }}>{fmt(data.grossPay)}</div>
+            <div style={{ fontSize: '14px', color: theme.textMuted }}>Net Pay</div>
+            <div style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: '700', color: '#22c55e' }}>{fmt(data.netPay)}</div>
+            {(data.totalAdditions > 0 || data.totalDeductions > 0) && (
+              <div style={{ fontSize: '12px', color: theme.textMuted }}>Gross: {fmt(data.grossPay)}</div>
+            )}
           </div>
         </div>
+
+        {/* Action Buttons */}
+        {isAdmin && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+            <button onClick={() => setShowAddTimeModal(emp)} style={{
+              padding: '8px 14px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+              borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px'
+            }}><Plus size={14} /><Clock size={14} /> Add Time</button>
+            <button onClick={() => setShowAddCommissionModal(emp)} style={{
+              padding: '8px 14px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+              borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px'
+            }}><Plus size={14} /><DollarSign size={14} /> Add Commission</button>
+            <button onClick={() => setShowAddAdjustmentModal({ employee: emp, type: 'addition' })} style={{
+              padding: '8px 14px', backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)',
+              borderRadius: '8px', color: '#22c55e', fontSize: '13px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px'
+            }}><Plus size={14} /> Addition</button>
+            <button onClick={() => setShowAddAdjustmentModal({ employee: emp, type: 'deduction' })} style={{
+              padding: '8px 14px', backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: '8px', color: '#ef4444', fontSize: '13px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px'
+            }}><Minus size={14} /> Deduction</button>
+            <button onClick={() => setShowCheckStub(emp)} style={{
+              padding: '8px 14px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+              borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto'
+            }}><FileText size={14} /> Check Stub</button>
+          </div>
+        )}
 
         {/* Pay Breakdown */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
@@ -946,6 +1122,55 @@ export default function Payroll() {
                   <div style={{ fontSize: '15px', fontWeight: '600', color: '#8b5cf6' }}>{fmt(d.bonusAmount)}</div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Payroll Adjustments */}
+        {data.adjustments.length > 0 && (
+          <div style={{ ...cardStyle, marginBottom: '20px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FileText size={18} style={{ color: theme.accent }} />
+              Payroll Adjustments
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {data.adjustments.map((adj) => (
+                <div key={adj.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px', backgroundColor: theme.bg, borderRadius: '8px',
+                  border: `1px solid ${adj.type === 'addition' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`
+                }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{adj.reason || adj.type}</div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                      {adj.recurring && <span style={{ color: '#8b5cf6', marginRight: '8px' }}>Recurring</span>}
+                      {adj.created_by && <span>Added by {employees.find(e => e.id === adj.created_by)?.name || 'Admin'}</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{
+                      fontSize: '15px', fontWeight: '600',
+                      color: adj.type === 'addition' ? '#22c55e' : '#ef4444'
+                    }}>{adj.type === 'addition' ? '+' : '-'}{fmt(adj.amount)}</div>
+                    {isAdmin && (
+                      <button onClick={() => handleDeleteAdjustment(adj.id)} style={{
+                        padding: '4px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '4px',
+                        cursor: 'pointer', color: theme.textMuted, display: 'flex', alignItems: 'center'
+                      }}><X size={12} /></button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{
+              marginTop: '12px', padding: '10px 12px', borderRadius: '8px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              backgroundColor: data.netPay >= data.grossPay ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'
+            }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: theme.textSecondary }}>Net After Adjustments</span>
+              <span style={{ fontSize: '16px', fontWeight: '700', color: data.netPay >= data.grossPay ? '#22c55e' : '#ef4444' }}>
+                {fmt(data.netPay)}
+              </span>
             </div>
           </div>
         )}
@@ -1175,6 +1400,43 @@ export default function Payroll() {
             theme={theme}
           />
         )}
+
+        <AddTimeModal
+          show={showAddTimeModal}
+          onClose={() => setShowAddTimeModal(null)}
+          onSave={handleAddTimeEntry}
+          saving={savingModal}
+          theme={theme}
+          isMobile={isMobile}
+        />
+        <AddCommissionModal
+          show={showAddCommissionModal}
+          onClose={() => setShowAddCommissionModal(null)}
+          onSave={handleAddCommission}
+          saving={savingModal}
+          theme={theme}
+          isMobile={isMobile}
+        />
+        <AddAdjustmentModal
+          show={showAddAdjustmentModal}
+          onClose={() => setShowAddAdjustmentModal(null)}
+          onSave={handleAddAdjustment}
+          saving={savingModal}
+          theme={theme}
+          isMobile={isMobile}
+        />
+        <CheckStubModal
+          show={showCheckStub}
+          onClose={() => setShowCheckStub(null)}
+          employeePayData={employeePayData}
+          payrollConfig={payrollConfig}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          company={company}
+          theme={theme}
+          isMobile={isMobile}
+          fmt={fmt}
+        />
       </div>
     )
   }
@@ -1230,15 +1492,32 @@ export default function Payroll() {
 
       {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: isMobile ? '12px' : '16px', marginBottom: '24px' }}>
-        {/* Pay Period */}
+        {/* Pay Period with navigation */}
         <div style={cardStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
             <Calendar size={20} style={{ color: theme.accent }} />
             <span style={{ color: theme.textMuted, fontSize: '13px' }}>Pay Period</span>
           </div>
-          <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
-            {periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button onClick={() => setPeriodOffset(p => p - 1)} style={{
+              padding: '4px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px',
+              cursor: 'pointer', color: theme.textSecondary, display: 'flex', alignItems: 'center'
+            }}><ChevronLeft size={16} /></button>
+            <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, flex: 1, textAlign: 'center' }}>
+              {periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </div>
+            <button onClick={() => setPeriodOffset(p => p + 1)} disabled={periodOffset >= 0} style={{
+              padding: '4px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px',
+              cursor: periodOffset >= 0 ? 'default' : 'pointer', color: periodOffset >= 0 ? theme.border : theme.textSecondary,
+              display: 'flex', alignItems: 'center', opacity: periodOffset >= 0 ? 0.4 : 1
+            }}><ChevronRight size={16} /></button>
           </div>
+          {periodOffset !== 0 && (
+            <button onClick={() => setPeriodOffset(0)} style={{
+              marginTop: '6px', fontSize: '11px', color: theme.accent, background: 'none', border: 'none',
+              cursor: 'pointer', padding: 0, textDecoration: 'underline'
+            }}>Back to current</button>
+          )}
         </div>
 
         {/* Next Pay / Days Until */}
@@ -1328,9 +1607,9 @@ export default function Payroll() {
           <span style={{ textAlign: 'center' }}>Hours</span>
           <span style={{ textAlign: 'center' }}>Commissions</span>
           {payrollConfig.efficiency_bonus_enabled && <span style={{ textAlign: 'center' }}>Bonus</span>}
-          {!payrollConfig.efficiency_bonus_enabled && <span style={{ textAlign: 'center' }}>PTO</span>}
-          <span style={{ textAlign: 'center' }}>Pending</span>
-          <span style={{ textAlign: 'right' }}>Gross Pay</span>
+          {!payrollConfig.efficiency_bonus_enabled && <span style={{ textAlign: 'center' }}>Adj</span>}
+          <span style={{ textAlign: 'center' }}>Gross</span>
+          <span style={{ textAlign: 'right' }}>Net Pay</span>
         </div>
 
         {filteredEmployees.map(emp => {
@@ -1398,7 +1677,7 @@ export default function Payroll() {
                   </div>
                 </div>
 
-                {/* Bonus or PTO */}
+                {/* Bonus or Adjustments */}
                 {payrollConfig.efficiency_bonus_enabled ? (
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontWeight: '600', color: data.efficiencyBonus.bonus > 0 ? '#8b5cf6' : theme.textMuted, fontSize: '14px' }}>
@@ -1407,23 +1686,23 @@ export default function Payroll() {
                   </div>
                 ) : (
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontWeight: '600', color: ptoBalance <= 0 ? '#ef4444' : '#8b5cf6', fontSize: '14px' }}>
-                      {ptoBalance.toFixed(1)}d
-                    </div>
+                    {data.totalAdditions > 0 && <div style={{ fontSize: '11px', color: '#22c55e', fontWeight: '500' }}>+{fmt(data.totalAdditions)}</div>}
+                    {data.totalDeductions > 0 && <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: '500' }}>-{fmt(data.totalDeductions)}</div>}
+                    {data.totalAdditions === 0 && data.totalDeductions === 0 && <div style={{ fontWeight: '600', color: theme.textMuted, fontSize: '14px' }}>-</div>}
                   </div>
                 )}
 
-                {/* Pending */}
+                {/* Gross */}
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontWeight: '600', color: data.invoiceCommissions.pending > 0 ? '#f97316' : theme.textMuted, fontSize: '14px' }}>
-                    {data.invoiceCommissions.pending > 0 ? fmt(data.invoiceCommissions.pending) : '-'}
+                  <div style={{ fontWeight: '600', color: theme.textSecondary, fontSize: '14px' }}>
+                    {fmt(data.grossPay)}
                   </div>
                 </div>
 
-                {/* Gross Pay */}
+                {/* Net Pay */}
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '16px', fontWeight: '700', color: '#22c55e' }}>
-                    {fmt(data.grossPay)}
+                    {fmt(data.netPay)}
                   </div>
                 </div>
               </div>
@@ -1450,13 +1729,11 @@ export default function Payroll() {
             <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
             <span />
             <div style={{ textAlign: 'center', fontWeight: '600', color: '#f59e0b' }}>{fmt(totalCommissions)}</div>
-            {payrollConfig.efficiency_bonus_enabled ? (
-              <div style={{ textAlign: 'center', fontWeight: '600', color: '#8b5cf6' }}>{fmt(totalBonuses)}</div>
-            ) : <span />}
-            <div style={{ textAlign: 'center', fontWeight: '600', color: '#f97316' }}>
-              {totalPendingCommissions > 0 ? fmt(totalPendingCommissions) : '-'}
+            <span />
+            <div style={{ textAlign: 'center', fontWeight: '600', color: theme.textSecondary }}>{fmt(totalPayroll)}</div>
+            <div style={{ textAlign: 'right', fontSize: '20px', fontWeight: '700', color: '#22c55e' }}>
+              {fmt(Object.values(employeePayData).reduce((sum, d) => sum + d.netPay, 0))}
             </div>
-            <div style={{ textAlign: 'right', fontSize: '20px', fontWeight: '700', color: '#22c55e' }}>{fmt(totalPayroll)}</div>
           </div>
         )}
         </div>
@@ -1878,6 +2155,364 @@ export default function Payroll() {
           theme={theme}
         />
       )}
+
+    </div>
+  )
+}
+
+// ── Add Time Entry Modal ─────────────────────────────────
+function AddTimeModal({ show, onClose, onSave, saving, theme, isMobile }) {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [startTime, setStartTime] = useState('08:00')
+  const [endTime, setEndTime] = useState('17:00')
+  const [reason, setReason] = useState('')
+
+  useEffect(() => {
+    if (show) { setDate(new Date().toISOString().split('T')[0]); setStartTime('08:00'); setEndTime('17:00'); setReason('') }
+  }, [show])
+
+  if (!show) return null
+  const inputStyle = {
+    width: '100%', padding: '10px 12px', backgroundColor: theme.bg,
+    border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', boxSizing: 'border-box'
+  }
+  const labelStyle = { display: 'block', fontSize: '13px', color: theme.textMuted, marginBottom: '6px' }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: '420px', overflow: 'hidden' }}>
+        <div style={{ padding: '20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Add Time Entry — {show.name}</div>
+          <button onClick={onClose} style={{ padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
+        </div>
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label style={labelStyle}>Date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={labelStyle}>Start Time</label>
+              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>End Time</label>
+              <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Reason</label>
+            <input type="text" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Missed clock-in, confirmed with employee" style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button onClick={onClose} style={{ flex: 1, padding: '12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '10px', color: theme.text, fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => onSave({ employeeId: show.id, date, startTime, endTime, reason })} disabled={saving}
+              style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', border: 'none', borderRadius: '10px', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: saving ? 'wait' : 'pointer' }}>
+              {saving ? 'Saving...' : 'Add Entry'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Add Commission Modal ─────────────────────────────────
+function AddCommissionModal({ show, onClose, onSave, saving, theme, isMobile }) {
+  const [amount, setAmount] = useState('')
+  const [description, setDescription] = useState('')
+  const [commissionType, setCommissionType] = useState('manual')
+
+  useEffect(() => {
+    if (show) { setAmount(''); setDescription(''); setCommissionType('manual') }
+  }, [show])
+
+  if (!show) return null
+  const inputStyle = {
+    width: '100%', padding: '10px 12px', backgroundColor: theme.bg,
+    border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', boxSizing: 'border-box'
+  }
+  const labelStyle = { display: 'block', fontSize: '13px', color: theme.textMuted, marginBottom: '6px' }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: '420px', overflow: 'hidden' }}>
+        <div style={{ padding: '20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Add Commission — {show.name}</div>
+          <button onClick={onClose} style={{ padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
+        </div>
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label style={labelStyle}>Amount</label>
+            <div style={{ position: 'relative' }}>
+              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }}>$</span>
+              <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)} style={{ ...inputStyle, paddingLeft: '28px' }} placeholder="0.00" />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Type</label>
+            <select value={commissionType} onChange={e => setCommissionType(e.target.value)} style={inputStyle}>
+              <option value="manual">Manual Commission</option>
+              <option value="appointment_set">Appointment Set</option>
+              <option value="lead_source">Lead Source</option>
+              <option value="bonus">Bonus</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Description</label>
+            <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. Bonus for closing XYZ deal" style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button onClick={onClose} style={{ flex: 1, padding: '12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '10px', color: theme.text, fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => onSave({ employeeId: show.id, amount, commissionType, description })} disabled={saving || !amount}
+              style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', border: 'none', borderRadius: '10px', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: saving || !amount ? 'default' : 'pointer', opacity: saving || !amount ? 0.5 : 1 }}>
+              {saving ? 'Saving...' : 'Add Commission'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Add Adjustment (Deduction/Addition) Modal ────────────
+function AddAdjustmentModal({ show, onClose, onSave, saving, theme, isMobile }) {
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [recurring, setRecurring] = useState(false)
+
+  useEffect(() => {
+    if (show) { setAmount(''); setReason(''); setRecurring(false) }
+  }, [show])
+
+  if (!show) return null
+  const isDeduction = show.type === 'deduction'
+  const inputStyle = {
+    width: '100%', padding: '10px 12px', backgroundColor: theme.bg,
+    border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', boxSizing: 'border-box'
+  }
+  const labelStyle = { display: 'block', fontSize: '13px', color: theme.textMuted, marginBottom: '6px' }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: '420px', overflow: 'hidden' }}>
+        <div style={{ padding: '20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
+            {isDeduction ? 'Add Deduction' : 'Add Addition'} — {show.employee?.name}
+          </div>
+          <button onClick={onClose} style={{ padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
+        </div>
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label style={labelStyle}>Amount</label>
+            <div style={{ position: 'relative' }}>
+              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }}>$</span>
+              <input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)} style={{ ...inputStyle, paddingLeft: '28px' }} placeholder="0.00" />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Reason *</label>
+            <input type="text" value={reason} onChange={e => setReason(e.target.value)}
+              placeholder={isDeduction ? 'e.g. Fleet vehicle personal use' : 'e.g. Cell phone allowance'}
+              style={inputStyle} />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', backgroundColor: theme.bg, borderRadius: '8px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={recurring} onChange={e => setRecurring(e.target.checked)} />
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Recurring</div>
+              <div style={{ fontSize: '12px', color: theme.textMuted }}>Apply this {isDeduction ? 'deduction' : 'addition'} to every pay period</div>
+            </div>
+          </label>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button onClick={onClose} style={{ flex: 1, padding: '12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '10px', color: theme.text, fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => onSave({ employeeId: show.employee.id, type: show.type, amount, reason, recurring })} disabled={saving || !amount || !reason.trim()}
+              style={{
+                flex: 1, padding: '12px', border: 'none', borderRadius: '10px', color: '#fff', fontSize: '14px', fontWeight: '600',
+                cursor: saving || !amount || !reason.trim() ? 'default' : 'pointer',
+                opacity: saving || !amount || !reason.trim() ? 0.5 : 1,
+                background: isDeduction ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+              }}>
+              {saving ? 'Saving...' : isDeduction ? 'Add Deduction' : 'Add Addition'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Check Stub Preview Modal ─────────────────────────────
+function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodStart, periodEnd, company, theme, isMobile, fmt }) {
+  if (!show) return null
+  const emp = show
+  const data = employeePayData[emp.id]
+  if (!data) return null
+
+  const handlePrint = () => {
+    const stubEl = document.getElementById('check-stub-content')
+    if (!stubEl) return
+    const printWindow = window.open('', '_blank', 'width=800,height=600')
+    printWindow.document.write(`
+      <html><head><title>Pay Stub - ${emp.name}</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; color: #333; }
+        table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { font-size: 12px; text-transform: uppercase; color: #666; }
+        .header { border-bottom: 2px solid #333; padding-bottom: 16px; margin-bottom: 16px; }
+        .total-row { font-weight: 700; border-top: 2px solid #333; }
+        .section { margin-top: 24px; }
+        .section-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+        @media print { body { padding: 20px; } }
+      </style></head><body>
+      ${stubEl.innerHTML}
+      </body></html>
+    `)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => { printWindow.print() }, 250)
+  }
+
+  const periodLabel = `${periodStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} – ${periodEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: '640px', maxHeight: '90vh', overflow: 'auto' }}>
+        <div style={{ padding: '20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, backgroundColor: theme.bgCard, zIndex: 1 }}>
+          <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Check Stub Preview</div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={handlePrint} style={{
+              padding: '8px 14px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px',
+              color: theme.textSecondary, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+            }}><Printer size={14} /> Print</button>
+            <button onClick={onClose} style={{ padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
+          </div>
+        </div>
+
+        <div id="check-stub-content" style={{ padding: '24px' }}>
+          {/* Stub Header */}
+          <div style={{ borderBottom: `2px solid ${theme.text}`, paddingBottom: '16px', marginBottom: '16px' }}>
+            <div style={{ fontSize: '20px', fontWeight: '700', color: theme.text }}>{company?.company_name || 'Company'}</div>
+            <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>Pay Stub</div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+            <div>
+              <div style={{ fontSize: '12px', color: theme.textMuted }}>Employee</div>
+              <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{emp.name}</div>
+              <div style={{ fontSize: '13px', color: theme.textMuted }}>{emp.role}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '12px', color: theme.textMuted }}>Pay Period</div>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{periodLabel}</div>
+            </div>
+          </div>
+
+          {/* Earnings Table */}
+          <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '8px' }}>Earnings</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'left' }}>Description</th>
+                <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>Hours/Qty</th>
+                <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>Rate</th>
+                <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'right' }}>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {emp.is_hourly && data.regularHours > 0 && (
+                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '8px 0', color: theme.text }}>Regular Hours</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.text }}>{data.regularHours.toFixed(2)}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.text }}>{fmt(data.hourlyRate)}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.regularHours * data.hourlyRate)}</td>
+                </tr>
+              )}
+              {emp.is_hourly && data.overtimeHours > 0 && (
+                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '8px 0', color: theme.text }}>Overtime Hours</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.text }}>{data.overtimeHours.toFixed(2)}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.text }}>{fmt(data.hourlyRate * (payrollConfig.overtime_multiplier || 1.5))}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.overtimeHours * data.hourlyRate * (payrollConfig.overtime_multiplier || 1.5))}</td>
+                </tr>
+              )}
+              {emp.is_salary && data.salaryPay > 0 && (
+                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '8px 0', color: theme.text }}>Salary</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.salaryPay)}</td>
+                </tr>
+              )}
+              {data.commissionPay > 0 && (
+                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '8px 0', color: theme.text }}>Commissions</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.commissionPay)}</td>
+                </tr>
+              )}
+              {data.efficiencyBonus.bonus > 0 && (
+                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '8px 0', color: theme.text }}>Efficiency Bonus</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.efficiencyBonus.bonus)}</td>
+                </tr>
+              )}
+              {/* Additions */}
+              {data.adjustments.filter(a => a.type === 'addition').map(adj => (
+                <tr key={adj.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '8px 0', color: '#22c55e' }}>{adj.reason || 'Addition'}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', color: '#22c55e' }}>+{fmt(adj.amount)}</td>
+                </tr>
+              ))}
+              <tr style={{ borderTop: `2px solid ${theme.text}` }}>
+                <td colSpan={3} style={{ padding: '10px 0', fontWeight: '700', color: theme.text }}>Gross Earnings</td>
+                <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: '700', color: theme.text }}>{fmt(data.grossPay + data.totalAdditions)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* Deductions Table */}
+          {data.totalDeductions > 0 && (
+            <>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '8px' }}>Deductions</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                    <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'left' }}>Description</th>
+                    <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'right' }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.adjustments.filter(a => a.type === 'deduction').map(adj => (
+                    <tr key={adj.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                      <td style={{ padding: '8px 0', color: '#ef4444' }}>{adj.reason || 'Deduction'}</td>
+                      <td style={{ padding: '8px 0', textAlign: 'right', color: '#ef4444' }}>-{fmt(adj.amount)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop: `2px solid ${theme.text}` }}>
+                    <td style={{ padding: '10px 0', fontWeight: '700', color: theme.text }}>Total Deductions</td>
+                    <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: '700', color: '#ef4444' }}>-{fmt(data.totalDeductions)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {/* Net Pay */}
+          <div style={{
+            padding: '20px', backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: '10px',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          }}>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>Net Pay</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#22c55e' }}>{fmt(data.netPay)}</div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
