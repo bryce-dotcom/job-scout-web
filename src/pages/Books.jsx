@@ -59,6 +59,9 @@ export default function Books() {
   const [txnEditNotes, setTxnEditNotes] = useState('')
   const [txnEditJobId, setTxnEditJobId] = useState(null)
   const [jobSearchText, setJobSearchText] = useState('')
+  // Multi-job allocations: [{ job_id, amount, notes }]
+  const [txnJobAllocations, setTxnJobAllocations] = useState([])
+  const [txnAllocJobSearch, setTxnAllocJobSearch] = useState('')
 
   // Expense modal
   const [showExpenseModal, setShowExpenseModal] = useState(false)
@@ -185,6 +188,31 @@ export default function Books() {
     setSyncing(false)
   }
 
+  // Expand a transaction: load its job allocations
+  const expandTransaction = async (txn) => {
+    setExpandedTxn(txn.id)
+    setTxnEditCategory(txn.user_category || txn.ai_category || '')
+    setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
+    setTxnEditNotes(txn.notes || '')
+    setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
+    setJobSearchText('')
+    setTxnAllocJobSearch('')
+    // Load existing allocations
+    const { data: allocs } = await supabase
+      .from('transaction_job_allocations')
+      .select('id, job_id, amount, notes')
+      .eq('transaction_id', txn.id)
+      .eq('company_id', companyId)
+    if (allocs && allocs.length > 0) {
+      setTxnJobAllocations(allocs.map(a => ({ id: a.id, job_id: a.job_id, amount: String(a.amount), notes: a.notes || '' })))
+    } else if (txn.job_id) {
+      // Legacy: single job_id, use full transaction amount
+      setTxnJobAllocations([{ job_id: txn.job_id, amount: String(Math.abs(parseFloat(txn.amount) || 0)), notes: '' }])
+    } else {
+      setTxnJobAllocations([])
+    }
+  }
+
   // Quick accept: confirm AI predictions directly from the row (no expand needed)
   // Only available when AI has predicted BOTH category and tax category
   const handleQuickAccept = async (e, txn) => {
@@ -217,15 +245,45 @@ export default function Books() {
       return
     }
 
+    // Validate allocations: amounts must not exceed transaction total
+    const txnAmount = Math.abs(parseFloat(plaidTransactions.find(t => t.id === txnId)?.amount) || 0)
+    const allocTotal = txnJobAllocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0)
+    if (txnJobAllocations.length > 0 && Math.abs(allocTotal - txnAmount) > 0.01) {
+      toast.error(`Allocated $${allocTotal.toFixed(2)} but transaction is $${txnAmount.toFixed(2)} — amounts must match`)
+      return
+    }
+
     const updates = {
       confirmed: true,
       user_category: category,
       user_tax_category: taxCategory,
     }
     if (txnEditNotes) updates.notes = txnEditNotes
-    if (txnEditJobId) updates.job_id = txnEditJobId
+    // Set job_id to first allocation for backward compat
+    const firstJobId = txnJobAllocations.length > 0 ? txnJobAllocations[0].job_id : txnEditJobId
+    if (firstJobId) updates.job_id = firstJobId
 
     await supabase.from('plaid_transactions').update(updates).eq('id', txnId)
+
+    // Save job allocations
+    if (txnJobAllocations.length > 0) {
+      // Delete old allocations
+      await supabase.from('transaction_job_allocations').delete().eq('transaction_id', txnId).eq('company_id', companyId)
+      // Insert new
+      const rows = txnJobAllocations.filter(a => a.job_id && parseFloat(a.amount) > 0).map(a => ({
+        company_id: companyId,
+        transaction_id: txnId,
+        job_id: a.job_id,
+        amount: parseFloat(a.amount) || 0,
+        notes: a.notes || null,
+      }))
+      if (rows.length > 0) {
+        await supabase.from('transaction_job_allocations').insert(rows)
+      }
+    } else {
+      // Clear allocations if no jobs assigned
+      await supabase.from('transaction_job_allocations').delete().eq('transaction_id', txnId).eq('company_id', companyId)
+    }
 
     // Learn rule if category was overridden
     const txn = plaidTransactions.find(t => t.id === txnId)
@@ -237,19 +295,6 @@ export default function Books() {
           merchant_name: txn.merchant_name,
           category,
           tax_category: taxCategory,
-        }
-      })
-    }
-
-    // Learn job mapping if job was assigned
-    if (txnEditJobId && txn?.merchant_name) {
-      await supabase.functions.invoke('categorize-transactions', {
-        body: {
-          action: 'learn_rule',
-          company_id: companyId,
-          merchant_name: txn.merchant_name,
-          category: category || txn.ai_category,
-          tax_category: taxCategory || txn.ai_tax_category,
         }
       })
     }
@@ -730,14 +775,7 @@ export default function Books() {
                       <div
                         onClick={() => {
                           if (isExpanded) { setExpandedTxn(null) }
-                          else {
-                            setExpandedTxn(txn.id)
-                            setTxnEditCategory(txn.user_category || txn.ai_category || '')
-                            setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
-                            setTxnEditNotes(txn.notes || '')
-                            setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
-                            setJobSearchText('')
-                          }
+                          else { expandTransaction(txn) }
                         }}
                         style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
                       >
@@ -901,15 +939,7 @@ export default function Books() {
                         {/* Job badge — clickable to expand and change */}
                         {matchedJob ? (
                           <span
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setExpandedTxn(txn.id)
-                              setTxnEditCategory(txn.user_category || txn.ai_category || '')
-                              setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
-                              setTxnEditNotes(txn.notes || '')
-                              setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
-                              setJobSearchText('')
-                            }}
+                            onClick={(e) => { e.stopPropagation(); expandTransaction(txn) }}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: '4px',
                               padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
@@ -925,15 +955,7 @@ export default function Books() {
                           </span>
                         ) : (
                           <span
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setExpandedTxn(txn.id)
-                              setTxnEditCategory(txn.user_category || txn.ai_category || '')
-                              setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
-                              setTxnEditNotes(txn.notes || '')
-                              setTxnEditJobId(null)
-                              setJobSearchText('')
-                            }}
+                            onClick={(e) => { e.stopPropagation(); expandTransaction(txn) }}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: '4px',
                               padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '500',
@@ -1082,26 +1104,96 @@ export default function Books() {
                           </div>
                         </div>
 
-                        {/* Job Assignment */}
+                        {/* Job Allocations */}
                         <div style={{ marginTop: '12px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
-                            <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Link to Job</label>
-                            <HelpBadge text="Connect this transaction to a specific job to track job profitability. If the AI matched it, you'll see the suggestion pre-filled. Only link it if this purchase was specifically for that job." size={13} />
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Allocate to Jobs</label>
+                              <HelpBadge text="Split this transaction across one or more jobs with exact dollar amounts for accurate job costing. Amounts must add up to the transaction total." size={13} />
+                            </div>
+                            <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                              Transaction: ${Math.abs(amountNum).toFixed(2)}
+                            </span>
                           </div>
+
+                          {/* Existing allocations */}
+                          {txnJobAllocations.map((alloc, allocIdx) => {
+                            const allocJob = (jobs || []).find(j => j.id === alloc.job_id)
+                            return (
+                              <div key={allocIdx} style={{
+                                display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px',
+                                padding: '8px 10px', backgroundColor: theme.bg, borderRadius: '8px',
+                                border: `1px solid ${theme.border}`
+                              }}>
+                                <Briefcase size={14} style={{ color: theme.accent, flexShrink: 0 }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {allocJob?.job_title || `Job #${alloc.job_id}`}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: theme.textMuted }}>{allocJob?.customer?.name || ''}</div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <span style={{ fontSize: '13px', color: theme.textMuted }}>$</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={alloc.amount}
+                                    onChange={(e) => {
+                                      const updated = [...txnJobAllocations]
+                                      updated[allocIdx] = { ...updated[allocIdx], amount: e.target.value }
+                                      setTxnJobAllocations(updated)
+                                    }}
+                                    style={{
+                                      width: '90px', padding: '6px 8px', border: `1px solid ${theme.border}`,
+                                      borderRadius: '6px', fontSize: '13px', color: theme.text,
+                                      backgroundColor: theme.bgCard, textAlign: 'right'
+                                    }}
+                                  />
+                                </div>
+                                <button
+                                  onClick={() => setTxnJobAllocations(txnJobAllocations.filter((_, i) => i !== allocIdx))}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}
+                                  title="Remove"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            )
+                          })}
+
+                          {/* Allocation summary */}
+                          {txnJobAllocations.length > 0 && (() => {
+                            const allocTotal = txnJobAllocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0)
+                            const remaining = Math.abs(amountNum) - allocTotal
+                            const isBalanced = Math.abs(remaining) < 0.01
+                            return (
+                              <div style={{
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                padding: '6px 10px', marginBottom: '8px', fontSize: '12px',
+                                backgroundColor: isBalanced ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                                borderRadius: '6px', color: isBalanced ? '#16a34a' : '#dc2626'
+                              }}>
+                                <span>Allocated: ${allocTotal.toFixed(2)}</span>
+                                {!isBalanced && <span>{remaining > 0 ? `$${remaining.toFixed(2)} remaining` : `$${Math.abs(remaining).toFixed(2)} over`}</span>}
+                                {isBalanced && <span><Check size={12} style={{ verticalAlign: 'middle' }} /> Balanced</span>}
+                              </div>
+                            )
+                          })()}
+
+                          {/* Add job search */}
                           <div style={{ position: 'relative' }}>
                             <input
                               type="text"
-                              value={jobSearchText || (() => {
-                                const j = (jobs || []).find(j => j.id === txnEditJobId)
-                                return j ? `${j.job_title || 'Job #' + j.id} — ${j.customer?.name || ''}` : ''
-                              })()}
-                              onChange={(e) => { setJobSearchText(e.target.value); if (!e.target.value) setTxnEditJobId(null) }}
-                              placeholder="Search by job name, customer, or address..."
+                              value={txnAllocJobSearch}
+                              onChange={(e) => setTxnAllocJobSearch(e.target.value)}
+                              placeholder="Search to add a job..."
                               style={inputStyle}
                             />
-                            {jobSearchText && (() => {
+                            {txnAllocJobSearch && (() => {
+                              const existingJobIds = new Set(txnJobAllocations.map(a => a.job_id))
                               const filtered = (jobs || []).filter(j => {
-                                const s = jobSearchText.toLowerCase()
+                                if (existingJobIds.has(j.id)) return false
+                                const s = txnAllocJobSearch.toLowerCase()
                                 return (j.job_title || '').toLowerCase().includes(s) ||
                                   (j.customer?.name || '').toLowerCase().includes(s) ||
                                   (j.job_address || '').toLowerCase().includes(s) ||
@@ -1116,7 +1208,16 @@ export default function Books() {
                                   maxHeight: '200px', overflowY: 'auto'
                                 }}>
                                   {filtered.map(j => (
-                                    <button key={j.id} onClick={() => { setTxnEditJobId(j.id); setJobSearchText('') }} style={{
+                                    <button key={j.id} onClick={() => {
+                                      const currentTotal = txnJobAllocations.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0)
+                                      const remaining = Math.abs(amountNum) - currentTotal
+                                      setTxnJobAllocations([...txnJobAllocations, {
+                                        job_id: j.id,
+                                        amount: String(Math.max(0, Math.round(remaining * 100) / 100)),
+                                        notes: ''
+                                      }])
+                                      setTxnAllocJobSearch('')
+                                    }} style={{
                                       width: '100%', padding: '10px 12px', border: 'none', backgroundColor: 'transparent',
                                       cursor: 'pointer', textAlign: 'left', fontSize: '13px', color: theme.text,
                                       borderBottom: `1px solid ${theme.border}`, minHeight: '44px'
@@ -1128,16 +1229,8 @@ export default function Books() {
                                 </div>
                               )
                             })()}
-                            {txnEditJobId && !jobSearchText && (
-                              <button onClick={() => { setTxnEditJobId(null); setJobSearchText('') }} style={{
-                                position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
-                                background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px'
-                              }}>
-                                <X size={14} />
-                              </button>
-                            )}
                           </div>
-                          {txn.ai_job_id && txn.ai_job_confidence != null && (
+                          {txn.ai_job_id && txn.ai_job_confidence != null && txnJobAllocations.length === 0 && (
                             <div style={{ fontSize: '11px', color: '#3b82f6', marginTop: '4px' }}>
                               <Sparkles size={10} style={{ verticalAlign: 'middle', marginRight: '3px' }} />
                               AI matched to job with {Math.round(txn.ai_job_confidence * 100)}% confidence

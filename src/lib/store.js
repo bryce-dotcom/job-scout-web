@@ -494,6 +494,7 @@ export const useStore = create(
             .from(TABLES.jobs)
             .select(QUERIES.jobs)
             .eq('company_id', companyId)
+            .neq('status', 'Archived')
             .order('start_date', { ascending: false })
             .limit(5000);
 
@@ -504,6 +505,7 @@ export const useStore = create(
               .from(TABLES.jobs)
               .select('*')
               .eq('company_id', companyId)
+              .neq('status', 'Archived')
               .order('start_date', { ascending: false })
               .limit(5000));
           }
@@ -1536,7 +1538,13 @@ export const useStore = create(
           .eq('job_id', jobId)
           .eq('company_id', companyId)
           .order('date', { ascending: false });
-        return { expenses: expenses || [], plaidTransactions: txns || [] };
+        const { data: allocs } = await supabase
+          .from('transaction_job_allocations')
+          .select('*, txn:plaid_transactions!transaction_id(id, amount, merchant_name, user_category, ai_category, date, account:connected_accounts(id, account_name, mask, institution_name))')
+          .eq('job_id', jobId)
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+        return { expenses: expenses || [], plaidTransactions: txns || [], allocations: allocs || [] };
       },
 
       reconcileTransaction: async (transactionId, expenseId) => {

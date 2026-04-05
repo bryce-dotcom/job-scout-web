@@ -845,7 +845,10 @@ export default function LeadDetail() {
       lead_source_employee_id: lead.lead_source_employee_id || '',
       meter_number: lead.meter_number || '',
       ein: lead.ein || '',
-      notes: lead.notes || ''
+      notes: lead.notes || '',
+      created_at: lead.created_at || '',
+      converted_at: lead.converted_at || '',
+      created_date: lead.created_date || ''
     })
     setIsEditing(true)
   }
@@ -870,6 +873,9 @@ export default function LeadDetail() {
       meter_number: editForm.meter_number || null,
       ein: editForm.ein || null,
       notes: editForm.notes || null,
+      created_at: editForm.created_at || lead.created_at,
+      converted_at: editForm.converted_at || null,
+      created_date: editForm.created_date || lead.created_date,
       updated_at: new Date().toISOString()
     })
     setIsEditing(false)
@@ -1355,6 +1361,25 @@ export default function LeadDetail() {
                     <div style={{ fontSize: '14px', color: theme.text }}>
                       {lead.last_contact_at ? new Date(lead.last_contact_at).toLocaleDateString() : '-'}
                     </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Created Date</div>
+                    {isEditing ? (
+                      <input type="date" value={editForm.created_date ? editForm.created_date.slice(0, 10) : (editForm.created_at ? editForm.created_at.slice(0, 10) : '')} onChange={(e) => {
+                        const val = e.target.value ? new Date(e.target.value + 'T12:00:00').toISOString() : ''
+                        setEditForm({ ...editForm, created_date: val, created_at: val })
+                      }} style={inputStyle} />
+                    ) : (
+                      <div style={{ fontSize: '14px', color: theme.text }}>{(lead.created_date || lead.created_at) ? new Date(lead.created_date || lead.created_at).toLocaleDateString() : '-'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Converted Date</div>
+                    {isEditing ? (
+                      <input type="date" value={editForm.converted_at ? editForm.converted_at.slice(0, 10) : ''} onChange={(e) => setEditForm({ ...editForm, converted_at: e.target.value ? new Date(e.target.value + 'T12:00:00').toISOString() : '' })} style={inputStyle} />
+                    ) : (
+                      <div style={{ fontSize: '14px', color: theme.text }}>{lead.converted_at ? new Date(lead.converted_at).toLocaleDateString() : '-'}</div>
+                    )}
                   </div>
                 </div>
               </div>

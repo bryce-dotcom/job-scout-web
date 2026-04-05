@@ -75,6 +75,16 @@ export default function Payroll() {
   const isAdmin = checkAdmin(user)
   const isManagerPlus = checkManager(user)
 
+  // Payroll is Admin+ only — block access for lower roles
+  if (user && !isAdmin) {
+    return (
+      <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+        <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Access Restricted</div>
+        <div style={{ fontSize: '14px', color: theme.textMuted }}>Payroll is only available to administrators.</div>
+      </div>
+    )
+  }
+
   // Load payroll config from settings
   useEffect(() => {
     if (companyId) {

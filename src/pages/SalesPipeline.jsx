@@ -247,8 +247,14 @@ export default function SalesPipeline() {
   // Map standalone job status to pipeline delivery stage
   const mapJobToStage = (job) => {
     if (job.invoice_status === 'Invoiced') return 'Invoiced'
-    // Use the actual job status directly — matches DB-driven job board statuses
-    return job.status || 'Chillin'
+    const status = job.status || 'Chillin'
+    // Ensure the status maps to an existing delivery stage
+    const hasStage = stages.some(s => s.id === status)
+    if (hasStage) return status
+    // Legacy fallback: 'Completed' → 'Job Complete'
+    if (status === 'Completed' && stages.some(s => s.id === 'Job Complete')) return 'Job Complete'
+    if (status === 'Job Complete' && stages.some(s => s.id === 'Completed')) return 'Completed'
+    return status
   }
 
   // Attach jobs data to leads
@@ -342,7 +348,7 @@ export default function SalesPipeline() {
       try {
         const { data: jobsData } = await supabase
           .from('jobs')
-          .select('id, lead_id, job_id, status, job_total, utility_incentive, assigned_team, invoice_status')
+          .select('id, lead_id, job_id, status, job_total, utility_incentive, assigned_team, invoice_status, salesperson_id, pm_id, job_lead_id')
           .in('lead_id', deliveryLeadIds)
         attachJobs(normalized, jobsData)
       } catch (e) { /* non-critical */ }
@@ -369,7 +375,7 @@ export default function SalesPipeline() {
 
     // Fetch standalone jobs for delivery stages
     try {
-      const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, utility_incentive, assigned_team, invoice_status, lead_id, customer:customers!customer_id(id, name)'
+      const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, utility_incentive, assigned_team, invoice_status, lead_id, salesperson_id, pm_id, job_lead_id, customer:customers!customer_id(id, name)'
       const rangeCutoff = getDateCutoff(dateRange)
 
       // Determine which statuses are "terminal" (completed-like) vs active
@@ -418,8 +424,10 @@ export default function SalesPipeline() {
             quote_amount: (parseFloat(job.job_total) || 0) + (parseFloat(job.utility_incentive) || 0),
             created_at: job.start_date,
             lead_owner: null,
-            lead_owner_id: null,
-            salesperson_id: null,
+            lead_owner_id: job.pm_id || job.job_lead_id || null,
+            salesperson_id: job.salesperson_id || null,
+            _pmId: job.pm_id || null,
+            _jobLeadId: job.job_lead_id || null,
             lead_source: 'Direct Job',
             jobs: [job],
           })
@@ -474,12 +482,22 @@ export default function SalesPipeline() {
       if (!searchable.includes(term)) return false
     }
 
-    // Standalone jobs don't have lead owners — skip owner filter for them
-    if (ownerFilter !== 'all' && !lead._isJob) {
+    // Owner filter — applies to leads AND jobs
+    if (ownerFilter !== 'all') {
+      const ownerId = parseInt(ownerFilter)
       if (ownerFilter === 'unassigned') {
         if (lead.lead_owner_id || lead.salesperson_id) return false
-      } else if (lead.lead_owner_id !== parseInt(ownerFilter) && lead.salesperson_id !== parseInt(ownerFilter)) {
-        return false
+      } else if (lead._isJob) {
+        // For standalone jobs, match salesperson, PM, or job lead
+        if (lead.salesperson_id !== ownerId && lead._pmId !== ownerId && lead._jobLeadId !== ownerId && lead.lead_owner_id !== ownerId) return false
+      } else {
+        // Check lead-level owners first
+        const leadMatch = lead.lead_owner_id === ownerId || lead.salesperson_id === ownerId
+        // Also check job-level owners for delivery leads
+        const jobMatch = (lead.jobs || []).some(j =>
+          j.salesperson_id === ownerId || j.pm_id === ownerId || j.job_lead_id === ownerId
+        )
+        if (!leadMatch && !jobMatch) return false
       }
     }
     if (buFilter !== 'all') {

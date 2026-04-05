@@ -323,10 +323,11 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                 gap: '6px', flexWrap: 'wrap'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: theme.textMuted }}>
-                  {job.start_date && (
+                  {(job.start_date || job.created_at) && (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                       <Calendar size={10} />
-                      {formatDate(job.start_date)}
+                      {job.start_date ? formatDate(job.start_date) : formatDate(job.created_at)}
+                      {!job.start_date && <span style={{ fontSize: '9px', opacity: 0.7 }}>(created)</span>}
                     </span>
                   )}
                   {(job.job_lead?.name || job.assigned_team) && (
@@ -1044,10 +1045,9 @@ export default function Jobs() {
             style={{ ...inputStyle, width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'auto' : '140px' }}
           >
             <option value="all">All Status</option>
-            <option value="Chillin">Chillin</option>
-            <option value="Scheduled">Scheduled</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
+            {boardColumns.map(col => (
+              <option key={col.id} value={col.id}>{col.name}</option>
+            ))}
             <option value="On Hold">On Hold</option>
             <option value="Cancelled">Cancelled</option>
           </select>
@@ -1621,7 +1621,8 @@ export default function Jobs() {
                       <div style={{ textAlign: 'right', minWidth: '120px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', color: theme.textSecondary, fontSize: '13px' }}>
                           <Calendar size={14} />
-                          <span>{formatDate(job.start_date)}</span>
+                          <span>{formatDate(job.start_date || job.created_at)}</span>
+                          {!job.start_date && job.created_at && <span style={{ fontSize: '10px', color: theme.textMuted }}>(created)</span>}
                         </div>
                         {job.allotted_time_hours && (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '4px', color: theme.textMuted, fontSize: '12px' }}>

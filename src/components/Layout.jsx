@@ -344,6 +344,10 @@ export default function Layout() {
       if (userIsFieldTech && section.key === 'TEAM') {
         return { ...section, baseItems: section.baseItems.filter(i => i.to === '/time-clock') }
       }
+      // Payroll: Admin+ only (level 3+)
+      if (section.key === 'TEAM' && userAccessLevel < 3) {
+        return { ...section, baseItems: section.baseItems.filter(i => i.to !== '/payroll') }
+      }
       // Team Lead (level 1) and below: hide Employees page
       if (section.key === 'TEAM' && userAccessLevel < 1) {
         return { ...section, baseItems: section.baseItems.filter(i => i.to !== '/employees') }

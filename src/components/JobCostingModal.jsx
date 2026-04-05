@@ -29,7 +29,7 @@ export default function JobCostingModal({ job, theme, onClose }) {
       const companyId = job.company_id
 
       // Fetch all data in parallel
-      const [invoicesRes, expensesRes, plaidRes, timeRes, configRes, skillRes] = await Promise.all([
+      const [invoicesRes, expensesRes, plaidRes, allocRes, timeRes, configRes, skillRes] = await Promise.all([
         supabase
           .from('invoices')
           .select('id, amount, payment_status')
@@ -43,6 +43,11 @@ export default function JobCostingModal({ job, theme, onClose }) {
         supabase
           .from('plaid_transactions')
           .select('*')
+          .eq('job_id', job.id)
+          .eq('company_id', companyId),
+        supabase
+          .from('transaction_job_allocations')
+          .select('*, txn:plaid_transactions!transaction_id(id, amount, merchant_name, user_category, ai_category, date)')
           .eq('job_id', job.id)
           .eq('company_id', companyId),
         supabase
@@ -66,8 +71,23 @@ export default function JobCostingModal({ job, theme, onClose }) {
 
       const invoices = invoicesRes.data || []
       const expenses = expensesRes.data || []
-      const plaidTxns = plaidRes.data || []
+      const allocations = allocRes.data || []
       const timeLogs = timeRes.data || []
+
+      // Build plaid costs from allocations (exact amounts) with fallback to legacy job_id
+      const allocatedTxnIds = new Set(allocations.map(a => a.transaction_id))
+      const legacyPlaidTxns = (plaidRes.data || []).filter(t => !allocatedTxnIds.has(t.id))
+      // Convert allocations to plaid-like objects with the allocated amount and category from parent txn
+      const allocPlaid = allocations.map(a => ({
+        ...a.txn,
+        amount: parseFloat(a.amount) || 0,
+        _allocatedAmount: parseFloat(a.amount) || 0,
+        category: a.txn?.user_category || a.txn?.ai_category,
+      }))
+      const plaidTxns = [
+        ...legacyPlaidTxns,
+        ...allocPlaid,
+      ]
 
       // Fetch payments for all invoices
       const invoiceIds = invoices.map((i) => i.id)
@@ -95,14 +115,15 @@ export default function JobCostingModal({ job, theme, onClose }) {
       const receiptExpenses = expenses.filter((e) => e.receipt_url)
       const otherExpenses = expenses.filter((e) => !isMaterial(e.category) && !isSub(e.category))
 
-      // Plaid transactions by category
+      // Plaid transactions by category — use _allocatedAmount if set, else abs(amount)
+      const plaidAmt = (t) => t._allocatedAmount != null ? t._allocatedAmount : Math.abs(parseFloat(t.amount) || 0)
       const materialPlaid = plaidTxns.filter((t) => isMaterial(t.category))
       const otherPlaid = plaidTxns.filter((t) => !isMaterial(t.category))
 
       // Material costs
       const materialCost =
         materialExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) +
-        materialPlaid.reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0)
+        materialPlaid.reduce((s, t) => s + plaidAmt(t), 0)
 
       // Labor costs
       const laborLines = []
@@ -127,7 +148,7 @@ export default function JobCostingModal({ job, theme, onClose }) {
       // Other costs
       const otherCost =
         otherExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) +
-        otherPlaid.reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0)
+        otherPlaid.reduce((s, t) => s + plaidAmt(t), 0)
 
       // Bonus hours calculation
       let bonusData = null

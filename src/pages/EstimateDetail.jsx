@@ -200,7 +200,7 @@ export default function EstimateDetail() {
       let lines = null
       const { data: l1, error: lErr } = await supabase
         .from('quote_lines')
-        .select('*, item:products_services(id, name, description, unit_price, cost, markup_percent)')
+        .select('*, item:products_services(id, name, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url)')
         .eq('quote_id', id)
         .order('sort_order', { ascending: true })
       if (!lErr) {
@@ -208,7 +208,7 @@ export default function EstimateDetail() {
       } else {
         const { data: l2 } = await supabase
           .from('quote_lines')
-          .select('*, item:products_services(id, name, description, unit_price, cost, markup_percent)')
+          .select('*, item:products_services(id, name, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url)')
           .eq('quote_id', id)
           .order('id')
         lines = l2
@@ -2000,10 +2000,37 @@ export default function EstimateDetail() {
               <div>
                 <label style={labelStyle}>Estimate Date</label>
                 <input
-                  type="text"
-                  value={estimate.created_at ? new Date(estimate.created_at).toLocaleDateString() : '-'}
-                  readOnly
-                  style={{ ...inputStyle, backgroundColor: theme.bg, cursor: 'default' }}
+                  type="date"
+                  value={estimate.created_at ? estimate.created_at.slice(0, 10) : ''}
+                  onChange={(e) => updateEstimateField('created_at', e.target.value ? new Date(e.target.value + 'T12:00:00').toISOString() : null)}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Sent Date</label>
+                <input
+                  type="date"
+                  value={estimate.sent_date ? estimate.sent_date.slice(0, 10) : ''}
+                  onChange={(e) => updateEstimateField('sent_date', e.target.value ? new Date(e.target.value + 'T12:00:00').toISOString() : null)}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Approved Date</label>
+                <input
+                  type="date"
+                  value={estimate.approved_date ? estimate.approved_date.slice(0, 10) : ''}
+                  onChange={(e) => updateEstimateField('approved_date', e.target.value ? new Date(e.target.value + 'T12:00:00').toISOString() : null)}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Rejected Date</label>
+                <input
+                  type="date"
+                  value={estimate.rejected_date ? estimate.rejected_date.slice(0, 10) : ''}
+                  onChange={(e) => updateEstimateField('rejected_date', e.target.value ? new Date(e.target.value + 'T12:00:00').toISOString() : null)}
+                  style={inputStyle}
                 />
               </div>
               <div>
@@ -2407,6 +2434,42 @@ export default function EstimateDetail() {
                               </span>
                             </div>
                           )}
+                          {/* Product Documents (spec sheets, install guides) */}
+                          {(line.item?.spec_sheet_url || line.item?.install_guide_url || line.item?.dlc_document_url) && (
+                            <div style={{ marginBottom: '12px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Documents</div>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {line.item.spec_sheet_url && (
+                                  <a href={line.item.spec_sheet_url} target="_blank" rel="noopener noreferrer" style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                                    backgroundColor: theme.accentBg, color: theme.accent, borderRadius: '6px',
+                                    fontSize: '12px', fontWeight: '500', textDecoration: 'none', border: `1px solid ${theme.border}`
+                                  }}>
+                                    <FileText size={14} /> Spec Sheet
+                                  </a>
+                                )}
+                                {line.item.install_guide_url && (
+                                  <a href={line.item.install_guide_url} target="_blank" rel="noopener noreferrer" style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                                    backgroundColor: theme.accentBg, color: theme.accent, borderRadius: '6px',
+                                    fontSize: '12px', fontWeight: '500', textDecoration: 'none', border: `1px solid ${theme.border}`
+                                  }}>
+                                    <FileText size={14} /> Install Guide
+                                  </a>
+                                )}
+                                {line.item.dlc_document_url && (
+                                  <a href={line.item.dlc_document_url} target="_blank" rel="noopener noreferrer" style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                                    backgroundColor: 'rgba(59,130,246,0.08)', color: '#3b82f6', borderRadius: '6px',
+                                    fontSize: '12px', fontWeight: '500', textDecoration: 'none', border: '1px solid rgba(59,130,246,0.2)'
+                                  }}>
+                                    <FileText size={14} /> DLC Certificate
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Source/Audit Photos (stored on quote_lines.photos JSON) */}
                           <div style={{ marginBottom: '12px' }}>
                             <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Photos</div>

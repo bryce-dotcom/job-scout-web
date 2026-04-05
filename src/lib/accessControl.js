@@ -142,8 +142,8 @@ export function getAllowedTeamItems(user) {
   // Everyone sees Time Clock
   items.push('/time-clock')
 
-  // Everyone sees Payroll (Field Techs see own data only)
-  items.push('/payroll')
+  // Payroll: Admin+ only
+  if (level >= ACCESS_LEVELS.ADMIN) items.push('/payroll')
 
   return items
 }

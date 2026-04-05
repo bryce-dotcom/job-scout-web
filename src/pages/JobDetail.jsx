@@ -208,7 +208,7 @@ function JobDetailInner() {
   const [submittalSelected, setSubmittalSelected] = useState(new Set())
   const [submittalDownloading, setSubmittalDownloading] = useState(false)
   const [submittalProgress, setSubmittalProgress] = useState('')
-  const [submittalSections, setSubmittalSections] = useState({ documents: true, lineItems: true, verification: true, notes: true, invoices: true })
+  const [submittalSections, setSubmittalSections] = useState({ documents: true, specSheets: true, lineItems: true, verification: true, notes: true, invoices: true })
   const [submittalEmail, setSubmittalEmail] = useState('')
   const [submittalMessage, setSubmittalMessage] = useState('')
   const [submittalSending, setSubmittalSending] = useState(false)
@@ -306,7 +306,7 @@ function JobDetailInner() {
 
       const { data: lines } = await supabase
         .from('job_lines')
-        .select('*, item:products_services(id, name, description, allotted_time_hours, cost)')
+        .select('*, item:products_services(id, name, description, allotted_time_hours, cost, spec_sheet_url, install_guide_url, dlc_document_url)')
         .eq('job_id', id)
         .order('id')
 
@@ -857,6 +857,7 @@ function JobDetailInner() {
     const updates = {
       job_title: formData.job_title,
       job_address: formData.job_address,
+      created_at: formData.created_at,
       start_date: formData.start_date,
       end_date: formData.end_date,
       assigned_team: formData.assigned_team,
@@ -1896,6 +1897,16 @@ function JobDetailInner() {
         if (inv) {
           items.push({ type: 'text', content: `Utility Invoice UTL-${inv.id}\nUtility: ${inv.utility_name || '-'}\nAmount: $${(inv.amount || 0).toFixed(2)}\nStatus: ${inv.payment_status}\nDate: ${new Date(inv.created_at).toLocaleDateString()}`, folder: '05_invoices', filename: `UTL-${inv.id}.txt` })
         }
+      } else if (type === 'specsheet') {
+        // rest = [docKey, url] — spec sheet/install guide/DLC doc
+        const url = rest.slice(1).join(':') // URL may contain colons
+        const docKey = rest[0] || 'doc'
+        const label = docKey.startsWith('spec') ? 'spec_sheet' : docKey.startsWith('install') ? 'install_guide' : docKey.startsWith('dlc') ? 'dlc_certificate' : 'document'
+        const lineId = docKey.split('-')[1]
+        const line = lineItems.find(l => l.id === parseInt(lineId))
+        const productName = sanitizeFilename(line?.item?.name || `product_${lineId}`)
+        const ext = url.split('.').pop()?.split('?')[0] || 'pdf'
+        items.push({ type: 'public', url, folder: '00_spec_sheets', filename: `${productName}_${label}.${ext}` })
       } else if (type === 'jobnotes') {
         if (job?.notes) {
           items.push({ type: 'text', content: `Job Notes — ${job.job_title || job.job_id}\n${'—'.repeat(40)}\n\n${job.notes}`, folder: '04_notes', filename: 'job_notes.txt' })
@@ -2627,6 +2638,10 @@ function JobDetailInner() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
+                    <label style={labelStyle}>Created Date</label>
+                    <input type="date" value={formData.created_at ? formData.created_at.slice(0, 10) : ''} onChange={(e) => setFormData(prev => ({ ...prev, created_at: e.target.value ? new Date(e.target.value + 'T12:00:00').toISOString() : prev.created_at }))} style={inputStyle} />
+                  </div>
+                  <div>
                     <label style={labelStyle}>Start Date</label>
                     <input type="datetime-local" value={formData.start_date ? formData.start_date.slice(0, 16) : ''} onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))} style={inputStyle} />
                   </div>
@@ -2944,6 +2959,42 @@ function JobDetailInner() {
                               </label>
                             </div>
                           </div>
+                          {/* Product Documents */}
+                          {(line.item?.spec_sheet_url || line.item?.install_guide_url || line.item?.dlc_document_url) && (
+                            <div style={{ marginBottom: '12px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Product Documents</div>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {line.item.spec_sheet_url && (
+                                  <a href={line.item.spec_sheet_url} target="_blank" rel="noopener noreferrer" style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                                    backgroundColor: 'rgba(90,99,73,0.12)', color: '#5a6349', borderRadius: '6px',
+                                    fontSize: '12px', fontWeight: '500', textDecoration: 'none', border: '1px solid #d6cdb8'
+                                  }}>
+                                    <FileText size={14} /> Spec Sheet
+                                  </a>
+                                )}
+                                {line.item.install_guide_url && (
+                                  <a href={line.item.install_guide_url} target="_blank" rel="noopener noreferrer" style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                                    backgroundColor: 'rgba(90,99,73,0.12)', color: '#5a6349', borderRadius: '6px',
+                                    fontSize: '12px', fontWeight: '500', textDecoration: 'none', border: '1px solid #d6cdb8'
+                                  }}>
+                                    <FileText size={14} /> Install Guide
+                                  </a>
+                                )}
+                                {line.item.dlc_document_url && (
+                                  <a href={line.item.dlc_document_url} target="_blank" rel="noopener noreferrer" style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                                    backgroundColor: 'rgba(59,130,246,0.08)', color: '#3b82f6', borderRadius: '6px',
+                                    fontSize: '12px', fontWeight: '500', textDecoration: 'none', border: '1px solid rgba(59,130,246,0.2)'
+                                  }}>
+                                    <FileText size={14} /> DLC Certificate
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Before Photos (file_attachments) */}
                           <div style={{ marginBottom: '12px' }}>
                             <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Before</div>
@@ -4660,6 +4711,73 @@ function JobDetailInner() {
                   {/* Section 2: Line Items */}
                   {lineItems.length > 0 && (
                     <div style={{ border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+                      {/* Product Spec Sheets Section */}
+                      {lineItems.some(l => l.item?.spec_sheet_url || l.item?.install_guide_url || l.item?.dlc_document_url) && (
+                        <>
+                          <div
+                            onClick={() => setSubmittalSections(p => ({ ...p, specSheets: !p.specSheets }))}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              padding: '12px 16px', backgroundColor: theme.bg, cursor: 'pointer'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {submittalSections.specSheets ? <ChevronDown size={16} color={theme.textMuted} /> : <ChevronRight size={16} color={theme.textMuted} />}
+                              <FileText size={14} color={theme.textMuted} />
+                              <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Product Spec Sheets</span>
+                            </div>
+                          </div>
+                          {submittalSections.specSheets && (
+                            <div style={{ padding: '8px 16px' }}>
+                              {lineItems.filter(l => l.item?.spec_sheet_url || l.item?.install_guide_url || l.item?.dlc_document_url).map(line => {
+                                const docs = []
+                                if (line.item.spec_sheet_url) docs.push({ label: 'Spec Sheet', url: line.item.spec_sheet_url, key: `spec-${line.id}` })
+                                if (line.item.install_guide_url) docs.push({ label: 'Install Guide', url: line.item.install_guide_url, key: `install-${line.id}` })
+                                if (line.item.dlc_document_url) docs.push({ label: 'DLC Certificate', url: line.item.dlc_document_url, key: `dlc-${line.id}` })
+                                return (
+                                  <div key={line.id} style={{ marginBottom: '10px' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: '600', color: theme.text, marginBottom: '6px' }}>
+                                      {line.item?.name || line.item_name || 'Line Item'} ({line.quantity || 1}x)
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', paddingLeft: '8px' }}>
+                                      {docs.map(doc => {
+                                        const isSelected = submittalSelected.has(`specsheet:${doc.key}:${doc.url}`)
+                                        return (
+                                          <label key={doc.key} style={{
+                                            display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px',
+                                            backgroundColor: isSelected ? 'rgba(90,99,73,0.12)' : theme.bgCard,
+                                            border: `1px solid ${isSelected ? '#5a6349' : theme.border}`,
+                                            borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
+                                            color: isSelected ? '#5a6349' : theme.textSecondary
+                                          }}>
+                                            <input
+                                              type="checkbox"
+                                              checked={!!isSelected}
+                                              onChange={() => {
+                                                setSubmittalSelected(prev => {
+                                                  const next = new Set(prev)
+                                                  const key = `specsheet:${doc.key}:${doc.url}`
+                                                  if (next.has(key)) next.delete(key)
+                                                  else next.add(key)
+                                                  return next
+                                                })
+                                              }}
+                                              style={{ accentColor: '#5a6349' }}
+                                            />
+                                            <FileText size={12} />
+                                            {doc.label}
+                                          </label>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </>
+                      )}
+
                       <div
                         onClick={() => setSubmittalSections(p => ({ ...p, lineItems: !p.lineItems }))}
                         style={{
