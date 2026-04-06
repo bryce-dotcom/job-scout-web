@@ -394,7 +394,7 @@ function JobDetailInner() {
       // Fetch utility invoices linked to this job
       const { data: utilInvoicesData } = await supabase
         .from('utility_invoices')
-        .select('id, amount, payment_status, utility_name, created_at')
+        .select('id, amount, payment_status, utility_name, created_at, project_cost, incentive_amount, net_cost, customer_name, notes')
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobUtilityInvoices(utilInvoicesData || [])
@@ -1818,6 +1818,84 @@ function JobDetailInner() {
     })
   }
 
+  // Generate a utility invoice PDF blob using jsPDF
+  const generateUtilityInvoicePDF = async (inv) => {
+    const { default: jsPDF } = await import('jspdf')
+    const pdfDoc = new jsPDF()
+    const pw = pdfDoc.internal.pageSize.getWidth()
+    const m = 20, re = pw - m, cw = pw - m * 2
+    let py = 20
+    const fmtCur = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v || 0)
+
+    // Title
+    pdfDoc.setFontSize(18); pdfDoc.setFont('helvetica', 'bold')
+    pdfDoc.setTextColor(90, 99, 73)
+    pdfDoc.text('UTILITY INVOICE', re, 20, { align: 'right' })
+    pdfDoc.setTextColor(80); pdfDoc.setFontSize(10); pdfDoc.setFont('helvetica', 'normal')
+    let iy = 30
+    pdfDoc.text(`Invoice #: UTL-${inv.id}`, re, iy, { align: 'right' }); iy += 5
+    pdfDoc.text(`Date: ${new Date(inv.created_at).toLocaleDateString()}`, re, iy, { align: 'right' }); iy += 5
+    pdfDoc.text(`Utility: ${inv.utility_name || '-'}`, re, iy, { align: 'right' })
+
+    // Customer
+    pdfDoc.setTextColor(0); pdfDoc.setFontSize(11); pdfDoc.setFont('helvetica', 'bold')
+    pdfDoc.text('Customer:', m, py); py += 6
+    pdfDoc.setFont('helvetica', 'normal'); pdfDoc.setFontSize(10)
+    pdfDoc.text(inv.customer_name || job.customer?.name || '-', m, py); py += 5
+    if (job.customer?.address) { pdfDoc.text(job.customer.address, m, py); py += 5 }
+    if (job.customer?.phone) { pdfDoc.text(job.customer.phone, m, py); py += 5 }
+    py += 3
+
+    // Job
+    pdfDoc.setFont('helvetica', 'bold'); pdfDoc.setFontSize(11)
+    pdfDoc.text('Job:', m, py); py += 6
+    pdfDoc.setFont('helvetica', 'normal'); pdfDoc.setFontSize(10)
+    pdfDoc.text(job.job_title || job.job_id || '-', m, py); py += 5
+    if (job.job_address) { pdfDoc.text(job.job_address, m, py); py += 5 }
+    py += 3
+
+    // Divider
+    pdfDoc.setDrawColor(214, 205, 184); pdfDoc.line(m, py, re, py); py += 10
+
+    // Cost breakdown from line items
+    const materialTotal = lineItems.reduce((s, l) => s + (parseFloat(l.total || l.line_total) || 0), 0)
+    const rawLaborTotal = lineItems.reduce((s, l) => s + (parseFloat(l.labor_total) || 0), 0)
+    const hasLaborData = lineItems.some(l => parseFloat(l.labor_total) > 0)
+    const laborTotal = hasLaborData ? rawLaborTotal : Math.round(materialTotal * 0.3 * 100) / 100
+
+    pdfDoc.setFontSize(11); pdfDoc.setFont('helvetica', 'bold')
+    pdfDoc.text('Cost Breakdown', m, py); py += 8
+    pdfDoc.setFillColor(247, 245, 239); pdfDoc.rect(m, py - 4, cw, 8, 'F')
+    pdfDoc.setFontSize(9); pdfDoc.setFont('helvetica', 'bold'); pdfDoc.setTextColor(80)
+    pdfDoc.text('Description', m + 2, py); pdfDoc.text('Amount', re - 2, py, { align: 'right' }); py += 8
+    pdfDoc.setFont('helvetica', 'normal'); pdfDoc.setTextColor(0); pdfDoc.setFontSize(10)
+    pdfDoc.text('Material', m + 2, py); pdfDoc.text(fmtCur(materialTotal), re - 2, py, { align: 'right' }); py += 7
+    pdfDoc.text('Labor', m + 2, py); pdfDoc.text(fmtCur(laborTotal), re - 2, py, { align: 'right' }); py += 4
+    pdfDoc.setDrawColor(214, 205, 184); pdfDoc.line(m, py, re, py); py += 10
+
+    // Financial summary
+    const sx = m + 100
+    pdfDoc.setFontSize(10); pdfDoc.setFont('helvetica', 'bold'); pdfDoc.setTextColor(0)
+    pdfDoc.text('Project Cost:', sx, py)
+    pdfDoc.text(fmtCur(inv.project_cost || inv.amount || (materialTotal + laborTotal)), re, py, { align: 'right' }); py += 6
+    pdfDoc.setFont('helvetica', 'normal'); pdfDoc.setTextColor(212, 148, 10)
+    pdfDoc.text('Utility Incentive:', sx, py)
+    pdfDoc.text(`- ${fmtCur(inv.incentive_amount)}`, re, py, { align: 'right' }); py += 8
+    pdfDoc.setDrawColor(214, 205, 184); pdfDoc.line(sx, py - 2, re, py - 2)
+    pdfDoc.setTextColor(0); pdfDoc.setFontSize(12); pdfDoc.setFont('helvetica', 'bold')
+    pdfDoc.text('Net Cost:', sx, py + 4)
+    pdfDoc.text(fmtCur(inv.net_cost), re, py + 4, { align: 'right' }); py += 14
+
+    // Notes
+    if (inv.notes) {
+      pdfDoc.setFontSize(10); pdfDoc.setFont('helvetica', 'normal'); pdfDoc.setTextColor(100)
+      pdfDoc.text('Notes:', m, py); py += 5
+      for (const ln of pdfDoc.splitTextToSize(inv.notes, cw)) { pdfDoc.text(ln, m, py); py += 5 }
+    }
+
+    return pdfDoc.output('blob')
+  }
+
   const buildSubmittalManifest = () => {
     const items = []
     submittalSelected.forEach(key => {
@@ -1895,7 +1973,7 @@ function JobDetailInner() {
         const invId = parseInt(rest[0])
         const inv = jobUtilityInvoices.find(i => i.id === invId)
         if (inv) {
-          items.push({ type: 'text', content: `Utility Invoice UTL-${inv.id}\nUtility: ${inv.utility_name || '-'}\nAmount: $${(inv.amount || 0).toFixed(2)}\nStatus: ${inv.payment_status}\nDate: ${new Date(inv.created_at).toLocaleDateString()}`, folder: '05_invoices', filename: `UTL-${inv.id}.txt` })
+          items.push({ type: 'utilpdf', invoice: inv, folder: '05_invoices', filename: `UTL-${inv.id}.pdf` })
         }
       } else if (type === 'specsheet') {
         // rest = [docKey, url] — spec sheet/install guide/DLC doc
@@ -1970,6 +2048,9 @@ function JobDetailInner() {
               const resp = await fetch(item.att.url)
               if (resp.ok) data = await resp.blob()
             }
+          }
+          if (!data && item.type === 'utilpdf') {
+            data = await generateUtilityInvoicePDF(item.invoice)
           }
           if (data) {
             zip.file(`${jobName}_submittal_package/${item.folder}/${item.filename}`, data)
@@ -2047,6 +2128,8 @@ function JobDetailInner() {
           } else if (item.type === 'doc' && item.att.storage_bucket) {
             const { data: signedData } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
             if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) data = await resp.blob() }
+          } else if (item.type === 'utilpdf') {
+            data = await generateUtilityInvoicePDF(item.invoice)
           }
           if (data) zip.file(`${jobName}_submittal_package/${item.folder}/${item.filename}`, data)
         } catch (err) { console.warn('Submittal email: skipping', item.filename, err.message) }
