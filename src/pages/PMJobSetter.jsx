@@ -82,7 +82,9 @@ export default function PMJobSetter() {
   const createJobSection = useStore((state) => state.createJobSection)
   const updateJobSection = useStore((state) => state.updateJobSection)
 
-  const isAdmin = checkManager(user)
+  // PMs (Project Managers) always get full board access, plus anyone Manager+ level
+  const isPM = (user?.role || '').toLowerCase().includes('project manager') || (user?.role || '').toLowerCase() === 'pm'
+  const isAdmin = isPM || checkManager(user)
 
   // Data-driven statuses from store
   const storeJobStatuses = useStore((state) => state.jobStatuses)
