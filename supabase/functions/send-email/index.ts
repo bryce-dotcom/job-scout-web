@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: from || 'JobScout <noreply@jobscout.appsannex.com>',
+        from: from || 'JobScout <invoices@appsannex.com>',
         to: Array.isArray(to) ? to : [to],
         subject,
         html: html || '',

@@ -2178,9 +2178,10 @@ function JobDetailInner() {
       setSubmittalProgress('Sending email...')
       const companyName = job?.business_unit || company?.name || 'Our Company'
       const customerName = job.customer?.name || job.customer?.business_name || ''
-      await supabase.functions.invoke('send-email', {
+      const sendResult = await supabase.functions.invoke('send-email', {
         body: {
           to: submittalEmail,
+          from: `${companyName} <invoices@appsannex.com>`,
           subject: `Submittal Package — ${job.job_title || job.job_id}${customerName ? ` — ${customerName}` : ''}`,
           html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
             <h2 style="color:#2c3530;">Submittal Package</h2>
@@ -2194,6 +2195,13 @@ function JobDetailInner() {
           </div>`
         }
       })
+
+      if (sendResult?.error) {
+        throw new Error(sendResult.error.message || 'Email send failed')
+      }
+      if (sendResult?.data?.error) {
+        throw new Error(sendResult.data.error)
+      }
 
       toast.success(`Submittal sent to ${submittalEmail}`)
       setShowSubmittalModal(false)
