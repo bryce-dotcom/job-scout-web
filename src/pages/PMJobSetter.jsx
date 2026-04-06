@@ -1345,6 +1345,10 @@ export default function PMJobSetter() {
         return emp?.name || ''
       }).filter(Boolean).join(', ')
       updateData.assigned_team = teamNames
+      // Set job_lead_id to first assigned employee for clock-in matching
+      if (!updateData.job_lead_id) {
+        updateData.job_lead_id = parseInt(scheduleForm.assigned_employee_ids[0])
+      }
     } else if (scheduleForm.assigned_team) {
       updateData.assigned_team = scheduleForm.assigned_team
     }
@@ -1497,9 +1501,10 @@ export default function PMJobSetter() {
 
       const appointmentRows = assignedIds.map(empId => {
         const emp = employees.find(e => String(e.id) === String(empId))
+        const baseTitle = scheduleJob.job_title || `Job #${scheduleJob.job_id || scheduleJob.id}`
         return {
           company_id: companyId,
-          title: scheduleJob.job_title || `Job #${scheduleJob.job_id || scheduleJob.id}`,
+          title: assignedIds.length > 1 && emp ? `${baseTitle} (${emp.name})` : baseTitle,
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
           location: scheduleJob.job_address || '',

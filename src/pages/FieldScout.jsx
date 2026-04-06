@@ -187,8 +187,14 @@ export default function FieldScout() {
     if (currentEmployee?.id && (j.salesperson_id === currentEmployee.id || j.pm_id === currentEmployee.id)) return true
     // No assignment at all — show to everyone
     if (!j.assigned_team && !j.job_lead_id) return true
-    // Assigned via team text match
-    if (j.assigned_team && employeeName && j.assigned_team.toLowerCase().includes(employeeName.toLowerCase())) return true
+    // Assigned via team — handle both array and comma-separated string
+    if (j.assigned_team && employeeName) {
+      if (Array.isArray(j.assigned_team)) {
+        if (j.assigned_team.some(name => name.toLowerCase().includes(employeeName.toLowerCase()))) return true
+      } else if (typeof j.assigned_team === 'string') {
+        if (j.assigned_team.toLowerCase().includes(employeeName.toLowerCase())) return true
+      }
+    }
     return false
   })
 
