@@ -27,7 +27,8 @@ const emptyInvoice = {
   project_cost: '',
   incentive_amount: '',
   net_cost: '',
-  customer_name: ''
+  customer_name: '',
+  business_unit: ''
 }
 
 export default function UtilityInvoices() {
@@ -38,6 +39,7 @@ export default function UtilityInvoices() {
   const customers = useStore((state) => state.customers)
   const utilityProviders = useStore((state) => state.utilityProviders)
   const fetchUtilityInvoices = useStore((state) => state.fetchUtilityInvoices)
+  const businessUnits = useStore((state) => state.businessUnits)
 
   const [showModal, setShowModal] = useState(false)
   const [editingInvoice, setEditingInvoice] = useState(null)
@@ -87,7 +89,8 @@ export default function UtilityInvoices() {
       project_cost: invoice.project_cost || '',
       incentive_amount: invoice.incentive_amount || '',
       net_cost: invoice.net_cost || '',
-      customer_name: invoice.customer_name || ''
+      customer_name: invoice.customer_name || '',
+      business_unit: invoice.business_unit || ''
     })
     setError(null)
     setShowModal(true)
@@ -122,6 +125,7 @@ export default function UtilityInvoices() {
       incentive_amount: parseFloat(formData.incentive_amount) || null,
       net_cost: parseFloat(formData.net_cost) || null,
       customer_name: formData.customer_name || null,
+      business_unit: formData.business_unit || null,
       updated_at: new Date().toISOString()
     }
 
@@ -524,6 +528,13 @@ export default function UtilityInvoices() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Business Unit</label>
+                    <select name="business_unit" value={formData.business_unit} onChange={handleChange} style={inputStyle}>
+                      <option value="">Select Business Unit</option>
+                      {(businessUnits || []).map(bu => <option key={bu} value={bu}>{bu}</option>)}
+                    </select>
+                  </div>
                   <div>
                     <label style={labelStyle}>Job ID</label>
                     <input type="text" name="job_id" value={formData.job_id} onChange={handleChange} style={inputStyle} placeholder="Job ID" />
