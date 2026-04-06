@@ -511,10 +511,10 @@ export default function PMJobSetter() {
       }
     }
 
-    // Non-admins always filter to their own jobs
+    // Non-admins always filter to their own jobs; admins see unassigned jobs too
     const effectivePM = !isAdmin && user?.id ? String(user.id) : filterPM
     if (effectivePM) {
-      filtered = filtered.filter(j => j.pm_id === parseInt(effectivePM))
+      filtered = filtered.filter(j => j.pm_id === parseInt(effectivePM) || !j.pm_id)
     }
     if (filterBusinessUnit) {
       filtered = filtered.filter(j => j.business_unit === filterBusinessUnit)
