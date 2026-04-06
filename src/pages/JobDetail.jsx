@@ -2178,8 +2178,10 @@ function JobDetailInner() {
       setSubmittalProgress('Sending email...')
       const companyName = job?.business_unit || company?.name || 'Our Company'
       const customerName = job.customer?.name || job.customer?.business_name || ''
-      const sendResult = await supabase.functions.invoke('send-email', {
-        body: {
+      // Call via direct fetch with anon key to avoid expired-JWT 401s
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const emailBody = {
           to: submittalEmail,
           from: `${companyName} <invoices@appsannex.com>`,
           subject: `Submittal Package — ${job.job_title || job.job_id}${customerName ? ` — ${customerName}` : ''}`,
@@ -2193,27 +2195,20 @@ function JobDetailInner() {
             <hr style="border:none;border-top:1px solid #d6cdb8;margin:24px 0;" />
             <p style="color:#7d8a7f;font-size:12px;">${companyName}</p>
           </div>`
-        }
-      })
-
-      if (sendResult?.error) {
-        // supabase-js wraps the response in error.context — read it for the real reason
-        let realMsg = sendResult.error.message || 'Email send failed'
-        try {
-          const ctx = sendResult.error.context
-          if (ctx && typeof ctx.text === 'function') {
-            const bodyText = await ctx.text()
-            if (bodyText) realMsg = `${realMsg} | ${bodyText.slice(0, 500)}`
-          } else if (ctx && typeof ctx === 'object') {
-            realMsg = `${realMsg} | ${JSON.stringify(ctx).slice(0, 500)}`
-          }
-        } catch (e) { console.warn('could not read error context', e) }
-        console.error('[submittal] supabase invoke error', sendResult.error, 'context:', sendResult.error.context)
-        throw new Error(realMsg)
       }
-      if (sendResult?.data && sendResult.data.success === false) {
-        const det = sendResult.data.details ? ` (${JSON.stringify(sendResult.data.details)})` : ''
-        throw new Error((sendResult.data.error || 'Email send failed') + det)
+      const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ANON_KEY}`,
+          'apikey': ANON_KEY,
+        },
+        body: JSON.stringify(emailBody),
+      })
+      const sendData = await sendRes.json().catch(() => ({}))
+      if (!sendRes.ok || sendData.success === false) {
+        const det = sendData.details ? ` (${JSON.stringify(sendData.details)})` : ''
+        throw new Error((sendData.error || `HTTP ${sendRes.status}`) + det)
       }
 
       toast.success(`Submittal sent to ${submittalEmail}`)
