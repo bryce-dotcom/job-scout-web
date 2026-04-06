@@ -86,6 +86,7 @@ export default function SalesPipeline() {
   const updateLead = useStore((state) => state.updateLead)
   const updateQuote = useStore((state) => state.updateQuote)
   const storeJobs = useStore((state) => state.jobs)
+  const fetchJobs = useStore((state) => state.fetchJobs)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
 
   // Pipeline state
@@ -732,8 +733,37 @@ export default function SalesPipeline() {
         updated_at: new Date().toISOString()
       })
 
-      // Check if ALL quotes for this lead are now Approved → auto-win the lead
+      // Auto-create a job in Chillin status for this won estimate
       const leadId = selectedLead._originalLeadId
+      try {
+        const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`
+        const { data: newJob } = await supabase.from('jobs').insert({
+          company_id: companyId,
+          job_id: jobNumber,
+          job_title: selectedLead.customer_name + ' - ' + (selectedLead._quoteName || 'Won Estimate'),
+          customer_id: selectedLead.customer_id || null,
+          customer_name: selectedLead.customer_name || null,
+          email: selectedLead.email || null,
+          phone: selectedLead.phone || null,
+          address: selectedLead.address || null,
+          salesperson_id: selectedLead.salesperson_id || selectedLead.lead_owner_id || null,
+          quote_id: selectedLead._quoteId,
+          lead_id: leadId,
+          job_total: selectedLead._quoteAmount || 0,
+          status: 'Chillin',
+          notes: wonNotes || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }).select().single()
+
+        if (newJob) {
+          await fetchJobs()
+        }
+      } catch (e) {
+        console.error('[Pipeline] Auto-create job failed:', e)
+      }
+
+      // Check if ALL quotes for this lead are now Approved → auto-win the lead
       const parentLead = pipelineLeads.find(l => l.id === leadId)
       if (parentLead && parentLead._quotes) {
         const allApproved = parentLead._quotes.every(q =>

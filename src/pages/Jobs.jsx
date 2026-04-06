@@ -413,7 +413,7 @@ export default function Jobs() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('active')
   const [teamFilter, setTeamFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
   const [customerSearchText, setCustomerSearchText] = useState('')
@@ -539,7 +539,9 @@ export default function Jobs() {
       job.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       job.job_id?.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesStatus = statusFilter === 'all' || job.status === statusFilter
+    const matchesStatus = statusFilter === 'all' ? true
+      : statusFilter === 'active' ? !['Completed', 'Cancelled', 'Archived'].includes(job.status)
+      : job.status === statusFilter
     const matchesTeam = teamFilter === 'all' || job.assigned_team === teamFilter
 
     return matchesSearch && matchesStatus && matchesTeam
@@ -1044,6 +1046,7 @@ export default function Jobs() {
             onChange={(e) => setStatusFilter(e.target.value)}
             style={{ ...inputStyle, width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'auto' : '140px' }}
           >
+            <option value="active">Active Jobs</option>
             <option value="all">All Status</option>
             {boardColumns.map(col => (
               <option key={col.id} value={col.id}>{col.name}</option>
