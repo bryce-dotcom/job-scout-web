@@ -2199,8 +2199,9 @@ function JobDetailInner() {
       if (sendResult?.error) {
         throw new Error(sendResult.error.message || 'Email send failed')
       }
-      if (sendResult?.data?.error) {
-        throw new Error(sendResult.data.error)
+      if (sendResult?.data && sendResult.data.success === false) {
+        const det = sendResult.data.details ? ` (${JSON.stringify(sendResult.data.details)})` : ''
+        throw new Error((sendResult.data.error || 'Email send failed') + det)
       }
 
       toast.success(`Submittal sent to ${submittalEmail}`)
