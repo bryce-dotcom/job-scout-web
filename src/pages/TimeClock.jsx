@@ -210,12 +210,13 @@ export default function TimeClock() {
     let regularHours = 0, overtimeHours = 0
     const weeklyHours = {}
     empEntries.forEach(entry => {
-      if (!entry.total_hours) return
+      const hours = getEntryHours(entry)
+      if (!hours) return
       const d = new Date(entry.clock_in)
       const ws = new Date(d)
       ws.setDate(d.getDate() - d.getDay())
       const key = ws.toISOString().split('T')[0]
-      weeklyHours[key] = (weeklyHours[key] || 0) + entry.total_hours
+      weeklyHours[key] = (weeklyHours[key] || 0) + hours
     })
     Object.values(weeklyHours).forEach(h => {
       if (h <= otThreshold) { regularHours += h } else { regularHours += otThreshold; overtimeHours += h - otThreshold }
@@ -417,10 +418,21 @@ export default function TimeClock() {
     return timeEntries.find(e => e.employee_id === employeeId && !e.clock_out)
   }
 
+  // Compute hours for an entry, using total_hours if present, otherwise clock_in/clock_out
+  const getEntryHours = (e) => {
+    if (e.total_hours) return e.total_hours
+    if (!e.clock_in || !e.clock_out) return 0
+    let h = (new Date(e.clock_out) - new Date(e.clock_in)) / (1000 * 60 * 60)
+    if (e.lunch_start && e.lunch_end) {
+      h -= (new Date(e.lunch_end) - new Date(e.lunch_start)) / (1000 * 60 * 60)
+    }
+    return Math.max(0, h)
+  }
+
   const getWeekTotal = (employeeId) => {
     return timeEntries
-      .filter(e => e.employee_id === employeeId && e.total_hours)
-      .reduce((sum, e) => sum + (e.total_hours || 0), 0)
+      .filter(e => e.employee_id === employeeId && e.clock_out)
+      .reduce((sum, e) => sum + getEntryHours(e), 0)
   }
 
   const getRecentSessions = (employeeId) => {

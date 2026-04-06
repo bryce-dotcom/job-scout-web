@@ -172,7 +172,16 @@ export default function Dashboard() {
 
   const handleClockToggle = async () => {
     if (clockedIn && activeTimeLog) {
-      await supabase.from('time_clock').update({ clock_out: new Date().toISOString() }).eq('id', activeTimeLog.id)
+      const clockOut = new Date()
+      let totalHours = 0
+      if (activeTimeLog.clock_in) {
+        totalHours = (clockOut - new Date(activeTimeLog.clock_in)) / (1000 * 60 * 60)
+        if (activeTimeLog.lunch_start && activeTimeLog.lunch_end) {
+          totalHours -= (new Date(activeTimeLog.lunch_end) - new Date(activeTimeLog.lunch_start)) / (1000 * 60 * 60)
+        }
+        totalHours = Math.max(0, totalHours)
+      }
+      await supabase.from('time_clock').update({ clock_out: clockOut.toISOString(), total_hours: totalHours }).eq('id', activeTimeLog.id)
       setClockedIn(false); setActiveTimeLog(null)
     } else {
       const { data } = await supabase.from('time_clock').insert({ company_id: companyId, employee_id: currentEmployee?.id, clock_in: new Date().toISOString() }).select().single()

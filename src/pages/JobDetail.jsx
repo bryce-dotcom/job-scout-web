@@ -2197,7 +2197,19 @@ function JobDetailInner() {
       })
 
       if (sendResult?.error) {
-        throw new Error(sendResult.error.message || 'Email send failed')
+        // supabase-js wraps the response in error.context — read it for the real reason
+        let realMsg = sendResult.error.message || 'Email send failed'
+        try {
+          const ctx = sendResult.error.context
+          if (ctx && typeof ctx.text === 'function') {
+            const bodyText = await ctx.text()
+            if (bodyText) realMsg = `${realMsg} | ${bodyText.slice(0, 500)}`
+          } else if (ctx && typeof ctx === 'object') {
+            realMsg = `${realMsg} | ${JSON.stringify(ctx).slice(0, 500)}`
+          }
+        } catch (e) { console.warn('could not read error context', e) }
+        console.error('[submittal] supabase invoke error', sendResult.error, 'context:', sendResult.error.context)
+        throw new Error(realMsg)
       }
       if (sendResult?.data && sendResult.data.success === false) {
         const det = sendResult.data.details ? ` (${JSON.stringify(sendResult.data.details)})` : ''

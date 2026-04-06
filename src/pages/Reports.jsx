@@ -107,6 +107,7 @@ export default function Reports() {
   const isAdmin = checkAdmin(user)
   const isManager = checkManager(user)
 
+  const [timeClockEntries, setTimeClockEntries] = useState([])
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
@@ -118,6 +119,34 @@ export default function Reports() {
   useEffect(() => {
     if (!companyId) navigate('/')
   }, [companyId, navigate])
+
+  // Fetch time_clock entries directly (paginated) for accurate employee hours reporting
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    const fetchAll = async () => {
+      const all = []
+      const pageSize = 1000
+      let from = 0
+      while (true) {
+        const { data, error } = await supabase
+          .from('time_clock')
+          .select('id, employee_id, clock_in, clock_out, lunch_start, lunch_end, total_hours, job_id')
+          .eq('company_id', companyId)
+          .gte('clock_in', dateRange.start)
+          .lte('clock_in', dateRange.end + 'T23:59:59')
+          .order('clock_in', { ascending: false })
+          .range(from, from + pageSize - 1)
+        if (error || !data || data.length === 0) break
+        all.push(...data)
+        if (data.length < pageSize) break
+        from += pageSize
+      }
+      if (!cancelled) setTimeClockEntries(all)
+    }
+    fetchAll()
+    return () => { cancelled = true }
+  }, [companyId, dateRange.start, dateRange.end])
 
   const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val || 0)
   const formatPercent = (val) => `${(val * 100).toFixed(1)}%`
@@ -181,21 +210,30 @@ export default function Reports() {
   }, [invoices, payments, expenses, leadPayments, dateRange])
 
   const employeeReportData = useMemo(() => {
-    const filteredLogs = filterByDate(timeLogs, 'clock_in_time')
+    const empNameById = {}
+    employees.forEach(e => { empNameById[e.id] = e.name })
     const hoursByEmployee = {}
-    filteredLogs.forEach(log => {
-      const empId = log.employee_id
-      const empName = log.employee?.name || 'Unknown'
+    timeClockEntries.forEach(entry => {
+      const empId = entry.employee_id
+      const empName = empNameById[empId] || 'Unknown'
       if (!hoursByEmployee[empId]) hoursByEmployee[empId] = { name: empName, hours: 0, jobs: new Set() }
-      if (log.clock_in_time && log.clock_out_time) {
-        hoursByEmployee[empId].hours += (new Date(log.clock_out_time) - new Date(log.clock_in_time)) / (1000 * 60 * 60)
+      let h = 0
+      if (entry.total_hours) {
+        h = entry.total_hours
+      } else if (entry.clock_in && entry.clock_out) {
+        h = (new Date(entry.clock_out) - new Date(entry.clock_in)) / (1000 * 60 * 60)
+        if (entry.lunch_start && entry.lunch_end) {
+          h -= (new Date(entry.lunch_end) - new Date(entry.lunch_start)) / (1000 * 60 * 60)
+        }
+        h = Math.max(0, h)
       }
-      if (log.job_id) hoursByEmployee[empId].jobs.add(log.job_id)
+      hoursByEmployee[empId].hours += h
+      if (entry.job_id) hoursByEmployee[empId].jobs.add(entry.job_id)
     })
     const employeeStats = Object.values(hoursByEmployee).map(e => ({ name: e.name, hours: e.hours.toFixed(1), jobCount: e.jobs.size })).sort((a, b) => parseFloat(b.hours) - parseFloat(a.hours))
     const totalHours = Object.values(hoursByEmployee).reduce((sum, e) => sum + e.hours, 0)
     return { employeeStats, totalHours }
-  }, [timeLogs, dateRange])
+  }, [timeClockEntries, employees])
 
   const inventoryReportData = useMemo(() => {
     const totalItems = inventory.length
