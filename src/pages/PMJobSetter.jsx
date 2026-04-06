@@ -264,7 +264,7 @@ export default function PMJobSetter() {
       .from('jobs')
       .select(jobCols)
       .eq('company_id', companyId)
-      .not('status', 'in', '("Completed","Complete","Verified","Verified Complete","Cancelled")')
+      .not('status', 'in', '("Completed","Complete","Verified","Verified Complete","Cancelled","Archived")')
       .order('start_date', { ascending: true })
       .limit(5000)
     let { data: jobsData, error } = await query
@@ -272,7 +272,7 @@ export default function PMJobSetter() {
       console.warn('[PMJobSetter] Join query failed, falling back:', error.message)
       let fallbackQuery = supabase.from('jobs').select('*')
         .eq('company_id', companyId)
-        .not('status', 'in', '("Completed","Complete","Verified","Verified Complete","Cancelled")')
+        .not('status', 'in', '("Completed","Complete","Verified","Verified Complete","Cancelled","Archived")')
         .order('start_date', { ascending: true }).limit(5000)
       const res = await fallbackQuery
       jobsData = res.data
