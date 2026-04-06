@@ -1909,12 +1909,20 @@ function JobDetailInner() {
 
   const buildSubmittalManifest = () => {
     const items = []
+    // Two-folder layout: Documents (PDFs/text) and Photos (images)
+    // Filenames carry the meaning so utilities can scan one folder
+    const DOCS = 'Documents'
+    const PHOTOS = 'Photos'
+
     submittalSelected.forEach(key => {
       const [type, ...rest] = key.split(':')
       if (type === 'doc') {
         const attId = parseInt(rest[0])
         const att = attachments.find(a => a.id === attId)
-        if (att) items.push({ type: 'doc', att, folder: '01_documents', filename: sanitizeFilename(att.file_name) })
+        if (att) {
+          const isImg = /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(att.file_name || '')
+          items.push({ type: 'doc', att, folder: isImg ? PHOTOS : DOCS, filename: sanitizeFilename(att.file_name) })
+        }
       } else if (type === 'source') {
         const [lineId, idx] = rest
         const line = lineItems.find(l => l.id === parseInt(lineId))
@@ -1922,7 +1930,7 @@ function JobDetailInner() {
         if (url) {
           const lineName = sanitizeFilename(line.item?.name || `line_${lineId}`)
           const ext = url.split('.').pop()?.split('?')[0] || 'jpg'
-          items.push({ type: 'public', url, folder: `02_line_items/${lineName}`, filename: `source_${parseInt(idx) + 1}.${ext}` })
+          items.push({ type: 'public', url, folder: PHOTOS, filename: `${lineName}_source_${parseInt(idx) + 1}.${ext}` })
         }
       } else if (type === 'before' || type === 'after') {
         const [lineId, attId] = rest
@@ -1932,7 +1940,8 @@ function JobDetailInner() {
         if (att) {
           const lineName = sanitizeFilename(line?.item?.name || `line_${lineId}`)
           const ext = (att.file_name || '').split('.').pop() || 'jpg'
-          items.push({ type: 'signed', att, folder: `02_line_items/${lineName}`, filename: `${type}_${attId}.${ext}` })
+          const label = type === 'before' ? 'BEFORE' : 'AFTER'
+          items.push({ type: 'signed', att, folder: PHOTOS, filename: `${lineName}_${label}_${attId}.${ext}` })
         }
       } else if (type === 'victor') {
         const [lineId, idx] = rest
@@ -1942,7 +1951,7 @@ function JobDetailInner() {
         if (vp) {
           const lineName = sanitizeFilename(line?.item?.name || `line_${lineId}`)
           const ext = vp.url.split('.').pop()?.split('?')[0] || 'jpg'
-          items.push({ type: 'public', url: vp.url, folder: `02_line_items/${lineName}`, filename: `verification_${parseInt(idx) + 1}.${ext}` })
+          items.push({ type: 'public', url: vp.url, folder: PHOTOS, filename: `${lineName}_verification_${parseInt(idx) + 1}.${ext}` })
         }
       } else if (type === 'vreport') {
         const reportId = parseInt(rest[0])
@@ -1950,7 +1959,7 @@ function JobDetailInner() {
         if (report) {
           const dateStr = new Date(report.created_at).toISOString().slice(0, 10)
           const text = `Victor Verification Report\nDate: ${dateStr}\nGrade: ${report.grade || 'N/A'}\nScore: ${report.score || 0}/100\n\n${report.summary || ''}\n\n${report.ai_analysis ? JSON.stringify(report.ai_analysis, null, 2) : ''}`
-          items.push({ type: 'text', content: text, folder: '03_verification', filename: `report_${dateStr}_summary.txt` })
+          items.push({ type: 'text', content: text, folder: DOCS, filename: `Verification_Report_${dateStr}.txt` })
         }
       } else if (type === 'vphoto') {
         const [reportId, idx] = rest
@@ -1958,51 +1967,82 @@ function JobDetailInner() {
         const photo = photos[parseInt(idx)]
         if (photo) {
           const ext = photo.url.split('.').pop()?.split('?')[0] || 'jpg'
-          items.push({ type: 'public', url: photo.url, folder: '03_verification', filename: `report_photo_${parseInt(idx) + 1}.${ext}` })
+          items.push({ type: 'public', url: photo.url, folder: PHOTOS, filename: `Verification_Photo_${parseInt(idx) + 1}.${ext}` })
         }
       } else if (type === 'notephoto') {
         const attId = parseInt(rest[0])
         const att = notesPhotos.find(p => p.id === attId)
         if (att) {
           const ext = (att.file_name || '').split('.').pop() || 'jpg'
-          items.push({ type: 'signed', att, folder: '04_notes', filename: `note_${attId}.${ext}` })
+          items.push({ type: 'signed', att, folder: PHOTOS, filename: `Note_Photo_${attId}.${ext}` })
         }
       } else if (type === 'auditphoto') {
         const idx = parseInt(rest[0])
         const photo = auditPhotos[idx]
         if (photo) {
           const ext = photo.url.split('.').pop()?.split('?')[0] || 'jpg'
-          items.push({ type: 'public', url: photo.url, folder: '04_notes', filename: `audit_${idx + 1}.${ext}` })
+          items.push({ type: 'public', url: photo.url, folder: PHOTOS, filename: `Audit_Photo_${idx + 1}.${ext}` })
         }
       } else if (type === 'invoice') {
         const invId = parseInt(rest[0])
         const inv = jobInvoices.find(i => i.id === invId)
         if (inv?.pdf_url) {
-          items.push({ type: 'signed_path', bucket: 'project-documents', path: inv.pdf_url, folder: '05_invoices', filename: `${inv.invoice_id || `invoice_${invId}`}.pdf` })
+          items.push({ type: 'signed_path', bucket: 'project-documents', path: inv.pdf_url, folder: DOCS, filename: `Invoice_${inv.invoice_id || invId}.pdf` })
         }
       } else if (type === 'utilinvoice') {
         const invId = parseInt(rest[0])
         const inv = jobUtilityInvoices.find(i => i.id === invId)
         if (inv) {
-          items.push({ type: 'utilpdf', invoice: inv, folder: '05_invoices', filename: `UTL-${inv.id}.pdf` })
+          items.push({ type: 'utilpdf', invoice: inv, folder: DOCS, filename: `Utility_Invoice_UTL-${inv.id}.pdf` })
         }
       } else if (type === 'specsheet') {
         // rest = [docKey, url] — spec sheet/install guide/DLC doc
         const url = rest.slice(1).join(':') // URL may contain colons
         const docKey = rest[0] || 'doc'
-        const label = docKey.startsWith('spec') ? 'spec_sheet' : docKey.startsWith('install') ? 'install_guide' : docKey.startsWith('dlc') ? 'dlc_certificate' : 'document'
+        const label = docKey.startsWith('spec') ? 'Spec_Sheet' : docKey.startsWith('install') ? 'Install_Guide' : docKey.startsWith('dlc') ? 'DLC_Certificate' : 'Document'
         const lineId = docKey.split('-')[1]
         const line = lineItems.find(l => l.id === parseInt(lineId))
-        const productName = sanitizeFilename(line?.item?.name || `product_${lineId}`)
+        const productName = sanitizeFilename(line?.item?.name || `Product_${lineId}`)
         const ext = url.split('.').pop()?.split('?')[0] || 'pdf'
-        items.push({ type: 'public', url, folder: '00_spec_sheets', filename: `${productName}_${label}.${ext}` })
+        items.push({ type: 'public', url, folder: DOCS, filename: `${label}_${productName}.${ext}` })
       } else if (type === 'jobnotes') {
         if (job?.notes) {
-          items.push({ type: 'text', content: `Job Notes — ${job.job_title || job.job_id}\n${'—'.repeat(40)}\n\n${job.notes}`, folder: '04_notes', filename: 'job_notes.txt' })
+          items.push({ type: 'text', content: `Job Notes — ${job.job_title || job.job_id}\n${'—'.repeat(40)}\n\n${job.notes}`, folder: DOCS, filename: 'Job_Notes.txt' })
         }
       }
     })
     return items
+  }
+
+  // Build a CONTENTS.txt index that lists everything in the package
+  const buildSubmittalIndex = (manifest, jobName, customerName, businessUnit) => {
+    const docs = manifest.filter(m => m.folder === 'Documents')
+    const photos = manifest.filter(m => m.folder === 'Photos')
+    const lines = []
+    lines.push('═'.repeat(60))
+    lines.push('  SUBMITTAL PACKAGE')
+    lines.push('═'.repeat(60))
+    lines.push('')
+    if (businessUnit) lines.push(`From:      ${businessUnit}`)
+    lines.push(`Job:       ${jobName}`)
+    if (customerName) lines.push(`Customer:  ${customerName}`)
+    lines.push(`Date:      ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`)
+    lines.push(`Items:     ${manifest.length} (${docs.length} document${docs.length !== 1 ? 's' : ''}, ${photos.length} photo${photos.length !== 1 ? 's' : ''})`)
+    lines.push('')
+    lines.push('─'.repeat(60))
+    lines.push('  DOCUMENTS/')
+    lines.push('─'.repeat(60))
+    if (docs.length === 0) lines.push('  (none)')
+    else docs.forEach((d, i) => lines.push(`  ${String(i + 1).padStart(2, '0')}. ${d.filename}`))
+    lines.push('')
+    lines.push('─'.repeat(60))
+    lines.push('  PHOTOS/')
+    lines.push('─'.repeat(60))
+    if (photos.length === 0) lines.push('  (none)')
+    else photos.forEach((p, i) => lines.push(`  ${String(i + 1).padStart(2, '0')}. ${p.filename}`))
+    lines.push('')
+    lines.push('═'.repeat(60))
+    return lines.join('\n')
   }
 
   const handleDownloadSubmittal = async () => {
@@ -2018,6 +2058,9 @@ function JobDetailInner() {
       ])
       const zip = new JSZip()
       const jobName = sanitizeFilename(job.job_title || job.job_id || 'job')
+      const indexCustomerName = job.customer?.name || job.customer?.business_name || ''
+      const indexBU = job?.business_unit || company?.name || ''
+      zip.file(`${jobName}_submittal_package/CONTENTS.txt`, buildSubmittalIndex(manifest, job.job_title || job.job_id, indexCustomerName, indexBU))
       let completed = 0
 
       for (const item of manifest) {
@@ -2122,6 +2165,9 @@ function JobDetailInner() {
       const [{ default: JSZip }] = await Promise.all([import('jszip')])
       const zip = new JSZip()
       const jobName = sanitizeFilename(job.job_title || job.job_id || 'job')
+      const _indexCustomer = job.customer?.name || job.customer?.business_name || ''
+      const _indexBU = job?.business_unit || company?.name || ''
+      zip.file(`${jobName}_submittal_package/CONTENTS.txt`, buildSubmittalIndex(manifest, job.job_title || job.job_id, _indexCustomer, _indexBU))
       let completed = 0
 
       for (const item of manifest) {
@@ -2181,20 +2227,110 @@ function JobDetailInner() {
       // Call via direct fetch with anon key to avoid expired-JWT 401s
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const docCount = manifest.filter(m => m.folder === 'Documents').length
+      const photoCount = manifest.filter(m => m.folder === 'Photos').length
+      const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+      const escapedMsg = submittalMessage ? submittalMessage.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''
+      const escapedJobTitle = (job.job_title || job.job_id || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const escapedCustomer = customerName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const escapedCompany = companyName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+      const emailHtml = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
+<body style="margin:0;padding:0;background-color:#f7f5ef;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#2c3530;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f7f5ef;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:14px;border:1px solid #d6cdb8;box-shadow:0 2px 12px rgba(44,53,48,0.06);overflow:hidden;">
+
+        <!-- Header bar -->
+        <tr><td style="background:linear-gradient(135deg,#5a6349 0%,#4a5239 100%);padding:28px 32px;">
+          <div style="font-size:11px;letter-spacing:2px;color:rgba(255,255,255,0.7);text-transform:uppercase;font-weight:600;margin-bottom:6px;">Submittal Package</div>
+          <div style="font-size:22px;color:#ffffff;font-weight:700;line-height:1.3;">${escapedJobTitle}</div>
+          ${escapedCustomer ? `<div style="font-size:14px;color:rgba(255,255,255,0.85);margin-top:4px;">${escapedCustomer}</div>` : ''}
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="padding:32px;">
+          ${escapedMsg
+            ? `<div style="font-size:15px;line-height:1.6;color:#2c3530;white-space:pre-line;margin-bottom:24px;">${escapedMsg}</div>`
+            : `<div style="font-size:15px;line-height:1.6;color:#2c3530;margin-bottom:24px;">Please find the submittal package for <strong>${escapedJobTitle}</strong> attached below. The download link is valid for 7 days.</div>`
+          }
+
+          <!-- Summary card -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f7f5ef;border:1px solid #d6cdb8;border-radius:10px;margin-bottom:24px;">
+            <tr><td style="padding:18px 20px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="font-size:11px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;padding-bottom:4px;">Documents</td>
+                  <td style="font-size:11px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;padding-bottom:4px;">Photos</td>
+                  <td style="font-size:11px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;padding-bottom:4px;">Total Items</td>
+                </tr>
+                <tr>
+                  <td style="font-size:24px;color:#5a6349;font-weight:700;">${docCount}</td>
+                  <td style="font-size:24px;color:#5a6349;font-weight:700;">${photoCount}</td>
+                  <td style="font-size:24px;color:#5a6349;font-weight:700;">${manifest.length}</td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+
+          <!-- CTA -->
+          ${downloadUrl ? `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+            <tr><td align="center">
+              <a href="${downloadUrl}" style="display:inline-block;padding:16px 36px;background:linear-gradient(135deg,#5a6349 0%,#4a5239 100%);color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;font-size:15px;letter-spacing:0.3px;box-shadow:0 4px 12px rgba(90,99,73,0.25);">
+                &#x2B07; Download Submittal Package
+              </a>
+              <div style="font-size:12px;color:#7d8a7f;margin-top:10px;">Link expires in 7 days &middot; ${today}</div>
+            </td></tr>
+          </table>
+          ` : ''}
+
+          <!-- What's inside -->
+          <div style="border-top:1px solid #eef2eb;padding-top:20px;">
+            <div style="font-size:12px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:10px;">What's Inside</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:8px 0;font-size:14px;color:#2c3530;">
+                  <span style="display:inline-block;width:24px;color:#5a6349;">&#128193;</span>
+                  <strong>Documents/</strong> <span style="color:#7d8a7f;">— spec sheets, install guides, certificates, invoices</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:8px 0;font-size:14px;color:#2c3530;">
+                  <span style="display:inline-block;width:24px;color:#5a6349;">&#128247;</span>
+                  <strong>Photos/</strong> <span style="color:#7d8a7f;">— before, after, and verification photos</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:8px 0;font-size:14px;color:#2c3530;">
+                  <span style="display:inline-block;width:24px;color:#5a6349;">&#128196;</span>
+                  <strong>CONTENTS.txt</strong> <span style="color:#7d8a7f;">— full index of every file included</span>
+                </td>
+              </tr>
+            </table>
+          </div>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background-color:#f7f5ef;border-top:1px solid #d6cdb8;padding:20px 32px;text-align:center;">
+          <div style="font-size:13px;color:#2c3530;font-weight:600;">${escapedCompany}</div>
+          <div style="font-size:11px;color:#7d8a7f;margin-top:4px;">This submittal package was generated by JobScout</div>
+        </td></tr>
+
+      </table>
+      <div style="font-size:11px;color:#7d8a7f;margin-top:16px;text-align:center;">If the button doesn't work, copy this link into your browser:<br />${downloadUrl ? `<a href="${downloadUrl}" style="color:#5a6349;word-break:break-all;">${downloadUrl}</a>` : ''}</div>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
       const emailBody = {
           to: submittalEmail,
           from: `${companyName} <invoices@appsannex.com>`,
           subject: `Submittal Package — ${job.job_title || job.job_id}${customerName ? ` — ${customerName}` : ''}`,
-          html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
-            <h2 style="color:#2c3530;">Submittal Package</h2>
-            ${submittalMessage ? `<p style="white-space:pre-line;">${submittalMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : `<p>Please find the submittal package for <strong>${job.job_title || job.job_id}</strong>.</p>`}
-            ${customerName ? `<p>Customer: ${customerName}</p>` : ''}
-            <p><strong>${manifest.length} item${manifest.length !== 1 ? 's' : ''}</strong> included in this package.</p>
-            ${downloadUrl ? `<p><a href="${downloadUrl}" style="display:inline-block;padding:12px 24px;background:#5a6349;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Download Submittal Package</a></p>` : ''}
-            <p style="color:#7d8a7f;font-size:13px;margin-top:24px;">This link expires in 7 days.</p>
-            <hr style="border:none;border-top:1px solid #d6cdb8;margin:24px 0;" />
-            <p style="color:#7d8a7f;font-size:12px;">${companyName}</p>
-          </div>`
+          html: emailHtml,
       }
       const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
         method: 'POST',
