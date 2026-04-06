@@ -35,11 +35,14 @@ const REP_PALETTE = [
   '#be185d', '#0e7490', '#4d7c0f', '#c2410c', '#6d28d9'
 ]
 
-// Resolve display name based on customer calendar_display preference
+// Resolve display name: customer name (or business name) first, then job title
 const getJobDisplayName = (job) => {
   const cust = job.customer
-  if (cust?.calendar_display === 'business' && cust.business_name) return cust.business_name
-  return job.job_title || cust?.name || job.customer_name || 'Untitled'
+  const custName = (cust?.calendar_display === 'business' && cust.business_name)
+    ? cust.business_name
+    : (cust?.name || job.customer_name || '')
+  if (custName && job.job_title) return `${custName} — ${job.job_title}`
+  return custName || job.job_title || 'Untitled'
 }
 
 export default function JobCalendar() {
