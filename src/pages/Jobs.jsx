@@ -533,13 +533,21 @@ export default function Jobs() {
     .sort((a, b) => new Date(b.end_date || b.updated_at) - new Date(a.end_date || a.updated_at))
 
   const filteredJobs = jobs.filter(job => {
+    const term = searchTerm.toLowerCase()
     const matchesSearch = searchTerm === '' ||
-      job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.job_address?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.job_id?.toLowerCase().includes(searchTerm.toLowerCase())
+      job.job_title?.toLowerCase().includes(term) ||
+      job.job_address?.toLowerCase().includes(term) ||
+      job.customer?.name?.toLowerCase().includes(term) ||
+      job.customer_name?.toLowerCase().includes(term) ||
+      job.job_id?.toLowerCase().includes(term) ||
+      job.customer?.business_name?.toLowerCase().includes(term) ||
+      job.business_name?.toLowerCase().includes(term) ||
+      job.notes?.toLowerCase().includes(term)
 
-    const matchesStatus = statusFilter === 'all' ? true
+    // When searching, show results from ALL statuses so you can find completed jobs
+    const matchesStatus = searchTerm
+      ? true
+      : statusFilter === 'all' ? true
       : statusFilter === 'active' ? !['Completed', 'Cancelled', 'Archived'].includes(job.status)
       : job.status === statusFilter
     const matchesTeam = teamFilter === 'all' || job.assigned_team === teamFilter
