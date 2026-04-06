@@ -245,10 +245,14 @@ export default function PMJobSetter() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Non-admins: lock PM filter to their own ID
+  // Non-admins: lock PM filter to their own ID; admins: clear any stale saved filter
   useEffect(() => {
     if (!isAdmin && user?.id && !pmFilterLocked) {
       setFilterPM(String(user.id))
+      setPmFilterLocked(true)
+    } else if (isAdmin && filterPM && !pmFilterLocked) {
+      // Clear stale PM filter for admins so they see all jobs by default
+      setFilterPM('')
       setPmFilterLocked(true)
     }
   }, [isAdmin, user?.id, pmFilterLocked])
@@ -511,10 +515,11 @@ export default function PMJobSetter() {
       }
     }
 
-    // Non-admins always filter to their own jobs; admins see unassigned jobs too
+    // Non-admins filter to their own jobs + unassigned; admins see all (or filtered by dropdown)
     const effectivePM = !isAdmin && user?.id ? String(user.id) : filterPM
     if (effectivePM) {
-      filtered = filtered.filter(j => j.pm_id === parseInt(effectivePM) || !j.pm_id)
+      const pmId = parseInt(effectivePM)
+      filtered = filtered.filter(j => j.pm_id === pmId || j.job_lead_id === pmId || !j.pm_id)
     }
     if (filterBusinessUnit) {
       filtered = filtered.filter(j => j.business_unit === filterBusinessUnit)
