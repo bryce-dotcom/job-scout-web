@@ -81,6 +81,7 @@ function JobDetailInner() {
   const { id } = useParams()
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const company = useStore((state) => state.company)
   const products = useStore((state) => state.products)
   const employees = useStore((state) => state.employees)
   const timeLogs = useStore((state) => state.timeLogs)
@@ -1827,6 +1828,15 @@ function JobDetailInner() {
     let py = 20
     const fmtCur = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v || 0)
 
+    // Sender (business unit) on left — businessUnits is an array of strings
+    const senderName = inv.business_unit || job?.business_unit || company?.name || 'Our Company'
+    pdfDoc.setFontSize(14); pdfDoc.setFont('helvetica', 'bold'); pdfDoc.setTextColor(90, 99, 73)
+    pdfDoc.text(senderName, m, 20)
+    pdfDoc.setFontSize(9); pdfDoc.setFont('helvetica', 'normal'); pdfDoc.setTextColor(80)
+    let sy = 26
+    if (company?.address) { pdfDoc.text(company.address, m, sy); sy += 4 }
+    if (company?.phone) { pdfDoc.text(company.phone, m, sy); sy += 4 }
+
     // Title
     pdfDoc.setFontSize(18); pdfDoc.setFont('helvetica', 'bold')
     pdfDoc.setTextColor(90, 99, 73)
@@ -1836,6 +1846,7 @@ function JobDetailInner() {
     pdfDoc.text(`Invoice #: UTL-${inv.id}`, re, iy, { align: 'right' }); iy += 5
     pdfDoc.text(`Date: ${new Date(inv.created_at).toLocaleDateString()}`, re, iy, { align: 'right' }); iy += 5
     pdfDoc.text(`Utility: ${inv.utility_name || '-'}`, re, iy, { align: 'right' })
+    py = Math.max(py, sy + 4)
 
     // Customer
     pdfDoc.setTextColor(0); pdfDoc.setFontSize(11); pdfDoc.setFont('helvetica', 'bold')
@@ -1995,6 +2006,7 @@ function JobDetailInner() {
   }
 
   const handleDownloadSubmittal = async () => {
+    const { toast } = await import('../lib/toast')
     const manifest = buildSubmittalManifest()
     if (manifest.length === 0) return
     setSubmittalDownloading(true)
@@ -2094,6 +2106,7 @@ function JobDetailInner() {
   }
 
   const handleSendSubmittal = async () => {
+    const { toast } = await import('../lib/toast')
     if (!submittalEmail) {
       toast.error('Enter a recipient email')
       return
@@ -2163,7 +2176,7 @@ function JobDetailInner() {
 
       // Send email via edge function
       setSubmittalProgress('Sending email...')
-      const companyName = company?.name || 'Our Company'
+      const companyName = job?.business_unit || company?.name || 'Our Company'
       const customerName = job.customer?.name || job.customer?.business_name || ''
       await supabase.functions.invoke('send-email', {
         body: {
