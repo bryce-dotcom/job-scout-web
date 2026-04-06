@@ -871,12 +871,18 @@ export default function InvoiceDetail() {
       const sendData = await sendRes.json()
       if (!sendData.success) throw new Error(sendData.error || 'Failed to send invoice')
 
-      // Update invoice
+      // Update invoice (capture Resend email_id for delivery tracking)
       await supabase.from('invoices').update({
         payment_status: invoice.payment_status === 'Draft' ? 'Sent' : invoice.payment_status,
         last_sent_at: new Date().toISOString(),
         sent_to_email: sendEmail,
         portal_token: portalToken?.token || null,
+        email_id: sendData.emailId || null,
+        email_status: 'sent',
+        email_status_at: new Date().toISOString(),
+        email_bounce_reason: null,
+        email_opened_at: null,
+        email_clicked_at: null,
         updated_at: new Date().toISOString()
       }).eq('id', id)
 
@@ -1050,6 +1056,43 @@ export default function InvoiceDetail() {
                 <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{invoice.customer?.address || '-'}</p>
               </div>
             </div>
+
+            {/* Email Delivery Status */}
+            {invoice.email_id && (() => {
+              const status = invoice.email_status || 'sent'
+              const statusConfig = {
+                sent: { label: 'Sent', color: theme.info, bg: 'rgba(59,130,246,0.12)' },
+                delivered: { label: 'Delivered', color: theme.success, bg: 'rgba(34,197,94,0.12)' },
+                delayed: { label: 'Delayed', color: theme.warning, bg: 'rgba(234,179,8,0.12)' },
+                bounced: { label: 'Bounced', color: theme.error, bg: 'rgba(239,68,68,0.12)' },
+                complained: { label: 'Spam Complaint', color: theme.error, bg: 'rgba(239,68,68,0.12)' },
+              }
+              const cfg = statusConfig[status] || statusConfig.sent
+              const ts = invoice.email_status_at ? new Date(invoice.email_status_at).toLocaleString() : ''
+              return (
+                <div style={{ marginTop: '16px', padding: '12px 16px', borderRadius: '10px', border: `1px solid ${theme.border}`, backgroundColor: cfg.bg }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                      <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Email Delivery</p>
+                      <p style={{ fontSize: '14px', fontWeight: '600', color: cfg.color }}>
+                        {cfg.label}
+                        {ts ? ` — ${ts}` : ''}
+                      </p>
+                      {invoice.sent_to_email && (
+                        <p style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>To: {invoice.sent_to_email}</p>
+                      )}
+                      {invoice.email_bounce_reason && (
+                        <p style={{ fontSize: '12px', color: theme.error, marginTop: '4px' }}>{invoice.email_bounce_reason}</p>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '12px', color: theme.textMuted }}>
+                      {invoice.email_opened_at && <div>Opened {new Date(invoice.email_opened_at).toLocaleString()}</div>}
+                      {invoice.email_clicked_at && <div>Clicked {new Date(invoice.email_clicked_at).toLocaleString()}</div>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
 
           {/* Job Info */}

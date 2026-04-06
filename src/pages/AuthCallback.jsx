@@ -96,7 +96,8 @@ export default function AuthCallback() {
       if (code) {
         const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
         if (exchangeError || !data.session) {
-          setError('Authentication failed. Please try signing in again.')
+          const msg = exchangeError?.message || 'Unknown error'
+          setError('Authentication failed: ' + msg + '. Please try again.')
           setLoading(false)
           return
         }
@@ -116,6 +117,21 @@ export default function AuthCallback() {
         setIsRecovery(true)
         setLoading(false)
         return
+      }
+
+      // For Google Calendar connect flow, prefer the already-logged-in user from the
+      // persisted store. This avoids losing context when the Supabase session gets
+      // replaced by the Google OAuth redirect (e.g. if Google email doesn't exactly
+      // match the JobScout employee email or identity linking isn't configured).
+      if (gcalConnect) {
+        const existingUser = useStore.getState().user
+        const existingCompany = useStore.getState().company
+        if (existingUser?.id && existingUser?.company_id) {
+          await storeGoogleCalendarToken(session, existingUser)
+          navigate('/appointments', { replace: true })
+          return
+        }
+        // Fall through to employee lookup if no persisted user
       }
 
       // Session acquired — look up employee
