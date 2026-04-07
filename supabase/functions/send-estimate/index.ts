@@ -38,7 +38,11 @@ serve(async (req) => {
       business_unit_address,
       presentation_mode,
       customer_name,
+      subtotal,
+      discount,
+      utility_incentive,
       contract_total,
+      net_after_incentive,
       down_payment_label,
       down_payment_amount,
     } = await req.json();
@@ -80,9 +84,18 @@ serve(async (req) => {
     const contactEmail = business_unit_email || '';
     const contactAddress = business_unit_address || '';
     const estNum = estimate_number || `EST-${estimate_id}`;
-    const totalNum = parseFloat(contract_total) || 0;
+    const subtotalNum = parseFloat(subtotal) || 0;
+    const discountNum = parseFloat(discount) || 0;
+    const incentiveNum = parseFloat(utility_incentive) || 0;
+    const totalNum = parseFloat(contract_total) || Math.max(0, subtotalNum - discountNum);
+    const netNum = parseFloat(net_after_incentive) || Math.max(0, totalNum - incentiveNum);
     const depositNum = parseFloat(down_payment_amount) || 0;
     const dpLabel = down_payment_label || 'Deposit';
+    // "Remaining balance" follows the same rule as the contract preview:
+    // when there's an incentive, the client's out-of-pocket base is
+    // Net After Incentive; otherwise it's the Contract Total.
+    const balanceBase = incentiveNum > 0 ? netNum : totalNum;
+    const remainingNum = Math.max(0, balanceBase - depositNum);
     const greeting = customer_name ? `Hi ${String(customer_name).split(' ')[0]},` : 'Hello,';
     const currency = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -101,26 +114,38 @@ serve(async (req) => {
         : `Estimate ${estNum} from ${displayName}`;
     const ctaLabel = isFormal ? 'Review &amp; Sign Proposal' : isInteractive ? 'View Your Proposal' : 'View Estimate Online';
 
-    // Summary table — only for formal (shows contract total + down payment + remaining)
+    // Summary table — only for formal. Mirrors the EstimateDetail summary
+    // exactly: Subtotal, Discount, Contract Total, Utility Incentive,
+    // Net After Incentive, (Deposit due now), Remaining Balance.
     let summaryTable = '';
-    if (isFormal && totalNum > 0) {
-      const remainingNum = Math.max(0, totalNum - depositNum);
-      let rows = `
+    if (isFormal && (totalNum > 0 || subtotalNum > 0)) {
+      const row = (label: string, value: string, opts: { strong?: boolean; accent?: boolean; minus?: boolean; topRule?: boolean } = {}) => {
+        const padTop = opts.topRule ? '14px' : '10px';
+        const border = opts.strong ? 'border-top:2px solid #5a6349;' : 'border-bottom:1px solid #f0ece4;';
+        const labelColor = opts.strong ? '#2c3530' : '#4d5a52';
+        const valColor = opts.accent ? '#5a6349' : '#2c3530';
+        const size = opts.strong ? '15px' : '13px';
+        const weight = opts.strong ? '700' : (opts.accent ? '600' : '400');
+        return `
         <tr>
-          <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">Contract Total</td>
-          <td style="padding:10px 0;color:#2c3530;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;font-weight:600;">${currency(totalNum)}</td>
+          <td style="padding:${padTop} 0;color:${labelColor};font-size:${size};font-weight:${opts.strong ? '700' : '400'};${border}">${label}</td>
+          <td style="padding:${padTop} 0;color:${valColor};font-size:${size};font-weight:${weight};text-align:right;${border}">${opts.minus ? '- ' : ''}${value}</td>
         </tr>`;
-      if (depositNum > 0) {
-        rows += `
-        <tr>
-          <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">${dpLabel} (due now)</td>
-          <td style="padding:10px 0;color:#2c3530;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">- ${currency(depositNum)}</td>
-        </tr>
-        <tr>
-          <td style="padding:14px 0;color:#2c3530;font-size:15px;font-weight:700;">Remaining Balance</td>
-          <td style="padding:14px 0;color:#5a6349;font-size:15px;font-weight:700;text-align:right;">${currency(remainingNum)}</td>
-        </tr>`;
+      };
+
+      let rows = '';
+      rows += row('Subtotal', currency(subtotalNum));
+      if (discountNum > 0) rows += row('Discount', currency(discountNum), { minus: true });
+      rows += row('Contract Total', currency(totalNum), { accent: true });
+      if (incentiveNum > 0) {
+        rows += row('Utility Incentive', currency(incentiveNum), { minus: true });
+        rows += row('Net After Incentive', currency(netNum), { accent: true });
       }
+      if (depositNum > 0) {
+        rows += row(`${dpLabel} (due now)`, currency(depositNum), { minus: true });
+        rows += row('Remaining Balance', currency(remainingNum), { strong: true, accent: true, topRule: true });
+      }
+
       summaryTable = `
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;">
         ${rows}

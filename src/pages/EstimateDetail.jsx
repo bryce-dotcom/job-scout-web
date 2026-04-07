@@ -1434,9 +1434,12 @@ export default function EstimateDetail() {
         logoUrl = logoSetting?.value || company?.logo_url || ''
       }
 
-      // Formal-mode numbers for the summary block
+      // Summary numbers — mirror the EstimateDetail summary exactly
       const subtotalCalc = (lineItems || []).reduce((sum, l) => sum + (parseFloat(l.line_total) || 0), 0)
-      const contractTotal = subtotalCalc - (parseFloat(estimate.discount) || 0)
+      const discountCalc = parseFloat(estimate.discount) || 0
+      const incentiveCalc = parseFloat(estimate.utility_incentive) || 0
+      const contractTotal = subtotalCalc - discountCalc
+      const netAfterIncentive = Math.max(0, contractTotal - incentiveCalc)
       const formalCfg = estimate.settings_overrides?.formal_proposal || {}
       const dpRaw = parseFloat(formalCfg.down_payment_amount) || 0
       const dpAmount = formalCfg.down_payment_is_percent ? +(contractTotal * (dpRaw / 100)).toFixed(2) : dpRaw
@@ -1468,7 +1471,11 @@ export default function EstimateDetail() {
           business_unit_address: buObject?.address || company?.address || '',
           presentation_mode: presMode,
           customer_name: custName,
+          subtotal: subtotalCalc,
+          discount: discountCalc,
+          utility_incentive: incentiveCalc,
           contract_total: contractTotal,
+          net_after_incentive: netAfterIncentive,
           down_payment_label: dpLabel,
           down_payment_amount: dpAmount,
         }),
