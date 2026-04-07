@@ -1032,8 +1032,8 @@ function JobDetailInner() {
           invoice_id: invoiceNumber,
           job_id: parseInt(id),
           customer_id: resolvedCustomerId,
-          amount: customerOOP,
-          discount_applied: customerIncentive,
+          amount: projectCost,
+          discount_applied: Math.max(0, projectCost - customerOOP),
           payment_status: 'Pending',
           job_description: `Lighting Project — $${Math.round(projectCost).toLocaleString()} project, $${Math.round(customerIncentive).toLocaleString()} incentive`
         }])
