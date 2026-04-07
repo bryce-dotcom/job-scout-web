@@ -593,18 +593,41 @@ export default function EstimateDetail() {
     setSaving(false)
   }
 
+  // Safety guard: never silently clobber quote_amount with a smaller number
+  // when the lines array might not be fully hydrated. If the computed total
+  // drops by more than 50% compared to what's on file, the lines almost
+  // certainly aren't loaded yet and we skip the write instead of corrupting
+  // a real quote. (Fixed a regression where quote_amount got reset during a
+  // partial state update.)
+  const safeWriteQuoteAmount = async (computedTotal, sourceTag) => {
+    const current = parseFloat(estimate?.quote_amount) || 0
+    if (computedTotal <= 0 && current > 0) {
+      console.warn(`[EstimateDetail] ${sourceTag}: refusing to overwrite $${current} with $0`)
+      return
+    }
+    if (current > 100 && computedTotal < current * 0.5) {
+      console.warn(`[EstimateDetail] ${sourceTag}: refusing shrink from $${current} → $${computedTotal} (lines likely not loaded)`)
+      return
+    }
+    await updateQuote(id, { quote_amount: computedTotal, updated_at: new Date().toISOString() })
+  }
+
   const updateEstimateTotal = async () => {
     const allQuoteLines = useStore.getState().quoteLines || []
     const lines = allQuoteLines.filter(l => String(l.quote_id) === String(id))
     const total = lines.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
-    await updateQuote(id, { quote_amount: total, updated_at: new Date().toISOString() })
+    await safeWriteQuoteAmount(total, 'updateEstimateTotal')
   }
 
   // Compute total from local line items (avoids stale Zustand store reads during rapid edits)
   const updateEstimateTotalFromLines = async (lines) => {
     const total = lines.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
-    setEstimate(prev => prev ? { ...prev, quote_amount: total } : prev)
-    await updateQuote(id, { quote_amount: total, updated_at: new Date().toISOString() })
+    const current = parseFloat(estimate?.quote_amount) || 0
+    const safe = !(current > 100 && total < current * 0.5) && !(total <= 0 && current > 0)
+    if (safe) {
+      setEstimate(prev => prev ? { ...prev, quote_amount: total } : prev)
+    }
+    await safeWriteQuoteAmount(total, 'updateEstimateTotalFromLines')
   }
 
   const updateEstimateField = async (field, value) => {
