@@ -1359,26 +1359,43 @@ export default function EstimateDetail() {
     setSendingEmail(true)
     try {
       const buObject = getBusinessUnitObject()
-      // Auto-generate PDF if none exists
-      if (!estimate.pdf_url) {
-        const effectiveSettings = getEffectiveSettings()
-        const pdfBlob = await generateEstimatePdf({
-          estimate,
-          lineItems,
-          company,
-          settings: effectiveSettings,
-          layout: effectiveSettings.pdf_layout || 'email',
-          businessUnit: buObject
-        })
-        const fileName = `estimates/${companyId}/${estimate.quote_id || estimate.id}_${Date.now()}.pdf`
-        await supabase.storage
-          .from('project-documents')
-          .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true })
-        await updateQuote(id, { pdf_url: fileName })
-        estimate.pdf_url = fileName
+      const presMode = estimate.settings_overrides?.presentation_mode || 'pdf'
+
+      // Only the PDF presentation mode needs a physical PDF attachment.
+      // Interactive and formal modes use the portal link, no attachment.
+      if (presMode === 'pdf') {
+        // Verify the existing pdf_url actually exists in storage — if the
+        // file was deleted or the path is stale, regenerate instead of
+        // passing a dead reference to the edge function.
+        let needNewPdf = !estimate.pdf_url
+        if (estimate.pdf_url) {
+          const { data: existsCheck } = await supabase.storage
+            .from('project-documents')
+            .createSignedUrl(estimate.pdf_url, 60)
+          if (!existsCheck?.signedUrl) needNewPdf = true
+        }
+
+        if (needNewPdf) {
+          const effectiveSettings = getEffectiveSettings()
+          const pdfBlob = await generateEstimatePdf({
+            estimate,
+            lineItems,
+            company,
+            settings: effectiveSettings,
+            layout: effectiveSettings.pdf_layout || 'email',
+            businessUnit: buObject
+          })
+          const fileName = `estimates/${companyId}/${estimate.quote_id || estimate.id}_${Date.now()}.pdf`
+          const { error: upErr } = await supabase.storage
+            .from('project-documents')
+            .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true })
+          if (upErr) throw new Error('PDF upload failed: ' + upErr.message)
+          await updateQuote(id, { pdf_url: fileName })
+          estimate.pdf_url = fileName
+        }
       }
 
-      // Create portal token
+      // Create portal token (new token every send so we can revoke old ones later)
       const { data: portalToken, error: tokenErr } = await supabase
         .from('customer_portal_tokens')
         .insert({
@@ -1390,6 +1407,7 @@ export default function EstimateDetail() {
         })
         .select('token')
         .single()
+      if (tokenErr) throw new Error('Portal token creation failed: ' + tokenErr.message)
 
       const siteUrl = 'https://jobscout.appsannex.com'
       const portalUrl = portalToken?.token
@@ -1417,7 +1435,6 @@ export default function EstimateDetail() {
       }
 
       // Formal-mode numbers for the summary block
-      const presMode = estimate.settings_overrides?.presentation_mode || 'pdf'
       const subtotalCalc = (lineItems || []).reduce((sum, l) => sum + (parseFloat(l.line_total) || 0), 0)
       const contractTotal = subtotalCalc - (parseFloat(estimate.discount) || 0)
       const formalCfg = estimate.settings_overrides?.formal_proposal || {}
@@ -1425,9 +1442,18 @@ export default function EstimateDetail() {
       const dpAmount = formalCfg.down_payment_is_percent ? +(contractTotal * (dpRaw / 100)).toFixed(2) : dpRaw
       const dpLabel = formalCfg.down_payment_label || 'Deposit'
 
-      // Call edge function
-      const { error: fnError } = await supabase.functions.invoke('send-estimate', {
-        body: {
+      // Call edge function via direct fetch so we can read the actual
+      // error body instead of the generic "non-2xx status code" wrapper
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/send-estimate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ANON_KEY}`,
+          'apikey': ANON_KEY,
+        },
+        body: JSON.stringify({
           company_id: companyId,
           estimate_id: estimate.id,
           recipient_email: sendEmail,
@@ -1445,10 +1471,12 @@ export default function EstimateDetail() {
           contract_total: contractTotal,
           down_payment_label: dpLabel,
           down_payment_amount: dpAmount,
-        }
+        }),
       })
-
-      if (fnError) throw fnError
+      const sendData = await sendRes.json().catch(() => ({}))
+      if (!sendRes.ok || sendData?.error) {
+        throw new Error(sendData?.error || `send-estimate HTTP ${sendRes.status}`)
+      }
 
       // Update estimate
       await updateQuote(id, {
