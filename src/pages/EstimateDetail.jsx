@@ -77,6 +77,7 @@ export default function EstimateDetail() {
   const [rebateForms, setRebateForms] = useState([])
   const [fillingForm, setFillingForm] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showFormalModal, setShowFormalModal] = useState(false)
   const [showDepositModal, setShowDepositModal] = useState(false)
   const [showSendModal, setShowSendModal] = useState(false)
   const [generatingPdf, setGeneratingPdf] = useState(false)
@@ -2883,6 +2884,30 @@ export default function EstimateDetail() {
                 Create Proposal
               </button>
 
+              {/* Formal Legal Proposal — opens the dedicated editor modal */}
+              <button
+                onClick={() => setShowFormalModal(true)}
+                disabled={saving}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  padding: '12px 16px',
+                  backgroundColor: 'transparent',
+                  color: theme.accent,
+                  border: `1.5px solid ${theme.accent}`,
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  opacity: saving ? 0.6 : 1
+                }}
+              >
+                <FileText size={18} />
+                Formal Legal Proposal
+              </button>
+
               {/* Portal Link */}
               {estimate.portal_token && (
                 <div style={{
@@ -3650,6 +3675,22 @@ export default function EstimateDetail() {
         />
       )}
 
+      {showFormalModal && (
+        <FormalProposalModal
+          theme={theme}
+          initialSettings={getEffectiveSettings()}
+          estimate={estimate}
+          onSave={async (newSettings) => {
+            await saveSettingsOverrides(newSettings)
+            setShowFormalModal(false)
+            toast.success('Formal proposal saved. Use Create Proposal to send the portal link.')
+          }}
+          onClose={() => setShowFormalModal(false)}
+          inputStyle={inputStyle}
+          labelStyle={labelStyle}
+        />
+      )}
+
       {/* Associate Lead/Customer Modal */}
       {showAssociateModal && (
         <div style={{
@@ -3908,6 +3949,126 @@ export default function EstimateDetail() {
 }
 
 // Settings Modal Component
+// Standalone modal that hosts the formal proposal editor. Triggered by the
+// "Formal Legal Proposal" button on the estimate page so reps don't need to
+// dig into the Settings gear to set up a formal contract.
+function FormalProposalModal({ theme, initialSettings, onSave, onClose, inputStyle, labelStyle, estimate }) {
+  const [localSettings, setLocalSettings] = useState(initialSettings)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      // Flip presentation mode to formal and persist whatever the rep entered
+      const next = { ...localSettings, presentation_mode: 'formal' }
+      await onSave(next)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const portalUrl = estimate?.portal_token
+    ? `${window.location.origin}/portal/${estimate.portal_token}`
+    : null
+
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose?.() }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(15,20,17,0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        zIndex: 1000,
+      }}
+    >
+      <div style={{
+        backgroundColor: theme.bgCard,
+        borderRadius: '14px',
+        border: `1px solid ${theme.border}`,
+        width: '100%',
+        maxWidth: '720px',
+        maxHeight: '90vh',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${theme.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: theme.text }}>Formal Legal Proposal</h3>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: theme.textMuted }}>
+                Configure the contract language, down payment, and signature block. Save to enable the formal customer portal view.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 6 }}
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+          <FormalProposalEditor
+            localSettings={localSettings}
+            setLocalSettings={setLocalSettings}
+            theme={theme}
+            labelStyle={labelStyle}
+            inputStyle={inputStyle}
+          />
+          {portalUrl && (
+            <div style={{
+              marginTop: 14,
+              padding: '10px 12px',
+              backgroundColor: theme.accentBg,
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <span style={{ fontSize: 12, color: theme.textSecondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {portalUrl}
+              </span>
+              <button
+                onClick={() => { navigator.clipboard.writeText(portalUrl); toast.success('Portal link copied!') }}
+                style={{ padding: '4px 10px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Copy Link
+              </button>
+            </div>
+          )}
+          {!portalUrl && (
+            <p style={{ marginTop: 12, fontSize: 12, color: theme.textMuted }}>
+              Use the Create Proposal button after saving to generate a portal link for the customer.
+            </p>
+          )}
+        </div>
+
+        <div style={{ padding: '16px 24px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+          <button
+            onClick={onClose}
+            style={{ padding: '10px 18px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{ padding: '10px 18px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.7 : 1 }}
+          >
+            {saving ? 'Saving...' : 'Save Formal Proposal'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Formal proposal editor — lives inside SettingsModal when presentation_mode === 'formal'
 function FormalProposalEditor({ localSettings, setLocalSettings, theme, labelStyle, inputStyle }) {
   const formal = localSettings.formal_proposal || {}
