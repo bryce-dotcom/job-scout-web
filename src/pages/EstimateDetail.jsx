@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -16,6 +16,8 @@ import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
 import SignedProposalCard from '../components/SignedProposalCard'
 import { buildDefaultTerms, DEFAULT_DOWN_PAYMENT_LABEL } from '../components/proposal/formalProposalDefaults'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -3973,6 +3975,41 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
   const [isPercent, setIsPercent] = useState(!!formal.down_payment_is_percent)
   const [terms, setTerms] = useState(formal.legal_terms_md || '')
   const [rev, setRev] = useState(0)
+  const [showTermsEditor, setShowTermsEditor] = useState(false)
+
+  // Parse the same company settings rows the invoice portal reads so the
+  // preview shows the real Stripe/ACH buttons the customer will see (instead
+  // of the "Online payment not yet configured" fallback).
+  const storeSettings = useStore((s) => s.settings) || []
+  const { previewPaymentConfig, previewInvoiceSettings } = useMemo(() => {
+    const getParsed = (key) => {
+      const row = storeSettings.find((s) => s.key === key)
+      if (!row?.value) return null
+      try { return JSON.parse(row.value) } catch { return row.value }
+    }
+    const cfgRow = storeSettings.find((s) => s.key === 'payment_config')
+    let cfg = null
+    if (cfgRow?.value) { try { cfg = JSON.parse(cfgRow.value) } catch { /* ignore */ } }
+    const paymentConfig = cfg ? {
+      stripe_enabled: !!(cfg.stripe_enabled && cfg.stripe_secret_key),
+      paypal_enabled: !!(cfg.paypal_enabled && cfg.paypal_client_id && cfg.paypal_secret),
+      bank_enabled: !!(cfg.bank_enabled && cfg.bank_name),
+      bank_name: cfg.bank_name || null,
+      bank_account_name: cfg.bank_account_name || null,
+      bank_routing: cfg.bank_routing || null,
+      bank_account: cfg.bank_account ? '****' + String(cfg.bank_account).slice(-4) : null,
+      bank_instructions: cfg.bank_instructions || null,
+    } : {}
+    const invoiceSettings = {
+      cc_fee_enabled: getParsed('invoice_cc_fee_enabled') ?? true,
+      cc_fee_percent: getParsed('invoice_cc_fee_percent') ?? 1.9,
+      accept_credit_card: getParsed('invoice_accept_credit_card') ?? false,
+      show_preferred_payment_note: getParsed('invoice_show_preferred_payment_note') ?? true,
+      preferred_payment_note: getParsed('invoice_preferred_payment_note')
+        || 'We accept ACH transfers, checks, and cash at no additional fee. Credit card payments include a {cc_fee_percent}% processing fee.',
+    }
+    return { previewPaymentConfig: paymentConfig, previewInvoiceSettings: invoiceSettings }
+  }, [storeSettings])
 
   // When the user edits terms/amount we save into settings_overrides.formal_proposal.
   // Silent save keeps the preview responsive without re-fetching the whole estimate.
@@ -4024,10 +4061,12 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
     } : {},
     business_unit: businessUnit || null,
     approval: null,
-    payment_config: {},
+    payment_config: previewPaymentConfig,
+    invoice_settings: previewInvoiceSettings,
   }
 
   return (
+    <>
     <div style={{ display: 'flex', gap: 0, height: '100%', minHeight: 420 }}>
       {/* Left: live preview */}
       <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, backgroundColor: '#f7f5ef' }}>
@@ -4048,12 +4087,12 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
 
       {/* Right: inline editor */}
       <div style={{
-        width: '320px',
+        width: '340px',
         flexShrink: 0,
         borderLeft: `1px solid ${theme.border}`,
         backgroundColor: theme.bgCard,
         overflowY: 'auto',
-        padding: '14px',
+        padding: '16px',
       }}>
         <p style={{ fontSize: '11px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 12px' }}>
           Formal Agreement
@@ -4066,7 +4105,7 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
           onChange={(e) => setLabel(e.target.value)}
           onBlur={() => persist({ down_payment_label: label })}
           placeholder="Deposit, Retainer, Mobilization Fee..."
-          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', color: theme.text, backgroundColor: theme.bg }}
+          style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 14, marginBottom: 10, boxSizing: 'border-box', color: theme.text, backgroundColor: theme.bg }}
         />
 
         <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: theme.textSecondary, marginBottom: 4 }}>Down Payment Amount</label>
@@ -4078,42 +4117,169 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
           onChange={(e) => setAmount(e.target.value)}
           onBlur={() => persist({ down_payment_amount: amount === '' ? null : parseFloat(amount) })}
           placeholder="0.00"
-          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 13, marginBottom: 8, boxSizing: 'border-box', color: theme.text, backgroundColor: theme.bg }}
+          style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 14, marginBottom: 8, boxSizing: 'border-box', color: theme.text, backgroundColor: theme.bg }}
         />
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.bg, cursor: 'pointer', marginBottom: 14 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.bg, cursor: 'pointer', marginBottom: 14 }}>
           <input
             type="checkbox"
             checked={isPercent}
             onChange={(e) => { setIsPercent(e.target.checked); persist({ down_payment_is_percent: e.target.checked }) }}
             style={{ width: 16, height: 16, accentColor: theme.accent }}
           />
-          <span style={{ fontSize: 12, color: theme.text }}>Treat amount as % of total</span>
+          <span style={{ fontSize: 13, color: theme.text }}>Treat amount as % of total</span>
         </label>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <label style={{ fontSize: '11px', fontWeight: 600, color: theme.textSecondary }}>Legal Terms (Markdown)</label>
+        {/* Big, obvious Edit Contract button — opens a full-screen editor */}
+        <button
+          type="button"
+          onClick={() => setShowTermsEditor(true)}
+          style={{
+            width: '100%',
+            padding: '14px 16px',
+            borderRadius: 10,
+            border: `1.5px solid ${theme.accent}`,
+            background: theme.accentBg,
+            color: theme.accent,
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            marginBottom: 10,
+          }}
+        >
+          <FileText size={16} />
+          Edit Contract Language
+        </button>
+        <p style={{ fontSize: 11, color: theme.textMuted, margin: '0 0 12px', lineHeight: 1.5, textAlign: 'center' }}>
+          Add, remove, or rewrite any section of the legal terms. Changes save automatically and show in the preview immediately.
+        </p>
+
+        <div style={{ marginTop: 8, padding: '10px 12px', border: `1px dashed ${theme.border}`, borderRadius: 8, background: theme.bg }}>
+          <div style={{ fontSize: 11, color: theme.textMuted }}>Current contract length</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+            {terms ? `${terms.length.toLocaleString()} chars` : 'Using default template'}
+          </div>
           <button
             type="button"
             onClick={resetTerms}
-            style={{ background: 'none', border: 'none', color: theme.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+            style={{ background: 'none', border: 'none', color: theme.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: 0, marginTop: 6 }}
           >
-            Reset
+            Reset to default template
           </button>
         </div>
-        <textarea
-          value={terms}
-          onChange={(e) => setTerms(e.target.value)}
-          onBlur={() => persist({ legal_terms_md: terms })}
-          rows={14}
-          placeholder="Leave blank to auto-generate from defaults. Edit to customize scope, warranty, dispute resolution, etc."
-          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 11, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', resize: 'vertical', boxSizing: 'border-box', color: theme.text, backgroundColor: theme.bg }}
-        />
-        <p style={{ fontSize: 10, color: theme.textMuted, marginTop: 6 }}>
-          Changes save automatically when you click away from a field.
-        </p>
       </div>
     </div>
+
+    {/* Full-screen Markdown editor for the legal terms */}
+    {showTermsEditor && (
+      <div
+        onClick={(e) => { if (e.target === e.currentTarget) { persist({ legal_terms_md: terms }); setShowTermsEditor(false) } }}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(15,20,17,0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          zIndex: 2000,
+        }}
+      >
+        <div style={{
+          width: '100%',
+          maxWidth: 1100,
+          height: '90vh',
+          backgroundColor: theme.bgCard,
+          borderRadius: 14,
+          border: `1px solid ${theme.border}`,
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.3)',
+        }}>
+          <div style={{ padding: '18px 24px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: theme.text }}>Edit Contract Language</h3>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: theme.textMuted }}>
+                Markdown supported. Use <code>##</code> for section headings and <code>**text**</code> for bold.
+              </p>
+            </div>
+            <button
+              onClick={() => { persist({ legal_terms_md: terms }); setShowTermsEditor(false) }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 6 }}
+            >
+              <X size={22} />
+            </button>
+          </div>
+          <div style={{ flex: 1, display: 'flex', gap: 0, overflow: 'hidden' }}>
+            <div style={{ flex: 1, padding: 0, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${theme.border}` }}>
+              <div style={{ padding: '8px 16px', fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                Source (Markdown)
+              </div>
+              <textarea
+                autoFocus
+                value={terms}
+                onChange={(e) => setTerms(e.target.value)}
+                onBlur={() => persist({ legal_terms_md: terms })}
+                placeholder="Leave blank to auto-generate from the default template. Edit freely to customize scope, payment terms, warranty, dispute resolution, etc."
+                style={{
+                  flex: 1,
+                  padding: '14px 18px',
+                  border: 'none',
+                  outline: 'none',
+                  resize: 'none',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  color: theme.text,
+                  backgroundColor: theme.bgCard,
+                }}
+              />
+            </div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ padding: '8px 16px', fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                Live Preview
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '18px 24px', backgroundColor: theme.bgCard }}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h1: ({ children }) => <h3 style={{ fontSize: 16, fontWeight: 800, color: theme.text, textTransform: 'uppercase', letterSpacing: 0.8, margin: '22px 0 10px', paddingBottom: 6, borderBottom: `2px solid ${theme.accent}` }}>{children}</h3>,
+                    h2: ({ children }) => <h4 style={{ fontSize: 13, fontWeight: 800, color: theme.accent, textTransform: 'uppercase', letterSpacing: 0.6, margin: '18px 0 6px' }}>{children}</h4>,
+                    h3: ({ children }) => <h5 style={{ fontSize: 13, fontWeight: 700, color: theme.text, margin: '14px 0 4px' }}>{children}</h5>,
+                    p: ({ children }) => <p style={{ fontSize: 13, lineHeight: 1.7, color: theme.text, margin: '0 0 10px' }}>{children}</p>,
+                    ul: ({ children }) => <ul style={{ fontSize: 13, lineHeight: 1.7, margin: '0 0 10px', paddingLeft: 20, color: theme.text }}>{children}</ul>,
+                    ol: ({ children }) => <ol style={{ fontSize: 13, lineHeight: 1.7, margin: '0 0 10px', paddingLeft: 20, color: theme.text }}>{children}</ol>,
+                    li: ({ children }) => <li style={{ marginBottom: 4 }}>{children}</li>,
+                    strong: ({ children }) => <strong style={{ fontWeight: 700, color: theme.text }}>{children}</strong>,
+                    hr: () => <hr style={{ border: 'none', borderTop: `1px solid ${theme.border}`, margin: '18px 0' }} />,
+                  }}
+                >{terms || '*Start typing to see a preview of your legal terms.*'}</ReactMarkdown>
+              </div>
+            </div>
+          </div>
+          <div style={{ padding: '14px 24px', borderTop: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={async () => { setTerms(''); await persist({ legal_terms_md: '' }) }}
+              style={{ background: 'none', border: 'none', color: theme.error || '#8b5a5a', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+            >
+              Reset to default template
+            </button>
+            <button
+              onClick={async () => { await persist({ legal_terms_md: terms }); setShowTermsEditor(false); toast.success('Contract saved') }}
+              style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: theme.accent, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+            >
+              Save & Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 
