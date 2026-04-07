@@ -181,7 +181,13 @@ function App() {
   // Check for existing session on mount and handle session recovery
   useEffect(() => {
     const initializeAuth = async () => {
-      setIsLoading(true)
+      // If we already have a persisted user+company, don't block the UI with
+      // "Loading..." — let them see the app immediately while we verify in the
+      // background. This is critical for field techs on flaky mobile networks.
+      const persisted = useStore.getState()
+      const hasPersisted = !!persisted.companyId && !!persisted.user
+
+      if (!hasPersisted) setIsLoading(true)
 
       try {
         const { data: { session } } = await supabase.auth.getSession()
@@ -199,13 +205,29 @@ function App() {
           if (employee && employee.company) {
             setUser(employee)
             setCompany(employee.company)
-          } else {
-            // No valid employee - clear session
+          } else if (!hasPersisted) {
+            // Only clear if we had nothing cached anyway — avoids kicking a
+            // field tech off the page because of a transient employee lookup
+            // failure (network blip, RLS hiccup, etc.)
             await clearSession()
+          } else {
+            console.warn('[Auth] Employee lookup failed on refresh, keeping cached session')
           }
 
           // Don't block on developer status check
           checkDeveloperStatus().catch(() => {})
+        } else if (hasPersisted) {
+          // No Supabase session but we have cached user data. Try a silent
+          // refresh once — if that fails, leave them logged in via cache and
+          // let the next API call trigger a real re-auth if needed.
+          try {
+            const { data: refreshData } = await supabase.auth.refreshSession()
+            if (!refreshData?.session) {
+              console.warn('[Auth] No session on refresh, keeping cached user')
+            }
+          } catch (e) {
+            console.warn('[Auth] Silent refresh failed, keeping cached user', e)
+          }
         }
       } catch (err) {
         console.error('[Auth] Init error:', err)
@@ -216,13 +238,16 @@ function App() {
 
     initializeAuth()
 
-    // Listen for auth state changes (sign out, token refresh failure, etc.)
+    // Listen for auth state changes. Only clear the store on EXPLICIT sign-out
+    // (user clicked logout). Transient refresh failures on mobile/PWA should
+    // NOT kick the user to the login screen mid-shift.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
-        // Clear store on sign out or failed token refresh (common on iOS PWA)
+      if (event === 'SIGNED_OUT') {
         setUser(null)
         setCompany(null)
       }
+      // Intentionally ignore TOKEN_REFRESHED with no session. Supabase will
+      // retry and the user's cached data remains usable in the meantime.
     })
 
     return () => subscription.unsubscribe()

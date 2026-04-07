@@ -1770,21 +1770,28 @@ export default function FieldScout() {
       {/* ===== SECTION 6: STANDALONE CLOCK-IN ===== */}
       {!activeEntry && (() => {
         const hasTodaysJobs = todaysJobs.length > 0
-        const searchResults = !hasTodaysJobs && jobSearchQuery.trim().length >= 2
+        // Statuses up to and including Scheduled — catches unassigned/new
+        // jobs in any pre-work state so field techs can still clock in
+        const SEARCHABLE_STATUSES = new Set([
+          'New', 'Pending', 'Estimate', 'Estimating', 'Approved', 'Quoted',
+          'Ready', 'Ready to Schedule', 'Scheduled', 'In Progress', 'On Hold',
+          'Completed', 'Complete'
+        ])
+        const searchResults = jobSearchQuery.trim().length >= 2
           ? jobs.filter(j => {
               const q = jobSearchQuery.toLowerCase()
+              const statusOk = !j.status || SEARCHABLE_STATUSES.has(j.status)
+              if (!statusOk) return false
               return (
-                (j.status === 'Scheduled' || j.status === 'In Progress' || j.status === 'Completed' || j.status === 'Complete') &&
-                (
-                  (j.job_title || '').toLowerCase().includes(q) ||
-                  (j.job_id || '').toString().toLowerCase().includes(q) ||
-                  (j.customer?.name || j.customer_name || '').toLowerCase().includes(q) ||
-                  (j.job_address || '').toLowerCase().includes(q)
-                )
+                (j.job_title || '').toLowerCase().includes(q) ||
+                (j.job_id || '').toString().toLowerCase().includes(q) ||
+                (j.customer?.name || j.customer_name || '').toLowerCase().includes(q) ||
+                (j.business_name || '').toLowerCase().includes(q) ||
+                (j.job_address || '').toLowerCase().includes(q)
               )
             }).slice(0, 10)
           : []
-        const selectedSearchJob = !hasTodaysJobs && selectedJobId
+        const selectedSearchJob = selectedJobId
           ? jobs.find(j => String(j.id) === String(selectedJobId))
           : null
 
@@ -1801,7 +1808,7 @@ export default function FieldScout() {
               Clock In
             </h2>
 
-            {hasTodaysJobs ? (
+            {hasTodaysJobs && !jobSearchQuery && !(selectedSearchJob && !todaysJobs.find(j => String(j.id) === String(selectedJobId))) && (
               /* Dropdown for today's jobs */
               <select
                 value={selectedJobId}
@@ -1814,7 +1821,7 @@ export default function FieldScout() {
                   borderRadius: '10px',
                   color: theme.text,
                   fontSize: '15px',
-                  marginBottom: '12px',
+                  marginBottom: '10px',
                   minHeight: '44px'
                 }}
               >
@@ -1825,9 +1832,9 @@ export default function FieldScout() {
                   </option>
                 ))}
               </select>
-            ) : (
-              /* Search for any job when none scheduled today */
-              <div style={{ marginBottom: '12px' }}>
+            )}
+            {/* Search is always available — finds any job up to and including Scheduled status */}
+            <div style={{ marginBottom: '12px' }}>
                 {selectedSearchJob ? (
                   /* Selected job chip */
                   <div style={{
@@ -1947,15 +1954,19 @@ export default function FieldScout() {
                       </div>
                     )}
 
-                    {jobSearchQuery.trim().length < 2 && (
+                    {jobSearchQuery.trim().length < 2 && !hasTodaysJobs && (
                       <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
                         No jobs scheduled today. Search to find a job, or clock in general.
                       </div>
                     )}
+                    {jobSearchQuery.trim().length < 2 && hasTodaysJobs && (
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px' }}>
+                        Can't find it above? Search for any job (up to Scheduled status).
+                      </div>
+                    )}
                   </>
                 )}
-              </div>
-            )}
+            </div>
 
             <button
               onClick={() => handleClockIn(selectedJobId ? parseInt(selectedJobId) : null)}
