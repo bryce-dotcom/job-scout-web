@@ -4068,8 +4068,8 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
   return (
     <>
     <div style={{ display: 'flex', gap: 0, height: '100%', minHeight: 420 }}>
-      {/* Left: live preview */}
-      <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, backgroundColor: '#f7f5ef' }}>
+      {/* Left: live preview with a floating Edit Contract pill */}
+      <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, backgroundColor: '#f7f5ef', position: 'relative' }}>
         <Suspense fallback={<div style={{ textAlign: 'center', padding: '40px', color: theme.textMuted }}>Loading formal proposal...</div>}>
           <FormalProposal
             key={rev}
@@ -4083,6 +4083,35 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
             onPay={() => {}}
           />
         </Suspense>
+        {/* Floating Edit Contract pill — always visible while scrolling the preview */}
+        <button
+          type="button"
+          onClick={() => setShowTermsEditor(true)}
+          style={{
+            position: 'sticky',
+            bottom: 20,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '12px 22px',
+            borderRadius: 999,
+            border: 'none',
+            background: 'linear-gradient(135deg, #5a6349 0%, #4a5239 100%)',
+            color: '#ffffff',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: 'pointer',
+            boxShadow: '0 10px 30px rgba(44,53,48,0.35)',
+            marginTop: 24,
+            marginBottom: 24,
+            zIndex: 5,
+          }}
+        >
+          <FileText size={16} />
+          Edit Contract Language
+        </button>
       </div>
 
       {/* Right: inline editor */}
