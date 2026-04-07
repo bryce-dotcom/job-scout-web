@@ -62,13 +62,17 @@ export default function FormalProposal({
   const [submitError, setSubmitError] = useState(null)
   const [localPaymentProvider, setLocalPaymentProvider] = useState(null)
 
+  // Mirror the numbers the EstimateDetail summary shows — contract total is
+  // subtotal minus discount; the utility incentive is a separate "net after
+  // incentive" line below it, NOT a reduction of the contract price.
   const totals = useMemo(() => {
-    const subtotal = lineItems.reduce((s, l) => s + (parseFloat(l.total) || 0), 0)
+    const subtotal = lineItems.reduce((s, l) => s + (parseFloat(l.line_total || l.total) || 0), 0)
       || parseFloat(doc?.quote_amount) || 0
     const discount = parseFloat(doc?.discount) || 0
     const incentive = parseFloat(doc?.utility_incentive) || 0
-    const total = Math.max(0, subtotal - discount - incentive)
-    return { subtotal, discount, incentive, total }
+    const contractTotal = Math.max(0, subtotal - discount)
+    const netAfterIncentive = Math.max(0, contractTotal - incentive)
+    return { subtotal, discount, incentive, total: contractTotal, netAfterIncentive }
   }, [lineItems, doc])
 
   const displayName = businessUnit?.name || company?.company_name || 'Our Company'
@@ -182,7 +186,7 @@ export default function FormalProposal({
                 {lineItems.map((li, idx) => {
                   const qty = parseFloat(li.quantity) || 1
                   const unit = parseFloat(li.unit_price || li.price) || 0
-                  const total = parseFloat(li.total) || qty * unit
+                  const total = parseFloat(li.line_total || li.total) || qty * unit
                   return (
                     <tr key={li.id || idx} style={{ borderTop: '1px solid #eef2eb' }}>
                       <td style={styles.td}>
@@ -206,9 +210,14 @@ export default function FormalProposal({
           <div style={styles.totalsBox}>
             <TotalRow label="Subtotal" value={currency(totals.subtotal)} />
             {totals.discount > 0 && <TotalRow label="Discount" value={`- ${currency(totals.discount)}`} />}
-            {totals.incentive > 0 && <TotalRow label="Utility Incentive" value={`- ${currency(totals.incentive)}`} />}
             <div style={{ borderTop: '1px solid #d6cdb8', margin: '8px 0' }} />
             <TotalRow label="Contract Total" value={currency(totals.total)} strong />
+            {totals.incentive > 0 && (
+              <>
+                <TotalRow label="Utility Incentive" value={`- ${currency(totals.incentive)}`} />
+                <TotalRow label="Net After Incentive" value={currency(totals.netAfterIncentive)} strong />
+              </>
+            )}
           </div>
           {downPaymentAmount > 0 && (
             <div style={styles.depositCallout}>

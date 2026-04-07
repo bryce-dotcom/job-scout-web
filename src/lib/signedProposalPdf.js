@@ -173,7 +173,7 @@ export async function generateSignedProposalPdf({
       const name = li.item_name || li.description || 'Item'
       const qty = parseFloat(li.quantity) || 1
       const unit = parseFloat(li.unit_price || li.price) || 0
-      const total = parseFloat(li.total || li.line_total) || (qty * unit)
+      const total = parseFloat(li.line_total || li.total) || (qty * unit)
       const nameLines = doc.splitTextToSize(name, CW - 220)
       doc.setTextColor(DARK[0], DARK[1], DARK[2])
       doc.text(nameLines[0], M + 8, y + 4)
@@ -195,14 +195,18 @@ export async function generateSignedProposalPdf({
     }
   }
 
-  // ---------- Totals ----------
-  const subtotal = lineItems.reduce((s, l) => s + (parseFloat(l.total || l.line_total) || 0), 0)
+  // ---------- Totals (match EstimateDetail summary) ----------
+  // Contract total = subtotal - discount. Utility incentive is a separate
+  // "Net After Incentive" line below the contract total, NOT a reduction
+  // of the contract price.
+  const subtotal = lineItems.reduce((s, l) => s + (parseFloat(l.line_total || l.total) || 0), 0)
     || parseFloat(quote?.quote_amount) || 0
   const discount = parseFloat(quote?.discount) || 0
   const incentive = parseFloat(quote?.utility_incentive) || 0
-  const contractTotal = Math.max(0, subtotal - discount - incentive)
+  const contractTotal = Math.max(0, subtotal - discount)
+  const netAfterIncentive = Math.max(0, contractTotal - incentive)
 
-  ensureSpace(80)
+  ensureSpace(100)
   y += 8
   const tx = M + CW - 200
   doc.setFontSize(10)
@@ -219,13 +223,6 @@ export async function generateSignedProposalPdf({
     doc.text(`- ${formatCurrency(discount)}`, M + CW - 8, y, { align: 'right' })
     y += 14
   }
-  if (incentive > 0) {
-    doc.setTextColor(MUTED[0], MUTED[1], MUTED[2])
-    doc.text('Utility Incentive', tx, y)
-    doc.setTextColor(DARK[0], DARK[1], DARK[2])
-    doc.text(`- ${formatCurrency(incentive)}`, M + CW - 8, y, { align: 'right' })
-    y += 14
-  }
   doc.setDrawColor(RULE[0], RULE[1], RULE[2])
   doc.line(tx - 4, y - 4, PW - M, y - 4)
   doc.setFont('helvetica', 'bold')
@@ -234,6 +231,20 @@ export async function generateSignedProposalPdf({
   doc.text('Contract Total', tx, y + 8)
   doc.text(formatCurrency(contractTotal), M + CW - 8, y + 8, { align: 'right' })
   y += 22
+  if (incentive > 0) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(MUTED[0], MUTED[1], MUTED[2])
+    doc.text('Utility Incentive', tx, y)
+    doc.setTextColor(DARK[0], DARK[1], DARK[2])
+    doc.text(`- ${formatCurrency(incentive)}`, M + CW - 8, y, { align: 'right' })
+    y += 14
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(ACCENT[0], ACCENT[1], ACCENT[2])
+    doc.text('Net After Incentive', tx, y)
+    doc.text(formatCurrency(netAfterIncentive), M + CW - 8, y, { align: 'right' })
+    y += 16
+  }
 
   // Down payment callout
   if (downPaymentAmount > 0) {
