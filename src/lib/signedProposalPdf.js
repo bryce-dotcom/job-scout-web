@@ -8,13 +8,38 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
 }
 
-function stripMarkdown(md) {
-  // Minimal markdown → plain text: we keep headings and bullets but drop
-  // bold/italic markers so jsPDF can flow it as paragraphs.
-  return (md || '')
-    .replace(/\*\*/g, '')
-    .replace(/(^|\s)_(.+?)_(\s|$)/g, '$1$2$3')
-    .replace(/\r/g, '')
+// Turn a markdown string into an array of rendering tokens the PDF layer
+// can style with real bold text instead of flattening everything.
+function parseMarkdownToTokens(md) {
+  const out = []
+  const text = (md || '').replace(/\r/g, '')
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trimEnd()
+    if (line === '') { out.push({ type: 'space' }); continue }
+    let m = line.match(/^(#{1,6})\s+(.*)$/)
+    if (m) {
+      out.push({ type: 'heading', level: m[1].length, text: m[2].replace(/\*\*/g, '') })
+      continue
+    }
+    m = line.match(/^\s*[-*]\s+(.*)$/)
+    if (m) { out.push({ type: 'bullet', text: m[1].replace(/\*\*/g, '') }); continue }
+    m = line.match(/^\s*(\d+)\.\s+(.*)$/)
+    if (m) { out.push({ type: 'ordered', num: m[1], text: m[2].replace(/\*\*/g, '') }); continue }
+    if (/^\s*---+\s*$/.test(line)) { out.push({ type: 'rule' }); continue }
+    // Inline bold segments **x**
+    const segments = []
+    let rest = line
+    const re = /\*\*(.+?)\*\*/
+    while (rest.length) {
+      const mm = rest.match(re)
+      if (!mm) { segments.push({ bold: false, text: rest }); break }
+      if (mm.index > 0) segments.push({ bold: false, text: rest.slice(0, mm.index) })
+      segments.push({ bold: true, text: mm[1] })
+      rest = rest.slice(mm.index + mm[0].length)
+    }
+    out.push({ type: 'paragraph', segments })
+  }
+  return out
 }
 
 /**
@@ -268,28 +293,97 @@ export async function generateSignedProposalPdf({
   doc.text('Terms & Conditions', M, y)
   y += 14
 
-  const termsText = stripMarkdown(legalTerms)
+  const tokens = parseMarkdownToTokens(legalTerms)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(DARK[0], DARK[1], DARK[2])
-  for (const rawLine of termsText.split('\n')) {
-    const line = rawLine.replace(/^#+\s*/, '').trimEnd()
-    const isHeading = /^#{1,6}\s/.test(rawLine)
-    if (line === '' && !isHeading) { y += 6; continue }
-    if (isHeading) {
-      ensureSpace(20)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(10)
-      doc.setTextColor(DARK[0], DARK[1], DARK[2])
-      doc.text(line, M, y); y += 13
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(9)
+
+  const renderSegments = (segments, indent = 0) => {
+    // Naive wrap: concatenate, wrap the whole thing, lose inline bold.
+    // For inline bold we walk segments word-by-word.
+    const maxW = CW - indent
+    let cursorX = M + indent
+    let first = true
+    for (const seg of segments) {
+      const words = (seg.text || '').split(/(\s+)/).filter(w => w !== '')
+      for (const w of words) {
+        doc.setFont('helvetica', seg.bold ? 'bold' : 'normal')
+        const ww = doc.getTextWidth(w)
+        if (cursorX + ww > M + indent + maxW && !first) {
+          y += 12
+          ensureSpace(12)
+          cursorX = M + indent
+        }
+        doc.text(w, cursorX, y)
+        cursorX += ww
+        first = false
+      }
+    }
+    y += 12
+    doc.setFont('helvetica', 'normal')
+  }
+
+  for (const tok of tokens) {
+    if (tok.type === 'space') { y += 4; continue }
+    if (tok.type === 'rule') {
+      ensureSpace(14)
+      doc.setDrawColor(RULE[0], RULE[1], RULE[2])
+      doc.line(M, y, PW - M, y); y += 10
       continue
     }
-    const wrapped = doc.splitTextToSize(line, CW)
-    for (const w of wrapped) {
-      ensureSpace(11)
-      doc.text(w, M, y); y += 11
+    if (tok.type === 'heading') {
+      const isH1 = tok.level === 1
+      const isH2 = tok.level === 2
+      ensureSpace(isH1 ? 28 : 22)
+      y += isH1 ? 8 : 6
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(isH1 ? 12 : isH2 ? 10 : 9)
+      doc.setTextColor(isH2 ? ACCENT[0] : DARK[0], isH2 ? ACCENT[1] : DARK[1], isH2 ? ACCENT[2] : DARK[2])
+      const upper = isH1 || isH2 ? tok.text.toUpperCase() : tok.text
+      for (const line of doc.splitTextToSize(upper, CW)) {
+        ensureSpace(14)
+        doc.text(line, M, y); y += isH1 ? 14 : 12
+      }
+      if (isH1) {
+        doc.setDrawColor(ACCENT[0], ACCENT[1], ACCENT[2])
+        doc.setLineWidth(0.8)
+        doc.line(M, y - 2, M + 40, y - 2)
+        doc.setLineWidth(0.5)
+      }
+      y += 4
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.setTextColor(DARK[0], DARK[1], DARK[2])
+      continue
+    }
+    if (tok.type === 'bullet') {
+      ensureSpace(14)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.setTextColor(ACCENT[0], ACCENT[1], ACCENT[2])
+      doc.text('•', M + 4, y)
+      doc.setTextColor(DARK[0], DARK[1], DARK[2])
+      for (const line of doc.splitTextToSize(tok.text, CW - 18)) {
+        ensureSpace(12); doc.text(line, M + 14, y); y += 12
+      }
+      continue
+    }
+    if (tok.type === 'ordered') {
+      ensureSpace(14)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(ACCENT[0], ACCENT[1], ACCENT[2])
+      doc.text(`${tok.num}.`, M + 2, y)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(DARK[0], DARK[1], DARK[2])
+      for (const line of doc.splitTextToSize(tok.text, CW - 20)) {
+        ensureSpace(12); doc.text(line, M + 18, y); y += 12
+      }
+      continue
+    }
+    if (tok.type === 'paragraph') {
+      ensureSpace(14)
+      renderSegments(tok.segments || [])
     }
   }
 

@@ -230,7 +230,57 @@ export default function FormalProposal({
         <section style={{ marginBottom: 24 }}>
           <h2 style={styles.sectionHeading}>Terms &amp; Conditions</h2>
           <div style={styles.termsBody}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{legalTerms}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                h1: ({ children }) => (
+                  <h3 style={{
+                    fontSize: 16,
+                    fontWeight: 800,
+                    color: '#2c3530',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.8,
+                    margin: '22px 0 10px',
+                    paddingBottom: 6,
+                    borderBottom: '2px solid #5a6349',
+                  }}>{children}</h3>
+                ),
+                h2: ({ children }) => (
+                  <h4 style={{
+                    fontSize: 13,
+                    fontWeight: 800,
+                    color: '#5a6349',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                    margin: '18px 0 6px',
+                  }}>{children}</h4>
+                ),
+                h3: ({ children }) => (
+                  <h5 style={{ fontSize: 13, fontWeight: 700, color: '#2c3530', margin: '14px 0 4px' }}>{children}</h5>
+                ),
+                p: ({ children }) => (
+                  <p style={{ fontSize: 13, lineHeight: 1.7, color: '#2c3530', margin: '0 0 10px' }}>{children}</p>
+                ),
+                ul: ({ children }) => (
+                  <ul style={{ fontSize: 13, lineHeight: 1.7, color: '#2c3530', margin: '0 0 10px', paddingLeft: 20 }}>{children}</ul>
+                ),
+                ol: ({ children }) => (
+                  <ol style={{ fontSize: 13, lineHeight: 1.7, color: '#2c3530', margin: '0 0 10px', paddingLeft: 20 }}>{children}</ol>
+                ),
+                li: ({ children }) => (
+                  <li style={{ marginBottom: 4 }}>{children}</li>
+                ),
+                strong: ({ children }) => (
+                  <strong style={{ fontWeight: 700, color: '#2c3530' }}>{children}</strong>
+                ),
+                em: ({ children }) => (
+                  <em style={{ color: '#4d5a52' }}>{children}</em>
+                ),
+                hr: () => (
+                  <hr style={{ border: 'none', borderTop: '1px solid #d6cdb8', margin: '18px 0' }} />
+                ),
+              }}
+            >{legalTerms}</ReactMarkdown>
           </div>
         </section>
 
