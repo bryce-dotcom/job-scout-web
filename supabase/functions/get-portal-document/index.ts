@@ -192,9 +192,11 @@ serve(async (req) => {
       } catch { /* ignore */ }
     }
 
-    // Fetch invoice-specific settings (CC fee, payment preferences)
+    // Fetch invoice-specific settings (CC fee, payment preferences).
+    // Also returned for estimates so the formal legal proposal's payment
+    // section can use the same Stripe configuration as invoices.
     let invoiceSettings = null;
-    if (tokenRow.document_type === 'invoice') {
+    {
       const settingKeys = [
         'invoice_cc_fee_enabled',
         'invoice_cc_fee_percent',

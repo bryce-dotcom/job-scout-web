@@ -127,6 +127,17 @@ export default function FormalProposal({
 
   const hasStripe = !!payment?.stripe_enabled
   const hasPaypal = !!payment?.paypal_enabled
+  const hasBank = !!payment?.bank_enabled
+
+  // Use the same invoice CC fee settings the Customer Portal uses on invoices.
+  // invoice_settings is now returned for estimates too (get-portal-document).
+  const invoiceSettings = data?.invoice_settings || null
+  const ccFeeEnabled = !!(invoiceSettings?.cc_fee_enabled && invoiceSettings?.accept_credit_card)
+  const ccFeePercent = parseFloat(invoiceSettings?.cc_fee_percent) || 1.9
+  const ccFeeAmount = ccFeeEnabled ? Math.round(downPaymentAmount * (ccFeePercent / 100) * 100) / 100 : 0
+  const cardTotal = downPaymentAmount + ccFeeAmount
+  const preferredPaymentNote = invoiceSettings?.preferred_payment_note || ''
+  const showPreferredNote = invoiceSettings?.show_preferred_payment_note && preferredPaymentNote
 
   return (
     <div style={styles.page}>
@@ -350,17 +361,20 @@ export default function FormalProposal({
           )}
         </section>
 
-        {/* Payment — always visible when a down payment is configured, regardless of sign state */}
+        {/* Payment — mirrors the invoice payment UI in CustomerPortal so
+            the customer sees the same Stripe Card + ACH buttons and the
+            same CC fee rules as a regular invoice. */}
         {downPaymentAmount > 0 && (
           <section style={{ marginBottom: 24 }}>
             <h2 style={styles.sectionHeading}>Payment</h2>
             <div style={{
               padding: '20px 22px',
               borderRadius: 14,
-              border: `1px solid #d6cdb8`,
+              border: '1px solid #d6cdb8',
               background: 'linear-gradient(135deg,#ffffff 0%,#f7f5ef 100%)',
             }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+              {/* Amount callout */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
                 <div style={{ flex: 1, minWidth: 220 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#7d8a7f', textTransform: 'uppercase', letterSpacing: 1 }}>
                     {downPaymentLabel}
@@ -369,38 +383,129 @@ export default function FormalProposal({
                     {currency(downPaymentAmount)}
                   </div>
                   <div style={{ fontSize: 12, color: '#7d8a7f', marginTop: 4 }}>
-                    Due upon acceptance. Secure checkout powered by your provider.
+                    Due upon acceptance. Secure checkout handled by Stripe.
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 220 }}>
-                  {hasStripe && (
-                    <button
-                      onClick={() => { setLocalPaymentProvider('stripe'); onPay?.('deposit', downPaymentAmount, 'stripe') }}
-                      disabled={localPaymentProvider === 'stripe'}
-                      style={{ ...styles.primaryBtn, padding: '14px 22px', fontSize: 15 }}
-                    >
-                      {localPaymentProvider === 'stripe' ? 'Redirecting to checkout…' : `Pay ${currency(downPaymentAmount)} with Card`}
-                    </button>
-                  )}
-                  {hasPaypal && (
-                    <button
-                      onClick={() => { setLocalPaymentProvider('paypal'); onPay?.('deposit', downPaymentAmount, 'paypal') }}
-                      disabled={localPaymentProvider === 'paypal'}
-                      style={{ ...styles.secondaryBtn, padding: '14px 22px', fontSize: 15 }}
-                    >
-                      {localPaymentProvider === 'paypal' ? 'Redirecting…' : 'Pay with PayPal'}
-                    </button>
-                  )}
-                  {!hasStripe && !hasPaypal && (
-                    <div style={{ fontSize: 12, color: '#7d8a7f', padding: '10px 12px', background: '#fbfaf6', border: '1px dashed #d6cdb8', borderRadius: 10, textAlign: 'center' }}>
-                      Online payment not yet configured.<br />Please follow instructions from your sales rep.
-                    </div>
-                  )}
-                </div>
               </div>
-              {!isSigned && (hasStripe || hasPaypal) && (
+
+              {/* Preferred payment note (same behavior as invoices) */}
+              {showPreferredNote && (
+                <div style={{
+                  padding: '12px 16px',
+                  backgroundColor: 'rgba(74,124,89,0.08)',
+                  border: '1px solid rgba(74,124,89,0.25)',
+                  borderRadius: 10,
+                  marginBottom: 14,
+                  fontSize: 13,
+                  color: '#4a7c59',
+                  lineHeight: 1.5,
+                }}>
+                  {preferredPaymentNote.replace('{cc_fee_percent}', ccFeePercent)}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {/* Stripe — two buttons: Card and ACH — exact same pattern as invoice portal */}
+                {hasStripe && (
+                  <>
+                    {/* Card payment button */}
+                    <div>
+                      <button
+                        onClick={() => { setLocalPaymentProvider('stripe-card'); onPay?.('estimate_deposit', ccFeeEnabled ? cardTotal : downPaymentAmount, 'stripe', 'card') }}
+                        disabled={localPaymentProvider === 'stripe-card'}
+                        style={{
+                          width: '100%',
+                          padding: '16px 24px',
+                          minHeight: 56,
+                          background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: 12,
+                          fontSize: 17,
+                          fontWeight: 700,
+                          cursor: localPaymentProvider === 'stripe-card' ? 'wait' : 'pointer',
+                          letterSpacing: 0.2,
+                        }}
+                      >
+                        {localPaymentProvider === 'stripe-card'
+                          ? 'Setting up payment...'
+                          : ccFeeEnabled
+                            ? `Pay with Card — ${currency(cardTotal)}`
+                            : `Pay with Card — ${currency(downPaymentAmount)}`}
+                      </button>
+                      {ccFeeEnabled && (
+                        <p style={{ fontSize: 12, color: '#7d8a7f', margin: '6px 0 0', textAlign: 'center', lineHeight: 1.4 }}>
+                          Credit or debit card &middot; {ccFeePercent}% processing fee included
+                        </p>
+                      )}
+                    </div>
+
+                    {/* ACH / Bank Account button */}
+                    <div>
+                      <button
+                        onClick={() => { setLocalPaymentProvider('stripe-ach'); onPay?.('estimate_deposit', downPaymentAmount, 'stripe', 'us_bank_account') }}
+                        disabled={localPaymentProvider === 'stripe-ach'}
+                        style={{
+                          width: '100%',
+                          padding: '16px 24px',
+                          minHeight: 56,
+                          background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: 12,
+                          fontSize: 17,
+                          fontWeight: 700,
+                          cursor: localPaymentProvider === 'stripe-ach' ? 'wait' : 'pointer',
+                          letterSpacing: 0.2,
+                        }}
+                      >
+                        {localPaymentProvider === 'stripe-ach' ? 'Setting up payment...' : `Pay with Bank Account — ${currency(downPaymentAmount)}`}
+                      </button>
+                      <p style={{ fontSize: 12, color: '#7d8a7f', margin: '6px 0 0', textAlign: 'center', lineHeight: 1.4 }}>
+                        ACH bank transfer &middot; No processing fee
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                {/* Manual bank transfer info — only if no Stripe */}
+                {hasBank && !hasStripe && (
+                  <div style={{
+                    padding: 16,
+                    backgroundColor: 'rgba(90,99,73,0.08)',
+                    borderRadius: 10,
+                    border: '1px solid #d6cdb8',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <p style={{ fontWeight: 600, color: '#2c3530', fontSize: 14, margin: 0 }}>Bank Transfer / ACH</p>
+                      <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, backgroundColor: 'rgba(74,124,89,0.12)', color: '#4a7c59' }}>No Fee</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: '#4d5a52', lineHeight: 1.7 }}>
+                      {payment.bank_name && <p style={{ margin: '0 0 4px' }}><strong>Bank:</strong> {payment.bank_name}</p>}
+                      {payment.bank_account_name && <p style={{ margin: '0 0 4px' }}><strong>Account Name:</strong> {payment.bank_account_name}</p>}
+                      {payment.bank_routing && <p style={{ margin: '0 0 4px' }}><strong>Routing #:</strong> {payment.bank_routing}</p>}
+                      {payment.bank_account && <p style={{ margin: '0 0 4px' }}><strong>Account #:</strong> {payment.bank_account}</p>}
+                      <p style={{ margin: '0 0 4px' }}><strong>Amount:</strong> {currency(downPaymentAmount)}</p>
+                      <p style={{ margin: '0 0 4px' }}><strong>Reference:</strong> {doc?.quote_id || doc?.id}</p>
+                    </div>
+                    {payment.bank_instructions && (
+                      <p style={{ fontSize: 12, color: '#7d8a7f', margin: '10px 0 0', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                        {payment.bank_instructions}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {!hasStripe && !hasBank && (
+                  <div style={{ fontSize: 12, color: '#7d8a7f', padding: '10px 12px', background: '#fbfaf6', border: '1px dashed #d6cdb8', borderRadius: 10, textAlign: 'center' }}>
+                    Online payment not yet configured.<br />Please follow instructions from your sales rep.
+                  </div>
+                )}
+              </div>
+
+              {!isSigned && (hasStripe || hasBank) && (
                 <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #eef2eb', fontSize: 11, color: '#7d8a7f', lineHeight: 1.6 }}>
-                  You can sign first and pay later, or pay now and sign afterward — either order is fine. Payment does not complete the agreement on its own.
+                  You can sign first and pay later, or pay now and sign afterward &mdash; either order is fine. Payment does not complete the agreement on its own.
                 </div>
               )}
             </div>
