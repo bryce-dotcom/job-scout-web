@@ -18,6 +18,7 @@ import SignedProposalCard from '../components/SignedProposalCard'
 import { buildDefaultTerms, DEFAULT_DOWN_PAYMENT_LABEL } from '../components/proposal/formalProposalDefaults'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
+const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
 
 // Light theme fallback
 const defaultTheme = {
@@ -77,7 +78,6 @@ export default function EstimateDetail() {
   const [rebateForms, setRebateForms] = useState([])
   const [fillingForm, setFillingForm] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
-  const [showFormalModal, setShowFormalModal] = useState(false)
   const [showDepositModal, setShowDepositModal] = useState(false)
   const [showSendModal, setShowSendModal] = useState(false)
   const [generatingPdf, setGeneratingPdf] = useState(false)
@@ -2884,9 +2884,14 @@ export default function EstimateDetail() {
                 Create Proposal
               </button>
 
-              {/* Formal Legal Proposal — opens the dedicated editor modal */}
+              {/* Formal Legal Proposal — reuses the Create Proposal preview+send modal
+                  with presentation_mode pre-set to 'formal' */}
               <button
-                onClick={() => setShowFormalModal(true)}
+                onClick={async () => {
+                  const current = getEffectiveSettings()
+                  await saveSettingsOverrides({ ...current, presentation_mode: 'formal' }, { silent: true })
+                  setShowSendModal(true)
+                }}
                 disabled={saving}
                 style={{
                   display: 'flex',
@@ -3675,21 +3680,6 @@ export default function EstimateDetail() {
         />
       )}
 
-      {showFormalModal && (
-        <FormalProposalModal
-          theme={theme}
-          initialSettings={getEffectiveSettings()}
-          estimate={estimate}
-          onSave={async (newSettings) => {
-            await saveSettingsOverrides(newSettings)
-            setShowFormalModal(false)
-            toast.success('Formal proposal saved. Use Create Proposal to send the portal link.')
-          }}
-          onClose={() => setShowFormalModal(false)}
-          inputStyle={inputStyle}
-          labelStyle={labelStyle}
-        />
-      )}
 
       {/* Associate Lead/Customer Modal */}
       {showAssociateModal && (
@@ -3949,6 +3939,161 @@ export default function EstimateDetail() {
 }
 
 // Settings Modal Component
+// In-modal formal proposal preview + inline editor. Rendered inside
+// EstimatePreviewModal when mode === 'formal'. Left pane = live FormalProposal
+// preview (what the customer will see). Right pane = editor for down payment
+// label/amount and legal terms. Saves on blur via onSettingsUpdate.
+function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, customer, settings, onSettingsUpdate }) {
+  const formal = settings?.formal_proposal || {}
+  const [label, setLabel] = useState(formal.down_payment_label || DEFAULT_DOWN_PAYMENT_LABEL)
+  const [amount, setAmount] = useState(formal.down_payment_amount ?? '')
+  const [isPercent, setIsPercent] = useState(!!formal.down_payment_is_percent)
+  const [terms, setTerms] = useState(formal.legal_terms_md || '')
+  const [rev, setRev] = useState(0)
+
+  // When the user edits terms/amount we save into settings_overrides.formal_proposal.
+  // Silent save keeps the preview responsive without re-fetching the whole estimate.
+  const persist = async (patch) => {
+    if (!onSettingsUpdate) return
+    const next = {
+      ...settings,
+      presentation_mode: 'formal',
+      formal_proposal: {
+        ...(settings.formal_proposal || {}),
+        down_payment_label: label,
+        down_payment_amount: amount === '' ? null : parseFloat(amount),
+        down_payment_is_percent: isPercent,
+        legal_terms_md: terms,
+        ...patch,
+      },
+    }
+    await onSettingsUpdate(next, { silent: true })
+    setRev((r) => r + 1)
+  }
+
+  const resetTerms = async () => {
+    setTerms('')
+    await persist({ legal_terms_md: '' })
+  }
+
+  // Data shape that FormalProposal expects (same as CustomerPortal)
+  const previewData = {
+    document: {
+      ...estimate,
+      settings_overrides: {
+        ...(estimate.settings_overrides || {}),
+        presentation_mode: 'formal',
+        formal_proposal: {
+          ...(settings.formal_proposal || {}),
+          down_payment_label: label,
+          down_payment_amount: amount === '' ? null : parseFloat(amount),
+          down_payment_is_percent: isPercent,
+          legal_terms_md: terms,
+        },
+      },
+    },
+    line_items: (lineItems || []).map(li => ({ ...li, total: li.line_total || li.total })),
+    company: company || {},
+    customer: customer ? {
+      ...customer,
+      name: customer.name || customer.customer_name || '',
+      business_name: customer.business_name || '',
+    } : {},
+    business_unit: businessUnit || null,
+    approval: null,
+    payment_config: {},
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 0, height: '100%', minHeight: 420 }}>
+      {/* Left: live preview */}
+      <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, backgroundColor: '#f7f5ef' }}>
+        <Suspense fallback={<div style={{ textAlign: 'center', padding: '40px', color: theme.textMuted }}>Loading formal proposal...</div>}>
+          <FormalProposal
+            key={rev}
+            data={previewData}
+            approverName=""
+            setApproverName={() => {}}
+            approverEmail=""
+            setApproverEmail={() => {}}
+            approvalSuccess={false}
+            onSubmitSignedApproval={async () => {}}
+            onPay={() => {}}
+          />
+        </Suspense>
+      </div>
+
+      {/* Right: inline editor */}
+      <div style={{
+        width: '320px',
+        flexShrink: 0,
+        borderLeft: `1px solid ${theme.border}`,
+        backgroundColor: theme.bgCard,
+        overflowY: 'auto',
+        padding: '14px',
+      }}>
+        <p style={{ fontSize: '11px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 12px' }}>
+          Formal Agreement
+        </p>
+
+        <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: theme.textSecondary, marginBottom: 4 }}>Down Payment Label</label>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onBlur={() => persist({ down_payment_label: label })}
+          placeholder="Deposit, Retainer, Mobilization Fee..."
+          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', color: theme.text, backgroundColor: theme.bg }}
+        />
+
+        <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: theme.textSecondary, marginBottom: 4 }}>Down Payment Amount</label>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          onBlur={() => persist({ down_payment_amount: amount === '' ? null : parseFloat(amount) })}
+          placeholder="0.00"
+          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 13, marginBottom: 8, boxSizing: 'border-box', color: theme.text, backgroundColor: theme.bg }}
+        />
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.bg, cursor: 'pointer', marginBottom: 14 }}>
+          <input
+            type="checkbox"
+            checked={isPercent}
+            onChange={(e) => { setIsPercent(e.target.checked); persist({ down_payment_is_percent: e.target.checked }) }}
+            style={{ width: 16, height: 16, accentColor: theme.accent }}
+          />
+          <span style={{ fontSize: 12, color: theme.text }}>Treat amount as % of total</span>
+        </label>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <label style={{ fontSize: '11px', fontWeight: 600, color: theme.textSecondary }}>Legal Terms (Markdown)</label>
+          <button
+            type="button"
+            onClick={resetTerms}
+            style={{ background: 'none', border: 'none', color: theme.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+          >
+            Reset
+          </button>
+        </div>
+        <textarea
+          value={terms}
+          onChange={(e) => setTerms(e.target.value)}
+          onBlur={() => persist({ legal_terms_md: terms })}
+          rows={14}
+          placeholder="Leave blank to auto-generate from defaults. Edit to customize scope, warranty, dispute resolution, etc."
+          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 11, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', resize: 'vertical', boxSizing: 'border-box', color: theme.text, backgroundColor: theme.bg }}
+        />
+        <p style={{ fontSize: 10, color: theme.textMuted, marginTop: 6 }}>
+          Changes save automatically when you click away from a field.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // Standalone modal that hosts the formal proposal editor. Triggered by the
 // "Formal Legal Proposal" button on the estimate page so reps don't need to
 // dig into the Settings gear to set up a formal contract.
@@ -4948,7 +5093,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
       <div style={{
         backgroundColor: theme.bgCard, borderRadius: '16px',
         boxShadow: '0 20px 40px rgba(0,0,0,0.15)', width: '100%',
-        maxWidth: step === 'preview' ? (mode === 'interactive' && proposalLayout ? '960px' : '680px') : '420px',
+        maxWidth: step === 'preview' ? (mode === 'formal' ? '1040px' : mode === 'interactive' && proposalLayout ? '960px' : '680px') : '420px',
         maxHeight: '90vh', display: 'flex', flexDirection: 'column',
         transition: 'max-width 0.2s ease'
       }}>
@@ -4969,7 +5114,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                 display: 'flex', backgroundColor: theme.bg, borderRadius: '8px',
                 border: `1px solid ${theme.border}`, overflow: 'hidden',
               }}>
-                {[['pdf', 'PDF'], ['interactive', 'Interactive Proposal']].map(([val, label]) => (
+                {[['pdf', 'PDF'], ['interactive', 'Interactive'], ['formal', 'Formal Legal']].map(([val, label]) => (
                   <button key={val} onClick={() => handleModeChange(val)}
                     style={{
                       padding: '7px 14px', fontSize: '13px', fontWeight: '500', border: 'none', cursor: 'pointer',
@@ -4982,7 +5127,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
               </div>
             ) : (
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                {mode === 'interactive' ? 'Send Proposal' : 'Send Estimate'}
+                {mode === 'formal' ? 'Send Formal Proposal' : mode === 'interactive' ? 'Send Proposal' : 'Send Estimate'}
               </h2>
             )}
           </div>
@@ -5033,7 +5178,18 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
             })()}
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px', backgroundColor: '#f7f5ef' }}>
-              {mode === 'interactive' ? (
+              {mode === 'formal' ? (
+                <FormalPreviewPane
+                  theme={theme}
+                  estimate={estimate}
+                  lineItems={lineItems}
+                  company={company}
+                  businessUnit={businessUnit}
+                  customer={customer}
+                  settings={settings}
+                  onSettingsUpdate={onSettingsUpdate}
+                />
+              ) : mode === 'interactive' ? (
                 proposalLayout ? (
                   <div style={{ display: 'flex', gap: '0', height: '100%' }}>
                     {/* Left: Real InteractiveProposal */}
@@ -5244,10 +5400,12 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
               <input type="email" value={sendEmail} onChange={(e) => setSendEmail(e.target.value)} placeholder="customer@example.com" style={inputStyle} />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', backgroundColor: mode === 'interactive' ? 'rgba(90,99,73,0.08)' : theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: mode === 'interactive' ? theme.accent : theme.textMuted }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', backgroundColor: (mode === 'interactive' || mode === 'formal') ? 'rgba(90,99,73,0.08)' : theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: (mode === 'interactive' || mode === 'formal') ? theme.accent : theme.textMuted }} />
               <p style={{ fontSize: '13px', color: theme.textSecondary, margin: 0 }}>
-                {mode === 'interactive'
+                {mode === 'formal'
+                  ? 'Customer will receive a link to a formal legal contract they can sign and pay from.'
+                  : mode === 'interactive'
                   ? 'Customer will receive a link to an interactive proposal.'
                   : 'A PDF will be generated and attached to the email.'}
               </p>
@@ -5266,7 +5424,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
                 }}>
                 <Mail size={16} />
-                {sendingEmail ? 'Sending...' : (mode === 'interactive' ? 'Send Proposal' : 'Send Email')}
+                {sendingEmail ? 'Sending...' : (mode === 'formal' ? 'Send Formal Proposal' : mode === 'interactive' ? 'Send Proposal' : 'Send Email')}
               </button>
             </div>
           </div>
