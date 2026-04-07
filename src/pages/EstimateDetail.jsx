@@ -3709,7 +3709,7 @@ export default function EstimateDetail() {
           setSendEmail={setSendEmail}
           sendingEmail={sendingEmail}
           onSend={handleSendEmail}
-          onClose={() => setShowSendModal(false)}
+          onClose={() => { setShowSendModal(false); fetchEstimateData() }}
           inputStyle={inputStyle}
           labelStyle={labelStyle}
           onSettingsUpdate={saveSettingsOverrides}
@@ -5548,15 +5548,91 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                 Close
               </button>
               {/* Save without sending — attaches the current formal proposal
-                  config to the estimate so it stays with the record. Helpful
-                  when the rep wants to draft the contract now and email it
-                  later (or print it at the kitchen table). */}
+                  config to the estimate AND generates a draft PDF that
+                  lands in the Documents section so the rep can see / print
+                  / download it locally without waiting for the customer to
+                  sign on the portal. */}
               <button onClick={async () => {
                   try {
+                    // 1) Persist settings_overrides so the config sticks
                     if (onSettingsUpdate) {
                       await onSettingsUpdate({ ...settings, presentation_mode: mode }, { silent: false })
                     }
-                    toast.success(mode === 'formal' ? 'Formal proposal saved to estimate' : 'Draft saved')
+
+                    // 2) For formal mode, also generate a draft PDF and
+                    //    attach it to the estimate documents.
+                    if (mode === 'formal' && estimate?.id) {
+                      try {
+                        const formalCfg = settings?.formal_proposal || {}
+                        const dpLabel = formalCfg.down_payment_label || 'Deposit'
+                        const dpRaw = parseFloat(formalCfg.down_payment_amount) || 0
+                        const subtotalCalc = (lineItems || []).reduce((s, l) => s + (parseFloat(l.line_total || l.total) || 0), 0)
+                        const contractTotalCalc = subtotalCalc - (parseFloat(estimate.discount) || 0)
+                        const dpAmount = formalCfg.down_payment_is_percent ? +(contractTotalCalc * (dpRaw / 100)).toFixed(2) : dpRaw
+
+                        const legalTerms = formalCfg.legal_terms_md || buildDefaultTerms({
+                          company,
+                          customer,
+                          quote: estimate,
+                          lineItems,
+                          downPaymentLabel: dpLabel,
+                          downPaymentAmount: dpAmount,
+                        })
+
+                        const enc = new TextEncoder()
+                        const hashBuf = await crypto.subtle.digest('SHA-256', enc.encode(legalTerms))
+                        const legalTermsHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+                        const { generateSignedProposalPdf } = await import('../lib/signedProposalPdf')
+                        const pdfBlob = await generateSignedProposalPdf({
+                          quote: estimate,
+                          lineItems,
+                          company,
+                          customer,
+                          legalTerms,
+                          signature: {}, // draft — no signature yet
+                          approver: {},
+                          approvedAt: null,
+                          legalTermsHash,
+                          downPaymentLabel: dpLabel,
+                          downPaymentAmount: dpAmount,
+                          businessUnit,
+                        })
+
+                        const ts = Date.now()
+                        const storagePath = `formal-drafts/${estimate.id}/${ts}.pdf`
+                        const { error: upErr } = await supabase.storage
+                          .from('project-documents')
+                          .upload(storagePath, pdfBlob, { contentType: 'application/pdf', upsert: false })
+
+                        if (upErr) throw upErr
+
+                        const fileName = `Formal_Proposal_${estimate.quote_id || `EST-${estimate.id}`}_Draft.pdf`
+                        const { error: insErr } = await supabase
+                          .from('file_attachments')
+                          .insert({
+                            company_id: estimate.company_id,
+                            quote_id: estimate.id,
+                            file_name: fileName,
+                            file_path: storagePath,
+                            file_type: 'application/pdf',
+                            file_size: pdfBlob.size,
+                            storage_bucket: 'project-documents',
+                            photo_context: 'formal_draft',
+                          })
+
+                        if (insErr) throw insErr
+                      } catch (pdfErr) {
+                        console.error('[formal draft pdf]', pdfErr)
+                        toast.error('Saved settings but PDF draft failed: ' + (pdfErr?.message || 'unknown'))
+                        onClose?.()
+                        return
+                      }
+                    }
+
+                    toast.success(mode === 'formal'
+                      ? 'Formal proposal draft saved to estimate documents'
+                      : 'Draft saved')
                     onClose?.()
                   } catch (err) {
                     toast.error('Save failed: ' + (err?.message || 'unknown'))
