@@ -14,6 +14,8 @@ import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf } from '../lib/estimatePdf'
 import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
+import SignedProposalCard from '../components/SignedProposalCard'
+import { buildDefaultTerms, DEFAULT_DOWN_PAYMENT_LABEL } from '../components/proposal/formalProposalDefaults'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 
@@ -1076,6 +1078,18 @@ export default function EstimateDetail() {
         }
       }
 
+      // 4b. Carry the signed formal proposal to the new job
+      if (estimate.signed_proposal_attachment_id) {
+        await supabase
+          .from('file_attachments')
+          .update({ job_id: newJob.id })
+          .eq('id', estimate.signed_proposal_attachment_id)
+        await supabase
+          .from('jobs')
+          .update({ signed_proposal_attachment_id: estimate.signed_proposal_attachment_id })
+          .eq('id', newJob.id)
+      }
+
       // Also carry notes photos forward
       if (notesPhotos.length > 0) {
         for (const p of notesPhotos) {
@@ -1657,6 +1671,15 @@ export default function EstimateDetail() {
           </button>
         </div>
       </div>
+
+      {/* Signed formal proposal on file — shows as soon as the customer signs */}
+      {estimate.signed_proposal_attachment_id && (
+        <SignedProposalCard
+          attachmentId={estimate.signed_proposal_attachment_id}
+          quoteId={estimate.id}
+          theme={theme}
+        />
+      )}
 
       {/* Flow context - only when linked to a lead */}
       {estimate.lead_id && estimate.lead?.status && (
@@ -3885,6 +3908,99 @@ export default function EstimateDetail() {
 }
 
 // Settings Modal Component
+// Formal proposal editor — lives inside SettingsModal when presentation_mode === 'formal'
+function FormalProposalEditor({ localSettings, setLocalSettings, theme, labelStyle, inputStyle }) {
+  const formal = localSettings.formal_proposal || {}
+
+  const update = (patch) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      formal_proposal: { ...(prev.formal_proposal || {}), ...patch },
+    }))
+  }
+
+  const resetTerms = () => {
+    update({ legal_terms_md: '' }) // empty = portal will rebuild from defaults
+  }
+
+  return (
+    <div style={{
+      marginTop: '12px',
+      padding: '16px',
+      backgroundColor: 'rgba(90,99,73,0.06)',
+      borderRadius: '10px',
+      border: `1px solid ${theme.border}`,
+    }}>
+      <p style={{ fontSize: '13px', fontWeight: '600', color: theme.text, margin: '0 0 6px' }}>
+        Formal Legal Proposal
+      </p>
+      <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px', lineHeight: 1.5 }}>
+        The customer will see a top-to-bottom contract, sign it (drawn or typed), and optionally pay.
+        A PDF of the signed document is archived automatically and travels with the estimate when it becomes a job.
+      </p>
+
+      <label style={labelStyle}>Down Payment Label</label>
+      <input
+        type="text"
+        value={formal.down_payment_label || DEFAULT_DOWN_PAYMENT_LABEL}
+        onChange={(e) => update({ down_payment_label: e.target.value })}
+        placeholder="e.g. Deposit, Project Retainer, Mobilization Fee"
+        style={inputStyle}
+      />
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '8px' }}>
+        <div>
+          <label style={labelStyle}>Down Payment Amount</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={formal.down_payment_amount ?? ''}
+            onChange={(e) => update({ down_payment_amount: e.target.value === '' ? null : parseFloat(e.target.value) })}
+            placeholder="0.00"
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>&nbsp;</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', backgroundColor: theme.bg, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={!!formal.down_payment_is_percent}
+              onChange={(e) => update({ down_payment_is_percent: e.target.checked })}
+              style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+            />
+            <span style={{ fontSize: '13px', color: theme.text }}>Treat as % of total</span>
+          </label>
+        </div>
+      </div>
+
+      <div style={{ marginTop: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label style={labelStyle}>Legal Terms (Markdown)</label>
+          <button
+            type="button"
+            onClick={resetTerms}
+            style={{ background: 'none', border: 'none', color: theme.accent, fontSize: '11px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+          >
+            Reset to default
+          </button>
+        </div>
+        <textarea
+          value={formal.legal_terms_md || ''}
+          onChange={(e) => update({ legal_terms_md: e.target.value })}
+          rows={12}
+          placeholder="Leave blank to use the default legal template. Edit here to customize scope, warranty, dispute resolution, etc."
+          style={{ ...inputStyle, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12px', resize: 'vertical' }}
+        />
+        <p style={{ fontSize: '11px', color: theme.textMuted, margin: '6px 0 0' }}>
+          Markdown is supported. Leave blank to auto-generate from defaults at send time.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle, labelStyle, estimate, lineItems, company, customer, onSettingsUpdate }) {
   const [localSettings, setLocalSettings] = useState(settings)
   const [generatingProposal, setGeneratingProposal] = useState(false)
@@ -4070,11 +4186,18 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
             >
               <option value="pdf">PDF Document</option>
               <option value="interactive">Interactive Proposal</option>
+              <option value="formal">Formal Legal Proposal</option>
             </select>
             {localSettings.presentation_mode === 'interactive' && (
               <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', lineHeight: 1.5 }}>
                 Customer portal will show an animated, chart-rich scrolling proposal instead of the standard view.
                 Use "Generate with AI" below to create compelling section copy.
+              </p>
+            )}
+            {localSettings.presentation_mode === 'formal' && (
+              <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', lineHeight: 1.5 }}>
+                Customer portal will show a top-to-bottom legal document with customizable terms,
+                a named down payment, and a binding digital signature. Edit the details in the card below.
               </p>
             )}
           </div>
@@ -4101,6 +4224,17 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
               style={{ ...inputStyle, resize: 'vertical' }}
             />
           </div>
+
+          {/* Formal Proposal editor (legal terms + named down payment) */}
+          {localSettings.presentation_mode === 'formal' && (
+            <FormalProposalEditor
+              localSettings={localSettings}
+              setLocalSettings={setLocalSettings}
+              theme={theme}
+              labelStyle={labelStyle}
+              inputStyle={inputStyle}
+            />
+          )}
 
           {/* Generate Proposal with AI */}
           {localSettings.presentation_mode === 'interactive' && (

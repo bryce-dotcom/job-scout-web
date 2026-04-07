@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
+const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -106,6 +107,22 @@ export default function CustomerPortal() {
     } finally {
       setApproving(false)
     }
+  }
+
+  // Formal proposal signing: caller passes signature + hashed terms + rendered PDF
+  const handleSignedApproval = async ({ signature, approver, legalTermsHash, signedPdfBase64 }) => {
+    await invokeEdgeFunction('approve-document', {
+      token,
+      approver_name: approver?.name || approverName,
+      approver_email: approver?.email || approverEmail,
+      signature_method: signature?.method,
+      signature_image_base64: signature?.imageDataUrl || null,
+      signature_typed_text: signature?.typedText || null,
+      legal_terms_hash: legalTermsHash,
+      signed_pdf_base64: signedPdfBase64,
+    })
+    setApprovalSuccess(true)
+    await fetchDocument()
   }
 
   const handlePay = async (paymentType, amountDollars, provider = 'stripe', stripeMethod) => {
@@ -217,6 +234,34 @@ export default function CustomerPortal() {
 
   // Line items (estimates)
   const estimateTotal = line_items?.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0) || 0
+
+  // Formal proposal mode — legal document with signature + optional payment
+  const presentationModeRaw = isEstimate && doc.settings_overrides?.presentation_mode
+  if (presentationModeRaw === 'formal') {
+    return (
+      <Suspense fallback={
+        <div style={styles.pageWrapper}>
+          <div style={styles.container}>
+            <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+              <div style={styles.spinner} />
+              <p style={{ color: theme.textMuted, marginTop: '16px', fontSize: '15px' }}>Loading proposal...</p>
+            </div>
+          </div>
+        </div>
+      }>
+        <FormalProposal
+          data={data}
+          approverName={approverName}
+          setApproverName={setApproverName}
+          approverEmail={approverEmail}
+          setApproverEmail={setApproverEmail}
+          approvalSuccess={approvalSuccess}
+          onSubmitSignedApproval={handleSignedApproval}
+          onPay={handlePay}
+        />
+      </Suspense>
+    )
+  }
 
   // Interactive proposal mode — lazy-load the full proposal experience
   const presentationMode = isEstimate && doc.settings_overrides?.presentation_mode

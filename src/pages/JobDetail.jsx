@@ -5,6 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
 import DealBreadcrumb from '../components/DealBreadcrumb'
+import SignedProposalCard from '../components/SignedProposalCard'
 import { jobStatusColors as statusColors } from '../lib/statusColors'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import {
@@ -2483,6 +2484,15 @@ function JobDetailInner() {
         customerId={job.customer_id}
         jobId={job.id}
       />
+
+      {/* Signed formal proposal carried over from the estimate */}
+      {job.signed_proposal_attachment_id && (
+        <SignedProposalCard
+          attachmentId={job.signed_proposal_attachment_id}
+          quoteId={job.quote_id}
+          theme={theme}
+        />
+      )}
 
       {/* Section Progress Bar */}
       {sections.length > 0 && (
