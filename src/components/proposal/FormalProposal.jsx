@@ -346,30 +346,66 @@ export default function FormalProposal({
             <div style={styles.signedBanner}>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#4a7c59' }}>Signed &amp; Submitted</div>
               <div style={{ fontSize: 13, color: '#4d5a52', marginTop: 4 }}>Thank you. A copy of the signed proposal has been archived on file.</div>
-
-              {/* Optional payment */}
-              {downPaymentAmount > 0 && (hasStripe || hasPaypal) && (
-                <div style={{ marginTop: 16, padding: 16, borderTop: '1px solid #d6cdb8' }}>
-                  <div style={{ fontSize: 13, color: '#4d5a52', marginBottom: 10 }}>
-                    You can pay the {downPaymentLabel.toLowerCase()} of <strong>{currency(downPaymentAmount)}</strong> now, or later.
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    {hasStripe && (
-                      <button onClick={() => { setLocalPaymentProvider('stripe'); onPay?.('deposit', downPaymentAmount, 'stripe') }} disabled={localPaymentProvider === 'stripe'} style={styles.primaryBtn}>
-                        {localPaymentProvider === 'stripe' ? 'Redirecting...' : `Pay ${downPaymentLabel} (Card)`}
-                      </button>
-                    )}
-                    {hasPaypal && (
-                      <button onClick={() => { setLocalPaymentProvider('paypal'); onPay?.('deposit', downPaymentAmount, 'paypal') }} disabled={localPaymentProvider === 'paypal'} style={styles.secondaryBtn}>
-                        {localPaymentProvider === 'paypal' ? 'Redirecting...' : `Pay with PayPal`}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </section>
+
+        {/* Payment — always visible when a down payment is configured, regardless of sign state */}
+        {downPaymentAmount > 0 && (
+          <section style={{ marginBottom: 24 }}>
+            <h2 style={styles.sectionHeading}>Payment</h2>
+            <div style={{
+              padding: '20px 22px',
+              borderRadius: 14,
+              border: `1px solid #d6cdb8`,
+              background: 'linear-gradient(135deg,#ffffff 0%,#f7f5ef 100%)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#7d8a7f', textTransform: 'uppercase', letterSpacing: 1 }}>
+                    {downPaymentLabel}
+                  </div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: '#5a6349', marginTop: 4 }}>
+                    {currency(downPaymentAmount)}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#7d8a7f', marginTop: 4 }}>
+                    Due upon acceptance. Secure checkout powered by your provider.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 220 }}>
+                  {hasStripe && (
+                    <button
+                      onClick={() => { setLocalPaymentProvider('stripe'); onPay?.('deposit', downPaymentAmount, 'stripe') }}
+                      disabled={localPaymentProvider === 'stripe'}
+                      style={{ ...styles.primaryBtn, padding: '14px 22px', fontSize: 15 }}
+                    >
+                      {localPaymentProvider === 'stripe' ? 'Redirecting to checkout…' : `Pay ${currency(downPaymentAmount)} with Card`}
+                    </button>
+                  )}
+                  {hasPaypal && (
+                    <button
+                      onClick={() => { setLocalPaymentProvider('paypal'); onPay?.('deposit', downPaymentAmount, 'paypal') }}
+                      disabled={localPaymentProvider === 'paypal'}
+                      style={{ ...styles.secondaryBtn, padding: '14px 22px', fontSize: 15 }}
+                    >
+                      {localPaymentProvider === 'paypal' ? 'Redirecting…' : 'Pay with PayPal'}
+                    </button>
+                  )}
+                  {!hasStripe && !hasPaypal && (
+                    <div style={{ fontSize: 12, color: '#7d8a7f', padding: '10px 12px', background: '#fbfaf6', border: '1px dashed #d6cdb8', borderRadius: 10, textAlign: 'center' }}>
+                      Online payment not yet configured.<br />Please follow instructions from your sales rep.
+                    </div>
+                  )}
+                </div>
+              </div>
+              {!isSigned && (hasStripe || hasPaypal) && (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #eef2eb', fontSize: 11, color: '#7d8a7f', lineHeight: 1.6 }}>
+                  You can sign first and pay later, or pay now and sign afterward — either order is fine. Payment does not complete the agreement on its own.
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         <div style={{ textAlign: 'center', marginTop: 28, fontSize: 11, color: '#7d8a7f' }}>
           {displayName} &middot; Proposal {doc?.quote_id || `EST-${doc?.id}`} &middot; Archived on signing
