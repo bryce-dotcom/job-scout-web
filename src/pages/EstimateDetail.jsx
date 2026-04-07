@@ -5399,8 +5399,30 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
             {/* Footer */}
             <div style={{ padding: '14px 20px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: '12px', flexShrink: 0 }}>
               <button onClick={onClose}
-                style={{ flex: 1, padding: '10px 16px', border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.text, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                style={{ padding: '10px 16px', border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.text, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
                 Close
+              </button>
+              {/* Save without sending — attaches the current formal proposal
+                  config to the estimate so it stays with the record. Helpful
+                  when the rep wants to draft the contract now and email it
+                  later (or print it at the kitchen table). */}
+              <button onClick={async () => {
+                  try {
+                    if (onSettingsUpdate) {
+                      await onSettingsUpdate({ ...settings, presentation_mode: mode }, { silent: false })
+                    }
+                    toast.success(mode === 'formal' ? 'Formal proposal saved to estimate' : 'Draft saved')
+                    onClose?.()
+                  } catch (err) {
+                    toast.error('Save failed: ' + (err?.message || 'unknown'))
+                  }
+                }}
+                style={{
+                  flex: 1, padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent,
+                  border: `1px solid ${theme.accent}`, borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                }}>
+                {mode === 'formal' ? 'Save to Estimate' : 'Save Draft'}
               </button>
               <button onClick={() => setStep('send')}
                 disabled={mode === 'interactive' && !proposalLayout}
