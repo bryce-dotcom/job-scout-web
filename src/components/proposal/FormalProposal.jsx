@@ -77,7 +77,16 @@ export default function FormalProposal({
 
   const displayName = businessUnit?.name || company?.company_name || 'Our Company'
   const logoUrl = businessUnit?.logo_url || company?.logo_url || null
+  // Phone: prefer business unit, then company, then the estimate owner's
+  // phone (e.g. Doug Webb). Owner phone is passed through data.owner_phone.
+  const senderPhone = businessUnit?.phone || company?.phone || data?.owner_phone || ''
+  const senderEmail = businessUnit?.email || company?.email || company?.owner_email || ''
+  const senderAddress = businessUnit?.address || company?.address || ''
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+
+  // Customer display — business name first (if present), then individual
+  const customerPrimary = customer?.business_name || customer?.name || customer?.customer_name || 'Client'
+  const customerSecondary = customer?.business_name ? (customer?.name || customer?.customer_name || '') : ''
 
   const isSigned = approvalSuccess || doc?.status === 'Approved'
 
@@ -147,15 +156,9 @@ export default function FormalProposal({
           <div style={{ flex: 1 }}>
             {logoUrl && <img src={logoUrl} alt={displayName} style={{ maxHeight: 56, maxWidth: 200, objectFit: 'contain', marginBottom: 10 }} />}
             <div style={styles.senderName}>{displayName}</div>
-            {(businessUnit?.address || company?.address) && (
-              <div style={styles.senderLine}>{businessUnit?.address || company?.address}</div>
-            )}
-            {(businessUnit?.phone || company?.phone) && (
-              <div style={styles.senderLine}>{businessUnit?.phone || company?.phone}</div>
-            )}
-            {(businessUnit?.email || company?.email || company?.owner_email) && (
-              <div style={styles.senderLine}>{businessUnit?.email || company?.email || company?.owner_email}</div>
-            )}
+            {senderAddress && <div style={styles.senderLine}>{senderAddress}</div>}
+            {senderPhone && <div style={styles.senderLine}>{senderPhone}</div>}
+            {senderEmail && <div style={styles.senderLine}>{senderEmail}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={styles.kicker}>PROPOSAL</div>
@@ -167,15 +170,16 @@ export default function FormalProposal({
 
         <hr style={styles.hr} />
 
-        {/* Customer block */}
+        {/* Customer block — business name first, then contact name */}
         <div style={{ marginBottom: 24 }}>
           <div style={styles.label}>Prepared For</div>
-          <div style={styles.customerName}>{customer?.name || customer?.business_name || 'Client'}</div>
-          {customer?.business_name && customer?.name && customer.business_name !== customer.name && (
-            <div style={styles.customerLine}>{customer.business_name}</div>
+          <div style={styles.customerName}>{customerPrimary}</div>
+          {customerSecondary && customerSecondary !== customerPrimary && (
+            <div style={styles.customerLine}>Attn: {customerSecondary}</div>
           )}
           {customer?.address && <div style={styles.customerLine}>{customer.address}</div>}
           {customer?.email && <div style={styles.customerLine}>{customer.email}</div>}
+          {customer?.phone && <div style={styles.customerLine}>{customer.phone}</div>}
         </div>
 
         {/* Scope of work */}

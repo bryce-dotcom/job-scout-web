@@ -100,7 +100,8 @@ export function buildDefaultTerms({ company, customer, quote, lineItems, downPay
 
   const replacements = {
     '{{company_name}}': company?.company_name || company?.name || 'Contractor',
-    '{{customer_name}}': customer?.name || customer?.business_name || quote?.customer_name || 'Client',
+    // Business name first, then fallback to individual contact name
+    '{{customer_name}}': customer?.business_name || customer?.name || customer?.customer_name || quote?.customer_name || 'Client',
     '{{total_price}}': formatCurrency(total),
     '{{down_payment_label}}': downPaymentLabel || 'Deposit',
     '{{down_payment_amount}}': formatCurrency(depositAmt),

@@ -88,10 +88,15 @@ export async function generateSignedProposalPdf({
 
   const senderName = businessUnit?.name || company?.company_name || company?.name || 'Contractor'
   const senderAddr = businessUnit?.address || company?.address || ''
-  const senderPhone = businessUnit?.phone || company?.phone || ''
+  // Phone priority: business unit → company → estimate owner
+  const senderPhone = businessUnit?.phone || company?.phone || quote?.owner_phone || ''
   const senderEmail = businessUnit?.email || company?.email || company?.owner_email || ''
 
-  const customerName = customer?.name || customer?.business_name || quote?.customer_name || 'Client'
+  // Customer display — business name first, then contact name
+  const customerBusiness = customer?.business_name || ''
+  const customerContact = customer?.name || customer?.customer_name || ''
+  const customerPrimary = customerBusiness || customerContact || quote?.customer_name || 'Client'
+  const customerSecondary = (customerBusiness && customerContact && customerBusiness !== customerContact) ? customerContact : ''
   const customerAddr = customer?.address || ''
   const customerEmail = customer?.email || approver?.email || ''
 
@@ -138,7 +143,7 @@ export async function generateSignedProposalPdf({
   y = Math.max(hy, ry) + 6
   drawRule()
 
-  // ---------- Customer block ----------
+  // ---------- Customer block (business name first) ----------
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
   doc.setTextColor(DARK[0], DARK[1], DARK[2])
@@ -146,9 +151,10 @@ export async function generateSignedProposalPdf({
   y += 14
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(11)
-  doc.text(customerName, M, y); y += 13
+  doc.text(customerPrimary, M, y); y += 13
   doc.setFontSize(9)
   doc.setTextColor(MUTED[0], MUTED[1], MUTED[2])
+  if (customerSecondary) { doc.text(`Attn: ${customerSecondary}`, M, y); y += 11 }
   if (customerAddr) { doc.text(customerAddr, M, y); y += 11 }
   if (customerEmail) { doc.text(customerEmail, M, y); y += 11 }
   y += 6

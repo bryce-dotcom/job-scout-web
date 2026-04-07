@@ -16,8 +16,7 @@ import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
 import SignedProposalCard from '../components/SignedProposalCard'
 import { buildDefaultTerms, DEFAULT_DOWN_PAYMENT_LABEL } from '../components/proposal/formalProposalDefaults'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import FormalTermsEditor from '../components/proposal/FormalTermsEditor'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -178,7 +177,7 @@ export default function EstimateDetail() {
     try {
     // Try with technician join first; if the column doesn't exist yet fall back
     let estimateData = null
-    const baseSelect = '*, lead:leads(id, customer_name, phone, email, address, status), customer:customers(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name)'
+    const baseSelect = '*, lead:leads(id, customer_name, phone, email, address, status), customer:customers(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name, phone, email)'
     const { data: d1, error: e1 } = await supabase
       .from('quotes')
       .select(baseSelect + ', technician:employees!quotes_technician_id_fkey(id, name)')
@@ -1397,6 +1396,35 @@ export default function EstimateDetail() {
         ? `${siteUrl}/portal/${portalToken.token}`
         : null
 
+      // Resolve customer display — business_name first, then individual name
+      const custRecord = estimate.customer || estimate.lead || {}
+      const custName = custRecord.business_name || custRecord.name || custRecord.customer_name || ''
+
+      // Resolve best-available phone: business unit → company → estimate owner (salesperson)
+      let ownerPhone = ''
+      try {
+        if (estimate.salesperson_id) {
+          const { data: sp } = await supabase.from('employees').select('phone').eq('id', estimate.salesperson_id).maybeSingle()
+          ownerPhone = sp?.phone || ''
+        }
+      } catch { /* ignore */ }
+
+      // Resolve logo URL (mirror invoice flow)
+      let logoUrl = buObject?.logo_url || ''
+      if (!logoUrl) {
+        const logoSetting = useStore.getState().settings?.find?.(s => s.key === 'company_logo_url')
+        logoUrl = logoSetting?.value || company?.logo_url || ''
+      }
+
+      // Formal-mode numbers for the summary block
+      const presMode = estimate.settings_overrides?.presentation_mode || 'pdf'
+      const subtotalCalc = (lineItems || []).reduce((sum, l) => sum + (parseFloat(l.line_total) || 0), 0)
+      const contractTotal = subtotalCalc - (parseFloat(estimate.discount) || 0)
+      const formalCfg = estimate.settings_overrides?.formal_proposal || {}
+      const dpRaw = parseFloat(formalCfg.down_payment_amount) || 0
+      const dpAmount = formalCfg.down_payment_is_percent ? +(contractTotal * (dpRaw / 100)).toFixed(2) : dpRaw
+      const dpLabel = formalCfg.down_payment_label || 'Deposit'
+
       // Call edge function
       const { error: fnError } = await supabase.functions.invoke('send-estimate', {
         body: {
@@ -1407,11 +1435,16 @@ export default function EstimateDetail() {
           company_name: company?.company_name || '',
           estimate_number: estimate.quote_id || `EST-${estimate.id}`,
           portal_url: portalUrl,
+          logo_url: logoUrl,
           business_unit_name: buObject?.name || estimate.business_unit || '',
-          business_unit_phone: buObject?.phone || company?.phone || '',
+          business_unit_phone: buObject?.phone || company?.phone || ownerPhone || '',
           business_unit_email: buObject?.email || company?.owner_email || '',
           business_unit_address: buObject?.address || company?.address || '',
-          presentation_mode: estimate.settings_overrides?.presentation_mode || 'pdf',
+          presentation_mode: presMode,
+          customer_name: custName,
+          contract_total: contractTotal,
+          down_payment_label: dpLabel,
+          down_payment_amount: dpAmount,
         }
       })
 
@@ -4063,6 +4096,9 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
     approval: null,
     payment_config: previewPaymentConfig,
     invoice_settings: previewInvoiceSettings,
+    // Pass the salesperson's phone as fallback so FormalProposal's
+    // letterhead can show it when neither business unit nor company has one
+    owner_phone: estimate?.salesperson?.phone || '',
   }
 
   return (
@@ -4203,111 +4239,25 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
       </div>
     </div>
 
-    {/* Full-screen Markdown editor for the legal terms */}
-    {showTermsEditor && (
-      <div
-        onClick={(e) => { if (e.target === e.currentTarget) { persist({ legal_terms_md: terms }); setShowTermsEditor(false) } }}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundColor: 'rgba(15,20,17,0.6)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 24,
-          zIndex: 2000,
-        }}
-      >
-        <div style={{
-          width: '100%',
-          maxWidth: 1100,
-          height: '90vh',
-          backgroundColor: theme.bgCard,
-          borderRadius: 14,
-          border: `1px solid ${theme.border}`,
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '0 24px 60px rgba(0,0,0,0.3)',
-        }}>
-          <div style={{ padding: '18px 24px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: theme.text }}>Edit Contract Language</h3>
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: theme.textMuted }}>
-                Markdown supported. Use <code>##</code> for section headings and <code>**text**</code> for bold.
-              </p>
-            </div>
-            <button
-              onClick={() => { persist({ legal_terms_md: terms }); setShowTermsEditor(false) }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 6 }}
-            >
-              <X size={22} />
-            </button>
-          </div>
-          <div style={{ flex: 1, display: 'flex', gap: 0, overflow: 'hidden' }}>
-            <div style={{ flex: 1, padding: 0, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${theme.border}` }}>
-              <div style={{ padding: '8px 16px', fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
-                Source (Markdown)
-              </div>
-              <textarea
-                autoFocus
-                value={terms}
-                onChange={(e) => setTerms(e.target.value)}
-                onBlur={() => persist({ legal_terms_md: terms })}
-                placeholder="Leave blank to auto-generate from the default template. Edit freely to customize scope, payment terms, warranty, dispute resolution, etc."
-                style={{
-                  flex: 1,
-                  padding: '14px 18px',
-                  border: 'none',
-                  outline: 'none',
-                  resize: 'none',
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                  fontSize: 13,
-                  lineHeight: 1.6,
-                  color: theme.text,
-                  backgroundColor: theme.bgCard,
-                }}
-              />
-            </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-              <div style={{ padding: '8px 16px', fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
-                Live Preview
-              </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '18px 24px', backgroundColor: theme.bgCard }}>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    h1: ({ children }) => <h3 style={{ fontSize: 16, fontWeight: 800, color: theme.text, textTransform: 'uppercase', letterSpacing: 0.8, margin: '22px 0 10px', paddingBottom: 6, borderBottom: `2px solid ${theme.accent}` }}>{children}</h3>,
-                    h2: ({ children }) => <h4 style={{ fontSize: 13, fontWeight: 800, color: theme.accent, textTransform: 'uppercase', letterSpacing: 0.6, margin: '18px 0 6px' }}>{children}</h4>,
-                    h3: ({ children }) => <h5 style={{ fontSize: 13, fontWeight: 700, color: theme.text, margin: '14px 0 4px' }}>{children}</h5>,
-                    p: ({ children }) => <p style={{ fontSize: 13, lineHeight: 1.7, color: theme.text, margin: '0 0 10px' }}>{children}</p>,
-                    ul: ({ children }) => <ul style={{ fontSize: 13, lineHeight: 1.7, margin: '0 0 10px', paddingLeft: 20, color: theme.text }}>{children}</ul>,
-                    ol: ({ children }) => <ol style={{ fontSize: 13, lineHeight: 1.7, margin: '0 0 10px', paddingLeft: 20, color: theme.text }}>{children}</ol>,
-                    li: ({ children }) => <li style={{ marginBottom: 4 }}>{children}</li>,
-                    strong: ({ children }) => <strong style={{ fontWeight: 700, color: theme.text }}>{children}</strong>,
-                    hr: () => <hr style={{ border: 'none', borderTop: `1px solid ${theme.border}`, margin: '18px 0' }} />,
-                  }}
-                >{terms || '*Start typing to see a preview of your legal terms.*'}</ReactMarkdown>
-              </div>
-            </div>
-          </div>
-          <div style={{ padding: '14px 24px', borderTop: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={async () => { setTerms(''); await persist({ legal_terms_md: '' }) }}
-              style={{ background: 'none', border: 'none', color: theme.error || '#8b5a5a', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: 0 }}
-            >
-              Reset to default template
-            </button>
-            <button
-              onClick={async () => { await persist({ legal_terms_md: terms }); setShowTermsEditor(false); toast.success('Contract saved') }}
-              style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: theme.accent, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
-            >
-              Save & Close
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
+    {/* Section-based contract editor — easy add/remove/reorder clauses */}
+    <FormalTermsEditor
+      open={showTermsEditor}
+      initialMarkdown={terms}
+      onClose={() => setShowTermsEditor(false)}
+      onSave={async (newMarkdown) => {
+        setTerms(newMarkdown)
+        await persist({ legal_terms_md: newMarkdown })
+        toast.success('Contract saved')
+      }}
+      defaultsInput={{
+        company,
+        customer,
+        quote: estimate,
+        lineItems,
+        downPaymentLabel: label,
+        downPaymentAmount: amount === '' ? 0 : parseFloat(amount) || 0,
+      }}
+    />
     </>
   )
 }
