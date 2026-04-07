@@ -101,9 +101,10 @@ serve(async (req) => {
         : `Estimate ${estNum} from ${displayName}`;
     const ctaLabel = isFormal ? 'Review &amp; Sign Proposal' : isInteractive ? 'View Your Proposal' : 'View Estimate Online';
 
-    // Summary table — only for formal (shows contract total + down payment)
+    // Summary table — only for formal (shows contract total + down payment + remaining)
     let summaryTable = '';
     if (isFormal && totalNum > 0) {
+      const remainingNum = Math.max(0, totalNum - depositNum);
       let rows = `
         <tr>
           <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">Contract Total</td>
@@ -112,8 +113,12 @@ serve(async (req) => {
       if (depositNum > 0) {
         rows += `
         <tr>
-          <td style="padding:14px 0;color:#2c3530;font-size:15px;font-weight:700;">${dpLabel} due upon acceptance</td>
-          <td style="padding:14px 0;color:#5a6349;font-size:15px;font-weight:700;text-align:right;">${currency(depositNum)}</td>
+          <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">${dpLabel} (due now)</td>
+          <td style="padding:10px 0;color:#2c3530;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">- ${currency(depositNum)}</td>
+        </tr>
+        <tr>
+          <td style="padding:14px 0;color:#2c3530;font-size:15px;font-weight:700;">Remaining Balance</td>
+          <td style="padding:14px 0;color:#5a6349;font-size:15px;font-weight:700;text-align:right;">${currency(remainingNum)}</td>
         </tr>`;
       }
       summaryTable = `

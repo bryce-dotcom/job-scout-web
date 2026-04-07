@@ -233,10 +233,24 @@ export default function FormalProposal({
                 <TotalRow label="Net After Incentive" value={currency(totals.netAfterIncentive)} strong />
               </>
             )}
+            {downPaymentAmount > 0 && (
+              <>
+                <div style={{ borderTop: '1px solid #d6cdb8', margin: '8px 0' }} />
+                <TotalRow label={`${downPaymentLabel} (due now)`} value={`- ${currency(downPaymentAmount)}`} />
+                <TotalRow
+                  label="Remaining Balance"
+                  value={currency(Math.max(0, (totals.incentive > 0 ? totals.netAfterIncentive : totals.total) - downPaymentAmount))}
+                  strong
+                />
+              </>
+            )}
           </div>
           {downPaymentAmount > 0 && (
             <div style={styles.depositCallout}>
-              <strong>{downPaymentLabel}:</strong> {currency(downPaymentAmount)} due upon acceptance
+              <div><strong>{downPaymentLabel}:</strong> {currency(downPaymentAmount)} due upon acceptance</div>
+              <div style={{ marginTop: 4, fontSize: 12, color: '#4d5a52' }}>
+                Remaining balance of <strong>{currency(Math.max(0, (totals.incentive > 0 ? totals.netAfterIncentive : totals.total) - downPaymentAmount))}</strong> due upon substantial completion.
+              </div>
             </div>
           )}
         </section>

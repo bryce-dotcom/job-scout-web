@@ -277,17 +277,42 @@ export async function generateSignedProposalPdf({
     y += 16
   }
 
-  // Down payment callout
+  // Down payment + remaining balance callout
   if (downPaymentAmount > 0) {
-    ensureSpace(34)
+    const netBase = incentive > 0 ? netAfterIncentive : contractTotal
+    const remainingBalance = Math.max(0, netBase - downPaymentAmount)
+
+    // Down payment + remaining balance rows in the totals stack
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(MUTED[0], MUTED[1], MUTED[2])
+    doc.text(`${downPaymentLabel} (due now)`, tx, y)
+    doc.setTextColor(DARK[0], DARK[1], DARK[2])
+    doc.text(`- ${formatCurrency(downPaymentAmount)}`, M + CW - 8, y, { align: 'right' })
+    y += 14
+    doc.setDrawColor(RULE[0], RULE[1], RULE[2])
+    doc.line(tx - 4, y - 4, PW - M, y - 4)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.setTextColor(ACCENT[0], ACCENT[1], ACCENT[2])
+    doc.text('Remaining Balance', tx, y + 8)
+    doc.text(formatCurrency(remainingBalance), M + CW - 8, y + 8, { align: 'right' })
+    y += 24
+
+    // Highlighted call-out box
+    ensureSpace(52)
     doc.setFillColor(247, 245, 239)
     doc.setDrawColor(RULE[0], RULE[1], RULE[2])
-    doc.rect(M, y, CW, 26, 'FD')
+    doc.rect(M, y, CW, 44, 'FD')
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
     doc.setTextColor(DARK[0], DARK[1], DARK[2])
     doc.text(`${downPaymentLabel}: ${formatCurrency(downPaymentAmount)} due upon acceptance`, M + 12, y + 17)
-    y += 36
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(MUTED[0], MUTED[1], MUTED[2])
+    doc.text(`Remaining balance of ${formatCurrency(remainingBalance)} due upon substantial completion.`, M + 12, y + 32)
+    y += 54
   }
 
   // ---------- Terms & Conditions ----------
