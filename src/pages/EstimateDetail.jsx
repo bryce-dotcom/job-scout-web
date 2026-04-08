@@ -15,6 +15,7 @@ import { generateEstimatePdf } from '../lib/estimatePdf'
 import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
 import SignedProposalCard from '../components/SignedProposalCard'
+import EmailDeliveryBadge from '../components/EmailDeliveryBadge'
 import { buildDefaultTerms, DEFAULT_DOWN_PAYMENT_LABEL } from '../components/proposal/formalProposalDefaults'
 import FormalTermsEditor from '../components/proposal/FormalTermsEditor'
 
@@ -1485,13 +1486,20 @@ export default function EstimateDetail() {
         throw new Error(sendData?.error || `send-estimate HTTP ${sendRes.status}`)
       }
 
-      // Update estimate
+      // Update estimate (capture Resend email_id for delivery tracking,
+      // same pattern InvoiceDetail uses)
       await updateQuote(id, {
         status: estimate.status === 'Draft' ? 'Sent' : estimate.status,
         last_sent_at: new Date().toISOString(),
         sent_to_email: sendEmail,
         sent_date: estimate.sent_date || new Date().toISOString(),
         portal_token: portalToken?.token || null,
+        email_id: sendData?.emailId || null,
+        email_status: 'sent',
+        email_status_at: new Date().toISOString(),
+        email_bounce_reason: null,
+        email_opened_at: null,
+        email_clicked_at: null,
         updated_at: new Date().toISOString()
       })
 
@@ -1774,6 +1782,9 @@ export default function EstimateDetail() {
           theme={theme}
         />
       )}
+
+      {/* Email delivery tracking (same tracker used on invoices) */}
+      <EmailDeliveryBadge record={estimate} theme={theme} />
 
       {/* Flow context - only when linked to a lead */}
       {estimate.lead_id && estimate.lead?.status && (

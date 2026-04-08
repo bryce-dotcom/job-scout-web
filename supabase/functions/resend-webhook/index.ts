@@ -75,11 +75,20 @@ Deno.serve(async (req) => {
       }
 
       if (Object.keys(update).length > 0) {
-        const { error } = await supabase
+        // Update both invoices and quotes — whichever table actually has a
+        // row with this email_id. email_id values are Resend-side UUIDs so
+        // there's zero risk of collision between the two tables.
+        const { error: invErr } = await supabase
           .from('invoices')
           .update(update)
           .eq('email_id', emailId)
-        if (error) console.error('[resend-webhook] update error', error)
+        if (invErr) console.error('[resend-webhook] invoices update error', invErr)
+
+        const { error: quoteErr } = await supabase
+          .from('quotes')
+          .update(update)
+          .eq('email_id', emailId)
+        if (quoteErr) console.error('[resend-webhook] quotes update error', quoteErr)
       }
     }
 
