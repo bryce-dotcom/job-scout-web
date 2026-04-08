@@ -45,7 +45,9 @@ import {
   Unlink,
   Phone,
   Send,
-  Zap
+  Zap,
+  Bell,
+  PartyPopper
 } from 'lucide-react'
 import { seedSampleData, clearAllData } from '../lib/seedData'
 import { toast } from '../lib/toast'
@@ -78,6 +80,7 @@ const baseTabs = [
   { id: 'service_types', label: 'Service Types', icon: Wrench },
   { id: 'statuses', label: 'Job Statuses', icon: CheckSquare },
   { id: 'estimate_defaults', label: 'Estimate Defaults', icon: FileStack },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'my_money', label: 'My Money', icon: Wallet },
   { id: 'users', label: 'User Management', icon: Users },
   { id: 'integrations', label: 'Integrations', icon: Link2 }
@@ -631,6 +634,9 @@ export default function Settings() {
 
       case 'estimate_defaults':
         return <EstimateDefaultsTab theme={theme} settings={settings} saveSetting={saveSetting} />
+
+      case 'notifications':
+        return <NotificationsTab theme={theme} settings={settings} saveSetting={saveSetting} user={user} />
 
       case 'my_money':
         return <PaymentSettingsTab theme={theme} settings={settings} saveSetting={saveSetting} />
@@ -1713,6 +1719,134 @@ function BusinessUnitsEditor({ items, setItems, saveSetting, companyId, theme })
 }
 
 // Estimate Defaults Tab Component
+function NotificationsTab({ theme, settings, saveSetting, user }) {
+  // Company-wide celebration setting lives under `celebration_enabled`
+  // (defaults to ON when the row is missing entirely).
+  const celebrationRow = settings.find(s => s.key === 'celebration_enabled')
+  const parseBool = (v) => {
+    if (v === undefined || v === null || v === '') return true
+    if (typeof v === 'boolean') return v
+    const s = String(v).toLowerCase()
+    return s === 'true' || s === '1' || s === 'yes'
+  }
+  const celebrationEnabled = celebrationRow ? parseBool(celebrationRow.value) : true
+
+  // Per-employee opt-out lives directly on the employees row
+  const [optOut, setOptOut] = useState(!!user?.celebration_opt_out)
+  const [savingOptOut, setSavingOptOut] = useState(false)
+
+  const handleCelebrationToggle = async () => {
+    await saveSetting('celebration_enabled', !celebrationEnabled)
+    toast.success(!celebrationEnabled
+      ? 'Approval celebrations enabled for the company'
+      : 'Approval celebrations disabled for the company')
+  }
+
+  const handleOptOutToggle = async () => {
+    if (!user?.id) return
+    setSavingOptOut(true)
+    const next = !optOut
+    try {
+      const { error } = await supabase.from('employees').update({ celebration_opt_out: next }).eq('id', user.id)
+      if (error) throw error
+      setOptOut(next)
+      toast.success(next ? 'You will no longer see confetti on approvals' : 'Confetti is back on for you')
+    } catch (err) {
+      toast.error('Could not save: ' + (err?.message || 'unknown'))
+    } finally {
+      setSavingOptOut(false)
+    }
+  }
+
+  return (
+    <div>
+      <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Notifications</h3>
+      <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '20px' }}>
+        Control how approval announcements and celebrations behave for your team and for yourself.
+      </p>
+
+      {/* Company-wide celebration toggle */}
+      <div style={{
+        padding: '18px 20px',
+        backgroundColor: theme.bg,
+        border: `1px solid ${theme.border}`,
+        borderRadius: '12px',
+        marginBottom: '14px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '14px', fontWeight: 600, color: theme.text }}>
+              <PartyPopper size={16} color="#d4af37" />
+              Approval Celebrations (Company-wide)
+            </div>
+            <p style={{ fontSize: '12px', color: theme.textMuted, margin: '4px 0 0', lineHeight: 1.5 }}>
+              When a customer approves an estimate or signs a proposal, fire a confetti burst for everyone watching.
+              The salesperson who owns the quote also gets a louder celebration.
+            </p>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <div
+              onClick={handleCelebrationToggle}
+              style={{
+                width: 44, height: 24, borderRadius: 12,
+                background: celebrationEnabled ? '#d4af37' : theme.border,
+                position: 'relative', transition: 'background 0.2s',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: 2, left: celebrationEnabled ? 22 : 2,
+                width: 20, height: 20, borderRadius: 10, background: '#fff',
+                transition: 'left 0.2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }} />
+            </div>
+            <span style={{ fontSize: '13px', color: theme.text, fontWeight: 500 }}>{celebrationEnabled ? 'On' : 'Off'}</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Per-employee opt-out */}
+      <div style={{
+        padding: '18px 20px',
+        backgroundColor: theme.bg,
+        border: `1px solid ${theme.border}`,
+        borderRadius: '12px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: theme.text }}>Opt me out of confetti</div>
+            <p style={{ fontSize: '12px', color: theme.textMuted, margin: '4px 0 0', lineHeight: 1.5 }}>
+              Personal override. Even when the company setting is on, you won't see confetti.
+              You'll still get the approval toast.
+            </p>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: savingOptOut ? 'wait' : 'pointer' }}>
+            <div
+              onClick={savingOptOut ? undefined : handleOptOutToggle}
+              style={{
+                width: 44, height: 24, borderRadius: 12,
+                background: optOut ? theme.accent : theme.border,
+                position: 'relative', transition: 'background 0.2s',
+                cursor: savingOptOut ? 'wait' : 'pointer',
+                opacity: savingOptOut ? 0.6 : 1,
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: 2, left: optOut ? 22 : 2,
+                width: 20, height: 20, borderRadius: 10, background: '#fff',
+                transition: 'left 0.2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }} />
+            </div>
+            <span style={{ fontSize: '13px', color: theme.text, fontWeight: 500 }}>{optOut ? 'Opted out' : 'On'}</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EstimateDefaultsTab({ theme, settings, saveSetting }) {
   const existing = settings.find(s => s.key === 'estimate_defaults')
   let defaults = {

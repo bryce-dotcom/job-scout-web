@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,6 +13,121 @@ function base64ToBytes(b64: string): Uint8Array {
   const out = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
   return out
+}
+
+/**
+ * Stamp a gold "Certificate of Electronic Signature" block onto the last
+ * page of a signed proposal PDF. Additive — the rest of the PDF is untouched.
+ * Safe to call when any of the metadata is missing; the renderer just shows
+ * a dash for the missing field rather than crashing.
+ */
+async function stampCertificateOnPdf(pdfBytes: Uint8Array, meta: {
+  approverName?: string | null;
+  approverEmail?: string | null;
+  signatureMethod?: string | null;
+  approvedAt: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  approvalId?: number | null;
+  documentHash?: string | null;
+  legalTermsHash?: string | null;
+}): Promise<Uint8Array> {
+  try {
+    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true })
+    const pages = pdfDoc.getPages()
+    if (pages.length === 0) return pdfBytes
+    const last = pages[pages.length - 1]
+    const { width, height } = last.getSize()
+
+    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica)
+    const helvBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+
+    // Gold palette (matches proposalTheme.certGold*)
+    const gold = rgb(212 / 255, 175 / 255, 55 / 255)
+    const goldFill = rgb(250 / 255, 243 / 255, 219 / 255)
+    const dark = rgb(44 / 255, 53 / 255, 48 / 255)
+    const muted = rgb(125 / 255, 138 / 255, 127 / 255)
+
+    const boxW = Math.min(width - 72, 480)
+    const boxH = 130
+    const boxX = (width - boxW) / 2
+    const boxY = 50 // leave room for footer
+
+    last.drawRectangle({
+      x: boxX,
+      y: boxY,
+      width: boxW,
+      height: boxH,
+      color: goldFill,
+      borderColor: gold,
+      borderWidth: 1.2,
+    })
+
+    // Header
+    last.drawText('ELECTRONICALLY SIGNED', {
+      x: boxX + 16,
+      y: boxY + boxH - 20,
+      size: 12,
+      font: helvBold,
+      color: gold,
+    })
+    last.drawText('E-Sign Act Certificate of Authenticity', {
+      x: boxX + 16,
+      y: boxY + boxH - 34,
+      size: 8,
+      font: helv,
+      color: muted,
+    })
+
+    // Two-column layout
+    const colGap = 16
+    const colW = (boxW - 32 - colGap) / 2
+    const leftX = boxX + 16
+    const rightX = leftX + colW + colGap
+
+    const drawPair = (x: number, yOffset: number, label: string, value: string) => {
+      last.drawText(label, { x, y: boxY + boxH - yOffset, size: 7, font: helvBold, color: muted })
+      last.drawText(value || '-', { x, y: boxY + boxH - yOffset - 10, size: 9, font: helv, color: dark })
+    }
+
+    const ts = meta.approvedAt ? new Date(meta.approvedAt).toLocaleString('en-US', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZoneName: 'short',
+    }) : '-'
+    const methodLabel = meta.signatureMethod === 'drawn' ? 'Drawn' : meta.signatureMethod === 'typed' ? 'Typed' : 'Click-to-Approve'
+
+    drawPair(leftX, 52, 'SIGNER NAME', meta.approverName || '-')
+    drawPair(leftX, 78, 'SIGNER EMAIL', meta.approverEmail || '-')
+    drawPair(leftX, 104, 'METHOD', methodLabel)
+
+    drawPair(rightX, 52, 'SIGNED AT', ts)
+    drawPair(rightX, 78, 'IP ADDRESS', meta.ipAddress || '-')
+    drawPair(rightX, 104, 'APPROVAL ID', meta.approvalId ? String(meta.approvalId) : '-')
+
+    // Hashes across the bottom (truncated, monospace-ish via courier)
+    const courier = await pdfDoc.embedFont(StandardFonts.Courier)
+    const hashY = boxY + 16
+    last.drawText('DOC HASH:', { x: leftX, y: hashY + 8, size: 7, font: helvBold, color: muted })
+    last.drawText((meta.documentHash || '-').slice(0, 24) + (meta.documentHash && meta.documentHash.length > 24 ? '…' : ''), {
+      x: leftX + 45, y: hashY + 8, size: 7, font: courier, color: dark,
+    })
+    last.drawText('TERMS HASH:', { x: leftX, y: hashY, size: 7, font: helvBold, color: muted })
+    last.drawText((meta.legalTermsHash || '-').slice(0, 24) + (meta.legalTermsHash && meta.legalTermsHash.length > 24 ? '…' : ''), {
+      x: leftX + 55, y: hashY, size: 7, font: courier, color: dark,
+    })
+
+    // ESIGN Act reference line below the box
+    last.drawText(
+      'Captured per the U.S. Electronic Signatures in Global and National Commerce Act (15 U.S.C. \u00A7 7001 et seq.) and Utah Code \u00A7 46-4.',
+      { x: boxX, y: boxY - 12, size: 6.5, font: helv, color: muted, maxWidth: boxW },
+    )
+
+    return await pdfDoc.save()
+  } catch (err) {
+    console.error('[approve-document] certificate stamp failed', err)
+    return pdfBytes
+  }
 }
 
 serve(async (req) => {
@@ -139,10 +255,25 @@ serve(async (req) => {
     }
 
     // --- Formal proposal: upload the signed PDF and link it to the estimate ---
+    // We re-stamp the PDF server-side with a gold "Certificate of Electronic
+    // Signature" block containing the real IP, user agent, approval id, and
+    // hashes — none of which the client had before the approval was recorded.
     let signedAttachmentId: number | null = null
     if (signed_pdf_base64) {
       try {
-        const pdfBytes = base64ToBytes(signed_pdf_base64)
+        const rawPdfBytes = base64ToBytes(signed_pdf_base64)
+        const stampedPdfBytes = await stampCertificateOnPdf(rawPdfBytes, {
+          approverName: approver_name,
+          approverEmail: approver_email,
+          signatureMethod: signature_method || null,
+          approvedAt: new Date().toISOString(),
+          ipAddress,
+          userAgent,
+          approvalId: approvalInsert?.id || null,
+          documentHash,
+          legalTermsHash: legal_terms_hash || null,
+        })
+        const pdfBytes = stampedPdfBytes
         const pdfPath = `signed-proposals/${estimate.id}/${approvalInsert?.id || Date.now()}.pdf`
         const { error: pdfUpErr } = await supabase.storage
           .from('project-documents')
@@ -213,6 +344,49 @@ serve(async (req) => {
         .from('leads')
         .update({ status: 'Won', updated_at: new Date().toISOString() })
         .eq('id', estimate.lead_id);
+    }
+
+    // Broadcast an "Estimate Approved" notification to the whole company
+    // so the rep team gets the toast + the salesperson who owns the quote
+    // gets the owner-targeted confetti burst on their screen. Runs last so
+    // the main approval work is already durable if this insert fails.
+    try {
+      let ownerName: string | null = null
+      if (estimate.salesperson_id) {
+        const { data: ownerRow } = await supabase
+          .from('employees')
+          .select('id, name')
+          .eq('id', estimate.salesperson_id)
+          .maybeSingle()
+        ownerName = ownerRow?.name || null
+      }
+      const amount = parseFloat(String(estimate.quote_amount || 0)) || 0
+      const { data: cust } = estimate.customer_id
+        ? await supabase.from('customers').select('name, business_name').eq('id', estimate.customer_id).maybeSingle()
+        : { data: null }
+      const customerDisplayName = cust?.business_name || cust?.name || estimate.customer_name || '(Customer)'
+      const amountStr = amount > 0 ? ` \u2014 $${amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : ''
+
+      await supabase.from('company_notifications').insert({
+        company_id: tokenRow.company_id,
+        type: 'estimate_approved',
+        title: 'Estimate Approved!',
+        message: `${customerDisplayName}${amountStr} (${estimate.quote_id || `EST-${estimate.id}`})`,
+        metadata: {
+          quote_id: estimate.id,
+          quote_number: estimate.quote_id || null,
+          customer_name: customerDisplayName,
+          amount,
+          owner_employee_id: estimate.salesperson_id || null,
+          owner_name: ownerName,
+          source: 'portal',
+          approver_name: approver_name || null,
+          approver_method: signature_method || 'click_to_approve',
+        },
+        created_by: null, // portal approvals have no session user
+      })
+    } catch (notifErr) {
+      console.error('[approve-document] notification insert failed', notifErr)
     }
 
     return new Response(JSON.stringify({
