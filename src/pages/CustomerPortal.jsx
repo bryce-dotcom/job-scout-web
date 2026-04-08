@@ -228,9 +228,10 @@ export default function CustomerPortal() {
 
   // Invoice state
   const invoiceAmount = isInvoice ? parseFloat(doc.amount) || 0 : 0
+  const invoiceDiscount = isInvoice ? parseFloat(doc.discount_applied) || 0 : 0
   const totalPaid = isInvoice ? (payments || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) : 0
   const existingCcFee = isInvoice ? (parseFloat(doc.credit_card_fee) || 0) : 0
-  const balanceDue = invoiceAmount - totalPaid + existingCcFee
+  const balanceDue = invoiceAmount - invoiceDiscount - totalPaid + existingCcFee
   const isFullyPaid = isInvoice && (doc.payment_status === 'Paid' || balanceDue <= 0)
 
   // CC fee settings from invoice_settings (passed by edge function)
@@ -431,25 +432,30 @@ export default function CustomerPortal() {
               {doc.job_description && (
                 <p style={{ color: theme.textSecondary, fontSize: '14px', lineHeight: '1.6', margin: '0 0 16px', whiteSpace: 'pre-wrap' }}>{doc.job_description}</p>
               )}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <p style={{ color: theme.textMuted, fontSize: '12px', margin: '0 0 2px' }}>Amount</p>
-                  <p style={{ fontWeight: '600', color: theme.text, fontSize: '16px', margin: 0 }}>{formatCurrency(invoiceAmount)}</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: theme.textMuted, fontSize: '13px' }}>Subtotal</span>
+                  <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceAmount)}</span>
                 </div>
-                <div>
-                  <p style={{ color: theme.textMuted, fontSize: '12px', margin: '0 0 2px' }}>Total Paid</p>
-                  <p style={{ fontWeight: '600', color: theme.success, fontSize: '16px', margin: 0 }}>{formatCurrency(totalPaid)}</p>
-                </div>
+                {invoiceDiscount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: theme.textMuted, fontSize: '13px' }}>Discount</span>
+                    <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(invoiceDiscount)}</span>
+                  </div>
+                )}
+                {totalPaid > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: theme.textMuted, fontSize: '13px' }}>Paid</span>
+                    <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(totalPaid)}</span>
+                  </div>
+                )}
                 {!isFullyPaid && (
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <p style={{ color: theme.textMuted, fontSize: '12px', margin: '0 0 2px' }}>Balance Due</p>
-                    <p style={{ fontWeight: '700', color: theme.error, fontSize: '20px', margin: 0 }}>{formatCurrency(balanceDue)}</p>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: `1px solid ${theme.border}`, marginTop: '4px' }}>
+                    <span style={{ color: theme.textMuted, fontSize: '13px' }}>Balance Due</span>
+                    <span style={{ fontWeight: '700', color: theme.error, fontSize: '20px' }}>{formatCurrency(balanceDue)}</span>
                   </div>
                 )}
               </div>
-              {doc.discount_applied > 0 && (
-                <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '8px' }}>Discount applied: {formatCurrency(doc.discount_applied)}</p>
-              )}
               {existingCcFee > 0 && (
                 <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '4px' }}>CC processing fee: {formatCurrency(existingCcFee)}</p>
               )}
