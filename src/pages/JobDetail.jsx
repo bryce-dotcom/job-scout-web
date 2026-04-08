@@ -380,7 +380,7 @@ function JobDetailInner() {
       // Fetch invoices linked to this job
       const { data: invoicesData } = await supabase
         .from('invoices')
-        .select('id, invoice_id, amount, payment_status, created_at, pdf_url')
+        .select('id, invoice_id, amount, payment_status, created_at, pdf_url, invoice_type')
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobInvoices(invoicesData || [])
@@ -950,6 +950,121 @@ function JobDetailInner() {
     }
 
     setSaving(false)
+  }
+
+  // Create a deposit/down-payment invoice for this job. Used for the
+  // historical-repair case (jobs converted before the auto-create logic
+  // existed) and for any situation where the rep realizes after the fact
+  // that the customer owes a deposit. Pulls the down payment config from
+  // the linked estimate's settings_overrides.formal_proposal, but also
+  // prompts for a manual amount if no formal proposal exists.
+  const createDepositInvoice = async () => {
+    const { toast } = await import('../lib/toast')
+    try {
+      // Block if a deposit invoice already exists on this job
+      const existing = jobInvoices.find(i => i.invoice_type === 'deposit')
+      if (existing) {
+        toast.error(`Deposit invoice already exists: ${existing.invoice_id}`)
+        return
+      }
+
+      // Resolve the down payment amount + label from the source estimate.
+      // Fall back to a manual prompt so reps can still create one on jobs
+      // without a formal proposal configured.
+      let dpAmount = 0
+      let dpLabel = 'Deposit'
+      let sourceEst = null
+      if (job.quote_id) {
+        const { data: est } = await supabase
+          .from('quotes')
+          .select('id, quote_id, estimate_name, settings_overrides, business_unit')
+          .eq('id', job.quote_id)
+          .maybeSingle()
+        if (est) {
+          sourceEst = est
+          const formal = est.settings_overrides?.formal_proposal || {}
+          const raw = parseFloat(formal.down_payment_amount) || 0
+          const isPercent = !!formal.down_payment_is_percent
+          const contractTotal = parseFloat(job.job_total) || 0
+          dpAmount = isPercent ? Math.round(contractTotal * (raw / 100) * 100) / 100 : raw
+          if (formal.down_payment_label) dpLabel = formal.down_payment_label
+        }
+      }
+
+      if (!(dpAmount > 0)) {
+        // Fallback: ask the rep for an amount
+        const input = window.prompt(`No down payment configured on the source estimate. Enter the ${dpLabel.toLowerCase()} amount (USD):`, '')
+        if (input === null) return
+        const manual = parseFloat(input)
+        if (!(manual > 0)) {
+          toast.error('Invalid amount')
+          return
+        }
+        dpAmount = manual
+      }
+
+      setSaving(true)
+      const invNumber = `INV-DEP-${Date.now().toString(36).toUpperCase()}`
+      const resolvedCustomerId = job.customer_id || job.quote?.customer_id || null
+      const refId = sourceEst?.quote_id || job.job_id || `JOB-${job.id}`
+      const { data: depositInvoice, error: insErr } = await supabase
+        .from('invoices')
+        .insert([{
+          company_id: companyId,
+          job_id: parseInt(id),
+          customer_id: resolvedCustomerId,
+          invoice_id: invNumber,
+          amount: dpAmount,
+          payment_status: 'Draft',
+          invoice_type: 'deposit',
+          business_unit: sourceEst?.business_unit || job.business_unit || null,
+          job_description: `${dpLabel} for ${sourceEst?.estimate_name || job.job_title || 'project'}`,
+          notes: `${dpLabel} invoice created from ${refId}. ${dpLabel} due upon acceptance.`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }])
+        .select()
+        .single()
+
+      if (insErr) throw insErr
+
+      // Auto-link any existing deposit payment recorded on the source estimate
+      if (sourceEst?.id) {
+        const { data: existingPayment } = await supabase
+          .from('payments')
+          .select('id, amount')
+          .eq('company_id', companyId)
+          .eq('quote_id', sourceEst.id)
+          .eq('is_deposit', true)
+          .is('invoice_id', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (existingPayment?.id) {
+          const paidAmount = parseFloat(existingPayment.amount) || 0
+          await supabase.from('payments')
+            .update({ invoice_id: depositInvoice.id, job_id: parseInt(id) })
+            .eq('id', existingPayment.id)
+          if (paidAmount >= dpAmount - 0.01) {
+            await supabase.from('invoices')
+              .update({ payment_status: 'Paid', updated_at: new Date().toISOString() })
+              .eq('id', depositInvoice.id)
+          } else if (paidAmount > 0) {
+            await supabase.from('invoices')
+              .update({ payment_status: 'Partial', updated_at: new Date().toISOString() })
+              .eq('id', depositInvoice.id)
+          }
+        }
+      }
+
+      toast.success(`${dpLabel} invoice ${invNumber} created: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(dpAmount)}`)
+      await fetchJobData()
+    } catch (err) {
+      console.error('[createDepositInvoice]', err)
+      toast.error('Could not create deposit invoice: ' + (err?.message || 'unknown'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const createCustomerInvoice = async () => {
@@ -3778,6 +3893,31 @@ function JobDetailInner() {
                 <FileText size={18} />
                 Generate Work Order
               </button>
+
+              {/* Create Deposit Invoice \u2014 historical repair + manual entry.
+                  Only shows when there isn't already a deposit invoice on
+                  the job. Pulls the amount from the source estimate's
+                  formal proposal config if present, otherwise prompts. */}
+              {!jobInvoices.some(i => i.invoice_type === 'deposit') && (
+                <button
+                  onClick={createDepositInvoice}
+                  disabled={saving}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px 16px',
+                    backgroundColor: 'rgba(212,175,55,0.12)',
+                    color: '#a88527',
+                    border: '1px solid rgba(212,175,55,0.4)',
+                    borderRadius: '8px', fontSize: '14px', fontWeight: '600',
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    opacity: saving ? 0.6 : 1,
+                  }}
+                >
+                  <DollarSign size={18} />
+                  Create Deposit Invoice
+                </button>
+              )}
+
               {/* Paired Invoicing: Customer + Utility Incentive */}
               {parseFloat(job.utility_incentive) > 0 && (jobInvoices.length === 0 || jobUtilityInvoices.length === 0) && (
                 <div style={{
