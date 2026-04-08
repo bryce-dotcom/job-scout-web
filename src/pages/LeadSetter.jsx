@@ -13,6 +13,7 @@ import {
 import EntityCard from '../components/EntityCard'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import SearchableSelect from '../components/SearchableSelect'
+import SalespeopleMultiSelect from '../components/SalespeopleMultiSelect'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -73,7 +74,7 @@ export default function LeadSetter() {
   const [contactForm, setContactForm] = useState({ notes: '', callback_date: '', callback_time: '' })
   const [showEventModal, setShowEventModal] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState(null)
-  const [eventForm, setEventForm] = useState({ start_time: '', duration_minutes: 60, salesperson_id: '', location: '', notes: '' })
+  const [eventForm, setEventForm] = useState({ start_time: '', duration_minutes: 60, salesperson_id: '', salesperson_ids: [], location: '', notes: '' })
   const [savingEvent, setSavingEvent] = useState(false)
 
   // Drag state
@@ -86,7 +87,8 @@ export default function LeadSetter() {
   const [appointmentForm, setAppointmentForm] = useState({
     start_time: '',
     duration_minutes: 60,
-    salesperson_id: '',
+    salesperson_id: '',           // primary rep (kept for backward compat)
+    salesperson_ids: [],          // full list of assigned reps
     location: '',
     notes: ''
   })
@@ -423,6 +425,7 @@ export default function LeadSetter() {
       start_time: formatDateTimeLocal(startTime),
       duration_minutes: 60,
       salesperson_id: '',
+      salesperson_ids: [],
       location: draggedLead.address || '',
       notes: ''
     })
@@ -446,6 +449,15 @@ export default function LeadSetter() {
     const endTime = new Date(startTime)
     endTime.setMinutes(endTime.getMinutes() + appointmentForm.duration_minutes)
 
+    // Resolve salesperson list. Primary id (salesperson_id) is the first in
+    // the array — kept for backward compat with everything that reads only
+    // that column. Full list goes into salesperson_ids.
+    const ids = (appointmentForm.salesperson_ids || []).filter(Boolean)
+    if (appointmentForm.salesperson_id && !ids.includes(appointmentForm.salesperson_id)) {
+      ids.unshift(appointmentForm.salesperson_id)
+    }
+    const primaryId = ids[0] || appointmentForm.salesperson_id || null
+
     // Create appointment with all required fields
     const appointmentPayload = {
       company_id: companyId,
@@ -455,7 +467,8 @@ export default function LeadSetter() {
       end_time: endTime.toISOString(),
       duration_minutes: appointmentForm.duration_minutes,
       location: appointmentForm.location || selectedLead.address || null,
-      salesperson_id: appointmentForm.salesperson_id || null,
+      salesperson_id: primaryId,
+      salesperson_ids: ids,
       setter_id: user?.id || null,
       lead_owner_id: selectedLead.lead_owner_id || null,
       status: 'Scheduled',
@@ -486,7 +499,8 @@ export default function LeadSetter() {
         status: 'Appointment Set',
         appointment_time: startTime.toISOString(),
         appointment_id: apt.id,
-        salesperson_id: appointmentForm.salesperson_id || null
+        salesperson_id: primaryId,
+        salesperson_ids: ids
       })
       .eq('id', selectedLead.id)
 
@@ -1313,6 +1327,9 @@ export default function LeadSetter() {
                                   start_time: formatDateTimeLocal(new Date(apt.start_time)),
                                   duration_minutes: apt.duration_minutes || 60,
                                   salesperson_id: apt.salesperson_id || '',
+                                  salesperson_ids: Array.isArray(apt.salesperson_ids) && apt.salesperson_ids.length
+                                    ? apt.salesperson_ids
+                                    : (apt.salesperson_id ? [apt.salesperson_id] : []),
                                   location: apt.location || '',
                                   notes: apt.notes || ''
                                 })
@@ -1328,11 +1345,29 @@ export default function LeadSetter() {
                               }}>
                                 {apt.lead?.customer_name || apt.title}
                               </div>
-                              {apt.salesperson && (
-                                <div style={{ color: isOverlay ? spColor : theme.textMuted, fontSize: '9px', opacity: 0.8 }}>
-                                  {apt.salesperson.name}
-                                </div>
-                              )}
+                              {(() => {
+                                // Show all assigned reps. Falls back to the
+                                // joined salesperson when the array column
+                                // isn't populated yet.
+                                const ids = Array.isArray(apt.salesperson_ids) && apt.salesperson_ids.length
+                                  ? apt.salesperson_ids
+                                  : (apt.salesperson_id ? [apt.salesperson_id] : [])
+                                if (ids.length === 0 && apt.salesperson) {
+                                  return (
+                                    <div style={{ color: isOverlay ? spColor : theme.textMuted, fontSize: '9px', opacity: 0.8 }}>
+                                      {apt.salesperson.name}
+                                    </div>
+                                  )
+                                }
+                                if (ids.length === 0) return null
+                                const names = ids.map(id => employees.find(e => e.id === id)?.name).filter(Boolean)
+                                if (names.length === 0) return null
+                                return (
+                                  <div style={{ color: isOverlay ? spColor : theme.textMuted, fontSize: '9px', opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {names.join(', ')}
+                                  </div>
+                                )
+                              })()}
                             </div>
                             )
                           })}
@@ -1455,12 +1490,17 @@ export default function LeadSetter() {
                 </div>
 
                 <div>
-                  <label style={labelStyle}>Assign Salesperson</label>
-                  <SearchableSelect
-                    options={employees.filter(e => e.role === 'Sales' || e.role === 'Manager' || e.role === 'Admin').map(emp => ({ value: emp.id, label: emp.name }))}
-                    value={appointmentForm.salesperson_id}
-                    onChange={(val) => setAppointmentForm(prev => ({ ...prev, salesperson_id: val }))}
-                    placeholder="-- Select Salesperson --"
+                  <label style={labelStyle}>Assign Sales Reps</label>
+                  <SalespeopleMultiSelect
+                    employees={employees}
+                    selectedIds={appointmentForm.salesperson_ids?.length
+                      ? appointmentForm.salesperson_ids
+                      : (appointmentForm.salesperson_id ? [appointmentForm.salesperson_id] : [])}
+                    onChange={(ids) => setAppointmentForm(prev => ({
+                      ...prev,
+                      salesperson_ids: ids,
+                      salesperson_id: ids[0] || '',
+                    }))}
                     theme={theme}
                   />
                 </div>
@@ -1875,7 +1915,15 @@ export default function LeadSetter() {
               <div style={{ flex: 1 }}>
                 <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>{selectedEvent.lead?.customer_name || selectedEvent.title}</h2>
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                  {selectedEvent.lead?.service_type || 'Appointment'}{selectedEvent.salesperson ? ` \xb7 ${selectedEvent.salesperson.name}` : ''}
+                  {selectedEvent.lead?.service_type || 'Appointment'}{(() => {
+                    const ids = Array.isArray(selectedEvent.salesperson_ids) && selectedEvent.salesperson_ids.length
+                      ? selectedEvent.salesperson_ids
+                      : (selectedEvent.salesperson_id ? [selectedEvent.salesperson_id] : [])
+                    const names = ids.map(id => employees.find(e => e.id === id)?.name).filter(Boolean)
+                    if (names.length > 0) return ' \xb7 ' + names.join(', ')
+                    if (selectedEvent.salesperson) return ' \xb7 ' + selectedEvent.salesperson.name
+                    return ''
+                  })()}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
@@ -1919,12 +1967,17 @@ export default function LeadSetter() {
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned To</label>
-                  <SearchableSelect
-                    options={employees.filter(emp => ['Sales', 'Manager', 'Admin'].includes(emp.role)).map(emp => ({ value: emp.id, label: emp.name }))}
-                    value={eventForm.salesperson_id}
-                    onChange={(val) => setEventForm(f => ({ ...f, salesperson_id: val }))}
-                    placeholder="Unassigned"
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned Reps</label>
+                  <SalespeopleMultiSelect
+                    employees={employees}
+                    selectedIds={eventForm.salesperson_ids?.length
+                      ? eventForm.salesperson_ids
+                      : (eventForm.salesperson_id ? [eventForm.salesperson_id] : [])}
+                    onChange={(ids) => setEventForm(f => ({
+                      ...f,
+                      salesperson_ids: ids,
+                      salesperson_id: ids[0] || '',
+                    }))}
                     theme={theme}
                   />
                 </div>
@@ -1949,17 +2002,24 @@ export default function LeadSetter() {
                   try {
                     const startDT = new Date(eventForm.start_time)
                     const endDT = new Date(startDT.getTime() + eventForm.duration_minutes * 60000)
+                    const _ids = (eventForm.salesperson_ids || []).filter(Boolean)
+                    if (eventForm.salesperson_id && !_ids.includes(eventForm.salesperson_id)) {
+                      _ids.unshift(eventForm.salesperson_id)
+                    }
+                    const _primary = _ids[0] || eventForm.salesperson_id || null
                     await supabase.from('appointments').update({
                       start_time: startDT.toISOString(), end_time: endDT.toISOString(),
                       duration_minutes: eventForm.duration_minutes,
-                      salesperson_id: eventForm.salesperson_id || null,
+                      salesperson_id: _primary,
+                      salesperson_ids: _ids,
                       location: eventForm.location || null, notes: eventForm.notes || null,
                       updated_at: new Date().toISOString()
                     }).eq('id', selectedEvent.id)
                     if (selectedEvent.lead_id) {
                       await supabase.from('leads').update({
                         appointment_time: startDT.toISOString(),
-                        salesperson_id: eventForm.salesperson_id || null,
+                        salesperson_id: _primary,
+                        salesperson_ids: _ids,
                         updated_at: new Date().toISOString()
                       }).eq('id', selectedEvent.lead_id)
                     }
