@@ -3,6 +3,8 @@
 //
 // Single export: generateSignedProposalPdf(args) -> Promise<Blob>
 
+import { getCustomerPrimary, getCustomerSecondary } from './customerDisplay'
+
 function formatCurrency(value) {
   const n = parseFloat(value) || 0
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
@@ -93,10 +95,8 @@ export async function generateSignedProposalPdf({
   const senderEmail = businessUnit?.email || company?.email || company?.owner_email || ''
 
   // Customer display — business name first, then contact name
-  const customerBusiness = customer?.business_name || ''
-  const customerContact = customer?.name || customer?.customer_name || ''
-  const customerPrimary = customerBusiness || customerContact || quote?.customer_name || 'Client'
-  const customerSecondary = (customerBusiness && customerContact && customerBusiness !== customerContact) ? customerContact : ''
+  const customerPrimary = getCustomerPrimary(customer) || quote?.customer_name || 'Client'
+  const customerSecondary = getCustomerSecondary(customer) || ''
   const customerAddr = customer?.address || ''
   const customerEmail = customer?.email || approver?.email || ''
 

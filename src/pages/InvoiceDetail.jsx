@@ -984,8 +984,35 @@ export default function InvoiceDetail() {
           <ArrowLeft size={20} />
         </button>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600' }}>
+          <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {invoice.invoice_id}
+            {invoice.invoice_type === 'deposit' && (
+              <span style={{
+                padding: '2px 10px', borderRadius: 999,
+                fontSize: 10, fontWeight: 800, letterSpacing: 0.8,
+                background: 'rgba(212,175,55,0.15)', color: '#a88527',
+                border: '1px solid rgba(212,175,55,0.4)',
+                textTransform: 'uppercase',
+              }}>Deposit</span>
+            )}
+            {invoice.invoice_type === 'final' && (
+              <span style={{
+                padding: '2px 10px', borderRadius: 999,
+                fontSize: 10, fontWeight: 800, letterSpacing: 0.8,
+                background: 'rgba(74,124,89,0.15)', color: '#3d6549',
+                border: '1px solid rgba(74,124,89,0.4)',
+                textTransform: 'uppercase',
+              }}>Final</span>
+            )}
+            {invoice.invoice_type === 'progress' && (
+              <span style={{
+                padding: '2px 10px', borderRadius: 999,
+                fontSize: 10, fontWeight: 800, letterSpacing: 0.8,
+                background: 'rgba(59,130,246,0.15)', color: '#2a5fb5',
+                border: '1px solid rgba(59,130,246,0.4)',
+                textTransform: 'uppercase',
+              }}>Progress</span>
+            )}
             {invoice.is_locked && (
               <span style={{ marginLeft: '8px', fontSize: '11px', color: theme.textMuted }}>
                 <Lock size={12} style={{ verticalAlign: 'middle', marginRight: '2px' }} />
@@ -994,7 +1021,7 @@ export default function InvoiceDetail() {
             )}
           </p>
           <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
-            {invoice.customer?.name || 'Invoice'}
+            {invoice.customer?.business_name || invoice.customer?.name || 'Invoice'}
           </h1>
         </div>
         <span style={{

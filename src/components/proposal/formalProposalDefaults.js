@@ -2,6 +2,8 @@
 // Sales reps can edit per estimate — this is just the starting point.
 // Placeholders are replaced at render time by buildDefaultTerms().
 
+import { getCustomerPrimary } from '../../lib/customerDisplay'
+
 const DEFAULT_LEGAL_TEMPLATE = `# Proposal Agreement
 
 This Proposal Agreement ("Agreement") is entered into as of the signing date below by and between **{{company_name}}** ("Contractor") and **{{customer_name}}** ("Client") for the work described herein.
@@ -101,7 +103,7 @@ export function buildDefaultTerms({ company, customer, quote, lineItems, downPay
   const replacements = {
     '{{company_name}}': company?.company_name || company?.name || 'Contractor',
     // Business name first, then fallback to individual contact name
-    '{{customer_name}}': customer?.business_name || customer?.name || customer?.customer_name || quote?.customer_name || 'Client',
+    '{{customer_name}}': getCustomerPrimary(customer) || quote?.customer_name || 'Client',
     '{{total_price}}': formatCurrency(total),
     '{{down_payment_label}}': downPaymentLabel || 'Deposit',
     '{{down_payment_amount}}': formatCurrency(depositAmt),

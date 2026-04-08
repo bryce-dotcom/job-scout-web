@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import SignatureModal from './SignatureModal'
 import { buildDefaultTerms, sha256Hex } from './formalProposalDefaults'
+import { getCustomerPrimary, getCustomerSecondary } from '../../lib/customerDisplay'
 
 /**
  * Formal / legal proposal view rendered inside CustomerPortal.
@@ -85,8 +86,8 @@ export default function FormalProposal({
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 
   // Customer display — business name first (if present), then individual
-  const customerPrimary = customer?.business_name || customer?.name || customer?.customer_name || 'Client'
-  const customerSecondary = customer?.business_name ? (customer?.name || customer?.customer_name || '') : ''
+  const customerPrimary = getCustomerPrimary(customer) || 'Client'
+  const customerSecondary = getCustomerSecondary(customer) || ''
 
   const isSigned = approvalSuccess || doc?.status === 'Approved'
 

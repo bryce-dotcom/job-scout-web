@@ -418,57 +418,65 @@ export default function FieldScout() {
 
   const firstName = (user?.name || user?.email || 'Scout').split(' ')[0]
 
-  // GPS helper
-  const getLocation = () => {
+  // Fast GPS grab — returns lat/lng only (no blocking reverse-geocode).
+  // We backfill the human-readable address in the background after the
+  // DB write so clock-in/out responds instantly.
+  const getCoordsFast = () => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        resolve({ lat: null, lng: null, address: null })
+        resolve({ lat: null, lng: null })
         return
       }
       setGpsStatus('capturing')
       navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords
-          try {
-            const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-            )
-            const data = await res.json()
-            setGpsStatus('done')
-            resolve({
-              lat: latitude,
-              lng: longitude,
-              address: data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-            })
-          } catch {
-            setGpsStatus('done')
-            resolve({ lat: latitude, lng: longitude, address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` })
-          }
+        (position) => {
+          setGpsStatus('done')
+          resolve({ lat: position.coords.latitude, lng: position.coords.longitude })
         },
         () => {
           setGpsStatus('failed')
-          resolve({ lat: null, lng: null, address: null })
+          resolve({ lat: null, lng: null })
         },
-        { timeout: 10000 }
+        { timeout: 4000, maximumAge: 60000, enableHighAccuracy: false }
       )
     })
+  }
+
+  // Reverse-geocode lat/lng and patch the row after the fact. Cosmetic only.
+  const backfillAddress = async (entryId, lat, lng, which /* 'in' | 'out' */) => {
+    if (lat == null || lng == null || !entryId) return
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      )
+      const data = await res.json()
+      const address = data.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+      const patch = which === 'in'
+        ? { clock_in_address: address }
+        : { clock_out_address: address }
+      await supabase.from('time_clock').update(patch).eq('id', entryId)
+      fetchEntries()
+    } catch { /* geocode is cosmetic — ignore failures */ }
   }
 
   // Clock in
   const handleClockIn = async (jobId) => {
     if (clockingIn) return
     setClockingIn(true)
-    const location = await getLocation()
+    const { lat, lng } = await getCoordsFast()
     try {
-      const { error } = await supabase.from('time_clock').insert({
-        company_id: companyId,
-        employee_id: currentEmployee.id,
-        job_id: jobId || null,
-        clock_in: new Date().toISOString(),
-        clock_in_lat: location.lat,
-        clock_in_lng: location.lng,
-        clock_in_address: location.address
-      })
+      const { data: inserted, error } = await supabase
+        .from('time_clock')
+        .insert({
+          company_id: companyId,
+          employee_id: currentEmployee.id,
+          job_id: jobId || null,
+          clock_in: new Date().toISOString(),
+          clock_in_lat: lat,
+          clock_in_lng: lng,
+        })
+        .select()
+        .single()
       if (error) throw error
 
       // Auto-update job status to In Progress when clocking in
@@ -491,6 +499,8 @@ export default function FieldScout() {
         setSelectedJobId('')
         setJobSearchQuery('')
       }
+      // Fill in the address in the background — doesn't block the UI.
+      if (inserted?.id && lat != null) backfillAddress(inserted.id, lat, lng, 'in')
     } catch (err) {
       alert('Error clocking in: ' + err.message)
     } finally {
@@ -518,7 +528,8 @@ export default function FieldScout() {
       return
     }
     setClockingOut(true)
-    const location = await getLocation()
+    const entryId = activeEntry.id
+    const { lat, lng } = await getCoordsFast()
     const clockIn = new Date(activeEntry.clock_in)
     const clockOut = new Date()
     let totalHours = (clockOut - clockIn) / (1000 * 60 * 60)
@@ -530,15 +541,15 @@ export default function FieldScout() {
         .from('time_clock')
         .update({
           clock_out: clockOut.toISOString(),
-          clock_out_lat: location.lat,
-          clock_out_lng: location.lng,
-          clock_out_address: location.address,
+          clock_out_lat: lat,
+          clock_out_lng: lng,
           total_hours: Math.round(totalHours * 100) / 100
         })
-        .eq('id', activeEntry.id)
+        .eq('id', entryId)
       if (error) throw error
       await fetchEntries()
       setShowDailyCheckPrompt(true)
+      if (lat != null) backfillAddress(entryId, lat, lng, 'out')
     } catch (err) {
       alert('Error clocking out: ' + err.message)
     } finally {

@@ -1064,6 +1064,87 @@ export default function EstimateDetail() {
 
       if (jobError) throw jobError
 
+      // 2b. Create a Deposit Invoice if the formal proposal has a
+      //     down payment configured. Standard construction practice:
+      //     deposit gets its own invoice so the bookkeeper has somewhere
+      //     to apply the customer's check. The invoice is created in the
+      //     regular `invoices` table with `invoice_type='deposit'`.
+      //     Utility invoices (separate table) are untouched.
+      try {
+        const formalCfg = estimate.settings_overrides?.formal_proposal || {}
+        const dpLabel = formalCfg.down_payment_label || 'Deposit'
+        const dpRaw = parseFloat(formalCfg.down_payment_amount) || 0
+        const dpIsPercent = !!formalCfg.down_payment_is_percent
+        const contractTotal = subtotal - (parseFloat(estimate.discount) || 0)
+        const dpAmount = dpIsPercent
+          ? Math.round(contractTotal * (dpRaw / 100) * 100) / 100
+          : dpRaw
+
+        if (dpAmount > 0) {
+          const invNumber = `INV-DEP-${Date.now().toString(36).toUpperCase()}`
+          const { data: depositInvoice, error: depInvErr } = await supabase
+            .from('invoices')
+            .insert([{
+              company_id: companyId,
+              job_id: newJob.id,
+              customer_id: customerId,
+              invoice_id: invNumber,
+              amount: dpAmount,
+              payment_status: 'Draft',
+              invoice_type: 'deposit',
+              business_unit: estimate.business_unit || null,
+              job_description: `${dpLabel} for ${estimate.estimate_name || estimate.quote_id || 'project'}`,
+              notes: `Auto-generated deposit invoice from ${estimate.quote_id || `EST-${estimate.id}`}. ${dpLabel} due upon acceptance per formal proposal.`,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }])
+            .select()
+            .single()
+
+          if (depInvErr) {
+            console.error('[convertToJob] deposit invoice insert failed', depInvErr)
+          } else if (depositInvoice) {
+            // If the rep already captured a deposit payment on the
+            // estimate via the existing Deposit Modal, the payments row
+            // will have is_deposit=true and quote_id=estimate.id. Link
+            // it to the new invoice and mark the invoice Paid/Partial.
+            const { data: existingPayment } = await supabase
+              .from('payments')
+              .select('id, amount')
+              .eq('company_id', companyId)
+              .eq('quote_id', estimate.id)
+              .eq('is_deposit', true)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+
+            if (existingPayment?.id) {
+              const paidAmount = parseFloat(existingPayment.amount) || 0
+              await supabase
+                .from('payments')
+                .update({ invoice_id: depositInvoice.id, job_id: newJob.id })
+                .eq('id', existingPayment.id)
+
+              if (paidAmount >= dpAmount - 0.01) {
+                await supabase
+                  .from('invoices')
+                  .update({ payment_status: 'Paid', updated_at: new Date().toISOString() })
+                  .eq('id', depositInvoice.id)
+              } else if (paidAmount > 0) {
+                await supabase
+                  .from('invoices')
+                  .update({ payment_status: 'Partial', updated_at: new Date().toISOString() })
+                  .eq('id', depositInvoice.id)
+              }
+            }
+
+            toast.success(`${dpLabel} invoice ${invNumber} created: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(dpAmount)}`)
+          }
+        }
+      } catch (depErr) {
+        console.error('[convertToJob] deposit invoice step failed', depErr)
+      }
+
       // 3. Copy quote lines to job lines
       if (lineItems.length > 0) {
         const jobLines = lineItems.map(line => ({

@@ -18,6 +18,7 @@ import {
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import JobCostingModal from '../components/JobCostingModal'
 import { companyNotify } from '../lib/companyNotify'
+import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import SearchableSelect from '../components/SearchableSelect'
 
 const CATEGORY_COLORS = {
@@ -832,7 +833,7 @@ function JobDetailInner() {
     }
 
     if (newStatus === 'Completed') {
-      const customerName = job.customer?.name || job.customer_name || 'Unknown'
+      const customerName = getCustomerPrimary(job.customer) || job.customer_name || 'Unknown'
       const amount = parseFloat(job.job_total) || 0
       const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
       companyNotify({
@@ -1114,7 +1115,7 @@ function JobDetailInner() {
           company_id: companyId,
           job_id: parseInt(id),
           lead_id: job.lead_id || null,
-          customer_name: job.customer?.name || '',
+          customer_name: getCustomerPrimary(job.customer) || '',
           utility_name: utilityName,
           amount: incentiveAmount,
           project_cost: projectCost,
@@ -1853,7 +1854,7 @@ function JobDetailInner() {
     pdfDoc.setTextColor(0); pdfDoc.setFontSize(11); pdfDoc.setFont('helvetica', 'bold')
     pdfDoc.text('Customer:', m, py); py += 6
     pdfDoc.setFont('helvetica', 'normal'); pdfDoc.setFontSize(10)
-    pdfDoc.text(inv.customer_name || job.customer?.name || '-', m, py); py += 5
+    pdfDoc.text(inv.customer_name || getCustomerPrimary(job.customer) || '-', m, py); py += 5
     if (job.customer?.address) { pdfDoc.text(job.customer.address, m, py); py += 5 }
     if (job.customer?.phone) { pdfDoc.text(job.customer.phone, m, py); py += 5 }
     py += 3
@@ -2059,7 +2060,7 @@ function JobDetailInner() {
       ])
       const zip = new JSZip()
       const jobName = sanitizeFilename(job.job_title || job.job_id || 'job')
-      const indexCustomerName = job.customer?.name || job.customer?.business_name || ''
+      const indexCustomerName = getCustomerPrimary(job.customer) || ''
       const indexBU = job?.business_unit || company?.name || ''
       zip.file(`${jobName}_submittal_package/CONTENTS.txt`, buildSubmittalIndex(manifest, job.job_title || job.job_id, indexCustomerName, indexBU))
       let completed = 0
@@ -2166,7 +2167,7 @@ function JobDetailInner() {
       const [{ default: JSZip }] = await Promise.all([import('jszip')])
       const zip = new JSZip()
       const jobName = sanitizeFilename(job.job_title || job.job_id || 'job')
-      const _indexCustomer = job.customer?.name || job.customer?.business_name || ''
+      const _indexCustomer = getCustomerPrimary(job.customer) || ''
       const _indexBU = job?.business_unit || company?.name || ''
       zip.file(`${jobName}_submittal_package/CONTENTS.txt`, buildSubmittalIndex(manifest, job.job_title || job.job_id, _indexCustomer, _indexBU))
       let completed = 0
@@ -2224,7 +2225,7 @@ function JobDetailInner() {
       // Send email via edge function
       setSubmittalProgress('Sending email...')
       const companyName = job?.business_unit || company?.name || 'Our Company'
-      const customerName = job.customer?.name || job.customer?.business_name || ''
+      const customerName = getCustomerPrimary(job.customer) || ''
       // Call via direct fetch with anon key to avoid expired-JWT 401s
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -2930,7 +2931,14 @@ function JobDetailInner() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Customer</p>
-                  <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{job.customer?.name || '-'}</p>
+                  <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                    {getCustomerPrimary(job.customer) || '-'}
+                  </p>
+                  {getCustomerSecondary(job.customer) && (
+                    <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                      Contact: {getCustomerSecondary(job.customer)}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Business Unit</p>

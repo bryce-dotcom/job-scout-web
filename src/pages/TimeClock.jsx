@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -17,10 +18,20 @@ const AVATAR_COLORS = [
 export default function TimeClock() {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
+  const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
+
+  // Field roles belong on FieldScout — redirect them there so they see
+  // job-level clock-in, line items, payment buttons, verification, etc.
+  const currentEmployee = employees.find(e => e.email === user?.email)
+  const FIELD_ROLES = ['field tech', 'installer', 'project manager', 'technician', 'foreman', 'crew lead']
+  const isFieldRole = currentEmployee?.role && FIELD_ROLES.includes(currentEmployee.role.toLowerCase())
+  useEffect(() => {
+    if (isFieldRole) navigate('/field-scout', { replace: true })
+  }, [isFieldRole, navigate])
 
   const [timeEntries, setTimeEntries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -34,6 +45,10 @@ export default function TimeClock() {
     reason: ''
   })
   const [savingPTO, setSavingPTO] = useState(false)
+
+  // Busy guards so repeated taps on Clock In/Out don't fire duplicate DB ops.
+  const [busyEmployeeIds, setBusyEmployeeIds] = useState(new Set()) // clock-in busy
+  const [busyEntryIds, setBusyEntryIds] = useState(new Set())       // clock-out / lunch busy
 
   // Pay summary data
   const [periodEntries, setPeriodEntries] = useState([])
@@ -67,7 +82,9 @@ export default function TimeClock() {
   }, [companyId])
 
   const fetchTimeEntries = async () => {
-    setLoading(true)
+    // Only show the full-screen loading state on the initial fetch.
+    // Subsequent fetches (e.g. after clock-in/out) refresh in-place so
+    // the clock card stays visible and doesn't flicker away.
     try {
       // Get entries from last 7 days
       const weekAgo = new Date()
@@ -269,92 +286,111 @@ export default function TimeClock() {
 
   const fmt = (n) => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  const getLocation = () => {
+  // Fast GPS grab — resolves with lat/lng only. Reverse-geocode to an
+  // address used to happen inline (Nominatim) and blocked the DB write for
+  // several seconds, which made clock-in/out feel broken. We now do the
+  // DB update immediately and geocode the address in the background.
+  const getCoordsFast = () => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        resolve({ lat: null, lng: null, address: null })
+        resolve({ lat: null, lng: null })
         return
       }
-
       navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords
-          // Reverse geocode using OpenStreetMap Nominatim
-          try {
-            const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-            )
-            const data = await res.json()
-            resolve({
-              lat: latitude,
-              lng: longitude,
-              address: data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-            })
-          } catch {
-            resolve({
-              lat: latitude,
-              lng: longitude,
-              address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-            })
-          }
-        },
-        () => resolve({ lat: null, lng: null, address: null }),
-        { timeout: 10000 }
+        (position) => resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        }),
+        () => resolve({ lat: null, lng: null }),
+        { timeout: 4000, maximumAge: 60000, enableHighAccuracy: false }
       )
     })
   }
 
-  const handleClockIn = async (employeeId) => {
-    const location = await getLocation()
-
+  // Background address lookup — updates the row after the fact so the UI
+  // responds instantly while the address is filled in opportunistically.
+  const backfillAddress = async (entryId, lat, lng, which /* 'in' | 'out' */) => {
+    if (lat == null || lng == null) return
     try {
-      const { error } = await supabase.from('time_clock').insert({
-        company_id: companyId,
-        employee_id: employeeId,
-        clock_in: new Date().toISOString(),
-        clock_in_lat: location.lat,
-        clock_in_lng: location.lng,
-        clock_in_address: location.address
-      })
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      )
+      const data = await res.json()
+      const address = data.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+      const patch = which === 'in'
+        ? { clock_in_address: address }
+        : { clock_out_address: address }
+      await supabase.from('time_clock').update(patch).eq('id', entryId)
+      fetchTimeEntries()
+    } catch { /* geocode is cosmetic — ignore failures */ }
+  }
 
+  const handleClockIn = async (employeeId) => {
+    if (busyEmployeeIds.has(employeeId)) return // prevent double-tap
+    setBusyEmployeeIds(prev => new Set(prev).add(employeeId))
+    try {
+      const { lat, lng } = await getCoordsFast()
+      const { data, error } = await supabase
+        .from('time_clock')
+        .insert({
+          company_id: companyId,
+          employee_id: employeeId,
+          clock_in: new Date().toISOString(),
+          clock_in_lat: lat,
+          clock_in_lng: lng,
+        })
+        .select()
+        .single()
       if (error) throw error
       await fetchTimeEntries()
+      if (data?.id && lat != null) backfillAddress(data.id, lat, lng, 'in')
     } catch (err) {
       alert('Error clocking in: ' + err.message)
+    } finally {
+      setBusyEmployeeIds(prev => {
+        const next = new Set(prev)
+        next.delete(employeeId)
+        return next
+      })
     }
   }
 
   const handleClockOut = async (entryId) => {
-    const location = await getLocation()
+    if (busyEntryIds.has(entryId)) return // prevent double-tap
     const entry = timeEntries.find(e => e.id === entryId)
     if (!entry) return
+    setBusyEntryIds(prev => new Set(prev).add(entryId))
 
     const clockIn = new Date(entry.clock_in)
     const clockOut = new Date()
     let totalHours = (clockOut - clockIn) / (1000 * 60 * 60)
-
-    // Subtract lunch if taken
     if (entry.lunch_start && entry.lunch_end) {
       const lunchDuration = (new Date(entry.lunch_end) - new Date(entry.lunch_start)) / (1000 * 60 * 60)
       totalHours -= lunchDuration
     }
 
     try {
+      const { lat, lng } = await getCoordsFast()
       const { error } = await supabase
         .from('time_clock')
         .update({
           clock_out: clockOut.toISOString(),
-          clock_out_lat: location.lat,
-          clock_out_lng: location.lng,
-          clock_out_address: location.address,
-          total_hours: Math.round(totalHours * 100) / 100
+          clock_out_lat: lat,
+          clock_out_lng: lng,
+          total_hours: Math.round(totalHours * 100) / 100,
         })
         .eq('id', entryId)
-
       if (error) throw error
       await fetchTimeEntries()
+      if (lat != null) backfillAddress(entryId, lat, lng, 'out')
     } catch (err) {
       alert('Error clocking out: ' + err.message)
+    } finally {
+      setBusyEntryIds(prev => {
+        const next = new Set(prev)
+        next.delete(entryId)
+        return next
+      })
     }
   }
 
@@ -749,27 +785,36 @@ export default function TimeClock() {
                     )}
 
                     {/* Clock Out Button */}
-                    <button
-                      onClick={() => handleClockOut(activeEntry.id)}
-                      style={{
-                        flex: 1,
-                        padding: '12px',
-                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                        border: 'none',
-                        borderRadius: '10px',
-                        color: '#fff',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <Square size={18} />
-                      Clock Out
-                    </button>
+                    {(() => {
+                      const outBusy = busyEntryIds.has(activeEntry.id)
+                      return (
+                        <button
+                          onClick={() => handleClockOut(activeEntry.id)}
+                          disabled={outBusy}
+                          style={{
+                            flex: 1,
+                            padding: '12px',
+                            background: outBusy
+                              ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 100%)'
+                              : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                            border: 'none',
+                            borderRadius: '10px',
+                            color: '#fff',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: outBusy ? 'wait' : 'pointer',
+                            opacity: outBusy ? 0.75 : 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          <Square size={18} />
+                          {outBusy ? 'Clocking Out…' : 'Clock Out'}
+                        </button>
+                      )
+                    })()}
                   </div>
 
                   {/* Location */}
@@ -796,28 +841,37 @@ export default function TimeClock() {
               ) : (
                 <div>
                   {/* Clock In Button */}
-                  <button
-                    onClick={() => handleClockIn(employee.id)}
-                    style={{
-                      width: '100%',
-                      padding: '20px',
-                      background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                      border: 'none',
-                      borderRadius: '12px',
-                      color: '#fff',
-                      fontSize: '18px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '10px',
-                      marginBottom: '12px'
-                    }}
-                  >
-                    <Play size={24} />
-                    Clock In
-                  </button>
+                  {(() => {
+                    const inBusy = busyEmployeeIds.has(employee.id)
+                    return (
+                      <button
+                        onClick={() => handleClockIn(employee.id)}
+                        disabled={inBusy}
+                        style={{
+                          width: '100%',
+                          padding: '20px',
+                          background: inBusy
+                            ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 100%)'
+                            : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                          border: 'none',
+                          borderRadius: '12px',
+                          color: '#fff',
+                          fontSize: '18px',
+                          fontWeight: '700',
+                          cursor: inBusy ? 'wait' : 'pointer',
+                          opacity: inBusy ? 0.75 : 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '10px',
+                          marginBottom: '12px'
+                        }}
+                      >
+                        <Play size={24} />
+                        {inBusy ? 'Clocking In…' : 'Clock In'}
+                      </button>
+                    )
+                  })()}
 
                   {/* PTO Request Button */}
                   <button

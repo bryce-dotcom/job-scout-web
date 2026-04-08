@@ -13,6 +13,7 @@ import ProductPickerModal from '../components/ProductPickerModal'
 import Tooltip from '../components/Tooltip'
 import EmptyState from '../components/EmptyState'
 import { quoteStatusColors, invoiceStatusColors } from '../lib/statusColors'
+import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -589,7 +590,7 @@ export default function CustomerDetail() {
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px', flexWrap: 'wrap' }}>
               <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
-                {customer.name}
+                {getCustomerPrimary(customer) || '-'}
               </h1>
               <span style={{
                 padding: '4px 10px',
@@ -602,9 +603,9 @@ export default function CustomerDetail() {
                 {customer.status}
               </span>
             </div>
-            {customer.business_name && (
+            {getCustomerSecondary(customer) && (
               <div style={{ fontSize: isMobile ? '13px' : '14px', color: theme.textMuted }}>
-                {customer.business_name}
+                Contact: {getCustomerSecondary(customer)}
               </div>
             )}
           </div>

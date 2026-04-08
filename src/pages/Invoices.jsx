@@ -1053,9 +1053,41 @@ export default function Invoices() {
                         </div>
                         <div>
                           <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
-                            {invoice.customer?.name || 'No customer'}
+                            {invoice.customer?.business_name || invoice.customer?.name || 'No customer'}
                           </h3>
-                          <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '500' }}>{invoice.invoice_id}</p>
+                          <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '500', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            {invoice.invoice_id}
+                            {invoice.invoice_type === 'deposit' && (
+                              <span style={{
+                                padding: '2px 8px', borderRadius: 999,
+                                fontSize: 9, fontWeight: 800, letterSpacing: 0.8,
+                                background: 'rgba(212,175,55,0.15)',
+                                color: '#a88527',
+                                border: '1px solid rgba(212,175,55,0.4)',
+                                textTransform: 'uppercase',
+                              }}>Deposit</span>
+                            )}
+                            {invoice.invoice_type === 'final' && (
+                              <span style={{
+                                padding: '2px 8px', borderRadius: 999,
+                                fontSize: 9, fontWeight: 800, letterSpacing: 0.8,
+                                background: 'rgba(74,124,89,0.15)',
+                                color: '#3d6549',
+                                border: '1px solid rgba(74,124,89,0.4)',
+                                textTransform: 'uppercase',
+                              }}>Final</span>
+                            )}
+                            {invoice.invoice_type === 'progress' && (
+                              <span style={{
+                                padding: '2px 8px', borderRadius: 999,
+                                fontSize: 9, fontWeight: 800, letterSpacing: 0.8,
+                                background: 'rgba(59,130,246,0.15)',
+                                color: '#2a5fb5',
+                                border: '1px solid rgba(59,130,246,0.4)',
+                                textTransform: 'uppercase',
+                              }}>Progress</span>
+                            )}
+                          </p>
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
