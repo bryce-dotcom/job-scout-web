@@ -6,6 +6,7 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { supabase } from '../../lib/supabase';
 import { fillPdfForm } from '../../lib/pdfFormFiller';
 import { resolveAllMappings } from '../../lib/dataPathResolver';
+import { resolveRmpRate, mapLenardControlsToRmp, SBE_BUSINESS_TYPES, clearRmpRateCache } from '../../lib/rmpMeasureLookup';
 
 // ============================================================
 // LENARD UT RMP â€" Rocky Mountain Power Lighting Rebate Calculator
@@ -222,28 +223,53 @@ function findBestProduct(allProducts, fixtureCategory, targetWatts) {
 
 // ==================== INCENTIVE CALCULATION ENGINES ====================
 
-function calcSMBE(line) {
+// Synchronous calc functions. The optional `rateMap` is a
+// Map<controlsTier, $/W> pre-resolved from prescriptive_measures at the
+// top of the component via useEffect. If the line's tier isn't in the
+// map, falls back to the hardcoded SMBE/EXPRESS constants.
+// Lines with controlsType === 'pending' return zero incentive so the
+// total doesn't drift while the rep is deciding.
+function calcSMBE(line, rateMap = null) {
   const q = line.qty || 0, nW = line.newW || 0, eW = line.existW || 0;
   const newTotal = nW * q, existTotal = eW * q, wattsReduced = Math.max(0, existTotal - newTotal);
+  // Skip pending lines until the rep picks a tier
+  if (!line.location === false && line.location !== 'exterior' && line.controlsType === 'pending') {
+    return { newTotal, existTotal, wattsReduced, fixtureIncentive: 0, controlsIncentive: 0, totalIncentive: 0, pending: true };
+  }
   if (line.location === 'exterior') {
     const cappedW = Math.min(nW, SMBE.exterior.maxWattsPerFixture);
-    const incentive = +(q * cappedW * SMBE.exterior.none).toFixed(2);
+    const overrideRate = rateMap?.get?.('exterior');
+    const rate = typeof overrideRate === 'number' ? overrideRate : SMBE.exterior.none;
+    const incentive = +(q * cappedW * rate).toFixed(2);
     return { newTotal, existTotal, wattsReduced, fixtureIncentive: incentive, controlsIncentive: 0, totalIncentive: incentive };
   }
-  const rate = SMBE.interior[line.controlsType] || SMBE.interior.none;
+  const rmpTier = mapLenardControlsToRmp(line.controlsType);
+  const overrideRate = rmpTier ? rateMap?.get?.(rmpTier) : null;
+  const rate = typeof overrideRate === 'number'
+    ? overrideRate
+    : (SMBE.interior[line.controlsType] || SMBE.interior.none);
   const incentive = +(q * nW * rate).toFixed(2);
   return { newTotal, existTotal, wattsReduced, fixtureIncentive: incentive, controlsIncentive: 0, totalIncentive: incentive };
 }
 
-function calcExpress(line) {
+function calcExpress(line, rateMap = null) {
   const q = line.qty || 0, nW = line.newW || 0, eW = line.existW || 0;
   const newTotal = nW * q, existTotal = eW * q, wattsReduced = Math.max(0, existTotal - newTotal);
+  if (line.location !== 'exterior' && line.controlsType === 'pending') {
+    return { newTotal, existTotal, wattsReduced, fixtureIncentive: 0, controlsIncentive: 0, totalIncentive: 0, pending: true };
+  }
   if (line.location === 'exterior') {
     const cappedW = Math.min(nW, EXPRESS.exterior.maxWattsPerFixture);
-    const incentive = +(q * cappedW * EXPRESS.exterior.none).toFixed(2);
+    const overrideRate = rateMap?.get?.('exterior');
+    const rate = typeof overrideRate === 'number' ? overrideRate : EXPRESS.exterior.none;
+    const incentive = +(q * cappedW * rate).toFixed(2);
     return { newTotal, existTotal, wattsReduced, fixtureIncentive: incentive, controlsIncentive: 0, totalIncentive: incentive };
   }
-  const rate = EXPRESS.interior[line.controlsType] || EXPRESS.interior.none;
+  const rmpTier = mapLenardControlsToRmp(line.controlsType);
+  const overrideRate = rmpTier ? rateMap?.get?.(rmpTier) : null;
+  const rate = typeof overrideRate === 'number'
+    ? overrideRate
+    : (EXPRESS.interior[line.controlsType] || EXPRESS.interior.none);
   const incentive = +(q * nW * rate).toFixed(2);
   return { newTotal, existTotal, wattsReduced, fixtureIncentive: incentive, controlsIncentive: 0, totalIncentive: incentive };
 }
@@ -287,6 +313,10 @@ export default function LenardUTRMP() {
   const lineIdRef = useRef(0);
   const toastTimer = useRef(null);
   const keepLinesOnSwitch = useRef(false);
+  // Tracks what the camera originally suggested for each line so we can
+  // diff against rep edits on save and POST corrections to the learning
+  // loop. Cleared after a successful save.
+  const cameraOriginalsRef = useRef({});
 
   const [employees, setEmployees] = useState([]);
   const [leadOwnerId, setLeadOwnerId] = useState(() => { try { return localStorage.getItem('lenard_lead_owner_id') || null; } catch { return null; } });
@@ -330,12 +360,21 @@ export default function LenardUTRMP() {
   const [contractTerms, setContractTerms] = useState('');
   const [appFields, setAppFields] = useState({
     businessName: '', contactName: '', contactEmail: '', contactPhone: '',
-    businessType: 'Commercial', rateSchedule: 'Small General Service',
+    // Empty until the rep picks an RMP business type from the dropdown.
+    // Required for the incentive rate lookup and blocks save.
+    businessType: '',
+    rateSchedule: 'Small General Service',
     smbeEligible: 'No', materialCost: 0, laborCost: 0, otherCost: 0,
     vendorName: 'HHH Building Services', vendorAddress: '1234 Main St, Salt Lake City, UT 84101', vendorContact: '', vendorPhone: '',
     payeeName: '', payeeAddress: '', payeeCity: '', payeeState: '', payeeZip: '',
     participantIs: 'Building Owner', buildingType: 'Commercial',
   });
+  // Rate map resolved from prescriptive_measures for the current
+  // (program, business type, company) combination. Key: controls tier
+  // (none|control_ready|nlc|lllc|exterior) → $/W. Pre-resolved once so
+  // calcSMBE/calcExpress can look up synchronously while staying pure.
+  const [rateMap, setRateMap] = useState(new Map());
+  const [rateMapSource, setRateMapSource] = useState('hardcoded_fallback');
   const [w9Fields, setW9Fields] = useState({
     name: '', businessName: '', taxClass: '', llcClass: '',
     exemptPayee: '', exemptFatca: '', address: '', cityStateZip: '',
@@ -440,6 +479,35 @@ export default function LenardUTRMP() {
     try { localStorage.setItem('lenard_lead_owner_id', empId); localStorage.setItem('lenard_lead_owner_name', empName); } catch (_) {}
   }, []);
 
+  // Resolve the RMP incentive rate map whenever program or business type
+  // changes. One DB round-trip per (program, businessType) combo, cached
+  // by resolveRmpRate's in-memory cache so switching programs is instant.
+  useEffect(() => {
+    if (program === 'large') return // large uses $/watt-reduced, not measure lookup
+    if (!appFields.businessType) return // wait until rep picks
+    let cancelled = false
+    ;(async () => {
+      const tiers = ['none', 'control_ready', 'nlc', 'lllc']
+      const map = new Map()
+      let source = 'hardcoded_fallback'
+      for (const tier of tiers) {
+        const res = await resolveRmpRate({
+          program,
+          businessType: appFields.businessType,
+          controlsTier: tier,
+          isExterior: false,
+        })
+        map.set(tier, res.incentivePerWatt)
+        if (res.source === 'rmp_measure') source = 'rmp_measure'
+      }
+      const ext = await resolveRmpRate({ program, controlsTier: 'exterior', isExterior: true })
+      map.set('exterior', ext.incentivePerWatt)
+      if (ext.source === 'rmp_measure') source = 'rmp_measure'
+      if (!cancelled) { setRateMap(map); setRateMapSource(source) }
+    })()
+    return () => { cancelled = true }
+  }, [program, appFields.businessType])
+
   const ownerLoadedRef = useRef(false);
   useEffect(() => {
     if (leadOwnerId && !ownerLoadedRef.current) {
@@ -540,10 +608,54 @@ export default function LenardUTRMP() {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ imageBase64: base64, mediaType: 'image/jpeg' }) });
       const data = await resp.json();
       if (data.fixtures && Array.isArray(data.fixtures)) {
-        if (data.fixtures.length === 0) { showToast("Couldn't identify fixtures \u2014 try a clearer photo", '\uD83D\uDCF7'); }
-        else {
-          data.fixtures.forEach(f => addLine({ name: f.name, existW: f.existW, newW: f.newW, qty: f.count || 1, location: f.category === 'exterior' ? 'exterior' : 'interior', height: f.height || 9, fixtureCategory: f.category === 'exterior' ? 'Outdoor' : 'Linear', lightingType: inferLampType(f.name), photoIndex: photoIdx }));
-          showToast(`Lenard found ${data.fixtures.length} fixture${data.fixtures.length > 1 ? 's' : ''}`, '\uD83D\uDCF7');
+        // Client-side safety net: drop anything with zero watts on both
+        // sides (heaters, speakers, sensors, etc.) and anything whose
+        // name matches a known non-lighting keyword. The edge function
+        // also filters these server-side, so this catches stragglers.
+        const NON_LIGHTING_RE = /\b(heat|heater|hvac|thermostat|speaker|sensor|sprinkler|smoke|camera|co2|vent|diffuser|ac unit|air conditioning)\b/i;
+        const cleaned = data.fixtures.filter(f => {
+          const name = String(f.name || '');
+          if ((parseFloat(f.existW) || 0) === 0 && (parseFloat(f.newW) || 0) === 0) return false;
+          if (NON_LIGHTING_RE.test(name)) return false;
+          return true;
+        });
+        const droppedCount = data.fixtures.length - cleaned.length;
+
+        if (cleaned.length === 0) {
+          showToast(droppedCount > 0 ? 'No lighting found \u2014 skipped non-lighting items' : "Couldn't identify fixtures \u2014 try a clearer photo", '\uD83D\uDCF7');
+        } else {
+          // Track camera originals BEFORE adding the line so we can diff
+          // on save and feed the learning loop.
+          const nextId = lineIdRef.current;
+          cleaned.forEach((f, idx) => {
+            const assignedId = nextId + 1 + idx; // addLine will bump lineIdRef
+            cameraOriginalsRef.current[assignedId] = {
+              name: f.name,
+              qty: f.count || 1,
+              existW: f.existW,
+              newW: f.newW,
+              height: f.height || 9,
+              category: f.category,
+              subtype: f.subtype,
+            };
+            addLine({
+              name: f.name,
+              existW: f.existW,
+              newW: f.newW,
+              qty: f.count || 1,
+              location: f.category === 'exterior' ? 'exterior' : 'interior',
+              height: f.height || 9,
+              fixtureCategory: f.category === 'exterior' ? 'Outdoor' : 'Linear',
+              lightingType: inferLampType(f.name),
+              photoIndex: photoIdx,
+              // NEW: force the rep to pick a controls tier per line
+              // before they can save. Interior only \u2014 exterior has a
+              // flat rate and doesn't need a pick.
+              controlsType: f.category === 'exterior' ? 'none' : 'pending',
+            });
+          });
+          const msg = `Lenard found ${cleaned.length} fixture${cleaned.length > 1 ? 's' : ''}` + (droppedCount > 0 ? ` (filtered ${droppedCount} non-lighting)` : '');
+          showToast(msg, '\uD83D\uDCF7');
         }
       } else { showToast("Couldn't identify fixtures \u2014 try a clearer photo", '\uD83D\uDCF7'); }
     } catch (err) { console.error('Lenard error:', err); showToast("Couldn't analyze that photo", '\uD83D\uDCF7'); }
@@ -663,8 +775,12 @@ export default function LenardUTRMP() {
   };
 
   // ---- INCENTIVE CALCULATIONS + CAP ----
+  // Pass the pre-resolved rateMap into the calc functions so each line
+  // uses the correct RMP rate for its (program × business type × tier).
+  // calcLarge doesn't accept a rateMap (it has its own $/watt-reduced logic).
   const calcFn = program === 'smbe' ? calcSMBE : program === 'express' ? calcExpress : calcLarge;
-  const results = lines.map(l => ({ ...l, calc: calcFn(l) }));
+  const runCalc = (l) => (program === 'large' ? calcLarge(l) : calcFn(l, rateMap));
+  const results = lines.map(l => ({ ...l, calc: runCalc(l) }));
   const totals = results.reduce((a, r) => ({
     existWatts: a.existWatts + r.calc.existTotal, newWatts: a.newWatts + r.calc.newTotal,
     wattsReduced: a.wattsReduced + r.calc.wattsReduced, fixtureIncentive: a.fixtureIncentive + r.calc.fixtureIncentive,
@@ -686,7 +802,7 @@ export default function LenardUTRMP() {
   const altComparison = useMemo(() => {
     if (program === 'large' || lines.length === 0) return null;
     const altCalcFn = program === 'smbe' ? calcExpress : calcSMBE;
-    const altResults = lines.map(l => altCalcFn(l));
+    const altResults = lines.map(l => altCalcFn(l, rateMap));
     const altRawTotal = altResults.reduce((s, r) => s + r.totalIncentive, 0);
     const altCapPct = program === 'smbe' ? EXPRESS.cap : SMBE.cap;
     const altCapAmount = effectiveProjectCost > 0 ? +(effectiveProjectCost * altCapPct).toFixed(2) : Infinity;
@@ -922,9 +1038,20 @@ export default function LenardUTRMP() {
     }));
   }, [projectName, saveEmail, savePhone, saveAddress, saveCity, saveState, saveZip, effectiveProjectCost]);
 
+  // Pending-tier guard: no save while camera-added lines still need a
+  // controls pick. Exterior lines are auto-filled to 'none' so they're
+  // always ready.
+  const pendingControlsCount = useMemo(
+    () => lines.filter(l => l.location !== 'exterior' && l.controlsType === 'pending').length,
+    [lines]
+  )
+  const canSave = !!appFields.businessType && pendingControlsCount === 0
+
   // ---- SAVE PROJECT ----
   const saveProject = async () => {
     if (!projectName.trim()) { showToast('Enter a customer name first', '\u26A0\uFE0F'); return; }
+    if (!appFields.businessType) { showToast('Pick a Business Type first', '\u26A0\uFE0F'); return; }
+    if (pendingControlsCount > 0) { showToast(`${pendingControlsCount} line${pendingControlsCount > 1 ? 's need' : ' needs'} a Controls tier`, '\u26A0\uFE0F'); return; }
     setSaving(true);
     try {
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -940,6 +1067,57 @@ export default function LenardUTRMP() {
       if (data.success) {
         setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false);
         showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
+
+        // Diff camera scan corrections and send for learning. Ported from
+        // LenardAZSRP. Tracks what the rep edited on camera-added lines
+        // AND what they deleted entirely, so the next lenard-analyze call
+        // can use the corrections as few-shot examples.
+        const originals = cameraOriginalsRef.current;
+        if (Object.keys(originals).length > 0) {
+          const corrections = [];
+          const remainingIds = new Set(lines.map(l => l.id));
+          lines.forEach(line => {
+            const orig = originals[line.id];
+            if (!orig) return;
+            const fields = ['name', 'qty', 'existW', 'newW', 'height'];
+            fields.forEach(f => {
+              const ov = String(orig[f] ?? '').trim();
+              const nv = String(line[f] ?? '').trim();
+              if (ov && nv && ov !== nv) {
+                corrections.push({
+                  fieldType: 'camera_fixture',
+                  fieldName: f,
+                  originalValue: ov,
+                  correctedValue: nv,
+                  context: { fixtureName: line.name, category: line.fixtureCategory || orig.category },
+                });
+              }
+            });
+          });
+          // Track deletions: camera-added lines that no longer exist
+          Object.keys(originals).forEach(idStr => {
+            const id = parseInt(idStr);
+            if (!remainingIds.has(id)) {
+              const orig = originals[idStr];
+              corrections.push({
+                fieldType: 'camera_fixture',
+                fieldName: 'name',
+                originalValue: String(orig.name || '').trim(),
+                correctedValue: 'DELETED',
+                context: { fixtureName: orig.name, category: orig.category, deleted: true },
+              });
+            }
+          });
+          if (corrections.length > 0) {
+            fetch(`${SUPABASE_URL}/functions/v1/dougie-corrections`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+              body: JSON.stringify({ corrections }),
+            }).catch(() => {});
+            console.log(`[Lenard UT] Saved ${corrections.length} camera scan corrections for learning`);
+          }
+          cameraOriginalsRef.current = {};
+        }
 
         // Mirror the customer signature onto the lead in the canonical
         // project-documents bucket so downstream attachments (W9, credit
@@ -2522,6 +2700,54 @@ export default function LenardUTRMP() {
 
       {/* ===== LINE ITEMS ===== */}
       <div style={{ padding: '8px 16px' }}>
+        {/* Pending-controls warning + bulk setter. Shows whenever any
+            camera-added line is still waiting for a Controls tier pick.
+            Save is blocked via canSave (checked in saveProject). */}
+        {pendingControlsCount > 0 && (
+          <div style={{
+            padding: '12px 14px',
+            marginBottom: '10px',
+            background: 'rgba(239,68,68,0.10)',
+            border: '1px solid rgba(239,68,68,0.35)',
+            borderRadius: '10px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: '10px', flexWrap: 'wrap',
+          }}>
+            <div style={{ fontSize: '12px', color: T.red, fontWeight: '600', flex: 1, minWidth: 0 }}>
+              {'\u26A0\uFE0F'} {pendingControlsCount} fixture{pendingControlsCount > 1 ? 's need' : ' needs'} a Controls tier before you can save.
+            </div>
+            <select
+              value=""
+              onChange={(e) => {
+                const tier = e.target.value
+                if (!tier) return
+                setLines(prev => prev.map(l => (l.controlsType === 'pending' ? { ...l, controlsType: tier } : l)))
+                markDirty()
+              }}
+              style={{
+                padding: '7px 10px', fontSize: '11px',
+                background: T.bgCard, color: T.text,
+                border: `1px solid ${T.border}`, borderRadius: '6px',
+                fontWeight: '600', cursor: 'pointer',
+              }}
+            >
+              <option value="">Set all pending to…</option>
+              <option value="none">No Controls</option>
+              <option value="plug_play">Control Ready</option>
+              <option value="networked">NLC</option>
+              <option value="lllc">LLLC</option>
+            </select>
+          </div>
+        )}
+
+        {/* Data source indicator — shows whether rates came from the DB
+            seed or the hardcoded fallback so the rep knows what they're on. */}
+        {appFields.businessType && (
+          <div style={{ fontSize: '10px', color: T.textMuted, marginBottom: '6px', textAlign: 'right' }}>
+            Rates: {rateMapSource === 'rmp_measure' ? 'RMP Measure Table' : 'fallback (seed not run)'}
+          </div>
+        )}
+
         {results.length === 0 && !cameraLoading && (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: T.textMuted }}>
             <div style={{ fontSize: '36px', marginBottom: '12px', opacity: 0.5 }}>{'\uD83D\uDCA1'}</div>
@@ -3467,10 +3693,22 @@ export default function LenardUTRMP() {
                       <input type="tel" value={appFields.contactPhone} onChange={e => setAppFields(p => ({ ...p, contactPhone: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Type</label>
-                      <select value={appFields.businessType} onChange={e => setAppFields(p => ({ ...p, businessType: e.target.value }))} style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box' }}>
-                        {['Commercial', 'Industrial', 'Retail', 'Office', 'Warehouse', 'Restaurant', 'Hotel', 'Healthcare', 'Education', 'Government', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                      <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Business Type <span style={{ color: T.red }}>*</span></label>
+                      <select
+                        value={appFields.businessType}
+                        onChange={e => setAppFields(p => ({ ...p, businessType: e.target.value }))}
+                        style={{
+                          width: '100%', padding: '8px',
+                          border: `1px solid ${!appFields.businessType ? T.red : '#ddd'}`,
+                          borderRadius: '6px', fontSize: '12px', boxSizing: 'border-box',
+                        }}
+                      >
+                        <option value="">— Select Business Type —</option>
+                        {SBE_BUSINESS_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
+                      {!appFields.businessType && (
+                        <div style={{ fontSize: '10px', color: T.red, marginTop: '3px' }}>Required for accurate RMP rate lookup</div>
+                      )}
                     </div>
                     <div>
                       <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '3px' }}>Rate Schedule</label>
@@ -3710,8 +3948,19 @@ export default function LenardUTRMP() {
               ))}
             </div>
           </div>)}
+          {(!appFields.businessType || pendingControlsCount > 0) && (
+            <div style={{
+              marginBottom: '10px', padding: '10px 12px',
+              background: 'rgba(239,68,68,0.10)',
+              border: '1px solid rgba(239,68,68,0.35)',
+              borderRadius: '8px', fontSize: '12px', color: T.red, lineHeight: 1.5,
+            }}>
+              {!appFields.businessType && <div>{'\u26A0\uFE0F'} Pick a Business Type in the RMP Application section above.</div>}
+              {pendingControlsCount > 0 && <div>{'\u26A0\uFE0F'} {pendingControlsCount} line{pendingControlsCount > 1 ? 's need' : ' needs'} a Controls tier (No Controls / Control Ready / NLC / LLLC).</div>}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={saveProject} disabled={saving} style={{ ...S.btn, flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving...' : 'Save'}</button>
+            <button onClick={saveProject} disabled={saving || !canSave} style={{ ...S.btn, flex: 1, opacity: (saving || !canSave) ? 0.5 : 1, cursor: (saving || !canSave) ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
             <button onClick={() => setShowSaveModal(false)} style={{ ...S.btnGhost, flex: 1 }}>Cancel</button>
           </div>
         </div>

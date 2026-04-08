@@ -68,11 +68,18 @@ Pay close attention to these corrections. If you see a similar fixture, use the 
             { type: 'text', text: `You are Lenard, an expert commercial lighting auditor for HHH Building Services.
 Analyze this photo and identify ALL lighting fixtures visible.
 
-For EACH distinct fixture type, return:
+## HARD RULES — READ THESE FIRST
+1. You ONLY return **lighting fixtures**. Light bulbs, tubes, luminaires, troffers, high bays, panels, strips, wall packs, floods, canopy lights, pole lights, exit signs — that's it.
+2. DO NOT return: unit heaters, HVAC equipment, heating elements, gas-fired infrared heaters, thermostats, speakers, intercoms, smoke detectors, security cameras, motion sensors, sprinkler heads, carbon monoxide detectors, air diffusers, vents, ceiling fans, or anything else that is NOT a lighting fixture.
+3. If a photo contains ZERO lighting fixtures, return an empty array \`[]\`. Do not invent fixtures to fill the response.
+4. Never return a fixture with existW=0 AND newW=0 — that's always a false positive (usually a non-lighting item). If you cannot confidently estimate wattages, skip the item entirely.
+5. Use the existing fixture's nameplate if visible. Otherwise estimate from shape, ballast housing, lamp count, and room context.
+
+For EACH distinct LIGHTING fixture type, return:
 - "name": descriptive label (e.g. "4-Lamp T8 4ft Troffer", "400W Metal Halide High Bay")
 - "count": estimated quantity visible (count carefully)
-- "existW": total system wattage INCLUDING ballast loss
-- "newW": recommended LED replacement wattage
+- "existW": total system wattage INCLUDING ballast loss (MUST be > 0)
+- "newW": recommended LED replacement wattage (MUST be > 0)
 - "category": one of "exterior", "highbay", "panel", "strip"
 - "subtype": one of "ext", "hb_250", "hb_400", "hb_1000", "panel_2x2", "panel_2x4", "strip_4", "strip_8"
   For high bay subtype: calculate watts reduced (existW - newW):
@@ -116,8 +123,22 @@ Return ONLY a valid JSON array. No markdown, no backticks, no explanation.` }
         { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const fixtures = JSON.parse(jsonMatch[0]);
-    return new Response(JSON.stringify({ success: true, fixtures }),
+    const rawFixtures = JSON.parse(jsonMatch[0]);
+    // Server-side guardrail: drop anything that's clearly not a lighting
+    // fixture even if the model slipped up. Same keyword list the client
+    // uses as a safety net.
+    const NON_LIGHTING_RE = /\b(heat|heater|hvac|thermostat|speaker|intercom|sensor|sprinkler|smoke|camera|co2|vent|diffuser|ac unit|air conditioning|fan)\b/i;
+    const dropped: unknown[] = [];
+    const fixtures = (Array.isArray(rawFixtures) ? rawFixtures : []).filter((f: Record<string, unknown>) => {
+      const name = String(f?.name || '');
+      const existW = parseFloat(String(f?.existW ?? '0')) || 0;
+      const newW = parseFloat(String(f?.newW ?? '0')) || 0;
+      if (existW === 0 && newW === 0) { dropped.push({ name, reason: 'zero_watts' }); return false; }
+      if (NON_LIGHTING_RE.test(name)) { dropped.push({ name, reason: 'non_lighting_keyword' }); return false; }
+      return true;
+    });
+    if (dropped.length > 0) console.warn('[Lenard] Dropped non-lighting items:', dropped);
+    return new Response(JSON.stringify({ success: true, fixtures, dropped }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
