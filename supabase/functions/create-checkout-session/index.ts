@@ -235,11 +235,21 @@ serve(async (req) => {
       if (!stripeRes.ok) {
         const errText = await stripeRes.text();
         console.error('Stripe API error:', errText);
-        return new Response(JSON.stringify({ error: 'Failed to create Stripe checkout session' }),
+        let stripeMsg = 'Failed to create Stripe checkout session';
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed?.error?.message) stripeMsg = `Stripe: ${parsed.error.message}`;
+        } catch { /* errText not JSON */ }
+        return new Response(JSON.stringify({ error: stripeMsg, stripe_raw: errText }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       const session = await stripeRes.json();
+      if (!session?.url) {
+        console.error('Stripe returned no checkout url:', session);
+        return new Response(JSON.stringify({ error: 'Stripe did not return a checkout URL', stripe_session: session }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
       return new Response(JSON.stringify({ checkout_url: session.url }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }

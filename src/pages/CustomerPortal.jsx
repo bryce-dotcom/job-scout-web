@@ -145,11 +145,18 @@ export default function CustomerPortal() {
       }
       if (stripeMethod) body.stripe_method = stripeMethod
       const result = await invokeEdgeFunction('create-checkout-session', body)
-      if (result.checkout_url) {
+      if (result?.checkout_url) {
         window.location.href = result.checkout_url
+        return
       }
+      // No checkout URL came back — surface whatever the server told us
+      const msg = result?.error || 'Payment setup failed: no checkout URL returned. Please contact the business.'
+      console.error('create-checkout-session response:', result)
+      alert(msg)
+      setPaying(false)
     } catch (err) {
-      alert('Payment setup failed: ' + err.message)
+      console.error('handlePay error:', err)
+      alert('Payment setup failed: ' + (err?.message || 'Unknown error'))
       setPaying(false)
     }
   }
