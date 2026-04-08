@@ -57,10 +57,24 @@ function getControlsOnlyOptions(location) {
     : [{ id: 'basic', label: 'Basic' }, { id: 'networked', label: 'Networked' }, { id: 'lllc', label: 'LLLC' }, { id: 'recommission', label: 'Recommission' }];
 }
 
-function getRate(program, line) {
+function getRate(program, line, rateMap = null) {
   if (program === 'large') {
     if (line.location === 'exterior') return LARGE.exterior_fixtures[line.controlsType] || LARGE.exterior_fixtures.none;
     return LARGE.interior_fixtures[line.controlsType] || LARGE.interior_fixtures.none;
+  }
+  // Pending tier — show dash instead of a stale number
+  if (line.location !== 'exterior' && line.controlsType === 'pending') return '?';
+  // Prefer the DB-resolved rate map (from prescriptive_measures) so the
+  // on-card "$X/W" label reflects what the rebate math is actually using.
+  if (rateMap) {
+    if (line.location === 'exterior') {
+      const v = rateMap.get?.('exterior');
+      if (typeof v === 'number') return v;
+    } else {
+      const rmpTier = mapLenardControlsToRmp(line.controlsType);
+      const v = rmpTier ? rateMap.get?.(rmpTier) : null;
+      if (typeof v === 'number') return v;
+    }
   }
   const rates = program === 'smbe' ? SMBE : EXPRESS;
   if (line.location === 'exterior') return rates.exterior.none;
@@ -1053,6 +1067,9 @@ export default function LenardUTRMP() {
     if (!appFields.businessType) { showToast('Pick a Business Type first', '\u26A0\uFE0F'); return; }
     if (pendingControlsCount > 0) { showToast(`${pendingControlsCount} line${pendingControlsCount > 1 ? 's need' : ' needs'} a Controls tier`, '\u26A0\uFE0F'); return; }
     setSaving(true);
+    // Safety: guarantee the Save button unlocks even if one of the
+    // downstream awaits (signature upload, give_me_log, etc.) hangs.
+    const saveTimeout = setTimeout(() => { setSaving(false); }, 45000);
     try {
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -1165,8 +1182,15 @@ export default function LenardUTRMP() {
         }
       }
       else { showToast(data.error || 'Save failed', '\u26A0\uFE0F'); }
-    } catch (err) { console.error('Save error:', err); showToast('Could not save project', '\u26A0\uFE0F'); }
-    setSaving(false);
+    } catch (err) {
+      console.error('Save error:', err);
+      showToast('Could not save project: ' + (err?.message || 'unknown error'), '\u26A0\uFE0F');
+    } finally {
+      // Always clear the Saving state, even if a post-success await
+      // (signature upload, give_me_log, etc.) threw or hung.
+      clearTimeout(saveTimeout);
+      setSaving(false);
+    }
   };
 
   const loadProjects = async (ownerId = leadOwnerId) => {
@@ -2783,7 +2807,7 @@ export default function LenardUTRMP() {
           const isExp = expandedLine === r.id;
           const isNew = newlyAdded.has(r.id);
           const hasRebate = r.calc.totalIncentive > 0;
-          const rate = getRate(program, r);
+          const rate = getRate(program, r, rateMap);
           const ctrlOpts = getControlsOptions(program, r.location);
           const ctrlLabel = ctrlOpts.find(o => o.id === r.controlsType)?.label || r.controlsType;
           return (
