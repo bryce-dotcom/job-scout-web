@@ -179,6 +179,8 @@ export default function FieldScout() {
   const todayStr = new Date().toDateString()
   const employeeName = currentEmployee?.name || ''
   const todaysJobs = jobs.filter(j => {
+    // Always include the job we're actively clocked into, even if not scheduled today
+    if (activeEntry?.job_id && j.id === activeEntry.job_id) return true
     if (!j.start_date) return false
     if (new Date(j.start_date).toDateString() !== todayStr) return false
     // Assigned directly to this employee via job_lead_id
@@ -393,6 +395,15 @@ export default function FieldScout() {
       }
 
       await fetchEntries()
+      // Auto-expand the job card so the user sees full details (line items,
+      // payment buttons, verification, etc.) — even for jobs found via search.
+      if (jobId) {
+        setExpandedJob(jobId)
+        fetchJobSections(jobId)
+        // Clear search selection so the now-active job renders inline
+        setSelectedJobId('')
+        setJobSearchQuery('')
+      }
     } catch (err) {
       alert('Error clocking in: ' + err.message)
     } finally {
@@ -716,7 +727,11 @@ export default function FieldScout() {
 
   // Quick stats
   const jobsToday = todaysJobs.length
-  const hoursAllotted = todaysJobs.reduce((sum, j) => sum + (parseFloat(j.hours_allotted) || 0), 0)
+  const hoursAllotted = todaysJobs.reduce((sum, j) => sum + (parseFloat(j.allotted_time_hours) || 0), 0)
+  // Hours used today: stored job.time_tracked across today's jobs, plus any in-progress elapsed for the active job
+  const hoursUsedStored = todaysJobs.reduce((sum, j) => sum + (parseFloat(j.time_tracked) || 0), 0)
+  const liveActiveOnTodayJob = activeEntry?.job_id && todaysJobs.some(j => j.id === activeEntry.job_id)
+  const hoursUsed = hoursUsedStored + (liveActiveOnTodayJob ? elapsedHours : 0)
   const completedToday = todaysJobs.filter(j => j.status === 'Completed').length
 
   // Open address in native maps
@@ -1194,7 +1209,14 @@ export default function FieldScout() {
       }}>
         {[
           { label: 'Jobs Today', value: jobsToday, icon: Briefcase },
-          { label: 'Hours Allotted', value: hoursAllotted ? `${hoursAllotted}h` : '—', icon: Timer },
+          {
+            label: 'Hours Used / Allotted',
+            value: hoursAllotted
+              ? `${hoursUsed.toFixed(1)} / ${hoursAllotted}h`
+              : (hoursUsed > 0 ? `${hoursUsed.toFixed(1)}h` : '—'),
+            icon: Timer,
+            valueColor: hoursAllotted && hoursUsed > hoursAllotted ? '#ef4444' : theme.text
+          },
           { label: 'Completed', value: completedToday, icon: CheckCircle }
         ].map((stat) => (
           <div key={stat.label} style={{
@@ -1206,7 +1228,7 @@ export default function FieldScout() {
             textAlign: 'center'
           }}>
             <stat.icon size={16} style={{ color: theme.accent, marginBottom: '4px' }} />
-            <div style={{ fontSize: '20px', fontWeight: '700', color: theme.text, lineHeight: 1.2 }}>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: stat.valueColor || theme.text, lineHeight: 1.2 }}>
               {stat.value}
             </div>
             <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '2px' }}>
@@ -1464,18 +1486,47 @@ export default function FieldScout() {
 
                     {/* Meta row */}
                     <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      {job.hours_allotted && (
-                        <span style={{
-                          fontSize: '11px',
-                          padding: '2px 8px',
-                          backgroundColor: theme.accentBg,
-                          color: theme.accent,
-                          borderRadius: '4px',
-                          fontWeight: '500'
-                        }}>
-                          {job.hours_allotted}h allotted
-                        </span>
-                      )}
+                      {(() => {
+                        const allotted = parseFloat(job.allotted_time_hours) || 0
+                        const stored = parseFloat(job.time_tracked) || 0
+                        const used = stored + (isActive ? elapsedHours : 0)
+                        if (!allotted && !used) return null
+                        const over = allotted > 0 && used > allotted
+                        const pct = allotted > 0 ? Math.min(100, (used / allotted) * 100) : 0
+                        return (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '11px',
+                            padding: '2px 8px',
+                            backgroundColor: over ? 'rgba(239,68,68,0.12)' : theme.accentBg,
+                            color: over ? '#ef4444' : theme.accent,
+                            borderRadius: '4px',
+                            fontWeight: '500'
+                          }}>
+                            <Timer size={10} />
+                            {used.toFixed(1)}{allotted ? ` / ${allotted}` : ''}h
+                            {allotted > 0 && (
+                              <span style={{
+                                display: 'inline-block',
+                                width: '40px',
+                                height: '4px',
+                                backgroundColor: 'rgba(0,0,0,0.08)',
+                                borderRadius: '2px',
+                                overflow: 'hidden'
+                              }}>
+                                <span style={{
+                                  display: 'block',
+                                  width: `${pct}%`,
+                                  height: '100%',
+                                  backgroundColor: over ? '#ef4444' : theme.accent
+                                }} />
+                              </span>
+                            )}
+                          </span>
+                        )
+                      })()}
                       {job.start_date && (
                         <span style={{ fontSize: '11px', color: theme.textMuted }}>
                           {new Date(job.start_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}

@@ -3948,6 +3948,30 @@ export default function LenardUTRMP() {
               ))}
             </div>
           </div>)}
+          {/* Business Type is required for an accurate RMP rate lookup.
+              We surface the picker directly in the Save modal so the rep
+              doesn't have to hunt for it in the RMP Application section. */}
+          <div style={{ marginBottom: '10px' }}>
+            <label style={{ fontSize: '11px', color: T.textSec, display: 'block', marginBottom: '4px', fontWeight: '600' }}>
+              Business Type <span style={{ color: T.red }}>*</span>
+              <span style={{ fontWeight: '400', color: T.textMuted, marginLeft: '6px' }}>(required for RMP rates)</span>
+            </label>
+            <select
+              value={appFields.businessType}
+              onChange={e => setAppFields(p => ({ ...p, businessType: e.target.value }))}
+              style={{
+                width: '100%', padding: '10px 12px',
+                background: T.bgInput,
+                border: `1px solid ${!appFields.businessType ? T.red : T.border}`,
+                borderRadius: '8px', fontSize: '13px', color: T.text,
+                boxSizing: 'border-box', cursor: 'pointer',
+              }}
+            >
+              <option value="">{'\u2014 Select Business Type \u2014'}</option>
+              {SBE_BUSINESS_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+
           {(!appFields.businessType || pendingControlsCount > 0) && (
             <div style={{
               marginBottom: '10px', padding: '10px 12px',
@@ -3955,8 +3979,8 @@ export default function LenardUTRMP() {
               border: '1px solid rgba(239,68,68,0.35)',
               borderRadius: '8px', fontSize: '12px', color: T.red, lineHeight: 1.5,
             }}>
-              {!appFields.businessType && <div>{'\u26A0\uFE0F'} Pick a Business Type in the RMP Application section above.</div>}
-              {pendingControlsCount > 0 && <div>{'\u26A0\uFE0F'} {pendingControlsCount} line{pendingControlsCount > 1 ? 's need' : ' needs'} a Controls tier (No Controls / Control Ready / NLC / LLLC).</div>}
+              {!appFields.businessType && <div>{'\u26A0\uFE0F'} Pick a Business Type above so Lenard can look up the correct RMP rate.</div>}
+              {pendingControlsCount > 0 && <div>{'\u26A0\uFE0F'} {pendingControlsCount} line{pendingControlsCount > 1 ? 's need' : ' needs'} a Controls tier (No Controls / Control Ready / NLC / LLLC) \u2014 scroll up and use the warning banner on the line list.</div>}
             </div>
           )}
           <div style={{ display: 'flex', gap: '8px' }}>
