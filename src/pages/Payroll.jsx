@@ -11,6 +11,10 @@ import {
   Edit3, Save, Map, Plus, Minus, Printer, Mail, Send
 } from 'lucide-react'
 import LocationTrailModal from '../components/LocationTrailModal'
+import {
+  getCurrentPayPeriod as sharedGetCurrentPayPeriod,
+  calculateEfficiencyBonus as sharedCalculateEfficiencyBonus,
+} from '../lib/bonusCalc'
 
 const AVATAR_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
@@ -293,71 +297,8 @@ export default function Payroll() {
     }
   }
 
-  // ── Period Calculations ──────────────────────────────────
-  const getCurrentPeriod = () => {
-    const today = new Date()
-    const frequency = payrollConfig.pay_frequency
-    let periodStart, periodEnd
-
-    if (frequency === 'weekly') {
-      const day = today.getDay()
-      periodStart = new Date(today)
-      periodStart.setDate(today.getDate() - (day === 0 ? 6 : day - 1))
-      periodEnd = new Date(periodStart)
-      periodEnd.setDate(periodStart.getDate() + 6)
-      // Apply offset
-      if (periodOffset !== 0) {
-        periodStart.setDate(periodStart.getDate() + periodOffset * 7)
-        periodEnd.setDate(periodEnd.getDate() + periodOffset * 7)
-      }
-    } else if (frequency === 'bi-weekly' || frequency === 'semi-monthly') {
-      if (today.getDate() <= 15) {
-        periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
-        periodEnd = new Date(today.getFullYear(), today.getMonth(), 15)
-      } else {
-        periodStart = new Date(today.getFullYear(), today.getMonth(), 16)
-        periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-      }
-      // Apply offset (each offset = one half-month period)
-      if (periodOffset !== 0) {
-        let m = periodStart.getMonth()
-        let y = periodStart.getFullYear()
-        let isFirstHalf = periodStart.getDate() === 1
-        let steps = Math.abs(periodOffset)
-        let dir = periodOffset > 0 ? 1 : -1
-        for (let i = 0; i < steps; i++) {
-          if (dir > 0) {
-            if (isFirstHalf) { isFirstHalf = false }
-            else { isFirstHalf = true; m++ }
-          } else {
-            if (!isFirstHalf) { isFirstHalf = true }
-            else { isFirstHalf = false; m-- }
-          }
-          if (m > 11) { m = 0; y++ }
-          if (m < 0) { m = 11; y-- }
-        }
-        if (isFirstHalf) {
-          periodStart = new Date(y, m, 1)
-          periodEnd = new Date(y, m, 15)
-        } else {
-          periodStart = new Date(y, m, 16)
-          periodEnd = new Date(y, m + 1, 0)
-        }
-      }
-    } else {
-      periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
-      periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-      // Apply offset (each offset = one month)
-      if (periodOffset !== 0) {
-        periodStart = new Date(today.getFullYear(), today.getMonth() + periodOffset, 1)
-        periodEnd = new Date(today.getFullYear(), today.getMonth() + periodOffset + 1, 0)
-      }
-    }
-
-    periodStart.setHours(0, 0, 0, 0)
-    periodEnd.setHours(23, 59, 59, 999)
-    return { periodStart, periodEnd }
-  }
+  // ── Period Calculations (shared with FieldScout) ────────────────────
+  const getCurrentPeriod = () => sharedGetCurrentPayPeriod(payrollConfig, periodOffset)
 
   const getNextPayDate = () => {
     const today = new Date()
@@ -543,99 +484,16 @@ export default function Payroll() {
     return { total, apptCount, sourceCount, details: empCommissions }
   }
 
-  // Helper: get bonus weight for an employee's skill level
-  const getSkillWeight = (empId) => {
-    const emp = employees.find(e => e.id === empId)
-    if (!emp?.skill_level) return 1 // default weight if no skill level assigned
-    const found = skillLevelSettings.find(s => s.name === emp.skill_level)
-    return found ? found.weight : 1
-  }
-
-  // Efficiency bonuses: allotted hours - actual hours, weighted split between crew
-  const calculateEfficiencyBonus = (employeeId) => {
-    if (!payrollConfig.efficiency_bonus_enabled) return { bonus: 0, details: [] }
-
-    const details = []
-    let totalBonus = 0
-    const rate = payrollConfig.efficiency_bonus_rate || 25
-    const companyCut = payrollConfig.company_bonus_cut_percent || 0
-    const minSaved = payrollConfig.bonus_min_hours_saved || 0
-
-    // Get time_log entries for this employee during this period
-    const empTimeLogs = timeLogEntries.filter(tl => tl.employee_id === employeeId)
-
-    // Group by job_id
-    const jobMap = {}
-    empTimeLogs.forEach(tl => {
-      if (!tl.job_id) return
-      if (!jobMap[tl.job_id]) jobMap[tl.job_id] = 0
-      jobMap[tl.job_id] += (tl.hours || 0)
-    })
-
-    Object.entries(jobMap).forEach(([jobId, myHours]) => {
-      const job = jobs.find(j => j.id === jobId)
-      if (!job?.allotted_time_hours) return
-
-      // Get all time_log entries for this job to find total actual hours
-      const allJobTimeLogs = timeLogEntries.filter(tl => tl.job_id === jobId)
-      const totalActualHours = allJobTimeLogs.reduce((sum, tl) => sum + (tl.hours || 0), 0)
-      const savedHours = job.allotted_time_hours - totalActualHours
-
-      if (savedHours <= 0) return // No bonus if over time
-      if (savedHours < minSaved) return // Below minimum threshold
-
-      // Quality gate: skip if job has callbacks/rework (check job.has_callback flag)
-      if (payrollConfig.bonus_quality_gate && job.has_callback) return
-
-      const totalPool = savedHours * rate
-      const companyShare = totalPool * (companyCut / 100)
-      const crewPool = totalPool - companyShare
-
-      // Weighted split: get all unique crew members and their weights
-      const crewMemberIds = [...new Set(allJobTimeLogs.map(tl => tl.employee_id))]
-      const crewWeights = crewMemberIds.map(id => ({ id, weight: getSkillWeight(id) }))
-      const participatingCrew = crewWeights.filter(c => c.weight > 0)
-      const totalWeight = participatingCrew.reduce((sum, c) => sum + c.weight, 0)
-
-      if (totalWeight <= 0) return // No eligible crew
-
-      const myWeight = getSkillWeight(employeeId)
-      if (myWeight <= 0) {
-        // This employee has weight 0 — no bonus
-        details.push({
-          jobId: job.job_id || job.id,
-          jobTitle: job.job_title || job.customer_name || 'Job',
-          allottedHours: job.allotted_time_hours,
-          actualHours: totalActualHours,
-          savedHours,
-          crewSize: crewMemberIds.length,
-          employeeShare: 0,
-          bonusAmount: 0,
-          weightedOut: true,
-        })
-        return
-      }
-
-      const bonusAmount = crewPool * (myWeight / totalWeight)
-
-      totalBonus += bonusAmount
-      details.push({
-        jobId: job.job_id || job.id,
-        jobTitle: job.job_title || job.customer_name || 'Job',
-        allottedHours: job.allotted_time_hours,
-        actualHours: totalActualHours,
-        savedHours,
-        crewSize: crewMemberIds.length,
-        employeeShare: savedHours * (myWeight / totalWeight),
-        bonusAmount,
-        companyCut: companyShare,
-        totalPool,
-        crewPool,
-      })
-    })
-
-    return { bonus: totalBonus, details }
-  }
+  // Efficiency bonuses: allotted hours - actual hours, weighted split between crew.
+  // Logic lives in src/lib/bonusCalc.js so FieldScout can render the same numbers.
+  const calculateEfficiencyBonus = (employeeId) => sharedCalculateEfficiencyBonus({
+    employeeId,
+    timeLogEntries,
+    jobs,
+    employees,
+    skillLevels: skillLevelSettings,
+    payrollConfig,
+  })
 
   // Full pay calculation per employee
   const calculateFullPay = (employee) => {
@@ -1578,6 +1436,127 @@ export default function Payroll() {
           </div>
         )}
       </div>
+
+      {/* ===== Bonuses Accumulating (this period) ===== */}
+      {payrollConfig.efficiency_bonus_enabled && (() => {
+        const leaderboard = filteredEmployees
+          .map(emp => {
+            const d = employeePayData[emp.id]
+            if (!d) return null
+            return {
+              emp,
+              bonus: d.efficiencyBonus?.bonus || 0,
+              jobs: d.efficiencyBonus?.details || [],
+            }
+          })
+          .filter(Boolean)
+          .filter(r => r.bonus > 0)
+          .sort((a, b) => b.bonus - a.bonus)
+
+        const jobCount = leaderboard.reduce((s, r) => s + r.jobs.length, 0)
+
+        return (
+          <div style={{
+            backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+            borderRadius: '12px', padding: isMobile ? '16px' : '20px', marginBottom: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+              <div style={{
+                width: '36px', height: '36px', borderRadius: '10px',
+                background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+              }}>
+                <Zap size={18} color="#fff" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>
+                  Bonuses Accumulating
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                  This pay period — {jobCount} job{jobCount === 1 ? '' : 's'} under allotted hours
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '22px', fontWeight: '700', color: '#8b5cf6' }}>
+                  {fmt(totalBonuses)}
+                </div>
+                <div style={{ fontSize: '11px', color: theme.textMuted }}>total pool</div>
+              </div>
+            </div>
+
+            {leaderboard.length === 0 ? (
+              <div style={{
+                marginTop: '12px', padding: '14px', textAlign: 'center',
+                fontSize: '13px', color: theme.textMuted,
+                backgroundColor: theme.bg, borderRadius: '8px'
+              }}>
+                No bonuses earned yet this period.
+              </div>
+            ) : (
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {leaderboard.slice(0, 8).map((r, i) => {
+                  const top = leaderboard[0].bonus || 1
+                  const pct = Math.max(4, (r.bonus / top) * 100)
+                  return (
+                    <div
+                      key={r.emp.id}
+                      onClick={() => setSelectedEmployee(r.emp)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        padding: '8px 10px', borderRadius: '8px',
+                        backgroundColor: theme.bg, cursor: 'pointer'
+                      }}
+                    >
+                      <div style={{
+                        width: '22px', fontSize: '12px', fontWeight: '700',
+                        color: i < 3 ? '#8b5cf6' : theme.textMuted, textAlign: 'center'
+                      }}>
+                        #{i + 1}
+                      </div>
+                      <div style={{
+                        width: '28px', height: '28px', borderRadius: '8px',
+                        backgroundColor: getAvatarColor(r.emp.name),
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#fff', fontWeight: '600', fontSize: '12px', flexShrink: 0,
+                        overflow: 'hidden'
+                      }}>
+                        {r.emp.headshot_url
+                          ? <img src={r.emp.headshot_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : (r.emp.name || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: '13px', fontWeight: '600', color: theme.text,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                        }}>
+                          {r.emp.name}
+                        </div>
+                        <div style={{
+                          marginTop: '3px', height: '4px', backgroundColor: 'rgba(139,92,246,0.12)',
+                          borderRadius: '2px', overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            width: `${pct}%`, height: '100%',
+                            background: 'linear-gradient(90deg, #8b5cf6, #a855f7)'
+                          }} />
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#8b5cf6' }}>
+                          {fmt(r.bonus)}
+                        </div>
+                        <div style={{ fontSize: '10px', color: theme.textMuted }}>
+                          {r.jobs.length} job{r.jobs.length === 1 ? '' : 's'}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Employee List */}
       <div style={{

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
 import ArnieFloatingPanel from '../components/ArnieFloatingPanel'
+import { getCurrentPayPeriod, calculateEfficiencyBonus } from '../lib/bonusCalc'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -144,6 +145,10 @@ export default function FieldScout() {
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [reviewSent, setReviewSent] = useState(new Set())
 
+  // Efficiency bonus (accumulating this pay period)
+  const [bonusSummary, setBonusSummary] = useState({ bonus: 0, details: [], loading: true, period: null })
+  const [showBonusDetail, setShowBonusDetail] = useState(false)
+
   // Victor verification
   const [victorModal, setVictorModal] = useState(null) // null | { type: 'daily' } | { type: 'completion', jobId }
   const [showDailyCheckPrompt, setShowDailyCheckPrompt] = useState(false)
@@ -255,6 +260,88 @@ export default function FieldScout() {
   }, [companyId, todaysJobs.length])
 
   useEffect(() => { fetchVerifiedJobs() }, [fetchVerifiedJobs])
+
+  // Fetch accumulating bonus for this pay period (uses shared calc with Payroll)
+  const fetchBonusSummary = useCallback(async () => {
+    if (!companyId || !currentEmployee) return
+    try {
+      // 1. Load payroll config + skill levels from settings table
+      const { data: cfgRows } = await supabase
+        .from('settings')
+        .select('key, value')
+        .eq('company_id', companyId)
+        .in('key', ['payroll_config', 'skill_levels'])
+
+      let payrollConfig = {}
+      let skillLevels = []
+      for (const row of (cfgRows || [])) {
+        try {
+          const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value
+          if (row.key === 'payroll_config') payrollConfig = parsed || {}
+          if (row.key === 'skill_levels') skillLevels = Array.isArray(parsed) ? parsed : []
+        } catch { /* ignore malformed JSON */ }
+      }
+
+      if (!payrollConfig.efficiency_bonus_enabled) {
+        setBonusSummary({ bonus: 0, details: [], loading: false, period: null, disabled: true })
+        return
+      }
+
+      // 2. Figure out the current pay period window
+      const { periodStart, periodEnd } = getCurrentPayPeriod(payrollConfig, 0)
+
+      // 3. Pull this employee's time_log for the period to find which jobs they worked
+      const { data: myLogs } = await supabase
+        .from('time_log')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('employee_id', currentEmployee.id)
+        .gte('created_at', periodStart.toISOString())
+        .lte('created_at', periodEnd.toISOString())
+
+      const myJobIds = [...new Set((myLogs || []).map(l => l.job_id).filter(Boolean))]
+      if (myJobIds.length === 0) {
+        setBonusSummary({ bonus: 0, details: [], loading: false, period: { periodStart, periodEnd } })
+        return
+      }
+
+      // 4. Pull ALL time_log entries for those jobs (any employee, any date) so the
+      //    total actual-hours and crew composition per job are correct.
+      const { data: allLogs } = await supabase
+        .from('time_log')
+        .select('*')
+        .eq('company_id', companyId)
+        .in('job_id', myJobIds)
+
+      // 5. Load the jobs themselves (need allotted_time_hours + has_callback)
+      const { data: jobRows } = await supabase
+        .from('jobs')
+        .select('id, job_id, job_title, customer_name, allotted_time_hours, has_callback')
+        .in('id', myJobIds)
+
+      // 6. Run the shared calc
+      const result = calculateEfficiencyBonus({
+        employeeId: currentEmployee.id,
+        timeLogEntries: allLogs || [],
+        jobs: jobRows || [],
+        employees,
+        skillLevels,
+        payrollConfig,
+      })
+
+      setBonusSummary({
+        bonus: result.bonus,
+        details: result.details,
+        loading: false,
+        period: { periodStart, periodEnd },
+      })
+    } catch (err) {
+      console.error('Error loading bonus summary:', err)
+      setBonusSummary({ bonus: 0, details: [], loading: false, period: null, error: true })
+    }
+  }, [companyId, currentEmployee, employees])
+
+  useEffect(() => { fetchBonusSummary() }, [fetchBonusSummary])
 
   // Fetch daily verification status for field roles
   useEffect(() => {
@@ -1237,6 +1324,92 @@ export default function FieldScout() {
           </div>
         ))}
       </div>
+
+      {/* ===== BONUS ACCUMULATING (this pay period) ===== */}
+      {!bonusSummary.loading && !bonusSummary.disabled && (
+        <div style={{
+          background: bonusSummary.bonus > 0
+            ? 'linear-gradient(135deg, rgba(168,85,247,0.10) 0%, rgba(124,58,237,0.06) 100%)'
+            : theme.bgCard,
+          border: `1px solid ${bonusSummary.bonus > 0 ? 'rgba(168,85,247,0.35)' : theme.border}`,
+          borderRadius: '14px',
+          padding: '14px 16px',
+          marginBottom: '16px'
+        }}>
+          <button
+            onClick={() => bonusSummary.details.length > 0 && setShowBonusDetail(!showBonusDetail)}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: bonusSummary.details.length > 0 ? 'pointer' : 'default',
+              textAlign: 'left',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}
+          >
+            <div style={{
+              width: '42px', height: '42px', borderRadius: '12px',
+              background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+            }}>
+              <DollarSign size={22} color="#fff" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500' }}>
+                Bonus Earned This Pay Period
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: '700', color: bonusSummary.bonus > 0 ? '#8b5cf6' : theme.textMuted, lineHeight: 1.2 }}>
+                ${bonusSummary.bonus.toFixed(2)}
+              </div>
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                {bonusSummary.details.length === 0
+                  ? 'Finish a job under allotted hours to start earning'
+                  : `From ${bonusSummary.details.filter(d => d.bonusAmount > 0).length} job${bonusSummary.details.filter(d => d.bonusAmount > 0).length === 1 ? '' : 's'} — tap to see breakdown`}
+              </div>
+            </div>
+            {bonusSummary.details.length > 0 && (
+              showBonusDetail ? <ChevronUp size={18} color={theme.textMuted} /> : <ChevronDown size={18} color={theme.textMuted} />
+            )}
+          </button>
+
+          {showBonusDetail && bonusSummary.details.length > 0 && (
+            <div style={{
+              marginTop: '12px',
+              paddingTop: '12px',
+              borderTop: `1px solid ${theme.border}`,
+              display: 'flex', flexDirection: 'column', gap: '8px'
+            }}>
+              {bonusSummary.details.map((d, i) => (
+                <div key={i} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '10px 12px', backgroundColor: theme.bgCard,
+                  borderRadius: '8px', border: `1px solid ${theme.border}`
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {d.jobTitle}
+                    </div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                      Allotted {d.allottedHours}h · Actual {d.actualHours.toFixed(1)}h · Saved {d.savedHours.toFixed(1)}h
+                      {d.crewSize > 1 && ` · Split ${d.crewSize} ways`}
+                    </div>
+                  </div>
+                  <div style={{
+                    fontSize: '14px', fontWeight: '700',
+                    color: d.bonusAmount > 0 ? '#8b5cf6' : theme.textMuted,
+                    flexShrink: 0, marginLeft: '8px'
+                  }}>
+                    ${d.bonusAmount.toFixed(2)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ===== UNVERIFIED COMPLETED JOBS WARNING ===== */}
       {(() => {

@@ -2700,9 +2700,8 @@ export default function LenardUTRMP() {
 
       {/* ===== LINE ITEMS ===== */}
       <div style={{ padding: '8px 16px' }}>
-        {/* Pending-controls warning + bulk setter. Shows whenever any
-            camera-added line is still waiting for a Controls tier pick.
-            Save is blocked via canSave (checked in saveProject). */}
+        {/* Pending-controls warning — only shown when there's at least
+            one camera-added fixture still waiting for a tier pick. */}
         {pendingControlsCount > 0 && (
           <div style={{
             padding: '12px 14px',
@@ -2710,32 +2709,56 @@ export default function LenardUTRMP() {
             background: 'rgba(239,68,68,0.10)',
             border: '1px solid rgba(239,68,68,0.35)',
             borderRadius: '10px',
+            fontSize: '12px', color: T.red, fontWeight: '600',
+          }}>
+            {'\u26A0\uFE0F'} {pendingControlsCount} fixture{pendingControlsCount > 1 ? 's need' : ' needs'} a Controls tier before you can save.
+          </div>
+        )}
+
+        {/* ALWAYS-ON bulk controls setter. Applies to every interior line
+            regardless of current tier \u2014 lets the rep upgrade an audit
+            from "No Controls" to "LLLC" (or any other tier) in one click,
+            which is exactly what makes Lenard match RMP's Express Tool.
+            Only visible once there's at least one interior line. */}
+        {lines.some(l => l.location !== 'exterior') && (
+          <div style={{
+            padding: '10px 12px',
+            marginBottom: '10px',
+            background: T.accentDim,
+            border: `1px solid ${T.accent}`,
+            borderRadius: '10px',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             gap: '10px', flexWrap: 'wrap',
           }}>
-            <div style={{ fontSize: '12px', color: T.red, fontWeight: '600', flex: 1, minWidth: 0 }}>
-              {'\u26A0\uFE0F'} {pendingControlsCount} fixture{pendingControlsCount > 1 ? 's need' : ' needs'} a Controls tier before you can save.
+            <div style={{ fontSize: '11px', color: T.text, fontWeight: '600', flex: 1, minWidth: 0 }}>
+              Controls Tier for all interior fixtures
+              <div style={{ fontSize: '10px', color: T.textMuted, fontWeight: '400', marginTop: '2px' }}>
+                Changing this updates every interior line and recomputes the rebate.
+              </div>
             </div>
             <select
               value=""
               onChange={(e) => {
                 const tier = e.target.value
                 if (!tier) return
-                setLines(prev => prev.map(l => (l.controlsType === 'pending' ? { ...l, controlsType: tier } : l)))
+                setLines(prev => prev.map(l => (l.location !== 'exterior' ? { ...l, controlsType: tier } : l)))
                 markDirty()
+                const tierLabel = ({ none: 'No Controls', plug_play: 'Control Ready', networked: 'NLC', lllc: 'LLLC' })[tier] || tier
+                showToast(`All interior fixtures set to ${tierLabel}`, '\u2713')
+                e.target.value = ''
               }}
               style={{
-                padding: '7px 10px', fontSize: '11px',
+                padding: '8px 12px', fontSize: '12px',
                 background: T.bgCard, color: T.text,
-                border: `1px solid ${T.border}`, borderRadius: '6px',
-                fontWeight: '600', cursor: 'pointer',
+                border: `1px solid ${T.accent}`, borderRadius: '6px',
+                fontWeight: '700', cursor: 'pointer',
               }}
             >
-              <option value="">Set all pending to…</option>
-              <option value="none">No Controls</option>
-              <option value="plug_play">Control Ready</option>
-              <option value="networked">NLC</option>
-              <option value="lllc">LLLC</option>
+              <option value="">Set all to…</option>
+              <option value="none">No Controls ($1.50/W SMBE)</option>
+              <option value="plug_play">Control Ready ($2.00/W SMBE)</option>
+              <option value="networked">NLC ($2.50/W SMBE)</option>
+              <option value="lllc">LLLC ($3.50/W SMBE)</option>
             </select>
           </div>
         )}
@@ -3971,6 +3994,45 @@ export default function LenardUTRMP() {
               {SBE_BUSINESS_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
+
+          {/* Inline Controls Tier quick-set so Doug can change LLLC etc
+              without closing the save modal first. Applies to every
+              interior line at once. */}
+          {lines.some(l => l.location !== 'exterior') && (
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ fontSize: '11px', color: T.textSec, display: 'block', marginBottom: '4px', fontWeight: '600' }}>
+                Controls Tier for all interior fixtures
+                <span style={{ fontWeight: '400', color: T.textMuted, marginLeft: '6px' }}>
+                  (quick-set \u2014 changes every interior line)
+                </span>
+              </label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const tier = e.target.value
+                  if (!tier) return
+                  setLines(prev => prev.map(l => (l.location !== 'exterior' ? { ...l, controlsType: tier } : l)))
+                  markDirty()
+                  const tierLabel = ({ none: 'No Controls', plug_play: 'Control Ready', networked: 'NLC', lllc: 'LLLC' })[tier] || tier
+                  showToast(`All interior fixtures set to ${tierLabel}`, '\u2713')
+                  e.target.value = ''
+                }}
+                style={{
+                  width: '100%', padding: '10px 12px',
+                  background: T.bgInput,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: '8px', fontSize: '13px', color: T.text,
+                  boxSizing: 'border-box', cursor: 'pointer',
+                }}
+              >
+                <option value="">{'\u2014 Quick-set controls tier \u2014'}</option>
+                <option value="none">No Controls ($1.50/W SMBE)</option>
+                <option value="plug_play">Control Ready ($2.00/W SMBE)</option>
+                <option value="networked">NLC ($2.50/W SMBE)</option>
+                <option value="lllc">LLLC ($3.50/W SMBE)</option>
+              </select>
+            </div>
+          )}
 
           {(!appFields.businessType || pendingControlsCount > 0) && (
             <div style={{
