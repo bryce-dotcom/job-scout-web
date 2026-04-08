@@ -757,6 +757,28 @@ export default function SalesPipeline() {
         }).select().single()
 
         if (newJob) {
+          // Carry canonical customer signature from the lead onto the new
+          // job so downstream attachments (W9, credit app, etc.) auto-stamp.
+          try {
+            const { data: leadSig } = await supabase
+              .from('leads')
+              .select('customer_signature_path, customer_signature_typed, customer_signature_method, customer_signature_captured_at')
+              .eq('id', leadId)
+              .maybeSingle()
+            if (leadSig && (leadSig.customer_signature_path || leadSig.customer_signature_typed)) {
+              await supabase
+                .from('jobs')
+                .update({
+                  customer_signature_path: leadSig.customer_signature_path || null,
+                  customer_signature_typed: leadSig.customer_signature_typed || null,
+                  customer_signature_method: leadSig.customer_signature_method || null,
+                  customer_signature_captured_at: leadSig.customer_signature_captured_at || null,
+                })
+                .eq('id', newJob.id)
+            }
+          } catch (sigErr) {
+            console.warn('[Pipeline] signature carry-over failed', sigErr)
+          }
           await fetchJobs()
         }
       } catch (e) {

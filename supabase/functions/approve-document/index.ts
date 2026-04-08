@@ -180,6 +180,33 @@ serve(async (req) => {
     if (signedAttachmentId) estimateUpdate.signed_proposal_attachment_id = signedAttachmentId
     await supabase.from('quotes').update(estimateUpdate).eq('id', estimate.id);
 
+    // Canonical customer-signature columns: mirror whatever we just captured
+    // onto the lead and job so attached W9s, credit apps, etc. can auto-stamp
+    // without caring which document the customer signed on.
+    const wroteSignature = !!(signature_method && (signatureImagePath || signature_typed_text))
+    if (wroteSignature) {
+      const signaturePatch: Record<string, unknown> = {
+        customer_signature_path: signatureImagePath || null,
+        customer_signature_typed: signature_method === 'typed' ? (signature_typed_text || null) : null,
+        customer_signature_method: signature_method,
+        customer_signature_captured_at: new Date().toISOString(),
+      }
+      if (estimate.lead_id) {
+        const { error: sigLeadErr } = await supabase
+          .from('leads')
+          .update(signaturePatch)
+          .eq('id', estimate.lead_id)
+        if (sigLeadErr) console.error('[approve-document] lead signature update error', sigLeadErr)
+      }
+      if (estimate.job_id) {
+        const { error: sigJobErr } = await supabase
+          .from('jobs')
+          .update(signaturePatch)
+          .eq('id', estimate.job_id)
+        if (sigJobErr) console.error('[approve-document] job signature update error', sigJobErr)
+      }
+    }
+
     // Update linked lead status to Won if lead_id exists
     if (estimate.lead_id) {
       await supabase

@@ -1116,6 +1116,31 @@ export default function EstimateDetail() {
           .eq('id', newJob.id)
       }
 
+      // 4c. Carry canonical customer signature from the lead to the job
+      //     so any signable document generated on the job auto-stamps it.
+      if (estimate.lead_id) {
+        try {
+          const { data: leadSig } = await supabase
+            .from('leads')
+            .select('customer_signature_path, customer_signature_typed, customer_signature_method, customer_signature_captured_at')
+            .eq('id', estimate.lead_id)
+            .maybeSingle()
+          if (leadSig && (leadSig.customer_signature_path || leadSig.customer_signature_typed)) {
+            await supabase
+              .from('jobs')
+              .update({
+                customer_signature_path: leadSig.customer_signature_path || null,
+                customer_signature_typed: leadSig.customer_signature_typed || null,
+                customer_signature_method: leadSig.customer_signature_method || null,
+                customer_signature_captured_at: leadSig.customer_signature_captured_at || null,
+              })
+              .eq('id', newJob.id)
+          }
+        } catch (sigErr) {
+          console.warn('[convertToJob] signature carry-over failed', sigErr)
+        }
+      }
+
       // Also carry notes photos forward
       if (notesPhotos.length > 0) {
         for (const p of notesPhotos) {

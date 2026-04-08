@@ -940,6 +940,29 @@ export default function LenardUTRMP() {
       if (data.success) {
         setSavedLeadId(data.leadId); setSavedAuditId(data.auditId); setIsDirty(false); setShowSaveModal(false);
         showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
+
+        // Mirror the customer signature onto the lead in the canonical
+        // project-documents bucket so downstream attachments (W9, credit
+        // app, etc.) can auto-stamp it via resolveCustomerSignature.
+        if (signatureData && data.leadId) {
+          try {
+            const sigBytes = Uint8Array.from(atob(signatureData.split(',')[1]), c => c.charCodeAt(0));
+            const sigPath = `signatures/lead-${data.leadId}.png`;
+            await supabase.storage
+              .from('project-documents')
+              .upload(sigPath, sigBytes, { contentType: 'image/png', upsert: true });
+            await supabase
+              .from('leads')
+              .update({
+                customer_signature_path: sigPath,
+                customer_signature_method: 'drawn',
+                customer_signature_captured_at: new Date().toISOString(),
+              })
+              .eq('id', data.leadId);
+          } catch (sigErr) {
+            console.warn('[Lenard UT] unified signature mirror failed', sigErr);
+          }
+        }
         // Attempt give_me_log insert (silent fail if table doesn't exist)
         // CREATE TABLE IF NOT EXISTS give_me_log (
         //   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,

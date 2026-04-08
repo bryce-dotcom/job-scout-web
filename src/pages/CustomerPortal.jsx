@@ -91,14 +91,23 @@ export default function CustomerPortal() {
     if (token) fetchDocument()
   }, [token])
 
-  const handleApprove = async () => {
+  // Generic approval. Accepts an optional signature payload from the
+  // interactive proposal's SignatureModal — same shape Formal sends.
+  // Backwards compatible: called with no args works exactly as before.
+  const handleApprove = async (signature) => {
     setApproving(true)
     try {
-      await invokeEdgeFunction('approve-document', {
+      const body = {
         token,
         approver_name: approverName,
         approver_email: approverEmail,
-      })
+      }
+      if (signature && signature.method) {
+        body.signature_method = signature.method
+        body.signature_image_base64 = signature.imageDataUrl || null
+        body.signature_typed_text = signature.typedText || null
+      }
+      await invokeEdgeFunction('approve-document', body)
       setApprovalSuccess(true)
       setShowApproveModal(false)
       await fetchDocument()

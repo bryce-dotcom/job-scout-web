@@ -207,6 +207,31 @@ export async function generateAndUploadTemplate(template, dataContext, { entityT
       } else {
         filledBytes = await fillPdfForm(fileBytes, fieldValues)
       }
+
+      // Canonical signature auto-stamp. If the template has signature_fields
+      // configured AND we can resolve a customer signature for this entity,
+      // stamp it onto the filled PDF. Happens on top of any fill/overlay
+      // the legacy `_sig_*` path already did, so both approaches coexist.
+      try {
+        const sigFields = Array.isArray(template.signature_fields) ? template.signature_fields : []
+        if (sigFields.length > 0) {
+          const { resolveCustomerSignature } = await import('./customerSignature')
+          const { stampSignatureOnPdf } = await import('./attachmentSignatureFiller')
+          const sig = await resolveCustomerSignature({
+            jobId: entityType === 'job' ? entityId : null,
+            leadId: entityType === 'lead' ? entityId : (leadId || null),
+          })
+          if (sig.found) {
+            filledBytes = await stampSignatureOnPdf(filledBytes, {
+              signatureBytes: sig.pngBytes,
+              typedText: sig.typedText,
+              signatureFields: sigFields,
+            })
+          }
+        }
+      } catch (sigErr) {
+        console.warn('[documentGenerator] canonical signature stamp failed', sigErr)
+      }
     }
 
     // Upload filled file

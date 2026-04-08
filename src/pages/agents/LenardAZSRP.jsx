@@ -945,6 +945,29 @@ export default function LenardAZSRP() {
         setShowSaveModal(false);
         showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
 
+        // Mirror the signature onto the canonical leads.customer_signature_*
+        // columns so downstream attachments (W9, credit app, etc.) can auto-
+        // stamp it via resolveCustomerSignature.
+        if (signatureData && data.leadId) {
+          try {
+            const sigBytes = Uint8Array.from(atob(signatureData.split(',')[1]), c => c.charCodeAt(0));
+            const sigPath = `signatures/lead-${data.leadId}.png`;
+            await supabase.storage
+              .from('project-documents')
+              .upload(sigPath, sigBytes, { contentType: 'image/png', upsert: true });
+            await supabase
+              .from('leads')
+              .update({
+                customer_signature_path: sigPath,
+                customer_signature_method: 'drawn',
+                customer_signature_captured_at: new Date().toISOString(),
+              })
+              .eq('id', data.leadId);
+          } catch (sigErr) {
+            console.warn('[Lenard AZ] unified signature mirror failed', sigErr);
+          }
+        }
+
         // Diff camera scan corrections and send for learning
         const originals = cameraOriginalsRef.current;
         if (Object.keys(originals).length > 0) {

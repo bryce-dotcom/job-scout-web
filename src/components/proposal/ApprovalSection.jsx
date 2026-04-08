@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle } from 'lucide-react'
 import ProposalSection from './ProposalSection'
 import proposalTheme from './proposalTheme'
+import SignatureModal from './SignatureModal'
 
 export default function ApprovalSection({
   section,
@@ -17,17 +18,47 @@ export default function ApprovalSection({
 }) {
   const [showModal, setShowModal] = useState(false)
   const [approving, setApproving] = useState(false)
+  const [showSigModal, setShowSigModal] = useState(false)
+  const [signatureState, setSignatureState] = useState(null) // { method, imageDataUrl?, typedText? }
 
   const ctaText = section?.cta_text || 'Approve This Proposal'
   const approved = isApproved || approvalSuccess
 
-  const handleApprove = async () => {
+  // Final submit — fires once both the identity modal AND the signature
+  // modal have been satisfied. Forwards the signature payload to onApprove
+  // so the caller can pass it through to the approve-document edge function.
+  const handleApprove = async (sigOverride) => {
     setApproving(true)
     try {
-      await onApprove()
+      const sig = sigOverride || signatureState
+      if (sig) {
+        await onApprove({
+          method: sig.method,
+          imageDataUrl: sig.imageDataUrl || null,
+          typedText: sig.typedText || null,
+        })
+      } else {
+        // Backwards compatibility: old callers still invoke onApprove() with
+        // no args. If somehow we land here without a signature, fall back.
+        await onApprove()
+      }
     } finally {
       setApproving(false)
     }
+  }
+
+  const handleNameEmailContinue = () => {
+    if (!approverName?.trim()) return
+    setShowModal(false)
+    setShowSigModal(true)
+  }
+
+  const handleSignatureConfirmed = async (sig) => {
+    setSignatureState(sig)
+    setShowSigModal(false)
+    // Fire the approval immediately — the customer has identified themselves
+    // AND signed, so there's nothing left to confirm.
+    await handleApprove(sig)
   }
 
   const formatDate = (d) => {
@@ -239,8 +270,9 @@ export default function ApprovalSection({
                     lineHeight: '1.5',
                     margin: 0,
                   }}>
-                    By clicking "Approve," your name, email address, IP address, and timestamp will be recorded
-                    as your electronic signature in accordance with the ESIGN Act (15 U.S.C. 7001 et seq.).
+                    After you confirm your info, you'll draw or type your signature.
+                    Your name, email, IP address, signature, and timestamp will be recorded
+                    as your electronic signature under the ESIGN Act (15 U.S.C. 7001 et seq.).
                   </p>
                 </div>
               </div>
@@ -267,8 +299,8 @@ export default function ApprovalSection({
                   Cancel
                 </button>
                 <button
-                  onClick={handleApprove}
-                  disabled={approving || !approverName}
+                  onClick={handleNameEmailContinue}
+                  disabled={!approverName}
                   style={{
                     padding: '12px 28px',
                     backgroundColor: proposalTheme.accent,
@@ -277,17 +309,25 @@ export default function ApprovalSection({
                     borderRadius: '8px',
                     fontSize: '14px',
                     fontWeight: '600',
-                    cursor: approving || !approverName ? 'not-allowed' : 'pointer',
-                    opacity: approving || !approverName ? 0.6 : 1,
+                    cursor: !approverName ? 'not-allowed' : 'pointer',
+                    opacity: !approverName ? 0.6 : 1,
                   }}
                 >
-                  {approving ? 'Approving...' : 'Approve'}
+                  Continue to Sign
                 </button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Signature capture — same modal the Formal Proposal uses */}
+      <SignatureModal
+        open={showSigModal}
+        signerName={approverName}
+        onClose={() => setShowSigModal(false)}
+        onConfirm={handleSignatureConfirmed}
+      />
     </div>
   )
 }
