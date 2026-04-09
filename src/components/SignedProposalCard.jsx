@@ -22,6 +22,7 @@ import { supabase } from '../lib/supabase'
 export default function SignedProposalCard({ attachmentId, quoteId, theme }) {
   const [attachment, setAttachment] = useState(null)
   const [approval, setApproval] = useState(null)
+  const [signatureUrl, setSignatureUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [signedUrlLoading, setSignedUrlLoading] = useState(false)
   const [showVerification, setShowVerification] = useState(false)
@@ -53,7 +54,7 @@ export default function SignedProposalCard({ attachmentId, quoteId, theme }) {
           quoteId
             ? supabase
                 .from('document_approvals')
-                .select('id, approver_name, approver_email, approved_at, signature_method, signature_typed_text, legal_terms_hash, document_hash, ip_address, user_agent')
+                .select('id, approver_name, approver_email, approved_at, signature_method, signature_typed_text, signature_image_path, legal_terms_hash, document_hash, ip_address, user_agent')
                 .eq('document_type', 'estimate')
                 .eq('document_id', quoteId)
                 .order('approved_at', { ascending: false })
@@ -62,7 +63,17 @@ export default function SignedProposalCard({ attachmentId, quoteId, theme }) {
         ])
         if (cancelled) return
         setAttachment(att || null)
-        setApproval(approvalQuery?.data?.[0] || null)
+        const approvalRow = approvalQuery?.data?.[0] || null
+        setApproval(approvalRow)
+        // Resolve drawn signature image URL for display
+        if (approvalRow?.signature_image_path && approvalRow.signature_method === 'drawn') {
+          try {
+            const { data: sigUrl } = await supabase.storage
+              .from('project-documents')
+              .createSignedUrl(approvalRow.signature_image_path, 3600)
+            if (!cancelled && sigUrl?.signedUrl) setSignatureUrl(sigUrl.signedUrl)
+          } catch (_) { /* best-effort */ }
+        }
       } catch (err) {
         console.warn('[SignedProposalCard] load error', err)
       } finally {
@@ -188,6 +199,67 @@ export default function SignedProposalCard({ attachmentId, quoteId, theme }) {
           {signedUrlLoading ? 'Opening…' : 'View PDF'}
         </button>
       </div>
+
+      {/* Visual signature — makes the card look official.
+          Drawn signatures show the PNG image; typed signatures
+          render in a cursive script font with a gold underline. */}
+      {approval && (signatureUrl || (approval.signature_method === 'typed' && approval.signature_typed_text)) && (
+        <div style={{
+          marginTop: 14,
+          padding: '14px 20px',
+          background: 'linear-gradient(135deg, rgba(212,175,55,0.06) 0%, rgba(212,175,55,0.02) 100%)',
+          border: `1px solid ${goldBorder}`,
+          borderRadius: 10,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>
+              Customer Signature
+            </div>
+            {signatureUrl ? (
+              <img
+                src={signatureUrl}
+                alt="Customer signature"
+                style={{
+                  maxHeight: 56,
+                  maxWidth: 280,
+                  objectFit: 'contain',
+                  filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.08))',
+                }}
+              />
+            ) : (
+              <div style={{
+                fontFamily: "'Brush Script MT', 'Segoe Script', 'Apple Chancery', cursive",
+                fontSize: 28,
+                color: '#1a2520',
+                borderBottom: `2px solid ${gold}`,
+                display: 'inline-block',
+                paddingBottom: 2,
+                lineHeight: 1.2,
+              }}>
+                {approval.signature_typed_text}
+              </div>
+            )}
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontSize: 10, color: t.textMuted }}>
+              {approval.approved_at ? new Date(approval.approved_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''}
+            </div>
+            <div style={{
+              marginTop: 4,
+              fontSize: 9,
+              fontWeight: 700,
+              color: gold,
+              letterSpacing: 0.5,
+            }}>
+              VERIFIED
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Verification toggle */}
       {approval && (
