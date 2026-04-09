@@ -169,6 +169,19 @@ function ProtectedOnboardingRoute({ children }) {
   return children
 }
 
+// Field techs should only use Field Scout for clocking in/out — the
+// Time Clock page is for office / PM / admin staff. If a field tech
+// lands on /time-clock (old bookmark, muscle memory, etc.) send them
+// to /field-scout instead. Everyone else sees the regular TimeClock page.
+function TimeClockRouteGuard() {
+  const user = useStore((state) => state.user)
+  const roleLower = (user?.role || '').toLowerCase()
+  if (roleLower === 'field tech') {
+    return <Navigate to="/field-scout" replace />
+  }
+  return <TimeClock />
+}
+
 function App() {
   const companyId = useStore((state) => state.companyId)
   const setUser = useStore((state) => state.setUser)
@@ -356,7 +369,7 @@ function App() {
           <Route path="/utility-invoices" element={<Navigate to="/invoices?type=utility" replace />} />
           <Route path="/utility-invoices/:id" element={<UtilityInvoiceDetail />} />
           <Route path="/incentives" element={<Incentives />} />
-          <Route path="/time-clock" element={<TimeClock />} />
+          <Route path="/time-clock" element={<TimeClockRouteGuard />} />
           <Route path="/field-scout" element={<FieldScout />} />
           <Route path="/payroll" element={<Payroll />} />
           <Route path="/books" element={<Books />} />

@@ -284,7 +284,7 @@ export default function Layout() {
       description: 'Scheduling, field work & inventory',
       sectionIcon: Wrench,
       baseItems: [
-        { to: '/field-scout', icon: Compass, label: 'Field Scout', hint: 'Daily dashboard for field techs' },
+        { to: '/field-scout', icon: Compass, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' },
         { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'PM workspace to schedule and track job sections' },
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
         { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' }
@@ -340,9 +340,10 @@ export default function Layout() {
       if (userIsFieldTech && section.key === 'OPERATIONS') {
         return { ...section, baseItems: section.baseItems.filter(i => i.to === '/field-scout' || i.to === '/job-board') }
       }
-      // Field Tech: filter TEAM to only Time Clock
+      // Field Tech: hide TEAM entirely (they use Field Scout for both
+      // their daily workflow AND clocking in/out — no separate Time Clock)
       if (userIsFieldTech && section.key === 'TEAM') {
-        return { ...section, baseItems: section.baseItems.filter(i => i.to === '/time-clock') }
+        return { ...section, baseItems: [] }
       }
       // Payroll: Admin+ only (level 3+)
       if (section.key === 'TEAM' && userAccessLevel < 3) {
