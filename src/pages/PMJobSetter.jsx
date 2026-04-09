@@ -717,6 +717,17 @@ export default function PMJobSetter() {
         }
       })
       .sort((a, b) => {
+        // Terminal/closed columns: most recently closed jobs at the top
+        // so reps can see their newest wins without scrolling through an
+        // archive. Uses updated_at, falling back to created_at, so a
+        // status change (marking Complete / Verified / Cancelled) moves
+        // the card straight to the top of its new column.
+        const isTerminalCol = ['Complete', 'Completed', 'Verified', 'Verified Complete', 'Cancelled'].includes(statusId)
+        if (isTerminalCol) {
+          const aT = new Date(a.updated_at || a.created_at || 0).getTime()
+          const bT = new Date(b.updated_at || b.created_at || 0).getTime()
+          return bT - aT
+        }
         if (!a.start_date && !b.start_date) return 0
         if (!a.start_date) return 1
         if (!b.start_date) return -1
@@ -1669,6 +1680,27 @@ export default function PMJobSetter() {
       })
     }
 
+    // Within each group, put the most recently closed jobs at the top
+    // of their section (so a rep's newest wins appear first in the
+    // gantt), and active jobs sorted by their scheduled start date.
+    const TERMINAL = new Set(['Complete', 'Completed', 'Verified', 'Verified Complete', 'Cancelled'])
+    Object.values(groups).forEach(group => {
+      group.jobs.sort((a, b) => {
+        const aTerm = TERMINAL.has(a.status)
+        const bTerm = TERMINAL.has(b.status)
+        if (aTerm !== bTerm) return aTerm ? -1 : 1 // terminal rows first
+        if (aTerm && bTerm) {
+          const aT = new Date(a.updated_at || a.created_at || 0).getTime()
+          const bT = new Date(b.updated_at || b.created_at || 0).getTime()
+          return bT - aT
+        }
+        if (!a.start_date && !b.start_date) return 0
+        if (!a.start_date) return 1
+        if (!b.start_date) return -1
+        return new Date(a.start_date) - new Date(b.start_date)
+      })
+    })
+
     return Object.values(groups)
   }
 
@@ -2187,18 +2219,6 @@ export default function PMJobSetter() {
             })}
           </select>
 
-          {/* Search */}
-          <div style={{ position: 'relative' }}>
-            <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
-            <input
-              type="text"
-              placeholder="Search jobs..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ ...inputStyle, paddingLeft: '34px', width: isMobile ? '100%' : '180px' }}
-            />
-          </div>
-
           {/* Date Range Filter (controls calendar view) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: theme.bg, borderRadius: '8px', padding: '3px', border: `1px solid ${theme.border}` }}>
             {[
@@ -2301,6 +2321,72 @@ export default function PMJobSetter() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Prominent Search Bar \u2014 full width, big target, highest priority UI
+          Pulled out of the filter row so reps can find a job without
+          hunting through a tiny input next to every other filter. */}
+      <div style={{
+        position: 'relative',
+        marginBottom: '10px',
+      }}>
+        <Search
+          size={20}
+          style={{
+            position: 'absolute',
+            left: '16px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            color: searchTerm ? theme.accent : theme.textMuted,
+            pointerEvents: 'none',
+          }}
+        />
+        <input
+          type="text"
+          placeholder="Search jobs by title, customer, or address..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '14px 46px 14px 48px',
+            fontSize: '15px',
+            backgroundColor: theme.bgCard,
+            border: `2px solid ${searchTerm ? theme.accent : theme.border}`,
+            borderRadius: '12px',
+            color: theme.text,
+            outline: 'none',
+            boxShadow: searchTerm
+              ? `0 0 0 4px ${theme.accent}22`
+              : '0 1px 3px rgba(0,0,0,0.06)',
+            transition: 'border-color 0.15s, box-shadow 0.15s',
+            boxSizing: 'border-box',
+            minHeight: '52px',
+          }}
+        />
+        {searchTerm && (
+          <button
+            type="button"
+            onClick={() => setSearchTerm('')}
+            title="Clear search"
+            style={{
+              position: 'absolute',
+              right: '12px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'none',
+              border: 'none',
+              padding: '8px',
+              cursor: 'pointer',
+              color: theme.textMuted,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '6px',
+            }}
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       {/* Main Content */}
