@@ -264,32 +264,33 @@ export default function UtilityInvoiceDetail() {
     doc.line(margin, y, rightEdge, y)
     y += 10
 
-    // Financial summary
+    // Financial summary — shows full project context for the utility,
+    // but the bottom-line "Amount Due" is only the utility incentive.
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
 
-    const summaryX = margin + 100
+    const summaryX = margin + 80
     const valX = rightEdge
 
     doc.setFont('helvetica', 'bold')
-    doc.text('Project Cost:', summaryX, y)
+    doc.text('Total Project Cost:', summaryX, y)
     doc.text(formatCurrency(invoice.project_cost || invoice.amount || (materialTotal + laborTotal)), valX, y, { align: 'right' }); y += 6
 
     doc.setFont('helvetica', 'normal')
-    doc.setTextColor(212, 148, 10)
-    doc.text('Utility Incentive:', summaryX, y)
-    doc.text(`- ${formatCurrency(invoice.incentive_amount)}`, valX, y, { align: 'right' }); y += 8
+    doc.setTextColor(100)
+    doc.text('Customer Portion:', summaryX, y)
+    doc.text(formatCurrency(invoice.net_cost), valX, y, { align: 'right' }); y += 8
 
     doc.setDrawColor(214, 205, 184)
     doc.line(summaryX, y - 2, rightEdge, y - 2)
 
-    doc.setTextColor(0)
-    doc.setFontSize(12)
+    doc.setTextColor(212, 148, 10)
+    doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
-    doc.text('Net Cost:', summaryX, y + 4)
-    doc.text(formatCurrency(invoice.net_cost), valX, y + 4, { align: 'right' })
-    y += 14
+    doc.text('Utility Incentive Due:', summaryX, y + 5)
+    doc.text(formatCurrency(invoice.incentive_amount || invoice.amount), valX, y + 5, { align: 'right' })
+    y += 18
 
     // Notes
     if (invoice.notes) {
@@ -654,19 +655,8 @@ export default function UtilityInvoiceDetail() {
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {(materialTotal > 0 || laborTotal > 0) && (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
-                    <span style={{ color: theme.textSecondary }}>Material</span>
-                    <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(materialTotal)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
-                    <span style={{ color: theme.textSecondary }}>Labor</span>
-                    <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(laborTotal)}</span>
-                  </div>
-                  <div style={{ height: '1px', backgroundColor: theme.border }} />
-                </>
-              )}
+              {/* Full project context — the utility sees these numbers
+                  but they're informational, not what's owed. */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
                 <span style={{ color: theme.textSecondary }}>Project Cost</span>
                 {isEditing ? (
@@ -682,40 +672,58 @@ export default function UtilityInvoiceDetail() {
                 )}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
-                <span style={{ color: theme.textSecondary }}>Incentive Amount</span>
-                {isEditing ? (
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editForm.incentive_amount}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, incentive_amount: e.target.value }))}
-                    style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
-                  />
-                ) : (
-                  <span style={{ fontWeight: '500', color: '#d4940a' }}>{formatCurrency(invoice.incentive_amount)}</span>
-                )}
-              </div>
+              {(materialTotal > 0 || laborTotal > 0) && (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', alignItems: 'center', paddingLeft: '12px' }}>
+                    <span style={{ color: theme.textMuted }}>Material ({invoice?.material_pct ?? 70}%)</span>
+                    <span style={{ color: theme.textSecondary }}>{formatCurrency(materialTotal)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', alignItems: 'center', paddingLeft: '12px' }}>
+                    <span style={{ color: theme.textMuted }}>Labor ({invoice?.labor_pct ?? 30}%)</span>
+                    <span style={{ color: theme.textSecondary }}>{formatCurrency(laborTotal)}</span>
+                  </div>
+                </>
+              )}
 
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                paddingTop: '12px',
-                borderTop: `1px solid ${theme.border}`,
-                alignItems: 'center'
-              }}>
-                <span style={{ fontWeight: '600', color: theme.text }}>Net Cost</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', alignItems: 'center' }}>
+                <span style={{ color: theme.textMuted }}>Customer Portion</span>
                 {isEditing ? (
                   <input
                     type="number"
                     step="0.01"
                     value={editForm.net_cost}
                     onChange={(e) => setEditForm(prev => ({ ...prev, net_cost: e.target.value }))}
-                    style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                    style={{ ...inputStyle, width: '140px', textAlign: 'right', fontSize: '13px' }}
                   />
                 ) : (
-                  <span style={{ fontSize: '20px', fontWeight: '600', color: theme.text }}>
-                    {formatCurrency(invoice.net_cost)}
+                  <span style={{ color: theme.textSecondary }}>{formatCurrency(invoice.net_cost)}</span>
+                )}
+              </div>
+
+              <div style={{ height: '1px', backgroundColor: theme.border }} />
+
+              {/* This is what the utility owes — the primary number */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '14px',
+                backgroundColor: 'rgba(212,148,10,0.08)',
+                borderRadius: '10px',
+                border: '1px solid rgba(212,148,10,0.3)',
+                alignItems: 'center'
+              }}>
+                <span style={{ fontWeight: '700', color: '#a88527', fontSize: '14px' }}>Utility Owes</span>
+                {isEditing ? (
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editForm.incentive_amount}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, incentive_amount: e.target.value, amount: e.target.value }))}
+                    style={{ ...inputStyle, width: '140px', textAlign: 'right', fontWeight: '700', fontSize: '18px' }}
+                  />
+                ) : (
+                  <span style={{ fontSize: '22px', fontWeight: '700', color: '#a88527' }}>
+                    {formatCurrency(invoice.incentive_amount || invoice.amount)}
                   </span>
                 )}
               </div>
@@ -723,8 +731,7 @@ export default function UtilityInvoiceDetail() {
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
-                paddingTop: '12px',
-                borderTop: `1px solid ${theme.border}`
+                alignItems: 'center',
               }}>
                 <span style={{ color: theme.textSecondary, fontSize: '14px' }}>Payment Status</span>
                 <span style={{
