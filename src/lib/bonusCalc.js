@@ -74,10 +74,41 @@ function getSkillWeight(empId, employees, skillLevels) {
   return found ? found.weight : 1
 }
 
+// ── time_clock → job-hours normalizer ─────────────────────────────────
+// time_clock is the single source of truth for "hours a tech spent on a
+// job". Each row has employee_id, job_id, clock_in, clock_out, total_hours.
+// This helper converts those rows into the shape the bonus calc wants
+// ({ employee_id, job_id, hours }), skipping rows that are missing data
+// (no job_id, still actively clocked in, etc.). Lunch breaks are already
+// subtracted in time_clock.total_hours at clock-out time.
+export function timeClockToJobHours(timeClockRows = []) {
+  return (timeClockRows || []).flatMap(row => {
+    if (!row?.job_id || !row?.employee_id) return []
+    let hours = parseFloat(row.total_hours)
+    if (!(hours > 0) && row.clock_in && row.clock_out) {
+      hours = (new Date(row.clock_out) - new Date(row.clock_in)) / 36e5
+      if (row.lunch_start && row.lunch_end) {
+        hours -= (new Date(row.lunch_end) - new Date(row.lunch_start)) / 36e5
+      }
+    }
+    if (!(hours > 0)) return []
+    return [{
+      employee_id: row.employee_id,
+      job_id: row.job_id,
+      hours: Math.round(hours * 100) / 100,
+    }]
+  })
+}
+
 // ── Efficiency bonus for a single employee ─────────────────────────────
-// Uses job-level time_log entries to figure out total actual hours per job
-// and who the crew was, then splits the (savedHours * rate) pool by skill
-// weight. Returns { bonus, details[] }.
+// Uses time_clock (the same rows Payroll's edit screen adjusts) to figure
+// out total actual hours per job and who the crew was, then splits the
+// (savedHours * rate) pool by skill weight. Returns { bonus, details[] }.
+//
+// The `timeLogEntries` parameter accepts the pre-normalized shape
+// { employee_id, job_id, hours } — callers should pass
+// `timeClockToJobHours(timeClockRows)` so one edit in Payroll flows
+// through every surface that reads from this function.
 export function calculateEfficiencyBonus({
   employeeId,
   timeLogEntries = [],

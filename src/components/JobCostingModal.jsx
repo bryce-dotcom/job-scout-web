@@ -50,11 +50,14 @@ export default function JobCostingModal({ job, theme, onClose }) {
           .select('*, txn:plaid_transactions!transaction_id(id, amount, merchant_name, user_category, ai_category, date)')
           .eq('job_id', job.id)
           .eq('company_id', companyId),
+        // time_clock is the single source of truth for "hours worked on a job".
+        // Payroll's edit screen adjusts these rows, so fixes flow through here.
         supabase
-          .from('time_log')
-          .select('*, employee:employees!employee_id(id, name, hourly_rate, skill_level)')
+          .from('time_clock')
+          .select('id, employee_id, job_id, clock_in, clock_out, total_hours, lunch_start, lunch_end, employee:employees!employee_id(id, name, hourly_rate, skill_level)')
           .eq('job_id', job.id)
-          .eq('company_id', companyId),
+          .eq('company_id', companyId)
+          .not('clock_out', 'is', null),
         supabase
           .from('settings')
           .select('value')
@@ -72,7 +75,20 @@ export default function JobCostingModal({ job, theme, onClose }) {
       const invoices = invoicesRes.data || []
       const expenses = expensesRes.data || []
       const allocations = allocRes.data || []
-      const timeLogs = timeRes.data || []
+      // Normalize time_clock rows into the { hours, employee, employee_id } shape
+      // the labor/bonus logic below expects. Lunch is already baked into
+      // total_hours at clock-out; fall back to (clock_out - clock_in) for any
+      // row where total_hours wasn't persisted yet.
+      const timeLogs = (timeRes.data || []).map((row) => {
+        let hours = parseFloat(row.total_hours)
+        if (!(hours > 0) && row.clock_in && row.clock_out) {
+          hours = (new Date(row.clock_out) - new Date(row.clock_in)) / 36e5
+          if (row.lunch_start && row.lunch_end) {
+            hours -= (new Date(row.lunch_end) - new Date(row.lunch_start)) / 36e5
+          }
+        }
+        return { ...row, hours: Math.round((hours || 0) * 100) / 100 }
+      })
 
       // Build plaid costs from allocations (exact amounts) with fallback to legacy job_id
       const allocatedTxnIds = new Set(allocations.map(a => a.transaction_id))

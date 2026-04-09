@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
 import ArnieFloatingPanel from '../components/ArnieFloatingPanel'
-import { getCurrentPayPeriod, calculateEfficiencyBonus } from '../lib/bonusCalc'
+import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
 
 // Stripe card payment form (rendered inside Elements provider)
@@ -308,28 +308,35 @@ export default function FieldScout() {
       // 2. Figure out the current pay period window
       const { periodStart, periodEnd } = getCurrentPayPeriod(payrollConfig, 0)
 
-      // 3. Pull this employee's time_log for the period to find which jobs they worked
-      const { data: myLogs } = await supabase
-        .from('time_log')
-        .select('*')
+      // 3. Pull this employee's time_clock for the period to find which jobs they worked.
+      //    time_clock is the single source of truth — the same rows Payroll's edit
+      //    screen adjusts — so fixes to a tech's time automatically flow through
+      //    the bonus calc.
+      const { data: myClockRows } = await supabase
+        .from('time_clock')
+        .select('id, employee_id, job_id, clock_in, clock_out, total_hours, lunch_start, lunch_end')
         .eq('company_id', companyId)
         .eq('employee_id', currentEmployee.id)
-        .gte('created_at', periodStart.toISOString())
-        .lte('created_at', periodEnd.toISOString())
+        .gte('clock_in', periodStart.toISOString())
+        .lte('clock_in', periodEnd.toISOString())
+        .not('clock_out', 'is', null)
+        .not('job_id', 'is', null)
 
-      const myJobIds = [...new Set((myLogs || []).map(l => l.job_id).filter(Boolean))]
+      const myJobIds = [...new Set((myClockRows || []).map(l => l.job_id).filter(Boolean))]
       if (myJobIds.length === 0) {
         setBonusSummary({ bonus: 0, details: [], loading: false, period: { periodStart, periodEnd } })
         return
       }
 
-      // 4. Pull ALL time_log entries for those jobs (any employee, any date) so the
+      // 4. Pull ALL time_clock rows for those jobs (any employee, any date) so the
       //    total actual-hours and crew composition per job are correct.
-      const { data: allLogs } = await supabase
-        .from('time_log')
-        .select('*')
+      const { data: allClockRows } = await supabase
+        .from('time_clock')
+        .select('id, employee_id, job_id, clock_in, clock_out, total_hours, lunch_start, lunch_end')
         .eq('company_id', companyId)
         .in('job_id', myJobIds)
+        .not('clock_out', 'is', null)
+      const allLogs = timeClockToJobHours(allClockRows || [])
 
       // 5. Load the jobs themselves (need allotted_time_hours + has_callback)
       const { data: jobRows } = await supabase

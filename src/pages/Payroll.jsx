@@ -14,6 +14,7 @@ import LocationTrailModal from '../components/LocationTrailModal'
 import {
   getCurrentPayPeriod as sharedGetCurrentPayPeriod,
   calculateEfficiencyBonus as sharedCalculateEfficiencyBonus,
+  timeClockToJobHours,
 } from '../lib/bonusCalc'
 
 const AVATAR_COLORS = [
@@ -486,9 +487,11 @@ export default function Payroll() {
 
   // Efficiency bonuses: allotted hours - actual hours, weighted split between crew.
   // Logic lives in src/lib/bonusCalc.js so FieldScout can render the same numbers.
+  // We feed it time_clock rows (normalized), so admin time edits on this page
+  // automatically flow into the bonus calc — one source of truth.
   const calculateEfficiencyBonus = (employeeId) => sharedCalculateEfficiencyBonus({
     employeeId,
-    timeLogEntries,
+    timeLogEntries: timeClockToJobHours(timeEntries),
     jobs,
     employees,
     skillLevels: skillLevelSettings,
