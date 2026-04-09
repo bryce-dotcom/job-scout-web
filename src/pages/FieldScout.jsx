@@ -167,6 +167,16 @@ export default function FieldScout() {
   // need to do in one glance.
   const [activeBriefing, setActiveBriefing] = useState(null) // { job, lines, notes }
   const [briefingExpanded, setBriefingExpanded] = useState(true)
+  // Per-line photo counts { [lineId]: { before: n, after: n } } so the
+  // briefing can show a photo badge next to each line without re-fetching
+  const [briefingLinePhotoCounts, setBriefingLinePhotoCounts] = useState({})
+  // Which line the rep is currently capturing a photo for + context
+  // ('line_before' | 'line_after') so we can re-use one hidden file
+  // input for every line.
+  const [linePhotoPicker, setLinePhotoPicker] = useState(null) // lineId
+  const [linePhotoTarget, setLinePhotoTarget] = useState(null) // { lineId, context }
+  const [linePhotoUploading, setLinePhotoUploading] = useState(false)
+  const linePhotoInputRef = useRef(null)
 
   // Job search (for clock-in when no today's jobs)
   const [jobSearchQuery, setJobSearchQuery] = useState('')
@@ -352,12 +362,32 @@ export default function FieldScout() {
 
   // Fetch the full briefing for whatever job the rep is clocked into:
   // job row (allotted_time_hours, notes, customer, address), the
-  // job_lines (what to install), and the most recent job_sections
-  // (open tasks / progress markers). Reruns whenever the active job
-  // changes so swapping jobs keeps the briefing in sync.
+  // job_lines (what to install), and any line photos already on file.
+  // Reruns whenever the active job changes so swapping jobs keeps the
+  // briefing in sync.
+  const refreshBriefingPhotoCounts = useCallback(async (jobId) => {
+    try {
+      const { data } = await supabase
+        .from('file_attachments')
+        .select('id, job_line_id, photo_context')
+        .eq('job_id', jobId)
+        .in('photo_context', ['line_before', 'line_after'])
+      const counts = {}
+      for (const p of data || []) {
+        if (!p.job_line_id) continue
+        if (!counts[p.job_line_id]) counts[p.job_line_id] = { before: 0, after: 0 }
+        if (p.photo_context === 'line_before') counts[p.job_line_id].before += 1
+        else if (p.photo_context === 'line_after') counts[p.job_line_id].after += 1
+      }
+      setBriefingLinePhotoCounts(counts)
+    } catch (err) {
+      console.warn('[FieldScout] photo counts fetch failed', err)
+    }
+  }, [])
+
   useEffect(() => {
     const jobId = activeEntry?.job_id
-    if (!jobId || !companyId) { setActiveBriefing(null); return }
+    if (!jobId || !companyId) { setActiveBriefing(null); setBriefingLinePhotoCounts({}); return }
     let cancelled = false
     ;(async () => {
       try {
@@ -373,12 +403,58 @@ export default function FieldScout() {
           .order('id')
         if (cancelled) return
         setActiveBriefing({ job: jobRow || null, lines: lineRows || [] })
+        refreshBriefingPhotoCounts(jobId)
       } catch (err) {
         if (!cancelled) console.warn('[FieldScout] briefing fetch failed', err)
       }
     })()
     return () => { cancelled = true }
-  }, [activeEntry?.job_id, companyId])
+  }, [activeEntry?.job_id, companyId, refreshBriefingPhotoCounts])
+
+  // Trigger the hidden file input for a specific line + context
+  const triggerLinePhoto = (lineId, context) => {
+    setLinePhotoTarget({ lineId, context })
+    setLinePhotoPicker(null)
+    // Give React a tick to attach the target, then click the file input
+    setTimeout(() => linePhotoInputRef.current?.click(), 50)
+  }
+
+  // Upload the captured photo to Supabase storage + file_attachments
+  const handleLinePhotoUpload = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !linePhotoTarget || !activeEntry?.job_id) return
+    const { lineId, context } = linePhotoTarget
+    setLinePhotoUploading(true)
+    try {
+      const safeName = (file.name || `photo_${Date.now()}.jpg`).replace(/[^a-zA-Z0-9._-]/g, '_')
+      const filePath = `jobs/${activeEntry.job_id}/lines/${lineId}/${Date.now()}_${safeName}`
+      const { error: upErr } = await supabase.storage
+        .from('project-documents')
+        .upload(filePath, file, { contentType: file.type || 'image/jpeg', upsert: false })
+      if (upErr) throw upErr
+      const { error: dbErr } = await supabase.from('file_attachments').insert({
+        company_id: companyId,
+        job_id: activeEntry.job_id,
+        job_line_id: lineId,
+        file_name: safeName,
+        file_path: filePath,
+        file_type: file.type || 'image/jpeg',
+        file_size: file.size,
+        storage_bucket: 'project-documents',
+        photo_context: context,
+      })
+      if (dbErr) throw dbErr
+      toast.success(`${context === 'line_before' ? 'Before' : 'After'} photo added`)
+      await refreshBriefingPhotoCounts(activeEntry.job_id)
+    } catch (err) {
+      console.error('[FieldScout] line photo upload failed', err)
+      toast.error('Photo upload failed: ' + (err?.message || 'unknown'))
+    } finally {
+      setLinePhotoUploading(false)
+      setLinePhotoTarget(null)
+    }
+  }
 
   // Fetch daily verification status for field roles
   useEffect(() => {
@@ -1257,42 +1333,134 @@ export default function FieldScout() {
                         {activeBriefing.lines.map((l, idx) => {
                           const name = l.item?.name || l.notes || `Item ${idx + 1}`
                           const qty = parseFloat(l.quantity) || 0
+                          const counts = briefingLinePhotoCounts[l.id] || { before: 0, after: 0 }
+                          const totalPhotos = counts.before + counts.after
+                          const pickerOpen = linePhotoPicker === l.id
                           return (
                             <div key={l.id || idx} style={{
-                              display: 'flex', alignItems: 'flex-start', gap: '8px',
                               padding: '8px 10px',
                               backgroundColor: 'rgba(255,255,255,0.12)',
                               borderRadius: '8px',
                             }}>
-                              <div style={{
-                                minWidth: '28px', height: '22px',
-                                borderRadius: '6px',
-                                backgroundColor: 'rgba(255,255,255,0.25)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '11px', fontWeight: '800',
-                                flexShrink: 0,
-                              }}>
-                                {qty || '1'}x
-                              </div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: '12px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {name}
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                <div style={{
+                                  minWidth: '28px', height: '22px',
+                                  borderRadius: '6px',
+                                  backgroundColor: 'rgba(255,255,255,0.25)',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: '11px', fontWeight: '800',
+                                  flexShrink: 0,
+                                }}>
+                                  {qty || '1'}x
                                 </div>
-                                {l.item?.description && (
-                                  <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {l.item.description}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '12px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {name}
                                   </div>
-                                )}
-                                {l.notes && (
-                                  <div style={{ fontSize: '10px', opacity: 0.9, marginTop: '2px', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
-                                    {l.notes}
-                                  </div>
-                                )}
+                                  {l.item?.description && (
+                                    <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {l.item.description}
+                                    </div>
+                                  )}
+                                  {l.notes && (
+                                    <div style={{ fontSize: '10px', opacity: 0.9, marginTop: '2px', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
+                                      {l.notes}
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setLinePhotoPicker(pickerOpen ? null : l.id) }}
+                                  disabled={linePhotoUploading}
+                                  title={totalPhotos > 0 ? `${totalPhotos} photo${totalPhotos > 1 ? 's' : ''} on file` : 'Add a photo'}
+                                  style={{
+                                    flexShrink: 0,
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    padding: '6px 10px',
+                                    minHeight: '32px',
+                                    background: totalPhotos > 0 ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.16)',
+                                    border: '1px solid rgba(255,255,255,0.35)',
+                                    borderRadius: '8px',
+                                    color: '#fff',
+                                    cursor: linePhotoUploading ? 'wait' : 'pointer',
+                                  }}
+                                >
+                                  <Camera size={14} />
+                                  {totalPhotos > 0 && (
+                                    <span style={{ fontSize: 11, fontWeight: 700 }}>{totalPhotos}</span>
+                                  )}
+                                </button>
                               </div>
+                              {pickerOpen && (
+                                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => triggerLinePhoto(l.id, 'line_before')}
+                                    disabled={linePhotoUploading}
+                                    style={{
+                                      flex: 1,
+                                      padding: '10px 12px', minHeight: '44px',
+                                      background: 'rgba(59,130,246,0.25)',
+                                      border: '1px solid rgba(59,130,246,0.55)',
+                                      borderRadius: '8px',
+                                      color: '#fff',
+                                      fontSize: '12px', fontWeight: '700',
+                                      cursor: linePhotoUploading ? 'wait' : 'pointer',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                    }}
+                                  >
+                                    <Camera size={14} />
+                                    Before{counts.before > 0 ? ` (${counts.before})` : ''}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => triggerLinePhoto(l.id, 'line_after')}
+                                    disabled={linePhotoUploading}
+                                    style={{
+                                      flex: 1,
+                                      padding: '10px 12px', minHeight: '44px',
+                                      background: 'rgba(34,197,94,0.3)',
+                                      border: '1px solid rgba(34,197,94,0.6)',
+                                      borderRadius: '8px',
+                                      color: '#fff',
+                                      fontSize: '12px', fontWeight: '700',
+                                      cursor: linePhotoUploading ? 'wait' : 'pointer',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                    }}
+                                  >
+                                    <Camera size={14} />
+                                    After{counts.after > 0 ? ` (${counts.after})` : ''}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLinePhotoPicker(null)}
+                                    style={{
+                                      padding: '10px 12px', minHeight: '44px',
+                                      background: 'rgba(255,255,255,0.15)',
+                                      border: '1px solid rgba(255,255,255,0.3)',
+                                      borderRadius: '8px',
+                                      color: '#fff',
+                                      fontSize: '12px', fontWeight: '600',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )
                         })}
                       </div>
+                      {/* Hidden file input shared by all line photo buttons */}
+                      <input
+                        ref={linePhotoInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handleLinePhotoUpload}
+                        style={{ display: 'none' }}
+                      />
                     </div>
                   )}
 
