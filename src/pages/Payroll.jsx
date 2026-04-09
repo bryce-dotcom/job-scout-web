@@ -55,6 +55,7 @@ export default function Payroll() {
   const [locationTrailEntry, setLocationTrailEntry] = useState(null) // entry to show on map
   const [periodOffset, setPeriodOffset] = useState(0) // 0 = current, -1 = previous, etc.
   const [adjustments, setAdjustments] = useState([])
+  const [verificationReports, setVerificationReports] = useState([])
   const [showAddTimeModal, setShowAddTimeModal] = useState(null) // employee object
   const [showAddCommissionModal, setShowAddCommissionModal] = useState(null) // employee object
   const [showAddAdjustmentModal, setShowAddAdjustmentModal] = useState(null) // { employee, type: 'deduction'|'addition' }
@@ -221,7 +222,7 @@ export default function Payroll() {
       const periodStartStr = periodStart.toISOString().split('T')[0]
       const periodEndStr = periodEnd.toISOString().split('T')[0]
 
-      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes] = await Promise.all([
+      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes] = await Promise.all([
         // Time clock entries for current period
         supabase
           .from('time_clock')
@@ -280,7 +281,19 @@ export default function Payroll() {
           .from('payroll_adjustments')
           .select('*')
           .eq('company_id', companyId)
-          .or(`and(pay_period_start.eq.${periodStartStr},pay_period_end.eq.${periodEndStr}),recurring.eq.true`)
+          .or(`and(pay_period_start.eq.${periodStartStr},pay_period_end.eq.${periodEndStr}),recurring.eq.true`),
+
+        // Victor verification reports — needed to gate efficiency bonus on
+        // completion + daily checks. We pull all reports in the period and
+        // bucket them in state; bonusCalc reads two Sets (verifiedJobIds +
+        // dailyVerifiedJobDays) built from this below.
+        supabase
+          .from('verification_reports')
+          .select('job_id, verification_type, score, created_at')
+          .eq('company_id', companyId)
+          .gte('score', 60)
+          .gte('created_at', periodStart.toISOString())
+          .lte('created_at', periodEnd.toISOString()),
       ])
 
       setTimeEntries(entriesRes.data || [])
@@ -291,6 +304,7 @@ export default function Payroll() {
       setJobs(jobsRes.data || [])
       setTimeOffRequests(requestsRes.data || [])
       setAdjustments(adjRes.data || [])
+      setVerificationReports(verRes.data || [])
     } catch (err) {
       console.error('Error:', err)
     } finally {
@@ -489,13 +503,31 @@ export default function Payroll() {
   // Logic lives in src/lib/bonusCalc.js so FieldScout can render the same numbers.
   // We feed it time_clock rows (normalized), so admin time edits on this page
   // automatically flow into the bonus calc — one source of truth.
+  //
+  // Victor gates: jobs without a passing completion verification get skipped,
+  // and employees lose a proportional share for any job-day they worked
+  // without a daily verification (coverageRatio < 1 in bonusCalc).
+  const verifiedJobIds = new Set(
+    (verificationReports || [])
+      .filter(r => r.verification_type === 'completion')
+      .map(r => r.job_id)
+      .filter(Boolean)
+  )
+  const dailyVerifiedJobDays = new Set(
+    (verificationReports || [])
+      .filter(r => r.verification_type === 'daily' && r.created_at && r.job_id)
+      .map(r => `${r.job_id}|${new Date(r.created_at).toISOString().split('T')[0]}`)
+  )
   const calculateEfficiencyBonus = (employeeId) => sharedCalculateEfficiencyBonus({
     employeeId,
     timeLogEntries: timeClockToJobHours(timeEntries),
+    timeClockRows: timeEntries,
     jobs,
     employees,
     skillLevels: skillLevelSettings,
     payrollConfig,
+    verifiedJobIds,
+    dailyVerifiedJobDays,
   })
 
   // Full pay calculation per employee

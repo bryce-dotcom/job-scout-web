@@ -153,7 +153,8 @@ export default function FieldScout() {
   // Victor verification
   const [victorModal, setVictorModal] = useState(null) // null | { type: 'daily' } | { type: 'completion', jobId }
   const [showDailyCheckPrompt, setShowDailyCheckPrompt] = useState(false)
-  const [verifiedJobs, setVerifiedJobs] = useState(new Set()) // job IDs with passing verification
+  const [verifiedJobs, setVerifiedJobs] = useState(new Set()) // job IDs with passing completion verification
+  const [dailyVerifiedJobs, setDailyVerifiedJobs] = useState(new Set()) // job IDs with passing daily verification TODAY (per-job, any crew member)
   const [clockOutBlocked, setClockOutBlocked] = useState(false)
   const [hasDailyVerification, setHasDailyVerification] = useState(false) // field roles need this
 
@@ -261,20 +262,37 @@ export default function FieldScout() {
 
   useEffect(() => { fetchEntries() }, [fetchEntries])
 
-  // Fetch verification status for today's jobs
+  // Fetch verification status for today's jobs.
+  // Both queries are scoped per-JOB (not per-employee) so that once any
+  // crew member runs a passing verification, the "run daily check" /
+  // "run completion check" buttons disappear for everyone on the crew.
   const fetchVerifiedJobs = useCallback(async () => {
     if (!companyId || todaysJobs.length === 0) return
     const jobIds = todaysJobs.map(j => j.id)
-    const { data } = await supabase
-      .from('verification_reports')
-      .select('job_id, score, grade')
-      .eq('company_id', companyId)
-      .eq('verification_type', 'completion')
-      .in('job_id', jobIds)
-      .gte('score', 60)
-    if (data) {
-      setVerifiedJobs(new Set(data.map(r => r.job_id)))
-    }
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
+    const [compRes, dailyRes] = await Promise.all([
+      // Completion: any time, any crew member, per job
+      supabase
+        .from('verification_reports')
+        .select('job_id, score')
+        .eq('company_id', companyId)
+        .eq('verification_type', 'completion')
+        .in('job_id', jobIds)
+        .gte('score', 60),
+      // Daily: today only, any crew member, per job
+      supabase
+        .from('verification_reports')
+        .select('job_id, score')
+        .eq('company_id', companyId)
+        .eq('verification_type', 'daily')
+        .in('job_id', jobIds)
+        .gte('created_at', todayStart.toISOString())
+        .gte('score', 60),
+    ])
+    if (compRes.data) setVerifiedJobs(new Set(compRes.data.map(r => r.job_id)))
+    if (dailyRes.data) setDailyVerifiedJobs(new Set(dailyRes.data.map(r => r.job_id).filter(Boolean)))
   }, [companyId, todaysJobs.length])
 
   useEffect(() => { fetchVerifiedJobs() }, [fetchVerifiedJobs])
@@ -344,14 +362,37 @@ export default function FieldScout() {
         .select('id, job_id, job_title, customer_name, allotted_time_hours, has_callback')
         .in('id', myJobIds)
 
+      // 5b. Victor verification gates: load completion + daily reports for these jobs.
+      //     completion = any date; daily = any date within period, keyed by job_id+YYYY-MM-DD.
+      const { data: verReports } = await supabase
+        .from('verification_reports')
+        .select('job_id, verification_type, score, created_at')
+        .eq('company_id', companyId)
+        .in('job_id', myJobIds)
+        .gte('score', 60)
+
+      const verifiedJobIds = new Set(
+        (verReports || [])
+          .filter(r => r.verification_type === 'completion')
+          .map(r => r.job_id)
+      )
+      const dailyVerifiedJobDays = new Set(
+        (verReports || [])
+          .filter(r => r.verification_type === 'daily' && r.created_at)
+          .map(r => `${r.job_id}|${new Date(r.created_at).toISOString().split('T')[0]}`)
+      )
+
       // 6. Run the shared calc
       const result = calculateEfficiencyBonus({
         employeeId: currentEmployee.id,
         timeLogEntries: allLogs || [],
+        timeClockRows: allClockRows || [],
         jobs: jobRows || [],
         employees,
         skillLevels,
         payrollConfig,
+        verifiedJobIds,
+        dailyVerifiedJobDays,
       })
 
       setBonusSummary({
@@ -491,7 +532,10 @@ export default function FieldScout() {
     }
   }
 
-  // Fetch daily verification status for field roles
+  // Fetch daily verification status for field roles (general / no-job path).
+  // This is only used when a tech clocks in WITHOUT a job_id (general
+  // clock-in). Per-job daily verifications are tracked in dailyVerifiedJobs
+  // and don't depend on who ran the check — any crew member covers the crew.
   useEffect(() => {
     if (!companyId || !currentEmployee || !isFieldRole) return
     const todayStart = new Date()
@@ -500,8 +544,8 @@ export default function FieldScout() {
       .from('verification_reports')
       .select('id')
       .eq('company_id', companyId)
-      .eq('verified_by', currentEmployee.id)
       .eq('verification_type', 'daily')
+      .is('job_id', null)
       .gte('created_at', todayStart.toISOString())
       .gte('score', 60)
       .limit(1)
@@ -1890,8 +1934,10 @@ export default function FieldScout() {
         )
       })()}
 
-      {/* ===== DAILY CHECK PROMPT (after clock-out) ===== */}
-      {showDailyCheckPrompt && (
+      {/* ===== DAILY CHECK PROMPT (after clock-out) =====
+          Hide this if the active/last job already had a passing daily
+          verification from any crew member — one per job per day. */}
+      {showDailyCheckPrompt && !(activeEntry?.job_id && dailyVerifiedJobs.has(activeEntry.job_id)) && (
         <div style={{
           backgroundColor: 'rgba(168,85,247,0.08)',
           border: '1px solid rgba(168,85,247,0.3)',
@@ -1946,30 +1992,81 @@ export default function FieldScout() {
         </div>
       )}
 
-      {/* ===== STANDALONE VICTOR BUTTON ===== */}
-      <button
-        onClick={() => setVictorModal({ type: 'completion', jobId: activeEntry?.job_id || null })}
-        style={{
+      {/* ===== STANDALONE VICTOR BUTTONS =====
+          One per verification type, hidden once any crew member has
+          covered the active job for that type. */}
+      {activeEntry?.job_id && !dailyVerifiedJobs.has(activeEntry.job_id) && (
+        <button
+          onClick={() => setVictorModal({ type: 'daily', jobId: activeEntry.job_id })}
+          style={{
+            width: '100%',
+            padding: '14px',
+            background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+            border: 'none',
+            borderRadius: '12px',
+            color: '#fff',
+            fontSize: '15px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            marginBottom: '10px',
+            minHeight: '48px'
+          }}
+        >
+          <Shield size={20} />
+          Run Victor Daily Check
+        </button>
+      )}
+      {!(activeEntry?.job_id && verifiedJobs.has(activeEntry.job_id)) && (
+        <button
+          onClick={() => setVictorModal({ type: 'completion', jobId: activeEntry?.job_id || null })}
+          style={{
+            width: '100%',
+            padding: '14px',
+            background: activeEntry?.job_id && dailyVerifiedJobs.has(activeEntry.job_id)
+              ? 'linear-gradient(135deg, #64748b 0%, #475569 100%)'
+              : 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+            border: 'none',
+            borderRadius: '12px',
+            color: '#fff',
+            fontSize: '15px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            marginBottom: '16px',
+            minHeight: '48px'
+          }}
+        >
+          <Shield size={20} />
+          Run Victor Completion Check
+        </button>
+      )}
+      {activeEntry?.job_id && verifiedJobs.has(activeEntry.job_id) && dailyVerifiedJobs.has(activeEntry.job_id) && (
+        <div style={{
           width: '100%',
-          padding: '14px',
-          background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-          border: 'none',
+          padding: '12px 14px',
+          backgroundColor: 'rgba(34,197,94,0.1)',
+          border: '1px solid rgba(34,197,94,0.4)',
           borderRadius: '12px',
-          color: '#fff',
-          fontSize: '15px',
+          color: '#22c55e',
+          fontSize: '13px',
           fontWeight: '600',
-          cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '10px',
+          gap: '8px',
           marginBottom: '16px',
-          minHeight: '48px'
-        }}
-      >
-        <Shield size={20} />
-        Open Victor Verification
-      </button>
+        }}>
+          <Shield size={16} />
+          Victor verified: daily + completion complete
+        </div>
+      )}
 
       {/* ===== SECTION 4: TODAY'S JOBS ===== */}
       <div style={{ marginBottom: '16px' }}>
@@ -2740,6 +2837,30 @@ export default function FieldScout() {
               </button>
             </div>
 
+            {/* Bonus impact warning — techs need to see this EVERY time the
+                Victor modal opens so they know skipping the check costs
+                the whole crew real money. */}
+            <div style={{
+              marginBottom: '14px',
+              padding: '12px 14px',
+              backgroundColor: 'rgba(234,179,8,0.1)',
+              border: '1px solid rgba(234,179,8,0.4)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+            }}>
+              <AlertTriangle size={18} style={{ color: '#eab308', flexShrink: 0, marginTop: '1px' }} />
+              <div style={{ fontSize: '12px', color: theme.text, lineHeight: 1.45 }}>
+                <div style={{ fontWeight: '700', marginBottom: '2px' }}>
+                  Efficiency bonus gate
+                </div>
+                No bonus will be paid for this job unless Victor has a passing score for{' '}
+                <strong>every crew member each day</strong> and a{' '}
+                <strong>completion verification</strong> when the job wraps. One crew member running it covers the whole crew for that day.
+              </div>
+            </div>
+
             <VictorVerify
               embeddedMode
               verificationType={victorModal.type}
@@ -2755,7 +2876,7 @@ export default function FieldScout() {
                   .eq('id', reportId)
                   .single()
                 if (report?.score >= 60) {
-                  if (jobId) {
+                  if (victorModal.type === 'completion' && jobId) {
                     setVerifiedJobs(prev => new Set(prev).add(jobId))
                     setClockOutBlocked(false)
                     if (shouldMarkComplete) {
@@ -2767,9 +2888,16 @@ export default function FieldScout() {
                       if (fetchJobs) fetchJobs(companyId)
                     }
                   }
-                  // Also check if this was a daily verification (unlocks General clock-out for field roles)
+                  // Daily verification: if it's tied to a job, flag that job
+                  // as daily-verified for today (so every crew member sees
+                  // the button disappear). Otherwise fall back to the legacy
+                  // general daily flag for no-job clock-ins.
                   if (victorModal.type === 'daily') {
-                    setHasDailyVerification(true)
+                    if (jobId) {
+                      setDailyVerifiedJobs(prev => new Set(prev).add(jobId))
+                    } else {
+                      setHasDailyVerification(true)
+                    }
                     setClockOutBlocked(false)
                   }
                 }

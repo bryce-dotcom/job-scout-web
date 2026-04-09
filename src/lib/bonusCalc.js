@@ -109,6 +109,15 @@ export function timeClockToJobHours(timeClockRows = []) {
 // { employee_id, job_id, hours } — callers should pass
 // `timeClockToJobHours(timeClockRows)` so one edit in Payroll flows
 // through every surface that reads from this function.
+//
+// Victor gates:
+//   - `verifiedJobIds` (Set/array of job IDs): jobs with a passing completion
+//     Victor verification. Required for the job to earn a bonus at all.
+//   - `dailyVerifiedJobDays` (Set of `${job_id}|YYYY-MM-DD` strings): job-days
+//     where a passing daily Victor verification exists. If the crew worked a
+//     day without a daily check, those hours still count toward savedHours but
+//     the bonus multiplier for that employee's share is reduced via a
+//     per-employee coverage ratio — missing a day costs you proportionally.
 export function calculateEfficiencyBonus({
   employeeId,
   timeLogEntries = [],
@@ -116,12 +125,17 @@ export function calculateEfficiencyBonus({
   employees = [],
   skillLevels = [],
   payrollConfig = {},
+  verifiedJobIds = null,      // null = legacy no-op (no gate); Set/array to enforce
+  dailyVerifiedJobDays = null, // null = legacy no-op; Set of "jobId|YYYY-MM-DD"
+  timeClockRows = null,        // raw rows (with clock_in) for daily-coverage lookup
 }) {
   if (!payrollConfig.efficiency_bonus_enabled) return { bonus: 0, details: [] }
 
   const rate = payrollConfig.efficiency_bonus_rate || 25
   const companyCut = payrollConfig.company_bonus_cut_percent || 0
   const minSaved = payrollConfig.bonus_min_hours_saved || 0
+  const verifiedSet = verifiedJobIds ? new Set([...verifiedJobIds].map(String)) : null
+  const dailySet = dailyVerifiedJobDays ? new Set([...dailyVerifiedJobDays]) : null
 
   const details = []
   let totalBonus = 0
@@ -145,6 +159,40 @@ export function calculateEfficiencyBonus({
     if (savedHours <= 0) return
     if (savedHours < minSaved) return
     if (payrollConfig.bonus_quality_gate && job.has_callback) return
+
+    // Victor completion gate: no completion verification → no bonus on this job.
+    if (verifiedSet && !verifiedSet.has(String(jobId))) {
+      details.push({
+        jobId: job.job_id || job.id,
+        jobTitle: job.job_title || job.customer_name || 'Job',
+        allottedHours: job.allotted_time_hours,
+        actualHours: totalActualHours,
+        savedHours,
+        crewSize: 0,
+        employeeShare: 0,
+        skipped: 'no_completion_verification',
+      })
+      return
+    }
+
+    // Victor daily gate: compute per-employee coverage ratio from time_clock
+    // rows. An employee who worked 3 days on the job but only has 2 days with
+    // daily verification gets 2/3 of their share.
+    let coverageRatio = 1
+    if (dailySet && Array.isArray(timeClockRows)) {
+      const myRowsOnJob = timeClockRows.filter(r =>
+        String(r.job_id) === String(jobId) &&
+        r.employee_id === employeeId &&
+        r.clock_in
+      )
+      const daysWorked = new Set(
+        myRowsOnJob.map(r => new Date(r.clock_in).toISOString().split('T')[0])
+      )
+      if (daysWorked.size > 0) {
+        const covered = [...daysWorked].filter(d => dailySet.has(`${jobId}|${d}`)).length
+        coverageRatio = covered / daysWorked.size
+      }
+    }
 
     const totalPool = savedHours * rate
     const companyShare = totalPool * (companyCut / 100)
@@ -174,7 +222,8 @@ export function calculateEfficiencyBonus({
       return
     }
 
-    const bonusAmount = crewPool * (myWeight / totalWeight)
+    const rawBonusAmount = crewPool * (myWeight / totalWeight)
+    const bonusAmount = rawBonusAmount * coverageRatio
     totalBonus += bonusAmount
     details.push({
       jobId: job.job_id || job.id,
@@ -183,11 +232,13 @@ export function calculateEfficiencyBonus({
       actualHours: totalActualHours,
       savedHours,
       crewSize: crewMemberIds.length,
-      employeeShare: savedHours * (myWeight / totalWeight),
+      employeeShare: savedHours * (myWeight / totalWeight) * coverageRatio,
       bonusAmount,
       companyCut: companyShare,
       totalPool,
       crewPool,
+      coverageRatio,
+      coveragePenalty: coverageRatio < 1 ? rawBonusAmount - bonusAmount : 0,
     })
   })
 
