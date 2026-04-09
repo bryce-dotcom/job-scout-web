@@ -108,7 +108,9 @@ export default function UtilityInvoiceDetail() {
       notes: invoice.notes || '',
       project_cost: invoice.project_cost || '',
       incentive_amount: invoice.incentive_amount || '',
-      net_cost: invoice.net_cost || ''
+      net_cost: invoice.net_cost || '',
+      material_pct: invoice.material_pct ?? 70,
+      labor_pct: invoice.labor_pct ?? 30,
     })
     setIsEditing(true)
   }
@@ -127,6 +129,8 @@ export default function UtilityInvoiceDetail() {
       project_cost: parseFloat(editForm.project_cost) || null,
       incentive_amount: parseFloat(editForm.incentive_amount) || null,
       net_cost: parseFloat(editForm.net_cost) || null,
+      material_pct: parseFloat(editForm.material_pct) || 70,
+      labor_pct: parseFloat(editForm.labor_pct) || 30,
       updated_at: new Date().toISOString()
     }).eq('id', id)
 
@@ -159,15 +163,19 @@ export default function UtilityInvoiceDetail() {
     }
   }
 
-  // Computed totals — just Material and Labor, no line item detail
+  // Computed totals — just Material and Labor, no line item detail.
+  // Uses the per-invoice split percentages stored on the row (editable
+  // by the PM). Falls back to 70/30 for invoices created before the
+  // migration or when the columns are null.
   const projectCost = parseFloat(invoice?.project_cost) || parseFloat(invoice?.amount) || 0
   const rawProductTotal = jobLines.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
   const rawLaborTotal = jobLines.reduce((sum, l) => sum + (parseFloat(l.labor_cost) || 0), 0)
   const hasLaborData = rawLaborTotal > 0
-  // If no labor data on line items, default 70% material / 30% labor
+  const matPct = (parseFloat(isEditing ? editForm.material_pct : invoice?.material_pct) || 70) / 100
+  const labPct = (parseFloat(isEditing ? editForm.labor_pct : invoice?.labor_pct) || 30) / 100
   const totalBase = rawProductTotal > 0 ? rawProductTotal + rawLaborTotal : projectCost
-  const materialTotal = hasLaborData ? rawProductTotal : Math.round(totalBase * 0.7 * 100) / 100
-  const laborTotal = hasLaborData ? rawLaborTotal : Math.round(totalBase * 0.3 * 100) / 100
+  const materialTotal = hasLaborData ? rawProductTotal : Math.round(totalBase * matPct * 100) / 100
+  const laborTotal = hasLaborData ? rawLaborTotal : Math.round(totalBase * labPct * 100) / 100
 
   const generateUtilityPDF = () => {
     const doc = new jsPDF()
@@ -242,10 +250,12 @@ export default function UtilityInvoiceDetail() {
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
     doc.setFontSize(10)
-    doc.text('Material', margin + 2, y)
+    const pdfMatPct = invoice.material_pct ?? 70
+    const pdfLabPct = invoice.labor_pct ?? 30
+    doc.text(`Material (${pdfMatPct}%)`, margin + 2, y)
     doc.text(formatCurrency(materialTotal), rightEdge - 2, y, { align: 'right' })
     y += 7
-    doc.text('Labor', margin + 2, y)
+    doc.text(`Labor (${pdfLabPct}%)`, margin + 2, y)
     doc.text(formatCurrency(laborTotal), rightEdge - 2, y, { align: 'right' })
     y += 4
 
@@ -519,9 +529,47 @@ export default function UtilityInvoiceDetail() {
                   <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{formatCurrency(laborTotal)}</span>
                 </div>
                 {!hasLaborData && (
-                  <p style={{ fontSize: '11px', color: theme.textMuted, fontStyle: 'italic', margin: 0 }}>
-                    Estimated at 70% material / 30% labor
-                  </p>
+                  isEditing ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>Split:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={editForm.material_pct}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, material_pct: e.target.value }))}
+                          style={{
+                            width: '60px', padding: '6px 8px',
+                            border: `1px solid ${theme.border}`, borderRadius: '6px',
+                            fontSize: '13px', backgroundColor: theme.bg, color: theme.text,
+                            textAlign: 'center',
+                          }}
+                        />
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>% material</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={editForm.labor_pct}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, labor_pct: e.target.value }))}
+                          style={{
+                            width: '60px', padding: '6px 8px',
+                            border: `1px solid ${theme.border}`, borderRadius: '6px',
+                            fontSize: '13px', backgroundColor: theme.bg, color: theme.text,
+                            textAlign: 'center',
+                          }}
+                        />
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>% labor</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '11px', color: theme.textMuted, fontStyle: 'italic', margin: 0 }}>
+                      Estimated at {invoice?.material_pct ?? 70}% material / {invoice?.labor_pct ?? 30}% labor
+                    </p>
+                  )
                 )}
               </div>
             </div>
