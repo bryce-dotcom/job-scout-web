@@ -161,6 +161,13 @@ export default function FieldScout() {
   const [invoiceData, setInvoiceData] = useState(null) // { invoice, lines }
   const [invoiceLoading, setInvoiceLoading] = useState(false)
 
+  // Active job briefing (allotted hours + notes + line items + sections)
+  // for the job the rep is currently clocked into. Shown inside the
+  // green "Currently Working" card so the tech can see everything they
+  // need to do in one glance.
+  const [activeBriefing, setActiveBriefing] = useState(null) // { job, lines, notes }
+  const [briefingExpanded, setBriefingExpanded] = useState(true)
+
   // Job search (for clock-in when no today's jobs)
   const [jobSearchQuery, setJobSearchQuery] = useState('')
 
@@ -342,6 +349,36 @@ export default function FieldScout() {
   }, [companyId, currentEmployee, employees])
 
   useEffect(() => { fetchBonusSummary() }, [fetchBonusSummary])
+
+  // Fetch the full briefing for whatever job the rep is clocked into:
+  // job row (allotted_time_hours, notes, customer, address), the
+  // job_lines (what to install), and the most recent job_sections
+  // (open tasks / progress markers). Reruns whenever the active job
+  // changes so swapping jobs keeps the briefing in sync.
+  useEffect(() => {
+    const jobId = activeEntry?.job_id
+    if (!jobId || !companyId) { setActiveBriefing(null); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: jobRow } = await supabase
+          .from('jobs')
+          .select('id, job_id, job_title, customer_name, job_address, details, notes, allotted_time_hours, status, quote_id, customer:customers!customer_id(id, name, business_name, phone, address, email)')
+          .eq('id', jobId)
+          .maybeSingle()
+        const { data: lineRows } = await supabase
+          .from('job_lines')
+          .select('id, quantity, price, total, notes, item:products_services(id, name, description)')
+          .eq('job_id', jobId)
+          .order('id')
+        if (cancelled) return
+        setActiveBriefing({ job: jobRow || null, lines: lineRows || [] })
+      } catch (err) {
+        if (!cancelled) console.warn('[FieldScout] briefing fetch failed', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeEntry?.job_id, companyId])
 
   // Fetch daily verification status for field roles
   useEffect(() => {
@@ -1095,22 +1132,179 @@ export default function FieldScout() {
             {activeJobName}
           </div>
 
-          {/* Progress bar (8-hour day) */}
-          <div style={{
-            height: '6px',
-            backgroundColor: 'rgba(255,255,255,0.3)',
-            borderRadius: '3px',
-            marginBottom: '16px',
-            overflow: 'hidden'
-          }}>
+          {/* Progress bar \u2014 uses the job's allotted hours when known,
+              otherwise falls back to an 8-hour day. Adds a clear label
+              so field techs can see exactly how much budget they have. */}
+          {(() => {
+            const jobAllotted = parseFloat(activeBriefing?.job?.allotted_time_hours) || 0
+            const basis = jobAllotted > 0 ? jobAllotted : 8
+            const pct = Math.min(elapsedHours / basis * 100, 100)
+            const over = elapsedHours > basis
+            const remaining = Math.max(0, basis - elapsedHours)
+            return (
+              <>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  gap: '8px', marginBottom: '6px', flexWrap: 'wrap',
+                }}>
+                  <span style={{ fontSize: '11px', opacity: 0.9 }}>
+                    {jobAllotted > 0 ? `${elapsedHours.toFixed(1)} / ${jobAllotted.toFixed(1)} allotted hrs` : `${elapsedHours.toFixed(1)} hrs today`}
+                  </span>
+                  {jobAllotted > 0 && (
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      background: over ? 'rgba(239,68,68,0.85)' : 'rgba(255,255,255,0.22)',
+                    }}>
+                      {over ? `${(elapsedHours - basis).toFixed(1)} hrs over` : `${remaining.toFixed(1)} hrs left`}
+                    </span>
+                  )}
+                </div>
+                <div style={{
+                  height: '8px',
+                  backgroundColor: 'rgba(255,255,255,0.3)',
+                  borderRadius: '4px',
+                  marginBottom: '16px',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    width: `${pct}%`,
+                    height: '100%',
+                    backgroundColor: over ? '#ef4444' : '#fff',
+                    borderRadius: '4px',
+                    transition: 'width 1s linear',
+                  }} />
+                </div>
+              </>
+            )
+          })()}
+
+          {/* Job briefing \u2014 everything a tech needs to know about this
+              job in one place: notes, address, customer, line items. */}
+          {activeBriefing?.job && (
             <div style={{
-              width: `${Math.min(elapsedHours / 8 * 100, 100)}%`,
-              height: '100%',
-              backgroundColor: elapsedHours > 8 ? '#ef4444' : '#fff',
-              borderRadius: '3px',
-              transition: 'width 1s linear'
-            }} />
-          </div>
+              backgroundColor: 'rgba(255,255,255,0.14)',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              marginBottom: '16px',
+              border: '1px solid rgba(255,255,255,0.2)',
+            }}>
+              <button
+                type="button"
+                onClick={() => setBriefingExpanded(v => !v)}
+                style={{
+                  width: '100%',
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#fff', textAlign: 'left',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Briefcase size={16} />
+                  <span style={{ fontSize: '13px', fontWeight: '700', letterSpacing: '0.3px' }}>
+                    Job Briefing
+                  </span>
+                </div>
+                {briefingExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+
+              {briefingExpanded && (
+                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {/* Customer + address */}
+                  {(activeBriefing.job.customer?.business_name || activeBriefing.job.customer?.name || activeBriefing.job.customer_name || activeBriefing.job.job_address) && (
+                    <div style={{ fontSize: '12px', lineHeight: 1.5, opacity: 0.95 }}>
+                      {(activeBriefing.job.customer?.business_name || activeBriefing.job.customer?.name || activeBriefing.job.customer_name) && (
+                        <div style={{ fontWeight: '700' }}>
+                          {activeBriefing.job.customer?.business_name || activeBriefing.job.customer?.name || activeBriefing.job.customer_name}
+                        </div>
+                      )}
+                      {activeBriefing.job.job_address && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); const a = encodeURIComponent(activeBriefing.job.job_address); window.open(`https://www.google.com/maps/search/?api=1&query=${a}`, '_blank', 'noopener') }}
+                          style={{
+                            background: 'none', border: 'none', padding: 0, margin: '2px 0 0',
+                            color: '#fff', textDecoration: 'underline', cursor: 'pointer',
+                            fontSize: '12px', textAlign: 'left',
+                          }}
+                        >
+                          {activeBriefing.job.job_address}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Notes / details */}
+                  {(activeBriefing.job.details || activeBriefing.job.notes) && (
+                    <div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', opacity: 0.75, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
+                        Notes
+                      </div>
+                      <div style={{ fontSize: '12px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                        {activeBriefing.job.details || activeBriefing.job.notes}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Line items (work scope) */}
+                  {activeBriefing.lines && activeBriefing.lines.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', opacity: 0.75, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
+                        Scope ({activeBriefing.lines.length} item{activeBriefing.lines.length === 1 ? '' : 's'})
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {activeBriefing.lines.map((l, idx) => {
+                          const name = l.item?.name || l.notes || `Item ${idx + 1}`
+                          const qty = parseFloat(l.quantity) || 0
+                          return (
+                            <div key={l.id || idx} style={{
+                              display: 'flex', alignItems: 'flex-start', gap: '8px',
+                              padding: '8px 10px',
+                              backgroundColor: 'rgba(255,255,255,0.12)',
+                              borderRadius: '8px',
+                            }}>
+                              <div style={{
+                                minWidth: '28px', height: '22px',
+                                borderRadius: '6px',
+                                backgroundColor: 'rgba(255,255,255,0.25)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '11px', fontWeight: '800',
+                                flexShrink: 0,
+                              }}>
+                                {qty || '1'}x
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: '12px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {name}
+                                </div>
+                                {l.item?.description && (
+                                  <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {l.item.description}
+                                  </div>
+                                )}
+                                {l.notes && (
+                                  <div style={{ fontSize: '10px', opacity: 0.9, marginTop: '2px', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
+                                    {l.notes}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeBriefing.lines?.length === 0 && !activeBriefing.job.details && !activeBriefing.job.notes && (
+                    <div style={{ fontSize: '11px', opacity: 0.8 }}>
+                      No scope or notes added yet. Ask your project manager if you need more info.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: '10px' }}>
