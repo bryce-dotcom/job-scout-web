@@ -1574,9 +1574,17 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
     </th>
   )
 
-  const totalQty = productAggregation.reduce((s, p) => s + p.totalQty, 0)
-  const totalCost = productAggregation.reduce((s, p) => s + p.totalCost, 0)
-  const totalRevenue = productAggregation.reduce((s, p) => s + p.totalRevenue, 0)
+  // Summary stats respect the active groupBy so numbers in the top
+  // cards always match the table the PM is looking at.
+  const totalQty = groupBy === 'job'
+    ? jobAggregation.reduce((s, j) => s + j.lineCount, 0)
+    : productAggregation.reduce((s, p) => s + p.totalQty, 0)
+  const totalCost = groupBy === 'job'
+    ? jobAggregation.reduce((s, j) => s + j.totalCost, 0)
+    : productAggregation.reduce((s, p) => s + p.totalCost, 0)
+  const totalRevenue = groupBy === 'job'
+    ? jobAggregation.reduce((s, j) => s + j.totalRevenue, 0)
+    : productAggregation.reduce((s, p) => s + p.totalRevenue, 0)
 
   const handleExport = () => {
     if (groupBy === 'product') {
@@ -1797,6 +1805,17 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
                       <td style={{ padding: '10px 14px', fontSize: '14px', color: '#4a7c59', textAlign: 'right' }}>{formatCurrency(j.totalRevenue)}</td>
                       <td style={{ padding: '10px 14px', fontSize: '13px', fontWeight: '600', textAlign: 'right', color: jobCostPct > 50 ? '#c25a5a' : jobCostPct > 30 ? '#d4940a' : '#4a7c59' }}>{j.totalRevenue > 0 ? `${jobCostPct.toFixed(1)}%` : '—'}</td>
                     </tr>
+                    {/* Job total row — shows summed line count + costs
+                        for this job so the PM doesn't have to expand it */}
+                    {!isExpanded && (
+                      <tr style={{ borderBottom: `1px solid ${theme.border}`, backgroundColor: 'transparent' }}>
+                        <td colSpan={4}></td>
+                        <td style={{ padding: '2px 14px 8px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textAlign: 'right' }}>{j.lineCount} units</td>
+                        <td style={{ padding: '2px 14px 8px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textAlign: 'right' }}>{formatCurrency(j.totalCost)}</td>
+                        <td style={{ padding: '2px 14px 8px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textAlign: 'right' }}>{formatCurrency(j.totalRevenue)}</td>
+                        <td></td>
+                      </tr>
+                    )}
                     {isExpanded && j.items.map((item, idx) => {
                       const itemCostPct = item.price > 0 ? (item.cost / item.price) * 100 : 0
                       return (
@@ -1841,6 +1860,26 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
                 )
               })}
             </tbody>
+            {jobAggregation.length > 1 && (() => {
+              const grandQty = jobAggregation.reduce((s, j) => s + j.lineCount, 0)
+              const grandCost = jobAggregation.reduce((s, j) => s + j.totalCost, 0)
+              const grandRev = jobAggregation.reduce((s, j) => s + j.totalRevenue, 0)
+              const grandPct = grandRev > 0 ? (grandCost / grandRev) * 100 : 0
+              return (
+                <tfoot>
+                  <tr style={{ borderTop: `2px solid ${theme.accent}`, backgroundColor: theme.accentBg }}>
+                    <td></td>
+                    <td colSpan={3} style={{ padding: '12px 14px', fontSize: '14px', fontWeight: '700', color: theme.text }}>
+                      Grand Total — {jobAggregation.length} jobs
+                    </td>
+                    <td style={{ padding: '12px 14px', fontSize: '14px', fontWeight: '700', color: theme.text, textAlign: 'right' }}>{grandQty}</td>
+                    <td style={{ padding: '12px 14px', fontSize: '14px', fontWeight: '700', color: theme.text, textAlign: 'right' }}>{formatCurrency(grandCost)}</td>
+                    <td style={{ padding: '12px 14px', fontSize: '14px', fontWeight: '700', color: '#4a7c59', textAlign: 'right' }}>{formatCurrency(grandRev)}</td>
+                    <td style={{ padding: '12px 14px', fontSize: '13px', fontWeight: '700', textAlign: 'right', color: grandPct > 50 ? '#c25a5a' : grandPct > 30 ? '#d4940a' : '#4a7c59' }}>{grandRev > 0 ? `${grandPct.toFixed(1)}%` : '—'}</td>
+                  </tr>
+                </tfoot>
+              )
+            })()}
           </table>
         </div>
       )}
