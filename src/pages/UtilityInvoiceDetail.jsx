@@ -101,6 +101,9 @@ export default function UtilityInvoiceDetail() {
   }
 
   const startEditing = () => {
+    const pc = parseFloat(invoice.project_cost) || parseFloat(invoice.amount) || 0
+    const matP = parseFloat(invoice.material_pct) || 70
+    const labP = parseFloat(invoice.labor_pct) || 30
     setEditForm({
       amount: invoice.amount || '',
       utility_name: invoice.utility_name || '',
@@ -109,10 +112,96 @@ export default function UtilityInvoiceDetail() {
       project_cost: invoice.project_cost || '',
       incentive_amount: invoice.incentive_amount || '',
       net_cost: invoice.net_cost || '',
-      material_pct: invoice.material_pct ?? 70,
-      labor_pct: invoice.labor_pct ?? 30,
+      material_pct: matP,
+      labor_pct: labP,
+      material_amount: Math.round(pc * matP / 100 * 100) / 100 || '',
+      labor_amount: Math.round(pc * labP / 100 * 100) / 100 || '',
     })
     setIsEditing(true)
+  }
+
+  // Auto-recalc helpers — keeps all numbers in sync when one changes.
+  // Rules:
+  //   project_cost = material_amount + labor_amount
+  //   net_cost = project_cost - incentive_amount
+  //   amount = incentive_amount (always synced for payment tracking)
+  //   material_amount = project_cost * material_pct / 100
+  //   labor_amount = project_cost * labor_pct / 100
+  const recalcFromProjectCost = (form, newPC) => {
+    const pc = parseFloat(newPC) || 0
+    const inc = parseFloat(form.incentive_amount) || 0
+    const matP = parseFloat(form.material_pct) || 70
+    const labP = parseFloat(form.labor_pct) || 30
+    return {
+      ...form,
+      project_cost: newPC,
+      material_amount: Math.round(pc * matP / 100 * 100) / 100,
+      labor_amount: Math.round(pc * labP / 100 * 100) / 100,
+      net_cost: Math.round((pc - inc) * 100) / 100,
+    }
+  }
+
+  const recalcFromIncentive = (form, newInc) => {
+    const pc = parseFloat(form.project_cost) || 0
+    const inc = parseFloat(newInc) || 0
+    return {
+      ...form,
+      incentive_amount: newInc,
+      amount: newInc,
+      net_cost: Math.round((pc - inc) * 100) / 100,
+    }
+  }
+
+  const recalcFromNetCost = (form, newNet) => {
+    const pc = parseFloat(form.project_cost) || 0
+    const net = parseFloat(newNet) || 0
+    const newInc = Math.round((pc - net) * 100) / 100
+    return {
+      ...form,
+      net_cost: newNet,
+      incentive_amount: newInc,
+      amount: newInc,
+    }
+  }
+
+  const recalcFromPct = (form, field, newVal) => {
+    const pc = parseFloat(form.project_cost) || 0
+    const updated = { ...form, [field]: newVal }
+    const matP = parseFloat(field === 'material_pct' ? newVal : form.material_pct) || 0
+    const labP = parseFloat(field === 'labor_pct' ? newVal : form.labor_pct) || 0
+    updated.material_amount = Math.round(pc * matP / 100 * 100) / 100
+    updated.labor_amount = Math.round(pc * labP / 100 * 100) / 100
+    return updated
+  }
+
+  const recalcFromMaterialAmount = (form, newMat) => {
+    const lab = parseFloat(form.labor_amount) || 0
+    const mat = parseFloat(newMat) || 0
+    const newPC = Math.round((mat + lab) * 100) / 100
+    const inc = parseFloat(form.incentive_amount) || 0
+    const matP = newPC > 0 ? Math.round(mat / newPC * 100 * 10) / 10 : form.material_pct
+    return {
+      ...form,
+      material_amount: newMat,
+      material_pct: matP,
+      project_cost: newPC,
+      net_cost: Math.round((newPC - inc) * 100) / 100,
+    }
+  }
+
+  const recalcFromLaborAmount = (form, newLab) => {
+    const mat = parseFloat(form.material_amount) || 0
+    const lab = parseFloat(newLab) || 0
+    const newPC = Math.round((mat + lab) * 100) / 100
+    const inc = parseFloat(form.incentive_amount) || 0
+    const labP = newPC > 0 ? Math.round(lab / newPC * 100 * 10) / 10 : form.labor_pct
+    return {
+      ...form,
+      labor_amount: newLab,
+      labor_pct: labP,
+      project_cost: newPC,
+      net_cost: Math.round((newPC - inc) * 100) / 100,
+    }
   }
 
   const cancelEditing = () => {
@@ -121,13 +210,16 @@ export default function UtilityInvoiceDetail() {
 
   const saveEdits = async () => {
     setSaving(true)
+    // amount always equals incentive_amount — it's what drives payment
+    // tracking ("how much the utility owes us").
+    const incAmt = parseFloat(editForm.incentive_amount) || 0
     const { error } = await supabase.from('utility_invoices').update({
-      amount: parseFloat(editForm.amount) || 0,
+      amount: incAmt,
       utility_name: editForm.utility_name || null,
       customer_name: editForm.customer_name || null,
       notes: editForm.notes || null,
       project_cost: parseFloat(editForm.project_cost) || null,
-      incentive_amount: parseFloat(editForm.incentive_amount) || null,
+      incentive_amount: incAmt,
       net_cost: parseFloat(editForm.net_cost) || null,
       material_pct: parseFloat(editForm.material_pct) || 70,
       labor_pct: parseFloat(editForm.labor_pct) || 30,
@@ -523,54 +615,73 @@ export default function UtilityInvoiceDetail() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
                   <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Material</span>
-                  <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{formatCurrency(materialTotal)}</span>
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.material_amount}
+                      onChange={(e) => setEditForm(prev => recalcFromMaterialAmount(prev, e.target.value))}
+                      style={{ ...inputStyle, width: '140px', textAlign: 'right', fontWeight: '600' }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{formatCurrency(materialTotal)}</span>
+                  )}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
                   <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Labor</span>
-                  <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{formatCurrency(laborTotal)}</span>
-                </div>
-                {!hasLaborData && (
-                  isEditing ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '12px', color: theme.textMuted }}>Split:</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={editForm.material_pct}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, material_pct: e.target.value }))}
-                          style={{
-                            width: '60px', padding: '6px 8px',
-                            border: `1px solid ${theme.border}`, borderRadius: '6px',
-                            fontSize: '13px', backgroundColor: theme.bg, color: theme.text,
-                            textAlign: 'center',
-                          }}
-                        />
-                        <span style={{ fontSize: '12px', color: theme.textMuted }}>% material</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={editForm.labor_pct}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, labor_pct: e.target.value }))}
-                          style={{
-                            width: '60px', padding: '6px 8px',
-                            border: `1px solid ${theme.border}`, borderRadius: '6px',
-                            fontSize: '13px', backgroundColor: theme.bg, color: theme.text,
-                            textAlign: 'center',
-                          }}
-                        />
-                        <span style={{ fontSize: '12px', color: theme.textMuted }}>% labor</span>
-                      </div>
-                    </div>
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.labor_amount}
+                      onChange={(e) => setEditForm(prev => recalcFromLaborAmount(prev, e.target.value))}
+                      style={{ ...inputStyle, width: '140px', textAlign: 'right', fontWeight: '600' }}
+                    />
                   ) : (
-                    <p style={{ fontSize: '11px', color: theme.textMuted, fontStyle: 'italic', margin: 0 }}>
-                      Estimated at {invoice?.material_pct ?? 70}% material / {invoice?.labor_pct ?? 30}% labor
-                    </p>
-                  )
+                    <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{formatCurrency(laborTotal)}</span>
+                  )}
+                </div>
+                {isEditing ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>Split:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={editForm.material_pct}
+                        onChange={(e) => setEditForm(prev => recalcFromPct(prev, 'material_pct', e.target.value))}
+                        style={{
+                          width: '60px', padding: '6px 8px',
+                          border: `1px solid ${theme.border}`, borderRadius: '6px',
+                          fontSize: '13px', backgroundColor: theme.bg, color: theme.text,
+                          textAlign: 'center',
+                        }}
+                      />
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>%</span>
+                    </div>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>/</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={editForm.labor_pct}
+                        onChange={(e) => setEditForm(prev => recalcFromPct(prev, 'labor_pct', e.target.value))}
+                        style={{
+                          width: '60px', padding: '6px 8px',
+                          border: `1px solid ${theme.border}`, borderRadius: '6px',
+                          fontSize: '13px', backgroundColor: theme.bg, color: theme.text,
+                          textAlign: 'center',
+                        }}
+                      />
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '11px', color: theme.textMuted, fontStyle: 'italic', margin: 0 }}>
+                    {invoice?.material_pct ?? 70}% material / {invoice?.labor_pct ?? 30}% labor
+                  </p>
                 )}
               </div>
             </div>
@@ -664,7 +775,7 @@ export default function UtilityInvoiceDetail() {
                     type="number"
                     step="0.01"
                     value={editForm.project_cost}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, project_cost: e.target.value }))}
+                    onChange={(e) => setEditForm(prev => recalcFromProjectCost(prev, e.target.value))}
                     style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
                   />
                 ) : (
@@ -672,15 +783,15 @@ export default function UtilityInvoiceDetail() {
                 )}
               </div>
 
-              {(materialTotal > 0 || laborTotal > 0) && (
+              {(materialTotal > 0 || laborTotal > 0 || isEditing) && (
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', alignItems: 'center', paddingLeft: '12px' }}>
-                    <span style={{ color: theme.textMuted }}>Material ({invoice?.material_pct ?? 70}%)</span>
-                    <span style={{ color: theme.textSecondary }}>{formatCurrency(materialTotal)}</span>
+                    <span style={{ color: theme.textMuted }}>Material ({isEditing ? editForm.material_pct : (invoice?.material_pct ?? 70)}%)</span>
+                    <span style={{ color: theme.textSecondary }}>{formatCurrency(isEditing ? editForm.material_amount : materialTotal)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', alignItems: 'center', paddingLeft: '12px' }}>
-                    <span style={{ color: theme.textMuted }}>Labor ({invoice?.labor_pct ?? 30}%)</span>
-                    <span style={{ color: theme.textSecondary }}>{formatCurrency(laborTotal)}</span>
+                    <span style={{ color: theme.textMuted }}>Labor ({isEditing ? editForm.labor_pct : (invoice?.labor_pct ?? 30)}%)</span>
+                    <span style={{ color: theme.textSecondary }}>{formatCurrency(isEditing ? editForm.labor_amount : laborTotal)}</span>
                   </div>
                 </>
               )}
@@ -692,7 +803,7 @@ export default function UtilityInvoiceDetail() {
                     type="number"
                     step="0.01"
                     value={editForm.net_cost}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, net_cost: e.target.value }))}
+                    onChange={(e) => setEditForm(prev => recalcFromNetCost(prev, e.target.value))}
                     style={{ ...inputStyle, width: '140px', textAlign: 'right', fontSize: '13px' }}
                   />
                 ) : (
@@ -718,7 +829,7 @@ export default function UtilityInvoiceDetail() {
                     type="number"
                     step="0.01"
                     value={editForm.incentive_amount}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, incentive_amount: e.target.value, amount: e.target.value }))}
+                    onChange={(e) => setEditForm(prev => recalcFromIncentive(prev, e.target.value))}
                     style={{ ...inputStyle, width: '140px', textAlign: 'right', fontWeight: '700', fontSize: '18px' }}
                   />
                 ) : (
