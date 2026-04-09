@@ -1111,9 +1111,21 @@ function JobDetailInner() {
         customerOOP = jobTotal - incentiveAmt
       }
 
-      if (customerOOP <= 0) {
+      // Subtract any deposit invoices already on this job so the customer
+      // copayment invoice is strictly the balance due after the deposit.
+      // Link the latest deposit via parent_invoice_id for traceability.
+      const depositInvoices = jobInvoices.filter(i => i.invoice_type === 'deposit')
+      const depositTotal = depositInvoices.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+      const remainingCustomerOOP = Math.max(0, customerOOP - depositTotal)
+      const parentDepositId = depositInvoices[0]?.id || null
+
+      if (remainingCustomerOOP <= 0) {
         const { toast } = await import('../lib/toast')
-        toast.error('Customer copayment is $0 or less — no invoice needed')
+        toast.error(
+          depositTotal > 0
+            ? `Deposit of $${Math.round(depositTotal).toLocaleString()} already covers the customer portion — no balance invoice needed`
+            : 'Customer copayment is $0 or less — no invoice needed'
+        )
         setSaving(false)
         return
       }
@@ -1121,6 +1133,19 @@ function JobDetailInner() {
       const resolvedCustomerId = job.customer_id || job.quote?.customer_id || audit?.customer_id || null
 
       const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+
+      // Invoice carries the FULL project cost as `amount`. Both the
+      // utility rebate and any pre-paid deposit are rolled into
+      // `discount_applied`, so the balance due is
+      //   amount − discount_applied = remainingCustomerOOP.
+      // That keeps the ledger clean: the full project value is on the
+      // invoice, and the discounts show exactly how the customer's share
+      // was reduced.
+      const rebateDiscount = projectCost - customerOOP
+      const totalDiscount = rebateDiscount + depositTotal
+      const description = depositTotal > 0
+        ? `Lighting Project Balance — $${Math.round(projectCost).toLocaleString()} project, $${Math.round(customerIncentive).toLocaleString()} incentive, $${Math.round(depositTotal).toLocaleString()} deposit credit`
+        : `Lighting Project — $${Math.round(projectCost).toLocaleString()} project, $${Math.round(customerIncentive).toLocaleString()} incentive`
 
       const { data: invoice, error } = await supabase
         .from('invoices')
@@ -1130,9 +1155,10 @@ function JobDetailInner() {
           job_id: parseInt(id),
           customer_id: resolvedCustomerId,
           amount: projectCost,
-          discount_applied: Math.max(0, projectCost - customerOOP),
+          discount_applied: Math.max(0, totalDiscount),
           payment_status: 'Pending',
-          job_description: `Lighting Project — $${Math.round(projectCost).toLocaleString()} project, $${Math.round(customerIncentive).toLocaleString()} incentive`
+          parent_invoice_id: parentDepositId,
+          job_description: description,
         }])
         .select()
         .single()
@@ -3855,7 +3881,7 @@ function JobDetailInner() {
                   </button>
                 )
               })()}
-              {lineItems.length > 0 && job.invoice_status !== 'Invoiced' && job.invoice_status !== 'Paid' && jobInvoices.length === 0 && (
+              {lineItems.length > 0 && job.invoice_status !== 'Invoiced' && job.invoice_status !== 'Paid' && !jobInvoices.some(i => i.invoice_type !== 'deposit') && (
                 <button onClick={generateInvoice} disabled={saving} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   padding: '12px 16px', backgroundColor: theme.accent, color: '#ffffff',
@@ -3898,8 +3924,17 @@ function JobDetailInner() {
                 </button>
               )}
 
-              {/* Paired Invoicing: Customer + Utility Incentive */}
-              {parseFloat(job.utility_incentive) > 0 && (jobInvoices.length === 0 || jobUtilityInvoices.length === 0) && (
+              {/* Paired Invoicing: Customer + Utility Incentive.
+                  Gate only counts non-deposit customer invoices so an
+                  existing deposit invoice doesn't block the copayment
+                  button from appearing. */}
+              {(() => {
+                const hasCustomerInvoice = jobInvoices.some(i => i.invoice_type !== 'deposit')
+                const hasUtilityInvoice = jobUtilityInvoices.length > 0
+                const depositInvoices = jobInvoices.filter(i => i.invoice_type === 'deposit')
+                const depositTotal = depositInvoices.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+                if (!(parseFloat(job.utility_incentive) > 0 && (!hasCustomerInvoice || !hasUtilityInvoice))) return null
+                return (
                 <div style={{
                   border: `1px solid rgba(212,148,10,0.3)`,
                   borderRadius: '10px',
@@ -3914,26 +3949,35 @@ function JobDetailInner() {
                     const incentiveAmt = parseFloat(job.utility_incentive) || 0
                     const projectTotal = lineItems.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0) || (parseFloat(job.quote?.quote_amount) || 0)
                     const customerOOP = projectTotal > 0 ? projectTotal - incentiveAmt : 0
+                    const remainingAfterDeposit = Math.max(0, customerOOP - depositTotal)
                     return (
                       <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px', lineHeight: '1.6' }}>
                         {projectTotal > 0 && <div>Project: <strong>${projectTotal.toLocaleString()}</strong></div>}
                         <div>Utility Incentive: <strong style={{ color: '#d4940a' }}>${incentiveAmt.toLocaleString()}</strong></div>
                         {customerOOP > 0 && <div>Customer Copay: <strong>${customerOOP.toLocaleString()}</strong></div>}
+                        {depositTotal > 0 && (
+                          <>
+                            <div>Deposit Already Invoiced: <strong style={{ color: '#a88527' }}>−${depositTotal.toLocaleString()}</strong></div>
+                            <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: `1px dashed ${theme.border}` }}>
+                              Remaining Customer Balance: <strong style={{ color: theme.accent }}>${remainingAfterDeposit.toLocaleString()}</strong>
+                            </div>
+                          </>
+                        )}
                       </div>
                     )
                   })()}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {jobInvoices.length === 0 && (
+                    {!hasCustomerInvoice && (
                       <button onClick={createCustomerInvoice} disabled={saving} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                         padding: '10px 14px', backgroundColor: theme.accentBg, color: theme.accent,
                         border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
                       }}>
                         <DollarSign size={16} />
-                        Customer Copayment Invoice
+                        Customer {depositTotal > 0 ? 'Balance' : 'Copayment'} Invoice
                       </button>
                     )}
-                    {jobUtilityInvoices.length === 0 && (
+                    {!hasUtilityInvoice && (
                       <button onClick={createUtilityInvoice} disabled={saving} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                         padding: '10px 14px', backgroundColor: 'rgba(212,148,10,0.12)', color: '#d4940a',
@@ -3943,7 +3987,7 @@ function JobDetailInner() {
                         Utility Incentive Invoice
                       </button>
                     )}
-                    {jobInvoices.length === 0 && jobUtilityInvoices.length === 0 && (
+                    {!hasCustomerInvoice && !hasUtilityInvoice && (
                       <button onClick={async () => { await createCustomerInvoice(); await createUtilityInvoice(); }} disabled={saving} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                         padding: '10px 14px', backgroundColor: '#d4940a', color: '#ffffff',
@@ -3955,7 +3999,8 @@ function JobDetailInner() {
                     )}
                   </div>
                 </div>
-              )}
+                )
+              })()}
               <button onClick={() => setShowCostingModal(true)} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 padding: '12px 16px', backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6',
