@@ -5,14 +5,27 @@
  * (jobs.allotted_time_hours) is identical to what the field tech sees
  * on the clock-in progress bar.
  *
- * Logic (matches the original in JobDetail.jsx and what bonusCalc reads):
- *   1. If EVERY job line has a products_services.allotted_time_hours > 0,
- *      return SUM(line.item.allotted_time_hours * line.quantity).
- *   2. Otherwise, fall back to job_total / hourly_rate, where the hourly
- *      rate is looked up per business_unit from the settings table
- *      (key `default_hourly_rates`, JSON object keyed by business unit),
- *      with a legacy fallback to `default_hourly_rate` (single number).
- *   3. If nothing works, return 0.
+ * Logic (PER-LINE, not all-or-nothing):
+ *   For each job line:
+ *     - If the product has `allotted_time_hours > 0`,
+ *       add `allotted_time_hours × quantity` to the total.
+ *     - Otherwise, fall back to `line.total / hourly_rate`
+ *       (derives install hours from the dollar amount on the line).
+ *     - Blank / placeholder lines (no item, total = 0) contribute 0
+ *       and are silently skipped.
+ *   The hourly rate is looked up per business_unit from the settings
+ *   table (key `default_hourly_rates`, JSON object keyed by business
+ *   unit), with a legacy fallback to `default_hourly_rate` (single
+ *   number). If no rate is available, fallback lines contribute 0.
+ *
+ * Why per-line instead of all-or-nothing:
+ *   Real jobs often have one blank placeholder line or a non-install
+ *   discount row. The old "every line must have hours or fall back"
+ *   rule let one blank row corrupt the total by forcing the fallback
+ *   to divide the ENTIRE job_total by the hourly rate — which on a
+ *   $217k lighting retrofit with one blank line produced ~3,192 hours
+ *   instead of the correct ~714 (job 21004). Per-line is the only safe
+ *   policy.
  *
  * This helper is pure — it takes settings in as an argument so both
  * JobDetail and FieldScout can call it with whatever they've got in
@@ -56,29 +69,47 @@ export function resolveHourlyRate(settings, businessUnit) {
 /**
  * Compute total allotted hours for a job.
  *
+ * Per-line: each line contributes its own hours independently.
+ *
  * @param {object} opts
  * @param {Array}  opts.lines        Job lines with `item.allotted_time_hours` joined from products_services
- * @param {number} opts.jobTotal     Job total dollars (used for the fallback path)
- * @param {string} opts.businessUnit Business unit for rate lookup
+ * @param {number} opts.jobTotal     (unused for the main path; kept for callsite compatibility)
+ * @param {string} opts.businessUnit Business unit for rate lookup on lines without product hours
  * @param {Array|object} opts.settings Settings rows (or parsed map)
  * @returns {number} Allotted hours, rounded to 2 decimals
  */
 export function computeAllottedHours({ lines = [], jobTotal = 0, businessUnit = null, settings = [] } = {}) {
   const rows = Array.isArray(lines) ? lines : []
-  const allLinesHaveHours = rows.length > 0 && rows.every(l => parseFloat(l?.item?.allotted_time_hours) > 0)
-
-  if (allLinesHaveHours) {
-    const sum = rows.reduce(
-      (acc, l) => acc + (parseFloat(l.item.allotted_time_hours) || 0) * (parseFloat(l.quantity) || 1),
-      0
-    )
-    return Math.round(sum * 100) / 100
+  if (rows.length === 0) {
+    // No lines at all — last-resort full-job fallback so old records
+    // still get a sensible value before any lines are attached.
+    const total = parseFloat(jobTotal) || 0
+    if (total <= 0) return 0
+    const rate = resolveHourlyRate(settings, businessUnit)
+    if (rate <= 0) return 0
+    return Math.round((total / rate) * 100) / 100
   }
 
-  // Fallback: divide total dollars by the hourly rate
-  const total = parseFloat(jobTotal) || 0
-  if (total <= 0) return 0
   const rate = resolveHourlyRate(settings, businessUnit)
-  if (rate <= 0) return 0
-  return Math.round((total / rate) * 100) / 100
+
+  let sum = 0
+  for (const line of rows) {
+    const productHours = parseFloat(line?.item?.allotted_time_hours) || 0
+    const qty = parseFloat(line?.quantity) || 0
+    if (productHours > 0) {
+      // Normal path: product has labor hours defined
+      sum += productHours * (qty || 1)
+      continue
+    }
+    // Fallback path: line has no product hours → derive from dollars ÷ rate.
+    // Uses line.total (the final line total) so discounts and per-line
+    // price adjustments are respected. Skips blank/placeholder lines
+    // (item_id null + total 0) silently.
+    const lineTotal = parseFloat(line?.total) || 0
+    if (lineTotal > 0 && rate > 0) {
+      sum += lineTotal / rate
+    }
+  }
+
+  return Math.round(sum * 100) / 100
 }
