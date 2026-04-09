@@ -1136,9 +1136,10 @@ export default function LenardUTRMP() {
           cameraOriginalsRef.current = {};
         }
 
-        // Mirror the customer signature onto the lead in the canonical
-        // project-documents bucket so downstream attachments (W9, credit
-        // app, etc.) can auto-stamp it via resolveCustomerSignature.
+        // Mirror the customer signature onto the lead AND any linked job
+        // in the canonical project-documents bucket so downstream
+        // attachments (W9, credit app, invoices, etc.) can auto-stamp it
+        // via resolveCustomerSignature.
         if (signatureData && data.leadId) {
           try {
             const sigBytes = Uint8Array.from(atob(signatureData.split(',')[1]), c => c.charCodeAt(0));
@@ -1146,14 +1147,21 @@ export default function LenardUTRMP() {
             await supabase.storage
               .from('project-documents')
               .upload(sigPath, sigBytes, { contentType: 'image/png', upsert: true });
-            await supabase
-              .from('leads')
-              .update({
-                customer_signature_path: sigPath,
-                customer_signature_method: 'drawn',
-                customer_signature_captured_at: new Date().toISOString(),
-              })
-              .eq('id', data.leadId);
+            const sigPatch = {
+              customer_signature_path: sigPath,
+              customer_signature_method: 'drawn',
+              customer_signature_captured_at: new Date().toISOString(),
+            }
+            await supabase.from('leads').update(sigPatch).eq('id', data.leadId);
+            // Also stamp any jobs linked to this lead so
+            // resolveCustomerSignature finds it on the job directly.
+            const { data: linkedJobs } = await supabase
+              .from('jobs')
+              .select('id')
+              .eq('lead_id', data.leadId)
+            if (linkedJobs?.length > 0) {
+              await supabase.from('jobs').update(sigPatch).eq('lead_id', data.leadId)
+            }
           } catch (sigErr) {
             console.warn('[Lenard UT] unified signature mirror failed', sigErr);
           }

@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { resolveAllMappings } from './dataPathResolver'
 import { fillPdfForm, fillPdfFormWithImages } from './pdfFormFiller'
 import { fillExcelTemplate, fillExcelCellMapping } from './excelTemplateFiller'
+import { resolveCustomerSignature } from './customerSignature'
 
 /**
  * Build a normalized data context for document template filling.
@@ -96,9 +97,35 @@ export async function buildDataContext({ lead, job, audits, quotes, lineItems, a
     signature_date: new Date().toLocaleDateString('en-US'),
   }
 
-  // Fetch customer signature if audit has one
+  // Resolve customer signature using the canonical resolver.
+  // Priority: job signature → lead signature → audit signature (legacy).
+  // This covers formal proposals, interactive proposals, Lenard agents,
+  // and any other flow that writes to the canonical columns.
   let signature = { customer: '', customer_bytes: null, has_customer: false }
-  if (audit?.customer_signature) {
+  try {
+    const sig = await resolveCustomerSignature({
+      jobId: job?.id || null,
+      leadId: lead?.id || null,
+    })
+    if (sig.found && sig.pngBytes) {
+      const base64 = btoa(String.fromCharCode(...sig.pngBytes))
+      signature = {
+        customer: `data:image/png;base64,${base64}`,
+        customer_bytes: sig.pngBytes,
+        has_customer: true,
+      }
+    } else if (sig.found && sig.typedText) {
+      signature = {
+        customer: sig.typedText,
+        customer_bytes: null,
+        has_customer: true,
+      }
+    }
+  } catch (_) { /* best-effort */ }
+
+  // Legacy fallback: audit-photos bucket for audits that predate the
+  // canonical column system. Only used if the resolver found nothing.
+  if (!signature.has_customer && audit?.customer_signature) {
     try {
       const { data: sigUrlData } = supabase.storage.from('audit-photos').getPublicUrl(audit.customer_signature)
       if (sigUrlData?.publicUrl) {
@@ -106,7 +133,6 @@ export async function buildDataContext({ lead, job, audits, quotes, lineItems, a
         if (sigRes.ok) {
           const sigBuf = await sigRes.arrayBuffer()
           const sigBytes = new Uint8Array(sigBuf)
-          // Build data URL for non-PDF use
           const base64 = btoa(String.fromCharCode(...sigBytes))
           signature = {
             customer: `data:image/png;base64,${base64}`,
