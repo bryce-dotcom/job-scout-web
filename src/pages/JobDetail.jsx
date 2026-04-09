@@ -19,6 +19,7 @@ import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGene
 import JobCostingModal from '../components/JobCostingModal'
 import { companyNotify } from '../lib/companyNotify'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
+import { computeAllottedHours } from '../lib/allottedHours'
 import SearchableSelect from '../components/SearchableSelect'
 
 const CATEGORY_COLORS = {
@@ -315,38 +316,17 @@ function JobDetailInner() {
 
       setLineItems(lines || [])
 
-      // Auto-calculate allotted time: ALL product hours OR ALL from hourly rate (not mixed)
-      const loadedLines = lines || []
-      const allLinesHaveHours = loadedLines.length > 0 && loadedLines.every(l => parseFloat(l.item?.allotted_time_hours) > 0)
-      const productHoursSum = allLinesHaveHours
-        ? loadedLines.reduce((sum, l) => sum + (parseFloat(l.item?.allotted_time_hours) || 0) * (parseFloat(l.quantity) || 1), 0)
-        : 0
+      // Auto-calculate allotted time via the shared helper so JobDetail,
+      // FieldScout, Payroll and bonusCalc all agree on one number.
+      const calcRounded = computeAllottedHours({
+        lines: lines || [],
+        jobTotal: jobData.job_total,
+        businessUnit: jobData.business_unit,
+        settings: useStore.getState().settings || [],
+      })
 
-      let calculatedHours = productHoursSum
-      if (calculatedHours === 0 && jobData.job_total) {
-        // Look up per-business-unit hourly rate
-        const storeSettings = useStore.getState().settings || []
-        const ratesSetting = storeSettings.find(s => s.key === 'default_hourly_rates')
-        let rate = 0
-        if (ratesSetting) {
-          try {
-            const ratesMap = JSON.parse(ratesSetting.value) || {}
-            rate = parseFloat(ratesMap[jobData.business_unit]) || 0
-          } catch {}
-        }
-        // Fallback to legacy single rate
-        if (rate === 0) {
-          const oldSetting = storeSettings.find(s => s.key === 'default_hourly_rate')
-          if (oldSetting) {
-            try { rate = parseFloat(JSON.parse(oldSetting.value)) || 0 } catch {}
-          }
-        }
-        if (rate > 0) calculatedHours = Math.round((parseFloat(jobData.job_total) / rate) * 100) / 100
-      }
-
-      if (calculatedHours > 0) {
+      if (calcRounded > 0) {
         const currentAllotted = parseFloat(jobData.allotted_time_hours) || 0
-        const calcRounded = Math.round(calculatedHours * 100) / 100
         if (calcRounded !== currentAllotted) {
           await supabase.from('jobs').update({
             allotted_time_hours: calcRounded,

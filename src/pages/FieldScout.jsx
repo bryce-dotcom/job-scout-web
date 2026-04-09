@@ -18,6 +18,7 @@ import {
 import VictorVerify from './agents/victor/VictorVerify'
 import ArnieFloatingPanel from '../components/ArnieFloatingPanel'
 import { getCurrentPayPeriod, calculateEfficiencyBonus } from '../lib/bonusCalc'
+import { computeAllottedHours } from '../lib/allottedHours'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -393,16 +394,43 @@ export default function FieldScout() {
       try {
         const { data: jobRow } = await supabase
           .from('jobs')
-          .select('id, job_id, job_title, customer_name, job_address, details, notes, allotted_time_hours, status, quote_id, customer:customers!customer_id(id, name, business_name, phone, address, email)')
+          .select('id, job_id, job_title, customer_name, job_address, details, notes, allotted_time_hours, job_total, business_unit, status, quote_id, customer:customers!customer_id(id, name, business_name, phone, address, email)')
           .eq('id', jobId)
           .maybeSingle()
         const { data: lineRows } = await supabase
           .from('job_lines')
-          .select('id, quantity, price, total, notes, item:products_services(id, name, description)')
+          .select('id, quantity, price, total, notes, item:products_services(id, name, description, allotted_time_hours)')
           .eq('job_id', jobId)
           .order('id')
         if (cancelled) return
-        setActiveBriefing({ job: jobRow || null, lines: lineRows || [] })
+
+        // If the persisted jobs.allotted_time_hours is missing/zero,
+        // compute it live with the shared helper and backfill the row
+        // so bonusCalc + Payroll see the same number the field tech sees.
+        let effectiveJob = jobRow || null
+        if (effectiveJob) {
+          const persisted = parseFloat(effectiveJob.allotted_time_hours) || 0
+          if (persisted <= 0) {
+            const liveHours = computeAllottedHours({
+              lines: lineRows || [],
+              jobTotal: effectiveJob.job_total,
+              businessUnit: effectiveJob.business_unit,
+              settings: useStore.getState().settings || [],
+            })
+            if (liveHours > 0) {
+              effectiveJob = { ...effectiveJob, allotted_time_hours: liveHours }
+              // Fire-and-forget backfill; don't block the UI on it
+              supabase.from('jobs').update({
+                allotted_time_hours: liveHours,
+                calculated_allotted_time: liveHours,
+              }).eq('id', effectiveJob.id).then(({ error }) => {
+                if (error) console.warn('[FieldScout] allotted hours backfill failed', error)
+              })
+            }
+          }
+        }
+
+        setActiveBriefing({ job: effectiveJob, lines: lineRows || [] })
         refreshBriefingPhotoCounts(jobId)
       } catch (err) {
         if (!cancelled) console.warn('[FieldScout] briefing fetch failed', err)
@@ -1239,19 +1267,34 @@ export default function FieldScout() {
                   )}
                 </div>
                 <div style={{
-                  height: '8px',
+                  position: 'relative',
+                  height: '10px',
                   backgroundColor: 'rgba(255,255,255,0.3)',
-                  borderRadius: '4px',
+                  borderRadius: '5px',
                   marginBottom: '16px',
-                  overflow: 'hidden',
+                  overflow: 'visible',
                 }}>
                   <div style={{
                     width: `${pct}%`,
                     height: '100%',
                     backgroundColor: over ? '#ef4444' : '#fff',
-                    borderRadius: '4px',
+                    borderRadius: '5px',
                     transition: 'width 1s linear',
                   }} />
+                  {jobAllotted > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      right: '-2px',
+                      top: '-22px',
+                      fontSize: '11px',
+                      fontWeight: '800',
+                      color: '#fff',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.4)',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {jobAllotted.toFixed(1)}h
+                    </span>
+                  )}
                 </div>
               </>
             )
