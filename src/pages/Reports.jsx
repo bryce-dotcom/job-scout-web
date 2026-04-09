@@ -1495,13 +1495,15 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
     return arr
   }, [filtered, sortField, sortDir, componentMap, products, showComponents])
 
-  // Aggregate by job — keep individual line items per job (with component expansion)
+  // Aggregate by job — DEDUP products within each job so the PM sees
+  // "order 138 highbays" instead of 6 separate lines for the same SKU.
+  // Components from bundles are also deduped if shown.
   const jobAggregation = useMemo(() => {
     const map = {}
     filtered.forEach(line => {
       const jid = line.job?.id
       if (!jid) return
-      if (!map[jid]) map[jid] = { id: jid, jobId: line.job.job_id, title: line.job.job_title || line.job.job_id, status: line.job.status, customer: line.job.customer_name || '', startDate: line.job.start_date, lineCount: 0, totalCost: 0, totalRevenue: 0, items: [] }
+      if (!map[jid]) map[jid] = { id: jid, jobId: line.job.job_id, title: line.job.job_title || line.job.job_id, status: line.job.status, customer: line.job.customer_name || '', startDate: line.job.start_date, lineCount: 0, totalCost: 0, totalRevenue: 0, itemMap: {} }
       const qty = parseFloat(line.quantity) || 1
       const cost = parseFloat(line.item?.cost) || 0
       const price = parseFloat(line.price) || parseFloat(line.item?.unit_price) || 0
@@ -1512,25 +1514,53 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
       map[jid].lineCount += qty
       map[jid].totalCost += cost * qty
       map[jid].totalRevenue += price * qty
-      map[jid].items.push({
-        id: line.id,
-        name: line.item?.name || line.description || 'Unknown',
-        productId: line.item?.item_id || '',
-        qty,
-        cost: cost * qty,
-        price: price * qty,
-        type: line.item?.type || '',
-        isBundle,
-        components: isBundle ? components.map(comp => {
+
+      // Dedup: merge matching products by item_id (or by name for orphan lines)
+      const key = itemId || `name:${line.item?.name || line.description || 'Unknown'}`
+      if (!map[jid].itemMap[key]) {
+        map[jid].itemMap[key] = {
+          id: key,
+          name: line.item?.name || line.description || 'Unknown',
+          productId: line.item?.item_id || '',
+          qty: 0,
+          cost: 0,
+          price: 0,
+          type: line.item?.type || '',
+          isBundle,
+          componentMap: {},
+        }
+      }
+      map[jid].itemMap[key].qty += qty
+      map[jid].itemMap[key].cost += cost * qty
+      map[jid].itemMap[key].price += price * qty
+
+      // Dedup components within the job too
+      if (isBundle) {
+        components.forEach(comp => {
           const cp = products.find(p => p.id === comp.component_product_id)
-          if (!cp) return null
+          if (!cp) return
           const compCost = parseFloat(cp.cost) || 0
           const compQty = comp.quantity * qty
-          return { name: cp.name, productId: cp.item_id || '', qty: compQty, cost: compCost * compQty, type: cp.type || '' }
-        }).filter(Boolean) : []
-      })
+          const compKey = cp.id
+          if (!map[jid].itemMap[key].componentMap[compKey]) {
+            map[jid].itemMap[key].componentMap[compKey] = { name: cp.name, productId: cp.item_id || '', qty: 0, cost: 0, type: cp.type || '' }
+          }
+          map[jid].itemMap[key].componentMap[compKey].qty += compQty
+          map[jid].itemMap[key].componentMap[compKey].cost += compCost * compQty
+        })
+      }
     })
-    return Object.values(map).sort((a, b) => (b.totalCost - a.totalCost))
+
+    // Flatten itemMap → items array, sort by qty descending within each job
+    return Object.values(map).map(j => ({
+      ...j,
+      items: Object.values(j.itemMap)
+        .map(item => ({
+          ...item,
+          components: Object.values(item.componentMap),
+        }))
+        .sort((a, b) => b.qty - a.qty),
+    })).sort((a, b) => b.totalRevenue - a.totalRevenue)
   }, [filtered, componentMap, products, showComponents])
 
   // Aggregate by status (with component expansion)
@@ -1805,17 +1835,6 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
                       <td style={{ padding: '10px 14px', fontSize: '14px', color: '#4a7c59', textAlign: 'right' }}>{formatCurrency(j.totalRevenue)}</td>
                       <td style={{ padding: '10px 14px', fontSize: '13px', fontWeight: '600', textAlign: 'right', color: jobCostPct > 50 ? '#c25a5a' : jobCostPct > 30 ? '#d4940a' : '#4a7c59' }}>{j.totalRevenue > 0 ? `${jobCostPct.toFixed(1)}%` : '—'}</td>
                     </tr>
-                    {/* Job total row — shows summed line count + costs
-                        for this job so the PM doesn't have to expand it */}
-                    {!isExpanded && (
-                      <tr style={{ borderBottom: `1px solid ${theme.border}`, backgroundColor: 'transparent' }}>
-                        <td colSpan={4}></td>
-                        <td style={{ padding: '2px 14px 8px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textAlign: 'right' }}>{j.lineCount} units</td>
-                        <td style={{ padding: '2px 14px 8px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textAlign: 'right' }}>{formatCurrency(j.totalCost)}</td>
-                        <td style={{ padding: '2px 14px 8px', fontSize: '12px', fontWeight: '600', color: theme.textMuted, textAlign: 'right' }}>{formatCurrency(j.totalRevenue)}</td>
-                        <td></td>
-                      </tr>
-                    )}
                     {isExpanded && j.items.map((item, idx) => {
                       const itemCostPct = item.price > 0 ? (item.cost / item.price) * 100 : 0
                       return (
