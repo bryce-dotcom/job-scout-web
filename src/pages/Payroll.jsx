@@ -291,6 +291,7 @@ export default function Payroll() {
           .from('verification_reports')
           .select('job_id, verification_type, score, created_at')
           .eq('company_id', companyId)
+          .eq('voided', false)
           .gte('score', 60)
           .gte('created_at', periodStart.toISOString())
           .lte('created_at', periodEnd.toISOString()),

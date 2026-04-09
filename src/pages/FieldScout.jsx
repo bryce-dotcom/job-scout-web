@@ -280,6 +280,7 @@ export default function FieldScout() {
         .eq('company_id', companyId)
         .eq('verification_type', 'completion')
         .in('job_id', jobIds)
+        .eq('voided', false)
         .gte('score', 60),
       // Daily: today only, any crew member, per job
       supabase
@@ -289,6 +290,7 @@ export default function FieldScout() {
         .eq('verification_type', 'daily')
         .in('job_id', jobIds)
         .gte('created_at', todayStart.toISOString())
+        .eq('voided', false)
         .gte('score', 60),
     ])
     if (compRes.data) setVerifiedJobs(new Set(compRes.data.map(r => r.job_id)))
@@ -369,6 +371,7 @@ export default function FieldScout() {
         .select('job_id, verification_type, score, created_at')
         .eq('company_id', companyId)
         .in('job_id', myJobIds)
+        .eq('voided', false)
         .gte('score', 60)
 
       const verifiedJobIds = new Set(
@@ -478,7 +481,35 @@ export default function FieldScout() {
           }
         }
 
-        setActiveBriefing({ job: effectiveJob, lines: lineRows || [] })
+        // If this job has an associated lighting audit (from Lenard or a
+        // manual audit), pull the per-area breakdown so the field crew can
+        // see fixture locations, counts, lighting type, and AI notes right
+        // in the briefing. Skipped silently for jobs with no audit link.
+        let auditAreas = []
+        let auditInfo = null
+        try {
+          const { data: audit } = await supabase
+            .from('lighting_audits')
+            .select('id, audit_id, facility_name, total_fixtures, notes')
+            .eq('company_id', companyId)
+            .eq('job_id', jobId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (audit?.id) {
+            auditInfo = audit
+            const { data: areas } = await supabase
+              .from('audit_areas')
+              .select('id, area_name, fixture_count, fixture_type_detected, lighting_type, ceiling_height, existing_wattage, led_wattage, override_notes, ai_analysis_json, photos')
+              .eq('audit_id', audit.id)
+              .order('id')
+            auditAreas = areas || []
+          }
+        } catch (err) {
+          console.warn('[FieldScout] audit area fetch failed', err)
+        }
+
+        setActiveBriefing({ job: effectiveJob, lines: lineRows || [], auditAreas, auditInfo })
         refreshBriefingPhotoCounts(jobId)
       } catch (err) {
         if (!cancelled) console.warn('[FieldScout] briefing fetch failed', err)
@@ -1318,12 +1349,11 @@ export default function FieldScout() {
                   )}
                 </div>
                 <div style={{
-                  position: 'relative',
                   height: '10px',
                   backgroundColor: 'rgba(255,255,255,0.3)',
                   borderRadius: '5px',
                   marginBottom: '16px',
-                  overflow: 'visible',
+                  overflow: 'hidden',
                 }}>
                   <div style={{
                     width: `${pct}%`,
@@ -1332,20 +1362,6 @@ export default function FieldScout() {
                     borderRadius: '5px',
                     transition: 'width 1s linear',
                   }} />
-                  {jobAllotted > 0 && (
-                    <span style={{
-                      position: 'absolute',
-                      right: '-2px',
-                      top: '-22px',
-                      fontSize: '11px',
-                      fontWeight: '800',
-                      color: '#fff',
-                      textShadow: '0 1px 2px rgba(0,0,0,0.4)',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {jobAllotted.toFixed(1)}h
-                    </span>
-                  )}
                 </div>
               </>
             )
@@ -1413,6 +1429,66 @@ export default function FieldScout() {
                       </div>
                       <div style={{ fontSize: '12px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
                         {activeBriefing.job.details || activeBriefing.job.notes}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Audit locations — only when a Lenard/lighting audit is
+                      linked to this job. Shows each area (room/zone) with
+                      fixture count, type, height, and any AI/override notes
+                      so the crew knows WHERE to go. */}
+                  {activeBriefing.auditAreas && activeBriefing.auditAreas.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', opacity: 0.75, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
+                        Locations ({activeBriefing.auditAreas.length})
+                        {activeBriefing.auditInfo?.facility_name && (
+                          <span style={{ fontWeight: '500', opacity: 0.85 }}> · {activeBriefing.auditInfo.facility_name}</span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {activeBriefing.auditAreas.map((a, idx) => {
+                          const aiNotes = a.override_notes || a.ai_analysis_json?.notes || a.ai_analysis_json?.observations || ''
+                          const fxLabel = a.fixture_type_detected || a.lighting_type || ''
+                          return (
+                            <div key={a.id || idx} style={{
+                              padding: '8px 10px',
+                              backgroundColor: 'rgba(255,255,255,0.12)',
+                              borderRadius: '8px',
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                <div style={{
+                                  minWidth: '28px', height: '22px',
+                                  borderRadius: '6px',
+                                  backgroundColor: 'rgba(255,255,255,0.25)',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: '11px', fontWeight: '800',
+                                  flexShrink: 0,
+                                }}>
+                                  {a.fixture_count || '?'}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '12px', fontWeight: '700' }}>
+                                    {a.area_name || `Area ${idx + 1}`}
+                                  </div>
+                                  {(fxLabel || a.ceiling_height || a.existing_wattage) && (
+                                    <div style={{ fontSize: '10px', opacity: 0.85, marginTop: '2px' }}>
+                                      {[
+                                        fxLabel,
+                                        a.ceiling_height ? `${a.ceiling_height}ft ceiling` : null,
+                                        a.existing_wattage ? `${a.existing_wattage}W → ${a.led_wattage || '?'}W LED` : null,
+                                      ].filter(Boolean).join(' · ')}
+                                    </div>
+                                  )}
+                                  {aiNotes && (
+                                    <div style={{ fontSize: '10px', opacity: 0.9, marginTop: '4px', fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>
+                                      {aiNotes}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
                   )}

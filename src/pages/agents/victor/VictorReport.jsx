@@ -5,9 +5,10 @@ import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import {
   Shield, Star, CheckCircle2, X, AlertTriangle, Camera,
-  ChevronLeft, Wrench, Sparkles, MapPin, User, Calendar
+  ChevronLeft, Wrench, Sparkles, MapPin, User, Calendar, Edit3, Save, Ban
 } from 'lucide-react'
 import { useIsMobile } from '../../../hooks/useIsMobile'
+import { isAdmin as checkAdmin } from '../../../lib/accessControl'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -20,13 +21,21 @@ export default function VictorReport() {
   const { id } = useParams()
   const navigate = useNavigate()
   const companyId = useStore(s => s.companyId)
+  const user = useStore(s => s.user)
+  const employees = useStore(s => s.employees) || []
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
   const isMobile = useIsMobile()
+  const isAdmin = checkAdmin(user)
 
   const [report, setReport] = useState(null)
   const [photos, setPhotos] = useState([])
   const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [editScore, setEditScore] = useState('')
+  const [editGrade, setEditGrade] = useState('')
+  const [editReason, setEditReason] = useState('')
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!id || !companyId) return
@@ -62,10 +71,125 @@ export default function VictorReport() {
     setLoading(false)
   }
 
+  const startEdit = () => {
+    setEditScore(String(report?.score ?? ''))
+    setEditGrade(report?.grade ?? '')
+    setEditReason('')
+    setEditing(true)
+  }
+
+  const gradeFromScore = (s) => {
+    const n = parseInt(s, 10)
+    if (!(n >= 0)) return null
+    if (n >= 90) return 'A'
+    if (n >= 80) return 'B'
+    if (n >= 70) return 'C'
+    if (n >= 60) return 'D'
+    return 'F'
+  }
+
+  const saveOverride = async () => {
+    if (!editReason.trim()) {
+      alert('Please enter a reason for the override — this is logged for audit.')
+      return
+    }
+    const newScore = parseInt(editScore, 10)
+    if (!(newScore >= 0 && newScore <= 100)) {
+      alert('Score must be between 0 and 100.')
+      return
+    }
+    const newGrade = editGrade || gradeFromScore(newScore)
+    setSaving(true)
+    try {
+      const adminEmp = employees.find(e => e.email === user?.email)
+      const update = {
+        score: newScore,
+        grade: newGrade,
+        override_reason: editReason.trim(),
+        override_by: adminEmp?.id || null,
+        override_at: new Date().toISOString(),
+        voided: false,
+        updated_at: new Date().toISOString(),
+      }
+      // Preserve originals only on first override
+      if (report.original_score == null) {
+        update.original_score = report.score
+        update.original_grade = report.grade
+      }
+      const { error } = await supabase
+        .from('verification_reports')
+        .update(update)
+        .eq('id', id)
+      if (error) throw error
+      setEditing(false)
+      await fetchReport()
+    } catch (err) {
+      alert('Error saving override: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const voidReport = async () => {
+    const reason = prompt('Reason for voiding this verification? (logged for audit)')
+    if (!reason || !reason.trim()) return
+    setSaving(true)
+    try {
+      const adminEmp = employees.find(e => e.email === user?.email)
+      const update = {
+        voided: true,
+        override_reason: reason.trim(),
+        override_by: adminEmp?.id || null,
+        override_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      if (report.original_score == null) {
+        update.original_score = report.score
+        update.original_grade = report.grade
+      }
+      const { error } = await supabase
+        .from('verification_reports')
+        .update(update)
+        .eq('id', id)
+      if (error) throw error
+      await fetchReport()
+    } catch (err) {
+      alert('Error voiding report: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const restoreOriginal = async () => {
+    if (!confirm('Restore the original Victor score and grade? This will clear the override.')) return
+    setSaving(true)
+    try {
+      const { error } = await supabase
+        .from('verification_reports')
+        .update({
+          score: report.original_score,
+          grade: report.original_grade,
+          override_reason: null,
+          override_by: null,
+          override_at: null,
+          voided: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+      if (error) throw error
+      await fetchReport()
+    } catch (err) {
+      alert('Error restoring original: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) return <div style={{ padding: '40px', textAlign: 'center', color: defaultTheme.textMuted }}>Loading report...</div>
   if (!report) return <div style={{ padding: '40px', textAlign: 'center', color: defaultTheme.textMuted }}>Report not found</div>
 
   const analysis = report.ai_analysis || {}
+  const isOverridden = report.override_at != null
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '800px', margin: '0 auto' }}>
@@ -99,6 +223,245 @@ export default function VictorReport() {
           </div>
         </div>
       </div>
+
+      {/* Voided banner */}
+      {report.voided && (
+        <div style={{
+          backgroundColor: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: '10px',
+          padding: '12px 14px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+        }}>
+          <Ban size={18} style={{ color: '#dc2626' }} />
+          <div style={{ flex: 1, fontSize: '13px', color: '#991b1b' }}>
+            <strong>This verification has been voided.</strong>
+            {report.override_reason && <> — {report.override_reason}</>}
+          </div>
+        </div>
+      )}
+
+      {/* Override banner (non-voided) */}
+      {isOverridden && !report.voided && (
+        <div style={{
+          backgroundColor: 'rgba(234,179,8,0.1)',
+          border: '1px solid rgba(234,179,8,0.4)',
+          borderRadius: '10px',
+          padding: '12px 14px',
+          marginBottom: '16px',
+          fontSize: '12px',
+          color: theme.text,
+          lineHeight: 1.5,
+        }}>
+          <div style={{ fontWeight: '700', marginBottom: '4px', color: '#a16207', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Edit3 size={14} /> Admin Override
+          </div>
+          {report.original_score != null && (
+            <div>Original Victor score: <strong>{report.original_score}</strong> ({report.original_grade})</div>
+          )}
+          {report.override_reason && <div style={{ marginTop: '4px' }}><em>"{report.override_reason}"</em></div>}
+          <div style={{ color: theme.textMuted, marginTop: '4px' }}>
+            {new Date(report.override_at).toLocaleString()}
+          </div>
+        </div>
+      )}
+
+      {/* Admin controls */}
+      {isAdmin && (
+        <div style={{ marginBottom: '20px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {!editing ? (
+            <>
+              <button
+                onClick={startEdit}
+                disabled={saving}
+                style={{
+                  padding: '10px 14px',
+                  backgroundColor: theme.bgCard,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '10px',
+                  color: theme.text,
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  minHeight: '40px',
+                }}
+              >
+                <Edit3 size={14} />
+                Override Score
+              </button>
+              {!report.voided && (
+                <button
+                  onClick={voidReport}
+                  disabled={saving}
+                  style={{
+                    padding: '10px 14px',
+                    backgroundColor: 'rgba(239,68,68,0.1)',
+                    border: '1px solid rgba(239,68,68,0.4)',
+                    borderRadius: '10px',
+                    color: '#dc2626',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    minHeight: '40px',
+                  }}
+                >
+                  <Ban size={14} />
+                  Void Report
+                </button>
+              )}
+              {isOverridden && report.original_score != null && (
+                <button
+                  onClick={restoreOriginal}
+                  disabled={saving}
+                  style={{
+                    padding: '10px 14px',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '10px',
+                    color: theme.textSecondary,
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    minHeight: '40px',
+                  }}
+                >
+                  Restore Original ({report.original_score})
+                </button>
+              )}
+            </>
+          ) : (
+            <div style={{
+              width: '100%',
+              padding: '14px',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '12px',
+            }}>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: theme.text, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Edit3 size={14} /> Override Victor Score
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 120px' }}>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Score (0–100)</div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={editScore}
+                    onChange={(e) => { setEditScore(e.target.value); const g = gradeFromScore(e.target.value); if (g) setEditGrade(g) }}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      backgroundColor: theme.bg,
+                      color: theme.text,
+                      minHeight: '40px',
+                    }}
+                  />
+                </div>
+                <div style={{ flex: '0 0 100px' }}>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Grade</div>
+                  <select
+                    value={editGrade}
+                    onChange={(e) => setEditGrade(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      backgroundColor: theme.bg,
+                      color: theme.text,
+                      minHeight: '40px',
+                    }}
+                  >
+                    <option value="A">A</option>
+                    <option value="B">B</option>
+                    <option value="C">C</option>
+                    <option value="D">D</option>
+                    <option value="F">F</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Reason (required)</div>
+              <textarea
+                value={editReason}
+                onChange={(e) => setEditReason(e.target.value)}
+                placeholder="Why is this override necessary?"
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  backgroundColor: theme.bg,
+                  color: theme.text,
+                  resize: 'vertical',
+                  marginBottom: '10px',
+                  fontFamily: 'inherit',
+                }}
+              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={saveOverride}
+                  disabled={saving}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    backgroundColor: theme.accent,
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    cursor: saving ? 'wait' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    minHeight: '40px',
+                  }}
+                >
+                  <Save size={14} />
+                  {saving ? 'Saving…' : 'Save Override'}
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  disabled={saving}
+                  style={{
+                    padding: '10px 14px',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '10px',
+                    color: theme.textSecondary,
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    minHeight: '40px',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Summary */}
       {report.summary && (
