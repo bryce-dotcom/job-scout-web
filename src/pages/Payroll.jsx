@@ -1713,8 +1713,8 @@ export default function Payroll() {
 
               {/* Worked example — uses big numbers to make it enticing */}
               {(() => {
-                const rate = payrollConfig.efficiency_bonus_rate || 30
-                const cut = payrollConfig.company_bonus_cut_percent || 20
+                const rate = payrollConfig.efficiency_bonus_rate ?? 30
+                const cut = payrollConfig.company_bonus_cut_percent ?? 20
                 const savedHrs = 80 // Big lighting job
                 const pool = savedHrs * rate
                 const companyKeeps = pool * cut / 100
