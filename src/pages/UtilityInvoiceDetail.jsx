@@ -213,27 +213,28 @@ export default function UtilityInvoiceDetail() {
     // amount always equals incentive_amount — it's what drives payment
     // tracking ("how much the utility owes us").
     const incAmt = parseFloat(editForm.incentive_amount) || 0
-    const { error } = await supabase.from('utility_invoices').update({
+    const pc = parseFloat(editForm.project_cost) || 0
+    const nc = parseFloat(editForm.net_cost) || 0
+    const { data: updated, error } = await supabase.from('utility_invoices').update({
       amount: incAmt,
       utility_name: editForm.utility_name || null,
       customer_name: editForm.customer_name || null,
       notes: editForm.notes || null,
-      project_cost: parseFloat(editForm.project_cost) || null,
+      project_cost: pc,
       incentive_amount: incAmt,
-      net_cost: parseFloat(editForm.net_cost) || null,
+      net_cost: nc,
       material_pct: parseFloat(editForm.material_pct) || 70,
       labor_pct: parseFloat(editForm.labor_pct) || 30,
       updated_at: new Date().toISOString()
-    }).eq('id', id)
+    }).eq('id', id).select().single()
 
-    const { toast } = await import('../lib/toast')
-    if (error) {
-      toast.error('Failed to save: ' + error.message)
+    if (error || !updated) {
+      toast.error('Failed to save: ' + (error?.message || 'No rows updated'))
     } else {
+      setInvoice(updated)
       toast.success('Utility incentive updated')
       setIsEditing(false)
-      await fetchInvoiceData()
-      await fetchUtilityInvoices()
+      fetchUtilityInvoices()
     }
     setSaving(false)
   }
@@ -277,10 +278,10 @@ export default function UtilityInvoiceDetail() {
     const contentWidth = pageWidth - margin * 2
     let y = 20
 
-    // Company header
+    // Company header — use the invoice's business unit name
     doc.setFontSize(20)
     doc.setFont('helvetica', 'bold')
-    doc.text(company?.name || 'Company', margin, y)
+    doc.text(invoice.business_unit || company?.name || 'Company', margin, y)
     y += 8
 
     doc.setFontSize(10)

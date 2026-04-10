@@ -12,6 +12,7 @@ import {
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { employeesFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin, canAccessDevTools, canEditPipelineStages } from '../lib/accessControl'
+import RankBadge from '../components/RankBadge'
 
 // Role colors (OG DiX style)
 const roleColors = {
@@ -1135,15 +1136,11 @@ export default function Employees() {
                       </span>
                     )}
                     {employee.skill_level && (
-                      <span style={{
-                        fontSize: '11px',
-                        padding: '3px 10px',
-                        borderRadius: '20px',
-                        backgroundColor: 'rgba(168,85,247,0.1)',
-                        color: '#a855f7'
-                      }}>
-                        {employee.skill_level}
-                      </span>
+                      <RankBadge
+                        rank={employee.skill_level}
+                        weight={(() => { const sl = skillLevels.find(s => (s.name || s) === employee.skill_level); return typeof sl === 'object' ? sl.weight : undefined })()}
+                        theme={theme}
+                      />
                     )}
                   </div>
                 </div>

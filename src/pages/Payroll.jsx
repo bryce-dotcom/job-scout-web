@@ -11,6 +11,7 @@ import {
   Edit3, Save, Map, Plus, Minus, Printer, Mail, Send
 } from 'lucide-react'
 import LocationTrailModal from '../components/LocationTrailModal'
+import RankBadge, { SCOUT_RANKS } from '../components/RankBadge'
 import {
   getCurrentPayPeriod as sharedGetCurrentPayPeriod,
   calculateEfficiencyBonus as sharedCalculateEfficiencyBonus,
@@ -69,7 +70,7 @@ export default function Payroll() {
     pay_day_2: '5',
     commission_trigger: 'payment_received', // payment_received, invoice_created, job_completed
     efficiency_bonus_enabled: false,
-    efficiency_bonus_rate: 25, // $ per hour saved
+    efficiency_bonus_rate: 30, // $ per hour saved
     company_bonus_cut_percent: 20, // company keeps 20% of saved-hour value
     bonus_quality_gate: false, // require zero callbacks to qualify
     bonus_min_hours_saved: 0.5, // minimum hours saved to trigger bonus
@@ -850,7 +851,7 @@ export default function Payroll() {
             <h2 style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text }}>{emp.name}</h2>
             <div style={{ fontSize: isMobile ? '12px' : '14px', color: theme.textMuted, display: 'flex', gap: isMobile ? '8px' : '12px', flexWrap: 'wrap', marginTop: '4px' }}>
               <span>{emp.role}</span>
-              {emp.skill_level && <span style={{ color: '#a855f7' }}>{emp.skill_level}</span>}
+              {emp.skill_level && <RankBadge rank={emp.skill_level} weight={(() => { const sl = skillLevelSettings.find(s => (s.name || s) === emp.skill_level); return sl?.weight })() } theme={theme} />}
               {emp.is_hourly && <span>${emp.hourly_rate}/hr</span>}
               {emp.is_salary && <span>${(emp.annual_salary || 0).toLocaleString()}/yr</span>}
               <span style={{ color: '#8b5cf6' }}>PTO: {ptoBalance.toFixed(1)} days</span>
@@ -1594,6 +1595,146 @@ export default function Payroll() {
         )
       })()}
 
+      {/* ===== BONUS PROGRAM SETTINGS (inline, admin only) ===== */}
+      {isAdmin && (
+        <div style={{
+          backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+          borderRadius: '12px', padding: isMobile ? '16px' : '20px', marginBottom: '16px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                width: '36px', height: '36px', borderRadius: '10px',
+                background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+              }}>
+                <Award size={18} color="#fff" />
+              </div>
+              <div>
+                <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>Bonus Program</div>
+                <div style={{ fontSize: '12px', color: theme.textMuted }}>Efficiency bonus settings & crew rank structure</div>
+              </div>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={payrollConfig.efficiency_bonus_enabled}
+                onChange={async (e) => {
+                  const updated = { ...payrollConfig, efficiency_bonus_enabled: e.target.checked }
+                  setPayrollConfig(updated)
+                  await supabase.from('settings').upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(updated), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+                }}
+                style={{ width: '18px', height: '18px', accentColor: '#8b5cf6' }}
+              />
+              <span style={{ fontSize: '13px', fontWeight: '600', color: payrollConfig.efficiency_bonus_enabled ? '#8b5cf6' : theme.textMuted }}>
+                {payrollConfig.efficiency_bonus_enabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </label>
+          </div>
+
+          {payrollConfig.efficiency_bonus_enabled && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Rate + cuts row */}
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
+                <div style={{ padding: '14px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Rate per Hour Saved</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#8b5cf6' }}>$</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={payrollConfig.efficiency_bonus_rate}
+                      onBlur={async () => {
+                        await supabase.from('settings').upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(payrollConfig), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+                      }}
+                      onChange={(e) => setPayrollConfig({ ...payrollConfig, efficiency_bonus_rate: parseFloat(e.target.value) || 30 })}
+                      style={{ width: '80px', padding: '6px 8px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '20px', fontWeight: '700', color: '#8b5cf6', backgroundColor: theme.bgCard, textAlign: 'center' }}
+                    />
+                    <span style={{ fontSize: '13px', color: theme.textMuted }}>/hr</span>
+                  </div>
+                </div>
+                <div style={{ padding: '14px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Company Retention</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      value={payrollConfig.company_bonus_cut_percent}
+                      onBlur={async () => {
+                        await supabase.from('settings').upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(payrollConfig), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+                      }}
+                      onChange={(e) => setPayrollConfig({ ...payrollConfig, company_bonus_cut_percent: parseFloat(e.target.value) || 0 })}
+                      style={{ width: '60px', padding: '6px 8px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '18px', fontWeight: '700', color: theme.text, backgroundColor: theme.bgCard, textAlign: 'center' }}
+                    />
+                    <span style={{ fontSize: '13px', color: theme.textMuted }}>% kept by company</span>
+                  </div>
+                </div>
+                <div style={{ padding: '14px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Min Hours Saved</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.25}
+                      value={payrollConfig.bonus_min_hours_saved}
+                      onBlur={async () => {
+                        await supabase.from('settings').upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(payrollConfig), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+                      }}
+                      onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_min_hours_saved: parseFloat(e.target.value) || 0 })}
+                      style={{ width: '60px', padding: '6px 8px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '18px', fontWeight: '700', color: theme.text, backgroundColor: theme.bgCard, textAlign: 'center' }}
+                    />
+                    <span style={{ fontSize: '13px', color: theme.textMuted }}>hrs threshold</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Crew Rank Structure */}
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: theme.text, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Zap size={14} style={{ color: '#8b5cf6' }} />
+                  Crew Rank Structure
+                  <span style={{ fontSize: '11px', fontWeight: '500', color: theme.textMuted }}>— higher rank = bigger share of the bonus pool</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {(skillLevelSettings.length > 0 ? skillLevelSettings : SCOUT_RANKS).map((sl, i) => {
+                    const name = typeof sl === 'string' ? sl : sl.name
+                    const weight = typeof sl === 'string' ? 1 : (sl.weight || 1)
+                    return (
+                      <RankBadge key={name || i} rank={name} weight={weight} size="md" theme={theme} />
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>
+                  Manage ranks in Employees → Settings → Skill Levels. Assign ranks to individual employees on their profile.
+                </div>
+              </div>
+
+              {/* Worked example */}
+              <div style={{ padding: '14px', backgroundColor: 'rgba(168,85,247,0.06)', borderRadius: '10px', border: '1px solid rgba(168,85,247,0.2)' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  Worked Example
+                </div>
+                <div style={{ fontSize: '12px', color: theme.text, lineHeight: 1.7 }}>
+                  Job allotted <strong>40 hrs</strong>, crew finishes in <strong>32 hrs</strong> → <strong>8 hrs saved</strong>
+                  <br />
+                  Bonus pool: 8h × <strong>${payrollConfig.efficiency_bonus_rate}</strong>/hr = <strong>${(8 * payrollConfig.efficiency_bonus_rate).toFixed(0)}</strong>
+                  <br />
+                  <span style={{ color: '#22c55e' }}>Company keeps ({payrollConfig.company_bonus_cut_percent}%): ${(8 * payrollConfig.efficiency_bonus_rate * payrollConfig.company_bonus_cut_percent / 100).toFixed(0)}</span>
+                  {' · '}
+                  <span style={{ color: '#8b5cf6' }}>Crew splits ({100 - payrollConfig.company_bonus_cut_percent}%): ${(8 * payrollConfig.efficiency_bonus_rate * (100 - payrollConfig.company_bonus_cut_percent) / 100).toFixed(0)}</span>
+                  <br />
+                  <span style={{ color: theme.textMuted }}>
+                    Split by rank weight — a Star (×3) earns 3× more than a Scout (×1)
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Employee List */}
       <div style={{
         backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
@@ -1678,7 +1819,7 @@ export default function Payroll() {
                     </div>
                     <div style={{ fontSize: '12px', color: theme.textMuted, display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <span>{emp.role}</span>
-                      {emp.skill_level && <span style={{ color: '#a855f7' }}>{emp.skill_level}</span>}
+                      {emp.skill_level && <RankBadge rank={emp.skill_level} weight={(() => { const sl = skillLevelSettings.find(s => (s.name || s) === emp.skill_level); return sl?.weight })() } theme={theme} />}
                       {emp.is_hourly && <span>${emp.hourly_rate}/hr</span>}
                       {emp.is_salary && <span>Salary</span>}
                     </div>

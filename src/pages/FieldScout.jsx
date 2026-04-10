@@ -19,6 +19,7 @@ import VictorVerify from './agents/victor/VictorVerify'
 import ArnieFloatingPanel from '../components/ArnieFloatingPanel'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
+import RankBadge from '../components/RankBadge'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -1263,6 +1264,11 @@ export default function FieldScout() {
             {getGreeting()}, {firstName}
           </h1>
         </div>
+        {currentEmployee?.skill_level && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
+            <RankBadge rank={currentEmployee.skill_level} theme={theme} />
+          </div>
+        )}
         <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '8px' }}>
           {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
         </div>
