@@ -278,8 +278,9 @@ export default function UtilityInvoiceDetail() {
     const contentWidth = pageWidth - margin * 2
     let y = 20
 
-    // Company header — use the business unit (from invoice, or from the linked job)
-    const displayCompanyName = invoice.business_unit || jobData?.business_unit || company?.name || 'Company'
+    // Company header — business unit first, fall back to company name.
+    // The companies table uses `company_name` (not `name`).
+    const displayCompanyName = invoice.business_unit || jobData?.business_unit || company?.company_name || company?.name || 'Company'
     doc.setFontSize(20)
     doc.setFont('helvetica', 'bold')
     doc.text(displayCompanyName, margin, y)
@@ -311,7 +312,7 @@ export default function UtilityInvoiceDetail() {
     doc.line(margin, y, rightEdge, y)
     y += 10
 
-    // Customer info
+    // Customer info — business_name wins over contact name
     doc.setTextColor(0)
     doc.setFontSize(11)
     doc.setFont('helvetica', 'bold')
@@ -319,10 +320,13 @@ export default function UtilityInvoiceDetail() {
     y += 6
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(10)
-    const custName = invoice.customer_name || jobData?.customer?.name || '-'
-    doc.text(custName, margin, y); y += 5
+    const custPrimary = invoice.customer_name || jobData?.customer?.business_name || jobData?.customer?.name || '-'
+    const custContact = jobData?.customer?.business_name && jobData?.customer?.name ? jobData.customer.name : null
+    doc.text(custPrimary, margin, y); y += 5
+    if (custContact) { doc.text(`Attn: ${custContact}`, margin, y); y += 5 }
     if (jobData?.customer?.address) { doc.text(jobData.customer.address, margin, y); y += 5 }
     if (jobData?.customer?.phone) { doc.text(jobData.customer.phone, margin, y); y += 5 }
+    if (jobData?.customer?.email) { doc.text(jobData.customer.email, margin, y); y += 5 }
     y += 8
 
     // Cost breakdown table — Material and Labor only
