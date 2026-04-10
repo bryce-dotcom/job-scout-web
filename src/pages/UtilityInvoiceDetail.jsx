@@ -278,10 +278,11 @@ export default function UtilityInvoiceDetail() {
     const contentWidth = pageWidth - margin * 2
     let y = 20
 
-    // Company header — use the invoice's business unit name
+    // Company header — use the business unit (from invoice, or from the linked job)
+    const displayCompanyName = invoice.business_unit || jobData?.business_unit || company?.name || 'Company'
     doc.setFontSize(20)
     doc.setFont('helvetica', 'bold')
-    doc.text(invoice.business_unit || company?.name || 'Company', margin, y)
+    doc.text(displayCompanyName, margin, y)
     y += 8
 
     doc.setFontSize(10)

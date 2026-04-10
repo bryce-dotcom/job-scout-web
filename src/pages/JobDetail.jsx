@@ -1238,6 +1238,7 @@ function JobDetailInner() {
           lead_id: job.lead_id || null,
           customer_name: getCustomerPrimary(job.customer) || '',
           utility_name: utilityName,
+          business_unit: job.business_unit || null,
           amount: incentiveAmount,
           project_cost: projectCost,
           incentive_amount: incentiveAmount,
