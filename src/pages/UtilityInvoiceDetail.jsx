@@ -289,7 +289,10 @@ export default function UtilityInvoiceDetail() {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(100)
-    if (company?.address) { doc.text(company.address, margin, y); y += 5 }
+    if (company?.address) {
+      const compAddrLines = doc.splitTextToSize(company.address, contentWidth * 0.5)
+      for (const line of compAddrLines) { doc.text(line, margin, y); y += 5 }
+    }
     if (company?.phone) { doc.text(company.phone, margin, y); y += 5 }
     if (company?.owner_email || company?.email) { doc.text(company.owner_email || company.email, margin, y); y += 5 }
     y += 5
@@ -322,10 +325,21 @@ export default function UtilityInvoiceDetail() {
     doc.setFontSize(10)
     const custPrimary = invoice.customer_name || jobData?.customer?.business_name || jobData?.customer?.name || '-'
     const custContact = jobData?.customer?.business_name && jobData?.customer?.name ? jobData.customer.name : null
-    doc.text(custPrimary, margin, y); y += 5
+    doc.setFontSize(11)
+    doc.text(custPrimary, margin, y); y += 6
+    doc.setFontSize(10)
     if (custContact) { doc.text(`Attn: ${custContact}`, margin, y); y += 5 }
-    if (jobData?.customer?.address) { doc.text(jobData.customer.address, margin, y); y += 5 }
-    if (jobData?.customer?.phone) { doc.text(jobData.customer.phone, margin, y); y += 5 }
+    // Split address into lines so street and city/state/zip don't smash together
+    if (jobData?.customer?.address) {
+      const addrLines = doc.splitTextToSize(jobData.customer.address, contentWidth * 0.6)
+      for (const line of addrLines) { doc.text(line, margin, y); y += 5 }
+    }
+    // Job address as fallback if no customer address
+    if (!jobData?.customer?.address && jobData?.job_address) {
+      const addrLines = doc.splitTextToSize(jobData.job_address, contentWidth * 0.6)
+      for (const line of addrLines) { doc.text(line, margin, y); y += 5 }
+    }
+    if (jobData?.customer?.phone) { y += 1; doc.text(jobData.customer.phone, margin, y); y += 5 }
     if (jobData?.customer?.email) { doc.text(jobData.customer.email, margin, y); y += 5 }
     y += 8
 
@@ -348,12 +362,10 @@ export default function UtilityInvoiceDetail() {
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
     doc.setFontSize(10)
-    const pdfMatPct = invoice.material_pct ?? 70
-    const pdfLabPct = invoice.labor_pct ?? 30
-    doc.text(`Material (${pdfMatPct}%)`, margin + 2, y)
+    doc.text('Material', margin + 2, y)
     doc.text(formatCurrency(materialTotal), rightEdge - 2, y, { align: 'right' })
     y += 7
-    doc.text(`Labor (${pdfLabPct}%)`, margin + 2, y)
+    doc.text('Labor', margin + 2, y)
     doc.text(formatCurrency(laborTotal), rightEdge - 2, y, { align: 'right' })
     y += 4
 
