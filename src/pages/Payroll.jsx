@@ -1711,25 +1711,71 @@ export default function Payroll() {
                 </div>
               </div>
 
-              {/* Worked example */}
-              <div style={{ padding: '14px', backgroundColor: 'rgba(168,85,247,0.06)', borderRadius: '10px', border: '1px solid rgba(168,85,247,0.2)' }}>
-                <div style={{ fontSize: '11px', fontWeight: '700', color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
-                  Worked Example
-                </div>
-                <div style={{ fontSize: '12px', color: theme.text, lineHeight: 1.7 }}>
-                  Job allotted <strong>40 hrs</strong>, crew finishes in <strong>32 hrs</strong> → <strong>8 hrs saved</strong>
-                  <br />
-                  Bonus pool: 8h × <strong>${payrollConfig.efficiency_bonus_rate}</strong>/hr = <strong>${(8 * payrollConfig.efficiency_bonus_rate).toFixed(0)}</strong>
-                  <br />
-                  <span style={{ color: '#22c55e' }}>Company keeps ({payrollConfig.company_bonus_cut_percent}%): ${(8 * payrollConfig.efficiency_bonus_rate * payrollConfig.company_bonus_cut_percent / 100).toFixed(0)}</span>
-                  {' · '}
-                  <span style={{ color: '#8b5cf6' }}>Crew splits ({100 - payrollConfig.company_bonus_cut_percent}%): ${(8 * payrollConfig.efficiency_bonus_rate * (100 - payrollConfig.company_bonus_cut_percent) / 100).toFixed(0)}</span>
-                  <br />
-                  <span style={{ color: theme.textMuted }}>
-                    Split by rank weight — a Star (×3) earns 3× more than a Scout (×1)
-                  </span>
-                </div>
-              </div>
+              {/* Worked example — uses big numbers to make it enticing */}
+              {(() => {
+                const rate = payrollConfig.efficiency_bonus_rate || 30
+                const cut = payrollConfig.company_bonus_cut_percent || 20
+                const savedHrs = 80 // Big lighting job
+                const pool = savedHrs * rate
+                const companyKeeps = pool * cut / 100
+                const crewPool = pool - companyKeeps
+                // Build crew from actual configured ranks (or defaults)
+                const ranks = (skillLevelSettings.length > 0 ? skillLevelSettings : SCOUT_RANKS)
+                  .map(sl => ({ name: typeof sl === 'string' ? sl : sl.name, weight: typeof sl === 'string' ? 1 : (sl.weight || 1) }))
+                // Pick a realistic 4-person crew from the highest ranks available
+                const exampleCrew = ranks.length >= 4
+                  ? [ranks[ranks.length - 1], ranks[Math.max(ranks.length - 2, 0)], ranks[Math.max(ranks.length - 3, 0)], ranks[0]]
+                  : ranks.length >= 2
+                    ? [ranks[ranks.length - 1], ranks[0], ranks[0], ranks[0]]
+                    : [{ name: 'Crew', weight: 1 }, { name: 'Crew', weight: 1 }, { name: 'Crew', weight: 1 }, { name: 'Crew', weight: 1 }]
+                const totalWeight = exampleCrew.reduce((s, c) => s + c.weight, 0)
+                return (
+                  <div style={{ padding: '16px', backgroundColor: 'rgba(168,85,247,0.06)', borderRadius: '10px', border: '1px solid rgba(168,85,247,0.2)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                      Example — Large Lighting Retrofit
+                    </div>
+                    <div style={{ fontSize: '13px', color: theme.text, lineHeight: 1.8 }}>
+                      Job allotted <strong>800 hrs</strong>, crew knocks it out in <strong>720 hrs</strong> → <strong>{savedHrs} hrs saved</strong>
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#8b5cf6', margin: '8px 0 4px' }}>
+                      Bonus pool: {savedHrs}h × ${rate}/hr = ${pool.toLocaleString()}
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', fontSize: '13px' }}>
+                      <span style={{ color: '#22c55e', fontWeight: '600' }}>Company keeps ({cut}%): ${companyKeeps.toLocaleString()}</span>
+                      <span style={{ color: '#8b5cf6', fontWeight: '600' }}>Crew splits ({100 - cut}%): ${crewPool.toLocaleString()}</span>
+                    </div>
+
+                    {/* Per-crew-member breakdown */}
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '8px' }}>
+                      {exampleCrew.map((member, i) => {
+                        const share = crewPool * (member.weight / totalWeight)
+                        return (
+                          <div key={i} style={{
+                            padding: '10px 12px',
+                            backgroundColor: theme.bgCard,
+                            borderRadius: '8px',
+                            border: `1px solid ${theme.border}`,
+                            textAlign: 'center',
+                          }}>
+                            <RankBadge rank={member.name} weight={member.weight} size="sm" theme={theme} />
+                            <div style={{ fontSize: '20px', fontWeight: '800', color: '#8b5cf6', marginTop: '6px' }}>
+                              ${Math.round(share).toLocaleString()}
+                            </div>
+                            <div style={{ fontSize: '10px', color: theme.textMuted }}>
+                              {member.weight}/{totalWeight} of crew pool
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '10px', lineHeight: 1.5 }}>
+                      The faster and better the crew works, the more everyone earns. Higher rank = bigger share.
+                      Victor verification required to qualify.
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
         </div>
