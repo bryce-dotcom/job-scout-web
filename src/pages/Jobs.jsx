@@ -711,15 +711,29 @@ export default function Jobs() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
+    setFormData(prev => {
+      const next = { ...prev, [name]: value }
 
-    // Auto-fill address from customer
-    if (name === 'customer_id' && value) {
-      const customer = customers.find(c => c.id === parseInt(value))
-      if (customer?.address) {
-        setFormData(prev => ({ ...prev, job_address: customer.address }))
+      // Auto-fill address from customer
+      if (name === 'customer_id' && value) {
+        const customer = customers.find(c => c.id === parseInt(value))
+        if (customer?.address) next.job_address = customer.address
       }
-    }
+
+      // Auto-sync status ↔ start_date so scheduled jobs always land on calendar
+      if (name === 'start_date' && value && prev.status === 'Chillin') {
+        next.status = 'Scheduled'
+      }
+      if (name === 'status' && value === 'Scheduled' && !prev.start_date) {
+        // Default to tomorrow 8 AM so the calendar has a date to render
+        const tomorrow = new Date()
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        tomorrow.setHours(8, 0, 0, 0)
+        next.start_date = tomorrow.toISOString().slice(0, 16)
+      }
+
+      return next
+    })
   }
 
   const handleSubmit = async (e) => {
@@ -808,23 +822,72 @@ export default function Jobs() {
       }
     }
 
+    // Auto-create appointment when job is scheduled with a date — so it shows on calendar
+    const savedJob = editingJob || result.data?.[0]
+    if (savedJob && payload.status === 'Scheduled' && payload.start_date) {
+      const startTime = new Date(payload.start_date)
+      const endTime = payload.end_date ? new Date(payload.end_date) : new Date(startTime.getTime() + 4 * 60 * 60 * 1000)
+
+      const assigneeId = payload.job_lead_id || (user?.employee_id ? parseInt(user.employee_id) : null)
+      const jobTitle = payload.job_title || savedJob.job_title || 'Scheduled Job'
+      const customer = payload.customer_id ? customers.find(c => c.id === parseInt(payload.customer_id)) : null
+      await supabase.from('appointments').insert({
+        company_id: companyId,
+        title: jobTitle,
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
+        appointment_type: 'Job',
+        status: 'Scheduled',
+        notes: `Job: ${jobTitle} (#${savedJob.job_id || savedJob.id})`,
+        employee_id: assigneeId,
+        customer_id: customer?.id || null,
+        location: payload.job_address || '',
+        created_at: new Date().toISOString()
+      })
+    }
+
     await fetchJobs()
     closeModal()
     setLoading(false)
   }
 
   const scheduleJob = async (job) => {
-    await supabase
-      .from('jobs')
-      .update({
-        status: 'Scheduled',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', job.id)
+    // Set start_date if missing so job appears on calendar (default tomorrow 8 AM)
+    const updateData = {
+      status: 'Scheduled',
+      updated_at: new Date().toISOString()
+    }
+    if (!job.start_date) {
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      tomorrow.setHours(8, 0, 0, 0)
+      updateData.start_date = tomorrow.toISOString()
+      updateData.end_date = new Date(tomorrow.getTime() + 4 * 60 * 60 * 1000).toISOString()
+    }
+
+    await supabase.from('jobs').update(updateData).eq('id', job.id)
 
     if (job.lead_id) {
       await supabase.from('leads').update({ status: 'Job Scheduled', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
     }
+
+    // Create appointment so job shows on Appointments calendar too
+    const startTime = job.start_date || updateData.start_date
+    const endTime = job.end_date || updateData.end_date
+    const jobTitle = job.job_title || 'Scheduled Job'
+    await supabase.from('appointments').insert({
+      company_id: companyId,
+      title: jobTitle,
+      start_time: startTime,
+      end_time: endTime,
+      appointment_type: 'Job',
+      status: 'Scheduled',
+      notes: `Job: ${jobTitle} (#${job.job_id || job.id})`,
+      employee_id: job.job_lead_id || null,
+      customer_id: job.customer?.id || job.customer_id || null,
+      location: job.job_address || '',
+      created_at: new Date().toISOString()
+    })
 
     await fetchJobs()
   }
@@ -1944,8 +2007,25 @@ export default function Jobs() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Start Date/Time</label>
-                    <input type="datetime-local" name="start_date" value={formData.start_date} onChange={handleChange} style={inputStyle} />
+                    <label style={{ ...labelStyle, color: formData.status === 'Scheduled' && !formData.start_date ? '#ef4444' : labelStyle.color }}>
+                      Start Date/Time {formData.status === 'Scheduled' ? '*' : ''}
+                    </label>
+                    <input
+                      type="datetime-local"
+                      name="start_date"
+                      value={formData.start_date}
+                      onChange={handleChange}
+                      required={formData.status === 'Scheduled'}
+                      style={{
+                        ...inputStyle,
+                        ...(formData.status === 'Scheduled' && !formData.start_date ? { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,0.15)' } : {})
+                      }}
+                    />
+                    {formData.status === 'Scheduled' && !formData.start_date && (
+                      <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px' }}>
+                        Required for calendar display
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label style={labelStyle}>End Date/Time</label>

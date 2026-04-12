@@ -787,6 +787,13 @@ function JobDetailInner() {
       updated_at: new Date().toISOString()
     }
 
+    if (newStatus === 'Scheduled' && !job.start_date) {
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      tomorrow.setHours(8, 0, 0, 0)
+      updateData.start_date = tomorrow.toISOString()
+      updateData.end_date = new Date(tomorrow.getTime() + 4 * 60 * 60 * 1000).toISOString()
+    }
     if (newStatus === 'In Progress' && !job.start_date) {
       updateData.start_date = new Date().toISOString()
     }
