@@ -963,7 +963,8 @@ export default function InvoiceDetail() {
 
   const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const ccFeeOnInvoice = parseFloat(invoice.credit_card_fee) || 0
-  const balanceDue = (parseFloat(invoice.amount) || 0) + ccFeeOnInvoice - totalPaid
+  const discountApplied = parseFloat(invoice.discount_applied) || 0
+  const balanceDue = (parseFloat(invoice.amount) || 0) - discountApplied + ccFeeOnInvoice - totalPaid
   const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
   return (

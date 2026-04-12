@@ -185,7 +185,7 @@ export default function CustomerDetail() {
       .from('customer_payment_methods')
       .select('id, brand, last_four, exp_month, exp_year, is_default, created_at')
       .eq('company_id', companyId)
-      .eq('customer_id', id)
+      .eq('customer_id', parseInt(id))
       .eq('status', 'active')
       .order('is_default', { ascending: false })
     setSavedCards(cardData || [])

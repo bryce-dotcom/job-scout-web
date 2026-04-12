@@ -906,6 +906,9 @@ function JobDetailInner() {
     const discount = parseFloat(job.discount) || 0
     const total = subtotal - discount
 
+    const descParts = [job.job_title]
+    if (discount > 0) descParts.push(`Discount: -$${discount.toFixed(2)}`)
+
     const { data: invoice, error } = await supabase
       .from('invoices')
       .insert([{
@@ -913,10 +916,10 @@ function JobDetailInner() {
         invoice_id: invoiceNumber,
         job_id: parseInt(id),
         customer_id: job.customer_id,
-        amount: total,
+        amount: subtotal,
         discount_applied: discount,
         payment_status: 'Pending',
-        job_description: job.job_title
+        job_description: descParts.join(' | ')
       }])
       .select()
       .single()
