@@ -3347,7 +3347,6 @@ function JobDetailInner() {
                                 <input
                                   type="file"
                                   accept="image/*"
-                                  capture="environment"
                                   style={{ display: 'none' }}
                                   onChange={(e) => handleJobLinePhotoUpload(line.id, e)}
                                 />

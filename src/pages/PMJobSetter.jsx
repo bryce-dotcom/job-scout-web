@@ -135,6 +135,7 @@ export default function PMJobSetter() {
 
   // UI State
   const [expandedJobs, setExpandedJobs] = useState({})
+  const [expandedDay, setExpandedDay] = useState(null) // dateString of expanded calendar day
   const [currentDate, setCurrentDate] = useState(new Date())
   const [showSectionModal, setShowSectionModal] = useState(false)
   const [selectedSection, setSelectedSection] = useState(null)
@@ -2906,83 +2907,102 @@ export default function PMJobSetter() {
                             }}>
                               {day.getDate()}
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              {dayJobs.slice(0, 4).map(job => {
-                                const statusColor = defaultStatusColors[job.status] || theme.accent
-                                return (
-                                  <div
-                                    key={job.id}
-                                    draggable
-                                    onDragStart={(e) => handleJobDragStart(e, job)}
-                                    onDragEnd={handleDragEnd}
-                                    onClick={() => setDetailJob(job)}
-                                    style={{
-                                      backgroundColor: `${statusColor}18`,
-                                      borderLeft: `3px solid ${statusColor}`,
-                                      borderRadius: '3px',
-                                      padding: '2px 4px',
-                                      cursor: 'grab',
-                                      fontSize: '10px',
-                                      fontWeight: '500',
-                                      color: theme.text,
-                                      whiteSpace: 'nowrap',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis'
-                                    }}
-                                    title={`${job.job_title || 'Untitled'} — ${job.customer?.name || ''}`}
-                                  >
-                                    {job.job_title || `Job #${job.id}`}
-                                  </div>
-                                )
-                              })}
-                              {dayJobs.length > 4 && (
-                                <div style={{ fontSize: '10px', color: theme.textMuted, padding: '1px 4px' }}>
-                                  +{dayJobs.length - 4} more
+                            {(() => {
+                              const dayKey = day.toDateString()
+                              const isExpanded = expandedDay === dayKey
+                              const totalItems = dayJobs.length + dayAppointments.length
+                              const showLimit = isExpanded ? 999 : 4
+                              const jobsToShow = dayJobs.slice(0, showLimit)
+                              const aptsToShow = dayAppointments.slice(0, Math.max(0, showLimit - dayJobs.length))
+                              const hiddenCount = totalItems - Math.min(totalItems, showLimit)
+
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', position: 'relative' }}>
+                                  {jobsToShow.map(job => {
+                                    const statusColor = defaultStatusColors[job.status] || theme.accent
+                                    return (
+                                      <div
+                                        key={job.id}
+                                        draggable
+                                        onDragStart={(e) => handleJobDragStart(e, job)}
+                                        onDragEnd={handleDragEnd}
+                                        onClick={() => setDetailJob(job)}
+                                        style={{
+                                          backgroundColor: `${statusColor}18`,
+                                          borderLeft: `3px solid ${statusColor}`,
+                                          borderRadius: '3px',
+                                          padding: '2px 4px',
+                                          cursor: 'grab',
+                                          fontSize: '10px',
+                                          fontWeight: '500',
+                                          color: theme.text,
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis'
+                                        }}
+                                        title={`${job.job_title || 'Untitled'} — ${job.customer?.name || ''}`}
+                                      >
+                                        {job.job_title || `Job #${job.id}`}
+                                      </div>
+                                    )
+                                  })}
+                                  {/* Appointments */}
+                                  {aptsToShow.map(apt => {
+                                    const aptColor = appointmentStatusColors[apt.status] || '#0ea5e9'
+                                    const isRecurring = isRecurringAppointment(apt)
+                                    return (
+                                      <div
+                                        key={`apt-${apt.id}`}
+                                        draggable
+                                        onDragStart={(e) => handleAppointmentDragStart(e, apt)}
+                                        onDragEnd={handleDragEnd}
+                                        onClick={(e) => { e.stopPropagation(); handleAppointmentClick(apt) }}
+                                        style={{
+                                          backgroundColor: isRecurring ? '#dbeafe' : `${aptColor}15`,
+                                          borderLeft: `3px solid ${isRecurring ? '#0ea5e9' : aptColor}`,
+                                          borderRadius: '3px',
+                                          padding: '2px 4px',
+                                          fontSize: '10px',
+                                          fontWeight: isRecurring ? '600' : '500',
+                                          color: isRecurring ? '#0369a1' : aptColor,
+                                          cursor: 'grab',
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '3px',
+                                          border: isRecurring ? '1px solid #93c5fd' : 'none',
+                                          borderLeftWidth: '3px'
+                                        }}
+                                        title={`${isRecurring ? '↻ Recurring — ' : ''}${apt.title}${apt.employee?.name ? ` — ${apt.employee.name}` : ''}${apt.location ? ` @ ${apt.location}` : ''}`}
+                                      >
+                                        {isRecurring && <RefreshCw size={8} style={{ flexShrink: 0 }} />}
+                                        {!isRecurring && <Clock size={8} style={{ flexShrink: 0 }} />}
+                                        {apt.title || 'Appointment'}
+                                      </div>
+                                    )
+                                  })}
+                                  {/* Expand / collapse toggle */}
+                                  {hiddenCount > 0 && (
+                                    <div
+                                      onClick={(e) => { e.stopPropagation(); setExpandedDay(dayKey) }}
+                                      style={{ fontSize: '10px', color: theme.accent, padding: '1px 4px', cursor: 'pointer', fontWeight: '600' }}
+                                    >
+                                      +{hiddenCount} more
+                                    </div>
+                                  )}
+                                  {isExpanded && totalItems > 4 && (
+                                    <div
+                                      onClick={(e) => { e.stopPropagation(); setExpandedDay(null) }}
+                                      style={{ fontSize: '10px', color: theme.accent, padding: '1px 4px', cursor: 'pointer', fontWeight: '600' }}
+                                    >
+                                      Show less
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                              {/* Appointments */}
-                              {dayAppointments.slice(0, Math.max(0, 4 - dayJobs.length)).map(apt => {
-                                const aptColor = appointmentStatusColors[apt.status] || '#0ea5e9'
-                                const isRecurring = isRecurringAppointment(apt)
-                                return (
-                                  <div
-                                    key={`apt-${apt.id}`}
-                                    draggable
-                                    onDragStart={(e) => handleAppointmentDragStart(e, apt)}
-                                    onDragEnd={handleDragEnd}
-                                    onClick={(e) => { e.stopPropagation(); handleAppointmentClick(apt) }}
-                                    style={{
-                                      backgroundColor: isRecurring ? '#dbeafe' : `${aptColor}15`,
-                                      borderLeft: `3px solid ${isRecurring ? '#0ea5e9' : aptColor}`,
-                                      borderRadius: '3px',
-                                      padding: '2px 4px',
-                                      fontSize: '10px',
-                                      fontWeight: isRecurring ? '600' : '500',
-                                      color: isRecurring ? '#0369a1' : aptColor,
-                                      cursor: 'grab',
-                                      whiteSpace: 'nowrap',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '3px',
-                                      border: isRecurring ? '1px solid #93c5fd' : 'none',
-                                      borderLeftWidth: '3px'
-                                    }}
-                                    title={`${isRecurring ? '↻ Recurring — ' : ''}${apt.title}${apt.employee?.name ? ` — ${apt.employee.name}` : ''}${apt.location ? ` @ ${apt.location}` : ''}`}
-                                  >
-                                    {isRecurring && <RefreshCw size={8} style={{ flexShrink: 0 }} />}
-                                    {!isRecurring && <Clock size={8} style={{ flexShrink: 0 }} />}
-                                    {apt.title || 'Appointment'}
-                                  </div>
-                                )
-                              })}
-                              {(dayJobs.length + dayAppointments.length) > 4 && dayJobs.length <= 4 && dayAppointments.length > (4 - dayJobs.length) && (
-                                <div style={{ fontSize: '10px', color: theme.textMuted, padding: '1px 4px' }}>
-                                  +{(dayJobs.length + dayAppointments.length) - 4} more
-                                </div>
-                              )}
-                            </div>
+                              )
+                            })()}
                           </>
                         )}
                       </div>

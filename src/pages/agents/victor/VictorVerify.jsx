@@ -653,7 +653,6 @@ export default function VictorVerify({
                         ref={el => lineItemInputRefs.current[line.id] = el}
                         type="file"
                         accept="image/*"
-                        capture="environment"
                         onChange={(e) => handleLineItemPhoto(line.id, e)}
                         style={{ display: 'none' }}
                       />
@@ -707,7 +706,6 @@ export default function VictorVerify({
                 type="file"
                 accept="image/*"
                 multiple
-                capture="environment"
                 onChange={handlePhotoUpload}
                 style={{ display: 'none' }}
               />

@@ -1251,7 +1251,6 @@ export default function FieldScout() {
         ref={receiptInputRef}
         type="file"
         accept="image/*"
-        capture="environment"
         onChange={handleReceiptCapture}
         style={{ display: 'none' }}
       />
@@ -1633,7 +1632,6 @@ export default function FieldScout() {
                         ref={linePhotoInputRef}
                         type="file"
                         accept="image/*"
-                        capture="environment"
                         onChange={handleLinePhotoUpload}
                         style={{ display: 'none' }}
                       />
