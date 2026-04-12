@@ -262,6 +262,25 @@ function drawEstimate(doc, { estimate, lineItems, company, brand, logo, settings
   // ── Totals ──
   y = drawTotals(doc, estimate, lineItems, y, m, pw, ph)
 
+  // ── Notes (after totals, before footer) ──
+  if (estimate.notes) {
+    if (y + 20 > ph - 30) { doc.addPage(); y = m }
+    y += 6
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...C.primaryDk)
+    doc.text('NOTES', m, y)
+    y += 5
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...C.muted)
+    const noteLines = doc.splitTextToSize(estimate.notes, cw)
+    for (const line of noteLines) {
+      if (y + 4 > ph - 30) { doc.addPage(); y = m }
+      doc.text(line, m, y)
+      y += 4
+    }
+  }
+
   // ── Footer ──
   drawFooter(doc, brand, settings, m, pw, ph)
 
@@ -319,7 +338,18 @@ function drawTable(doc, lineItems, settings, startY, m, cw, pw, ph) {
   doc.setFontSize(9)
 
   lineItems.forEach((line, idx) => {
-    if (y + rowH > ph - 30) {
+    const itemName = line.item_name || line.item?.name || 'Item'
+    const maxNameW = cols[0].w - 5
+    const nameLines = doc.splitTextToSize(itemName, maxNameW)
+    let descLines = []
+    if (showDesc) {
+      const desc = line.description || line.item?.description || ''
+      if (desc) descLines = doc.splitTextToSize(desc, cols[1].w - 5)
+    }
+    const textLineCount = Math.max(nameLines.length, descLines.length, 1)
+    const dynamicRowH = Math.max(rowH, 4 + textLineCount * 4)
+
+    if (y + dynamicRowH > ph - 30) {
       doc.addPage()
       y = m
     }
@@ -327,31 +357,25 @@ function drawTable(doc, lineItems, settings, startY, m, cw, pw, ph) {
     // Alternating row background
     if (idx % 2 === 0) {
       doc.setFillColor(...C.cream)
-      doc.rect(m, y - 1, cw, rowH, 'F')
+      doc.rect(m, y - 1, cw, dynamicRowH, 'F')
     }
 
     let rx = m + 3
-    const itemName = line.item_name || line.item?.name || 'Item'
 
-    // Item name
+    // Item name (multi-line)
     doc.setTextColor(...C.text)
     doc.setFont('helvetica', 'normal')
-    const maxNameW = cols[0].w - 5
-    const truncName = doc.getTextWidth(itemName) > maxNameW
-      ? itemName.substring(0, Math.floor(maxNameW / doc.getTextWidth('A') * itemName.length)) + '...'
-      : itemName
-    doc.text(truncName, rx, y + 4)
+    for (let i = 0; i < nameLines.length; i++) {
+      doc.text(nameLines[i], rx, y + 4 + i * 4)
+    }
     rx += cols[0].w
 
-    // Description (if shown)
+    // Description (if shown, multi-line)
     if (showDesc) {
       doc.setTextColor(...C.muted)
-      const desc = line.description || line.item?.description || ''
-      const maxDescW = cols[1].w - 5
-      const truncDesc = doc.getTextWidth(desc) > maxDescW
-        ? desc.substring(0, Math.floor(maxDescW / doc.getTextWidth('A') * desc.length)) + '...'
-        : desc
-      doc.text(truncDesc, rx, y + 4)
+      for (let i = 0; i < descLines.length; i++) {
+        doc.text(descLines[i], rx, y + 4 + i * 4)
+      }
       rx += cols[1].w
     }
 
@@ -374,7 +398,7 @@ function drawTable(doc, lineItems, settings, startY, m, cw, pw, ph) {
     doc.text(fmt(line.line_total), rx + cols[amtColIdx].w - 3, y + 4, { align: 'right' })
     doc.setFont('helvetica', 'normal')
 
-    y += rowH
+    y += dynamicRowH
   })
 
   // Bottom border of table

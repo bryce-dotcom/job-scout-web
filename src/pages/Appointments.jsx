@@ -12,6 +12,16 @@ import SearchableSelect from '../components/SearchableSelect'
 import { appointmentsFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 
+// Convert a Date to YYYY-MM-DDTHH:mm for datetime-local inputs (local timezone)
+const toLocalDateTimeStr = (d) => {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const h = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${y}-${m}-${day}T${h}:${min}`
+}
+
 const defaultTheme = {
   bg: '#f7f5ef',
   bgCard: '#ffffff',
@@ -450,8 +460,8 @@ export default function Appointments() {
       lead_id: apt.lead_id || '',
       customer_id: apt.customer_id || '',
       employee_id: apt.employee_id || '',
-      start_time: apt.start_time ? apt.start_time.slice(0, 16) : '',
-      end_time: apt.end_time ? apt.end_time.slice(0, 16) : '',
+      start_time: apt.start_time ? toLocalDateTimeStr(new Date(apt.start_time)) : '',
+      end_time: apt.end_time ? toLocalDateTimeStr(new Date(apt.end_time)) : '',
       location: apt.location || '',
       status: apt.status || 'Scheduled',
       appointment_type: apt.appointment_type || '',
