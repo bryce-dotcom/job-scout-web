@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -545,6 +545,182 @@ export default function CustomerDetail() {
         Customer not found
       </div>
     )
+  }
+
+  // ── Statement Generator ──────────────────────────────────
+  const generateStatement = async () => {
+    const { jsPDF } = await import('jspdf')
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const margin = 20
+    const rightEdge = pageWidth - margin
+    const contentWidth = pageWidth - margin * 2
+    let y = 20
+
+    const currency = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'
+
+    // Company header
+    const companyName = company?.company_name || company?.name || 'Company'
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.text(companyName, margin, y)
+    y += 7
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100)
+    if (company?.address) { doc.text(company.address, margin, y); y += 5 }
+    if (company?.phone) { doc.text(company.phone, margin, y); y += 5 }
+    y += 3
+
+    // Statement title
+    doc.setTextColor(90, 99, 73)
+    doc.setFontSize(16)
+    doc.setFont('helvetica', 'bold')
+    doc.text('ACCOUNT STATEMENT', rightEdge, 20, { align: 'right' })
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(80)
+    doc.text(`Date: ${fmtDate(new Date())}`, rightEdge, 30, { align: 'right' })
+
+    // Customer info
+    doc.setDrawColor(214, 205, 184)
+    doc.line(margin, y, rightEdge, y)
+    y += 10
+    doc.setTextColor(0)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    const custDisplay = customer.business_name || customer.name || 'Customer'
+    doc.text(custDisplay, margin, y)
+    y += 6
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(80)
+    if (customer.address) { doc.text(customer.address, margin, y); y += 5 }
+    if (customer.email) { doc.text(customer.email, margin, y); y += 5 }
+    if (customer.phone) { doc.text(customer.phone, margin, y); y += 5 }
+    y += 8
+
+    // Summary box
+    const totalInvoiced = invoices.reduce((s, inv) => s + (parseFloat(inv.amount) || 0), 0)
+    const totalDiscounts = invoices.reduce((s, inv) => s + (parseFloat(inv.discount_applied) || 0), 0)
+    const totalPaid = invoicePayments.filter(p => p.status === 'Completed' || !p.status).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+    const balance = totalInvoiced - totalDiscounts - totalPaid
+
+    doc.setFillColor(247, 245, 239)
+    doc.rect(margin, y, contentWidth, 28, 'F')
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(44, 53, 48)
+    const col1 = margin + 5; const col2 = margin + contentWidth * 0.33; const col3 = margin + contentWidth * 0.66
+    doc.text('Total Invoiced', col1, y + 8)
+    doc.text('Total Paid', col2, y + 8)
+    doc.text('Balance Due', col3, y + 8)
+    doc.setFontSize(14)
+    doc.text(currency(totalInvoiced - totalDiscounts), col1, y + 20)
+    doc.setTextColor(34, 197, 94)
+    doc.text(currency(totalPaid), col2, y + 20)
+    doc.setTextColor(balance > 0 ? 239 : 34, balance > 0 ? 68 : 197, balance > 0 ? 68 : 94)
+    doc.text(currency(balance), col3, y + 20)
+    y += 36
+
+    // Invoices table
+    doc.setTextColor(44, 53, 48)
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Invoices', margin, y)
+    y += 8
+
+    // Table header
+    doc.setFillColor(90, 99, 73)
+    doc.rect(margin, y - 4, contentWidth, 8, 'F')
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(255)
+    doc.text('Invoice #', margin + 2, y)
+    doc.text('Date', margin + 35, y)
+    doc.text('Description', margin + 65, y)
+    doc.text('Amount', rightEdge - 30, y)
+    doc.text('Status', rightEdge - 2, y, { align: 'right' })
+    y += 7
+
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0)
+    doc.setFontSize(9)
+    const sortedInvoices = [...invoices].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    for (const inv of sortedInvoices) {
+      if (y > 270) { doc.addPage(); y = 20 }
+      const desc = (inv.job_description || '').substring(0, 35)
+      doc.text(inv.invoice_id || `#${inv.id}`, margin + 2, y)
+      doc.text(fmtDate(inv.created_at), margin + 35, y)
+      doc.text(desc, margin + 65, y)
+      doc.text(currency(inv.amount), rightEdge - 30, y)
+      doc.text(inv.payment_status || 'Pending', rightEdge - 2, y, { align: 'right' })
+      y += 6
+    }
+    if (invoices.length === 0) {
+      doc.setTextColor(120)
+      doc.text('No invoices', margin + 2, y)
+      y += 6
+    }
+    y += 6
+
+    // Payments table
+    doc.setTextColor(44, 53, 48)
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Payments', margin, y)
+    y += 8
+
+    doc.setFillColor(90, 99, 73)
+    doc.rect(margin, y - 4, contentWidth, 8, 'F')
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(255)
+    doc.text('Date', margin + 2, y)
+    doc.text('Method', margin + 35, y)
+    doc.text('Invoice', margin + 70, y)
+    doc.text('Amount', rightEdge - 2, y, { align: 'right' })
+    y += 7
+
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0)
+    doc.setFontSize(9)
+    const sortedPayments = [...invoicePayments].sort((a, b) => new Date(a.date || a.created_at) - new Date(b.date || b.created_at))
+    for (const pmt of sortedPayments) {
+      if (y > 270) { doc.addPage(); y = 20 }
+      const linkedInv = invoices.find(i => i.id === pmt.invoice_id)
+      doc.text(fmtDate(pmt.date || pmt.created_at), margin + 2, y)
+      doc.text(pmt.method || '-', margin + 35, y)
+      doc.text(linkedInv?.invoice_id || '-', margin + 70, y)
+      doc.setTextColor(34, 120, 60)
+      doc.text(currency(pmt.amount), rightEdge - 2, y, { align: 'right' })
+      doc.setTextColor(0)
+      y += 6
+    }
+    if (invoicePayments.length === 0) {
+      doc.setTextColor(120)
+      doc.text('No payments recorded', margin + 2, y)
+      y += 6
+    }
+    y += 10
+
+    // Balance footer
+    if (y > 260) { doc.addPage(); y = 20 }
+    doc.setDrawColor(90, 99, 73)
+    doc.line(margin + contentWidth * 0.5, y, rightEdge, y)
+    y += 8
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(44, 53, 48)
+    doc.text('Balance Due:', margin + contentWidth * 0.5, y)
+    doc.setTextColor(balance > 0 ? 220 : 34, balance > 0 ? 50 : 160, balance > 0 ? 50 : 60)
+    doc.text(currency(balance), rightEdge, y, { align: 'right' })
+
+    // Open in new tab
+    const blob = doc.output('blob')
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
   }
 
   const tabs = [
@@ -1342,6 +1518,18 @@ export default function CustomerDetail() {
                   Invoices issued to this customer
                 </p>
               </div>
+              <button
+                onClick={generateStatement}
+                style={{
+                  padding: '8px 14px', backgroundColor: theme.accentBg, color: theme.accent,
+                  border: `1px solid ${theme.accent}`, borderRadius: '8px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <FileText size={16} />
+                Generate Statement
+              </button>
             </div>
 
             {invoices.length === 0 ? (

@@ -42,6 +42,8 @@ serve(async (req) => {
       business_unit_email,
       business_unit_address,
       payment_methods,
+      custom_subject,
+      extra_attachments,
     } = await req.json();
 
     if (!recipient_email || !invoice_id) {
@@ -253,16 +255,25 @@ serve(async (req) => {
     const emailPayload: Record<string, unknown> = {
       from: `${displayName} <invoices@appsannex.com>`,
       to: [recipient_email],
-      subject: `Invoice ${invNum}${amountStr ? ` — ${amountStr}` : ''} from ${displayName}`,
+      subject: custom_subject || `Invoice ${invNum}${amountStr ? ` — ${amountStr}` : ''} from ${displayName}`,
       html: htmlBody,
     };
 
-    // Attach PDF if available
+    // Build attachments list
+    const attachmentsList: Array<{filename: string; content: string}> = [];
     if (pdfBase64) {
-      emailPayload.attachments = [{
-        filename: `${invNum}.pdf`,
-        content: pdfBase64,
-      }];
+      attachmentsList.push({ filename: `${invNum}.pdf`, content: pdfBase64 });
+    }
+    // Add any extra file attachments (base64-encoded, passed from client)
+    if (extra_attachments && Array.isArray(extra_attachments)) {
+      for (const att of extra_attachments) {
+        if (att.filename && att.content) {
+          attachmentsList.push({ filename: att.filename, content: att.content });
+        }
+      }
+    }
+    if (attachmentsList.length > 0) {
+      emailPayload.attachments = attachmentsList;
     }
 
     const resendRes = await fetch('https://api.resend.com/emails', {

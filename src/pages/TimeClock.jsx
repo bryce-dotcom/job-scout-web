@@ -49,6 +49,7 @@ export default function TimeClock() {
   // Busy guards so repeated taps on Clock In/Out don't fire duplicate DB ops.
   const [busyEmployeeIds, setBusyEmployeeIds] = useState(new Set()) // clock-in busy
   const [busyEntryIds, setBusyEntryIds] = useState(new Set())       // clock-out / lunch busy
+  const [lookbackDays, setLookbackDays] = useState(14) // default 14 days for time entries
 
   // Pay summary data
   const [periodEntries, setPeriodEntries] = useState([])
@@ -79,22 +80,22 @@ export default function TimeClock() {
       fetchTimeEntries()
       fetchPayData()
     }
-  }, [companyId])
+  }, [companyId, lookbackDays])
 
   const fetchTimeEntries = async () => {
     // Only show the full-screen loading state on the initial fetch.
     // Subsequent fetches (e.g. after clock-in/out) refresh in-place so
     // the clock card stays visible and doesn't flicker away.
     try {
-      // Get entries from last 7 days
-      const weekAgo = new Date()
-      weekAgo.setDate(weekAgo.getDate() - 7)
+      // Get entries from last N days (configurable, default 14)
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - lookbackDays)
 
       const { data, error } = await supabase
         .from('time_clock')
         .select('*')
         .eq('company_id', companyId)
-        .gte('clock_in', weekAgo.toISOString())
+        .gte('clock_in', cutoff.toISOString())
         .order('clock_in', { ascending: false })
 
       if (error) throw error
@@ -551,6 +552,28 @@ export default function TimeClock() {
         }}>
           {currentTime.toLocaleTimeString()}
         </div>
+      </div>
+
+      {/* Lookback Range Selector */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px',
+        flexWrap: 'wrap'
+      }}>
+        <Calendar size={14} style={{ color: theme.textMuted }} />
+        <span style={{ fontSize: '13px', color: theme.textMuted }}>Showing:</span>
+        {[7, 14, 30, 60, 90].map(d => (
+          <button
+            key={d}
+            onClick={() => setLookbackDays(d)}
+            style={{
+              padding: '4px 10px', fontSize: '12px', fontWeight: lookbackDays === d ? '600' : '400',
+              background: lookbackDays === d ? theme.accentBg : 'transparent',
+              color: lookbackDays === d ? theme.accent : theme.textSecondary,
+              border: `1px solid ${lookbackDays === d ? theme.accent : theme.border}`,
+              borderRadius: '14px', cursor: 'pointer', minHeight: '28px'
+            }}
+          >{d}d</button>
+        ))}
       </div>
 
       {/* Employee Cards Grid */}

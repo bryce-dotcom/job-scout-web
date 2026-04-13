@@ -548,6 +548,18 @@ export default function Reports() {
               <input type="date" value={dateRange.start} onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))} style={inputStyle} />
               <span style={{ color: theme.textMuted, fontSize: '13px' }}>to</span>
               <input type="date" value={dateRange.end} onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))} style={inputStyle} />
+              {/* Quick-select date ranges */}
+              {[
+                { label: 'This Week', fn: () => { const now = new Date(); const d = now.getDay(); const mon = new Date(now); mon.setDate(now.getDate() - (d === 0 ? 6 : d - 1)); return { start: mon.toISOString().split('T')[0], end: now.toISOString().split('T')[0] } } },
+                { label: '30d', fn: () => { const now = new Date(); const ago = new Date(now); ago.setDate(now.getDate() - 30); return { start: ago.toISOString().split('T')[0], end: now.toISOString().split('T')[0] } } },
+                { label: '90d', fn: () => { const now = new Date(); const ago = new Date(now); ago.setDate(now.getDate() - 90); return { start: ago.toISOString().split('T')[0], end: now.toISOString().split('T')[0] } } },
+                { label: 'This Year', fn: () => { const now = new Date(); return { start: `${now.getFullYear()}-01-01`, end: now.toISOString().split('T')[0] } } },
+              ].map(q => (
+                <button key={q.label} onClick={() => setDateRange(q.fn())} style={{
+                  padding: '4px 8px', fontSize: '11px', background: theme.accentBg, color: theme.accent,
+                  border: `1px solid ${theme.border}`, borderRadius: '12px', cursor: 'pointer', fontWeight: '500'
+                }}>{q.label}</button>
+              ))}
             </div>
           )}
           {showDateRange && (

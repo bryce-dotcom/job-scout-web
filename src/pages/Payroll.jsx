@@ -1395,6 +1395,27 @@ export default function Payroll() {
         </div>
       </div>
 
+      {/* Past Period Banner */}
+      {periodOffset !== 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 16px', marginBottom: '16px', borderRadius: '10px',
+          background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Calendar size={16} style={{ color: '#3b82f6' }} />
+            <span style={{ fontSize: '13px', fontWeight: '600', color: '#3b82f6' }}>
+              Viewing past period: {periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          </div>
+          <button onClick={() => setPeriodOffset(0)} style={{
+            fontSize: '12px', color: '#3b82f6', background: 'rgba(59,130,246,0.12)',
+            border: '1px solid rgba(59,130,246,0.3)', borderRadius: '6px',
+            padding: '4px 12px', cursor: 'pointer', fontWeight: '600'
+          }}>Back to Current</button>
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: isMobile ? '12px' : '16px', marginBottom: '24px' }}>
         {/* Pay Period with navigation */}

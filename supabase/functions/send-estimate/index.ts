@@ -45,6 +45,8 @@ serve(async (req) => {
       net_after_incentive,
       down_payment_label,
       down_payment_amount,
+      custom_subject,
+      extra_attachments,
     } = await req.json();
 
     const isInteractive = presentation_mode === 'interactive';
@@ -107,11 +109,12 @@ serve(async (req) => {
     const contactLine = contactParts.join(' &nbsp;&bull;&nbsp; ');
 
     const badgeLabel = isFormal ? `FORMAL PROPOSAL ${estNum}` : isInteractive ? `PROPOSAL ${estNum}` : `ESTIMATE ${estNum}`;
-    const subject = isFormal
+    const defaultSubject = isFormal
       ? `Formal Proposal ${estNum} from ${displayName}`
       : isInteractive
         ? `Your Proposal from ${displayName}`
         : `Estimate ${estNum} from ${displayName}`;
+    const subject = custom_subject || defaultSubject;
     const ctaLabel = isFormal ? 'Review &amp; Sign Proposal' : isInteractive ? 'View Your Proposal' : 'View Estimate Online';
 
     // Summary table — only for formal. Mirrors the EstimateDetail summary
@@ -232,12 +235,21 @@ serve(async (req) => {
       html: htmlBody,
     };
 
-    // Attach PDF if available (only for non-interactive, non-formal)
+    // Build attachments list
+    const attachmentsList: Array<{filename: string; content: string}> = [];
     if (pdfBase64) {
-      emailPayload.attachments = [{
-        filename: `${estNum}.pdf`,
-        content: pdfBase64,
-      }];
+      attachmentsList.push({ filename: `${estNum}.pdf`, content: pdfBase64 });
+    }
+    // Add any extra file attachments (base64-encoded, passed from client)
+    if (extra_attachments && Array.isArray(extra_attachments)) {
+      for (const att of extra_attachments) {
+        if (att.filename && att.content) {
+          attachmentsList.push({ filename: att.filename, content: att.content });
+        }
+      }
+    }
+    if (attachmentsList.length > 0) {
+      emailPayload.attachments = attachmentsList;
     }
 
     const resendRes = await fetch('https://api.resend.com/emails', {

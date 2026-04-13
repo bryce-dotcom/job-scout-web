@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard, ExternalLink, Paperclip } from 'lucide-react'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { toast } from '../lib/toast'
@@ -66,6 +66,8 @@ export default function InvoiceDetail() {
   // Send modal state
   const [showSendModal, setShowSendModal] = useState(false)
   const [sendEmail, setSendEmail] = useState('')
+  const [sendSubject, setSendSubject] = useState('')
+  const [sendAttachments, setSendAttachments] = useState([]) // [{ file, name, base64 }]
   const [sendingEmail, setSendingEmail] = useState(false)
 
   // Charge saved card state
@@ -864,7 +866,9 @@ export default function InvoiceDetail() {
           business_unit_name: buObject?.name || invoice.business_unit || '',
           business_unit_phone: buObject?.phone || company?.phone || '',
           business_unit_email: buObject?.email || company?.owner_email || '',
-          business_unit_address: buObject?.address || company?.address || ''
+          business_unit_address: buObject?.address || company?.address || '',
+          custom_subject: sendSubject || undefined,
+          extra_attachments: sendAttachments.length > 0 ? sendAttachments.map(a => ({ filename: a.name, content: a.base64 })) : undefined,
         })
       })
 
@@ -888,6 +892,8 @@ export default function InvoiceDetail() {
 
       toast.success('Invoice sent successfully!')
       setShowSendModal(false)
+      setSendSubject('')
+      setSendAttachments([])
       await fetchInvoiceData()
       await fetchInvoices()
     } catch (err) {
@@ -2028,6 +2034,50 @@ export default function InvoiceDetail() {
                   placeholder="customer@email.com"
                   style={inputStyle}
                 />
+              </div>
+              <div>
+                <label style={labelStyle}>Subject Line <span style={{ color: theme.textMuted, fontWeight: '400' }}>(optional)</span></label>
+                <input
+                  type="text"
+                  value={sendSubject}
+                  onChange={(e) => setSendSubject(e.target.value)}
+                  placeholder={`Invoice ${invoice?.invoice_id || ''} from ${company?.company_name || 'Company'}`}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Attachments <span style={{ color: theme.textMuted, fontWeight: '400' }}>(spec sheets, documents)</span></label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {sendAttachments.map((att, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
+                      <Paperclip size={14} style={{ color: theme.textMuted }} />
+                      <span style={{ fontSize: '13px', color: theme.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.name}</span>
+                      <span style={{ fontSize: '11px', color: theme.textMuted }}>{(att.file.size / 1024).toFixed(0)} KB</span>
+                      <button onClick={() => setSendAttachments(prev => prev.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: theme.textMuted }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  <label style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                    border: `1px dashed ${theme.border}`, borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '13px', color: theme.accent, background: 'transparent'
+                  }}>
+                    <Paperclip size={14} />
+                    Add File
+                    <input type="file" multiple style={{ display: 'none' }} onChange={(e) => {
+                      Array.from(e.target.files).forEach(file => {
+                        const reader = new FileReader()
+                        reader.onload = () => {
+                          const base64 = reader.result.split(',')[1]
+                          setSendAttachments(prev => [...prev, { file, name: file.name, base64 }])
+                        }
+                        reader.readAsDataURL(file)
+                      })
+                      e.target.value = ''
+                    }} />
+                  </label>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 <button
