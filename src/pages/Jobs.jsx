@@ -415,6 +415,7 @@ export default function Jobs() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('active')
   const [teamFilter, setTeamFilter] = useState('all')
+  const [buFilter, setBuFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
   const [customerSearchText, setCustomerSearchText] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
@@ -551,8 +552,9 @@ export default function Jobs() {
       : statusFilter === 'active' ? !['Completed', 'Cancelled', 'Archived'].includes(job.status)
       : job.status === statusFilter
     const matchesTeam = teamFilter === 'all' || job.assigned_team === teamFilter
+    const matchesBU = buFilter === 'all' || job.business_unit === buFilter
 
-    return matchesSearch && matchesStatus && matchesTeam
+    return matchesSearch && matchesStatus && matchesTeam && matchesBU
   })
 
   // Board view groups — dynamic from boardColumns
@@ -1134,6 +1136,19 @@ export default function Jobs() {
             placeholder="All Teams"
             theme={theme}
             style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'auto' : '140px' }}
+          />
+        )}
+        {businessUnits.length > 1 && (
+          <SearchableSelect
+            options={[{ value: 'all', label: 'All Business Units' }, ...businessUnits.map(bu => {
+              const buName = typeof bu === 'object' ? bu.name : bu
+              return { value: buName, label: buName }
+            })]}
+            value={buFilter}
+            onChange={(val) => setBuFilter(val)}
+            placeholder="All Business Units"
+            theme={theme}
+            style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'auto' : '160px' }}
           />
         )}
       </div>

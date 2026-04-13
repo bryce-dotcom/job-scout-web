@@ -613,6 +613,20 @@ function JobDetailInner() {
     setSaving(false)
   }
 
+  const addCustomLineItem = async () => {
+    setSaving(true)
+    await supabase.from('job_lines').insert([{
+      company_id: companyId,
+      job_id: parseInt(id),
+      item_name: 'Custom Item',
+      quantity: 1,
+      price: 0,
+      total: 0
+    }])
+    await fetchJobData()
+    setSaving(false)
+  }
+
   const duplicateLineItem = async (line) => {
     setSaving(true)
     await supabase.from('job_lines').insert([{
@@ -3171,6 +3185,14 @@ function JobDetailInner() {
                   <Plus size={16} />
                   Add Item
                 </button>
+                <button onClick={addCustomLineItem} disabled={saving} style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '8px 12px', backgroundColor: 'transparent', color: theme.accent,
+                  border: `1px solid ${theme.accent}`, borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
+                }}>
+                  <Plus size={16} />
+                  Custom Line
+                </button>
               </div>
             </div>
 
@@ -3214,7 +3236,7 @@ function JobDetailInner() {
                           {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>{line.item?.name || 'Unknown'}</p>
+                          <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>{line.item?.name || line.item_name || 'Custom Item'}</p>
                           {line.notes && (
                             <span style={{ fontSize: '11px', backgroundColor: 'rgba(59,130,246,0.1)', color: '#3b82f6', padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
                               <FileText size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />notes
@@ -3277,6 +3299,53 @@ function JobDetailInner() {
                       </div>
                       {isExpanded && (
                         <div style={{ padding: '12px 20px 16px', backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                          {/* Custom item name + description (for lines not linked to a product) */}
+                          {!line.item_id && (
+                            <div style={{ marginBottom: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                              <div style={{ flex: '1 1 200px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Item Name</div>
+                                <input
+                                  type="text"
+                                  placeholder="Custom item name..."
+                                  defaultValue={line.item_name || ''}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onBlur={(e) => {
+                                    const val = e.target.value.trim()
+                                    if (val !== (line.item_name || '')) {
+                                      supabase.from('job_lines').update({ item_name: val }).eq('id', line.id).then(() => fetchJobData())
+                                    }
+                                  }}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                                  style={{
+                                    width: '100%', padding: '6px 8px', fontSize: '13px', color: theme.text, fontWeight: '500',
+                                    border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard,
+                                    outline: 'none', boxSizing: 'border-box'
+                                  }}
+                                />
+                              </div>
+                              <div style={{ flex: '2 1 300px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</div>
+                                <input
+                                  type="text"
+                                  placeholder="Line description..."
+                                  defaultValue={line.description || ''}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onBlur={(e) => {
+                                    const val = e.target.value.trim()
+                                    if (val !== (line.description || '')) {
+                                      supabase.from('job_lines').update({ description: val }).eq('id', line.id).then(() => fetchJobData())
+                                    }
+                                  }}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                                  style={{
+                                    width: '100%', padding: '6px 8px', fontSize: '13px', color: theme.textSecondary,
+                                    border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard,
+                                    outline: 'none', boxSizing: 'border-box'
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
                           {/* Labor cost info */}
                           {line.labor_cost > 0 && (
                             <div style={{ marginBottom: '12px', padding: '8px 10px', backgroundColor: 'rgba(139,92,246,0.08)', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>

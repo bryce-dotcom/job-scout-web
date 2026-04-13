@@ -202,12 +202,19 @@ export default function FieldScout() {
 
   // Today's jobs — only show jobs assigned to this user (or unassigned)
   const todayStr = new Date().toDateString()
+  const todayDate = new Date(); todayDate.setHours(23, 59, 59, 999)
   const employeeName = currentEmployee?.name || ''
   const todaysJobs = jobs.filter(j => {
+    // Skip terminal statuses
+    if (['Completed', 'Cancelled', 'Archived'].includes(j.status)) return false
     // Always include the job we're actively clocked into, even if not scheduled today
     if (activeEntry?.job_id && j.id === activeEntry.job_id) return true
-    if (!j.start_date) return false
-    if (new Date(j.start_date).toDateString() !== todayStr) return false
+    // "In Progress" jobs always show (crew is actively working)
+    const isActive = j.status === 'In Progress'
+    // Jobs scheduled for today or earlier (catch-up on overdue work)
+    const jobDate = j.start_date ? new Date(j.start_date) : null
+    const isScheduledForTodayOrBefore = jobDate && jobDate <= todayDate
+    if (!isActive && !isScheduledForTodayOrBefore) return false
     // Assigned directly to this employee via job_lead_id
     if (currentEmployee?.id && j.job_lead_id === currentEmployee.id) return true
     // Assigned as salesperson or PM
