@@ -33,7 +33,7 @@ export default function InteractiveProposal({
 
   const logoUrl = business_unit?.logo_url || company?.logo_url
   const isApproved = doc.status === 'Approved' || !!approval || approvalSuccess
-  const totalCost = line_items?.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0) || 0
+  const totalCost = line_items?.reduce((sum, li) => sum + (parseFloat(li.total || li.line_total) || 0), 0) || 0
   const annualSavings = findMetric(sections, 'annual_savings')
   const incentive = parseFloat(doc.utility_incentive) || 0
   const discountAmount = parseFloat(doc.discount) || 0

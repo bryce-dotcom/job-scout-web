@@ -4374,10 +4374,18 @@ function JobDetailInner() {
           }}>
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Notes</h3>
             <textarea
-              value={job.notes || ''}
-              onChange={(e) => {
-                supabase.from('jobs').update({ notes: e.target.value, updated_at: new Date().toISOString() }).eq('id', id)
-                setJob(prev => ({ ...prev, notes: e.target.value }))
+              defaultValue={job.notes || ''}
+              onBlur={async (e) => {
+                const val = e.target.value
+                if (val === (job.notes || '')) return
+                const { error } = await supabase.from('jobs').update({ notes: val, updated_at: new Date().toISOString() }).eq('id', id)
+                const { toast } = await import('../lib/toast')
+                if (error) {
+                  toast.error('Failed to save notes')
+                } else {
+                  setJob(prev => ({ ...prev, notes: val }))
+                  toast.success('Notes saved')
+                }
               }}
               rows={4}
               style={{ ...inputStyle, resize: 'vertical' }}

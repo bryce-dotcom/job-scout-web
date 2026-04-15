@@ -3078,10 +3078,11 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
 
   // ─── Google Calendar handlers ───
   const handleConnectGoogle = async () => {
+    try { sessionStorage.setItem('gcal_connect', 'true') } catch {}
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin + '/auth/callback?gcal_connect=true',
+        redirectTo: window.location.origin + '/auth/callback',
         scopes: 'https://www.googleapis.com/auth/calendar.events.readonly',
         queryParams: { access_type: 'offline', prompt: 'consent' }
       }

@@ -243,10 +243,13 @@ export default function Appointments() {
   }, [fetchGcalEvents])
 
   const handleConnectGoogle = async () => {
+    // Store gcal flag in sessionStorage so AuthCallback can detect it after redirect.
+    // This avoids putting query params in redirectTo which can confuse PKCE matching.
+    try { sessionStorage.setItem('gcal_connect', 'true') } catch {}
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin + '/auth/callback?gcal_connect=true',
+        redirectTo: window.location.origin + '/auth/callback',
         scopes: 'https://www.googleapis.com/auth/calendar.events.readonly',
         queryParams: { access_type: 'offline', prompt: 'consent' }
       }

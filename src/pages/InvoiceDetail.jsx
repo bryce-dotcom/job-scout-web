@@ -476,7 +476,7 @@ export default function InvoiceDetail() {
         } catch { /* ignore */ }
       }
     }
-    const headerName = buInfo?.name || invoice.business_unit || company?.name || 'Company'
+    const headerName = buInfo?.name || invoice.business_unit || company?.company_name || company?.name || 'Company'
     const headerAddress = buInfo?.address || company?.address
     const headerPhone = buInfo?.phone || company?.phone
     const headerEmail = buInfo?.email || company?.owner_email || company?.email

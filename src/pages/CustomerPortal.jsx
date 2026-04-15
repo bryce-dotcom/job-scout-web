@@ -250,7 +250,7 @@ export default function CustomerPortal() {
   const showPreferredNote = invoice_settings?.show_preferred_payment_note && preferredPaymentNote
 
   // Line items (estimates)
-  const estimateTotal = line_items?.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0) || 0
+  const estimateTotal = line_items?.reduce((sum, li) => sum + (parseFloat(li.total || li.line_total) || 0), 0) || 0
 
   // Formal proposal mode — legal document with signature + optional payment
   const presentationModeRaw = isEstimate && doc.settings_overrides?.presentation_mode

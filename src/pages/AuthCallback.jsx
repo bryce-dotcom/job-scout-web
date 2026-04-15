@@ -84,7 +84,15 @@ export default function AuthCallback() {
       const params = new URLSearchParams(window.location.search)
       const hashParams = new URLSearchParams(hash.replace('#', ''))
       const type = params.get('type') || hashParams.get('type')
-      const gcalConnect = params.get('gcal_connect') === 'true'
+      // Check URL param first, then sessionStorage (we moved to sessionStorage to
+      // avoid query params in redirectTo that can interfere with PKCE matching)
+      let gcalConnect = params.get('gcal_connect') === 'true'
+      if (!gcalConnect) {
+        try {
+          gcalConnect = sessionStorage.getItem('gcal_connect') === 'true'
+          if (gcalConnect) sessionStorage.removeItem('gcal_connect')
+        } catch {}
+      }
 
       // If there's a code in the URL, always exchange it first — this is critical
       // for recovery (password reset) and Google Calendar connect flows.
