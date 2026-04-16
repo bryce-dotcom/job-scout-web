@@ -1632,14 +1632,14 @@ export default function InvoiceDetail() {
                 </button>
               )}
 
-              {/* Send Invoice */}
+              {/* Send Invoice — same button is used for first send and resend */}
               <button
                 onClick={() => setShowSendModal(true)}
                 disabled={generatingPdf}
                 style={actionBtnStyle(theme.accent, '#ffffff')}
               >
                 <Mail size={18} />
-                Send Invoice
+                {invoice.last_sent_at ? 'Resend Invoice' : 'Send Invoice'}
               </button>
 
               {/* Payment Portal — open portal to take payment over the phone */}

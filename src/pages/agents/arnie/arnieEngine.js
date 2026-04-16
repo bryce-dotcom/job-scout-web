@@ -1,6 +1,7 @@
 import { getUserRole, assembleDataContext, getDataLoadStatus } from './arnieTools'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
+import { JOBSCOUT_KNOWLEDGE } from './arnieKnowledge'
 
 function buildSystemPrompt(user, company, role) {
   const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
@@ -88,7 +89,21 @@ ${role === 'user' || role === 'team_lead' ? `- Can see: assigned jobs, products,
 - Add personality to data responses — a quick quip, not a monologue.
 
 ## About JobScout
-JobScout is a business management platform for field service companies. It handles the full business lifecycle: leads, quotes, jobs, invoices, payments, team & fleet management, plus specialized AI Agents (Lenard for lighting, Freddy for fleet, Conrad for email, Victor for verification). You know it all inside and out.`
+JobScout is a business management platform for field service companies. It handles the full business lifecycle: leads, quotes, jobs, invoices, payments, team & fleet management, plus specialized AI Agents (Lenard for lighting, Freddy for fleet, Conrad for email, Victor for verification). You know it all inside and out.
+
+${JOBSCOUT_KNOWLEDGE}
+
+## Tools You Can Call
+You have access to live database query tools. USE THEM when the data context doesn't have what you need:
+- **query_invoices** — overdue/by-customer/by-month invoice questions
+- **query_jobs** — job filtering by status/employee/date range
+- **query_revenue** — revenue by period (this_month, last_month, this_quarter, this_year, last_year, custom) — OWNER ONLY
+- **query_leads** — lead/deal questions, salesperson stats — ADMIN+ ONLY
+- **query_customers** — customer search/lookup
+- **query_employees** — employee details with stats
+- **query_inventory** — stock levels, low-stock alerts
+
+When in doubt, call a tool rather than guessing. Tools return the live truth from the database. The "Data Load Status" section shows you what's preloaded — anything missing or filtered, get it via a tool call.`
 }
 
 // Keyword-based intent detection to determine which data domains to fetch
@@ -216,13 +231,12 @@ export function detectIntent(message) {
   return Array.from(domains)
 }
 
-// Call Claude via Supabase edge function
-async function callClaude(conversationHistory, systemPrompt, dataContext, onChunk) {
+// Call Claude via Supabase edge function — streams responses via SSE
+async function callClaude(conversationHistory, systemPrompt, dataContext, onChunk, companyId, role) {
   const contextMessage = dataContext
-    ? `\n\n## Current Data Context (REAL DATA — use ONLY these facts)\nBelow is the ACTUAL company data pulled from the database. Use ONLY these numbers and facts when answering data questions. If something is not listed here, you do NOT have it.\n\n${dataContext}`
-    : '\n\n## Current Data Context\nNo data was loaded for this query. If the user asks about specific numbers or records, let them know you don\'t have that data available right now.'
+    ? `\n\n## Current Data Context (REAL DATA — use ONLY these facts)\nBelow is the ACTUAL company data pulled from the database. Use ONLY these numbers and facts when answering data questions. If something is not listed here AND no tool can fetch it, you do NOT have it.\n\n${dataContext}`
+    : '\n\n## Current Data Context\nNo preloaded data — call a query_* tool to fetch what you need.'
 
-  // Build messages array for Claude (roles: 'user' | 'assistant')
   const messages = conversationHistory.map(msg => ({
     role: msg.role === 'user' ? 'user' : 'assistant',
     content: msg.content,
@@ -230,39 +244,68 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
 
   const fullSystemPrompt = systemPrompt + contextMessage
 
-  const { data, error } = await supabase.functions.invoke('arnie-chat', {
-    body: {
+  // Stream via fetch directly so we can read SSE
+  const session = await supabase.auth.getSession()
+  const accessToken = session?.data?.session?.access_token
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/arnie-chat`
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({
       messages,
       systemPrompt: fullSystemPrompt,
-      sessionId: null,
-    },
+      companyId,
+      role,
+      stream: true,
+    }),
   })
 
-  if (error) {
-    // supabase.functions.invoke returns error for non-2xx — try to parse the context
-    let detail = error.message || 'Failed to call arnie-chat'
-    // The error.context may contain the response body
-    if (error.context?.body) {
-      try {
-        const reader = error.context.body.getReader()
-        const { value } = await reader.read()
-        const text = new TextDecoder().decode(value)
-        const parsed = JSON.parse(text)
-        detail = parsed.error || parsed.details || text
-      } catch {}
+  if (!res.ok || !res.body) {
+    const errText = await res.text().catch(() => 'stream failed')
+    throw new Error(`arnie-chat error: ${res.status} ${errText}`)
+  }
+
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  let full = ''
+  let currentEvent = ''
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop() || ''
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7).trim()
+      } else if (line.startsWith('data: ')) {
+        try {
+          const payload = JSON.parse(line.slice(6))
+          if (currentEvent === 'text' && payload.delta) {
+            full += payload.delta
+            onChunk(full) // pass cumulative text for replace-style rendering
+          } else if (currentEvent === 'tool_call') {
+            onChunk(full + `\n\n_…looking that up (${payload.name})_`, { tool: payload.name })
+          } else if (currentEvent === 'error') {
+            throw new Error(payload.message || 'stream error')
+          }
+        } catch (e) {
+          if (currentEvent === 'error') throw e
+        }
+      }
     }
-    console.error('[Arnie Engine] Edge function error:', detail)
-    throw new Error(detail)
   }
 
-  if (data?.error) {
-    console.error('[Arnie Engine] Claude API error:', data.error, data.details)
-    throw new Error(data.error)
-  }
-
-  const reply = data?.reply || ''
-  onChunk(reply)
-  return reply
+  // Final clean send (without the "looking that up" hint)
+  if (full) onChunk(full)
+  return full
 }
 
 // Send a message through the full pipeline with streaming
@@ -321,7 +364,8 @@ export async function sendMessageStream(message, history = [], onChunk) {
     { role: 'user', content: message }
   ]
 
-  const response = await callClaude(conversationHistory, systemPrompt, dataContext, onChunk)
+  const { companyId } = useStore.getState()
+  const response = await callClaude(conversationHistory, systemPrompt, dataContext, onChunk, companyId, role)
   return response
 }
 

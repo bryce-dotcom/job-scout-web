@@ -74,6 +74,10 @@ export function getJobs(role, userId) {
   const now = new Date()
   const weekEnd = new Date(now)
   weekEnd.setDate(weekEnd.getDate() + 7)
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+  const yearStart = new Date(now.getFullYear(), 0, 1)
 
   const upcoming = filtered
     .filter(j => j.scheduled_date && new Date(j.scheduled_date) >= now)
@@ -86,11 +90,36 @@ export function getJobs(role, userId) {
     return d >= now && d <= weekEnd
   })
 
+  // Date-bucketed counts using start_date or scheduled_date
+  const dateOf = (j) => j.start_date || j.scheduled_date || j.created_at
+  const inRange = (j, start, end) => {
+    const d = dateOf(j)
+    if (!d) return false
+    const dt = new Date(d)
+    return dt >= start && (!end || dt <= end)
+  }
+  const thisMonth = filtered.filter(j => inRange(j, monthStart, null))
+  const lastMonth = filtered.filter(j => inRange(j, lastMonthStart, lastMonthEnd))
+  const ytd = filtered.filter(j => inRange(j, yearStart, null))
+
+  // Group by month (last 12 months)
+  const byMonth = {}
+  filtered.forEach(j => {
+    const d = dateOf(j)
+    if (!d) return
+    const key = String(d).slice(0, 7) // YYYY-MM
+    byMonth[key] = (byMonth[key] || 0) + 1
+  })
+
   return {
     total: filtered.length,
     byStatus,
     upcoming: upcoming.map(j => ({ id: j.id, name: j.name || j.title, status: j.status, date: j.scheduled_date, customer: j.customer_name })),
-    thisWeek: thisWeek.length
+    thisWeek: thisWeek.length,
+    thisMonth: thisMonth.length,
+    lastMonth: lastMonth.length,
+    ytd: ytd.length,
+    byMonth
   }
 }
 
@@ -267,7 +296,62 @@ export function getFinancials(role) {
   const totalExpenses = expItems.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const totalDeposits = depositItems.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
 
-  const unpaid = invItems.filter(i => i.status === 'sent' || i.status === 'overdue')
+  const unpaid = invItems.filter(i => i.status === 'sent' || i.status === 'overdue' || i.payment_status === 'Pending' || i.payment_status === 'Overdue')
+
+  // Date helpers
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+  const yearStart = new Date(now.getFullYear(), 0, 1)
+
+  const sumInRange = (items, dateField, valueField, start, end) =>
+    items
+      .filter(i => {
+        const d = i[dateField]
+        if (!d) return false
+        const dt = new Date(d)
+        return dt >= start && (!end || dt <= end)
+      })
+      .reduce((s, i) => s + (parseFloat(i[valueField]) || 0), 0)
+
+  // Per-period revenue/expenses
+  const revenueThisMonth = sumInRange(payItems, 'date', 'amount', monthStart, null)
+  const revenueLastMonth = sumInRange(payItems, 'date', 'amount', lastMonthStart, lastMonthEnd)
+  const revenueYtd = sumInRange(payItems, 'date', 'amount', yearStart, null)
+  const expensesThisMonth = sumInRange(expItems, 'date', 'amount', monthStart, null)
+  const expensesLastMonth = sumInRange(expItems, 'date', 'amount', lastMonthStart, lastMonthEnd)
+  const expensesYtd = sumInRange(expItems, 'date', 'amount', yearStart, null)
+
+  // Per-customer unpaid invoice breakdown (top 15)
+  const unpaidByCustomer = {}
+  unpaid.forEach(i => {
+    const cust = i.customer_name || `Customer #${i.customer_id}` || 'Unknown'
+    if (!unpaidByCustomer[cust]) unpaidByCustomer[cust] = { count: 0, totalOwed: 0, oldestDate: null }
+    unpaidByCustomer[cust].count++
+    unpaidByCustomer[cust].totalOwed += parseFloat(i.balance || i.total || i.amount || 0)
+    const d = i.created_at || i.date
+    if (d && (!unpaidByCustomer[cust].oldestDate || d < unpaidByCustomer[cust].oldestDate)) {
+      unpaidByCustomer[cust].oldestDate = d
+    }
+  })
+  const topUnpaidCustomers = Object.entries(unpaidByCustomer)
+    .map(([name, v]) => ({ customer: name, ...v, totalOwed: v.totalOwed.toFixed(2) }))
+    .sort((a, b) => parseFloat(b.totalOwed) - parseFloat(a.totalOwed))
+    .slice(0, 15)
+
+  // Revenue by month (last 12 months from payments)
+  const revenueByMonth = {}
+  payItems.forEach(p => {
+    if (!p.date) return
+    const key = String(p.date).slice(0, 7)
+    revenueByMonth[key] = (revenueByMonth[key] || 0) + (parseFloat(p.amount) || 0)
+  })
+  // Keep only last 12 months sorted
+  const last12 = Object.entries(revenueByMonth)
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, 12)
+    .map(([month, val]) => ({ month, revenue: val.toFixed(2) }))
 
   // Expense breakdown by category
   const expensesByCategory = {}
@@ -309,7 +393,16 @@ export function getFinancials(role) {
     totalDeposits: totalDeposits.toFixed(2),
     netIncome: (totalDeposits - totalExpenses).toFixed(2),
     revenue: (totalPaid - totalExpenses).toFixed(2),
+    revenueThisMonth: revenueThisMonth.toFixed(2),
+    revenueLastMonth: revenueLastMonth.toFixed(2),
+    revenueYtd: revenueYtd.toFixed(2),
+    expensesThisMonth: expensesThisMonth.toFixed(2),
+    expensesLastMonth: expensesLastMonth.toFixed(2),
+    expensesYtd: expensesYtd.toFixed(2),
+    revenueByMonth: last12,
     unpaidInvoices: unpaid.length,
+    totalUnpaidAmount: unpaid.reduce((s, i) => s + parseFloat(i.balance || i.total || 0), 0).toFixed(2),
+    topUnpaidCustomers,
     invoiceCount: invItems.length,
     expenseCount: expItems.length,
     depositCount: depositItems.length,

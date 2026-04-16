@@ -656,8 +656,11 @@ function JobDetailInner() {
   }
 
   const handleJobLinePriceChange = async (line, newPrice) => {
-    const basePrice = parseFloat(line.item?.price || line.item?.unit_price) || parseFloat(line.price) || 0
-    const price = Math.max(basePrice, parseFloat(newPrice) || basePrice)
+    // Use the user's exact input. The previous Math.max(basePrice, newPrice)
+    // logic enforced a price floor based on the linked product's unit_price,
+    // which prevented users from setting custom (lower) prices on line items.
+    const parsed = parseFloat(newPrice)
+    const price = isNaN(parsed) || parsed < 0 ? 0 : parsed
     const discount = parseFloat(line.discount) || 0
     const newTotal = (price * (line.quantity || 1)) - discount
 
@@ -918,9 +921,20 @@ function JobDetailInner() {
     const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
     const subtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.total) || 0), 0)
     const discount = parseFloat(job.discount) || 0
-    const total = subtotal - discount
 
-    const descParts = [job.job_title]
+    // Build job_description as a readable summary of all line items so the
+    // invoice PDF actually reflects what was sold instead of just showing
+    // the job title. (Reported bug: invoice was pulling info from the job
+    // name with nothing from the line items.)
+    const descParts = []
+    if (job.job_title) descParts.push(job.job_title)
+    for (const l of lineItems) {
+      const name = l.description || l.item?.name || 'Item'
+      const qty = l.quantity || 1
+      const price = parseFloat(l.price) || 0
+      const lineTotal = parseFloat(l.total) || (qty * price)
+      descParts.push(`${qty} × ${name} @ $${price.toFixed(2)} = $${lineTotal.toFixed(2)}`)
+    }
     if (discount > 0) descParts.push(`Discount: -$${discount.toFixed(2)}`)
 
     const { data: invoice, error } = await supabase
@@ -933,12 +947,31 @@ function JobDetailInner() {
         amount: subtotal,
         discount_applied: discount,
         payment_status: 'Pending',
-        job_description: descParts.join(' | ')
+        job_description: descParts.join('\n')
       }])
       .select()
       .single()
 
     if (!error && invoice) {
+      // Copy job line items into invoice_lines so the invoice has its own
+      // record of what was billed (independent of any future job edits).
+      if (lineItems.length > 0) {
+        const invoiceLineRows = lineItems.map((l, idx) => ({
+          company_id: companyId,
+          invoice_id: invoice.id,
+          item_id: l.item_id || null,
+          line_number: idx + 1,
+          description: l.description || l.item?.name || 'Item',
+          quantity: l.quantity || 1,
+          unit_price: parseFloat(l.price) || 0,
+          discount: parseFloat(l.discount) || 0,
+          line_total: parseFloat(l.total) || ((l.quantity || 1) * (parseFloat(l.price) || 0)),
+          sort_order: idx,
+        }))
+        const { error: linesErr } = await supabase.from('invoice_lines').insert(invoiceLineRows)
+        if (linesErr) console.error('Failed to copy line items into invoice_lines:', linesErr)
+      }
+
       await supabase.from('jobs').update({
         invoice_status: 'Invoiced',
         updated_at: new Date().toISOString()
@@ -3267,7 +3300,7 @@ function JobDetailInner() {
                             type="number" step="0.01"
                             min="0"
                             defaultValue={line.price}
-                            key={`price-${line.id}-${line.price}`}
+                            key={`price-${line.id}`}
                             onBlur={(e) => {
                               const val = parseFloat(e.target.value)
                               if (isNaN(val) || val < 0) { e.target.value = line.price; return }
@@ -3960,16 +3993,38 @@ function JobDetailInner() {
                   </button>
                 )
               })()}
-              {lineItems.length > 0 && job.invoice_status !== 'Invoiced' && job.invoice_status !== 'Paid' && !jobInvoices.some(i => i.invoice_type !== 'deposit') && (
-                <button onClick={generateInvoice} disabled={saving} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '12px 16px', backgroundColor: theme.accent, color: '#ffffff',
-                  border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
-                }}>
-                  <DollarSign size={18} />
-                  Generate Invoice
-                </button>
-              )}
+              {(() => {
+                // Show "Generate Invoice" if no real invoice exists yet,
+                // otherwise show "Open Invoice" linking to the existing one
+                // so the user can resend, edit, or delete it. Previously the
+                // button just disappeared after generating, leaving no path
+                // to re-send a corrected invoice.
+                const existingInvoice = jobInvoices.find(i => i.invoice_type !== 'deposit')
+                if (lineItems.length === 0) return null
+                if (existingInvoice) {
+                  return (
+                    <button onClick={() => navigate(`/invoices/${existingInvoice.id}`)} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                      padding: '12px 16px', backgroundColor: theme.accent, color: '#ffffff',
+                      border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+                    }}>
+                      <DollarSign size={18} />
+                      Open Invoice ({existingInvoice.invoice_id})
+                    </button>
+                  )
+                }
+                if (job.invoice_status === 'Invoiced' || job.invoice_status === 'Paid') return null
+                return (
+                  <button onClick={generateInvoice} disabled={saving} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px 16px', backgroundColor: theme.accent, color: '#ffffff',
+                    border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+                  }}>
+                    <DollarSign size={18} />
+                    Generate Invoice
+                  </button>
+                )
+              })()}
               <button style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 padding: '12px 16px', backgroundColor: theme.accentBg, color: theme.accent,
