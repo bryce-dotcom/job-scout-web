@@ -131,6 +131,10 @@ export default function Invoices() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  // Quick-view filters for Tracy's "invoices coming due" + "card on file" workflow
+  const [dueFilter, setDueFilter] = useState('all') // all | overdue | due_soon | due_30 | has_card | active_plan
+  const [customersWithCard, setCustomersWithCard] = useState(new Set())
+  const [activePlanInvoiceIds, setActivePlanInvoiceIds] = useState(new Set())
   const [showImportExport, setShowImportExport] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState('preferences')
@@ -162,6 +166,21 @@ export default function Invoices() {
     fetchInvoices()
     fetchUtilityInvoices()
     fetchSettings()
+    // Lookup tables for the "due/card" quick filters
+    ;(async () => {
+      const [cards, plans] = await Promise.all([
+        supabase.from('customer_payment_methods')
+          .select('customer_id')
+          .eq('company_id', companyId)
+          .eq('status', 'active'),
+        supabase.from('payment_plans')
+          .select('invoice_id')
+          .eq('company_id', companyId)
+          .eq('status', 'active'),
+      ])
+      setCustomersWithCard(new Set((cards.data || []).map(c => c.customer_id).filter(Boolean)))
+      setActivePlanInvoiceIds(new Set((plans.data || []).map(p => p.invoice_id).filter(Boolean)))
+    })()
   }, [companyId, navigate, fetchInvoices, fetchUtilityInvoices, fetchSettings])
 
   // Sync typeFilter to URL
@@ -174,8 +193,25 @@ export default function Invoices() {
     }
   }
 
+  // Helper for due-date / card / plan filters
+  const matchesDueFilter = (invoice) => {
+    if (dueFilter === 'all') return true
+    const isUnpaidInv = invoice.payment_status !== 'Paid' && invoice.payment_status !== 'Cancelled'
+    if (dueFilter === 'has_card') return isUnpaidInv && customersWithCard.has(invoice.customer_id)
+    if (dueFilter === 'active_plan') return activePlanInvoiceIds.has(invoice.id)
+    if (!isUnpaidInv || !invoice.due_date) return false
+    const today = new Date(); today.setHours(0,0,0,0)
+    const due = new Date(invoice.due_date)
+    const daysUntil = Math.floor((due - today) / (1000 * 60 * 60 * 24))
+    if (dueFilter === 'overdue') return daysUntil < 0
+    if (dueFilter === 'due_soon') return daysUntil >= 0 && daysUntil <= 7
+    if (dueFilter === 'due_30') return daysUntil >= 0 && daysUntil <= 30
+    return true
+  }
+
   // Customer invoice filtering
   const filteredCustomerInvoices = invoices.filter(invoice => {
+    if (!matchesDueFilter(invoice)) return false
     if (searchTerm === '') {
       return statusFilter === 'all' || invoice.payment_status === statusFilter
     }
@@ -215,6 +251,10 @@ export default function Invoices() {
 
     const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
 
+    // Default Net-30 due date so the invoice surfaces in the Due Soon /
+    // Overdue quick filters. User can override later via InvoiceDetail edit.
+    const defaultDue = new Date(); defaultDue.setDate(defaultDue.getDate() + 30)
+
     const { data, error: insertError } = await supabase
       .from('invoices')
       .insert([{
@@ -228,7 +268,8 @@ export default function Invoices() {
         payment_status: formData.payment_status || 'Pending',
         discount_applied: formData.discount_applied || null,
         credit_card_fee: formData.credit_card_fee || null,
-        job_description: formData.job_description || null
+        job_description: formData.job_description || null,
+        due_date: formData.due_date || defaultDue.toISOString().split('T')[0],
       }])
       .select()
       .single()
@@ -874,6 +915,67 @@ export default function Invoices() {
         )}
       </div>
 
+      {/* Quick-view chips: Due Soon / Overdue / Has Card on File / Active Plan */}
+      {(() => {
+        const today = new Date(); today.setHours(0,0,0,0)
+        const isUnpaid = (i) => i.payment_status !== 'Paid' && i.payment_status !== 'Cancelled'
+        const overdueCount = invoices.filter(i => isUnpaid(i) && i.due_date && new Date(i.due_date) < today).length
+        const dueSoonCount = invoices.filter(i => {
+          if (!isUnpaid(i) || !i.due_date) return false
+          const d = Math.floor((new Date(i.due_date) - today) / 86400000)
+          return d >= 0 && d <= 7
+        }).length
+        const due30Count = invoices.filter(i => {
+          if (!isUnpaid(i) || !i.due_date) return false
+          const d = Math.floor((new Date(i.due_date) - today) / 86400000)
+          return d >= 0 && d <= 30
+        }).length
+        const hasCardCount = invoices.filter(i => isUnpaid(i) && customersWithCard.has(i.customer_id)).length
+        const planCount = invoices.filter(i => activePlanInvoiceIds.has(i.id)).length
+
+        const chip = (key, label, count, color) => (
+          <button
+            key={key}
+            onClick={() => setDueFilter(dueFilter === key ? 'all' : key)}
+            style={{
+              padding: '8px 14px',
+              backgroundColor: dueFilter === key ? color : theme.bgCard,
+              color: dueFilter === key ? '#fff' : theme.text,
+              border: `1px solid ${dueFilter === key ? color : theme.border}`,
+              borderRadius: '20px',
+              fontSize: '13px',
+              fontWeight: dueFilter === key ? 600 : 500,
+              cursor: 'pointer',
+              minHeight: '36px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            {label}
+            <span style={{
+              padding: '2px 8px',
+              borderRadius: '10px',
+              backgroundColor: dueFilter === key ? 'rgba(255,255,255,0.25)' : theme.accentBg,
+              color: dueFilter === key ? '#fff' : theme.accent,
+              fontSize: '11px',
+              fontWeight: 600,
+              minWidth: '20px',
+            }}>{count}</span>
+          </button>
+        )
+
+        return (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            {chip('overdue',     'Overdue',         overdueCount, '#ef4444')}
+            {chip('due_soon',    'Due in 7 days',   dueSoonCount, '#eab308')}
+            {chip('due_30',      'Due in 30 days',  due30Count,   '#3b82f6')}
+            {chip('has_card',    'Card on File',    hasCardCount, '#22c55e')}
+            {chip('active_plan', 'Active Plan',     planCount,    '#a855f7')}
+          </div>
+        )
+      })()}
+
       {/* Filters */}
       <div style={{
         display: 'flex',
@@ -1002,6 +1104,46 @@ export default function Invoices() {
                       <span style={{ fontSize: '12px', color: theme.textMuted }}>{formatDate(item.created_at)}</span>
                     </div>
                   </div>
+
+                  {/* Due-date / card-on-file / plan badges (customer invoices only) */}
+                  {isCustomer && (() => {
+                    const isUnpaidInv = item.payment_status !== 'Paid' && item.payment_status !== 'Cancelled'
+                    if (!isUnpaidInv) return null
+                    const today2 = new Date(); today2.setHours(0,0,0,0)
+                    const due = item.due_date ? new Date(item.due_date) : null
+                    const daysUntil = due ? Math.floor((due - today2) / 86400000) : null
+                    const hasCard = customersWithCard.has(item.customer_id)
+                    const hasPlan = activePlanInvoiceIds.has(item.id)
+                    if (daysUntil === null && !hasCard && !hasPlan) return null
+                    return (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${theme.border}` }}>
+                        {daysUntil !== null && (
+                          <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '10px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            backgroundColor: daysUntil < 0 ? 'rgba(239,68,68,0.12)' : daysUntil <= 7 ? 'rgba(234,179,8,0.12)' : 'rgba(59,130,246,0.10)',
+                            color:           daysUntil < 0 ? '#ef4444'              : daysUntil <= 7 ? '#a16207'              : '#3b82f6',
+                          }}>
+                            {daysUntil < 0 ? `${Math.abs(daysUntil)}d overdue` : daysUntil === 0 ? 'Due today' : `Due in ${daysUntil}d`}
+                          </span>
+                        )}
+                        {hasCard && (
+                          <span style={{
+                            padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600,
+                            backgroundColor: 'rgba(34,197,94,0.12)', color: '#16a34a',
+                          }}>Card on file</span>
+                        )}
+                        {hasPlan && (
+                          <span style={{
+                            padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600,
+                            backgroundColor: 'rgba(168,85,247,0.12)', color: '#9333ea',
+                          }}>Active plan</span>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </EntityCard>
               )
             })}

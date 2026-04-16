@@ -652,13 +652,14 @@ export default function VictorVerify({
                       <input
                         ref={el => lineItemInputRefs.current[line.id] = el}
                         type="file"
-                        accept="image/*"
+                        accept="image/*,.heic,.heif"
                         onChange={(e) => handleLineItemPhoto(line.id, e)}
                         style={{ display: 'none' }}
                       />
                       {!photo && (
                         <button
                           onClick={() => lineItemInputRefs.current[line.id]?.click()}
+                          title="Take a new photo or choose one from your photo library"
                           style={{
                             padding: '8px 14px', backgroundColor: '#a855f7',
                             color: '#fff', border: 'none', borderRadius: '8px',
@@ -666,7 +667,7 @@ export default function VictorVerify({
                             whiteSpace: 'nowrap', minHeight: '36px'
                           }}
                         >
-                          Take Photo
+                          Add Photo
                         </button>
                       )}
                     </div>
@@ -704,7 +705,7 @@ export default function VictorVerify({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.heic,.heif"
                 multiple
                 onChange={handlePhotoUpload}
                 style={{ display: 'none' }}

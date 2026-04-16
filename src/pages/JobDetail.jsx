@@ -956,6 +956,10 @@ function JobDetailInner() {
     }
     if (discount > 0) descParts.push(`Discount: -$${discount.toFixed(2)}`)
 
+    // Default Net-30 due date so the invoice appears in due-soon / overdue
+    // quick views in Invoices page and Frankie Collections.
+    const defaultDue = new Date(); defaultDue.setDate(defaultDue.getDate() + 30)
+
     const { data: invoice, error } = await supabase
       .from('invoices')
       .insert([{
@@ -966,7 +970,8 @@ function JobDetailInner() {
         amount: subtotal,
         discount_applied: discount,
         payment_status: 'Pending',
-        job_description: descParts.join('\n')
+        job_description: descParts.join('\n'),
+        due_date: defaultDue.toISOString().split('T')[0],
       }])
       .select()
       .single()
@@ -3381,7 +3386,7 @@ function JobDetailInner() {
                             type="number" step="0.01"
                             min="0"
                             defaultValue={line.price}
-                            key={`price-${line.id}`}
+                            key={`price-${line.id}-${line.price}`}
                             onBlur={(e) => {
                               const val = parseFloat(e.target.value)
                               if (isNaN(val) || val < 0) { e.target.value = line.price; return }

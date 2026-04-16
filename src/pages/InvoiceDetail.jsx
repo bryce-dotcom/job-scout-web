@@ -77,6 +77,20 @@ export default function InvoiceDetail() {
   const [selectedCardId, setSelectedCardId] = useState(null)
   const [charging, setCharging] = useState(false)
 
+  // Payment plan state (recurring scheduled payments)
+  const [paymentPlans, setPaymentPlans] = useState([])
+  const [showPlanModal, setShowPlanModal] = useState(false)
+  const [planForm, setPlanForm] = useState({
+    frequency: 'monthly',
+    installment_amount: '',
+    total_installments: '6',
+    start_date: new Date().toISOString().split('T')[0],
+    payment_method_id: '',
+    auto_charge: false,
+    notes: '',
+  })
+  const [savingPlan, setSavingPlan] = useState(false)
+
   // Theme with fallback
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -131,6 +145,15 @@ export default function InvoiceDetail() {
         .order('sort_order', { ascending: true })
 
       setInvoiceLines(linesData || [])
+
+      // Fetch payment plans for this invoice
+      const { data: plansData } = await supabase
+        .from('payment_plans')
+        .select('*')
+        .eq('invoice_id', id)
+        .order('created_at', { ascending: false })
+
+      setPaymentPlans(plansData || [])
 
       // Fetch PDF history from file_attachments
       const invoicePrefix = `invoices/${companyId}/${invoiceData.invoice_id || id}`
@@ -196,6 +219,67 @@ export default function InvoiceDetail() {
       toast.error(err.message || 'Payment failed')
     }
     setCharging(false)
+  }
+
+  // ── Payment plan helpers ──
+  const computeNextChargeDate = (startDate, frequency, completed = 0) => {
+    const d = new Date(startDate)
+    if (frequency === 'weekly')      d.setDate(d.getDate() + (7 * completed))
+    else if (frequency === 'bi-weekly')   d.setDate(d.getDate() + (14 * completed))
+    else if (frequency === 'monthly')     d.setMonth(d.getMonth() + completed)
+    else if (frequency === 'quarterly')   d.setMonth(d.getMonth() + (3 * completed))
+    return d.toISOString().split('T')[0]
+  }
+
+  const createPaymentPlan = async () => {
+    if (!planForm.installment_amount || !planForm.total_installments) {
+      toast.error('Installment amount and number of installments are required')
+      return
+    }
+    setSavingPlan(true)
+    try {
+      const totalInstall = parseInt(planForm.total_installments)
+      const start = planForm.start_date
+      const end = computeNextChargeDate(start, planForm.frequency, totalInstall - 1)
+      const { error } = await supabase.from('payment_plans').insert({
+        company_id: companyId,
+        invoice_id: parseInt(id),
+        customer_id: invoice.customer_id || null,
+        payment_method_id: planForm.auto_charge && planForm.payment_method_id ? planForm.payment_method_id : null,
+        frequency: planForm.frequency,
+        installment_amount: parseFloat(planForm.installment_amount),
+        total_installments: totalInstall,
+        installments_completed: 0,
+        start_date: start,
+        next_charge_date: start,
+        end_date: end,
+        status: 'active',
+        auto_charge: !!planForm.auto_charge,
+        notes: planForm.notes || null,
+      })
+      if (error) throw error
+      toast.success('Payment plan created')
+      setShowPlanModal(false)
+      setPlanForm({ frequency: 'monthly', installment_amount: '', total_installments: '6', start_date: new Date().toISOString().split('T')[0], payment_method_id: '', auto_charge: false, notes: '' })
+      await fetchInvoiceData()
+    } catch (err) {
+      toast.error(err.message || 'Failed to create payment plan')
+    }
+    setSavingPlan(false)
+  }
+
+  const cancelPaymentPlan = async (planId) => {
+    if (!window.confirm('Cancel this payment plan? Recorded payments will not be removed.')) return
+    try {
+      await supabase.from('payment_plans').update({
+        status: 'cancelled',
+        updated_at: new Date().toISOString(),
+      }).eq('id', planId)
+      toast.success('Payment plan cancelled')
+      await fetchInvoiceData()
+    } catch (err) {
+      toast.error(err.message || 'Failed to cancel plan')
+    }
   }
 
   const addPayment = async () => {
@@ -932,6 +1016,12 @@ export default function InvoiceDetail() {
           amount: invoice.amount,
           discount: invoice.discount_applied || 0,
           job_description: invoice.job_description || '',
+          invoice_lines: (invoiceLines || []).map(l => ({
+            description: l.description || l.item_name || 'Item',
+            quantity: l.quantity || 1,
+            unit_price: parseFloat(l.unit_price) || 0,
+            line_total: parseFloat(l.line_total) || 0,
+          })),
           customer_name: customerName,
           portal_url: portalUrl,
           logo_url: logoUrl,
@@ -1410,6 +1500,116 @@ export default function InvoiceDetail() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+
+          {/* Payment Plan section */}
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            overflow: 'hidden',
+            marginBottom: '24px'
+          }}>
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
+                Payment Plan
+              </h3>
+              {paymentPlans.filter(p => p.status === 'active').length === 0 && invoice.payment_status !== 'Paid' && (
+                <button
+                  onClick={() => setShowPlanModal(true)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 12px',
+                    backgroundColor: '#a855f7',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Plus size={16} />
+                  Set Up Plan
+                </button>
+              )}
+            </div>
+
+            {paymentPlans.length === 0 ? (
+              <div style={{ padding: '24px 20px', textAlign: 'center', color: theme.textMuted, fontSize: '14px' }}>
+                No payment plan. Set one up to spread the balance over recurring installments.
+              </div>
+            ) : (
+              paymentPlans.map(plan => {
+                const remaining = (plan.total_installments || 0) - (plan.installments_completed || 0)
+                const statusColor = plan.status === 'active' ? '#a855f7' : plan.status === 'completed' ? '#22c55e' : plan.status === 'cancelled' ? '#71717a' : '#eab308'
+                return (
+                  <div key={plan.id} style={{ padding: '14px 20px', borderBottom: `1px solid ${theme.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <span style={{ fontWeight: 600, color: theme.text, fontSize: '14px' }}>
+                            {formatCurrency(plan.installment_amount)} {plan.frequency}
+                          </span>
+                          <span style={{
+                            padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600,
+                            backgroundColor: `${statusColor}1f`, color: statusColor,
+                            textTransform: 'capitalize',
+                          }}>{plan.status}</span>
+                          {plan.auto_charge && (
+                            <span style={{
+                              padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600,
+                              backgroundColor: 'rgba(34,197,94,0.12)', color: '#16a34a',
+                            }}>Auto-charge</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                          {plan.installments_completed || 0} of {plan.total_installments} paid
+                          {plan.status === 'active' && remaining > 0 && plan.next_charge_date && (
+                            <> · Next: {formatDate(plan.next_charge_date)}</>
+                          )}
+                          {plan.end_date && <> · Ends: {formatDate(plan.end_date)}</>}
+                        </div>
+                        {plan.notes && (
+                          <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '4px', fontStyle: 'italic' }}>
+                            {plan.notes}
+                          </div>
+                        )}
+                      </div>
+                      {plan.status === 'active' && (
+                        <button
+                          onClick={() => cancelPaymentPlan(plan.id)}
+                          style={{
+                            background: 'none',
+                            border: `1px solid ${theme.border}`,
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            color: theme.textSecondary,
+                            cursor: 'pointer',
+                          }}
+                        >Cancel</button>
+                      )}
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{ height: '6px', backgroundColor: theme.border, borderRadius: '3px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${Math.min(100, ((plan.installments_completed || 0) / Math.max(1, plan.total_installments)) * 100)}%`,
+                        backgroundColor: statusColor,
+                        transition: 'width 0.3s',
+                      }} />
+                    </div>
+                  </div>
+                )
+              })
             )}
           </div>
 
@@ -1953,6 +2153,158 @@ export default function InvoiceDetail() {
                   }}
                 >
                   {saving ? 'Saving...' : 'Record Payment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Set Up Payment Plan Modal */}
+      {showPlanModal && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px', zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: theme.bgCard, borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px',
+            maxHeight: '90vh', overflowY: 'auto',
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '20px', borderBottom: `1px solid ${theme.border}`
+            }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>
+                Set Up Payment Plan
+              </h2>
+              <button onClick={() => setShowPlanModal(false)} style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer', color: theme.textMuted }}>
+                <X size={20} />
+              </button>
+            </div>
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ fontSize: '13px', color: theme.textSecondary, padding: '10px 12px', backgroundColor: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '8px' }}>
+                The plan will appear on the Invoices Dashboard under "Active Plan" so you know when payments are coming due. When the invoice balance reaches zero the plan auto-completes and stops appearing.
+              </div>
+
+              <div>
+                <label style={labelStyle}>Frequency</label>
+                <select
+                  value={planForm.frequency}
+                  onChange={(e) => setPlanForm(prev => ({ ...prev, frequency: e.target.value }))}
+                  style={inputStyle}
+                >
+                  <option value="weekly">Weekly</option>
+                  <option value="bi-weekly">Bi-Weekly (every 2 weeks)</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Installment Amount</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={planForm.installment_amount}
+                    onChange={(e) => setPlanForm(prev => ({ ...prev, installment_amount: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}># of Installments</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={planForm.total_installments}
+                    onChange={(e) => setPlanForm(prev => ({ ...prev, total_installments: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>First Charge Date</label>
+                <input
+                  type="date"
+                  value={planForm.start_date}
+                  onChange={(e) => setPlanForm(prev => ({ ...prev, start_date: e.target.value }))}
+                  style={inputStyle}
+                />
+              </div>
+
+              {savedCards.length > 0 && (
+                <>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.text, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={planForm.auto_charge}
+                      onChange={(e) => setPlanForm(prev => ({ ...prev, auto_charge: e.target.checked, payment_method_id: e.target.checked && savedCards[0] ? savedCards[0].id : '' }))}
+                    />
+                    Auto-charge a saved card on each due date
+                  </label>
+                  {planForm.auto_charge && (
+                    <div>
+                      <label style={labelStyle}>Card to Charge</label>
+                      <select
+                        value={planForm.payment_method_id}
+                        onChange={(e) => setPlanForm(prev => ({ ...prev, payment_method_id: e.target.value }))}
+                        style={inputStyle}
+                      >
+                        {savedCards.map(c => (
+                          <option key={c.id} value={c.id}>{c.brand} ····{c.last_four} (exp {c.exp_month}/{c.exp_year})</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div>
+                <label style={labelStyle}>Notes (optional)</label>
+                <textarea
+                  value={planForm.notes}
+                  onChange={(e) => setPlanForm(prev => ({ ...prev, notes: e.target.value }))}
+                  rows={2}
+                  style={{ ...inputStyle, resize: 'vertical' }}
+                  placeholder="e.g. 6-month payment plan agreed via email 4/15"
+                />
+              </div>
+
+              {planForm.installment_amount && planForm.total_installments && (
+                <div style={{ padding: '10px 12px', backgroundColor: theme.accentBg, borderRadius: '8px', fontSize: '13px', color: theme.text }}>
+                  <strong>Plan total:</strong> {formatCurrency(parseFloat(planForm.installment_amount || 0) * parseInt(planForm.total_installments || 0))}
+                  <br />
+                  <strong>Final payment:</strong> {formatDate(computeNextChargeDate(planForm.start_date, planForm.frequency, parseInt(planForm.total_installments || 1) - 1))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                <button
+                  onClick={() => setShowPlanModal(false)}
+                  style={{
+                    flex: 1, padding: '10px 16px',
+                    border: `1px solid ${theme.border}`,
+                    backgroundColor: 'transparent', color: theme.text,
+                    borderRadius: '8px', fontSize: '14px', cursor: 'pointer'
+                  }}
+                >Cancel</button>
+                <button
+                  onClick={createPaymentPlan}
+                  disabled={savingPlan || !planForm.installment_amount || !planForm.total_installments}
+                  style={{
+                    flex: 1, padding: '10px 16px',
+                    backgroundColor: '#a855f7', color: '#ffffff',
+                    border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',
+                    cursor: (savingPlan || !planForm.installment_amount) ? 'not-allowed' : 'pointer',
+                    opacity: (savingPlan || !planForm.installment_amount) ? 0.6 : 1,
+                  }}
+                >
+                  {savingPlan ? 'Saving...' : 'Create Plan'}
                 </button>
               </div>
             </div>

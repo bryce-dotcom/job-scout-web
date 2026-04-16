@@ -1100,6 +1100,10 @@ export default function PMJobSetter() {
       while (true) {
         if (appointmentForm.recurrence === 'Monthly') nextStart = new Date(new Date(nextStart).setMonth(nextStart.getMonth() + 1))
         else if (appointmentForm.recurrence === 'Quarterly') nextStart = new Date(new Date(nextStart).setMonth(nextStart.getMonth() + 3))
+        else if (appointmentForm.recurrence === 'Bi-Monthly') nextStart = new Date(new Date(nextStart).setMonth(nextStart.getMonth() + 2))
+        else if (appointmentForm.recurrence === 'Bi-Annually') nextStart = new Date(new Date(nextStart).setMonth(nextStart.getMonth() + 6))
+        else if (appointmentForm.recurrence === 'Annually') nextStart = new Date(new Date(nextStart).setFullYear(nextStart.getFullYear() + 1))
+        else if (appointmentForm.recurrence === 'Every 6 Weeks') nextStart = new Date(nextStart.getTime() + 42 * 86400000)
         else if (appointmentForm.recurrence === 'Bi-Weekly') nextStart = new Date(nextStart.getTime() + 14 * 86400000)
         else if (appointmentForm.recurrence === 'Weekly') nextStart = new Date(nextStart.getTime() + 7 * 86400000)
         else nextStart = new Date(nextStart.getTime() + 86400000)
@@ -2567,10 +2571,10 @@ export default function PMJobSetter() {
                                     WebkitBoxOrient: 'vertical',
                                     overflow: 'hidden'
                                   }}>
-                                    {job.job_title || `Job #${job.id}`}
+                                    {job.customer?.name || `Job #${job.id}`}
                                   </div>
                                   <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '6px' }}>
-                                    {job.customer?.name}
+                                    {job.job_title}
                                   </div>
 
                                   {/* Progress Bar */}
@@ -3169,7 +3173,7 @@ export default function PMJobSetter() {
                                       }} />
                                     )}
                                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {job?.job_title || sectionNames}
+                                      {job?.customer?.name ? `${job.customer.name} — ${job?.job_title || sectionNames}` : (job?.job_title || sectionNames)}
                                     </span>
                                   </div>
                                   {uniqueNames.length > 0 && (
@@ -4449,7 +4453,11 @@ export default function PMJobSetter() {
                       <option value="Weekly">Weekly</option>
                       <option value="Bi-Weekly">Every 2 weeks</option>
                       <option value="Monthly">Monthly</option>
-                      <option value="Quarterly">Every 3 months</option>
+                      <option value="Every 6 Weeks">Every 6 weeks</option>
+                      <option value="Bi-Monthly">Every 2 months</option>
+                      <option value="Quarterly">Every 3 months (Quarterly)</option>
+                      <option value="Bi-Annually">Every 6 months (Bi-Annually)</option>
+                      <option value="Annually">Annually</option>
                     </select>
                   </div>
 
@@ -4888,7 +4896,11 @@ export default function PMJobSetter() {
                       <option value="Weekly">Weekly</option>
                       <option value="Bi-Weekly">Every 2 weeks</option>
                       <option value="Monthly">Monthly</option>
-                      <option value="Quarterly">Every 3 months</option>
+                      <option value="Every 6 Weeks">Every 6 weeks</option>
+                      <option value="Bi-Monthly">Every 2 months</option>
+                      <option value="Quarterly">Every 3 months (Quarterly)</option>
+                      <option value="Bi-Annually">Every 6 months (Bi-Annually)</option>
+                      <option value="Annually">Annually</option>
                     </select>
                   </div>
 

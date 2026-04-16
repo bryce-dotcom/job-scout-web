@@ -1465,6 +1465,14 @@ export default function EstimateDetail() {
       toast.error('Please select a Business Unit before sending.')
       return
     }
+    if (!estimate.customer_id && !estimate.lead_id) {
+      toast.error('Please link this estimate to a customer or lead before sending. (No customer attached.)')
+      return
+    }
+    if (!lineItems || lineItems.length === 0) {
+      toast.error('Please add at least one line item before sending.')
+      return
+    }
     setSendingEmail(true)
     try {
       const buObject = getBusinessUnitObject()

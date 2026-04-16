@@ -33,6 +33,7 @@ serve(async (req) => {
       amount,
       discount,
       job_description,
+      invoice_lines,
       customer_name,
       portal_url,
       logo_url,
@@ -139,11 +140,43 @@ serve(async (req) => {
 
     // Invoice summary table
     let summaryRows = '';
-    if (job_description) {
+
+    // Prefer an itemized table of invoice_lines when available (each line shows
+    // qty, description, unit price, line total). Fall back to job_description
+    // for older invoices that don't have invoice_lines populated.
+    const lines = Array.isArray(invoice_lines) ? invoice_lines : [];
+    if (lines.length > 0) {
+      // Header row
+      summaryRows += `
+        <tr>
+          <td colspan="2" style="padding:0;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px 0;">
+              <tr>
+                <td style="padding:6px 0;color:#7d8a7f;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #d6cdb8;">Description</td>
+                <td style="padding:6px 0;color:#7d8a7f;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;text-align:center;width:40px;border-bottom:1px solid #d6cdb8;">Qty</td>
+                <td style="padding:6px 0;color:#7d8a7f;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;text-align:right;width:80px;border-bottom:1px solid #d6cdb8;">Price</td>
+                <td style="padding:6px 0;color:#7d8a7f;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;text-align:right;width:90px;border-bottom:1px solid #d6cdb8;">Total</td>
+              </tr>
+              ${lines.map((l: any) => {
+                const desc = String(l.description || l.item_name || 'Item').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const qty = parseFloat(l.quantity) || 1;
+                const unit = parseFloat(l.unit_price || l.price) || 0;
+                const total = parseFloat(l.line_total || l.total) || (qty * unit);
+                return `<tr>
+                  <td style="padding:8px 0;color:#2c3530;font-size:13px;border-bottom:1px solid #f0ece4;">${desc}</td>
+                  <td style="padding:8px 0;color:#4d5a52;font-size:13px;text-align:center;border-bottom:1px solid #f0ece4;">${qty}</td>
+                  <td style="padding:8px 0;color:#4d5a52;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">$${unit.toFixed(2)}</td>
+                  <td style="padding:8px 0;color:#2c3530;font-size:13px;text-align:right;font-weight:500;border-bottom:1px solid #f0ece4;">$${total.toFixed(2)}</td>
+                </tr>`;
+              }).join('')}
+            </table>
+          </td>
+        </tr>`;
+    } else if (job_description) {
       summaryRows += `
         <tr>
           <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">Description</td>
-          <td style="padding:10px 0;color:#2c3530;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">${job_description}</td>
+          <td style="padding:10px 0;color:#2c3530;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">${String(job_description).replace(/\n/g, '<br/>')}</td>
         </tr>`;
     }
     if (amountNum > 0) {
