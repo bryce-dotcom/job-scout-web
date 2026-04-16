@@ -2917,6 +2917,33 @@ export default function EstimateDetail() {
                 </div>
               )}
 
+              {/* Manual Annual Savings */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '14px'
+              }}>
+                <span style={{ color: theme.textSecondary }}>Annual Savings</span>
+                <input
+                  type="number"
+                  value={estimate.manual_annual_savings || ''}
+                  onChange={(e) => updateEstimateField('manual_annual_savings', e.target.value || 0)}
+                  placeholder={estimate.audit_id ? 'From audit' : '0'}
+                  style={{
+                    width: '100px',
+                    padding: '6px 10px',
+                    textAlign: 'right',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    color: theme.text,
+                    backgroundColor: theme.bgCard
+                  }}
+                  step="0.01"
+                />
+              </div>
+
               {/* Audit Link */}
               <div style={{
                 borderTop: `1px solid ${theme.border}`,
@@ -4714,6 +4741,7 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
           total: lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0,
           utility_incentive: estimate?.utility_incentive || 0,
           discount: estimate?.discount || 0,
+          manual_annual_savings: estimate?.manual_annual_savings || 0,
           audit_data: auditData,
           audit_areas_data: auditAreasData,
           proposal_notes: proposalNotes,
@@ -5311,6 +5339,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
           discount: estimate?.discount || 0,
           user_direction: direction || '',
           existing_layout: direction && direction !== '__fresh__' && proposalLayout ? proposalLayout : null,
+          manual_annual_savings: estimate?.manual_annual_savings || 0,
           audit_data: auditData,
           audit_areas_data: auditAreasData,
           proposal_notes: proposalNotes,

@@ -7,7 +7,7 @@ import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
 import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin, Map,
-  Play, CheckCircle, FileText, ChevronRight, User, Upload, Download,
+  Play, CheckCircle, FileText, ChevronRight, User, Users, Upload, Download,
   Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, Navigation, ExternalLink
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
@@ -39,6 +39,7 @@ const emptyJob = {
   quote_id: '',
   status: 'Chillin',
   assigned_team: '',
+  assigned_employee_ids: [],
   job_lead_id: '',
   business_unit: '',
   start_date: '',
@@ -686,6 +687,15 @@ export default function Jobs() {
       quote_id: job.quote_id || '',
       status: job.status || 'Scheduled',
       assigned_team: job.assigned_team || '',
+      assigned_employee_ids: (() => {
+        // Parse existing assigned_team names back to employee IDs
+        if (!job.assigned_team) return []
+        const names = job.assigned_team.split(',').map(n => n.trim()).filter(Boolean)
+        return names.map(name => {
+          const emp = employees.find(e => e.name === name)
+          return emp ? String(emp.id) : null
+        }).filter(Boolean)
+      })(),
       business_unit: job.business_unit || '',
       start_date: job.start_date ? job.start_date.slice(0, 16) : '',
       end_date: job.end_date ? job.end_date.slice(0, 16) : '',
@@ -755,8 +765,13 @@ export default function Jobs() {
       salesperson_id: formData.salesperson_id || null,
       quote_id: formData.quote_id || null,
       status: formData.status,
-      assigned_team: formData.assigned_team || null,
-      job_lead_id: formData.job_lead_id || null,
+      assigned_team: formData.assigned_employee_ids.length > 0
+        ? formData.assigned_employee_ids.map(id => {
+            const emp = employees.find(e => String(e.id) === String(id))
+            return emp?.name || ''
+          }).filter(Boolean).join(', ')
+        : (formData.assigned_team || null),
+      job_lead_id: formData.job_lead_id || (formData.assigned_employee_ids.length > 0 ? parseInt(formData.assigned_employee_ids[0]) : null),
       business_unit: formData.business_unit || null,
       start_date: formData.start_date || null,
       end_date: formData.end_date || null,
@@ -2003,7 +2018,57 @@ export default function Jobs() {
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Assigned Team</label>
-                    <input type="text" name="assigned_team" value={formData.assigned_team} onChange={handleChange} style={inputStyle} placeholder="Team A" />
+                    <div style={{
+                      maxHeight: '160px',
+                      overflowY: 'auto',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '10px',
+                      backgroundColor: theme.bg
+                    }}>
+                      {employees.filter(e => e.active !== false).map(emp => (
+                        <label
+                          key={emp.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '8px 12px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            color: theme.text,
+                            borderBottom: `1px solid ${theme.border}`,
+                            backgroundColor: formData.assigned_employee_ids.includes(String(emp.id))
+                              ? theme.accentBg : 'transparent'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.assigned_employee_ids.includes(String(emp.id))}
+                            onChange={(e) => {
+                              setFormData(prev => ({
+                                ...prev,
+                                assigned_employee_ids: e.target.checked
+                                  ? [...prev.assigned_employee_ids, String(emp.id)]
+                                  : prev.assigned_employee_ids.filter(id => id !== String(emp.id))
+                              }))
+                            }}
+                            style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                          />
+                          <Users size={14} style={{ color: theme.textMuted, flexShrink: 0 }} />
+                          <span>{emp.name}</span>
+                          {emp.role && (
+                            <span style={{ marginLeft: 'auto', fontSize: '11px', color: theme.textMuted }}>
+                              {emp.role}
+                            </span>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                    {formData.assigned_employee_ids.length > 0 && (
+                      <div style={{ marginTop: '6px', fontSize: '12px', color: theme.textMuted }}>
+                        {formData.assigned_employee_ids.length} employee{formData.assigned_employee_ids.length !== 1 ? 's' : ''} selected
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label style={labelStyle}>Business Unit</label>
