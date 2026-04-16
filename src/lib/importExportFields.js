@@ -260,7 +260,8 @@ export const quoteLinesFields = [
   { field: 'sort_order', label: 'Sort Order', type: 'number', desc: 'Display order' },
 ]
 
-// NOTE: invoice_lines table does NOT exist in production DB. Invoices have no line items table.
+// NOTE: invoice_lines table created in migration 20260416150000. Use to track per-invoice line items
+// independent of source job_lines (which can be edited later).
 
 // Verified against production DB: payments has payment_id, invoice_id, amount, date, method, status, notes
 export const paymentsFields = [

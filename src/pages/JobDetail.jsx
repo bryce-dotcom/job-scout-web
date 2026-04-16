@@ -143,6 +143,8 @@ function JobDetailInner() {
   const [newTime, setNewTime] = useState({ employee_id: '', hours: '', category: 'Regular', notes: '' })
   const [editMode, setEditMode] = useState(false)
   const [formData, setFormData] = useState({})
+  const [editAssignedIds, setEditAssignedIds] = useState([])
+  const [showCrewDropdown, setShowCrewDropdown] = useState(false)
   const [customerSearchText, setCustomerSearchText] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -294,6 +296,15 @@ function JobDetailInner() {
       setFormData(jobData)
       setLocalIncentive(jobData.utility_incentive || '')
       setLocalDiscount(jobData.discount || '')
+
+      // Parse assigned_team (comma-separated names) back to employee IDs for multi-select
+      const teamNames = (jobData.assigned_team || '').split(',').map(s => s.trim()).filter(Boolean)
+      const empList = useStore.getState().employees || []
+      const teamIds = teamNames
+        .map(n => empList.find(e => e.name === n)?.id)
+        .filter(Boolean)
+        .map(String)
+      setEditAssignedIds(teamIds)
 
       // Fetch lead's meter_number and ein if linked
       if (jobData.lead_id) {
@@ -861,18 +872,26 @@ function JobDetailInner() {
       return
     }
     setSaving(true)
+    // Build assigned_team string from multi-select crew IDs (falls back to free-text if none selected)
+    const teamStr = editAssignedIds.length > 0
+      ? editAssignedIds
+          .map(id => employees.find(e => String(e.id) === String(id))?.name)
+          .filter(Boolean)
+          .join(', ')
+      : (formData.assigned_team || null)
     const updates = {
       job_title: formData.job_title,
       job_address: formData.job_address,
       created_at: formData.created_at,
       start_date: formData.start_date,
       end_date: formData.end_date,
-      assigned_team: formData.assigned_team,
+      assigned_team: teamStr,
       allotted_time_hours: formData.allotted_time_hours,
       details: formData.details,
       notes: formData.notes,
       salesperson_id: formData.salesperson_id || null,
-      job_lead_id: formData.job_lead_id || null,
+      job_lead_id: formData.job_lead_id
+        || (editAssignedIds.length > 0 ? parseInt(editAssignedIds[0]) : null),
       business_unit: formData.business_unit,
       updated_at: new Date().toISOString()
     }
@@ -3065,7 +3084,7 @@ function JobDetailInner() {
                   <input type="text" value={formData.job_address || ''} onChange={(e) => setFormData(prev => ({ ...prev, job_address: e.target.value }))} style={inputStyle} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Assigned To</label>
+                  <label style={labelStyle}>Assigned To (Job Lead)</label>
                   <SearchableSelect
                     options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
                     value={formData.job_lead_id || ''}
@@ -3073,6 +3092,68 @@ function JobDetailInner() {
                     placeholder="-- Select --"
                     theme={theme}
                   />
+                </div>
+                <div>
+                  <label style={labelStyle}>Crew Members (assign multiple)</label>
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowCrewDropdown(v => !v)}
+                      style={{ ...inputStyle, textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
+                      <span style={{ color: editAssignedIds.length ? theme.text : theme.textMuted }}>
+                        {editAssignedIds.length > 0
+                          ? editAssignedIds
+                              .map(id => employees.find(e => String(e.id) === String(id))?.name)
+                              .filter(Boolean)
+                              .join(', ')
+                          : '-- Select crew members --'}
+                      </span>
+                      <span style={{ color: theme.textMuted, fontSize: '12px' }}>{showCrewDropdown ? '▲' : '▼'}</span>
+                    </button>
+                    {showCrewDropdown && (
+                      <div style={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
+                        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                        borderRadius: '8px', marginTop: '4px', maxHeight: '240px', overflowY: 'auto',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                      }}>
+                        {employees.filter(e => e.status === 'Active' || !e.status).map(emp => (
+                          <label
+                            key={emp.id}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px',
+                              padding: '8px 12px', cursor: 'pointer', fontSize: '13px',
+                              color: theme.text, borderBottom: `1px solid ${theme.border}`,
+                              backgroundColor: editAssignedIds.includes(String(emp.id)) ? theme.accentBg : 'transparent'
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={editAssignedIds.includes(String(emp.id))}
+                              onChange={(e) => {
+                                setEditAssignedIds(prev => e.target.checked
+                                  ? [...prev, String(emp.id)]
+                                  : prev.filter(id => id !== String(emp.id)))
+                              }}
+                              style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                            />
+                            <span>{emp.name}</span>
+                            {emp.role && (
+                              <span style={{ marginLeft: 'auto', fontSize: '11px', color: theme.textMuted }}>
+                                {emp.role}
+                              </span>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {editAssignedIds.length > 0 && (
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: theme.textMuted }}>
+                      {editAssignedIds.length} crew member{editAssignedIds.length !== 1 ? 's' : ''} assigned
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>

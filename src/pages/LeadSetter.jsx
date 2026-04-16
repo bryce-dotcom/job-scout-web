@@ -80,6 +80,12 @@ export default function LeadSetter() {
   // Drag state
   const [draggedLead, setDraggedLead] = useState(null)
   const [dragOverStage, setDragOverStage] = useState(null)
+
+  // Reactivate-customer-as-lead modal
+  const [showReactivateModal, setShowReactivateModal] = useState(false)
+  const [reactivateSearch, setReactivateSearch] = useState('')
+  const [reactivating, setReactivating] = useState(false)
+  const customers = useStore((state) => state.customers) || []
   const [dragOverSlot, setDragOverSlot] = useState(null)
   const [draggedAppointment, setDraggedAppointment] = useState(null) // for rescheduling existing appointments
 
@@ -314,6 +320,41 @@ export default function LeadSetter() {
 
   const goToToday = () => {
     setCurrentDate(new Date())
+  }
+
+  // Reactivate an existing customer as a fresh lead in the New stage
+  const handleReactivateCustomer = async (customer) => {
+    if (!customer || reactivating) return
+    setReactivating(true)
+    const senderName = user?.name || 'Someone'
+    const noteText = `Reactivated from existing customer by ${senderName} on ${new Date().toLocaleDateString()}`
+    const { data, error } = await supabase
+      .from('leads')
+      .insert({
+        company_id: companyId,
+        customer_name: customer.name,
+        email: customer.email || null,
+        phone: customer.phone || null,
+        address: customer.address || null,
+        business_name: customer.business_name || null,
+        status: 'New',
+        lead_source: 'Existing Customer',
+        customer_id: customer.id,
+        notes: noteText
+      })
+      .select()
+      .single()
+    setReactivating(false)
+    if (error) {
+      const { toast } = await import('../lib/toast')
+      toast.error('Error reactivating: ' + error.message)
+      return
+    }
+    const { toast } = await import('../lib/toast')
+    toast.success(`${customer.name} added as a new lead`)
+    setShowReactivateModal(false)
+    setReactivateSearch('')
+    await fetchData()
   }
 
   // Drag handlers for Kanban
@@ -795,6 +836,26 @@ export default function LeadSetter() {
               style={{ ...inputStyle, paddingLeft: '34px', width: isMobile ? '140px' : '180px' }}
             />
           </div>
+          <button
+            onClick={() => setShowReactivateModal(true)}
+            title="Reactivate an existing customer as a new lead"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '10px 14px',
+              backgroundColor: theme.accentBg,
+              border: `1px solid ${theme.accent}`,
+              color: theme.accent,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: '500'
+            }}
+          >
+            <Plus size={14} />
+            {!isMobile && 'Reactivate Customer'}
+          </button>
           <button
             onClick={fetchData}
             style={{
@@ -2219,6 +2280,116 @@ export default function LeadSetter() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reactivate-Customer Modal */}
+      {showReactivateModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1000
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowReactivateModal(false); setReactivateSearch('') } }}
+        >
+          <div style={{
+            backgroundColor: theme.bgCard || '#fff', borderRadius: '12px',
+            padding: '24px', width: '100%', maxWidth: '560px',
+            maxHeight: '85vh', display: 'flex', flexDirection: 'column'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: theme.text }}>
+                Reactivate Customer as New Lead
+              </h3>
+              <button
+                onClick={() => { setShowReactivateModal(false); setReactivateSearch('') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ fontSize: '13px', color: theme.textSecondary, margin: '0 0 12px' }}>
+              Pick an existing customer to add back to the New Leads stage. Their lead will link
+              to the original customer record so history is preserved.
+            </p>
+            <div style={{ position: 'relative', marginBottom: '12px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
+              <input
+                type="text"
+                placeholder="Search by name, business, email, or phone..."
+                value={reactivateSearch}
+                onChange={(e) => setReactivateSearch(e.target.value)}
+                autoFocus
+                style={{
+                  width: '100%', padding: '10px 10px 10px 34px',
+                  border: `1px solid ${theme.border}`, borderRadius: '8px',
+                  fontSize: '14px', backgroundColor: theme.bg, color: theme.text,
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', border: `1px solid ${theme.border}`, borderRadius: '8px' }}>
+              {(() => {
+                const q = reactivateSearch.trim().toLowerCase()
+                const filtered = customers.filter(c => {
+                  if (!q) return true
+                  return (
+                    (c.name || '').toLowerCase().includes(q) ||
+                    (c.business_name || '').toLowerCase().includes(q) ||
+                    (c.email || '').toLowerCase().includes(q) ||
+                    (c.phone || '').toLowerCase().includes(q)
+                  )
+                }).slice(0, 50)
+                if (filtered.length === 0) {
+                  return (
+                    <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                      {q ? 'No matching customers' : 'No customers loaded'}
+                    </div>
+                  )
+                }
+                return filtered.map(cust => (
+                  <button
+                    key={cust.id}
+                    onClick={() => handleReactivateCustomer(cust)}
+                    disabled={reactivating}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '10px 12px', border: 'none',
+                      borderBottom: `1px solid ${theme.border}`,
+                      backgroundColor: 'transparent', cursor: reactivating ? 'not-allowed' : 'pointer',
+                      opacity: reactivating ? 0.6 : 1
+                    }}
+                    onMouseOver={(e) => { e.currentTarget.style.backgroundColor = theme.accentBg }}
+                    onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                  >
+                    <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
+                      {cust.name}
+                      {cust.business_name && (
+                        <span style={{ marginLeft: '8px', fontSize: '12px', color: theme.textMuted, fontWeight: '400' }}>
+                          ({cust.business_name})
+                        </span>
+                      )}
+                      {cust.status === 'Inactive' && (
+                        <span style={{ marginLeft: '8px', fontSize: '11px', color: '#6b7280', fontWeight: '500' }}>
+                          INACTIVE
+                        </span>
+                      )}
+                    </div>
+                    {(cust.email || cust.phone) && (
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                        {cust.email}{cust.email && cust.phone ? ' · ' : ''}{cust.phone}
+                      </div>
+                    )}
+                  </button>
+                ))
+              })()}
+            </div>
+            {reactivating && (
+              <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textMuted, textAlign: 'center' }}>
+                Creating new lead...
+              </div>
+            )}
           </div>
         </div>
       )}

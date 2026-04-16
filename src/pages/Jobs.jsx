@@ -2124,7 +2124,13 @@ export default function Jobs() {
                       <option value="None">None</option>
                       <option value="Daily">Daily</option>
                       <option value="Weekly">Weekly</option>
+                      <option value="Bi-Weekly">Bi-Weekly (every 2 weeks)</option>
                       <option value="Monthly">Monthly</option>
+                      <option value="Every 6 Weeks">Every 6 Weeks</option>
+                      <option value="Bi-Monthly">Bi-Monthly (every 2 months)</option>
+                      <option value="Quarterly">Quarterly (every 3 months)</option>
+                      <option value="Bi-Annually">Bi-Annually (every 6 months)</option>
+                      <option value="Annually">Annually</option>
                     </select>
                   </div>
                 </div>

@@ -624,7 +624,6 @@ export default function LeadPayments() {
                       <input
                         type="file"
                         accept="image/*"
-                        capture="environment"
                         onChange={handlePhotoCapture}
                         style={{ display: 'none' }}
                       />

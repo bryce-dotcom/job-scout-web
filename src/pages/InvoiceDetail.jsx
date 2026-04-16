@@ -35,6 +35,7 @@ export default function InvoiceDetail() {
   const fetchSettings = useStore((state) => state.fetchSettings)
 
   const [invoice, setInvoice] = useState(null)
+  const [invoiceLines, setInvoiceLines] = useState([])
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -121,6 +122,15 @@ export default function InvoiceDetail() {
         .order('date', { ascending: false })
 
       setPayments(paymentsData || [])
+
+      // Fetch invoice line items
+      const { data: linesData } = await supabase
+        .from('invoice_lines')
+        .select('*')
+        .eq('invoice_id', id)
+        .order('sort_order', { ascending: true })
+
+      setInvoiceLines(linesData || [])
 
       // Fetch PDF history from file_attachments
       const invoicePrefix = `invoices/${companyId}/${invoiceData.invoice_id || id}`
@@ -533,8 +543,72 @@ export default function InvoiceDetail() {
     if (invoice.customer?.phone) { doc.text(invoice.customer.phone, margin, y); y += 5 }
     y += 8
 
-    // ── Description table ──
-    if (invoice.job_description) {
+    // ── Line items table ──
+    if (invoiceLines && invoiceLines.length > 0) {
+      checkPage(30)
+
+      // Column layout: Description | Qty | Unit Price | Total
+      const qtyColX = rightEdge - 90
+      const priceColX = rightEdge - 60
+      const totalColX = rightEdge - 4
+      const descColMaxWidth = qtyColX - margin - 8
+
+      // Table header
+      doc.setFillColor(90, 99, 73)
+      doc.rect(margin, y - 4, contentWidth, 8, 'F')
+      doc.setTextColor(255)
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Description', margin + 4, y)
+      doc.text('Qty', qtyColX, y, { align: 'right' })
+      doc.text('Unit Price', priceColX, y, { align: 'right' })
+      doc.text('Total', totalColX, y, { align: 'right' })
+      y += 8
+
+      // Table rows
+      doc.setTextColor(0)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(10)
+
+      invoiceLines.forEach((line, idx) => {
+        const description = line.description || 'Item'
+        const qty = parseFloat(line.quantity) || 1
+        const unitPrice = parseFloat(line.unit_price) || 0
+        const lineTotal = parseFloat(line.line_total) || (qty * unitPrice)
+
+        const descLines = doc.splitTextToSize(description, descColMaxWidth)
+        checkPage(descLines.length * lineHeight + 4)
+
+        // Subtle alternating row separator
+        const rowStartY = y - 4
+
+        for (let i = 0; i < descLines.length; i++) {
+          checkPage(lineHeight + 2)
+          doc.text(descLines[i], margin + 4, y)
+          if (i === 0) {
+            doc.text(String(qty), qtyColX, y, { align: 'right' })
+            doc.text(formatCurrency(unitPrice), priceColX, y, { align: 'right' })
+            doc.text(formatCurrency(lineTotal), totalColX, y, { align: 'right' })
+          }
+          y += lineHeight
+        }
+
+        // Light divider between rows
+        if (idx < invoiceLines.length - 1) {
+          y += 1
+          doc.setDrawColor(230, 225, 210)
+          doc.line(margin, y, rightEdge, y)
+          y += 3
+        }
+      })
+      y += 3
+
+      // Bottom border
+      doc.setDrawColor(214, 205, 184)
+      doc.line(margin, y, rightEdge, y)
+      y += 8
+    } else if (invoice.job_description) {
+      // Fallback for invoices created before invoice_lines were tracked
       checkPage(30)
 
       // Table header
@@ -553,7 +627,6 @@ export default function InvoiceDetail() {
       doc.setFontSize(10)
       const descMaxWidth = contentWidth - 50 // leave room for amount column
       const descLines = doc.splitTextToSize(invoice.job_description, descMaxWidth)
-      const rowStartY = y
 
       // Draw description lines with page break support
       for (let i = 0; i < descLines.length; i++) {

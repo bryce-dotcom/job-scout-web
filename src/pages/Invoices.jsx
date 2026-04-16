@@ -135,7 +135,7 @@ export default function Invoices() {
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState('preferences')
 
-  // invoice_lines table does not exist in production DB — only payments is a child table
+  // invoice_lines is a child table (per-invoice line item history); payments is the other child table
   const invoiceRelatedTables = [
     {
       tableName: 'payments',

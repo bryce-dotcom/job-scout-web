@@ -51,6 +51,16 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Sanitize recipient: strip "Name <email>" wrapper, trim, lowercase, validate format
+    const extractMatch = String(recipient_email).match(/<([^>]+)>/);
+    const cleanedRecipient = (extractMatch ? extractMatch[1] : String(recipient_email)).trim().toLowerCase();
+    const emailRegex = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+    if (!emailRegex.test(cleanedRecipient)) {
+      return new Response(JSON.stringify({
+        error: `Invalid recipient email format: "${recipient_email}". Please verify the customer's email address before resending.`
+      }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     // Download PDF from Supabase Storage
     let pdfBase64 = '';
     if (pdf_storage_path) {
@@ -254,7 +264,7 @@ serve(async (req) => {
     // Send via Resend API
     const emailPayload: Record<string, unknown> = {
       from: `${displayName} <invoices@appsannex.com>`,
-      to: [recipient_email],
+      to: [cleanedRecipient],
       subject: custom_subject || `Invoice ${invNum}${amountStr ? ` — ${amountStr}` : ''} from ${displayName}`,
       html: htmlBody,
     };
@@ -297,7 +307,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       emailId: resendData.id,
-      recipient: recipient_email,
+      recipient: cleanedRecipient,
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {

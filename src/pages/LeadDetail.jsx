@@ -1940,7 +1940,6 @@ export default function LeadDetail() {
                   type="file"
                   ref={receiptInputRef}
                   accept="image/*"
-                  capture="environment"
                   style={{ display: 'none' }}
                   onChange={handleLeadReceiptCapture}
                 />

@@ -1143,11 +1143,11 @@ export default function LightingAuditDetail() {
                           fontWeight: '600',
                           display: 'inline-block'
                         }}>
-                          📷 Take Photo
+                          📷 Add Photo
                           <input
                             type="file"
                             accept="image/*"
-                            capture="environment"
+                            multiple
                             onChange={handlePhotoCapture}
                             style={{ display: 'none' }}
                           />

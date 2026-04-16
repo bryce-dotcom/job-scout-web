@@ -1789,7 +1789,7 @@ export default function EstimateDetail() {
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Hidden photo input for before/after/notes uploads */}
-      <input type="file" ref={photoInputRef} accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUploadPhoto} />
+      <input type="file" ref={photoInputRef} accept="image/*" multiple style={{ display: 'none' }} onChange={handleUploadPhoto} />
 
       {/* Header */}
       <div style={{
@@ -2748,7 +2748,7 @@ export default function EstimateDetail() {
                                 <input
                                   type="file"
                                   accept="image/*"
-                                  capture="environment"
+                                  multiple
                                   style={{ display: 'none' }}
                                   onChange={(e) => handleLinePhotoUpload(line.id, e)}
                                 />
@@ -3417,7 +3417,7 @@ export default function EstimateDetail() {
                 <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: 0 }}>Expenses ({quoteExpenses.length})</h3>
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
-                <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} id="quote-receipt-input" onChange={handleQuoteReceiptCapture} />
+                <input type="file" accept="image/*" style={{ display: 'none' }} id="quote-receipt-input" onChange={handleQuoteReceiptCapture} />
                 <button onClick={() => document.getElementById('quote-receipt-input')?.click()} disabled={receiptUploading} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '6px 10px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '6px', fontSize: '11px', fontWeight: '500', cursor: 'pointer', minHeight: '32px', opacity: receiptUploading ? 0.6 : 1 }}>
                   <Camera size={12} />{receiptUploading ? '...' : 'Receipt'}
                 </button>
@@ -3815,7 +3815,6 @@ export default function EstimateDetail() {
                     <input
                       type="file"
                       accept="image/*"
-                      capture="environment"
                       style={{ display: 'none' }}
                       onChange={(e) => {
                         const file = e.target.files?.[0]

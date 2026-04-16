@@ -2940,9 +2940,9 @@ export default function PMJobSetter() {
                                           overflow: 'hidden',
                                           textOverflow: 'ellipsis'
                                         }}
-                                        title={`${job.job_title || 'Untitled'} — ${job.customer?.name || ''}`}
+                                        title={`${job.customer?.name || ''}${job.customer?.name ? ' — ' : ''}${job.job_title || 'Untitled'}`}
                                       >
-                                        {job.job_title || `Job #${job.id}`}
+                                        {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
                                       </div>
                                     )
                                   })}
@@ -3109,12 +3109,12 @@ export default function PMJobSetter() {
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis'
                                 }}
-                                title={`${job.job_title || 'Untitled Job'} — ${job.customer?.name || ''}${calendar ? ` (${calendar.name})` : ''}`}
+                                title={`${job.customer?.name || ''}${job.customer?.name ? ' — ' : ''}${job.job_title || 'Untitled Job'}${calendar ? ` (${calendar.name})` : ''}`}
                               >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                   <Briefcase size={9} style={{ flexShrink: 0, opacity: 0.7 }} />
                                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {job.job_title || `Job #${job.id}`}
+                                    {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
                                   </span>
                                 </div>
                               </div>
@@ -3678,7 +3678,7 @@ export default function PMJobSetter() {
                           overflow: 'hidden',
                           textOverflow: 'ellipsis'
                         }}>
-                          {job.job_title || `Job #${job.id}`}
+                          {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
                         </span>
                       </div>
                     ))}
