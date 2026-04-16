@@ -91,15 +91,29 @@ export default function TimeClock() {
       const cutoff = new Date()
       cutoff.setDate(cutoff.getDate() - lookbackDays)
 
-      const { data, error } = await supabase
-        .from('time_clock')
-        .select('*')
-        .eq('company_id', companyId)
-        .gte('clock_in', cutoff.toISOString())
-        .order('clock_in', { ascending: false })
+      // Two queries combined: recent window + ALL still-open entries (even
+      // if they pre-date the cutoff). Stale open entries left from forgotten
+      // clock-outs were causing duplicate open rows because the UI didn't
+      // see them and let employees clock in again on top.
+      const [recentRes, openRes] = await Promise.all([
+        supabase
+          .from('time_clock')
+          .select('*')
+          .eq('company_id', companyId)
+          .gte('clock_in', cutoff.toISOString())
+          .order('clock_in', { ascending: false }),
+        supabase
+          .from('time_clock')
+          .select('*')
+          .eq('company_id', companyId)
+          .is('clock_out', null)
+          .lt('clock_in', cutoff.toISOString())
+          .order('clock_in', { ascending: false }),
+      ])
 
-      if (error) throw error
-      setTimeEntries(data || [])
+      if (recentRes.error) throw recentRes.error
+      const merged = [...(recentRes.data || []), ...(openRes.data || [])]
+      setTimeEntries(merged)
     } catch (err) {
       console.error('Error fetching time entries:', err)
     } finally {
@@ -330,6 +344,27 @@ export default function TimeClock() {
     if (busyEmployeeIds.has(employeeId)) return // prevent double-tap
     setBusyEmployeeIds(prev => new Set(prev).add(employeeId))
     try {
+      // Race-safe duplicate guard: re-check the DB for any still-open
+      // entry for this employee BEFORE inserting. If the local state
+      // missed a stale row (e.g. clock-out from another device or an
+      // entry older than the lookback window) this prevents creating
+      // a second concurrent open row.
+      const { data: existingOpen } = await supabase
+        .from('time_clock')
+        .select('id, clock_in')
+        .eq('company_id', companyId)
+        .eq('employee_id', employeeId)
+        .is('clock_out', null)
+        .order('clock_in', { ascending: false })
+        .limit(1)
+
+      if (existingOpen && existingOpen.length > 0) {
+        await fetchTimeEntries()
+        const since = new Date(existingOpen[0].clock_in).toLocaleString()
+        alert(`Already clocked in since ${since}. Refreshing your status — clock out first if you want to start a new entry.`)
+        return
+      }
+
       const { lat, lng } = await getCoordsFast()
       const { data, error } = await supabase
         .from('time_clock')
@@ -395,6 +430,39 @@ export default function TimeClock() {
     }
   }
 
+  // Close any stale open entries for an employee (entries left open from a
+  // previous duplicate clock-in bug). Sets clock_out to the same minute as
+  // clock_in (0 hours, audit-flagged) so payroll isn't credited for time the
+  // employee wasn't really working. We use clock_in time (not "now") because
+  // we don't know when they actually stopped — better to under-credit and
+  // let a manager adjust than to over-credit days of phantom hours.
+  const handleCloseStaleOpens = async (employeeId, staleEntries) => {
+    if (!staleEntries || staleEntries.length === 0) return
+    const ok = window.confirm(
+      `Close ${staleEntries.length} forgotten clock-in${staleEntries.length === 1 ? '' : 's'}?\n\n` +
+      `These will be marked closed with 0 hours. A manager can edit the times if you actually worked them.`
+    )
+    if (!ok) return
+    try {
+      const now = new Date().toISOString()
+      for (const e of staleEntries) {
+        await supabase
+          .from('time_clock')
+          .update({
+            clock_out: e.clock_in, // 0-hour close
+            total_hours: 0,
+            adjusted_at: now,
+            adjustment_reason: 'Auto-closed: forgotten clock-in (duplicate open entry cleanup)',
+            notes: (e.notes ? e.notes + '\n' : '') + '[Auto-closed forgotten entry]',
+          })
+          .eq('id', e.id)
+      }
+      await fetchTimeEntries()
+    } catch (err) {
+      alert('Error closing entries: ' + err.message)
+    }
+  }
+
   const handleLunchStart = async (entryId) => {
     try {
       const { error } = await supabase
@@ -452,7 +520,17 @@ export default function TimeClock() {
   }
 
   const getActiveEntry = (employeeId) => {
-    return timeEntries.find(e => e.employee_id === employeeId && !e.clock_out)
+    // If there are multiple open entries (data corruption from earlier
+    // duplicate-clock-in bug), return the most recent so the user is
+    // looking at the active "now" session, not a stale one.
+    const open = timeEntries.filter(e => e.employee_id === employeeId && !e.clock_out)
+    if (open.length === 0) return undefined
+    return open.reduce((latest, e) => new Date(e.clock_in) > new Date(latest.clock_in) ? e : latest)
+  }
+
+  // Returns ALL still-open entries for an employee (for cleanup / display)
+  const getAllOpenEntries = (employeeId) => {
+    return timeEntries.filter(e => e.employee_id === employeeId && !e.clock_out)
   }
 
   // Compute hours for an entry, using total_hours if present, otherwise clock_in/clock_out
@@ -584,6 +662,8 @@ export default function TimeClock() {
       }}>
         {employees.filter(e => e.active && (isTeamLeadPlus || e.id === user?.id)).map(employee => {
           const activeEntry = getActiveEntry(employee.id)
+          const allOpen = getAllOpenEntries(employee.id)
+          const staleOpens = allOpen.filter(e => activeEntry && e.id !== activeEntry.id)
           const weekTotal = getWeekTotal(employee.id)
           const recentSessions = getRecentSessions(employee.id)
           const isClockedIn = !!activeEntry
@@ -676,6 +756,46 @@ export default function TimeClock() {
                 <Calendar size={12} />
                 PTO: {employee.pto_accrued - (employee.pto_used || 0) || 0} days
               </div>
+
+              {/* Stale-open warning: previous clock-ins that were never closed */}
+              {staleOpens.length > 0 && (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  padding: '10px 12px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '8px',
+                  marginBottom: '12px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, color: '#ef4444' }}>
+                    <AlertTriangle size={14} />
+                    {staleOpens.length} forgotten clock-in{staleOpens.length === 1 ? '' : 's'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+                    {staleOpens.map(e => new Date(e.clock_in).toLocaleString()).slice(0,3).join(' · ')}
+                    {staleOpens.length > 3 ? ` · +${staleOpens.length - 3} more` : ''}
+                  </div>
+                  <button
+                    onClick={() => handleCloseStaleOpens(employee.id, staleOpens)}
+                    style={{
+                      padding: '6px 10px',
+                      backgroundColor: '#ef4444',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      alignSelf: 'flex-start',
+                      minHeight: '28px',
+                    }}
+                  >
+                    Close forgotten entries
+                  </button>
+                </div>
+              )}
 
               {/* Timer / Clock In Area */}
               {isClockedIn ? (
