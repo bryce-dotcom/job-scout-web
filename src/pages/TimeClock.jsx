@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { isAdmin as checkAdmin, isTeamLead as checkTeamLead } from '../lib/accessControl'
+import { isAdmin as checkAdmin, isTeamLead as checkTeamLead, canViewHR } from '../lib/accessControl'
 import {
   Clock, Play, Square, Coffee, MapPin, Calendar, AlertTriangle,
   Plus, X, ChevronRight, DollarSign, TrendingUp, Award
@@ -23,6 +23,7 @@ export default function TimeClock() {
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
+  const hasHR = canViewHR(user)
 
   // Field roles belong on FieldScout — redirect them there so they see
   // job-level clock-in, line items, payment buttons, verification, etc.
@@ -668,6 +669,11 @@ export default function TimeClock() {
           const recentSessions = getRecentSessions(employee.id)
           const isClockedIn = !!activeEntry
           const isOnLunch = activeEntry?.lunch_start && !activeEntry?.lunch_end
+          // HR-sensitive fields (pay rate, tax class, gross pay) are shown for
+          // the viewer's own row always, but hidden on other employees unless
+          // the viewer has HR access.
+          const isSelfRow = employee.id === user?.id || employee.email === user?.email
+          const canSeeComp = hasHR || isSelfRow
 
           // Calculate elapsed hours for progress bar
           let elapsedHours = 0
@@ -1069,8 +1075,8 @@ export default function TimeClock() {
                 </div>
               )}
 
-              {/* My Pay This Period */}
-              {(() => {
+              {/* My Pay This Period — only visible to the employee themselves or to HR-authorised viewers */}
+              {canSeeComp && (() => {
                 const pay = calculatePay(employee)
                 const { periodStart, periodEnd } = getCurrentPeriod()
                 const nextPay = getNextPayDate()
