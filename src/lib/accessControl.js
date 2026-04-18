@@ -73,6 +73,31 @@ export function canViewFinancials(user) {
   return hasMinAccess(user, ACCESS_LEVELS.ADMIN)
 }
 
+/**
+ * HR access — gated by the explicit has_hr_access flag on the employee record,
+ * NOT by access level. Super Admins and Developers get it by default (set in
+ * the DB migration) but any Admin can be granted or denied HR visibility
+ * independently.
+ *
+ * HR-restricted surfaces:
+ *  - Employee compensation fields (hourly rate, salary, commission rates,
+ *    tax classification W2/1099, PTO accrual)
+ *  - Payroll page (/payroll) — entire page hidden from nav and blocked on direct navigation
+ *
+ * Developers ALWAYS have HR access regardless of the flag (for support).
+ */
+export function canViewHR(user) {
+  if (!user) return false
+  if (user.is_developer) return true
+  if (getAccessLevel(user) >= ACCESS_LEVELS.DEVELOPER) return true
+  return user.has_hr_access === true
+}
+
+/** Only Super Admin+ can grant/revoke HR access on another employee. */
+export function canManageHRAccess(user) {
+  return hasMinAccess(user, ACCESS_LEVELS.SUPER_ADMIN)
+}
+
 export function canEditPipelineStages(user) {
   return hasMinAccess(user, ACCESS_LEVELS.SUPER_ADMIN)
 }

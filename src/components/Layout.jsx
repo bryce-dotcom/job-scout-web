@@ -324,6 +324,9 @@ export default function Layout() {
   })()
   const userIsFieldTech = (user?.role || '').toLowerCase() === 'field tech' && userAccessLevel <= 0
   const userIsAdmin = userAccessLevel >= 3
+  // HR access is a separate flag; Developers always have it, everyone else
+  // requires an explicit has_hr_access=true set by a Super Admin.
+  const userHasHR = userAccessLevel >= 5 || user?.is_developer || user?.has_hr_access === true
 
   // Filter base nav sections by access level
   const filteredNavSections = useMemo(() => {
@@ -345,8 +348,10 @@ export default function Layout() {
       if (userIsFieldTech && section.key === 'TEAM') {
         return { ...section, baseItems: [] }
       }
-      // Payroll: Admin+ only (level 3+)
-      if (section.key === 'TEAM' && userAccessLevel < 3) {
+      // Payroll: Admin+ only (level 3+) AND requires the HR access flag.
+      // Regular Admins without has_hr_access (e.g. office admins) never see
+      // the Payroll link in nav; only Super Admins can grant HR access.
+      if (section.key === 'TEAM' && (userAccessLevel < 3 || !userHasHR)) {
         return { ...section, baseItems: section.baseItems.filter(i => i.to !== '/payroll') }
       }
       // Team Lead (level 1) and below: hide Employees page
@@ -355,7 +360,7 @@ export default function Layout() {
       }
       return section
     })
-  }, [userAccessLevel, userIsFieldTech])
+  }, [userAccessLevel, userIsFieldTech, userHasHR])
 
   // Build dynamic nav sections with agents injected
   const navSections = useMemo(() => {

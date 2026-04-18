@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { isAdmin as checkAdmin, isManager as checkManager } from '../lib/accessControl'
+import { isAdmin as checkAdmin, isManager as checkManager, canViewHR } from '../lib/accessControl'
 import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
   ChevronRight, ChevronDown, ChevronLeft, AlertTriangle, TrendingUp, Zap,
@@ -81,13 +81,20 @@ export default function Payroll() {
 
   const isAdmin = checkAdmin(user)
   const isManagerPlus = checkManager(user)
+  const hasHR = canViewHR(user)
 
-  // Payroll is Admin+ only — block access for lower roles
-  if (user && !isAdmin) {
+  // Payroll requires BOTH Admin+ access AND the HR permission.
+  // Admins without has_hr_access (e.g. office admins handling ops only) cannot
+  // see compensation data. Only a Super Admin can grant HR access.
+  if (user && (!isAdmin || !hasHR)) {
     return (
       <div style={{ padding: '48px 24px', textAlign: 'center' }}>
         <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Access Restricted</div>
-        <div style={{ fontSize: '14px', color: theme.textMuted }}>Payroll is only available to administrators.</div>
+        <div style={{ fontSize: '14px', color: theme.textMuted }}>
+          {!isAdmin
+            ? 'Payroll is only available to administrators.'
+            : 'Payroll access requires HR permission. Contact a Super Admin to request access.'}
+        </div>
       </div>
     )
   }

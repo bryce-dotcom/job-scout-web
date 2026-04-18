@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { employeesFields } from '../lib/importExportFields'
-import { isAdmin as checkAdmin, canAccessDevTools, canEditPipelineStages } from '../lib/accessControl'
+import { isAdmin as checkAdmin, canAccessDevTools, canEditPipelineStages, canViewHR, canManageHRAccess } from '../lib/accessControl'
 import RankBadge from '../components/RankBadge'
 
 // Role colors (OG DiX style)
@@ -53,6 +53,7 @@ const emptyEmployee = {
   role: 'Field Tech',
   user_role: 'User',
   is_developer: false,
+  has_hr_access: false,
   business_unit: '',
   employee_id: '',
   active: true,
@@ -147,6 +148,8 @@ export default function Employees() {
   const isAdmin = checkAdmin(currentUser)
   const isOwner = canEditPipelineStages(currentUser) // Super Admin+
   const isDeveloper = canAccessDevTools(currentUser)
+  const hasHR = canViewHR(currentUser) // HR-sensitive fields (pay, commission, tax)
+  const canGrantHR = canManageHRAccess(currentUser) // Super Admin+ can flip has_hr_access flag
 
   useEffect(() => {
     if (!companyId) {
@@ -331,7 +334,10 @@ export default function Employees() {
 
   // Check if user can view sensitive info (pay, commission, PTO)
   const canViewSensitiveInfo = (employee) => {
-    if (isAdmin) return true
+    // Compensation / commission / tax info requires the HR access flag even
+    // for Admins. The user can always see their OWN data (so they can check
+    // their own pay) but cannot see other employees' pay without HR access.
+    if (hasHR) return true
     return currentUser?.email === employee?.email || currentUser?.id === employee?.id
   }
 
@@ -352,6 +358,7 @@ export default function Employees() {
       role: employee.role || 'Field Tech',
       user_role: employee.user_role || 'User',
       is_developer: employee.is_developer || false,
+      has_hr_access: employee.has_hr_access === true,
       business_unit: employee.business_unit || '',
       employee_id: employee.employee_id || '',
       active: employee.active !== false,
@@ -468,6 +475,9 @@ export default function Employees() {
       role: formData.role,
       user_role: formData.user_role,
       is_developer: formData.is_developer || false,
+      // HR access can only be written by a Super Admin. For anyone else, keep
+      // the existing DB value (omitting the key so Supabase doesn't overwrite).
+      ...(canGrantHR ? { has_hr_access: !!formData.has_hr_access } : {}),
       business_unit: formData.business_unit || null,
       employee_id: formData.employee_id || null,
       active: formData.active,
@@ -675,6 +685,9 @@ export default function Employees() {
       role: formData.role,
       user_role: formData.user_role,
       is_developer: formData.is_developer || false,
+      // HR access can only be written by a Super Admin. For anyone else, keep
+      // the existing DB value (omitting the key so Supabase doesn't overwrite).
+      ...(canGrantHR ? { has_hr_access: !!formData.has_hr_access } : {}),
       business_unit: formData.business_unit || null,
       employee_id: formData.employee_id || null,
       active: formData.active,
@@ -1124,7 +1137,7 @@ export default function Employees() {
                     }}>
                       {employee.active ? 'Active' : 'Inactive'}
                     </span>
-                    {employee.tax_classification && (
+                    {hasHR && employee.tax_classification && (
                       <span style={{
                         fontSize: '11px',
                         padding: '3px 10px',
@@ -1485,7 +1498,8 @@ export default function Employees() {
                       />
                     </div>
 
-                    {/* W2 / 1099 Toggle */}
+                    {/* W2 / 1099 Toggle — HR-sensitive, hidden from non-HR Admins */}
+                    {canViewSensitiveInfo(viewingEmployee) && (
                     <div>
                       <label style={labelStyle}>Tax Classification</label>
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -1539,6 +1553,7 @@ export default function Employees() {
                         </button>
                       </div>
                     </div>
+                    )}
                   </div>
                 </div>
 
@@ -1598,6 +1613,42 @@ export default function Employees() {
                     </div>
                   )}
                 </div>
+
+                {/* HR Access — Super Admin only can grant; grants access to
+                    compensation data (pay, commission, tax, PTO) and Payroll page */}
+                {canGrantHR && (
+                  <div style={{
+                    marginBottom: '16px',
+                    padding: '12px',
+                    backgroundColor: 'rgba(168, 85, 247, 0.08)',
+                    border: '1px solid rgba(168, 85, 247, 0.2)',
+                    borderRadius: '8px'
+                  }}>
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      cursor: isEditing ? 'pointer' : 'not-allowed'
+                    }}>
+                      <input
+                        type="checkbox"
+                        name="has_hr_access"
+                        checked={!!formData.has_hr_access}
+                        onChange={(e) => isEditing && setFormData(prev => ({ ...prev, has_hr_access: e.target.checked }))}
+                        disabled={!isEditing}
+                        style={{ width: '18px', height: '18px', cursor: isEditing ? 'pointer' : 'not-allowed' }}
+                      />
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#a855f7' }}>
+                          HR Access
+                        </div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                          Allows this employee to view pay rates, commissions, tax classification, PTO, and the Payroll page. Only Super Admins can grant this.
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                )}
 
                 {/* Skill Level */}
                 {SKILL_LEVELS.length > 0 && (
