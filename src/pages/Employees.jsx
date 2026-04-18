@@ -474,7 +474,11 @@ export default function Employees() {
       phone: formData.phone || null,
       role: formData.role,
       user_role: formData.user_role,
-      is_developer: formData.is_developer || false,
+      // is_developer can only be written by an existing developer — UI
+      // checkbox is already hidden from non-devs, but we strip the field
+      // from the payload entirely for non-devs to prevent tampering via
+      // the browser console.
+      ...(isDeveloper ? { is_developer: !!formData.is_developer } : {}),
       // HR access can only be written by a Super Admin. For anyone else, keep
       // the existing DB value (omitting the key so Supabase doesn't overwrite).
       ...(canGrantHR ? { has_hr_access: !!formData.has_hr_access } : {}),
@@ -684,7 +688,11 @@ export default function Employees() {
       phone: formData.phone || null,
       role: formData.role,
       user_role: formData.user_role,
-      is_developer: formData.is_developer || false,
+      // is_developer can only be written by an existing developer — UI
+      // checkbox is already hidden from non-devs, but we strip the field
+      // from the payload entirely for non-devs to prevent tampering via
+      // the browser console.
+      ...(isDeveloper ? { is_developer: !!formData.is_developer } : {}),
       // HR access can only be written by a Super Admin. For anyone else, keep
       // the existing DB value (omitting the key so Supabase doesn't overwrite).
       ...(canGrantHR ? { has_hr_access: !!formData.has_hr_access } : {}),
