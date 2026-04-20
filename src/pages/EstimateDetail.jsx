@@ -3906,6 +3906,10 @@ export default function EstimateDetail() {
           labelStyle={labelStyle}
           onSettingsUpdate={saveSettingsOverrides}
           customer={estimate?.customer || estimate?.lead}
+          sendSubject={sendSubject}
+          setSendSubject={setSendSubject}
+          sendAttachments={sendAttachments}
+          setSendAttachments={setSendAttachments}
         />
       )}
 
@@ -5190,7 +5194,7 @@ function EstimatePreview({ estimate, lineItems, company, businessUnit, settings 
 }
 
 // Preview + Send modal with two steps
-function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle, onSettingsUpdate, customer }) {
+function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle, onSettingsUpdate, customer, sendSubject, setSendSubject, sendAttachments, setSendAttachments }) {
   const [step, setStep] = useState('preview') // 'preview' | 'send'
   const [mode, setMode] = useState(settings.presentation_mode || 'pdf')
   const [generating, setGenerating] = useState(false)
