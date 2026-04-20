@@ -31,6 +31,10 @@ export const PERIODS_PER_YEAR = {
 //  inPeriodPayments — payments with date within current pay period
 //  payrollConfig  — { commission_trigger: 'payment_received' | 'invoice_created' | 'job_completed' }
 //  periodStartStr / periodEndStr — ISO date strings bounding the current period
+//  leads          — (optional) all leads. When a job has no salesperson_id,
+//                   we fall back to the linked lead's salesperson. Most
+//                   ownership lives on the lead in practice, so omitting
+//                   this will under-count commission.
 export function calculateInvoiceCommissions({
   employee,
   jobs,
@@ -39,6 +43,7 @@ export function calculateInvoiceCommissions({
   payrollConfig,
   periodStartStr,
   periodEndStr,
+  leads = [],
 }) {
   if (!employee?.is_commission) return { available: 0, pending: 0, details: [] }
 
@@ -57,7 +62,23 @@ export function calculateInvoiceCommissions({
   let available = 0
   let pending = 0
 
-  const empJobs = (jobs || []).filter(j => j.salesperson_id === employee.id)
+  // Ownership resolution: a job belongs to the employee if
+  //   job.salesperson_id === employee.id         (explicit job owner)
+  //   OR the linked lead's salesperson_id === employee.id
+  //   OR the lead.salesperson_ids array includes employee.id (multi-rep)
+  // Fall-through to lead is critical — most ownership lives on the lead.
+  const leadsById = new Map((leads || []).map(l => [l.id, l]))
+  const ownsJob = (job) => {
+    if (job.salesperson_id === employee.id) return true
+    if (job.lead_id) {
+      const lead = leadsById.get(job.lead_id)
+      if (!lead) return false
+      if (lead.salesperson_id === employee.id) return true
+      if (Array.isArray(lead.salesperson_ids) && lead.salesperson_ids.includes(employee.id)) return true
+    }
+    return false
+  }
+  const empJobs = (jobs || []).filter(ownsJob)
   const empJobIds = empJobs.map(j => j.id)
   const empInvoices = (invoices || []).filter(inv => empJobIds.includes(inv.job_id))
   const trigger = payrollConfig?.commission_trigger || 'payment_received'

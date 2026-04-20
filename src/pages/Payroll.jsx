@@ -41,6 +41,7 @@ export default function Payroll() {
   const [payments, setPayments] = useState([])
   const [invoices, setInvoices] = useState([])
   const [jobs, setJobs] = useState([])
+  const [leads, setLeads] = useState([])
   const [timeOffRequests, setTimeOffRequests] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -240,7 +241,7 @@ export default function Payroll() {
       const periodStartStr = periodStart.toISOString().split('T')[0]
       const periodEndStr = periodEnd.toISOString().split('T')[0]
 
-      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes] = await Promise.all([
+      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes] = await Promise.all([
         // Time clock entries for current period
         supabase
           .from('time_clock')
@@ -313,6 +314,14 @@ export default function Payroll() {
           .gte('score', 60)
           .gte('created_at', periodStart.toISOString())
           .lte('created_at', periodEnd.toISOString()),
+
+        // All leads — needed so commission calc can fall back to
+        // lead.salesperson_id when jobs.salesperson_id is null (which is
+        // the case for 97% of jobs).
+        supabase
+          .from('leads')
+          .select('id, salesperson_id, salesperson_ids')
+          .eq('company_id', companyId),
       ])
 
       setTimeEntries(entriesRes.data || [])
@@ -321,6 +330,7 @@ export default function Payroll() {
       setPayments(paymentsRes.data || [])
       setInvoices(invoicesRes.data || [])
       setJobs(jobsRes.data || [])
+      setLeads(leadsRes?.data || [])
       setTimeOffRequests(requestsRes.data || [])
       setAdjustments(adjRes.data || [])
       setVerificationReports(verRes.data || [])
@@ -438,6 +448,7 @@ export default function Payroll() {
       employee,
       jobs,
       invoices,
+      leads,
       inPeriodPayments: payments,
       payrollConfig,
       periodStartStr: periodStart.toISOString().split('T')[0],

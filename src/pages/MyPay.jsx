@@ -37,6 +37,7 @@ export default function MyPay() {
     commission_trigger: 'payment_received',
   })
   const [jobs, setJobs] = useState([])
+  const [leads, setLeads] = useState([])
   const [invoices, setInvoices] = useState([])
   const [payments, setPayments] = useState([])
   const [timeEntries, setTimeEntries] = useState([])
@@ -67,12 +68,21 @@ export default function MyPay() {
         const periodStartStr = periodStart.toISOString().split('T')[0]
         const periodEndStr = periodEnd.toISOString().split('T')[0]
 
-        // All jobs the user is salesperson on (needed for commission + pending)
+        // Leads owned by this rep (explicit or via salesperson_ids array).
+        // Needed because most ownership lives on leads, not jobs.
+        const leadsPromise = supabase
+          .from('leads')
+          .select('id, salesperson_id, salesperson_ids')
+          .eq('company_id', companyId)
+          .or(`salesperson_id.eq.${user.id},salesperson_ids.cs.{${user.id}}`)
+
+        // All jobs — we need any job owned directly by the user OR linked
+        // to one of their leads. Pulling all company jobs is simpler than
+        // two round-trips and the filter is cheap client-side.
         const jobsPromise = supabase
           .from('jobs')
-          .select('id, job_id, salesperson_id, status, customer_name, job_title, invoice_status')
+          .select('id, job_id, salesperson_id, lead_id, status, customer_name, job_title, invoice_status')
           .eq('company_id', companyId)
-          .eq('salesperson_id', user.id)
 
         // Invoices — filter to those on user's jobs by loading in two steps
         // (can't join without rpc); fetch all invoices and filter client-side
@@ -100,8 +110,9 @@ export default function MyPay() {
           .lte('clock_in', periodEnd.toISOString())
           .not('clock_out', 'is', null)
 
-        const [jr, ir, pr, tr] = await Promise.all([jobsPromise, invoicesPromise, paymentsPromise, timePromise])
+        const [jr, lr, ir, pr, tr] = await Promise.all([jobsPromise, leadsPromise, invoicesPromise, paymentsPromise, timePromise])
         setJobs(jr.data || [])
+        setLeads(lr.data || [])
         setInvoices(ir.data || [])
         setPayments(pr.data || [])
         setTimeEntries(tr.data || [])
@@ -120,13 +131,14 @@ export default function MyPay() {
     return calculateInvoiceCommissions({
       employee: user,
       jobs,
+      leads,
       invoices,
       inPeriodPayments: payments,
       payrollConfig,
       periodStartStr,
       periodEndStr,
     })
-  }, [user, jobs, invoices, payments, payrollConfig, periodStartStr, periodEndStr])
+  }, [user, jobs, leads, invoices, payments, payrollConfig, periodStartStr, periodEndStr])
 
   const totalHours = timeEntries.reduce((s, e) => {
     let h = e.total_hours
