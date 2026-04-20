@@ -152,6 +152,7 @@ function JobDetailInner() {
   const [leadEin, setLeadEin] = useState(null)
   const [jobInvoices, setJobInvoices] = useState([])
   const [jobUtilityInvoices, setJobUtilityInvoices] = useState([])
+  const [jobTimeEntries, setJobTimeEntries] = useState([])
   const [localIncentive, setLocalIncentive] = useState('')
   const [localDiscount, setLocalDiscount] = useState('')
 
@@ -392,6 +393,14 @@ function JobDetailInner() {
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobUtilityInvoices(utilInvoicesData || [])
+
+      // Fetch time_clock entries logged against this job (by any employee)
+      const { data: timeData } = await supabase
+        .from('time_clock')
+        .select('id, employee_id, clock_in, clock_out, total_hours, adjusted_by, adjustment_reason')
+        .eq('job_id', parseInt(id))
+        .order('clock_in', { ascending: false })
+      setJobTimeEntries(timeData || [])
 
       // Fetch file attachments linked to this job (by job_id or by lead_id)
       const jobIdFilter = supabase.from('file_attachments').select('*').eq('job_id', id).order('created_at', { ascending: false })
@@ -4260,6 +4269,90 @@ function JobDetailInner() {
               }}>
                 {job.quote.quote_id}
               </button>
+            </div>
+          )}
+
+          {/* Time Logged on this Job */}
+          {jobTimeEntries.length > 0 && (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              padding: '20px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Clock size={16} style={{ color: theme.accent }} />
+                  Time Logged
+                </h3>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: theme.accent }}>
+                  {jobTimeEntries.reduce((sum, e) => {
+                    let h = e.total_hours
+                    if (!h && e.clock_in && e.clock_out) h = (new Date(e.clock_out) - new Date(e.clock_in)) / 36e5
+                    return sum + (h || 0)
+                  }, 0).toFixed(2)}h
+                </span>
+              </div>
+              {/* Group by employee */}
+              {(() => {
+                const byEmp = {}
+                jobTimeEntries.forEach(e => {
+                  let h = e.total_hours
+                  if (!h && e.clock_in && e.clock_out) h = (new Date(e.clock_out) - new Date(e.clock_in)) / 36e5
+                  if (!byEmp[e.employee_id]) byEmp[e.employee_id] = { hours: 0, count: 0 }
+                  byEmp[e.employee_id].hours += (h || 0)
+                  byEmp[e.employee_id].count += 1
+                })
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                    {Object.entries(byEmp)
+                      .sort(([, a], [, b]) => b.hours - a.hours)
+                      .map(([empId, stats]) => {
+                        const emp = employees.find(em => em.id === parseInt(empId))
+                        return (
+                          <div key={empId} style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '8px 10px', backgroundColor: theme.bg, borderRadius: '6px', fontSize: '13px'
+                          }}>
+                            <span style={{ color: theme.text, fontWeight: 500 }}>{emp?.name || `Employee #${empId}`}</span>
+                            <span style={{ color: theme.textMuted }}>
+                              {stats.hours.toFixed(2)}h · {stats.count} {stats.count === 1 ? 'entry' : 'entries'}
+                            </span>
+                          </div>
+                        )
+                      })}
+                  </div>
+                )
+              })()}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '220px', overflowY: 'auto' }}>
+                {jobTimeEntries.slice(0, 15).map(e => {
+                  const emp = employees.find(em => em.id === e.employee_id)
+                  let hours = e.total_hours
+                  if (!hours && e.clock_in && e.clock_out) hours = (new Date(e.clock_out) - new Date(e.clock_in)) / 36e5
+                  const ci = new Date(e.clock_in)
+                  const co = e.clock_out ? new Date(e.clock_out) : null
+                  return (
+                    <div key={e.id} style={{ fontSize: '11px', color: theme.textMuted, padding: '4px 0', borderTop: `1px solid ${theme.border}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: theme.text }}>{emp?.name || `Emp ${e.employee_id}`}</span>
+                        <span style={{ fontWeight: 600, color: theme.accent }}>{hours ? `${hours.toFixed(2)}h` : '—'}</span>
+                      </div>
+                      <div>
+                        {ci.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        {' · '}
+                        {ci.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        {co ? ` – ${co.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ' – open'}
+                        {e.adjusted_by && <span style={{ color: '#f97316' }}> · adj</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+                {jobTimeEntries.length > 15 && (
+                  <div style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'center', padding: '6px' }}>
+                    +{jobTimeEntries.length - 15} more entries
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

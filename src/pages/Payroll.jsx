@@ -195,6 +195,7 @@ export default function Payroll() {
         clock_in: newClockIn.toISOString(),
         clock_out: newClockOut ? newClockOut.toISOString() : null,
         total_hours: newTotalHours,
+        job_id: editingEntry.job_id ? parseInt(editingEntry.job_id) : null,
         adjusted_by: adminEmp?.id || null,
         adjusted_at: new Date().toISOString(),
         adjustment_reason: editingEntry.reason.trim(),
@@ -1161,6 +1162,31 @@ export default function Payroll() {
                                   </div>
                                 </div>
                                 <div>
+                                  <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '2px' }}>Assigned Job</label>
+                                  <select
+                                    value={editingEntry.job_id || ''}
+                                    onChange={e => setEditingEntry(prev => ({ ...prev, job_id: e.target.value || null }))}
+                                    style={{ width: '100%', padding: '6px 8px', background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.text, fontSize: '13px', boxSizing: 'border-box' }}
+                                  >
+                                    <option value="">General / No specific job</option>
+                                    {jobs
+                                      .slice()
+                                      .sort((a, b) => {
+                                        const rank = s => {
+                                          const v = (s || '').toLowerCase()
+                                          if (v.includes('progress') || v.includes('scheduled') || v.includes('active')) return 0
+                                          if (v.includes('complete') || v.includes('cancel')) return 2
+                                          return 1
+                                        }
+                                        return rank(a.status) - rank(b.status)
+                                      })
+                                      .map(j => {
+                                        const label = [j.customer_name, j.job_title || j.job_id].filter(Boolean).join(' — ')
+                                        return <option key={j.id} value={j.id}>{label}{j.status ? ` [${j.status}]` : ''}</option>
+                                      })}
+                                  </select>
+                                </div>
+                                <div>
                                   <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '2px' }}>Reason for adjustment *</label>
                                   <input type="text" value={editingEntry.reason || ''} placeholder="e.g. Employee forgot to clock out, actual time confirmed"
                                     onChange={e => setEditingEntry(prev => ({ ...prev, reason: e.target.value }))}
@@ -1177,7 +1203,7 @@ export default function Payroll() {
                             ) : (
                               /* ---- READ MODE ---- */
                               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                                <div style={{ flex: 1 }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
                                     {clockIn.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                   </div>
@@ -1185,6 +1211,37 @@ export default function Payroll() {
                                     {clockIn.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                                     {clockOut ? ` — ${clockOut.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ' — Still clocked in'}
                                   </div>
+                                  {/* Job Assignment */}
+                                  {(() => {
+                                    const job = entry.job_id ? jobs.find(j => j.id === entry.job_id) : null
+                                    const jobLabel = job
+                                      ? [job.customer_name, job.job_title || job.job_id].filter(Boolean).join(' — ')
+                                      : null
+                                    return (
+                                      <div style={{
+                                        fontSize: '11px',
+                                        marginTop: '4px',
+                                        padding: '2px 8px',
+                                        borderRadius: '4px',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        maxWidth: '100%',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        backgroundColor: job ? 'rgba(90,99,73,0.10)' : 'rgba(107,114,128,0.08)',
+                                        color: job ? theme.accent : theme.textMuted,
+                                        fontWeight: job ? 600 : 400,
+                                      }}
+                                      title={jobLabel || 'No job assigned'}>
+                                        <Briefcase size={10} />
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                          {jobLabel || 'General / no job'}
+                                        </span>
+                                      </div>
+                                    )
+                                  })()}
                                   {/* Clock In Location */}
                                   {(entry.clock_in_address || (entry.clock_in_lat && entry.clock_in_lng)) && (
                                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -1238,6 +1295,7 @@ export default function Payroll() {
                                         clock_in: toLocal(ci),
                                         clock_out: co ? toLocal(co) : '',
                                         reason: '',
+                                        job_id: entry.job_id || '',
                                       })
                                     }} style={{ padding: '4px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '4px', cursor: 'pointer', color: theme.textMuted, display: 'flex', alignItems: 'center' }}
                                       title="Adjust time entry">
