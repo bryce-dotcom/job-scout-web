@@ -34,7 +34,13 @@ export default function SearchableSelect({
   const selected = options.find(o => String(o.value) === String(value))
 
   const filtered = search
-    ? options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
+    ? (() => {
+        const tokens = search.toLowerCase().split(/\s+/).filter(Boolean)
+        return options.filter(o => {
+          const label = o.label.toLowerCase()
+          return tokens.every(t => label.includes(t))
+        })
+      })()
     : options
 
   // Close on click outside
