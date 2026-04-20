@@ -2880,8 +2880,15 @@ export default function PMJobSetter() {
                     </div>
                   ))}
                 </div>
-                {/* Day grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                {/* Day grid — auto-scales rows to fill the available viewport
+                    and falls back to internal scrolling when overflowing. */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                  gridAutoRows: `minmax(60px, calc((100vh - 360px) / ${Math.ceil(getMonthDays().length / 7)}))`,
+                  maxHeight: 'calc(100vh - 220px)',
+                  overflow: 'auto',
+                }}>
                   {getMonthDays().map((day, idx) => {
                     const dayJobs = day ? getJobsForDate(day) : []
                     const dayAppointments = day ? getAppointmentsForDate(day) : []
@@ -2893,10 +2900,11 @@ export default function PMJobSetter() {
                         onDragOver={day ? (e) => { e.preventDefault(); setDragOverSlot({ date: day, hour: 8 }) } : undefined}
                         onDrop={day ? (e) => handleMonthDayDrop(e, day) : undefined}
                         style={{
-                          minHeight: '80px',
+                          minWidth: 0,
                           borderBottom: `1px solid ${theme.border}`,
                           borderRight: (idx + 1) % 7 !== 0 ? `1px solid ${theme.border}` : 'none',
                           padding: '4px',
+                          overflow: 'hidden',
                           backgroundColor: !day ? theme.bg : isDragOver ? theme.accentBg : (day && isToday(day) ? 'rgba(90,99,73,0.06)' : 'transparent'),
                           transition: 'background-color 0.15s'
                         }}

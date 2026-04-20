@@ -29,6 +29,7 @@ export default function InvoiceDetail() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
+  const user = useStore((state) => state.user)
   const fetchInvoices = useStore((state) => state.fetchInvoices)
   const settings = useStore((state) => state.settings)
   const getSettingValue = useStore((state) => state.getSettingValue)
@@ -63,6 +64,10 @@ export default function InvoiceDetail() {
   const [latestPdfSignedUrl, setLatestPdfSignedUrl] = useState(null)
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null)
   const [pdfPreviewBlob, setPdfPreviewBlob] = useState(null)
+
+  // Conversation log — payment-arrangement notes per invoice with timestamps.
+  const [logEntry, setLogEntry] = useState('')
+  const [savingLog, setSavingLog] = useState(false)
 
   // Send modal state
   const [showSendModal, setShowSendModal] = useState(false)
@@ -398,6 +403,29 @@ export default function InvoiceDetail() {
     setSaving(false)
   }
 
+  const addConversationEntry = async () => {
+    const text = logEntry.trim()
+    if (!text) return
+    setSavingLog(true)
+    const existing = Array.isArray(invoice.conversation_log) ? invoice.conversation_log : []
+    const entry = {
+      at: new Date().toISOString(),
+      by: user?.email || 'Unknown',
+      text
+    }
+    const next = [...existing, entry]
+    const { error } = await supabase.from('invoices')
+      .update({ conversation_log: next, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (error) {
+      toast.error('Failed to add note: ' + error.message)
+    } else {
+      setInvoice(prev => ({ ...prev, conversation_log: next }))
+      setLogEntry('')
+    }
+    setSavingLog(false)
+  }
+
   const rescindPayment = async (payment) => {
     if (!confirm(`Rescind ${formatCurrency(payment.amount)} payment from ${formatDate(payment.date)}? This will delete the payment record and update the invoice balance.`)) return
 
@@ -510,15 +538,28 @@ export default function InvoiceDetail() {
       await supabase.from('file_attachments').delete().in('file_path', paths)
     }
 
+    // Capture the linked job before deletion so we can clear the cached
+    // invoice_status — otherwise the JobDetail "Generate Invoice" button
+    // stays hidden and the user has no path to create a new one.
+    const linkedJobId = invoice?.job_id
+
     const { error } = await supabase.from('invoices').delete().eq('id', id)
 
     if (error) {
       toast.error('Failed to delete invoice: ' + error.message)
       setSaving(false)
     } else {
+      if (linkedJobId) {
+        await supabase.from('jobs')
+          .update({ invoice_status: null, updated_at: new Date().toISOString() })
+          .eq('id', linkedJobId)
+      }
       toast.success('Invoice deleted')
       await fetchInvoices()
-      navigate('/invoices')
+      // Send the user back to the job so they can immediately re-invoice
+      // with the corrected line items, instead of dropping them on the
+      // /invoices list with no obvious next step.
+      navigate(linkedJobId ? `/jobs/${linkedJobId}` : '/invoices')
     }
   }
 
@@ -1344,6 +1385,78 @@ export default function InvoiceDetail() {
                 {invoice.job_description || <span style={{ color: theme.textMuted, fontStyle: 'italic' }}>No description</span>}
               </p>
             )}
+          </div>
+
+          {/* Conversation Log — payment-arrangement chat history */}
+          <div style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '20px'
+          }}>
+            <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>
+              Conversation Log
+            </h3>
+            <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '14px' }}>
+              Timestamped notes — payment arrangements, follow-ups, customer commitments.
+            </p>
+
+            {(Array.isArray(invoice.conversation_log) && invoice.conversation_log.length > 0) ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+                {[...invoice.conversation_log].reverse().map((e, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: '10px 12px',
+                      backgroundColor: theme.bg,
+                      borderRadius: '8px',
+                      border: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '600', color: theme.accent }}>
+                        {e.by || 'Unknown'}
+                      </span>
+                      <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                        {e.at ? new Date(e.at).toLocaleString() : ''}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '14px', color: theme.text, margin: 0, whiteSpace: 'pre-wrap' }}>
+                      {e.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ fontSize: '13px', color: theme.textMuted, fontStyle: 'italic', marginBottom: '14px' }}>
+                No entries yet.
+              </p>
+            )}
+
+            <textarea
+              value={logEntry}
+              onChange={(e) => setLogEntry(e.target.value)}
+              rows={2}
+              placeholder="Spoke with customer — agreed to pay by Friday..."
+              style={{ ...inputStyle, resize: 'vertical', marginBottom: '8px' }}
+            />
+            <button
+              onClick={addConversationEntry}
+              disabled={savingLog || !logEntry.trim()}
+              style={{
+                padding: '10px 16px',
+                backgroundColor: theme.accent,
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '500',
+                cursor: (savingLog || !logEntry.trim()) ? 'not-allowed' : 'pointer',
+                opacity: (savingLog || !logEntry.trim()) ? 0.5 : 1,
+              }}
+            >
+              {savingLog ? 'Adding...' : 'Add Note'}
+            </button>
           </div>
 
           {/* Notes */}

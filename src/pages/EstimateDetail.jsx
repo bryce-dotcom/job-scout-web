@@ -2300,6 +2300,22 @@ export default function EstimateDetail() {
                 />
               </div>
               <div>
+                <label style={labelStyle}>Salesperson</label>
+                <select
+                  value={estimate.salesperson_id || ''}
+                  onChange={(e) => updateEstimateField('salesperson_id', e.target.value || null)}
+                  style={inputStyle}
+                >
+                  <option value="">-- Select --</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))}
+                </select>
+                <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                  Drives commission attribution. Defaults to whoever created the estimate but can be reassigned.
+                </p>
+              </div>
+              <div>
                 <label style={labelStyle}>Technician</label>
                 <select
                   value={estimate.technician_id || ''}
@@ -2311,6 +2327,9 @@ export default function EstimateDetail() {
                     <option key={emp.id} value={emp.id}>{emp.name}</option>
                   ))}
                 </select>
+                <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                  Who's running the install. Independent of the salesperson.
+                </p>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelStyle}>Estimate Message</label>

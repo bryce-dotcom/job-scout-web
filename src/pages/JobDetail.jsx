@@ -771,7 +771,9 @@ function JobDetailInner() {
 
     setSaving(true)
 
-    await supabase.from('time_log').insert([{
+    // Surface DB errors — historically this insert silently failed because
+    // the table was missing the `notes` column.
+    const { error } = await supabase.from('time_log').insert([{
       company_id: companyId,
       job_id: parseInt(id),
       employee_id: parseInt(newTime.employee_id),
@@ -780,6 +782,13 @@ function JobDetailInner() {
       notes: newTime.notes || null,
       date: new Date().toISOString().split('T')[0]
     }])
+
+    if (error) {
+      const { toast } = await import('../lib/toast')
+      toast.error('Failed to save time entry: ' + error.message)
+      setSaving(false)
+      return
+    }
 
     await fetchTimeLogs()
     setNewTime({ employee_id: '', hours: '', category: 'Regular', notes: '' })
@@ -4108,7 +4117,10 @@ function JobDetailInner() {
                     </button>
                   )
                 }
-                if (job.invoice_status === 'Invoiced' || job.invoice_status === 'Paid') return null
+                // No customer invoice exists. Always offer Generate — previously
+                // we early-returned on job.invoice_status === 'Invoiced'/'Paid',
+                // but that field can be stale (e.g. after the user deletes the
+                // invoice to redo it), which left the user with no path forward.
                 return (
                   <button onClick={generateInvoice} disabled={saving} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',

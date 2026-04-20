@@ -47,6 +47,12 @@ export default function UtilityInvoiceDetail() {
     net_cost: ''
   })
 
+  // Record Payment modal — captures the real paid_at date so commission
+  // timing isn't keyed off the click date.
+  const [showRecordPayment, setShowRecordPayment] = useState(false)
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [paymentNote, setPaymentNote] = useState('')
+
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
@@ -89,14 +95,63 @@ export default function UtilityInvoiceDetail() {
     setLoading(false)
   }
 
-  const markAsPaid = async () => {
+  const openRecordPayment = () => {
+    // Default the date to invoice.paid_at if it exists (re-edit case),
+    // otherwise today.
+    if (invoice.paid_at) {
+      setPaymentDate(invoice.paid_at.slice(0, 10))
+    } else {
+      setPaymentDate(new Date().toISOString().slice(0, 10))
+    }
+    setPaymentNote('')
+    setShowRecordPayment(true)
+  }
+
+  const recordPayment = async () => {
+    if (!paymentDate) {
+      toast.error('Pick a payment date')
+      return
+    }
     setSaving(true)
-    await supabase.from('utility_invoices').update({
+    // Store the date at noon UTC so it doesn't drift to the day before in
+    // negative timezones when displayed back.
+    const isoPaidAt = `${paymentDate}T12:00:00.000Z`
+    const stamped = `Paid ${paymentDate}${paymentNote ? ' — ' + paymentNote : ''}`
+    const newNotes = invoice.notes ? `${invoice.notes}\n\n${stamped}` : stamped
+    const { error } = await supabase.from('utility_invoices').update({
       payment_status: 'Paid',
+      paid_at: isoPaidAt,
+      notes: newNotes,
       updated_at: new Date().toISOString()
     }).eq('id', id)
+    if (error) {
+      toast.error('Failed to record payment: ' + error.message)
+      setSaving(false)
+      return
+    }
     await fetchInvoiceData()
     await fetchUtilityInvoices()
+    setShowRecordPayment(false)
+    setSaving(false)
+    toast.success('Payment recorded')
+  }
+
+  // Allow correcting the paid_at after the fact without re-recording.
+  const updatePaidAt = async (newDate) => {
+    if (!newDate) return
+    setSaving(true)
+    const isoPaidAt = `${newDate}T12:00:00.000Z`
+    const { error } = await supabase.from('utility_invoices').update({
+      paid_at: isoPaidAt,
+      updated_at: new Date().toISOString()
+    }).eq('id', id)
+    if (error) {
+      toast.error('Failed to update paid date: ' + error.message)
+    } else {
+      await fetchInvoiceData()
+      await fetchUtilityInvoices()
+      toast.success('Paid date updated')
+    }
     setSaving(false)
   }
 
@@ -874,6 +929,30 @@ export default function UtilityInvoiceDetail() {
                   {invoice.payment_status}
                 </span>
               </div>
+
+              {invoice.payment_status === 'Paid' && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}>
+                  <span style={{ color: theme.textSecondary, fontSize: '14px' }}>Paid Date</span>
+                  <input
+                    type="date"
+                    value={invoice.paid_at ? invoice.paid_at.slice(0, 10) : ''}
+                    onChange={(e) => updatePaidAt(e.target.value)}
+                    disabled={saving}
+                    style={{
+                      padding: '4px 8px',
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      color: theme.text,
+                      backgroundColor: theme.bgCard,
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -908,14 +987,24 @@ export default function UtilityInvoiceDetail() {
 
               <div style={{ borderTop: `1px solid ${theme.border}`, margin: '2px 0' }} />
 
-              {invoice.payment_status !== 'Paid' && (
+              {invoice.payment_status !== 'Paid' ? (
                 <button
-                  onClick={markAsPaid}
+                  onClick={openRecordPayment}
                   disabled={saving}
                   style={actionBtnStyle('#4a7c59', '#ffffff')}
                 >
                   <CheckCircle size={18} />
-                  Mark as Paid
+                  Record Payment
+                </button>
+              ) : (
+                <button
+                  onClick={openRecordPayment}
+                  disabled={saving}
+                  style={actionBtnStyle(theme.accentBg, theme.accent)}
+                  title="Re-record payment with a corrected date"
+                >
+                  <Pencil size={18} />
+                  Edit Payment
                 </button>
               )}
 
@@ -939,6 +1028,99 @@ export default function UtilityInvoiceDetail() {
           </div>
         </div>
       </div>
+
+      {showRecordPayment && (
+        <div
+          onClick={() => !saving && setShowRecordPayment(false)}
+          style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, padding: '16px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              padding: '24px',
+              width: '100%',
+              maxWidth: '420px',
+            }}
+          >
+            <h3 style={{ fontSize: '17px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
+              {invoice.payment_status === 'Paid' ? 'Edit Payment' : 'Record Utility Payment'}
+            </h3>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '20px' }}>
+              When did the utility actually pay out? This date drives commission timing.
+            </p>
+
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Paid Date</label>
+              <input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Amount</label>
+              <input
+                type="text"
+                value={formatCurrency(invoice.incentive_amount || invoice.amount)}
+                readOnly
+                style={{ ...inputStyle, backgroundColor: theme.bg, color: theme.textMuted }}
+              />
+              <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                Utility incentive payments are recorded as a single full payout. To change the amount, edit the rebate.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={labelStyle}>Note (optional)</label>
+              <input
+                type="text"
+                value={paymentNote}
+                onChange={(e) => setPaymentNote(e.target.value)}
+                placeholder="Check #, ACH ref, etc."
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setShowRecordPayment(false)}
+                disabled={saving}
+                style={{
+                  flex: 1, padding: '12px',
+                  border: `1px solid ${theme.border}`, backgroundColor: 'transparent',
+                  color: theme.text, borderRadius: '8px', fontSize: '14px',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={recordPayment}
+                disabled={saving}
+                style={{
+                  flex: 1, padding: '12px',
+                  backgroundColor: '#4a7c59', color: '#ffffff',
+                  border: 'none', borderRadius: '8px', fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  opacity: saving ? 0.6 : 1,
+                }}
+              >
+                {saving ? 'Saving...' : 'Save Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

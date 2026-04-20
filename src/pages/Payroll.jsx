@@ -11,6 +11,7 @@ import {
   Edit3, Save, Map, Plus, Minus, Printer, Mail, Send
 } from 'lucide-react'
 import LocationTrailModal from '../components/LocationTrailModal'
+import SearchableSelect from '../components/SearchableSelect'
 import RankBadge, { SCOUT_RANKS } from '../components/RankBadge'
 import {
   getCurrentPayPeriod as sharedGetCurrentPayPeriod,
@@ -1163,28 +1164,30 @@ export default function Payroll() {
                                 </div>
                                 <div>
                                   <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '2px' }}>Assigned Job</label>
-                                  <select
+                                  <SearchableSelect
                                     value={editingEntry.job_id || ''}
-                                    onChange={e => setEditingEntry(prev => ({ ...prev, job_id: e.target.value || null }))}
-                                    style={{ width: '100%', padding: '6px 8px', background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.text, fontSize: '13px', boxSizing: 'border-box' }}
-                                  >
-                                    <option value="">General / No specific job</option>
-                                    {jobs
-                                      .slice()
-                                      .sort((a, b) => {
-                                        const rank = s => {
-                                          const v = (s || '').toLowerCase()
-                                          if (v.includes('progress') || v.includes('scheduled') || v.includes('active')) return 0
-                                          if (v.includes('complete') || v.includes('cancel')) return 2
-                                          return 1
-                                        }
-                                        return rank(a.status) - rank(b.status)
-                                      })
-                                      .map(j => {
-                                        const label = [j.customer_name, j.job_title || j.job_id].filter(Boolean).join(' — ')
-                                        return <option key={j.id} value={j.id}>{label}{j.status ? ` [${j.status}]` : ''}</option>
-                                      })}
-                                  </select>
+                                    onChange={(val) => setEditingEntry(prev => ({ ...prev, job_id: val || null }))}
+                                    placeholder="General / No specific job"
+                                    theme={theme}
+                                    options={[
+                                      { value: '', label: 'General / No specific job' },
+                                      ...jobs
+                                        .slice()
+                                        .sort((a, b) => {
+                                          const rank = s => {
+                                            const v = (s || '').toLowerCase()
+                                            if (v.includes('progress') || v.includes('scheduled') || v.includes('active')) return 0
+                                            if (v.includes('complete') || v.includes('cancel')) return 2
+                                            return 1
+                                          }
+                                          return rank(a.status) - rank(b.status)
+                                        })
+                                        .map(j => {
+                                          const label = [j.customer_name, j.job_title || j.job_id].filter(Boolean).join(' — ')
+                                          return { value: j.id, label: `${label}${j.status ? ` [${j.status}]` : ''}` }
+                                        })
+                                    ]}
+                                  />
                                 </div>
                                 <div>
                                   <label style={{ fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '2px' }}>Reason for adjustment *</label>
