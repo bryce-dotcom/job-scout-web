@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, CheckCircle, Pencil, Trash2, Download, Send, FileText } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Pencil, Trash2, Download, Send, FileText, RotateCcw } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { jsPDF } from 'jspdf'
@@ -134,6 +134,26 @@ export default function UtilityInvoiceDetail() {
     setShowRecordPayment(false)
     setSaving(false)
     toast.success('Payment recorded')
+  }
+
+  // Reopen a paid utility invoice so a payment can be re-applied or corrected.
+  // Clears paid_at and flips status back to Open. Notes are kept (audit trail).
+  const unmarkPaid = async () => {
+    if (!confirm('Reopen this utility invoice? The status will go back to Open and the paid date will be cleared so you can record the actual payment fresh.')) return
+    setSaving(true)
+    const { error } = await supabase.from('utility_invoices').update({
+      payment_status: 'Open',
+      paid_at: null,
+      updated_at: new Date().toISOString()
+    }).eq('id', id)
+    if (error) {
+      toast.error('Failed to reopen: ' + error.message)
+    } else {
+      await fetchInvoiceData()
+      await fetchUtilityInvoices()
+      toast.success('Reopened')
+    }
+    setSaving(false)
   }
 
   // Allow correcting the paid_at after the fact without re-recording.
@@ -997,15 +1017,26 @@ export default function UtilityInvoiceDetail() {
                   Record Payment
                 </button>
               ) : (
-                <button
-                  onClick={openRecordPayment}
-                  disabled={saving}
-                  style={actionBtnStyle(theme.accentBg, theme.accent)}
-                  title="Re-record payment with a corrected date"
-                >
-                  <Pencil size={18} />
-                  Edit Payment
-                </button>
+                <>
+                  <button
+                    onClick={openRecordPayment}
+                    disabled={saving}
+                    style={actionBtnStyle(theme.accentBg, theme.accent)}
+                    title="Re-record payment with a corrected date"
+                  >
+                    <Pencil size={18} />
+                    Edit Payment
+                  </button>
+                  <button
+                    onClick={unmarkPaid}
+                    disabled={saving}
+                    style={actionBtnStyle('rgba(234,179,8,0.12)', '#a16207')}
+                    title="Reopen so you can record the payment fresh"
+                  >
+                    <RotateCcw size={18} />
+                    Unmark Paid
+                  </button>
+                </>
               )}
 
               {!isEditing && (

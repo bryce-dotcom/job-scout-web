@@ -403,6 +403,25 @@ export default function InvoiceDetail() {
     setSaving(false)
   }
 
+  // Reopen a paid invoice so a new payment can be applied (e.g. customer
+  // sends a check after the invoice was prematurely marked paid).
+  const reopenInvoice = async () => {
+    if (!confirm('Reopen this invoice? Status will go back to Pending so you can apply a new payment. Existing payment records are kept untouched — review them on the Payments tab if you need to delete or reassign one.')) return
+    setSaving(true)
+    const { error } = await supabase.from('invoices').update({
+      payment_status: 'Pending',
+      updated_at: new Date().toISOString()
+    }).eq('id', id)
+    if (error) {
+      toast.error('Failed to reopen: ' + error.message)
+    } else {
+      await fetchInvoiceData()
+      await fetchInvoices()
+      toast.success('Invoice reopened')
+    }
+    setSaving(false)
+  }
+
   const addConversationEntry = async () => {
     const text = logEntry.trim()
     if (!text) return
@@ -1996,6 +2015,18 @@ export default function InvoiceDetail() {
                     Mark as Paid
                   </button>
                 </>
+              )}
+
+              {invoice.payment_status === 'Paid' && (
+                <button
+                  onClick={reopenInvoice}
+                  disabled={saving}
+                  style={actionBtnStyle('rgba(234,179,8,0.12)', '#a16207')}
+                  title="Reopen so you can apply a new payment"
+                >
+                  <RotateCcw size={18} />
+                  Reopen Invoice
+                </button>
               )}
 
               {/* Edit button — only if not locked and not currently editing */}
