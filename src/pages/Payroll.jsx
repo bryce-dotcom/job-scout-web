@@ -685,6 +685,7 @@ export default function Payroll() {
         clock_in: clockIn.toISOString(),
         clock_out: clockOut.toISOString(),
         total_hours: totalHours,
+        job_id: formData.jobId || null,
         adjusted_by: adminEmp?.id || null,
         adjusted_at: new Date().toISOString(),
         adjustment_reason: formData.reason || 'Manual entry by admin',
@@ -1320,6 +1321,7 @@ export default function Payroll() {
           saving={savingModal}
           theme={theme}
           isMobile={isMobile}
+          jobs={jobs}
         />
         <AddCommissionModal
           show={showAddCommissionModal}
@@ -2401,17 +2403,40 @@ export default function Payroll() {
 }
 
 // ── Add Time Entry Modal ─────────────────────────────────
-function AddTimeModal({ show, onClose, onSave, saving, theme, isMobile }) {
+function AddTimeModal({ show, onClose, onSave, saving, theme, isMobile, jobs = [] }) {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [startTime, setStartTime] = useState('08:00')
   const [endTime, setEndTime] = useState('17:00')
   const [reason, setReason] = useState('')
+  const [jobId, setJobId] = useState('')
 
   useEffect(() => {
-    if (show) { setDate(new Date().toISOString().split('T')[0]); setStartTime('08:00'); setEndTime('17:00'); setReason('') }
+    if (show) {
+      setDate(new Date().toISOString().split('T')[0])
+      setStartTime('08:00')
+      setEndTime('17:00')
+      setReason('')
+      setJobId('')
+    }
   }, [show])
 
   if (!show) return null
+
+  // Show active/scheduled/in-progress jobs first; completed/cancelled
+  // still selectable but surfaced at the bottom so admins can back-fill
+  // historical time against any job.
+  const jobOptions = (jobs || [])
+    .slice()
+    .sort((a, b) => {
+      const rank = s => {
+        const v = (s || '').toLowerCase()
+        if (v.includes('progress') || v.includes('scheduled') || v.includes('active')) return 0
+        if (v.includes('complete') || v.includes('cancel')) return 2
+        return 1
+      }
+      return rank(a.status) - rank(b.status)
+    })
+
   const inputStyle = {
     width: '100%', padding: '10px 12px', backgroundColor: theme.bg,
     border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', boxSizing: 'border-box'
@@ -2420,12 +2445,12 @@ function AddTimeModal({ show, onClose, onSave, saving, theme, isMobile }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-      <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: '420px', overflow: 'hidden' }}>
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: '420px', overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Add Time Entry — {show.name}</div>
           <button onClick={onClose} style={{ padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
         </div>
-        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
           <div>
             <label style={labelStyle}>Date</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
@@ -2441,12 +2466,27 @@ function AddTimeModal({ show, onClose, onSave, saving, theme, isMobile }) {
             </div>
           </div>
           <div>
+            <label style={labelStyle}>Assign to Job <span style={{ color: theme.textMuted, fontWeight: '400' }}>(optional)</span></label>
+            <select value={jobId} onChange={e => setJobId(e.target.value)} style={inputStyle}>
+              <option value="">General / No specific job</option>
+              {jobOptions.map(j => {
+                const label = [j.customer_name, j.job_title || j.job_id].filter(Boolean).join(' — ')
+                const statusSuffix = j.status ? ` [${j.status}]` : ''
+                return (
+                  <option key={j.id} value={j.id}>
+                    {label}{statusSuffix}
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+          <div>
             <label style={labelStyle}>Reason</label>
             <input type="text" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Missed clock-in, confirmed with employee" style={inputStyle} />
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button onClick={onClose} style={{ flex: 1, padding: '12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '10px', color: theme.text, fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
-            <button onClick={() => onSave({ employeeId: show.id, date, startTime, endTime, reason })} disabled={saving}
+            <button onClick={() => onSave({ employeeId: show.id, date, startTime, endTime, reason, jobId: jobId ? parseInt(jobId) : null })} disabled={saving}
               style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', border: 'none', borderRadius: '10px', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: saving ? 'wait' : 'pointer' }}>
               {saving ? 'Saving...' : 'Add Entry'}
             </button>
