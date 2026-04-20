@@ -310,6 +310,7 @@ export default function Layout() {
       baseItems: [
         { to: '/employees', icon: UserCog, label: 'Employees', hint: 'Manage team members and roles' },
         { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' },
+        { to: '/my-pay', icon: DollarSign, label: 'My Pay', hint: 'Your commissions, pending payouts, and hours' },
         { to: '/payroll', icon: DollarSign, label: 'Payroll', hint: 'Commissions, hours, bonuses, and pay runs' }
       ]
     }
@@ -343,10 +344,11 @@ export default function Layout() {
       if (userIsFieldTech && section.key === 'OPERATIONS') {
         return { ...section, baseItems: section.baseItems.filter(i => i.to === '/field-scout' || i.to === '/job-board') }
       }
-      // Field Tech: hide TEAM entirely (they use Field Scout for both
-      // their daily workflow AND clocking in/out — no separate Time Clock)
+      // Field Tech: TEAM collapses to just My Pay (they use Field Scout for
+      // their daily workflow and clock-in, but they still need to check their
+      // own commissions, bonuses, and hours).
       if (userIsFieldTech && section.key === 'TEAM') {
-        return { ...section, baseItems: [] }
+        return { ...section, baseItems: section.baseItems.filter(i => i.to === '/my-pay') }
       }
       // Payroll: Admin+ only (level 3+) AND requires the HR access flag.
       // Regular Admins without has_hr_access (e.g. office admins) never see

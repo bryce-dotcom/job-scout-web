@@ -17,6 +17,7 @@ import {
   getCurrentPayPeriod as sharedGetCurrentPayPeriod,
   calculateEfficiencyBonus as sharedCalculateEfficiencyBonus,
   timeClockToJobHours,
+  calculateInvoiceCommissions as sharedCalculateInvoiceCommissions,
 } from '../lib/bonusCalc'
 
 const AVATAR_COLORS = [
@@ -85,18 +86,24 @@ export default function Payroll() {
   const isManagerPlus = checkManager(user)
   const hasHR = canViewHR(user)
 
-  // Payroll requires BOTH Admin+ access AND the HR permission.
-  // Admins without has_hr_access (e.g. office admins handling ops only) cannot
-  // see compensation data. Only a Super Admin can grant HR access.
+  // Payroll requires BOTH Admin+ access AND the HR permission for the
+  // full roster view. Non-HR users get redirected to /my-pay where they
+  // can see their own commissions + hours.
   if (user && (!isAdmin || !hasHR)) {
     return (
       <div style={{ padding: '48px 24px', textAlign: 'center' }}>
         <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Access Restricted</div>
-        <div style={{ fontSize: '14px', color: theme.textMuted }}>
+        <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '16px' }}>
           {!isAdmin
-            ? 'Payroll is only available to administrators.'
+            ? 'The full Payroll view is admin-only.'
             : 'Payroll access requires HR permission. Contact a Super Admin to request access.'}
         </div>
+        <button onClick={() => navigate('/my-pay')} style={{
+          padding: '10px 20px', backgroundColor: theme.accent, color: '#fff', border: 'none',
+          borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer'
+        }}>
+          View My Pay →
+        </button>
       </div>
     )
   }
@@ -421,7 +428,40 @@ export default function Payroll() {
     return { regularHours, overtimeHours, totalHours: regularHours + overtimeHours }
   }
 
-  // Invoice-based commissions: payment → invoice → job → salesperson
+  // Invoice-based commissions — delegates to bonusCalc.calculateInvoiceCommissions
+  // so MyPay (rep self-view) and Payroll (admin) stay in sync.
+  const calculateInvoiceCommissions = (employeeId) => {
+    const employee = employees.find(e => e.id === employeeId)
+    if (!employee) return { available: 0, pending: 0, details: [] }
+    const { periodStart, periodEnd } = getCurrentPeriod()
+    return sharedCalculateInvoiceCommissions({
+      employee,
+      jobs,
+      invoices,
+      inPeriodPayments: payments,
+      payrollConfig,
+      periodStartStr: periodStart.toISOString().split('T')[0],
+      periodEndStr: periodEnd.toISOString().split('T')[0],
+    })
+  }
+
+  /* Original inline version (kept for reference — now shared in bonusCalc.js)
+  //
+  // Three trigger modes, all anchored to the rep's commission rate on the
+  // full invoice amount ($inv × rate = total possible commission per job):
+  //
+  //  payment_received — earn proportionally to payments received in-period.
+  //    A $10k invoice at 10% = $1,000 total. A $4,000 in-period payment
+  //    earns $400 (40% of $1,000). Pending = (unpaid balance × rate) for
+  //    every invoice the rep owns that still has a balance.
+  //
+  //  invoice_created  — full commission available the period the invoice
+  //    is created. Pending = any invoice created before this period that
+  //    hasn't been paid out yet (we don't track per-period payout history
+  //    so pending defaults to zero here).
+  //
+  //  job_completed    — full commission available the period the job is
+  //    marked Completed. Pending = invoices on jobs not yet complete.
   const calculateInvoiceCommissions = (employeeId) => {
     const employee = employees.find(e => e.id === employeeId)
     if (!employee?.is_commission) return { available: 0, pending: 0, details: [] }
@@ -430,6 +470,20 @@ export default function Payroll() {
     let available = 0
     let pending = 0
 
+    // Rate resolution: prefer services rate, fall back to goods rate if
+    // services is zero. Commission type must be percent for scaling to
+    // payment amount to make sense; flat rates pay once per invoice.
+    const svcRate = parseFloat(employee.commission_services_rate) || 0
+    const svcType = employee.commission_services_type || 'percent'
+    const goodsRate = parseFloat(employee.commission_goods_rate) || 0
+    const goodsType = employee.commission_goods_type || 'percent'
+    const rate = svcRate > 0 ? svcRate : goodsRate
+    const rateType = svcRate > 0 ? svcType : goodsType
+
+    if (rate <= 0) return { available: 0, pending: 0, details: [] }
+
+    const commissionOn = (amount) => rateType === 'percent' ? amount * (rate / 100) : rate
+
     // Get all jobs where this employee is the salesperson
     const empJobs = jobs.filter(j => j.salesperson_id === employeeId)
     const empJobIds = empJobs.map(j => j.id)
@@ -437,82 +491,134 @@ export default function Payroll() {
     // Get invoices for those jobs
     const empInvoices = invoices.filter(inv => empJobIds.includes(inv.job_id))
 
+    // Current period window — needed for payment_received trigger
+    const { periodStart, periodEnd } = getCurrentPeriod()
+    const periodStartStr = periodStart.toISOString().split('T')[0]
+    const periodEndStr = periodEnd.toISOString().split('T')[0]
+
     empInvoices.forEach(inv => {
-      const invAmount = inv.amount || 0
+      const invAmount = parseFloat(inv.amount) || 0
       if (invAmount <= 0) return
 
-      // Calculate commission amount based on employee's commission rates
-      // Use services rate as default for invoice-level commissions
-      const rate = employee.commission_services_rate || 0
-      const rateType = employee.commission_services_type || 'percent'
-      const commissionAmount = rateType === 'percent' ? invAmount * (rate / 100) : rate
-
-      if (commissionAmount <= 0) return
-
-      // Check if payment exists for this invoice
-      const invPayments = payments.filter(p => p.invoice_id === inv.id)
-      const totalPaid = invPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
-      const isPaid = totalPaid >= invAmount || inv.payment_status === 'Paid'
-
       const job = empJobs.find(j => j.id === inv.job_id)
+      const jobLabel = job?.job_title || job?.customer_name || inv.job_description || 'Unknown'
+      const fullCommission = commissionOn(invAmount)
+      if (fullCommission <= 0) return
 
       if (payrollConfig.commission_trigger === 'payment_received') {
-        if (isPaid) {
-          available += commissionAmount
-          details.push({
-            type: 'invoice_commission',
-            status: 'available',
-            amount: commissionAmount,
-            invoiceId: inv.invoice_id,
-            jobTitle: job?.job_title || job?.customer_name || inv.job_description || 'Unknown',
-            invoiceAmount: invAmount,
-            paidDate: invPayments[0]?.date
-          })
-        } else {
-          pending += commissionAmount
+        // payments is already period-filtered; match by invoice_id
+        const inPeriodPayments = payments.filter(p => p.invoice_id === inv.id)
+        const paidInPeriod = inPeriodPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+
+        if (paidInPeriod > 0) {
+          // Proportional commission. For flat rates this would over-pay on
+          // partial payments, so we cap at fullCommission across all periods
+          // combined (approximated here by only paying flat if fully paid).
+          const earned = rateType === 'percent'
+            ? commissionOn(paidInPeriod)
+            : (paidInPeriod >= invAmount ? fullCommission : 0)
+          if (earned > 0) {
+            available += earned
+            details.push({
+              type: 'invoice_commission',
+              status: 'available',
+              amount: earned,
+              invoiceId: inv.invoice_id,
+              invoiceDbId: inv.id,
+              jobId: inv.job_id,
+              jobTitle: jobLabel,
+              invoiceAmount: invAmount,
+              paidAmount: paidInPeriod,
+              paidDate: inPeriodPayments[0]?.date,
+              rate,
+              rateType,
+            })
+          }
+        }
+
+        // Pending = remaining unpaid balance × rate, regardless of period.
+        // Helps reps see what's still owed them on outstanding invoices.
+        // We approximate totalPaid from invoice.payment_status + amount_paid
+        // field if present; fallback to 0 when status is Pending.
+        const totalPaidAllTime = inv.payment_status === 'Paid'
+          ? invAmount
+          : parseFloat(inv.amount_paid || inv.total_paid || 0)
+        const remaining = Math.max(0, invAmount - totalPaidAllTime)
+        if (remaining > 0 && inv.payment_status !== 'Paid') {
+          const pendingAmt = rateType === 'percent' ? commissionOn(remaining) : fullCommission
+          pending += pendingAmt
           details.push({
             type: 'invoice_commission',
             status: 'pending',
-            amount: commissionAmount,
+            amount: pendingAmt,
             invoiceId: inv.invoice_id,
-            jobTitle: job?.job_title || job?.customer_name || inv.job_description || 'Unknown',
+            invoiceDbId: inv.id,
+            jobId: inv.job_id,
+            jobTitle: jobLabel,
             invoiceAmount: invAmount,
-            paidAmount: totalPaid,
-            remaining: invAmount - totalPaid
+            paidAmount: totalPaidAllTime,
+            remaining,
+            rate,
+            rateType,
+            paymentStatus: inv.payment_status,
           })
         }
       } else if (payrollConfig.commission_trigger === 'invoice_created') {
-        available += commissionAmount
-        details.push({
-          type: 'invoice_commission',
-          status: 'available',
-          amount: commissionAmount,
-          invoiceId: inv.invoice_id,
-          jobTitle: job?.job_title || job?.customer_name || inv.job_description || 'Unknown',
-          invoiceAmount: invAmount,
-        })
-      } else if (payrollConfig.commission_trigger === 'job_completed') {
-        const isComplete = job?.status === 'Completed' || job?.status === 'Complete'
-        if (isComplete) {
-          available += commissionAmount
+        // Available this period if invoice was created in this period
+        const createdStr = (inv.created_at || '').split('T')[0]
+        const inPeriod = createdStr >= periodStartStr && createdStr <= periodEndStr
+        if (inPeriod) {
+          available += fullCommission
           details.push({
             type: 'invoice_commission',
             status: 'available',
-            amount: commissionAmount,
+            amount: fullCommission,
             invoiceId: inv.invoice_id,
-            jobTitle: job?.job_title || job?.customer_name || inv.job_description || 'Unknown',
+            invoiceDbId: inv.id,
+            jobId: inv.job_id,
+            jobTitle: jobLabel,
             invoiceAmount: invAmount,
+            createdDate: inv.created_at,
+            rate,
+            rateType,
+          })
+        }
+        // (No pending bucket for invoice_created — commission is earned at
+        // creation time; past-period earnings aren't tracked here.)
+      } else if (payrollConfig.commission_trigger === 'job_completed') {
+        const isComplete = job?.status === 'Completed' || job?.status === 'Complete'
+        if (isComplete) {
+          // Completed jobs → available in the period the job was marked complete.
+          // We don't store job completion timestamp cleanly, so we attribute
+          // to current period if status is Completed and the invoice exists.
+          // This is an approximation — a completion timestamp would be better.
+          available += fullCommission
+          details.push({
+            type: 'invoice_commission',
+            status: 'available',
+            amount: fullCommission,
+            invoiceId: inv.invoice_id,
+            invoiceDbId: inv.id,
+            jobId: inv.job_id,
+            jobTitle: jobLabel,
+            invoiceAmount: invAmount,
+            rate,
+            rateType,
           })
         } else {
-          pending += commissionAmount
+          pending += fullCommission
           details.push({
             type: 'invoice_commission',
             status: 'pending',
-            amount: commissionAmount,
+            amount: fullCommission,
             invoiceId: inv.invoice_id,
-            jobTitle: job?.job_title || job?.customer_name || inv.job_description || 'Unknown',
+            invoiceDbId: inv.id,
+            jobId: inv.job_id,
+            jobTitle: jobLabel,
             invoiceAmount: invAmount,
-            jobStatus: job?.status || 'In Progress'
+            jobStatus: job?.status || 'In Progress',
+            rate,
+            rateType,
           })
         }
       }
@@ -520,6 +626,7 @@ export default function Payroll() {
 
     return { available, pending, details }
   }
+  */
 
   // Lead commissions (appointment setting, sourcing)
   const calculateLeadCommissions = (employeeId) => {
@@ -1109,6 +1216,80 @@ export default function Payroll() {
             </div>
           </div>
         )}
+
+        {/* Commission Detail — earned this period + pending on open invoices */}
+        {(() => {
+          const commData = calculateInvoiceCommissions(emp.id)
+          if (!commData.details.length) return null
+          const earned = commData.details.filter(d => d.status === 'available')
+          const pendingList = commData.details.filter(d => d.status === 'pending')
+          return (
+            <div style={{ ...cardStyle, marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <DollarSign size={18} style={{ color: '#f59e0b' }} />
+                  Commissions
+                </h3>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Earned this period</div>
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#22c55e' }}>{fmt(commData.available)}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pending (unpaid)</div>
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#f59e0b' }}>{fmt(commData.pending)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {earned.length > 0 && (
+                <>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Earned this period ({earned.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: pendingList.length > 0 ? '16px' : 0 }}>
+                    {earned.map((d, i) => (
+                      <div key={`e-${i}`} style={{ padding: '10px 12px', backgroundColor: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.jobTitle}</div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                            {d.invoiceId} · ${(d.paidAmount || d.invoiceAmount).toFixed(2)} paid
+                            {d.paidDate && ` on ${new Date(d.paidDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                            {d.rateType === 'percent' && ` · ${d.rate}%`}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#22c55e', whiteSpace: 'nowrap' }}>{fmt(d.amount)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {pendingList.length > 0 && (
+                <>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Won jobs · pending payment ({pendingList.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {pendingList.map((d, i) => (
+                      <div key={`p-${i}`} style={{ padding: '10px 12px', backgroundColor: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.jobTitle}</div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                            {d.invoiceId} · {d.paymentStatus || d.jobStatus || 'Open'}
+                            {d.remaining != null && ` · $${d.remaining.toFixed(2)} unpaid`}
+                            {d.rateType === 'percent' && ` · ${d.rate}%`}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>{fmt(d.amount)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Time Clock Entries */}
         {(() => {

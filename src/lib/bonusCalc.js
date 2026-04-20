@@ -14,6 +14,129 @@ export const PERIODS_PER_YEAR = {
   monthly: 12,
 }
 
+// ── Invoice-based commission calculator ────────────────────────────────
+// Given an employee, their jobs/invoices/in-period payments, and the
+// payroll config, return { available, pending, details[] }.
+//  available: commission earned THIS pay period
+//  pending:   commission the rep hasn't been paid yet on open/unpaid work
+//  details:   per-invoice breakdown { status, amount, invoiceId, jobTitle,
+//             rate, rateType, paymentStatus, remaining, paidAmount, paidDate }
+//
+// Args:
+//  employee       — row from `employees` (needs commission_services_rate,
+//                   commission_services_type, commission_goods_rate,
+//                   commission_goods_type, is_commission)
+//  jobs           — all jobs (for salesperson_id match)
+//  invoices       — all invoices (scan for ones on rep's jobs)
+//  inPeriodPayments — payments with date within current pay period
+//  payrollConfig  — { commission_trigger: 'payment_received' | 'invoice_created' | 'job_completed' }
+//  periodStartStr / periodEndStr — ISO date strings bounding the current period
+export function calculateInvoiceCommissions({
+  employee,
+  jobs,
+  invoices,
+  inPeriodPayments,
+  payrollConfig,
+  periodStartStr,
+  periodEndStr,
+}) {
+  if (!employee?.is_commission) return { available: 0, pending: 0, details: [] }
+
+  const svcRate = parseFloat(employee.commission_services_rate) || 0
+  const svcType = employee.commission_services_type || 'percent'
+  const goodsRate = parseFloat(employee.commission_goods_rate) || 0
+  const goodsType = employee.commission_goods_type || 'percent'
+  const rate = svcRate > 0 ? svcRate : goodsRate
+  const rateType = svcRate > 0 ? svcType : goodsType
+
+  if (rate <= 0) return { available: 0, pending: 0, details: [] }
+
+  const commissionOn = (amount) => rateType === 'percent' ? amount * (rate / 100) : rate
+
+  const details = []
+  let available = 0
+  let pending = 0
+
+  const empJobs = (jobs || []).filter(j => j.salesperson_id === employee.id)
+  const empJobIds = empJobs.map(j => j.id)
+  const empInvoices = (invoices || []).filter(inv => empJobIds.includes(inv.job_id))
+  const trigger = payrollConfig?.commission_trigger || 'payment_received'
+
+  empInvoices.forEach(inv => {
+    const invAmount = parseFloat(inv.amount) || 0
+    if (invAmount <= 0) return
+    const job = empJobs.find(j => j.id === inv.job_id)
+    const jobLabel = job?.job_title || job?.customer_name || inv.job_description || 'Unknown'
+    const fullCommission = commissionOn(invAmount)
+    if (fullCommission <= 0) return
+
+    if (trigger === 'payment_received') {
+      const matching = (inPeriodPayments || []).filter(p => p.invoice_id === inv.id)
+      const paidInPeriod = matching.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+      if (paidInPeriod > 0) {
+        const earned = rateType === 'percent'
+          ? commissionOn(paidInPeriod)
+          : (paidInPeriod >= invAmount ? fullCommission : 0)
+        if (earned > 0) {
+          available += earned
+          details.push({
+            type: 'invoice_commission', status: 'available', amount: earned,
+            invoiceId: inv.invoice_id, invoiceDbId: inv.id, jobId: inv.job_id,
+            jobTitle: jobLabel, invoiceAmount: invAmount, paidAmount: paidInPeriod,
+            paidDate: matching[0]?.date, rate, rateType,
+          })
+        }
+      }
+      const totalPaidAllTime = inv.payment_status === 'Paid'
+        ? invAmount
+        : parseFloat(inv.amount_paid || inv.total_paid || 0)
+      const remaining = Math.max(0, invAmount - totalPaidAllTime)
+      if (remaining > 0 && inv.payment_status !== 'Paid') {
+        const pendingAmt = rateType === 'percent' ? commissionOn(remaining) : fullCommission
+        pending += pendingAmt
+        details.push({
+          type: 'invoice_commission', status: 'pending', amount: pendingAmt,
+          invoiceId: inv.invoice_id, invoiceDbId: inv.id, jobId: inv.job_id,
+          jobTitle: jobLabel, invoiceAmount: invAmount, paidAmount: totalPaidAllTime,
+          remaining, rate, rateType, paymentStatus: inv.payment_status,
+        })
+      }
+    } else if (trigger === 'invoice_created') {
+      const createdStr = (inv.created_at || '').split('T')[0]
+      const inPeriod = periodStartStr && periodEndStr && createdStr >= periodStartStr && createdStr <= periodEndStr
+      if (inPeriod) {
+        available += fullCommission
+        details.push({
+          type: 'invoice_commission', status: 'available', amount: fullCommission,
+          invoiceId: inv.invoice_id, invoiceDbId: inv.id, jobId: inv.job_id,
+          jobTitle: jobLabel, invoiceAmount: invAmount, createdDate: inv.created_at,
+          rate, rateType,
+        })
+      }
+    } else if (trigger === 'job_completed') {
+      const isComplete = job?.status === 'Completed' || job?.status === 'Complete'
+      if (isComplete) {
+        available += fullCommission
+        details.push({
+          type: 'invoice_commission', status: 'available', amount: fullCommission,
+          invoiceId: inv.invoice_id, invoiceDbId: inv.id, jobId: inv.job_id,
+          jobTitle: jobLabel, invoiceAmount: invAmount, rate, rateType,
+        })
+      } else {
+        pending += fullCommission
+        details.push({
+          type: 'invoice_commission', status: 'pending', amount: fullCommission,
+          invoiceId: inv.invoice_id, invoiceDbId: inv.id, jobId: inv.job_id,
+          jobTitle: jobLabel, invoiceAmount: invAmount,
+          jobStatus: job?.status || 'In Progress', rate, rateType,
+        })
+      }
+    }
+  })
+
+  return { available, pending, details }
+}
+
 // ── Pay period window from payroll config ──────────────────────────────
 // weekly: Mon–Sun window containing today
 // bi-weekly: 14-day windows anchored on payroll_config.pay_anchor_date
