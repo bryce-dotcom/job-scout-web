@@ -2,8 +2,24 @@
 // Used by both Payroll.jsx (admin view) and FieldScout.jsx (tech view)
 // so every surface computes bonuses identically.
 
+// Default bi-weekly anchor: a known Friday payday in 2024. Companies on
+// bi-weekly should set their own pay_anchor_date in payroll_config; this
+// fallback keeps period math sane if they haven't yet.
+const DEFAULT_BIWEEKLY_ANCHOR = '2024-01-05' // Friday
+
+export const PERIODS_PER_YEAR = {
+  weekly: 52,
+  'bi-weekly': 26,
+  'semi-monthly': 24,
+  monthly: 12,
+}
+
 // ── Pay period window from payroll config ──────────────────────────────
-// Mirrors the logic originally living inside Payroll.jsx (getCurrentPeriod)
+// weekly: Mon–Sun window containing today
+// bi-weekly: 14-day windows anchored on payroll_config.pay_anchor_date
+//   (period ENDS on an anchor payday; the 14 days prior are the period)
+// semi-monthly: 1st–15th / 16th–end-of-month
+// monthly: 1st–end-of-month
 export function getCurrentPayPeriod(payrollConfig = {}, offset = 0) {
   const today = new Date()
   const frequency = payrollConfig.pay_frequency || 'bi-weekly'
@@ -19,7 +35,27 @@ export function getCurrentPayPeriod(payrollConfig = {}, offset = 0) {
       periodStart.setDate(periodStart.getDate() + offset * 7)
       periodEnd.setDate(periodEnd.getDate() + offset * 7)
     }
-  } else if (frequency === 'bi-weekly' || frequency === 'semi-monthly') {
+  } else if (frequency === 'bi-weekly') {
+    // Anchor date is a known payday. Each pay period covers the 14 days
+    // ending on a payday, so pay period N = (anchor + 14*N - 14) .. (anchor + 14*N - 1)
+    const anchorStr = payrollConfig.pay_anchor_date || DEFAULT_BIWEEKLY_ANCHOR
+    const anchor = new Date(anchorStr + 'T00:00:00')
+    const MS_PER_DAY = 86400000
+    const daysSinceAnchor = Math.floor((today - anchor) / MS_PER_DAY)
+    // Find the payday that is >= today (current period's payday)
+    const cycle = ((daysSinceAnchor % 14) + 14) % 14
+    const daysUntilPayday = cycle === 0 ? 0 : 14 - cycle
+    const currentPayday = new Date(today)
+    currentPayday.setDate(today.getDate() + daysUntilPayday)
+    // Period ENDS on payday - 1 (last worked day); period STARTS 14 days earlier
+    periodEnd = new Date(currentPayday)
+    periodStart = new Date(currentPayday)
+    periodStart.setDate(currentPayday.getDate() - 13)
+    if (offset !== 0) {
+      periodStart.setDate(periodStart.getDate() + offset * 14)
+      periodEnd.setDate(periodEnd.getDate() + offset * 14)
+    }
+  } else if (frequency === 'semi-monthly') {
     if (today.getDate() <= 15) {
       periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
       periodEnd = new Date(today.getFullYear(), today.getMonth(), 15)
@@ -53,6 +89,7 @@ export function getCurrentPayPeriod(payrollConfig = {}, offset = 0) {
       }
     }
   } else {
+    // monthly
     periodStart = new Date(today.getFullYear(), today.getMonth(), 1)
     periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
     if (offset !== 0) {

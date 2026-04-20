@@ -66,8 +66,9 @@ export default function Payroll() {
   // Payroll settings from settings table
   const [payrollConfig, setPayrollConfig] = useState({
     pay_frequency: 'bi-weekly',
-    pay_day_1: '20',
-    pay_day_2: '5',
+    pay_day_1: '20',         // semi-monthly: first pay day of month
+    pay_day_2: '5',          // semi-monthly: second pay day of month
+    pay_anchor_date: '',     // bi-weekly: ISO date of any known past payday
     commission_trigger: 'payment_received', // payment_received, invoice_created, job_completed
     efficiency_bonus_enabled: false,
     efficiency_bonus_rate: 30, // $ per hour saved
@@ -331,18 +332,37 @@ export default function Payroll() {
     let nextPay = new Date(today)
 
     if (payrollConfig.pay_frequency === 'weekly') {
+      // Next Friday (standard weekly payroll day)
       const daysUntilFriday = (5 - today.getDay() + 7) % 7 || 7
       nextPay.setDate(today.getDate() + daysUntilFriday)
-    } else if (payrollConfig.pay_frequency === 'bi-weekly' || payrollConfig.pay_frequency === 'semi-monthly') {
-      if (today.getDate() < day2) {
-        nextPay = new Date(today.getFullYear(), today.getMonth(), day2)
-      } else if (today.getDate() < day1) {
-        nextPay = new Date(today.getFullYear(), today.getMonth(), day1)
+    } else if (payrollConfig.pay_frequency === 'bi-weekly') {
+      // Use the configured anchor date (any past payday). Step forward in
+      // 14-day chunks until we're >= today.
+      const anchorStr = payrollConfig.pay_anchor_date || '2024-01-05'
+      const anchor = new Date(anchorStr + 'T00:00:00')
+      const MS_PER_DAY = 86400000
+      const daysSinceAnchor = Math.floor((today - anchor) / MS_PER_DAY)
+      const cycle = ((daysSinceAnchor % 14) + 14) % 14
+      const daysUntilPayday = cycle === 0 ? 0 : 14 - cycle
+      nextPay = new Date(today)
+      nextPay.setDate(today.getDate() + daysUntilPayday)
+    } else if (payrollConfig.pay_frequency === 'semi-monthly') {
+      // Next pay_day_1 or pay_day_2 (day-of-month), whichever comes first.
+      // Normalise so the smaller one is checked first regardless of how the
+      // admin entered them.
+      const first = Math.min(day1, day2)
+      const second = Math.max(day1, day2)
+      if (today.getDate() < first) {
+        nextPay = new Date(today.getFullYear(), today.getMonth(), first)
+      } else if (today.getDate() < second) {
+        nextPay = new Date(today.getFullYear(), today.getMonth(), second)
       } else {
-        nextPay = new Date(today.getFullYear(), today.getMonth() + 1, day2)
+        nextPay = new Date(today.getFullYear(), today.getMonth() + 1, first)
       }
     } else {
-      nextPay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      // monthly — last day of current month (or next month if already past)
+      const eom = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      nextPay = today.getDate() < eom.getDate() ? eom : new Date(today.getFullYear(), today.getMonth() + 2, 0)
     }
     return nextPay
   }
@@ -2064,26 +2084,46 @@ export default function Payroll() {
                   onChange={(e) => setPayrollConfig({ ...payrollConfig, pay_frequency: e.target.value })}
                   style={inputStyle}
                 >
-                  <option value="weekly">Weekly</option>
-                  <option value="bi-weekly">Bi-Weekly</option>
-                  <option value="semi-monthly">Semi-Monthly (1st & 15th)</option>
-                  <option value="monthly">Monthly</option>
+                  <option value="weekly">Weekly (52 periods/yr, paid every Friday)</option>
+                  <option value="bi-weekly">Bi-Weekly (26 periods/yr, every 14 days)</option>
+                  <option value="semi-monthly">Semi-Monthly (24 periods/yr, twice a month)</option>
+                  <option value="monthly">Monthly (12 periods/yr)</option>
                 </select>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px', lineHeight: '1.4' }}>
+                  {payrollConfig.pay_frequency === 'weekly' && 'Paid every Friday. Annual salary ÷ 52.'}
+                  {payrollConfig.pay_frequency === 'bi-weekly' && 'Paid every 14 days (26 paychecks/year, so 2 months each year get 3 paydays). Annual salary ÷ 26.'}
+                  {payrollConfig.pay_frequency === 'semi-monthly' && 'Paid twice a month on the same two calendar days (exactly 24 paychecks/year). Annual salary ÷ 24.'}
+                  {payrollConfig.pay_frequency === 'monthly' && 'Paid once a month (last day of month). Annual salary ÷ 12.'}
+                </div>
               </div>
 
-              {(payrollConfig.pay_frequency === 'bi-weekly' || payrollConfig.pay_frequency === 'semi-monthly') && (
+              {payrollConfig.pay_frequency === 'bi-weekly' && (
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={labelStyle}>Pay Anchor Date</label>
+                  <input type="date" value={payrollConfig.pay_anchor_date || ''}
+                    onChange={(e) => setPayrollConfig({ ...payrollConfig, pay_anchor_date: e.target.value })}
+                    style={inputStyle} />
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px', lineHeight: '1.4' }}>
+                    Pick any past payday. All future pay periods are computed as 14-day windows anchored to this date.
+                  </div>
+                </div>
+              )}
+
+              {payrollConfig.pay_frequency === 'semi-monthly' && (
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                   <div>
                     <label style={labelStyle}>First Pay Day</label>
                     <input type="number" min="1" max="28" value={payrollConfig.pay_day_1}
                       onChange={(e) => setPayrollConfig({ ...payrollConfig, pay_day_1: e.target.value })}
                       style={inputStyle} />
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>Day of month (e.g. 5)</div>
                   </div>
                   <div>
                     <label style={labelStyle}>Second Pay Day</label>
                     <input type="number" min="1" max="28" value={payrollConfig.pay_day_2}
                       onChange={(e) => setPayrollConfig({ ...payrollConfig, pay_day_2: e.target.value })}
                       style={inputStyle} />
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>Day of month (e.g. 20)</div>
                   </div>
                 </div>
               )}
