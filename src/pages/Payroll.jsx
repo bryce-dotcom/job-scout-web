@@ -8,7 +8,7 @@ import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
   ChevronRight, ChevronDown, ChevronLeft, AlertTriangle, TrendingUp, Zap,
   Award, Filter, ArrowLeft, Eye, Briefcase, MapPin, FileText,
-  Edit3, Save, Map, Plus, Minus, Printer, Mail, Send
+  Edit3, Save, Map as MapIcon, Plus, Minus, Printer, Mail, Send
 } from 'lucide-react'
 import LocationTrailModal from '../components/LocationTrailModal'
 import SearchableSelect from '../components/SearchableSelect'
@@ -1512,7 +1512,7 @@ export default function Payroll() {
                                   <button onClick={() => setLocationTrailEntry(entry)}
                                     style={{ padding: '4px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '4px', cursor: 'pointer', color: theme.textMuted, display: 'flex', alignItems: 'center' }}
                                     title="View location trail">
-                                    <Map size={14} />
+                                    <MapIcon size={14} />
                                   </button>
                                   {isAdmin && (
                                     <button onClick={() => {
