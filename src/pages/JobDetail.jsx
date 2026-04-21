@@ -141,6 +141,10 @@ function JobDetailInner() {
   const [selectedGroupId, setSelectedGroupId] = useState(null)
   const [productSearch, setProductSearch] = useState('')
   const [newTime, setNewTime] = useState({ employee_id: '', hours: '', category: 'Regular', notes: '' })
+  // Inline edit state for the time-entries list. Holds the id of the row
+  // being edited and the staged values; null when nothing's being edited.
+  const [editingTimeId, setEditingTimeId] = useState(null)
+  const [editingTime, setEditingTime] = useState({ hours: '', category: '', notes: '' })
   const [editMode, setEditMode] = useState(false)
   const [formData, setFormData] = useState({})
   const [editAssignedIds, setEditAssignedIds] = useState([])
@@ -794,6 +798,30 @@ function JobDetailInner() {
     setNewTime({ employee_id: '', hours: '', category: 'Regular', notes: '' })
     setShowAddTime(false)
     setSaving(false)
+  }
+
+  // Inline edit/delete for an existing time_log row on this job.
+  // Alayda flagged that the entry list was read-only — only the +Add button
+  // worked, so once an entry was wrong (typo'd hours, wrong category) the
+  // only fix was to ask an admin.
+  const updateTimeEntry = async (entryId, patch) => {
+    const { error } = await supabase.from('time_log')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', entryId)
+    const { toast } = await import('../lib/toast')
+    if (error) { toast.error('Failed to update: ' + error.message); return false }
+    await fetchTimeLogs()
+    toast.success('Updated')
+    return true
+  }
+
+  const deleteTimeEntry = async (entryId) => {
+    if (!confirm('Delete this time entry?')) return
+    const { error } = await supabase.from('time_log').delete().eq('id', entryId)
+    const { toast } = await import('../lib/toast')
+    if (error) { toast.error('Failed to delete: ' + error.message); return }
+    await fetchTimeLogs()
+    toast.success('Deleted')
   }
 
   const copyFromQuote = async () => {
@@ -4073,18 +4101,102 @@ function JobDetailInner() {
               </div>
             ) : (
               <div>
-                {jobTimeLogs.map((entry) => (
-                  <div key={entry.id} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '12px 20px', borderBottom: `1px solid ${theme.border}`
-                  }}>
-                    <div>
-                      <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>{entry.employee?.name || 'Unknown'}</p>
-                      <p style={{ fontSize: '12px', color: theme.textMuted }}>{formatDate(entry.date)} - {entry.category}</p>
+                {jobTimeLogs.map((entry) => {
+                  const isEditing = editingTimeId === entry.id
+                  return (
+                    <div key={entry.id} style={{
+                      padding: '12px 20px', borderBottom: `1px solid ${theme.border}`
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>{entry.employee?.name || 'Unknown'}</p>
+                          <p style={{ fontSize: '12px', color: theme.textMuted, margin: '2px 0 0' }}>
+                            {formatDate(entry.date)}
+                            {!isEditing && entry.category ? ` — ${entry.category}` : ''}
+                            {!isEditing && entry.notes ? ` — ${entry.notes}` : ''}
+                          </p>
+                        </div>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <input
+                              type="number"
+                              step="0.25"
+                              value={editingTime.hours}
+                              onChange={(e) => setEditingTime(prev => ({ ...prev, hours: e.target.value }))}
+                              style={{ width: '70px', padding: '6px 8px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '14px', backgroundColor: theme.bgCard, color: theme.text }}
+                              placeholder="hrs"
+                            />
+                            <button
+                              onClick={async () => {
+                                const ok = await updateTimeEntry(entry.id, {
+                                  hours: parseFloat(editingTime.hours),
+                                  category: editingTime.category,
+                                  notes: editingTime.notes || null,
+                                })
+                                if (ok) setEditingTimeId(null)
+                              }}
+                              style={{ padding: '6px 10px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', minHeight: '32px' }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingTimeId(null)}
+                              style={{ padding: '6px 10px', backgroundColor: 'transparent', color: theme.textMuted, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '12px', cursor: 'pointer', minHeight: '32px' }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '15px', fontWeight: '500', color: theme.text }}>{entry.hours}h</span>
+                            <button
+                              onClick={() => {
+                                setEditingTimeId(entry.id)
+                                setEditingTime({
+                                  hours: entry.hours ?? '',
+                                  category: entry.category || 'Regular',
+                                  notes: entry.notes || '',
+                                })
+                              }}
+                              title="Edit hours"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '6px', minHeight: '32px', minWidth: '32px' }}
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              onClick={() => deleteTimeEntry(entry.id)}
+                              title="Delete entry"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', minHeight: '32px', minWidth: '32px' }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {isEditing && (
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                          <select
+                            value={editingTime.category}
+                            onChange={(e) => setEditingTime(prev => ({ ...prev, category: e.target.value }))}
+                            style={{ padding: '6px 8px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '12px', backgroundColor: theme.bgCard, color: theme.text }}
+                          >
+                            <option value="Regular">Regular</option>
+                            <option value="Overtime">Overtime</option>
+                            <option value="Drive">Drive</option>
+                            <option value="Other">Other</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={editingTime.notes}
+                            onChange={(e) => setEditingTime(prev => ({ ...prev, notes: e.target.value }))}
+                            placeholder="Notes (optional)"
+                            style={{ flex: 1, padding: '6px 8px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '12px', backgroundColor: theme.bgCard, color: theme.text }}
+                          />
+                        </div>
+                      )}
                     </div>
-                    <span style={{ fontSize: '15px', fontWeight: '500', color: theme.text }}>{entry.hours}h</span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

@@ -1425,7 +1425,7 @@ export default function LeadSetter() {
                                   : (apt.salesperson_id ? [apt.salesperson_id] : [])
                                 if (ids.length === 0 && apt.salesperson) {
                                   return (
-                                    <div style={{ color: isOverlay ? spColor : theme.textMuted, fontSize: '9px', opacity: 0.8 }}>
+                                    <div style={{ color: hasRepColor ? spColor : theme.textMuted, fontSize: '9px', opacity: 0.8 }}>
                                       {apt.salesperson.name}
                                     </div>
                                   )
@@ -1434,7 +1434,7 @@ export default function LeadSetter() {
                                 const names = ids.map(id => employees.find(e => e.id === id)?.name).filter(Boolean)
                                 if (names.length === 0) return null
                                 return (
-                                  <div style={{ color: isOverlay ? spColor : theme.textMuted, fontSize: '9px', opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  <div style={{ color: hasRepColor ? spColor : theme.textMuted, fontSize: '9px', opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {names.join(', ')}
                                   </div>
                                 )
