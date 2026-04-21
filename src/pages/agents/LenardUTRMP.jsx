@@ -3967,7 +3967,18 @@ export default function LenardUTRMP() {
       {/* ===== SAVE MODAL ===== */}
       {showSaveModal && (<>
         <div onClick={() => setShowSaveModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
-        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '90%', maxWidth: '400px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', zIndex: 51, padding: '24px' }}>
+        {/* Constrain height so the inner form scrolls INSIDE the modal
+            instead of the body. Fixes Doug's "scroll moves the screen
+            behind" complaint on phones where the Save button fell below
+            the viewport fold. */}
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          width: '90%', maxWidth: '400px',
+          maxHeight: 'calc(100vh - 32px)', display: 'flex', flexDirection: 'column',
+          background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', zIndex: 51,
+          overflow: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch'
+        }}>
+          <div style={{ padding: '24px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
           <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '4px' }}>{'\uD83D\uDCBE'} Save Project</div>
           <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>Creates a customer, lead + lighting audit in Job Scout</div>
           {leadOwnerName && (
@@ -4077,7 +4088,9 @@ export default function LenardUTRMP() {
               {pendingControlsCount > 0 && <div>{'\u26A0\uFE0F'} {pendingControlsCount} line{pendingControlsCount > 1 ? 's need' : ' needs'} a Controls tier (No Controls / Control Ready / NLC / LLLC) \u2014 scroll up and use the warning banner on the line list.</div>}
             </div>
           )}
-          <div style={{ display: 'flex', gap: '8px' }}>
+          </div>
+          {/* Pinned Save / Cancel — never below the fold */}
+          <div style={{ display: 'flex', gap: '8px', padding: '16px 24px', borderTop: `1px solid ${T.border}`, background: T.bgCard, flexShrink: 0 }}>
             <button onClick={saveProject} disabled={saving || !canSave} style={{ ...S.btn, flex: 1, opacity: (saving || !canSave) ? 0.5 : 1, cursor: (saving || !canSave) ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
             <button onClick={() => setShowSaveModal(false)} style={{ ...S.btnGhost, flex: 1 }}>Cancel</button>
           </div>

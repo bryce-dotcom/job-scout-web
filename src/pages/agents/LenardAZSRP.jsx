@@ -2468,7 +2468,20 @@ export default function LenardAZSRP() {
       {/* ===== SAVE MODAL ===== */}
       {showSaveModal && (<>
         <div onClick={() => setShowSaveModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />
-        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '90%', maxWidth: '400px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', zIndex: 51, padding: '24px' }}>
+        {/* Constrain height to viewport (minus a little) so the inner form
+            scrolls inside the modal. Previously the modal had no maxHeight
+            so on a phone the Save/Cancel buttons fell below the fold and
+            touch-scrolling moved the body behind instead of the form. */}
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          width: '90%', maxWidth: '400px',
+          maxHeight: 'calc(100vh - 32px)', display: 'flex', flexDirection: 'column',
+          background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', zIndex: 51,
+          overflow: 'hidden',
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch'
+        }}>
+          <div style={{ padding: '24px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
           <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '4px' }}>{'\uD83D\uDCBE'} Save Project</div>
           <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>Creates a customer, lead + lighting audit in Job Scout</div>
           {leadOwnerName && (
@@ -2506,7 +2519,9 @@ export default function LenardAZSRP() {
               ))}
             </div>
           </div>)}
-          <div style={{ display: 'flex', gap: '8px' }}>
+          </div>
+          {/* Pinned action row — stays visible while the form scrolls above */}
+          <div style={{ display: 'flex', gap: '8px', padding: '16px 24px', borderTop: `1px solid ${T.border}`, background: T.bgCard, flexShrink: 0 }}>
             <button onClick={saveProject} disabled={saving} style={{ ...S.btn, flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving...' : 'Save'}</button>
             <button onClick={() => setShowSaveModal(false)} style={{ ...S.btnGhost, flex: 1 }}>Cancel</button>
           </div>
