@@ -1289,10 +1289,95 @@ export default function ProductsServices() {
     if (result.error) { alert('Error saving rate: ' + result.error.message) }
     else {
       await fetchLaborRates()
+      // Cascade: recalculate unit_price on every product that uses this
+      // labor rate, then bubble the new prices up through bundles that
+      // contain those products. Previously a rate change updated just the
+      // labor_rates row — products kept their stale unit_price, so the
+      // bundle price didn't move either.
+      if (editingRate) {
+        try { await cascadeLaborRateChange(editingRate.id) } catch (e) { console.warn('Cascade failed:', e) }
+      }
       setEditingRate(null)
       setRateForm({ name: '', rate_per_hour: '', cost_per_hour: '', description: '', multiplier: '1.0', active: true, is_default: false })
     }
     setSaving(false)
+  }
+
+  // Recalculate unit_price for every product using this labor rate, then
+  // walk the bundle tree upward so parent bundles pick up the change.
+  // Re-fetches the affected rows at each step so we work with fresh data.
+  const cascadeLaborRateChange = async (laborRateId) => {
+    // Load fresh rates/products/components — avoids stale state during cascade
+    const [ratesRes, prodsRes, compsRes] = await Promise.all([
+      supabase.from('labor_rates').select('*').eq('company_id', companyId),
+      supabase.from('products_services').select('*').eq('company_id', companyId),
+      supabase.from('product_components').select('*').eq('company_id', companyId),
+    ])
+    const rates = ratesRes.data || []
+    const prods = prodsRes.data || []
+    const comps = compsRes.data || []
+    const defaultRate = rates.find(r => r.is_default) || rates[0]
+
+    const priceOf = (p) => {
+      const cost = parseFloat(p.cost) || 0
+      const childComps = comps.filter(c => c.parent_product_id === p.id)
+      const compValue = childComps.reduce((s, c) => {
+        const child = prods.find(x => x.id === c.component_product_id)
+        if (!child) return s
+        return s + ((parseFloat(child.unit_price) || parseFloat(child.cost) || 0) * (c.quantity || 1))
+      }, 0)
+      if (cost === 0 && compValue === 0) return null // manual-priced, leave alone
+      const markup = parseFloat(p.markup_percent) || 0
+      const hours = parseFloat(p.allotted_time_hours) || 0
+      const rate = p.labor_rate_id
+        ? rates.find(r => r.id === p.labor_rate_id) || defaultRate
+        : defaultRate
+      const laborCost = hours > 0 && rate ? hours * (parseFloat(rate.rate_per_hour) || 0) * (parseFloat(rate.multiplier) || 1) : 0
+      return +(cost * (1 + markup / 100) + compValue + laborCost).toFixed(2)
+    }
+
+    // Pass 1 — every product that directly uses this rate
+    const direct = prods.filter(p => p.labor_rate_id === laborRateId || (!p.labor_rate_id && defaultRate?.id === laborRateId))
+    const changed = new Set()
+    for (const p of direct) {
+      const newPrice = priceOf(p)
+      if (newPrice == null) continue
+      if (Math.abs(newPrice - (parseFloat(p.unit_price) || 0)) < 0.005) continue
+      await supabase.from('products_services').update({ unit_price: newPrice, updated_at: new Date().toISOString() }).eq('id', p.id)
+      p.unit_price = newPrice
+      changed.add(p.id)
+    }
+
+    // Pass 2..N — bubble up through bundles that contain any changed product.
+    // Keep iterating until nothing new changes or a hard cap (depth 5).
+    for (let depth = 0; depth < 5; depth++) {
+      const parentIds = new Set(
+        comps.filter(c => changed.has(c.component_product_id)).map(c => c.parent_product_id)
+      )
+      let iterChanged = 0
+      for (const parentId of parentIds) {
+        if (changed.has(parentId)) continue
+        const parent = prods.find(p => p.id === parentId)
+        if (!parent) continue
+        const newPrice = priceOf(parent)
+        if (newPrice == null) continue
+        if (Math.abs(newPrice - (parseFloat(parent.unit_price) || 0)) < 0.005) continue
+        await supabase.from('products_services').update({ unit_price: newPrice, updated_at: new Date().toISOString() }).eq('id', parentId)
+        parent.unit_price = newPrice
+        changed.add(parentId)
+        iterChanged++
+      }
+      if (iterChanged === 0) break
+    }
+
+    // Refresh the local product list so the UI shows the new prices
+    await fetchProducts()
+    const changedCount = changed.size
+    if (changedCount > 0) {
+      import('../lib/toast').then(({ toast }) => {
+        toast.success(`Rate change cascaded to ${changedCount} product${changedCount === 1 ? '' : 's'}.`)
+      }).catch(() => {})
+    }
   }
 
   const handleDeleteRate = async (rate) => {
