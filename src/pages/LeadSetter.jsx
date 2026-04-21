@@ -1353,8 +1353,14 @@ export default function LeadSetter() {
                         >
                           {slotAppointments.map(apt => {
                             const spId = apt.salesperson_id || apt.employee_id
-                            const isOverlay = spId && calendarEmployees.includes(spId) && apt.setter_id !== user?.id
-                            const spColor = isOverlay ? getSalespersonColor(spId) : null
+                            // Color every appointment that has a salesperson —
+                            // was previously gated behind isOverlay (only non-
+                            // self-set meetings showed rep color). Tracy /
+                            // Doug reported they couldn't tell whose meeting
+                            // was whose on the calendar because self-set
+                            // appointments all showed the same generic accent.
+                            const spColor = spId ? getSalespersonColor(spId) : null
+                            const hasRepColor = !!spColor
                             const isDragging = draggedAppointment?.id === apt.id
                             const isBlock = apt.appointment_type === 'Block'
                             return (
@@ -1364,22 +1370,26 @@ export default function LeadSetter() {
                               onDragStart={(e) => handleAppointmentDragStart(e, apt)}
                               onDragEnd={handleDragEnd}
                               style={{
+                                // Cancelled/Completed overrides everything so
+                                // status is still readable. Otherwise fall
+                                // back to the rep's chip color, then the
+                                // today / default accent.
                                 backgroundColor: isBlock ? `${theme.textMuted}15` :
-                                  isOverlay ? spColor + '18' :
-                                  apt.status === 'Completed' ? '#dcfce7' :
                                   apt.status === 'Cancelled' ? '#fee2e2' :
+                                  apt.status === 'Completed' ? '#dcfce7' :
+                                  hasRepColor ? spColor + '20' :
                                   isToday(new Date(apt.start_time)) ? '#d1fae5' : theme.accentBg,
                                 borderLeft: `3px solid ${isBlock ? theme.textMuted :
-                                  isOverlay ? spColor :
-                                  apt.status === 'Completed' ? '#16a34a' :
                                   apt.status === 'Cancelled' ? '#dc2626' :
+                                  apt.status === 'Completed' ? '#16a34a' :
+                                  hasRepColor ? spColor :
                                   isToday(new Date(apt.start_time)) ? '#059669' : theme.accent}`,
                                 borderRadius: '4px',
                                 padding: '4px 6px',
                                 fontSize: '10px',
                                 overflow: 'hidden',
                                 cursor: 'grab',
-                                opacity: isDragging ? 0.4 : isOverlay ? 0.85 : 1,
+                                opacity: isDragging ? 0.4 : 1,
                                 fontStyle: isBlock ? 'italic' : 'normal'
                               }}
                               onClick={() => {
@@ -1399,7 +1409,7 @@ export default function LeadSetter() {
                             >
                               <div style={{
                                 fontWeight: '600',
-                                color: isOverlay ? spColor : theme.text,
+                                color: hasRepColor ? spColor : theme.text,
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap'
