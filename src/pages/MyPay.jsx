@@ -77,20 +77,44 @@ export default function MyPay() {
           .or(`salesperson_id.eq.${user.id},salesperson_ids.cs.{${user.id}}`)
 
         // All jobs — we need any job owned directly by the user OR linked
-        // to one of their leads. Pulling all company jobs is simpler than
-        // two round-trips and the filter is cheap client-side.
-        const jobsPromise = supabase
-          .from('jobs')
-          .select('id, job_id, salesperson_id, lead_id, status, customer_name, job_title, invoice_status')
-          .eq('company_id', companyId)
+        // to one of their leads. Paginate because HHH has >6k jobs.
+        const fetchAllJobs = async () => {
+          const all = []
+          const pageSize = 1000
+          for (let from = 0; ; from += pageSize) {
+            const { data, error } = await supabase
+              .from('jobs')
+              .select('id, job_id, salesperson_id, lead_id, status, customer_name, job_title, invoice_status')
+              .eq('company_id', companyId)
+              .range(from, from + pageSize - 1)
+            if (error) return { data: null, error }
+            all.push(...(data || []))
+            if (!data || data.length < pageSize) break
+          }
+          return { data: all, error: null }
+        }
+        const jobsPromise = fetchAllJobs()
 
-        // Invoices — filter to those on user's jobs by loading in two steps
-        // (can't join without rpc); fetch all invoices and filter client-side
-        // since rep typically owns < 100 jobs.
-        const invoicesPromise = supabase
-          .from('invoices')
-          .select('id, invoice_id, job_id, amount, payment_status, amount_paid, total_paid, created_at, job_description')
-          .eq('company_id', companyId)
+        // Invoices — fetch all company invoices so we can match against any
+        // job owned directly or via a lead. HHH has >5k invoices so the
+        // default 1000-row cap silently drops most of them; paginate with
+        // .range() until exhausted.
+        const fetchAllInvoices = async () => {
+          const all = []
+          const pageSize = 1000
+          for (let from = 0; ; from += pageSize) {
+            const { data, error } = await supabase
+              .from('invoices')
+              .select('id, invoice_id, job_id, amount, payment_status, amount_paid, total_paid, created_at, job_description')
+              .eq('company_id', companyId)
+              .range(from, from + pageSize - 1)
+            if (error) return { data: null, error }
+            all.push(...(data || []))
+            if (!data || data.length < pageSize) break
+          }
+          return { data: all, error: null }
+        }
+        const invoicesPromise = fetchAllInvoices()
 
         // Payments in current period — used to compute earned-this-period
         const paymentsPromise = supabase

@@ -232,6 +232,21 @@ export default function Payroll() {
     }
   }
 
+  // Supabase queries default to 1000 rows. For tables that commonly exceed
+  // that (jobs, invoices, payments), walk pages with .range() until
+  // exhausted. Returns { data, error } shaped like a normal supabase call.
+  const fetchAllPages = async (buildQuery, pageSize = 1000) => {
+    const all = []
+    for (let from = 0; ; from += pageSize) {
+      const to = from + pageSize - 1
+      const { data, error } = await buildQuery().range(from, to)
+      if (error) return { data: null, error }
+      all.push(...(data || []))
+      if (!data || data.length < pageSize) break
+    }
+    return { data: all, error: null }
+  }
+
   const fetchData = async () => {
     setLoading(true)
     try {
@@ -275,17 +290,20 @@ export default function Payroll() {
           .gte('date', periodStartStr)
           .lte('date', periodEndStr),
 
-        // All invoices (need for commission chain)
-        supabase
+        // All invoices (need for commission chain).
+        // Supabase default limit is 1000 rows; HHH has >5k invoices, so we
+        // page with .range() inside fetchAllPages() below.
+        fetchAllPages(() => supabase
           .from('invoices')
-          .select('*')
-          .eq('company_id', companyId),
+          .select('id, company_id, job_id, invoice_id, amount, payment_status, amount_paid, total_paid, created_at, last_sent_at, job_description')
+          .eq('company_id', companyId)),
 
-        // All jobs (need for efficiency bonuses + commission chain)
-        supabase
+        // All jobs (need for efficiency bonuses + commission chain). Same
+        // pagination applies — HHH has >6k jobs.
+        fetchAllPages(() => supabase
           .from('jobs')
-          .select('id, company_id, job_id, salesperson_id, allotted_time_hours, status, customer_name, job_title, assigned_team')
-          .eq('company_id', companyId),
+          .select('id, company_id, job_id, salesperson_id, lead_id, allotted_time_hours, status, customer_name, job_title, assigned_team')
+          .eq('company_id', companyId)),
 
         // Pending time off requests
         supabase
