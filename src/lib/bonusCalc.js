@@ -44,6 +44,10 @@ export function calculateInvoiceCommissions({
   periodStartStr,
   periodEndStr,
   leads = [],
+  // Map<invoice_id, totalPaid>. Used for the pending bucket so we can
+  // subtract every lifetime payment from invoice.amount, not just
+  // in-period ones. If omitted we approximate with in-period only.
+  allPaymentsByInvoiceId,
 }) {
   if (!employee?.is_commission) return { available: 0, pending: 0, details: [] }
 
@@ -92,33 +96,45 @@ export function calculateInvoiceCommissions({
     if (fullCommission <= 0) return
 
     if (trigger === 'payment_received') {
-      const matching = (inPeriodPayments || []).filter(p => p.invoice_id === inv.id)
-      const paidInPeriod = matching.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+      // inPeriodPayments = payments with date inside the current pay
+      // period window (caller filters). EVERY in-period payment earns
+      // commission on its amount × rate, regardless of whether the
+      // invoice is now fully paid or still partial.
+      const inPeriodMatches = (inPeriodPayments || []).filter(p => p.invoice_id === inv.id)
+      const paidInPeriod = inPeriodMatches.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+
       if (paidInPeriod > 0) {
         const earned = rateType === 'percent'
           ? commissionOn(paidInPeriod)
-          : (paidInPeriod >= invAmount ? fullCommission : 0)
+          : fullCommission // flat rate earned once when any in-period payment lands
         if (earned > 0) {
           available += earned
           details.push({
             type: 'invoice_commission', status: 'available', amount: earned,
             invoiceId: inv.invoice_id, invoiceDbId: inv.id, jobId: inv.job_id,
             jobTitle: jobLabel, invoiceAmount: invAmount, paidAmount: paidInPeriod,
-            paidDate: matching[0]?.date, rate, rateType,
+            paidDate: inPeriodMatches[0]?.date, rate, rateType,
           })
         }
       }
-      const totalPaidAllTime = inv.payment_status === 'Paid'
+
+      // Pending commission = rate on the amount that has not yet been paid.
+      // For invoices flagged Paid we trust the flag. For anything else we
+      // sum ALL payments (`allPaymentsByInvoiceId`) so partial-paid
+      // invoices only count the remaining balance. When the caller doesn't
+      // pass allPaymentsByInvoiceId, fall back to the in-period sum, which
+      // is less accurate but never double-counts.
+      const lifetimePaid = inv.payment_status === 'Paid'
         ? invAmount
-        : parseFloat(inv.amount_paid || inv.total_paid || 0)
-      const remaining = Math.max(0, invAmount - totalPaidAllTime)
+        : (allPaymentsByInvoiceId?.get(inv.id) ?? paidInPeriod)
+      const remaining = Math.max(0, invAmount - lifetimePaid)
       if (remaining > 0 && inv.payment_status !== 'Paid') {
         const pendingAmt = rateType === 'percent' ? commissionOn(remaining) : fullCommission
         pending += pendingAmt
         details.push({
           type: 'invoice_commission', status: 'pending', amount: pendingAmt,
           invoiceId: inv.invoice_id, invoiceDbId: inv.id, jobId: inv.job_id,
-          jobTitle: jobLabel, invoiceAmount: invAmount, paidAmount: totalPaidAllTime,
+          jobTitle: jobLabel, invoiceAmount: invAmount, paidAmount: lifetimePaid,
           remaining, rate, rateType, paymentStatus: inv.payment_status,
         })
       }

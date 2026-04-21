@@ -42,6 +42,7 @@ export default function Payroll() {
   const [invoices, setInvoices] = useState([])
   const [jobs, setJobs] = useState([])
   const [leads, setLeads] = useState([])
+  const [allPaymentsByInvoiceId, setAllPaymentsByInvoiceId] = useState(new Map())
   const [timeOffRequests, setTimeOffRequests] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -256,7 +257,7 @@ export default function Payroll() {
       const periodStartStr = periodStart.toISOString().split('T')[0]
       const periodEndStr = periodEnd.toISOString().split('T')[0]
 
-      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes] = await Promise.all([
+      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes, allPaymentsRes] = await Promise.all([
         // Time clock entries for current period
         supabase
           .from('time_clock')
@@ -340,6 +341,14 @@ export default function Payroll() {
           .from('leads')
           .select('id, salesperson_id, salesperson_ids')
           .eq('company_id', companyId),
+
+        // All payments (any date) — needed to compute lifetime paid per
+        // invoice so the pending-commission bucket subtracts what's
+        // already been paid (including in past periods).
+        fetchAllPages(() => supabase
+          .from('payments')
+          .select('id, invoice_id, amount')
+          .eq('company_id', companyId)),
       ])
 
       setTimeEntries(entriesRes.data || [])
@@ -349,6 +358,13 @@ export default function Payroll() {
       setInvoices(invoicesRes.data || [])
       setJobs(jobsRes.data || [])
       setLeads(leadsRes?.data || [])
+      // Build invoice_id -> totalPaid lookup (lifetime, all periods).
+      const paidByInvoice = new Map()
+      ;(allPaymentsRes?.data || []).forEach(p => {
+        if (!p.invoice_id) return
+        paidByInvoice.set(p.invoice_id, (paidByInvoice.get(p.invoice_id) || 0) + (parseFloat(p.amount) || 0))
+      })
+      setAllPaymentsByInvoiceId(paidByInvoice)
       setTimeOffRequests(requestsRes.data || [])
       setAdjustments(adjRes.data || [])
       setVerificationReports(verRes.data || [])
@@ -468,6 +484,7 @@ export default function Payroll() {
       invoices,
       leads,
       inPeriodPayments: payments,
+      allPaymentsByInvoiceId,
       payrollConfig,
       periodStartStr: periodStart.toISOString().split('T')[0],
       periodEndStr: periodEnd.toISOString().split('T')[0],
