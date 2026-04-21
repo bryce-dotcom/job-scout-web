@@ -1316,7 +1316,10 @@ export default function EstimateDetail() {
             status: 'Quote Sent',
             salesperson_id: estimate.salesperson_id || null,
             quote_id: estimate.id,
-            quote_amount: parseFloat(estimate.quote_amount) || 0,
+            // quote_amount intentionally NOT written — leads table has no
+            // such column; the amount lives on the quote itself. Writing it
+            // here caused a PostgREST schema-cache error that killed the
+            // "link a lead to my estimate" flow.
             notes: estimate.summary || null
           })
           .select()
@@ -2060,8 +2063,11 @@ export default function EstimateDetail() {
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 360px',
-        gap: '24px'
+        // On mobile stack vertically — the old fixed 360px right column
+        // stole all the horizontal space on phone widths ("can only see
+        // the left half", "squishy screen" from Cole & Noah).
+        gridTemplateColumns: isMobile ? '1fr' : '1fr 360px',
+        gap: isMobile ? '16px' : '24px'
       }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -2418,6 +2424,13 @@ export default function EstimateDetail() {
               </div>
             ) : (
               <>
+                {/* Line items table — wraps in horizontal scroll on mobile
+                    since the 8-column grid (20+2fr+1.5fr+80+100+90+100+72 ≈
+                    800px minimum) can't compress into a phone viewport. The
+                    scroll container pinned to the parent's width keeps the
+                    rest of the page from overflowing. */}
+                <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+                <div style={{ minWidth: isMobile ? '780px' : 'auto' }}>
                 {/* Table Header */}
                 <div style={{
                   display: 'grid',
@@ -2495,7 +2508,7 @@ export default function EstimateDetail() {
                               const val = parseInt(e.target.value) || 1
                               if (val !== line.quantity) handleQuantityChange(line, val)
                             }}
-                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                             style={{
                               width: '56px',
                               padding: '4px 6px',
@@ -2520,7 +2533,7 @@ export default function EstimateDetail() {
                               const val = parseFloat(e.target.value) || 0
                               if (val !== parseFloat(line.price)) handlePriceChange(line, val)
                             }}
-                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                             style={{
                               width: '80px',
                               padding: '4px 6px',
@@ -2546,7 +2559,7 @@ export default function EstimateDetail() {
                               const val = parseFloat(e.target.value) || 0
                               if (val !== (parseFloat(line.discount) || 0)) handleDiscountChange(line, val)
                             }}
-                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                             style={{
                               width: '70px',
                               padding: '4px 6px',
@@ -2625,7 +2638,7 @@ export default function EstimateDetail() {
                                 const current = line.item_name || line.item?.name || ''
                                 if (val && val !== current) handleLineNameChange(line, val)
                               }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                               style={{
                                 width: '100%',
                                 padding: '6px 8px',
@@ -2678,7 +2691,7 @@ export default function EstimateDetail() {
                                 const val = e.target.value.trim()
                                 if (val !== (line.notes || '')) handleLineNotesChange(line, val)
                               }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                               style={{
                                 width: '100%',
                                 padding: '6px 8px',
@@ -2810,6 +2823,8 @@ export default function EstimateDetail() {
                     </div>
                   )
                 })}
+                </div>{/* close minWidth wrapper (line items mobile scroll) */}
+                </div>{/* close overflowX wrapper */}
               </>
             )}
           </div>
@@ -3930,6 +3945,85 @@ export default function EstimateDetail() {
           sendAttachments={sendAttachments}
           setSendAttachments={setSendAttachments}
         />
+      )}
+
+      {/* PDF Preview Modal — shows the generated PDF with Save/Download/Discard
+          actions. Was missing from the render tree, which made the "Preview PDF"
+          button silently generate a blob that nobody could see. */}
+      {pdfPreviewUrl && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)',
+            display: 'flex', flexDirection: 'column', zIndex: 2000, padding: isMobile ? '0' : '24px'
+          }}
+          onClick={handleDiscardPdfPreview}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: theme.bgCard, borderRadius: isMobile ? '0' : '12px',
+              flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              maxWidth: isMobile ? '100%' : '1100px', margin: '0 auto', width: '100%'
+            }}
+          >
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>
+                Preview — {estimate?.quote_id || `EST-${estimate?.id}`}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={handleSavePdfPreview}
+                  disabled={generatingPdf}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 14px', backgroundColor: theme.accent, color: '#fff',
+                    border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600',
+                    cursor: generatingPdf ? 'wait' : 'pointer'
+                  }}
+                >
+                  <Download size={14} />
+                  {generatingPdf ? 'Saving...' : 'Save to Documents'}
+                </button>
+                <button
+                  onClick={() => {
+                    const a = document.createElement('a')
+                    a.href = pdfPreviewUrl
+                    a.download = `${estimate.quote_id || 'estimate'}.pdf`
+                    a.click()
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 14px', backgroundColor: 'transparent', color: theme.textSecondary,
+                    border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Download size={14} />
+                  Download only
+                </button>
+                <button
+                  onClick={handleDiscardPdfPreview}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 14px', backgroundColor: 'transparent', color: theme.textMuted,
+                    border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <X size={14} />
+                  Close
+                </button>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden', backgroundColor: '#525659' }}>
+              <iframe
+                src={pdfPreviewUrl}
+                title="Estimate preview"
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Settings Modal */}

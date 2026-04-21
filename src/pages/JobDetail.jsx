@@ -3339,6 +3339,11 @@ function JobDetailInner() {
               </div>
             ) : (
               <>
+                {/* 7-col grid can't compress to a phone viewport — wrap in
+                    horizontal scroll so Before/After photo buttons stay
+                    reachable without cutting off the screen. */}
+                <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
+                <div style={{ minWidth: isMobile ? '700px' : 'auto' }}>
                 <div style={{
                   display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 90px 100px 72px', gap: '12px',
                   padding: '12px 20px', backgroundColor: theme.accentBg,
@@ -3653,6 +3658,8 @@ function JobDetailInner() {
                     </div>
                   )
                 })}
+                </div>{/* close minWidth wrapper (job line items) */}
+                </div>{/* close overflowX wrapper */}
                 <div style={{ padding: '16px 20px', backgroundColor: theme.accentBg }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <span style={{ color: theme.textSecondary }}>Subtotal</span>
