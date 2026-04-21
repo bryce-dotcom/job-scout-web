@@ -17,6 +17,48 @@ import {
 import { toast } from '../lib/toast'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 
+// Single source of truth for the Tax Category dropdown (IRS Form 1065 lines).
+// Used in the transaction edit modal and wherever Tax Category picking happens.
+// Keep these values in sync with public.expense_categories.default_tax_category
+// so auto-fill from Expense Category always lands on a real option.
+export const TAX_CATEGORIES = [
+  { group: 'Cost of Goods Sold', options: [
+    { value: 'Line 2 - Cost of goods sold', label: 'Cost of Goods Sold (job materials, resale items)' },
+  ]},
+  { group: 'Common Deductions', options: [
+    { value: 'Line 20 - Advertising', label: 'Advertising & Marketing' },
+    { value: 'Line 20 - Office expenses', label: 'Office Expenses & Supplies' },
+    { value: 'Line 20 - Auto expenses', label: 'Vehicle & Auto Expenses' },
+    { value: 'Line 12 - Repairs and maintenance', label: 'Repairs & Maintenance' },
+    { value: 'Line 14 - Rent', label: 'Rent' },
+    { value: 'Line 20 - Utilities', label: 'Utilities' },
+    { value: 'Line 20 - Insurance', label: 'Insurance' },
+    { value: 'Line 15 - Taxes and licenses', label: 'Taxes & Licenses' },
+    { value: 'Line 20 - Travel', label: 'Travel' },
+    { value: 'Line 20 - Meals', label: 'Meals (50% deductible)' },
+  ]},
+  { group: 'Payroll & Contractors', options: [
+    { value: 'Line 10 - Guaranteed payments', label: 'Guaranteed Payments (partners)' },
+    { value: 'Line 9 - Salaries and wages', label: 'Salaries & Wages' },
+    { value: 'Line 20 - Contract labor', label: 'Contract Labor / Subcontractors' },
+    { value: 'Line 18 - Retirement plans', label: 'Retirement Plan Contributions' },
+    { value: 'Line 19 - Employee benefit programs', label: 'Employee Benefits' },
+  ]},
+  { group: 'Assets & Depreciation', options: [
+    { value: 'Line 16a - Depreciation', label: 'Depreciation (equipment, vehicles)' },
+    { value: 'Line 20 - Equipment rental', label: 'Equipment Rental' },
+  ]},
+  { group: 'Other', options: [
+    { value: 'Line 20 - Other deductions', label: 'Other Deductions' },
+    { value: 'Line 13 - Bad debts', label: 'Bad Debts' },
+    { value: 'Not deductible', label: 'Not Deductible (personal, distributions)' },
+    { value: 'Income', label: 'Income (not a deduction)' },
+  ]},
+]
+
+// Flat list for reverse lookup (value -> label).
+export const TAX_CATEGORY_OPTIONS = TAX_CATEGORIES.flatMap(g => g.options)
+
 export default function Books() {
   const navigate = useNavigate()
   const user = useStore((state) => state.user)
@@ -86,6 +128,15 @@ export default function Books() {
   // AR filter
   const [arFilter, setArFilter] = useState('all')
 
+  // Manage Categories modal
+  const [showManageCategories, setShowManageCategories] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [newCategoryType, setNewCategoryType] = useState('expense')
+  const [newCategoryTax, setNewCategoryTax] = useState('')
+  const [savingCategory, setSavingCategory] = useState(false)
+  const [editingCategoryId, setEditingCategoryId] = useState(null)
+  const [editingCategoryTax, setEditingCategoryTax] = useState('')
+
   useEffect(() => {
     if (companyId) fetchAllBooksData()
   }, [companyId])
@@ -115,8 +166,69 @@ export default function Books() {
   }
 
   const fetchExpenseCategories = async () => {
-    const { data } = await supabase.from('expense_categories').select('*').order('sort_order')
+    // Show globals (company_id IS NULL) plus any this company has added.
+    const { data } = await supabase
+      .from('expense_categories')
+      .select('*')
+      .or(`company_id.is.null,company_id.eq.${companyId}`)
+      .order('sort_order')
+      .order('name')
     setExpenseCategories(data || [])
+  }
+
+  // Add a new expense category scoped to this company.
+  const addCustomCategory = async () => {
+    const name = newCategoryName.trim()
+    if (!name) { toast.error('Name is required'); return }
+    if (expenseCategories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      toast.error('A category with that name already exists')
+      return
+    }
+    setSavingCategory(true)
+    const { error } = await supabase.from('expense_categories').insert({
+      company_id: companyId,
+      name,
+      type: newCategoryType,
+      default_tax_category: newCategoryTax || null,
+      sort_order: 100, // custom rows sort after globals
+      icon: newCategoryType === 'income' ? '💰' : '📁',
+      color: newCategoryType === 'income' ? '#22c55e' : '#64748b',
+    })
+    setSavingCategory(false)
+    if (error) { toast.error('Failed to add: ' + error.message); return }
+    setNewCategoryName('')
+    setNewCategoryTax('')
+    setNewCategoryType('expense')
+    await fetchExpenseCategories()
+    toast.success('Category added')
+  }
+
+  // Update the default_tax_category mapping on a category. For globals
+  // (company_id IS NULL) the server-side RLS will block this — we keep it
+  // enabled only for the current company's rows.
+  const saveCategoryTaxDefault = async (categoryId) => {
+    setSavingCategory(true)
+    const { error } = await supabase.from('expense_categories')
+      .update({ default_tax_category: editingCategoryTax || null })
+      .eq('id', categoryId)
+    setSavingCategory(false)
+    if (error) { toast.error('Failed: ' + error.message); return }
+    setEditingCategoryId(null)
+    setEditingCategoryTax('')
+    await fetchExpenseCategories()
+  }
+
+  // Delete a custom category. Globals cannot be deleted (RLS blocks it).
+  const deleteCategory = async (cat) => {
+    if (cat.company_id === null) {
+      toast.error("Built-in categories can't be deleted (you can add your own with a different name).")
+      return
+    }
+    if (!confirm(`Delete "${cat.name}"? Transactions already using it will keep the name but it won't appear in the dropdown.`)) return
+    const { error } = await supabase.from('expense_categories').delete().eq('id', cat.id)
+    if (error) { toast.error('Failed: ' + error.message); return }
+    await fetchExpenseCategories()
+    toast.success('Deleted')
   }
 
   const fetchAssets = async () => {
@@ -837,7 +949,16 @@ export default function Books() {
                             onChange={async (e) => {
                               e.stopPropagation()
                               const val = e.target.value
-                              await supabase.from('plaid_transactions').update({ user_category: val }).eq('id', txn.id)
+                              // Auto-fill the row's tax category from the picked
+                              // expense category's default, UNLESS the user already
+                              // has a tax category on this row (don't clobber).
+                              const existingTax = txn.user_tax_category || txn.ai_tax_category
+                              const match = expenseCategories.find(c => c.name === val)
+                              const updates = { user_category: val }
+                              if (val && !existingTax && match?.default_tax_category) {
+                                updates.user_tax_category = match.default_tax_category
+                              }
+                              await supabase.from('plaid_transactions').update(updates).eq('id', txn.id)
                               await fetchPlaidTransactions()
                             }}
                             style={{
@@ -908,32 +1029,13 @@ export default function Books() {
                             }}
                           >
                             <option value="">Tax category... *</option>
-                            <optgroup label="Common Deductions">
-                              <option value="Line 20 - Advertising">Advertising</option>
-                              <option value="Line 20 - Office expenses">Office Expenses</option>
-                              <option value="Line 20 - Auto expenses">Vehicle/Auto</option>
-                              <option value="Line 12 - Repairs and maintenance">Repairs</option>
-                              <option value="Line 14 - Rent">Rent</option>
-                              <option value="Line 20 - Utilities">Utilities</option>
-                              <option value="Line 20 - Insurance">Insurance</option>
-                              <option value="Line 15 - Taxes and licenses">Taxes/Licenses</option>
-                              <option value="Line 20 - Travel">Travel</option>
-                              <option value="Line 20 - Meals">Meals</option>
-                            </optgroup>
-                            <optgroup label="Payroll & Labor">
-                              <option value="Line 10 - Guaranteed payments">Guaranteed Payments</option>
-                              <option value="Line 9 - Salaries and wages">Salaries/Wages</option>
-                              <option value="Line 20 - Contract labor">Contract Labor</option>
-                              <option value="Line 18 - Retirement plans">Retirement</option>
-                              <option value="Line 19 - Employee benefit programs">Benefits</option>
-                            </optgroup>
-                            <optgroup label="Other">
-                              <option value="Line 16a - Depreciation">Depreciation</option>
-                              <option value="Line 20 - Equipment rental">Equip Rental</option>
-                              <option value="Line 20 - Other deductions">Other Deductions</option>
-                              <option value="Not deductible">Not Deductible</option>
-                              <option value="Income">Income</option>
-                            </optgroup>
+                            {TAX_CATEGORIES.map(grp => (
+                              <optgroup key={grp.group} label={grp.group}>
+                                {grp.options.map(opt => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </optgroup>
+                            ))}
                           </select>
                         </div>
                         {/* Job badge — clickable to expand and change */}
@@ -1021,13 +1123,34 @@ export default function Books() {
                         {/* Category + Tax Category */}
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginTop: '12px' }}>
                           <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
-                              <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Expense Category</label>
-                              <HelpBadge text="How you track this expense in your business. Groups similar spending together (e.g., all gas purchases go under Fuel). This helps you see where your money goes each month." size={13} />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Expense Category</label>
+                                <HelpBadge text="How you track this expense in your business. Groups similar spending together (e.g., all gas purchases go under Fuel). This helps you see where your money goes each month." size={13} />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowManageCategories(true)}
+                                style={{ fontSize: '11px', color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                              >
+                                + Manage categories
+                              </button>
                             </div>
                             <select
                               value={txnEditCategory}
-                              onChange={(e) => setTxnEditCategory(e.target.value)}
+                              onChange={(e) => {
+                                const newCat = e.target.value
+                                setTxnEditCategory(newCat)
+                                // Auto-fill Tax Category from the picked expense category's
+                                // default_tax_category — but only if the user hasn't already
+                                // set a tax category (don't clobber overrides).
+                                if (newCat && !txnEditTaxCategory) {
+                                  const match = expenseCategories.find(c => c.name === newCat)
+                                  if (match?.default_tax_category) {
+                                    setTxnEditTaxCategory(match.default_tax_category)
+                                  }
+                                }
+                              }}
                               style={{ ...inputStyle, cursor: 'pointer' }}
                             >
                               <option value="">Select a category...</option>
@@ -1063,7 +1186,7 @@ export default function Books() {
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
                               <label style={{ fontSize: '12px', fontWeight: '600', color: theme.text }}>Tax Category</label>
-                              <HelpBadge text="Where this goes on your tax return. Your accountant uses this to file taxes. If you're unsure, the AI suggestion is usually correct — just confirm it." size={13} />
+                              <HelpBadge text="Where this goes on your tax return. Your accountant uses this to file taxes. Auto-fills from your Expense Category — override only if this specific transaction belongs on a different line (e.g. 'Supplies' for a job → COGS; 'Supplies' for the office → Office Expenses)." size={13} />
                             </div>
                             <select
                               value={txnEditTaxCategory}
@@ -1071,35 +1194,13 @@ export default function Books() {
                               style={{ ...inputStyle, cursor: 'pointer' }}
                             >
                               <option value="">Select tax category...</option>
-                              <optgroup label="Common Deductions">
-                                <option value="Line 20 - Advertising">Advertising & Marketing</option>
-                                <option value="Line 20 - Office expenses">Office Expenses & Supplies</option>
-                                <option value="Line 20 - Auto expenses">Vehicle & Auto Expenses</option>
-                                <option value="Line 12 - Repairs and maintenance">Repairs & Maintenance</option>
-                                <option value="Line 14 - Rent">Rent</option>
-                                <option value="Line 20 - Utilities">Utilities</option>
-                                <option value="Line 20 - Insurance">Insurance</option>
-                                <option value="Line 15 - Taxes and licenses">Taxes & Licenses</option>
-                                <option value="Line 20 - Travel">Travel</option>
-                                <option value="Line 20 - Meals">Meals (50% deductible)</option>
-                              </optgroup>
-                              <optgroup label="Payroll & Contractors">
-                                <option value="Line 10 - Guaranteed payments">Guaranteed Payments (partners)</option>
-                                <option value="Line 9 - Salaries and wages">Salaries & Wages</option>
-                                <option value="Line 20 - Contract labor">Contract Labor / Subcontractors</option>
-                                <option value="Line 18 - Retirement plans">Retirement Plan Contributions</option>
-                                <option value="Line 19 - Employee benefit programs">Employee Benefits</option>
-                              </optgroup>
-                              <optgroup label="Assets & Depreciation">
-                                <option value="Line 16a - Depreciation">Depreciation (equipment, vehicles)</option>
-                                <option value="Line 20 - Equipment rental">Equipment Rental</option>
-                              </optgroup>
-                              <optgroup label="Other">
-                                <option value="Line 20 - Other deductions">Other Deductions</option>
-                                <option value="Line 13 - Bad debts">Bad Debts</option>
-                                <option value="Not deductible">Not Deductible (personal, distributions)</option>
-                                <option value="Income">Income (not a deduction)</option>
-                              </optgroup>
+                              {TAX_CATEGORIES.map(grp => (
+                                <optgroup key={grp.group} label={grp.group}>
+                                  {grp.options.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  ))}
+                                </optgroup>
+                              ))}
                             </select>
                           </div>
                         </div>
@@ -1770,6 +1871,167 @@ export default function Books() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Manage Expense Categories modal */}
+      {showManageCategories && (
+        <div
+          onClick={() => setShowManageCategories(false)}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '14px', width: '100%', maxWidth: '640px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+          >
+            {/* Header */}
+            <div style={{ padding: '20px 24px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: '700', color: theme.text, margin: 0 }}>Manage Expense Categories</h2>
+                <p style={{ fontSize: '12px', color: theme.textMuted, margin: '4px 0 0' }}>
+                  Add your own buckets (like Job Supplies, Truck Payments, etc.) and map each one to the right tax line. Once a category has a default tax line, picking that category on a transaction auto-fills the Tax Category.
+                </p>
+              </div>
+              <button onClick={() => setShowManageCategories(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Add new */}
+            <div style={{ padding: '16px 24px', borderBottom: `1px solid ${theme.border}`, backgroundColor: theme.bg }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Add New Category</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 2fr auto', gap: '8px', alignItems: 'end' }}>
+                <div>
+                  <label style={{ fontSize: '11px', color: theme.textMuted }}>Name</label>
+                  <input
+                    type="text"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="e.g. Truck Payments"
+                    style={{ width: '100%', padding: '8px 10px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '13px', backgroundColor: theme.bgCard, color: theme.text, boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '11px', color: theme.textMuted }}>Type</label>
+                  <select
+                    value={newCategoryType}
+                    onChange={(e) => setNewCategoryType(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '13px', backgroundColor: theme.bgCard, color: theme.text, boxSizing: 'border-box' }}
+                  >
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: '11px', color: theme.textMuted }}>Default Tax Category</label>
+                  <select
+                    value={newCategoryTax}
+                    onChange={(e) => setNewCategoryTax(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '13px', backgroundColor: theme.bgCard, color: theme.text, boxSizing: 'border-box' }}
+                  >
+                    <option value="">(none — ask each time)</option>
+                    {TAX_CATEGORIES.map(grp => (
+                      <optgroup key={grp.group} label={grp.group}>
+                        {grp.options.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={addCustomCategory}
+                  disabled={savingCategory || !newCategoryName.trim()}
+                  style={{ padding: '8px 14px', backgroundColor: theme.accent, border: 'none', borderRadius: '6px', color: '#fff', fontSize: '13px', fontWeight: '500', cursor: savingCategory ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  <Plus size={14} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {/* Existing list */}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {expenseCategories.length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>No categories yet.</div>
+              ) : (
+                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: theme.bg, position: 'sticky', top: 0 }}>
+                      <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: '11px', color: theme.textMuted, fontWeight: '600' }}>Category</th>
+                      <th style={{ textAlign: 'left', padding: '10px 8px', fontSize: '11px', color: theme.textMuted, fontWeight: '600' }}>Type</th>
+                      <th style={{ textAlign: 'left', padding: '10px 8px', fontSize: '11px', color: theme.textMuted, fontWeight: '600' }}>Default Tax Category</th>
+                      <th style={{ width: '60px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenseCategories.map(cat => {
+                      const isGlobal = cat.company_id === null
+                      const isEditingThis = editingCategoryId === cat.id
+                      const taxLabel = TAX_CATEGORY_OPTIONS.find(o => o.value === cat.default_tax_category)?.label || cat.default_tax_category
+                      return (
+                        <tr key={cat.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                          <td style={{ padding: '10px 16px', color: theme.text }}>
+                            <span style={{ marginRight: '6px' }}>{cat.icon}</span>
+                            {cat.name}
+                            {isGlobal && <span style={{ marginLeft: '6px', fontSize: '10px', color: theme.textMuted, fontStyle: 'italic' }}>(built-in)</span>}
+                          </td>
+                          <td style={{ padding: '10px 8px', color: theme.textSecondary }}>{cat.type}</td>
+                          <td style={{ padding: '10px 8px', color: theme.textSecondary }}>
+                            {isEditingThis ? (
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <select
+                                  value={editingCategoryTax}
+                                  onChange={(e) => setEditingCategoryTax(e.target.value)}
+                                  style={{ flex: 1, padding: '6px 8px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '12px', backgroundColor: theme.bgCard, color: theme.text }}
+                                >
+                                  <option value="">(none)</option>
+                                  {TAX_CATEGORIES.map(grp => (
+                                    <optgroup key={grp.group} label={grp.group}>
+                                      {grp.options.map(opt => (
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                      ))}
+                                    </optgroup>
+                                  ))}
+                                </select>
+                                <button onClick={() => saveCategoryTaxDefault(cat.id)} disabled={savingCategory} style={{ padding: '6px 10px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>Save</button>
+                                <button onClick={() => { setEditingCategoryId(null); setEditingCategoryTax('') }} style={{ padding: '6px 10px', backgroundColor: 'transparent', color: theme.textMuted, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>Cancel</button>
+                              </div>
+                            ) : isGlobal ? (
+                              <span style={{ color: theme.textMuted }}>{taxLabel || '—'}</span>
+                            ) : (
+                              <span
+                                onClick={() => { setEditingCategoryId(cat.id); setEditingCategoryTax(cat.default_tax_category || '') }}
+                                style={{ cursor: 'pointer', color: taxLabel ? theme.text : theme.textMuted, textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+                                title="Click to change"
+                              >
+                                {taxLabel || 'Set default...'}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '10px 16px', textAlign: 'right' }}>
+                            {!isGlobal && (
+                              <button
+                                onClick={() => deleteCategory(cat)}
+                                title="Delete"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div style={{ padding: '12px 24px', borderTop: `1px solid ${theme.border}`, backgroundColor: theme.bg, textAlign: 'right' }}>
+              <button onClick={() => setShowManageCategories(false)} style={{ padding: '8px 16px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>Done</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
