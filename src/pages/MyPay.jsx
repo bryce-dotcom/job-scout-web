@@ -42,6 +42,10 @@ export default function MyPay() {
   const [payments, setPayments] = useState([])
   const [timeEntries, setTimeEntries] = useState([])
   const [loading, setLoading] = useState(true)
+  // Fresh copy of the user's employee row (rate, commission flags) re-read
+  // from DB on every mount so a just-updated rate shows here immediately
+  // instead of waiting for the next full login.
+  const [empRow, setEmpRow] = useState(null)
   // 0 = current period, -1 = previous, -2 = two back, etc.
   // Lets a rep look at a past pay period to see commissions that have
   // already been paid out (or would have been). Payroll admin page has
@@ -140,12 +144,21 @@ export default function MyPay() {
           .lte('clock_in', periodEnd.toISOString())
           .not('clock_out', 'is', null)
 
-        const [jr, lr, ir, pr, tr] = await Promise.all([jobsPromise, leadsPromise, invoicesPromise, paymentsPromise, timePromise])
+        // Re-fetch my own employee row so commission_services_rate /
+        // commission_goods_rate / is_commission reflect the latest edits
+        // (store snapshot from login would otherwise go stale).
+        const empPromise = supabase
+          .from('employees')
+          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, is_hourly, is_salary, hourly_rate, annual_salary')
+          .eq('id', user.id).maybeSingle()
+
+        const [jr, lr, ir, pr, tr, er] = await Promise.all([jobsPromise, leadsPromise, invoicesPromise, paymentsPromise, timePromise, empPromise])
         setJobs(jr.data || [])
         setLeads(lr.data || [])
         setInvoices(ir.data || [])
         setPayments(pr.data || [])
         setTimeEntries(tr.data || [])
+        setEmpRow(er?.data || null)
       } finally {
         setLoading(false)
       }
@@ -159,8 +172,10 @@ export default function MyPay() {
 
   const commData = useMemo(() => {
     if (!user?.id) return { available: 0, pending: 0, details: [] }
+    // Prefer freshly-fetched empRow; fall back to the store's user until it arrives.
+    const me = empRow || user
     return calculateInvoiceCommissions({
-      employee: user,
+      employee: me,
       jobs,
       leads,
       invoices,
@@ -169,7 +184,7 @@ export default function MyPay() {
       periodStartStr,
       periodEndStr,
     })
-  }, [user, jobs, leads, invoices, payments, payrollConfig, periodStartStr, periodEndStr])
+  }, [user, empRow, jobs, leads, invoices, payments, payrollConfig, periodStartStr, periodEndStr])
 
   const totalHours = timeEntries.reduce((s, e) => {
     let h = e.total_hours

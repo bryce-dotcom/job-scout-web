@@ -32,6 +32,7 @@ export default function Payroll() {
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
+  const fetchEmployees = useStore((state) => state.fetchEmployees)
   const refreshCompany = useStore((state) => state.fetchCompany)
 
   // Data state
@@ -260,6 +261,11 @@ export default function Payroll() {
   const fetchData = async () => {
     setLoading(true)
     try {
+      // Refresh the employees store so any rate / commission changes made
+      // elsewhere (Employees page, DB admin) are picked up immediately.
+      // Without this, edits to commission_services_rate wouldn't flow into
+      // calculateInvoiceCommissions until a hard page reload.
+      if (fetchEmployees) fetchEmployees().catch(() => {})
       const { periodStart, periodEnd } = getCurrentPeriod()
 
       // Parallel fetches for all data
