@@ -6253,7 +6253,14 @@ function JobDetailInner() {
                       return (
                         <button
                           key={p.id}
-                          onClick={() => setNewLine(prev => ({ ...prev, item_id: String(p.id) }))}
+                          // Click toggles selection — tapping the currently
+                          // selected item again clears it so Christopher
+                          // doesn't have to add-then-delete when he picks
+                          // the wrong service by mistake.
+                          onClick={() => setNewLine(prev => ({
+                            ...prev,
+                            item_id: isSelected ? '' : String(p.id)
+                          }))}
                           style={{
                             display: 'flex', alignItems: 'center', gap: '10px',
                             padding: '10px 12px', borderRadius: '8px', border: isSelected ? `2px solid ${theme.accent}` : `1px solid ${theme.border}`,

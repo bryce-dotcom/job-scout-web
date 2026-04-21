@@ -198,6 +198,15 @@ export default function Payroll() {
       const newClockOut = editingEntry.clock_out ? new Date(editingEntry.clock_out) : null
       const newTotalHours = newClockOut ? Math.round((newClockOut - newClockIn) / 36e5 * 100) / 100 : null
 
+      // Overlap guard for edits — check against OTHER entries (skip self)
+      if (newClockOut) {
+        const overlap = await findOverlap(original.employee_id, newClockIn, newClockOut, editingEntry.id)
+        if (overlap) {
+          const proceed = window.confirm(formatOverlapPrompt(overlap))
+          if (!proceed) { setSavingEntry(false); return }
+        }
+      }
+
       // Find the admin employee record
       const adminEmp = employees.find(e => e.email === user?.email)
 
@@ -853,6 +862,19 @@ export default function Payroll() {
       const clockOut = new Date(formData.date + 'T' + formData.endTime)
       const totalHours = Math.round((clockOut - clockIn) / 36e5 * 100) / 100
       if (totalHours <= 0) { alert('End time must be after start time'); setSavingModal(false); return }
+
+      // Overlap guard — if the admin is adding a window that collides with
+      // an existing time_clock row for the same employee, surface it and
+      // force a conscious decision. This is the fix for "fixing hours
+      // creates duplicates or overlapping times" — the save now blocks
+      // unless the admin confirms they really want the overlap.
+      const overlap = await findOverlap(formData.employeeId, clockIn, clockOut)
+      if (overlap) {
+        const msg = formatOverlapPrompt(overlap)
+        const proceed = window.confirm(msg)
+        if (!proceed) { setSavingModal(false); return }
+      }
+
       const adminEmp = employees.find(e => e.email === user?.email)
       const { error } = await supabase.from('time_clock').insert({
         company_id: companyId,
@@ -870,6 +892,40 @@ export default function Payroll() {
       await fetchData()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setSavingModal(false) }
+  }
+
+  // Returns the first existing time_clock row that overlaps the given
+  // window for this employee (null if none). Optionally pass excludeId
+  // to skip the row being edited.
+  const findOverlap = async (employeeId, clockIn, clockOut, excludeId = null) => {
+    // Fetch rows whose window could possibly overlap — cheaper to filter
+    // server-side on the same calendar day +/- 1 to catch cross-midnight
+    // entries.
+    const dayStart = new Date(clockIn); dayStart.setDate(dayStart.getDate() - 1); dayStart.setHours(0,0,0,0)
+    const dayEnd = new Date(clockOut); dayEnd.setDate(dayEnd.getDate() + 1); dayEnd.setHours(23,59,59,999)
+    const { data } = await supabase
+      .from('time_clock')
+      .select('id, clock_in, clock_out')
+      .eq('company_id', companyId)
+      .eq('employee_id', employeeId)
+      .gte('clock_in', dayStart.toISOString())
+      .lte('clock_in', dayEnd.toISOString())
+    for (const r of (data || [])) {
+      if (excludeId && r.id === excludeId) continue
+      const rIn = new Date(r.clock_in).getTime()
+      const rOut = r.clock_out ? new Date(r.clock_out).getTime() : rIn
+      const nIn = clockIn.getTime()
+      const nOut = clockOut.getTime()
+      // overlap if windows intersect. Treat equal timestamps as overlap too.
+      if (nIn < rOut && nOut > rIn) return r
+      if (nIn === rIn && nOut === rOut) return r
+    }
+    return null
+  }
+
+  const formatOverlapPrompt = (existing) => {
+    const fmtDt = (iso) => iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '(open)'
+    return `This time entry overlaps an existing one:\n\n  ${fmtDt(existing.clock_in)}  →  ${fmtDt(existing.clock_out)}\n\nSaving will create a duplicate/overlapping row.\n\nOK to save anyway, Cancel to go back and edit the existing entry instead.`
   }
 
   // Add manual commission

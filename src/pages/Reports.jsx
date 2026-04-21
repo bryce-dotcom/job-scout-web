@@ -112,6 +112,10 @@ export default function Reports() {
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   })
+  // Drill-in modal for Financial Report stat cards. Stored as
+  // { title, rows: [{label, amount, link, sub}] } — rows are the underlying
+  // records that make up the clicked stat.
+  const [statDrillIn, setStatDrillIn] = useState(null)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -256,10 +260,23 @@ export default function Reports() {
 
   // ── Shared UI Components ──────────────────────────────────────────
 
-  const StatCard = ({ label, value, subvalue, color }) => (
-    <div style={{ padding: '20px', backgroundColor: theme.bg, borderRadius: '10px', textAlign: 'center' }}>
+  const StatCard = ({ label, value, subvalue, color, onClick }) => (
+    <div
+      onClick={onClick}
+      style={{
+        padding: '20px', backgroundColor: theme.bg, borderRadius: '10px', textAlign: 'center',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'transform 120ms ease, box-shadow 120ms ease',
+        position: 'relative'
+      }}
+      onMouseEnter={(e) => { if (onClick) e.currentTarget.style.boxShadow = `0 0 0 1px ${theme.accent}40` }}
+      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none' }}
+    >
       <div style={{ fontSize: '28px', fontWeight: '700', color: color || theme.text, marginBottom: '4px' }}>{value}</div>
-      <div style={{ fontSize: '13px', color: theme.textMuted }}>{label}</div>
+      <div style={{ fontSize: '13px', color: theme.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+        {label}
+        {onClick && <ChevronRight size={12} style={{ color: theme.textMuted }} />}
+      </div>
       {subvalue && <div style={{ fontSize: '12px', color: theme.accent, marginTop: '4px' }}>{subvalue}</div>}
     </div>
   )
@@ -309,14 +326,70 @@ export default function Reports() {
 
   const renderFinancialReport = () => {
     const d = financialReportData
+
+    // Build drill-in row sets on click. Each open drill-in shows the
+    // individual records that sum to the stat's value.
+    const drillCollected = () => {
+      const rows = filterByDate(payments, 'date')
+        .slice()
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        .map(p => {
+          const inv = invoices.find(i => i.id === p.invoice_id)
+          return {
+            label: `${inv?.invoice_id || p.invoice_id || 'Payment ' + p.id}`,
+            sub: [inv?.customer?.name, p.date, p.method].filter(Boolean).join(' · '),
+            amount: parseFloat(p.amount) || 0,
+            link: inv ? `/invoices/${inv.id}` : null,
+          }
+        })
+      setStatDrillIn({ title: 'Total Collected — payments in period', rows })
+    }
+    const drillInvoiced = () => {
+      const rows = filterByDate(invoices, 'created_at')
+        .slice()
+        .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+        .map(inv => ({
+          label: inv.invoice_id || `Invoice ${inv.id}`,
+          sub: [inv.customer?.name || inv.job_description, (inv.created_at || '').slice(0, 10), inv.payment_status].filter(Boolean).join(' · '),
+          amount: parseFloat(inv.amount) || 0,
+          link: `/invoices/${inv.id}`,
+        }))
+      setStatDrillIn({ title: 'Total Invoiced — invoices created in period', rows })
+    }
+    const drillOutstanding = () => {
+      const rows = filterByDate(invoices, 'created_at')
+        .filter(inv => inv.payment_status !== 'Paid')
+        .slice()
+        .sort((a, b) => (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0))
+        .map(inv => ({
+          label: inv.invoice_id || `Invoice ${inv.id}`,
+          sub: [inv.customer?.name, (inv.created_at || '').slice(0, 10), inv.payment_status || 'Pending'].filter(Boolean).join(' · '),
+          amount: parseFloat(inv.amount) || 0,
+          link: `/invoices/${inv.id}`,
+        }))
+      setStatDrillIn({ title: 'Outstanding — invoices not yet paid', rows })
+    }
+    const drillExpenses = () => {
+      const rows = filterByDate(expenses || [], 'date')
+        .slice()
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        .map(e => ({
+          label: e.vendor || e.merchant || e.description || `Expense ${e.id}`,
+          sub: [e.category, (e.date || '').slice(0, 10), e.description].filter(Boolean).join(' · '),
+          amount: parseFloat(e.amount) || 0,
+          link: null,
+        }))
+      setStatDrillIn({ title: 'Total Expenses — expenses in period', rows })
+    }
+
     return (
       <div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-          <StatCard label="Total Invoiced" value={formatCurrency(d.totalInvoiced)} />
-          <StatCard label="Total Collected" value={formatCurrency(d.totalCollected)} color="#4a7c59" />
-          <StatCard label="Outstanding" value={formatCurrency(d.outstanding)} color={d.outstanding > 0 ? '#c25a5a' : theme.text} />
+          <StatCard label="Total Invoiced" value={formatCurrency(d.totalInvoiced)} onClick={drillInvoiced} />
+          <StatCard label="Total Collected" value={formatCurrency(d.totalCollected)} color="#4a7c59" onClick={drillCollected} />
+          <StatCard label="Outstanding" value={formatCurrency(d.outstanding)} color={d.outstanding > 0 ? '#c25a5a' : theme.text} onClick={drillOutstanding} />
           <StatCard label="Total Deposits" value={formatCurrency(d.totalDeposits)} />
-          <StatCard label="Total Expenses" value={formatCurrency(d.totalExpenses)} color="#c25a5a" />
+          <StatCard label="Total Expenses" value={formatCurrency(d.totalExpenses)} color="#c25a5a" onClick={drillExpenses} />
           <StatCard label="Net Income" value={formatCurrency(d.netIncome)} color={d.netIncome >= 0 ? '#4a7c59' : '#c25a5a'} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '24px' }}>
@@ -579,6 +652,55 @@ export default function Reports() {
       <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: isMobile ? '16px' : '24px', overflowX: 'auto' }}>
         {renderReport()}
       </div>
+
+      {/* Financial stat drill-in — underlying rows for a clicked StatCard */}
+      {statDrillIn && (
+        <div
+          onClick={() => setStatDrillIn(null)}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ backgroundColor: theme.bgCard, borderRadius: '12px', width: '100%', maxWidth: '640px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+          >
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{statDrillIn.title}</div>
+              <button onClick={() => setStatDrillIn(null)} style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+              {statDrillIn.rows.length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>No records in this period.</div>
+              ) : (
+                statDrillIn.rows.map((r, i) => (
+                  <div
+                    key={i}
+                    onClick={() => { if (r.link) { navigate(r.link); setStatDrillIn(null) } }}
+                    style={{
+                      padding: '10px 20px', borderBottom: `1px solid ${theme.border}`,
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      cursor: r.link ? 'pointer' : 'default'
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</div>
+                      {r.sub && <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>{r.sub}</div>}
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginLeft: '12px', whiteSpace: 'nowrap' }}>{formatCurrency(r.amount)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: theme.textSecondary }}>
+              <span>{statDrillIn.rows.length} {statDrillIn.rows.length === 1 ? 'record' : 'records'}</span>
+              <span style={{ fontWeight: '600', color: theme.text }}>
+                Total {formatCurrency(statDrillIn.rows.reduce((s, r) => s + (r.amount || 0), 0))}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

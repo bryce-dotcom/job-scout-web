@@ -823,19 +823,30 @@ export default function PMJobSetter() {
     })
   }
 
-  // Get jobs (not sections) scheduled for a calendar slot
+  // Get jobs (not sections) scheduled for a calendar slot.
+  // A job occupies every calendar day from start_date through end_date
+  // (inclusive). Previously only the start date matched — a three-day job
+  // would disappear from the calendar on days 2 and 3. Christopher
+  // reported this as "Multi-Day Job only occupies one date".
+  const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const slotDateInJobRange = (slotDate, job) => {
+    if (!job.start_date) return false
+    const start = new Date(job.start_date); start.setHours(0,0,0,0)
+    const endSrc = job.end_date ? new Date(job.end_date) : new Date(job.start_date)
+    endSrc.setHours(23,59,59,999)
+    const slot = new Date(slotDate); slot.setHours(12,0,0,0) // midday — safe from DST edges
+    return slot >= start && slot <= endSrc
+  }
   const getJobsForSlot = (date, hour) => {
-    const slotDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     return getFilteredJobs().filter(job => {
-      if (!job.start_date) return false
+      if (!slotDateInJobRange(date, job)) return false
+      // For the FIRST day the job uses its scheduled hour; subsequent days
+      // default to the 8 AM slot so continuing jobs show up somewhere.
       const jobDt = new Date(job.start_date)
-      // Compare local date parts
-      const jobDateStr = `${jobDt.getFullYear()}-${String(jobDt.getMonth() + 1).padStart(2, '0')}-${String(jobDt.getDate()).padStart(2, '0')}`
-      if (jobDateStr !== slotDateStr) return false
-
-      // Match by hour (default to 8 AM if no time component)
+      const isFirstDay = toLocalDateStr(jobDt) === toLocalDateStr(date)
       const jobHour = jobDt.getHours()
-      return jobHour === hour || (jobHour === 0 && hour === 8)
+      if (isFirstDay) return jobHour === hour || (jobHour === 0 && hour === 8)
+      return hour === 8
     })
   }
 
@@ -904,12 +915,7 @@ export default function PMJobSetter() {
     if (cutoff && date < cutoff) return []
     if (cutoffEnd && date > cutoffEnd) return []
 
-    return getFilteredJobs().filter(job => {
-      if (!job.start_date) return false
-      const jobDt = new Date(job.start_date)
-      const jobDateStr = `${jobDt.getFullYear()}-${String(jobDt.getMonth() + 1).padStart(2, '0')}-${String(jobDt.getDate()).padStart(2, '0')}`
-      return jobDateStr === dateStr
-    })
+    return getFilteredJobs().filter(job => slotDateInJobRange(date, job))
   }
 
   const handleMonthDayDrop = async (e, date) => {
