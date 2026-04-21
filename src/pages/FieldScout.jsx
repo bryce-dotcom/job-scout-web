@@ -981,50 +981,59 @@ export default function FieldScout() {
 
   // Receipt capture — uploads photo to storage and creates expense record for job costing
   const handleReceiptCapture = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file || !receiptJobId) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0 || !receiptJobId) return
     setReceiptUploading(receiptJobId)
 
-    try {
-      const timestamp = Date.now()
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const storagePath = `jobs/${receiptJobId}/receipts/${timestamp}_${safeName}`
+    let successCount = 0
+    let failCount = 0
+    // Upload each file serially so we don't hammer Supabase and so one
+    // failure doesn't tank the rest. Each file becomes its own expense
+    // row — London can edit amounts afterward in the Expenses tab.
+    for (let idx = 0; idx < files.length; idx++) {
+      const file = files[idx]
+      try {
+        // Stagger timestamps so multiple picks in the same click don't
+        // collide on storage paths.
+        const timestamp = Date.now() + idx
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const storagePath = `jobs/${receiptJobId}/receipts/${timestamp}_${safeName}`
 
-      const { error: uploadErr } = await supabase.storage
-        .from('project-documents')
-        .upload(storagePath, file, { contentType: file.type })
+        const { error: uploadErr } = await supabase.storage
+          .from('project-documents')
+          .upload(storagePath, file, { contentType: file.type })
 
-      if (uploadErr) {
-        toast.error('Receipt upload failed: ' + uploadErr.message)
-        return
-      }
+        if (uploadErr) { failCount++; continue }
 
-      const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
+        const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
 
-      const { error: insertErr } = await supabase.from('expenses').insert([{
-        company_id: companyId,
-        job_id: receiptJobId,
-        amount: 0,
-        category: 'Materials',
-        date: new Date().toISOString().split('T')[0],
-        description: 'Receipt capture — Field Scout',
-        receipt_url: urlData.publicUrl,
-        receipt_storage_path: storagePath,
-        source: 'receipt'
-      }])
+        const { error: insertErr } = await supabase.from('expenses').insert([{
+          company_id: companyId,
+          job_id: receiptJobId,
+          amount: 0,
+          category: 'Materials',
+          date: new Date().toISOString().split('T')[0],
+          description: 'Receipt capture — Field Scout',
+          receipt_url: urlData.publicUrl,
+          receipt_storage_path: storagePath,
+          source: 'receipt'
+        }])
 
-      if (insertErr) {
-        toast.error('Failed to save expense: ' + insertErr.message)
-      } else {
-        toast.success('Receipt captured — edit amount in Expenses')
-      }
-    } catch (err) {
-      toast.error('Receipt upload error: ' + err.message)
-    } finally {
-      setReceiptUploading(null)
-      setReceiptJobId(null)
-      if (receiptInputRef.current) receiptInputRef.current.value = ''
+        if (insertErr) { failCount++ } else { successCount++ }
+      } catch { failCount++ }
     }
+
+    if (successCount > 0 && failCount === 0) {
+      toast.success(`${successCount} receipt${successCount === 1 ? '' : 's'} captured — edit amounts in Expenses`)
+    } else if (successCount > 0 && failCount > 0) {
+      toast.success(`${successCount} saved, ${failCount} failed — retry the failed ones`)
+    } else {
+      toast.error(`Failed to save ${failCount} receipt${failCount === 1 ? '' : 's'}`)
+    }
+
+    setReceiptUploading(null)
+    setReceiptJobId(null)
+    if (receiptInputRef.current) receiptInputRef.current.value = ''
   }
 
   const triggerReceiptCapture = (jobId) => {
@@ -1253,11 +1262,14 @@ export default function FieldScout() {
   return (
     <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', overflowX: 'hidden' }}>
 
-      {/* Hidden file input for receipt camera */}
+      {/* Hidden file input for receipt camera — multiple so London can pick
+          a stack of receipts in one go instead of re-opening the picker per
+          file. Each file becomes its own expense row. */}
       <input
         ref={receiptInputRef}
         type="file"
         accept="image/*"
+        multiple
         onChange={handleReceiptCapture}
         style={{ display: 'none' }}
       />
