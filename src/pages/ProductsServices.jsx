@@ -1303,11 +1303,12 @@ export default function ProductsServices() {
     setSaving(false)
   }
 
-  // Recalculate unit_price for every product using this labor rate, then
-  // walk the bundle tree upward so parent bundles pick up the change.
-  // Re-fetches the affected rows at each step so we work with fresh data.
+  // Recalculate unit_price for products that EXPLICITLY use this labor
+  // rate (strict labor_rate_id === laborRateId match — no implicit default
+  // fallback, so changing one rate never touches products using a different
+  // rate). Then walk the bundle tree upward so parent bundles containing
+  // those products pick up the new child prices.
   const cascadeLaborRateChange = async (laborRateId) => {
-    // Load fresh rates/products/components — avoids stale state during cascade
     const [ratesRes, prodsRes, compsRes] = await Promise.all([
       supabase.from('labor_rates').select('*').eq('company_id', companyId),
       supabase.from('products_services').select('*').eq('company_id', companyId),
@@ -1316,7 +1317,12 @@ export default function ProductsServices() {
     const rates = ratesRes.data || []
     const prods = prodsRes.data || []
     const comps = compsRes.data || []
-    const defaultRate = rates.find(r => r.is_default) || rates[0]
+
+    // Resolve the rate for a product: explicit labor_rate_id only. No
+    // implicit default fallback — a product with labor_rate_id=null is not
+    // tied to any specific rate and should not be rewritten from a rate
+    // edit (user was explicit about not wanting data mass-touched).
+    const rateFor = (p) => p.labor_rate_id ? rates.find(r => r.id === p.labor_rate_id) : null
 
     const priceOf = (p) => {
       const cost = parseFloat(p.cost) || 0
@@ -1326,18 +1332,22 @@ export default function ProductsServices() {
         if (!child) return s
         return s + ((parseFloat(child.unit_price) || parseFloat(child.cost) || 0) * (c.quantity || 1))
       }, 0)
-      if (cost === 0 && compValue === 0) return null // manual-priced, leave alone
       const markup = parseFloat(p.markup_percent) || 0
       const hours = parseFloat(p.allotted_time_hours) || 0
-      const rate = p.labor_rate_id
-        ? rates.find(r => r.id === p.labor_rate_id) || defaultRate
-        : defaultRate
-      const laborCost = hours > 0 && rate ? hours * (parseFloat(rate.rate_per_hour) || 0) * (parseFloat(rate.multiplier) || 1) : 0
+      const rate = rateFor(p)
+      const laborCost = (hours > 0 && rate)
+        ? hours * (parseFloat(rate.rate_per_hour) || 0) * (parseFloat(rate.multiplier) || 1)
+        : 0
+      // Only skip if the product has NO derived cost basis at all — cost,
+      // components, AND labor are all zero. Products whose price is built
+      // from labor alone (cost=null, no components, hours>0) must NOT be
+      // skipped; they are exactly the ones a rate change should move.
+      if (cost === 0 && compValue === 0 && laborCost === 0) return null
       return +(cost * (1 + markup / 100) + compValue + laborCost).toFixed(2)
     }
 
-    // Pass 1 — every product that directly uses this rate
-    const direct = prods.filter(p => p.labor_rate_id === laborRateId || (!p.labor_rate_id && defaultRate?.id === laborRateId))
+    // Pass 1 — ONLY products whose labor_rate_id strictly matches the edited rate
+    const direct = prods.filter(p => p.labor_rate_id === laborRateId)
     const changed = new Set()
     for (const p of direct) {
       const newPrice = priceOf(p)
@@ -1348,8 +1358,9 @@ export default function ProductsServices() {
       changed.add(p.id)
     }
 
-    // Pass 2..N — bubble up through bundles that contain any changed product.
-    // Keep iterating until nothing new changes or a hard cap (depth 5).
+    // Pass 2..N — bubble up to bundles ONLY through their component chain.
+    // Never touches products that don't contain a changed child, so a
+    // sibling product on a different rate is never rewritten.
     for (let depth = 0; depth < 5; depth++) {
       const parentIds = new Set(
         comps.filter(c => changed.has(c.component_product_id)).map(c => c.parent_product_id)
@@ -1370,12 +1381,15 @@ export default function ProductsServices() {
       if (iterChanged === 0) break
     }
 
-    // Refresh the local product list so the UI shows the new prices
     await fetchProducts()
     const changedCount = changed.size
     if (changedCount > 0) {
       import('../lib/toast').then(({ toast }) => {
         toast.success(`Rate change cascaded to ${changedCount} product${changedCount === 1 ? '' : 's'}.`)
+      }).catch(() => {})
+    } else {
+      import('../lib/toast').then(({ toast }) => {
+        toast.success('Rate saved. No products needed a price update.')
       }).catch(() => {})
     }
   }
