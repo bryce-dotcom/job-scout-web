@@ -3341,12 +3341,21 @@ function JobDetailInner() {
               <>
                 {/* 7-col grid can't compress to a phone viewport — wrap in
                     horizontal scroll so Before/After photo buttons stay
-                    reachable without cutting off the screen. */}
+                    reachable without cutting off the screen. Also tightened
+                    the minWidth from 700 → 520 so it fits most phones
+                    without forcing horizontal scroll; pinch-zoom is now
+                    enabled in index.html if users still need to see detail. */}
                 <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
-                <div style={{ minWidth: isMobile ? '700px' : 'auto' }}>
+                <div style={{ minWidth: isMobile ? '520px' : 'auto' }}>
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 90px 100px 72px', gap: '12px',
-                  padding: '12px 20px', backgroundColor: theme.accentBg,
+                  display: 'grid',
+                  // Phone-friendlier column widths: tighter qty/price/discount,
+                  // compact action column. Desktop unchanged.
+                  gridTemplateColumns: isMobile
+                    ? '16px 2fr 56px 80px 70px 84px 56px'
+                    : '20px 2fr 80px 100px 90px 100px 72px',
+                  gap: isMobile ? '8px' : '12px',
+                  padding: isMobile ? '10px 12px' : '12px 20px', backgroundColor: theme.accentBg,
                   fontSize: '12px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px'
                 }}>
                   <div></div>
@@ -3370,8 +3379,13 @@ function JobDetailInner() {
                       <div
                         onClick={() => setExpandedLineId(isExpanded ? null : line.id)}
                         style={{
-                          display: 'grid', gridTemplateColumns: '20px 2fr 80px 100px 90px 100px 72px', gap: '12px',
-                          padding: '14px 20px', borderBottom: `1px solid ${theme.border}`, alignItems: 'center', cursor: 'pointer'
+                          display: 'grid',
+                          gridTemplateColumns: isMobile
+                            ? '16px 2fr 56px 80px 70px 84px 56px'
+                            : '20px 2fr 80px 100px 90px 100px 72px',
+                          gap: isMobile ? '8px' : '12px',
+                          padding: isMobile ? '12px' : '14px 20px',
+                          borderBottom: `1px solid ${theme.border}`, alignItems: 'center', cursor: 'pointer'
                         }}
                       >
                         <div style={{ color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
