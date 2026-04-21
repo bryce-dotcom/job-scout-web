@@ -792,7 +792,13 @@ export default function Payroll() {
       data[emp.id] = calculateFullPay(emp)
     })
     return data
-  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leadCommissions, payrollConfig, skillLevelSettings, adjustments])
+    // Include leads + allPaymentsByInvoiceId — the commission calc reads
+    // both (leads for the salesperson-fallback ownership, allPayments for
+    // lifetime-paid math on the pending bucket). Missing them here meant
+    // the memo could cache a result computed before those two finished
+    // loading, so commissions stayed at $0 until something else re-triggered
+    // a recompute.
+  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports])
 
   const totalPayroll = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),

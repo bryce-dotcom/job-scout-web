@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle } from 'lucide-react'
+import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
   getCurrentPayPeriod,
   calculateInvoiceCommissions,
@@ -42,6 +42,12 @@ export default function MyPay() {
   const [payments, setPayments] = useState([])
   const [timeEntries, setTimeEntries] = useState([])
   const [loading, setLoading] = useState(true)
+  // 0 = current period, -1 = previous, -2 = two back, etc.
+  // Lets a rep look at a past pay period to see commissions that have
+  // already been paid out (or would have been). Payroll admin page has
+  // the same control; MyPay was missing it so reps could only ever see
+  // the current period.
+  const [periodOffset, setPeriodOffset] = useState(0)
 
   useEffect(() => {
     if (!companyId || !user?.id) return
@@ -64,7 +70,7 @@ export default function MyPay() {
           } catch {}
         }
 
-        const { periodStart, periodEnd } = getCurrentPayPeriod(cfg, 0)
+        const { periodStart, periodEnd } = getCurrentPayPeriod(cfg, periodOffset)
         const periodStartStr = periodStart.toISOString().split('T')[0]
         const periodEndStr = periodEnd.toISOString().split('T')[0]
 
@@ -144,9 +150,10 @@ export default function MyPay() {
         setLoading(false)
       }
     })()
-  }, [companyId, user?.id])
+    // periodOffset in deps so changing the period refetches in-period payments
+  }, [companyId, user?.id, periodOffset])
 
-  const { periodStart, periodEnd } = getCurrentPayPeriod(payrollConfig, 0)
+  const { periodStart, periodEnd } = getCurrentPayPeriod(payrollConfig, periodOffset)
   const periodStartStr = periodStart.toISOString().split('T')[0]
   const periodEndStr = periodEnd.toISOString().split('T')[0]
 
@@ -205,10 +212,50 @@ export default function MyPay() {
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '900px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>My Pay</h1>
-        <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
-          Pay period: {periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>My Pay</h1>
+          <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
+            Pay period: {periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            {periodOffset !== 0 && (
+              <span style={{ marginLeft: '8px', padding: '2px 8px', backgroundColor: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.3)', color: '#3b82f6', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>
+                {periodOffset < 0 ? `${Math.abs(periodOffset)} period${Math.abs(periodOffset) === 1 ? '' : 's'} ago` : 'future'}
+              </span>
+            )}
+          </div>
+        </div>
+        {/* Period navigation — step back/forward through pay periods */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            onClick={() => setPeriodOffset(p => p - 1)}
+            title="Previous pay period"
+            style={{ padding: '6px 10px', background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', cursor: 'pointer', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+          >
+            <ChevronLeft size={14} /> Prev
+          </button>
+          {periodOffset !== 0 && (
+            <button
+              onClick={() => setPeriodOffset(0)}
+              style={{ padding: '6px 10px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
+            >
+              Current
+            </button>
+          )}
+          <button
+            onClick={() => setPeriodOffset(p => p + 1)}
+            disabled={periodOffset >= 0}
+            title="Next pay period"
+            style={{
+              padding: '6px 10px', background: theme.bgCard,
+              border: `1px solid ${theme.border}`, borderRadius: '8px',
+              cursor: periodOffset >= 0 ? 'not-allowed' : 'pointer',
+              color: periodOffset >= 0 ? theme.border : theme.textSecondary,
+              display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px',
+              opacity: periodOffset >= 0 ? 0.4 : 1
+            }}
+          >
+            Next <ChevronRight size={14} />
+          </button>
         </div>
       </div>
 
