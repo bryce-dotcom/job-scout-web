@@ -3419,7 +3419,8 @@ function JobDetailInner() {
                         <div style={{ color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
                           {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>{line.item?.name || line.item_name || 'Custom Item'}</p>
                           {line.notes && (
                             <span style={{ fontSize: '11px', backgroundColor: 'rgba(59,130,246,0.1)', color: '#3b82f6', padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
@@ -3435,6 +3436,14 @@ function JobDetailInner() {
                             <span style={{ fontSize: '11px', backgroundColor: 'rgba(168,85,247,0.1)', color: '#a855f7', padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
                               Victor
                             </span>
+                          )}
+                          </div>
+                          {/* Show line description inline so HCP-imported
+                              detail is visible without expanding the row. */}
+                          {line.description && line.description !== (line.item?.name || line.item_name) && (
+                            <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0, whiteSpace: 'pre-wrap' }}>
+                              {line.description}
+                            </p>
                           )}
                         </div>
                         <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>

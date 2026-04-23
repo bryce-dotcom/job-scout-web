@@ -1,0 +1,23 @@
+require('dotenv').config()
+const { createClient } = require('@supabase/supabase-js')
+const sb = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+const KEY='44aecf944c03403fb58ee457ec657d0c', BASE='https://api.housecallpro.com'
+async function hcp(p){const r=await fetch(BASE+p,{headers:{Authorization:'Token '+KEY,Accept:'application/json'}});if(!r.ok)return null;return r.json()}
+;(async()=>{
+  const { data: c } = await sb.from('customers').select('*').eq('id',7604).single()
+  console.log('JS customer 7604:')
+  console.log('  name:', c.name)
+  console.log('  business_name:', c.business_name)
+  console.log('  email:', c.email)
+  console.log('  phone:', c.phone)
+  console.log('  address:', c.address)
+  console.log('  source_id:', c.source_id)
+  console.log('\nHCP customer raw:')
+  const h = await hcp('/customers/cus_43f1c66fbbbc4c3788639b9e37261592')
+  console.log('  first/last:', h.first_name, h.last_name)
+  console.log('  company:', h.company)
+  console.log('  email:', h.email)
+  console.log('  addresses:', JSON.stringify(h.addresses))
+  console.log('  emails:', JSON.stringify(h.emails))
+  console.log('  phones:', JSON.stringify(h.mobile_number))
+})()

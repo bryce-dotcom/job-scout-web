@@ -611,17 +611,18 @@ export default function QuoteDetail() {
                   >
                     <div>
                       <p style={{ fontWeight: '500', color: theme.text, fontSize: isMobile ? '13px' : '14px' }}>
-                        {line.item?.name || 'Unknown'}
+                        {/* Prefer the line's own item_name (set by importers
+                            when the source product isn't in the price book)
+                            and fall back to the joined product's name. */}
+                        {line.item_name || line.item?.name || 'Unknown'}
                       </p>
-                      {line.item?.description && !isMobile && (
+                      {(line.description || line.item?.description) && !isMobile && (
                         <p style={{
                           fontSize: '12px',
                           color: theme.textMuted,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
+                          whiteSpace: 'pre-wrap'
                         }}>
-                          {line.item.description}
+                          {line.description || line.item?.description}
                         </p>
                       )}
                     </div>
