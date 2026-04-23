@@ -62,6 +62,10 @@ export default function Payroll() {
   const [periodOffset, setPeriodOffset] = useState(0) // 0 = current, -1 = previous, etc.
   const [adjustments, setAdjustments] = useState([])
   const [verificationReports, setVerificationReports] = useState([])
+  const [utilityInvoicesState, setUtilityInvoicesState] = useState([])
+  // Admin bonus overrides (release bonuses blocked by the Victor gate).
+  // Stored as payroll_adjustments rows, category='bonus_override'.
+  const [bonusOverrides, setBonusOverrides] = useState([])
   const [showAddTimeModal, setShowAddTimeModal] = useState(null) // employee object
   const [showAddCommissionModal, setShowAddCommissionModal] = useState(null) // employee object
   const [showAddAdjustmentModal, setShowAddAdjustmentModal] = useState(null) // { employee, type: 'deduction'|'addition' }
@@ -80,6 +84,12 @@ export default function Payroll() {
     company_bonus_cut_percent: 20, // company keeps 20% of saved-hour value
     bonus_quality_gate: false, // require zero callbacks to qualify
     bonus_min_hours_saved: 0.5, // minimum hours saved to trigger bonus
+    // Victor-gate mode for the efficiency bonus:
+    //   'strict' (default) — completion verification required
+    //   'paid_override'    — release if job is >= threshold% paid
+    //   'off'              — no gate
+    bonus_verification_gate: 'paid_override',
+    bonus_paid_threshold_percent: 50,
     overtime_threshold: 40, // hours per week
     overtime_multiplier: 1.5,
   })
@@ -272,7 +282,7 @@ export default function Payroll() {
       const periodStartStr = periodStart.toISOString().split('T')[0]
       const periodEndStr = periodEnd.toISOString().split('T')[0]
 
-      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes, allPaymentsRes] = await Promise.all([
+      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes, allPaymentsRes, utilityRes] = await Promise.all([
         // Time clock entries for current period
         supabase
           .from('time_clock')
@@ -376,6 +386,15 @@ export default function Payroll() {
           .from('payments')
           .select('id, invoice_id, amount')
           .eq('company_id', companyId)),
+
+        // Utility invoices — incentive payments from SRP/RMP/etc.
+        // Used for both (a) utility-side commissions (paid_at in period)
+        // and (b) the paid-threshold bonus override (combined with the
+        // standard invoice totals on the same job).
+        supabase
+          .from('utility_invoices')
+          .select('id, utility_invoice_id, job_id, customer_name, utility_name, amount, incentive_amount, project_cost, net_cost, payment_status, paid_at, created_at')
+          .eq('company_id', companyId),
       ])
 
       setTimeEntries(entriesRes.data || [])
@@ -385,6 +404,14 @@ export default function Payroll() {
       setInvoices(invoicesRes.data || [])
       setJobs(jobsRes.data || [])
       setLeads(leadsRes?.data || [])
+      setUtilityInvoicesState(utilityRes?.data || [])
+      // Pull bonus_override rows out of the already-fetched adjustments.
+      // Admin-released bonuses are stored in payroll_adjustments with
+      // category='bonus_override' and metadata {job_id, employee_id}.
+      const overrides = (adjRes?.data || [])
+        .filter(a => a.category === 'bonus_override' && a.metadata?.job_id && a.metadata?.employee_id)
+        .map(a => ({ job_id: a.metadata.job_id, employee_id: a.metadata.employee_id, id: a.id }))
+      setBonusOverrides(overrides)
       // Build invoice_id -> totalPaid lookup (lifetime, all periods).
       const paidByInvoice = new Map()
       ;(allPaymentsRes?.data || []).forEach(p => {
@@ -512,6 +539,7 @@ export default function Payroll() {
       leads,
       inPeriodPayments: payments,
       allPaymentsByInvoiceId,
+      utilityInvoices: utilityInvoicesState,
       payrollConfig,
       periodStartStr: periodStart.toISOString().split('T')[0],
       periodEndStr: periodEnd.toISOString().split('T')[0],
@@ -729,6 +757,62 @@ export default function Payroll() {
       .filter(r => r.verification_type === 'daily' && r.created_at && r.job_id)
       .map(r => `${r.job_id}|${new Date(r.created_at).toISOString().split('T')[0]}`)
   )
+  // Build job -> { standardPaid, standardTotal, utilityPaid, utilityTotal }.
+  // Used by the paid-threshold bonus gate.
+  //
+  // When a job has BOTH a standard invoice (for the full project cost)
+  // AND a utility invoice (covering part of that cost), the standard
+  // invoice and the utility incentive overlap — summing them over-states
+  // the job's billable. In that case the source of truth for the job
+  // total is utility_invoices.project_cost, with:
+  //   paid = (utility incentive if utility is Paid) + (standard payments,
+  //          capped at project_cost − utility paid)
+  // Otherwise fall back to the standard-invoice sum.
+  const jobPaymentStatus = (() => {
+    const map = new Map()
+    // Group utility invoices by job_id first so we can detect overlap.
+    const utilByJob = new Map()
+    ;(utilityInvoicesState || []).forEach(u => {
+      if (!u.job_id) return
+      if (!utilByJob.has(u.job_id)) utilByJob.set(u.job_id, [])
+      utilByJob.get(u.job_id).push(u)
+    })
+    // Collect all jobs that have any billing
+    const jobIds = new Set()
+    ;(invoices || []).forEach(inv => { if (inv.job_id) jobIds.add(inv.job_id) })
+    utilByJob.forEach((_, jobId) => jobIds.add(jobId))
+
+    jobIds.forEach(jobId => {
+      const stdInvs = (invoices || []).filter(i => i.job_id === jobId)
+      const utils = utilByJob.get(jobId) || []
+      const stdPaid = stdInvs.reduce((s, inv) => s + (inv.payment_status === 'Paid'
+        ? (parseFloat(inv.amount) || 0)
+        : (allPaymentsByInvoiceId?.get(inv.id) || 0)
+      ), 0)
+      const utilPaid = utils.filter(u => u.payment_status === 'Paid').reduce((s, u) => s + (parseFloat(u.incentive_amount) || parseFloat(u.amount) || 0), 0)
+
+      let total
+      if (utils.length > 0 && utils.some(u => parseFloat(u.project_cost) > 0)) {
+        // Utility invoice tells us the true project cost — use that as the
+        // denominator to avoid double-counting the overlap with the
+        // standard invoice.
+        total = utils.reduce((s, u) => s + (parseFloat(u.project_cost) || 0), 0)
+      } else {
+        total = stdInvs.reduce((s, inv) => s + (parseFloat(inv.amount) || 0), 0)
+      }
+      map.set(jobId, {
+        standardPaid: stdPaid,
+        standardTotal: stdInvs.reduce((s, inv) => s + (parseFloat(inv.amount) || 0), 0),
+        utilityPaid: utilPaid,
+        utilityTotal: utils.reduce((s, u) => s + (parseFloat(u.incentive_amount) || parseFloat(u.amount) || 0), 0),
+        // Authoritative fields used by bonusCalc's paid-threshold check:
+        paid: stdPaid + utilPaid,
+        total,
+      })
+    })
+    return map
+  })()
+
   const calculateEfficiencyBonus = (employeeId) => sharedCalculateEfficiencyBonus({
     employeeId,
     timeLogEntries: timeClockToJobHours(timeEntries),
@@ -739,6 +823,8 @@ export default function Payroll() {
     payrollConfig,
     verifiedJobIds,
     dailyVerifiedJobDays,
+    jobPaymentStatus,
+    bonusOverrides,
   })
 
   // Full pay calculation per employee
@@ -816,7 +902,7 @@ export default function Payroll() {
     // the memo could cache a result computed before those two finished
     // loading, so commissions stayed at $0 until something else re-triggered
     // a recompute.
-  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports])
+  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides])
 
   const totalPayroll = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),
@@ -1002,6 +1088,41 @@ export default function Payroll() {
       await supabase.from('payroll_adjustments').delete().eq('id', adjId)
       await fetchData()
     } catch (err) { alert('Error: ' + err.message) }
+  }
+
+  // Release a blocked bonus for one employee/job. Stores the override as
+  // a payroll_adjustments row with category='bonus_override' and metadata
+  // { job_id, employee_id } so the calc picks it up on the next run.
+  // The raw job_id (numeric DB id) is on the bonus detail's jobId field
+  // as either the display job_id string or the numeric PK. We need the
+  // numeric PK so the calc can match.
+  const handleBonusOverride = async (employeeId, detail) => {
+    const amount = detail.wouldHaveEarned || 0
+    if (amount <= 0) { alert('Nothing to release on this bonus.'); return }
+    // Resolve numeric job id — detail.jobId may be either the display
+    // string (e.g. "JOB-MN...") or the PK.
+    const job = jobs.find(j => j.id === detail.jobId || j.job_id === detail.jobId)
+    if (!job) { alert('Could not resolve job for override.'); return }
+    if (!confirm(`Release this bonus?\n\n${detail.jobTitle}\nEmployee will receive ${fmt(amount)} this period.\n\nReason on file: "${detail.blockedReason || 'blocked'}".`)) return
+    const adminEmp = employees.find(e => e.email === user?.email)
+    const { periodStart, periodEnd } = getCurrentPeriod()
+    try {
+      const { error } = await supabase.from('payroll_adjustments').insert({
+        company_id: companyId,
+        employee_id: employeeId,
+        type: 'addition',
+        category: 'bonus_override',
+        amount,
+        reason: `Efficiency bonus released (admin override): ${detail.jobTitle}`,
+        pay_period_start: periodStart.toISOString().split('T')[0],
+        pay_period_end: periodEnd.toISOString().split('T')[0],
+        recurring: false,
+        created_by: adminEmp?.id || null,
+        metadata: { job_id: job.id, employee_id: employeeId, blocked_reason: detail.blockedReason || null, saved_hours: detail.savedHours, would_have_earned: amount },
+      })
+      if (error) throw error
+      await fetchData()
+    } catch (err) { alert('Override failed: ' + err.message) }
   }
 
   const handleRunPayroll = async () => {
@@ -1275,21 +1396,55 @@ export default function Payroll() {
               Efficiency Bonuses
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {data.efficiencyBonus.details.map((d, i) => (
+              {data.efficiencyBonus.details.map((d, i) => {
+                const blocked = !!d.blockedReason
+                return (
                 <div key={i} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px', backgroundColor: theme.bg, borderRadius: '8px'
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px',
+                  padding: '12px', backgroundColor: blocked ? 'rgba(239,68,68,0.04)' : theme.bg,
+                  border: blocked ? '1px solid rgba(239,68,68,0.25)' : 'none',
+                  borderRadius: '8px'
                 }}>
-                  <div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{d.jobTitle}</div>
                     <div style={{ fontSize: '12px', color: theme.textMuted }}>
                       Allotted: {d.allottedHours}h — Actual: {d.actualHours.toFixed(1)}h — Saved: {d.savedHours.toFixed(1)}h
                       {d.crewSize > 1 && ` (split ${d.crewSize} ways: ${d.employeeShare.toFixed(1)}h)`}
                     </div>
+                    {blocked && (
+                      <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', fontWeight: '600' }}>
+                        {d.blockedReason === 'no_completion_verification' ? 'Blocked — completion verification missing' : 'Blocked'}
+                        {d.paidPercent != null && ` · ${d.paidPercent}% of billable paid (threshold ${d.paidThresholdPct}%)`}
+                      </div>
+                    )}
+                    {!blocked && d.releaseReason && d.releaseReason !== 'victor_verified' && (
+                      <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '4px', fontWeight: '600' }}>
+                        Released via {d.releaseReason === 'admin_override' ? 'admin override' : d.releaseReason === 'paid_threshold_met' ? `paid threshold (${d.paidPercent}%)` : 'gate off'}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ fontSize: '15px', fontWeight: '600', color: '#8b5cf6' }}>{fmt(d.bonusAmount)}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                    {blocked ? (
+                      <>
+                        <div style={{ fontSize: '15px', fontWeight: '600', color: theme.textMuted, textDecoration: 'line-through' }}>
+                          {fmt(d.wouldHaveEarned || 0)}
+                        </div>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleBonusOverride(emp.id, d)}
+                            style={{ padding: '4px 10px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                          >
+                            Pay anyway
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ fontSize: '15px', fontWeight: '600', color: '#8b5cf6' }}>{fmt(d.bonusAmount)}</div>
+                    )}
+                  </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
@@ -2105,6 +2260,49 @@ export default function Payroll() {
                     />
                     <span style={{ fontSize: '13px', color: theme.textMuted }}>hrs threshold</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Verification gate — controls what blocks bonus payout */}
+              <div style={{ padding: '14px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  Verification Gate
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px', lineHeight: '1.5' }}>
+                  Controls when a crew member earns their efficiency bonus on a job.
+                </div>
+                <select
+                  value={payrollConfig.bonus_verification_gate || 'paid_override'}
+                  onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_verification_gate: e.target.value })}
+                  onBlur={async () => {
+                    await supabase.from('settings').upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(payrollConfig), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+                  }}
+                  style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', backgroundColor: theme.bgCard, fontSize: '13px', color: theme.text }}
+                >
+                  <option value="strict">Strict — requires Victor completion verification</option>
+                  <option value="paid_override">Paid Override — release when job is ≥ N% paid, even without Victor</option>
+                  <option value="off">Off — no verification required</option>
+                </select>
+                {payrollConfig.bonus_verification_gate === 'paid_override' && (
+                  <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>Release threshold:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={payrollConfig.bonus_paid_threshold_percent ?? 50}
+                      onBlur={async () => {
+                        await supabase.from('settings').upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(payrollConfig), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+                      }}
+                      onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_paid_threshold_percent: parseFloat(e.target.value) || 50 })}
+                      style={{ width: '70px', padding: '6px 8px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '14px', fontWeight: '600', color: theme.text, backgroundColor: theme.bgCard, textAlign: 'center' }}
+                    />
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>% of billable must be paid (combining standard invoice + utility incentive)</span>
+                  </div>
+                )}
+                <div style={{ marginTop: '10px', fontSize: '11px', color: theme.textMuted, lineHeight: '1.5' }}>
+                  Blocked bonuses always remain visible in the payroll view with a &quot;would have earned&quot; amount; admins can force-release them per job from the employee card.
                 </div>
               </div>
 

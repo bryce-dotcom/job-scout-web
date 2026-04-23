@@ -41,6 +41,7 @@ export default function MyPay() {
   const [invoices, setInvoices] = useState([])
   const [payments, setPayments] = useState([])
   const [timeEntries, setTimeEntries] = useState([])
+  const [utilityInvoices, setUtilityInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   // Fresh copy of the user's employee row (rate, commission flags) re-read
   // from DB on every mount so a just-updated rate shows here immediately
@@ -158,13 +159,21 @@ export default function MyPay() {
           .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, is_hourly, is_salary, hourly_rate, annual_salary')
           .eq('id', user.id).maybeSingle()
 
-        const [jr, lr, ir, pr, tr, er] = await Promise.all([jobsPromise, leadsPromise, invoicesPromise, paymentsPromise, timePromise, empPromise])
+        // Utility invoices on jobs the user might own — we fetch them all
+        // and filter client-side via the shared calc's ownership lookup.
+        const utilPromise = supabase
+          .from('utility_invoices')
+          .select('id, utility_invoice_id, job_id, customer_name, utility_name, amount, incentive_amount, project_cost, net_cost, payment_status, paid_at, created_at')
+          .eq('company_id', companyId)
+
+        const [jr, lr, ir, pr, tr, er, ur] = await Promise.all([jobsPromise, leadsPromise, invoicesPromise, paymentsPromise, timePromise, empPromise, utilPromise])
         setJobs(jr.data || [])
         setLeads(lr.data || [])
         setInvoices(ir.data || [])
         setPayments(pr.data || [])
         setTimeEntries(tr.data || [])
         setEmpRow(er?.data || null)
+        setUtilityInvoices(ur?.data || [])
       } finally {
         setLoading(false)
       }
@@ -186,11 +195,12 @@ export default function MyPay() {
       leads,
       invoices,
       inPeriodPayments: payments,
+      utilityInvoices,
       payrollConfig,
       periodStartStr,
       periodEndStr,
     })
-  }, [user, empRow, jobs, leads, invoices, payments, payrollConfig, periodStartStr, periodEndStr])
+  }, [user, empRow, jobs, leads, invoices, payments, utilityInvoices, payrollConfig, periodStartStr, periodEndStr])
 
   const totalHours = timeEntries.reduce((s, e) => {
     let h = e.total_hours

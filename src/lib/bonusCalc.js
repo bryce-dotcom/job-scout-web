@@ -48,6 +48,10 @@ export function calculateInvoiceCommissions({
   // subtract every lifetime payment from invoice.amount, not just
   // in-period ones. If omitted we approximate with in-period only.
   allPaymentsByInvoiceId,
+  // Rows from utility_invoices. When a utility invoice's paid_at falls in
+  // the current pay period AND the linked job is owned by this rep, the
+  // incentive amount × rate is earned commission for that period.
+  utilityInvoices = [],
 }) {
   if (!employee?.is_commission) return { available: 0, pending: 0, details: [] }
 
@@ -171,8 +175,56 @@ export function calculateInvoiceCommissions({
     }
   })
 
+  // ── Utility invoice commissions ─────────────────────────────────────
+  // Commission on incentive paid by the utility, attributed to the rep who
+  // owns the job. A utility invoice is a commissionable event in the period
+  // whose paid_at date falls inside [periodStart, periodEnd]. Pending =
+  // incentive × rate for utility invoices on rep's jobs that aren't paid yet.
+  const empUtilities = (utilityInvoices || []).filter(u => empJobIds.includes(u.job_id))
+  empUtilities.forEach(u => {
+    const incentive = parseFloat(u.incentive_amount) || parseFloat(u.amount) || 0
+    if (incentive <= 0) return
+    const earnedAmount = rateType === 'percent' ? commissionOn(incentive) : fullCommissionFlat(rate)
+    if (earnedAmount <= 0) return
+
+    const job = empJobs.find(j => j.id === u.job_id)
+    const jobLabel = job?.job_title || job?.customer_name || u.customer_name || 'Utility incentive'
+    const isPaid = u.payment_status === 'Paid'
+    const paidAtStr = (u.paid_at || '').split('T')[0]
+    const paidInPeriod = isPaid && periodStartStr && periodEndStr &&
+      paidAtStr >= periodStartStr && paidAtStr <= periodEndStr
+
+    if (paidInPeriod) {
+      available += earnedAmount
+      details.push({
+        type: 'utility_commission', status: 'available', amount: earnedAmount,
+        utilityInvoiceId: u.utility_invoice_id || `UTL-${u.id}`,
+        utilityInvoiceDbId: u.id,
+        jobId: u.job_id, jobTitle: jobLabel,
+        invoiceAmount: incentive, paidAmount: incentive,
+        paidDate: u.paid_at,
+        utilityName: u.utility_name,
+        rate, rateType,
+      })
+    } else if (!isPaid) {
+      pending += earnedAmount
+      details.push({
+        type: 'utility_commission', status: 'pending', amount: earnedAmount,
+        utilityInvoiceId: u.utility_invoice_id || `UTL-${u.id}`,
+        utilityInvoiceDbId: u.id,
+        jobId: u.job_id, jobTitle: jobLabel,
+        invoiceAmount: incentive, paymentStatus: u.payment_status,
+        utilityName: u.utility_name, rate, rateType,
+      })
+    }
+    // else: paid in a different period (past or future) — don't include
+  })
+
   return { available, pending, details }
 }
+
+// Flat-rate helper — a flat commission is earned once per qualifying event
+function fullCommissionFlat(rate) { return rate }
 
 // ── Pay period window from payroll config ──────────────────────────────
 // weekly: Mon–Sun window containing today
@@ -325,14 +377,35 @@ export function calculateEfficiencyBonus({
   verifiedJobIds = null,      // null = legacy no-op (no gate); Set/array to enforce
   dailyVerifiedJobDays = null, // null = legacy no-op; Set of "jobId|YYYY-MM-DD"
   timeClockRows = null,        // raw rows (with clock_in) for daily-coverage lookup
+  // Map<job_id, { standardPaid, standardTotal, utilityPaid, utilityTotal }>.
+  // Used by the paid-threshold gate override: if a job's Victor verification
+  // is missing but >= threshold% of its combined billable has been collected
+  // (standard invoice + utility incentive), the bonus is released instead
+  // of hard-blocked. Caller builds this from invoices + utility_invoices.
+  jobPaymentStatus = null,
+  // Override list from payroll_adjustments where category='bonus_override'.
+  // Array of { job_id, employee_id } tuples — the admin has explicitly said
+  // "pay this bonus anyway" for that employee/job combo. Always releases.
+  bonusOverrides = [],
 }) {
   if (!payrollConfig.efficiency_bonus_enabled) return { bonus: 0, details: [] }
 
   const rate = payrollConfig.efficiency_bonus_rate || 25
   const companyCut = payrollConfig.company_bonus_cut_percent || 0
   const minSaved = payrollConfig.bonus_min_hours_saved || 0
+  // Verification gate mode:
+  //   'strict'        — Victor completion required (legacy behavior)
+  //   'paid_override' — Victor required UNLESS >= threshold% of the job has
+  //                     been paid (combining standard invoice + utility
+  //                     incentive). Default threshold 50%.
+  //   'off'           — no verification required at all
+  const gateMode = payrollConfig.bonus_verification_gate || 'strict'
+  const paidThresholdPct = Number.isFinite(parseFloat(payrollConfig.bonus_paid_threshold_percent))
+    ? parseFloat(payrollConfig.bonus_paid_threshold_percent)
+    : 50
   const verifiedSet = verifiedJobIds ? new Set([...verifiedJobIds].map(String)) : null
   const dailySet = dailyVerifiedJobDays ? new Set([...dailyVerifiedJobDays]) : null
+  const overrideSet = new Set((bonusOverrides || []).map(o => `${o.job_id}|${o.employee_id}`))
 
   const details = []
   let totalBonus = 0
@@ -357,20 +430,69 @@ export function calculateEfficiencyBonus({
     if (savedHours < minSaved) return
     if (payrollConfig.bonus_quality_gate && job.has_callback) return
 
-    // Victor completion gate: no completion verification → no bonus on this job.
-    if (verifiedSet && !verifiedSet.has(String(jobId))) {
+    // Verification gate — respect the configured mode.
+    //
+    // A blocked job still emits a details row so the Payroll UI can show
+    // "would have earned $X, blocked because …" and offer an override.
+    // The computed-but-blocked amount is carried in wouldHaveEarned on the
+    // details row; it isn't added to totalBonus.
+    const passesVictor = !verifiedSet || verifiedSet.has(String(jobId))
+    const hasAdminOverride = overrideSet.has(`${jobId}|${employeeId}`)
+    let paidPercent = null
+    let paidOverrideApplies = false
+    if (gateMode === 'paid_override' && !passesVictor && jobPaymentStatus) {
+      const s = jobPaymentStatus.get ? jobPaymentStatus.get(Number(jobId)) : jobPaymentStatus[jobId]
+      if (s) {
+        // Prefer the authoritative totals the caller computed (handles the
+        // overlap case where a standard invoice and a utility incentive
+        // describe the same project). Fall back to naive sum for older
+        // callers.
+        const total = (+s.total) || ((+s.standardTotal || 0) + (+s.utilityTotal || 0))
+        const paid = (+s.paid !== undefined) ? (+s.paid) : ((+s.standardPaid || 0) + (+s.utilityPaid || 0))
+        if (total > 0) {
+          paidPercent = (paid / total) * 100
+          if (paidPercent >= paidThresholdPct) paidOverrideApplies = true
+        }
+      }
+    }
+    const gateOff = gateMode === 'off'
+    const passes = gateOff || passesVictor || paidOverrideApplies || hasAdminOverride
+
+    if (!passes) {
+      // Compute what they WOULD have earned so the admin can override.
+      // Approximate crew share by even split across employees with time_log
+      // on this job (skill-weighting happens below in the paid path; we
+      // mirror it roughly here but don't apply coverageRatio since the
+      // strict gate already blocks).
+      const crew = [...new Set(allJobTimeLogs.map(tl => tl.employee_id))]
+      const myHours = jobMap[jobId] || 0
+      const totalLoggedHours = allJobTimeLogs.reduce((s, tl) => s + (tl.hours||0), 0)
+      const myShareBase = totalLoggedHours > 0 ? myHours / totalLoggedHours : (crew.length ? 1/crew.length : 0)
+      const rawPool = savedHours * rate
+      const companyPortion = rawPool * (companyCut / 100)
+      const crewPortion = rawPool - companyPortion
+      const myRawShare = crewPortion * myShareBase
       details.push({
         jobId: job.job_id || job.id,
         jobTitle: job.job_title || job.customer_name || 'Job',
         allottedHours: job.allotted_time_hours,
         actualHours: totalActualHours,
         savedHours,
-        crewSize: 0,
+        crewSize: crew.length,
         employeeShare: 0,
-        skipped: 'no_completion_verification',
+        wouldHaveEarned: +myRawShare.toFixed(2),
+        blockedReason: !passesVictor ? 'no_completion_verification' : 'blocked',
+        paidPercent: paidPercent != null ? +paidPercent.toFixed(1) : null,
+        paidThresholdPct,
+        gateMode,
       })
       return
     }
+    // Bonus released via an override path — tag it so the UI can show why.
+    const releaseReason = passesVictor ? 'victor_verified'
+      : hasAdminOverride ? 'admin_override'
+      : paidOverrideApplies ? 'paid_threshold_met'
+      : 'gate_off'
 
     // Victor daily gate: compute per-employee coverage ratio from time_clock
     // rows. An employee who worked 3 days on the job but only has 2 days with
@@ -436,6 +558,9 @@ export function calculateEfficiencyBonus({
       crewPool,
       coverageRatio,
       coveragePenalty: coverageRatio < 1 ? rawBonusAmount - bonusAmount : 0,
+      releaseReason,
+      paidPercent: paidPercent != null ? +paidPercent.toFixed(1) : null,
+      gateMode,
     })
   })
 
