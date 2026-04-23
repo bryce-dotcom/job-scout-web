@@ -96,6 +96,7 @@ export default function MyPay() {
               .from('jobs')
               .select('id, job_id, salesperson_id, lead_id, status, customer_name, job_title, invoice_status')
               .eq('company_id', companyId)
+              .or('salesperson_id.not.is.null,lead_id.not.is.null')
               .range(from, from + pageSize - 1)
             if (error) return { data: null, error }
             all.push(...(data || []))
@@ -115,8 +116,13 @@ export default function MyPay() {
           for (let from = 0; ; from += pageSize) {
             const { data, error } = await supabase
               .from('invoices')
-              .select('id, invoice_id, job_id, amount, payment_status, amount_paid, total_paid, created_at, job_description')
+              // amount_paid / total_paid removed — they don't exist on the
+              // invoices table; selecting them returned 400 and broke the
+              // entire page silently. Lifetime paid is computed from the
+              // payments table via allPaymentsByInvoiceId in bonusCalc.
+              .select('id, invoice_id, job_id, amount, payment_status, created_at, job_description')
               .eq('company_id', companyId)
+              .or(`payment_status.neq.Paid,created_at.gte.${periodStartStr}`)
               .range(from, from + pageSize - 1)
             if (error) return { data: null, error }
             all.push(...(data || []))

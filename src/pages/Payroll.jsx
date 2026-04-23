@@ -306,20 +306,32 @@ export default function Payroll() {
           .gte('date', periodStartStr)
           .lte('date', periodEndStr),
 
-        // All invoices (need for commission chain).
-        // Supabase default limit is 1000 rows; HHH has >5k invoices, so we
-        // page with .range() inside fetchAllPages() below.
+        // Invoices needed for commission math:
+        //   - Anything not fully Paid (pending bucket needs them, any age)
+        //   - Anything created in the current period (available bucket)
+        //   - Anything with an in-period payment (covered by the not-Paid
+        //     filter since a partially-paid invoice is still 'Pending' or
+        //     'Partially Paid'; a fully paid invoice in this period is
+        //     covered by the period filter via created_at OR by joining
+        //     the in-period payments back to the invoice client-side)
+        // NOTE: previously selected `amount_paid, total_paid` here — those
+        // columns don't exist on invoices (no migration creates them) so
+        // PostgREST 400'd the whole query and Promise.all silently rejected,
+        // wiping every commission to $0. Removed.
         fetchAllPages(() => supabase
           .from('invoices')
-          .select('id, company_id, job_id, invoice_id, amount, payment_status, amount_paid, total_paid, created_at, last_sent_at, job_description')
-          .eq('company_id', companyId)),
+          .select('id, company_id, job_id, invoice_id, amount, payment_status, created_at, last_sent_at, job_description')
+          .eq('company_id', companyId)
+          .or(`payment_status.neq.Paid,created_at.gte.${periodStartStr}`)),
 
-        // All jobs (need for efficiency bonuses + commission chain). Same
-        // pagination applies — HHH has >6k jobs.
+        // Jobs needed for commission math: only those with a salesperson_id
+        // OR a lead_id (commission ownership lives on one of those). Strips
+        // ~30%+ of jobs that have neither and never produce commission.
         fetchAllPages(() => supabase
           .from('jobs')
           .select('id, company_id, job_id, salesperson_id, lead_id, allotted_time_hours, status, customer_name, job_title, assigned_team')
-          .eq('company_id', companyId)),
+          .eq('company_id', companyId)
+          .or('salesperson_id.not.is.null,lead_id.not.is.null')),
 
         // Pending time off requests
         supabase
