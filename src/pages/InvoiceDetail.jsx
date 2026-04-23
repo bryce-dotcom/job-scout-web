@@ -313,6 +313,7 @@ export default function InvoiceDetail() {
       date: paymentData.date,
       method: paymentData.method,
       status: paymentData.status,
+      source: 'manual',
       notes: paymentData.notes || (ccFeeAmount > 0 ? `Includes $${ccFeeAmount.toFixed(2)} CC processing fee` : null)
     }])
 
@@ -394,13 +395,53 @@ export default function InvoiceDetail() {
 
   const markAsPaid = async () => {
     setSaving(true)
-    await supabase.from('invoices').update({
-      payment_status: 'Paid',
-      updated_at: new Date().toISOString()
-    }).eq('id', id)
-    await fetchInvoiceData()
-    await fetchInvoices()
-    setSaving(false)
+    try {
+      // Calculate the outstanding balance so we can insert a payment row that
+      // covers exactly what's owed. Without a payment row, the payroll
+      // commission engine (payment_received trigger) sees no payment in the
+      // pay period and silently awards $0 commission for this invoice.
+      const invoiceTotal =
+        (parseFloat(invoice?.amount) || 0) +
+        (parseFloat(invoice?.credit_card_fee) || 0)
+      const alreadyPaid = (payments || []).reduce(
+        (sum, p) => sum + (parseFloat(p.amount) || 0), 0
+      )
+      const outstanding = Math.max(0, invoiceTotal - alreadyPaid)
+
+      if (outstanding > 0.005) {
+        const { error: payErr } = await supabase.from('payments').insert([{
+          company_id: companyId,
+          invoice_id: parseInt(id),
+          customer_id: invoice?.customer_id || null,
+          job_id: invoice?.job_id || null,
+          amount: Math.round(outstanding * 100) / 100,
+          date: new Date().toISOString().split('T')[0],
+          method: 'Manual',
+          status: 'Completed',
+          source: 'mark_paid',
+          notes: 'Created by Mark as Paid'
+        }])
+        if (payErr) {
+          // Don't block the status flip — but warn so the user knows commission
+          // tracking will be missing for this invoice until they add a payment.
+          toast.error('Marked paid, but failed to create payment row: ' + payErr.message + ' — commissions for this invoice may not appear on payroll. Add a payment manually on the Payments tab.')
+        }
+      }
+
+      const { error: invErr } = await supabase.from('invoices').update({
+        payment_status: 'Paid',
+        updated_at: new Date().toISOString()
+      }).eq('id', id)
+      if (invErr) throw invErr
+
+      await fetchInvoiceData()
+      await fetchInvoices()
+      toast.success(outstanding > 0.005 ? `Marked Paid — payment of $${outstanding.toFixed(2)} recorded` : 'Marked Paid')
+    } catch (err) {
+      toast.error('Failed to mark paid: ' + (err.message || 'unknown error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   // Reopen a paid invoice so a new payment can be applied (e.g. customer
