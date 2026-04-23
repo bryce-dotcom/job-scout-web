@@ -6,7 +6,7 @@ import { canAccessDevTools } from '../../lib/accessControl'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import {
   LayoutDashboard, MessageSquare, Building2, Users, Zap, Bot,
-  Package, Database, Upload, Terminal, ScrollText, Settings, Sparkles,
+  Package, Database, Upload, Terminal, ScrollText, Settings, Sparkles, GitMerge,
   ArrowLeft, Menu, X, RefreshCw
 } from 'lucide-react'
 
@@ -23,6 +23,7 @@ import DataConsoleSQL from './DataConsoleSQL'
 import DataConsoleFeedback from './DataConsoleFeedback'
 import DataConsoleAuditLog from './DataConsoleAuditLog'
 import DataConsoleSystem from './DataConsoleSystem'
+import DataConsoleMigrations from './DataConsoleMigrations'
 
 // Placeholder for AI Assistant (coming later)
 const Placeholder = ({ title }) => (
@@ -43,6 +44,7 @@ const navItems = [
   { path: 'products', label: 'Products Library', icon: Package },
   { path: 'browser', label: 'Data Browser', icon: Database },
   { path: 'bulk-ops', label: 'Bulk Ops', icon: Upload },
+  { path: 'migrations', label: 'Migrations', icon: GitMerge },
   { path: 'sql', label: 'SQL Runner', icon: Terminal },
   { path: 'audit-log', label: 'Audit Log', icon: ScrollText },
   { path: 'system', label: 'System', icon: Settings },
@@ -390,6 +392,7 @@ export default function DataConsole() {
           <Route path="products" element={<DataConsoleProducts />} />
           <Route path="browser" element={<DataConsoleBrowser />} />
           <Route path="bulk-ops" element={<DataConsoleBulkOps />} />
+          <Route path="migrations" element={<DataConsoleMigrations />} />
           <Route path="sql" element={<DataConsoleSQL />} />
           <Route path="audit-log" element={<DataConsoleAuditLog />} />
           <Route path="system" element={<DataConsoleSystem />} />

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { Building2, Briefcase, Settings, Upload, Check, ChevronRight, ChevronLeft, Tent, Bot } from 'lucide-react'
+import { Building2, Briefcase, Settings, Upload, Check, ChevronRight, ChevronLeft, Tent, Bot, Database } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 const theme = {
@@ -71,7 +71,8 @@ const STEPS = [
   { label: 'Industry', icon: Briefcase },
   { label: 'AI Agents', icon: Bot },
   { label: 'Preferences', icon: Settings },
-  { label: 'Logo', icon: Upload }
+  { label: 'Logo', icon: Upload },
+  { label: 'Import Data', icon: Database }
 ]
 
 export default function Onboarding() {
@@ -96,7 +97,9 @@ export default function Onboarding() {
     industry: company?.industry || '',
     timezone: company?.timezone || 'America/Denver',
     primary_color: company?.primary_color || '#5a6349',
-    logo_url: company?.logo_url || ''
+    logo_url: company?.logo_url || '',
+    import_source: '',          // '' | 'hcp' | 'skip'
+    hcp_api_key: ''
   })
 
   const handleChange = (e) => {
@@ -179,6 +182,25 @@ export default function Onboarding() {
       setError(updateError.message)
       setSaving(false)
       return
+    }
+
+    // If user opted into HCP import, queue a migration_jobs row.
+    // A worker (Vercel Function / cron) will pick this up and run the
+    // single-tenant importer. We never store the bare API key in the
+    // companies table — it goes only on the queued job row.
+    if (formData.import_source === 'hcp' && formData.hcp_api_key.trim()) {
+      const { error: jobErr } = await supabase.from('migration_jobs').insert({
+        company_id: company.id,
+        source: 'hcp-onboarding-import',
+        status: 'queued',
+        started_at: null,
+        report: { hcp_api_key: formData.hcp_api_key.trim() }, // worker pulls + clears
+      })
+      if (jobErr) {
+        // Surface but don't block onboarding — they can retry from the
+        // Migrations admin page.
+        console.warn('Failed to queue HCP import:', jobErr.message)
+      }
     }
 
     setCompany(data)
@@ -478,6 +500,56 @@ export default function Onboarding() {
               <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '16px', textAlign: 'center' }}>
                 You can always add or change your logo later in Settings
               </p>
+            </div>
+          )}
+
+          {/* Step 6: Data Import */}
+          {step === 5 && (
+            <div>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Bring your data with you</h2>
+              <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '24px' }}>
+                We'll import your customers, estimates, jobs, invoices, and line items from your current system. You can always do this later from Settings → Migrations.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                {[
+                  { id: 'hcp', label: 'HousecallPro', desc: 'Full import: customers, estimates with line items, jobs, invoices, payments.' },
+                  { id: 'skip', label: 'Start fresh', desc: "I'll add data manually or import later." },
+                ].map(opt => {
+                  const active = formData.import_source === opt.id
+                  return (
+                    <button
+                      type="button"
+                      key={opt.id}
+                      onClick={() => setFormData(p => ({ ...p, import_source: opt.id }))}
+                      style={{
+                        textAlign: 'left', padding: '14px 16px', border: `1px solid ${active ? theme.accent : theme.border}`,
+                        background: active ? theme.accentBg : theme.bg, borderRadius: 10, cursor: 'pointer'
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, color: theme.text, fontSize: 15 }}>{opt.label}</div>
+                      <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 4 }}>{opt.desc}</div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {formData.import_source === 'hcp' && (
+                <div>
+                  <label style={labelStyle}>HousecallPro API Key</label>
+                  <input
+                    type="password"
+                    name="hcp_api_key"
+                    value={formData.hcp_api_key}
+                    onChange={handleChange}
+                    placeholder="Paste your HCP API key"
+                    style={inputStyle}
+                  />
+                  <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 8 }}>
+                    Find this in HCP → My Apps → API. We use it once to pull your data, then discard it. The import runs in the background — you'll see progress in Settings → Migrations.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
