@@ -241,6 +241,180 @@ export default function Books() {
     setLiabilities(data || [])
   }
 
+  // ─── Income reconciliation: bank-deposit ↔ invoice matching ───
+  // The Payroll commission engine reads the payments table. Two scenarios
+  // silently dropped commission until we fixed them:
+  //   1) Bank deposit hits the account but nobody marks the invoice paid in
+  //      JobScout — invoice stays Pending, no payment row, $0 commission.
+  //      Solution: surface unmatched deposits, let admin pick the invoice,
+  //      we insert a payment row dated to the deposit date.
+  //   2) Admin clicked "Mark as Paid" before commit 9d69e6d added the
+  //      payment-row insert. Status='Paid' but no row in payments. Same
+  //      $0 commission outcome. Solution: surface these and one-click
+  //      backfill a payment dated to the invoice's updated_at.
+  const [paymentsByInvoiceId, setPaymentsByInvoiceId] = useState(new Map())
+  const [paymentsLoaded, setPaymentsLoaded] = useState(false)
+  const [matchModal, setMatchModal] = useState({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })
+  const [backfilling, setBackfillingInvoiceId] = useState(null)
+
+  const fetchPaymentsLifetime = async () => {
+    // Only need invoice_id + amount for the rollup. Paginate to be safe on
+    // tenants with thousands of payment rows.
+    const all = []
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('id, invoice_id, amount')
+        .eq('company_id', companyId)
+        .range(from, from + 999)
+      if (error) break
+      all.push(...(data || []))
+      if (!data || data.length < 1000) break
+    }
+    const map = new Map()
+    all.forEach(p => {
+      if (!p.invoice_id) return
+      map.set(p.invoice_id, (map.get(p.invoice_id) || 0) + (parseFloat(p.amount) || 0))
+    })
+    setPaymentsByInvoiceId(map)
+    setPaymentsLoaded(true)
+  }
+
+  // Open the match modal for a given Plaid deposit. Pre-fetches open
+  // invoices (status != Paid) and ranks them by:
+  //   1) exact amount match (within 1¢)
+  //   2) close amount match (within 5%)
+  //   3) customer-name fuzzy match on the deposit's merchant_name/name
+  const openMatchModal = async (deposit) => {
+    setMatchModal({ open: true, deposit, invoices: [], loading: true, query: '', selectedId: null, saving: false })
+    const depAmount = Math.abs(parseFloat(deposit.amount) || 0)
+    const depName = ((deposit.merchant_name || deposit.name || '') + '').toLowerCase()
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('id, invoice_id, amount, payment_status, created_at, customer_id, job_id, customer:customers(name)')
+      .eq('company_id', companyId)
+      .neq('payment_status', 'Paid')
+      .neq('payment_status', 'Cancelled')
+      .order('created_at', { ascending: false })
+      .limit(500)
+    if (error) {
+      toast.error('Failed to load invoices: ' + error.message)
+      setMatchModal(m => ({ ...m, open: false }))
+      return
+    }
+    // Compute open balance per invoice (amount − payments already on it).
+    const ranked = (data || []).map(inv => {
+      const paid = paymentsByInvoiceId.get(inv.id) || 0
+      const open = Math.max(0, (parseFloat(inv.amount) || 0) - paid)
+      const custName = (inv.customer?.name || '').toLowerCase()
+      let score = 0
+      if (Math.abs(open - depAmount) < 0.01) score += 100
+      else if (open > 0 && Math.abs(open - depAmount) / open < 0.05) score += 50
+      if (depName && custName && (depName.includes(custName.split(' ')[0]) || custName.includes(depName.split(' ')[0]))) score += 25
+      return { ...inv, _open: open, _score: score }
+    }).filter(inv => inv._open > 0.01)
+      .sort((a, b) => (b._score - a._score) || (b.created_at < a.created_at ? 1 : -1))
+    setMatchModal(m => ({ ...m, invoices: ranked, loading: false, selectedId: ranked[0]?._score >= 100 ? ranked[0].id : null }))
+  }
+
+  // Confirm the match: insert a payments row dated to the deposit, then
+  // tag the plaid_transactions row so we don't re-prompt. The same path
+  // the existing addPayment uses, just with source='bank_match' and a
+  // back-reference to the txn for audit.
+  const confirmMatch = async () => {
+    const { deposit, selectedId, invoices } = matchModal
+    const inv = invoices.find(i => i.id === selectedId)
+    if (!inv) { toast.error('Pick an invoice first'); return }
+    setMatchModal(m => ({ ...m, saving: true }))
+    const depAmount = Math.abs(parseFloat(deposit.amount) || 0)
+    const payAmount = Math.min(depAmount, inv._open)
+    const { data: payRow, error: payErr } = await supabase.from('payments').insert([{
+      company_id: companyId,
+      invoice_id: inv.id,
+      customer_id: inv.customer_id || null,
+      job_id: inv.job_id || null,
+      amount: Math.round(payAmount * 100) / 100,
+      date: deposit.date,
+      method: 'Bank Deposit',
+      status: 'Completed',
+      source: 'bank_match',
+      source_transaction_id: deposit.id,
+      notes: `Matched bank deposit (${deposit.merchant_name || deposit.name || 'unnamed'})`
+    }]).select('id').single()
+    if (payErr) {
+      toast.error('Failed to create payment: ' + payErr.message)
+      setMatchModal(m => ({ ...m, saving: false }))
+      return
+    }
+    // Tag the plaid txn so it stops appearing in the unmatched list.
+    const { error: txnErr } = await supabase.from('plaid_transactions').update({
+      matched_invoice_id: inv.id,
+      matched_payment_id: payRow.id,
+      matched_at: new Date().toISOString(),
+    }).eq('id', deposit.id)
+    if (txnErr) console.warn('Match tag failed (non-fatal):', txnErr)
+    // If this payment closes out the invoice, flip status to Paid.
+    if (payAmount + (paymentsByInvoiceId.get(inv.id) || 0) >= (parseFloat(inv.amount) || 0) - 0.01) {
+      await supabase.from('invoices').update({ payment_status: 'Paid', updated_at: new Date().toISOString() }).eq('id', inv.id)
+    } else {
+      await supabase.from('invoices').update({ payment_status: 'Partially Paid', updated_at: new Date().toISOString() }).eq('id', inv.id)
+    }
+    toast.success(`Matched $${payAmount.toFixed(2)} to invoice ${inv.invoice_id || inv.id}`)
+    setMatchModal({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })
+    await Promise.all([fetchPaymentsLifetime(), fetchPlaidTransactions()])
+  }
+
+  // One-click backfill: invoice is marked Paid but has no payment row.
+  // Insert one for the remaining balance dated to invoice.updated_at so
+  // the commission engine sees a payment in the period the admin marked
+  // it paid in.
+  const backfillMissingPayment = async (inv) => {
+    if (!confirm(`Create a payment record for $${(parseFloat(inv.amount) || 0).toFixed(2)} on invoice ${inv.invoice_id || inv.id}? This will be dated to the invoice's last update so commissions land in the right pay period.`)) return
+    setBackfillingInvoiceId(inv.id)
+    const paid = paymentsByInvoiceId.get(inv.id) || 0
+    const owed = Math.max(0, (parseFloat(inv.amount) || 0) - paid)
+    if (owed < 0.01) { toast.error('Nothing left owed'); setBackfillingInvoiceId(null); return }
+    const dateStr = (inv.updated_at || inv.created_at || new Date().toISOString()).slice(0, 10)
+    const { error } = await supabase.from('payments').insert([{
+      company_id: companyId,
+      invoice_id: inv.id,
+      customer_id: inv.customer_id || null,
+      job_id: inv.job_id || null,
+      amount: Math.round(owed * 100) / 100,
+      date: dateStr,
+      method: 'Backfill',
+      status: 'Completed',
+      source: 'mark_paid',
+      notes: 'Backfilled missing payment record (invoice was already marked Paid)'
+    }])
+    setBackfillingInvoiceId(null)
+    if (error) { toast.error('Failed: ' + error.message); return }
+    toast.success('Payment record created — commission will appear on next Payroll load')
+    await fetchPaymentsLifetime()
+  }
+
+  // Fetch lifetime payments once the page mounts.
+  useEffect(() => {
+    if (companyId) fetchPaymentsLifetime()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId])
+
+  // Lists derived from the raw store + payments map.
+  const unmatchedDeposits = (plaidTransactions || [])
+    .filter(t => t.amount < 0 && !t.is_transfer && !t.matched_invoice_id)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .slice(0, 50) // cap UI; admin clears the queue from the top
+
+  const paidWithoutPayment = paymentsLoaded
+    ? (invoices || []).filter(inv => {
+        if (inv.payment_status !== 'Paid') return false
+        if ((parseFloat(inv.amount) || 0) <= 0) return false
+        const paid = paymentsByInvoiceId.get(inv.id) || 0
+        return paid < (parseFloat(inv.amount) || 0) * 0.99
+      }).slice(0, 50)
+    : []
+
+
   // ─── Calculations ───
   const activeConnected = connectedAccounts.filter(a => a.status === 'active')
   const totalBankBalance = bankAccounts.reduce((sum, acc) => sum + (parseFloat(acc.current_balance) || 0), 0)
@@ -669,6 +843,110 @@ export default function Books() {
               <div style={{ fontSize: '28px', fontWeight: '700', color: netMonth >= 0 ? '#22c55e' : '#ef4444' }}>{formatCurrency(netMonth)}</div>
             </div>
           </div>
+
+          {/* Income to Reconcile — bank-deposit ↔ invoice matching + Paid-with-no-payment backfill.
+              Both flows insert a row in the payments table, which is what the Payroll
+              commission engine reads. Without this, commissions silently went to $0
+              for any invoice closed via the Mark-Paid button or paid via bank deposit
+              that nobody manually applied in JobScout. */}
+          {(unmatchedDeposits.length > 0 || paidWithoutPayment.length > 0) && (
+            <div style={{
+              ...statCardStyle,
+              marginBottom: '24px',
+              border: '1px solid rgba(234,179,8,0.4)',
+              backgroundColor: 'rgba(234,179,8,0.05)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <AlertCircle size={18} style={{ color: '#eab308' }} />
+                <h3 style={{ fontSize: '15px', fontWeight: '700', color: theme.text, margin: 0 }}>Income to reconcile</h3>
+                <HelpBadge text="Money in that hasn't been linked to an invoice yet. Linking creates the payment record that drives commissions on the Payroll page." />
+              </div>
+              <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '14px' }}>
+                Each item below blocks commission tracking until it's resolved. Click Match to tie a bank deposit to an invoice; click Add payment record to back-fill an invoice that was marked Paid but never had a payment row created.
+              </div>
+
+              {/* Unmatched bank deposits */}
+              {unmatchedDeposits.length > 0 && (
+                <div style={{ marginBottom: paidWithoutPayment.length > 0 ? '20px' : 0 }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Unmatched bank deposits ({unmatchedDeposits.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {unmatchedDeposits.map(dep => (
+                      <div key={dep.id} style={{
+                        display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px',
+                        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px'
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {dep.merchant_name || dep.name || '(unnamed deposit)'}
+                          </div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                            {formatDate(dep.date)}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#22c55e', minWidth: '90px', textAlign: 'right' }}>
+                          +{formatCurrency(Math.abs(parseFloat(dep.amount) || 0))}
+                        </div>
+                        <button
+                          onClick={() => openMatchModal(dep)}
+                          style={{
+                            padding: '6px 14px', backgroundColor: theme.accent, color: '#fff',
+                            border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '4px'
+                          }}
+                        >
+                          <Link size={12} /> Match
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Invoices marked Paid but missing a payment row */}
+              {paidWithoutPayment.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Invoices marked Paid but missing a payment record ({paidWithoutPayment.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {paidWithoutPayment.map(inv => (
+                      <div key={inv.id} style={{
+                        display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px',
+                        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px'
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {inv.invoice_id || `Invoice #${inv.id}`}
+                            {inv.job_description ? ` — ${inv.job_description}` : ''}
+                          </div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                            Marked Paid {formatDate(inv.updated_at || inv.created_at)}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, minWidth: '90px', textAlign: 'right' }}>
+                          {formatCurrency(parseFloat(inv.amount) || 0)}
+                        </div>
+                        <button
+                          onClick={() => backfillMissingPayment(inv)}
+                          disabled={backfilling === inv.id}
+                          style={{
+                            padding: '6px 14px', backgroundColor: theme.accent, color: '#fff',
+                            border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
+                            cursor: backfilling === inv.id ? 'wait' : 'pointer', opacity: backfilling === inv.id ? 0.5 : 1,
+                            display: 'flex', alignItems: 'center', gap: '4px'
+                          }}
+                        >
+                          <Plus size={12} /> Add payment record
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Utility Incentive Tracking */}
           {(pendingIncentives.length > 0 || collectedIncentives.length > 0) && (
@@ -2029,6 +2307,117 @@ export default function Books() {
 
             <div style={{ padding: '12px 24px', borderTop: `1px solid ${theme.border}`, backgroundColor: theme.bg, textAlign: 'right' }}>
               <button onClick={() => setShowManageCategories(false)} style={{ padding: '8px 16px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bank-deposit ↔ invoice match modal. Shows open invoices ranked by
+          amount-similarity + customer-name fuzzy match, with the deposit's
+          context up top so the user can confirm visually. */}
+      {matchModal.open && matchModal.deposit && (
+        <div onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })}
+             style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div onClick={e => e.stopPropagation()}
+               style={{ backgroundColor: theme.bgCard, borderRadius: '10px', maxWidth: '700px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '16px 24px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0 }}>Match deposit to invoice</h3>
+              <button onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: '16px 24px', borderBottom: `1px solid ${theme.border}`, backgroundColor: theme.bg }}>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Bank deposit</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
+                    {matchModal.deposit.merchant_name || matchModal.deposit.name || '(unnamed)'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: theme.textMuted }}>{formatDate(matchModal.deposit.date)}</div>
+                </div>
+                <div style={{ fontSize: '18px', fontWeight: '700', color: '#22c55e' }}>
+                  +{formatCurrency(Math.abs(parseFloat(matchModal.deposit.amount) || 0))}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: '12px 24px', borderBottom: `1px solid ${theme.border}` }}>
+              <input
+                type="text"
+                placeholder="Filter open invoices by customer or invoice #…"
+                value={matchModal.query}
+                onChange={e => setMatchModal(m => ({ ...m, query: e.target.value }))}
+                style={{ width: '100%', padding: '8px 12px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '13px', backgroundColor: theme.bgCard, color: theme.text, boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+              {matchModal.loading && <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>Loading open invoices…</div>}
+              {!matchModal.loading && matchModal.invoices.length === 0 && (
+                <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                  No open invoices to match against. Create the invoice first, then come back and match this deposit.
+                </div>
+              )}
+              {!matchModal.loading && matchModal.invoices
+                .filter(inv => {
+                  const q = matchModal.query.toLowerCase().trim()
+                  if (!q) return true
+                  return (inv.invoice_id || '').toLowerCase().includes(q) ||
+                         (inv.customer?.name || '').toLowerCase().includes(q)
+                })
+                .slice(0, 40)
+                .map(inv => {
+                  const selected = matchModal.selectedId === inv.id
+                  const exact = inv._score >= 100
+                  return (
+                    <div key={inv.id}
+                         onClick={() => setMatchModal(m => ({ ...m, selectedId: inv.id }))}
+                         style={{
+                           display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', marginBottom: '4px',
+                           cursor: 'pointer', borderRadius: '6px',
+                           backgroundColor: selected ? theme.accentBg : 'transparent',
+                           border: `1px solid ${selected ? theme.accent : 'transparent'}`,
+                         }}>
+                      <input type="radio" checked={selected} onChange={() => setMatchModal(m => ({ ...m, selectedId: inv.id }))} style={{ cursor: 'pointer' }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                          {inv.invoice_id || `Invoice #${inv.id}`}
+                          {inv.customer?.name && ` — ${inv.customer.name}`}
+                          {exact && <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: '700', color: '#22c55e', backgroundColor: 'rgba(34,197,94,0.12)', padding: '1px 6px', borderRadius: '8px' }}>EXACT MATCH</span>}
+                        </div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                          {inv.payment_status} · created {formatDate(inv.created_at)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{formatCurrency(inv._open)}</div>
+                        <div style={{ fontSize: '10px', color: theme.textMuted }}>open balance</div>
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+
+            <div style={{ padding: '12px 24px', borderTop: `1px solid ${theme.border}`, backgroundColor: theme.bg, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+              <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                {matchModal.selectedId
+                  ? `Will create a payment row dated ${formatDate(matchModal.deposit.date)} on the selected invoice. Commission flows to the rep on the next Payroll load.`
+                  : 'Select an invoice to enable Match.'}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })}
+                        disabled={matchModal.saving}
+                        style={{ padding: '8px 14px', backgroundColor: 'transparent', color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button onClick={confirmMatch}
+                        disabled={!matchModal.selectedId || matchModal.saving}
+                        style={{ padding: '8px 14px', backgroundColor: matchModal.selectedId ? theme.accent : theme.border, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: matchModal.selectedId && !matchModal.saving ? 'pointer' : 'not-allowed', opacity: matchModal.saving ? 0.5 : 1 }}>
+                  {matchModal.saving ? 'Matching…' : 'Match & create payment'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
