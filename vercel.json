@@ -1,5 +1,17 @@
 {
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/drain-migrations",
+      "schedule": "*/5 * * * *"
+    }
+  ],
+  "functions": {
+    "api/cron/drain-migrations.cjs": {
+      "maxDuration": 300
+    }
+  }
 }
