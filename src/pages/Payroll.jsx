@@ -330,9 +330,12 @@ export default function Payroll() {
         // wiping every commission to $0. Removed.
         fetchAllPages(() => supabase
           .from('invoices')
-          .select('id, company_id, job_id, invoice_id, amount, payment_status, created_at, last_sent_at, job_description')
+          .select('id, company_id, job_id, invoice_id, amount, payment_status, created_at, updated_at, last_sent_at, job_description, invoice_type')
           .eq('company_id', companyId)
-          .or(`payment_status.neq.Paid,created_at.gte.${periodStartStr}`)),
+          // Paid invoices outside the period can still matter for the
+          // synthetic-payment fallback if their updated_at lands in
+          // period, so pull everything unpaid OR updated in period.
+          .or(`payment_status.neq.Paid,updated_at.gte.${periodStartStr}`)),
 
         // Jobs needed for commission math: only those with a salesperson_id
         // OR a lead_id (commission ownership lives on one of those). Strips

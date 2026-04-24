@@ -121,7 +121,7 @@ export default function MyPay() {
               // invoices table; selecting them returned 400 and broke the
               // entire page silently. Lifetime paid is computed from the
               // payments table via allPaymentsByInvoiceId in bonusCalc.
-              .select('id, invoice_id, job_id, amount, payment_status, created_at, job_description')
+              .select('id, invoice_id, job_id, amount, payment_status, created_at, updated_at, job_description')
               .eq('company_id', companyId)
               .or(`payment_status.neq.Paid,created_at.gte.${periodStartStr}`)
               .range(from, from + pageSize - 1)

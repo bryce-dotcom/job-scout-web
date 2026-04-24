@@ -75,14 +75,24 @@ export function calculateInvoiceCommissions({
   //   OR the linked lead's salesperson_id === employee.id
   //   OR the lead.salesperson_ids array includes employee.id (multi-rep)
   // Fall-through to lead is critical — most ownership lives on the lead.
-  const leadsById = new Map((leads || []).map(l => [l.id, l]))
+  //
+  // Defensive coercion: jobs.lead_id sometimes comes back as a string
+  // ("1669") and sometimes as a number (1669) depending on how the row
+  // was inserted. Same for leads.id. We coerce both to string when
+  // building the lookup and when querying so type mismatch doesn't
+  // silently drop an entire rep's ownership chain (as happened on
+  // Redman #2 — lead_id was a string and leadsById was keyed by int).
+  const leadsById = new Map((leads || []).map(l => [String(l.id), l]))
+  const empId = employee.id
+  const empIdStr = String(empId)
+  const matchId = (a, b) => a != null && b != null && String(a) === String(b)
   const ownsJob = (job) => {
-    if (job.salesperson_id === employee.id) return true
+    if (matchId(job.salesperson_id, empId)) return true
     if (job.lead_id) {
-      const lead = leadsById.get(job.lead_id)
+      const lead = leadsById.get(String(job.lead_id))
       if (!lead) return false
-      if (lead.salesperson_id === employee.id) return true
-      if (Array.isArray(lead.salesperson_ids) && lead.salesperson_ids.includes(employee.id)) return true
+      if (matchId(lead.salesperson_id, empId)) return true
+      if (Array.isArray(lead.salesperson_ids) && lead.salesperson_ids.map(String).includes(empIdStr)) return true
     }
     return false
   }
@@ -105,7 +115,23 @@ export function calculateInvoiceCommissions({
       // commission on its amount × rate, regardless of whether the
       // invoice is now fully paid or still partial.
       const inPeriodMatches = (inPeriodPayments || []).filter(p => p.invoice_id === inv.id)
-      const paidInPeriod = inPeriodMatches.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+      let paidInPeriod = inPeriodMatches.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+      let paidDate = inPeriodMatches[0]?.date
+
+      // Fallback: some Paid invoices (esp. deposits imported from HCP) never
+      // got a matching row in the payments table. If an invoice is marked
+      // Paid AND its updated_at/created_at lands in the period AND we have
+      // no payment rows for it, count it as paid-in-period for the full
+      // invoice amount. This patches a data sync gap without requiring a
+      // mass-backfill of 300+ historical rows.
+      const lifetimePaidFromPays = allPaymentsByInvoiceId?.get(inv.id) || 0
+      if (inv.payment_status === 'Paid' && lifetimePaidFromPays === 0 && paidInPeriod === 0) {
+        const effectiveDate = (inv.updated_at || inv.created_at || '').split('T')[0]
+        if (periodStartStr && periodEndStr && effectiveDate >= periodStartStr && effectiveDate <= periodEndStr) {
+          paidInPeriod = invAmount
+          paidDate = effectiveDate
+        }
+      }
 
       if (paidInPeriod > 0) {
         const earned = rateType === 'percent'
@@ -117,7 +143,7 @@ export function calculateInvoiceCommissions({
             type: 'invoice_commission', status: 'available', amount: earned,
             invoiceId: inv.invoice_id, invoiceDbId: inv.id, jobId: inv.job_id,
             jobTitle: jobLabel, invoiceAmount: invAmount, paidAmount: paidInPeriod,
-            paidDate: inPeriodMatches[0]?.date, rate, rateType,
+            paidDate, rate, rateType,
           })
         }
       }
