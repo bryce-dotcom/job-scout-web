@@ -2309,6 +2309,38 @@ export default function Payroll() {
                 </div>
               </div>
 
+              {/* Utility Processor default */}
+              <div style={{ padding: '14px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  Default Utility Processor
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px', lineHeight: '1.5' }}>
+                  Who handles utility incentive paperwork by default. They earn their
+                  &quot;Per Utility Invoice Processed&quot; rate (set on their Employees
+                  profile) on every utility invoice that doesn&apos;t have a specific
+                  processor assigned.
+                </div>
+                <select
+                  value={payrollConfig.utility_processor_employee_id || ''}
+                  onChange={(e) => setPayrollConfig({
+                    ...payrollConfig,
+                    utility_processor_employee_id: e.target.value ? parseInt(e.target.value) : null,
+                  })}
+                  onBlur={async () => {
+                    await supabase.from('settings').upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(payrollConfig), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+                  }}
+                  style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', backgroundColor: theme.bgCard, fontSize: '13px', color: theme.text }}
+                >
+                  <option value="">— No default processor —</option>
+                  {employees.filter(e => e.active).map(e => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                      {e.commission_processor_rate > 0 ? ` — ${e.commission_processor_rate}${e.commission_processor_type === 'flat' ? '$' : '%'}` : ' — (rate not set)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Crew Rank Structure */}
               <div>
                 <div style={{ fontSize: '13px', fontWeight: '700', color: theme.text, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>

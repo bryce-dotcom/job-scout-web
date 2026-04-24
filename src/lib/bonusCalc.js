@@ -246,6 +246,63 @@ export function calculateInvoiceCommissions({
     // else: paid in a different period (past or future) — don't include
   })
 
+  // ── Processor commission ────────────────────────────────────────────
+  // If THIS employee is the designated processor for a utility invoice
+  // (either via utility_invoices.processor_id or the company-wide default
+  // in payrollConfig.utility_processor_employee_id), they earn an
+  // additional commission against every utility invoice they process.
+  // Uses the employee's own commission_processor_rate, independent of
+  // services/goods rates — this is a separate pay line.
+  const procRate = parseFloat(employee.commission_processor_rate) || 0
+  const procType = employee.commission_processor_type || 'percent'
+  if (procRate > 0) {
+    const defaultProcessorId = payrollConfig?.utility_processor_employee_id
+      ? Number(payrollConfig.utility_processor_employee_id)
+      : null
+    const procCommissionOn = (amount) => procType === 'percent' ? amount * (procRate / 100) : procRate
+    ;(utilityInvoices || []).forEach(u => {
+      const processorId = u.processor_id != null ? Number(u.processor_id) : defaultProcessorId
+      if (processorId !== employee.id) return
+      const incentive = parseFloat(u.incentive_amount) || parseFloat(u.amount) || 0
+      if (incentive <= 0) return
+      const earnedAmount = procType === 'percent' ? procCommissionOn(incentive) : procRate
+      if (earnedAmount <= 0) return
+      const job = (jobs || []).find(j => j.id === u.job_id)
+      const jobLabel = job?.job_title || job?.customer_name || u.customer_name || 'Utility incentive'
+      const isPaid = u.payment_status === 'Paid'
+      const paidAtStr = (u.paid_at || '').split('T')[0]
+      const paidInPeriod = isPaid && periodStartStr && periodEndStr &&
+        paidAtStr >= periodStartStr && paidAtStr <= periodEndStr
+
+      if (paidInPeriod) {
+        available += earnedAmount
+        details.push({
+          type: 'processor_commission', status: 'available', amount: earnedAmount,
+          utilityInvoiceId: u.utility_invoice_id || `UTL-${u.id}`,
+          utilityInvoiceDbId: u.id,
+          jobId: u.job_id, jobTitle: jobLabel,
+          invoiceAmount: incentive, paidAmount: incentive,
+          paidDate: u.paid_at,
+          utilityName: u.utility_name,
+          rate: procRate, rateType: procType,
+          source: u.processor_id ? 'per_invoice' : 'company_default',
+        })
+      } else if (!isPaid) {
+        pending += earnedAmount
+        details.push({
+          type: 'processor_commission', status: 'pending', amount: earnedAmount,
+          utilityInvoiceId: u.utility_invoice_id || `UTL-${u.id}`,
+          utilityInvoiceDbId: u.id,
+          jobId: u.job_id, jobTitle: jobLabel,
+          invoiceAmount: incentive, paymentStatus: u.payment_status,
+          utilityName: u.utility_name,
+          rate: procRate, rateType: procType,
+          source: u.processor_id ? 'per_invoice' : 'company_default',
+        })
+      }
+    })
+  }
+
   return { available, pending, details }
 }
 

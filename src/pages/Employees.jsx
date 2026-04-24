@@ -76,6 +76,11 @@ const emptyEmployee = {
   commission_leads_type: 'flat',
   commission_setter_rate: 25,
   commission_setter_type: 'flat',
+  // Utility-processor rate — for the office person handling utility
+  // incentive paperwork (e.g. Alayda at HHH). Paid on incentive_amount
+  // of every utility invoice they process.
+  commission_processor_rate: 0,
+  commission_processor_type: 'percent',
   // Skill level
   skill_level: '',
   // PTO
@@ -380,6 +385,8 @@ export default function Employees() {
       commission_leads_type: employee.commission_leads_type || 'flat',
       commission_setter_rate: employee.commission_setter_rate || 25,
       commission_setter_type: employee.commission_setter_type || 'flat',
+      commission_processor_rate: employee.commission_processor_rate || 0,
+      commission_processor_type: employee.commission_processor_type || 'percent',
       skill_level: employee.skill_level || '',
       pto_days_per_year: employee.pto_days_per_year || 10,
       pto_accrued: employee.pto_accrued || 0,
@@ -502,6 +509,8 @@ export default function Employees() {
       commission_leads_type: formData.commission_leads_type,
       commission_setter_rate: parseFloat(formData.commission_setter_rate) || 0,
       commission_setter_type: formData.commission_setter_type,
+      commission_processor_rate: parseFloat(formData.commission_processor_rate) || 0,
+      commission_processor_type: formData.commission_processor_type || 'percent',
       skill_level: formData.skill_level || null,
       pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
       pto_accrued: parseFloat(formData.pto_accrued) || 0,
@@ -716,6 +725,8 @@ export default function Employees() {
       commission_leads_type: formData.commission_leads_type,
       commission_setter_rate: parseFloat(formData.commission_setter_rate) || 0,
       commission_setter_type: formData.commission_setter_type,
+      commission_processor_rate: parseFloat(formData.commission_processor_rate) || 0,
+      commission_processor_type: formData.commission_processor_type || 'percent',
       skill_level: formData.skill_level || null,
       pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
       pto_accrued: parseFloat(formData.pto_accrued) || 0,
@@ -1961,6 +1972,21 @@ export default function Employees() {
                             typeName="commission_setter_type"
                             disabled={!isEditing}
                           />
+                        </div>
+
+                        <p style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginTop: '16px', marginBottom: '12px' }}>
+                          UTILITY PROCESSING
+                        </p>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
+                          <RateInput
+                            label="Per Utility Invoice Processed"
+                            rateName="commission_processor_rate"
+                            typeName="commission_processor_type"
+                            disabled={!isEditing}
+                          />
+                          <div style={{ fontSize: '11px', color: theme.textMuted, paddingTop: '20px', lineHeight: '1.4' }}>
+                            Paid on the incentive_amount of each utility invoice this employee processes. Set the company-wide default processor on the Payroll Settings page, or override per-invoice on the utility invoice itself.
+                          </div>
                         </div>
                       </>
                     )}
