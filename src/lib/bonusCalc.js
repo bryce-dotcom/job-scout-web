@@ -61,8 +61,12 @@ export function calculateInvoiceCommissions({
   const goodsType = employee.commission_goods_type || 'percent'
   const rate = svcRate > 0 ? svcRate : goodsRate
   const rateType = svcRate > 0 ? svcType : goodsType
-
-  if (rate <= 0) return { available: 0, pending: 0, details: [] }
+  // Processor rate is a DIFFERENT pay line — paid on utility invoices the
+  // employee processes. An employee can have rate=0 for services/goods
+  // but still earn processor commission (e.g. Alayda). Don't early-exit
+  // here unless ALL relevant rates are zero.
+  const procRatePreview = parseFloat(employee.commission_processor_rate) || 0
+  if (rate <= 0 && procRatePreview <= 0) return { available: 0, pending: 0, details: [] }
 
   const commissionOn = (amount) => rateType === 'percent' ? amount * (rate / 100) : rate
 

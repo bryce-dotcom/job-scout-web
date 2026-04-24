@@ -3,10 +3,12 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Zap } from 'lucide-react'
 import {
   getCurrentPayPeriod,
   calculateInvoiceCommissions,
+  calculateEfficiencyBonus,
+  timeClockToJobHours,
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
 
@@ -40,7 +42,16 @@ export default function MyPay() {
   const [leads, setLeads] = useState([])
   const [invoices, setInvoices] = useState([])
   const [payments, setPayments] = useState([])
+  // ALL payments (not period-filtered) — needed to compute lifetime paid
+  // per invoice for the pending bucket and for the paid-threshold bonus
+  // gate. Scoped to company.
+  const [allPayments, setAllPayments] = useState([])
   const [timeEntries, setTimeEntries] = useState([])
+  // time_log entries for bonus math — MyPay needs both the user's own
+  // entries (for their hours share) and every entry on jobs the user
+  // worked on (for the saved-hours denominator).
+  const [timeLogEntries, setTimeLogEntries] = useState([])
+  const [verificationReports, setVerificationReports] = useState([])
   const [utilityInvoices, setUtilityInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   // Fresh copy of the user's employee row (rate, commission flags) re-read
@@ -117,13 +128,12 @@ export default function MyPay() {
           for (let from = 0; ; from += pageSize) {
             const { data, error } = await supabase
               .from('invoices')
-              // amount_paid / total_paid removed — they don't exist on the
-              // invoices table; selecting them returned 400 and broke the
-              // entire page silently. Lifetime paid is computed from the
-              // payments table via allPaymentsByInvoiceId in bonusCalc.
-              .select('id, invoice_id, job_id, amount, payment_status, created_at, updated_at, job_description')
+              .select('id, invoice_id, job_id, amount, payment_status, created_at, updated_at, job_description, invoice_type')
               .eq('company_id', companyId)
-              .or(`payment_status.neq.Paid,created_at.gte.${periodStartStr}`)
+              // unpaid (need pending bucket) OR touched in period (for the
+              // synthetic-payment fallback — Paid invoices with no payment
+              // row but updated_at in period count as paid in period)
+              .or(`payment_status.neq.Paid,updated_at.gte.${periodStartStr}`)
               .range(from, from + pageSize - 1)
             if (error) return { data: null, error }
             all.push(...(data || []))
@@ -141,22 +151,58 @@ export default function MyPay() {
           .gte('date', periodStartStr)
           .lte('date', periodEndStr)
 
-        // Own time entries in period
+        // Own time entries in period (for hourly pay + bonus crew share)
         const timePromise = supabase
           .from('time_clock')
-          .select('id, job_id, clock_in, clock_out, total_hours')
+          .select('id, job_id, employee_id, clock_in, clock_out, total_hours')
           .eq('company_id', companyId)
           .eq('employee_id', user.id)
           .gte('clock_in', periodStart.toISOString())
           .lte('clock_in', periodEnd.toISOString())
           .not('clock_out', 'is', null)
 
-        // Re-fetch my own employee row so commission_services_rate /
-        // commission_goods_rate / is_commission reflect the latest edits
-        // (store snapshot from login would otherwise go stale).
+        // All time_log entries in period — bonus calc needs everyone's
+        // hours on the user's jobs to compute saved hours correctly.
+        const timeLogPromise = supabase
+          .from('time_log')
+          .select('id, employee_id, job_id, hours, date, created_at')
+          .eq('company_id', companyId)
+          .gte('created_at', periodStart.toISOString())
+          .lte('created_at', periodEnd.toISOString())
+
+        // All payments (lifetime, scoped by company) — needed to compute
+        // proper paid-threshold bonus gate and lifetime-paid bucket for
+        // pending commission math.
+        const fetchAllPayments = async () => {
+          const all = []
+          const pageSize = 1000
+          for (let from = 0; ; from += pageSize) {
+            const { data, error } = await supabase
+              .from('payments')
+              .select('invoice_id, amount')
+              .eq('company_id', companyId)
+              .range(from, from + pageSize - 1)
+            if (error) return { data: null, error }
+            all.push(...(data || []))
+            if (!data || data.length < pageSize) break
+          }
+          return { data: all, error: null }
+        }
+        const allPaymentsPromise = fetchAllPayments()
+
+        // Verification reports in period — Victor gate signal
+        const verPromise = supabase
+          .from('verification_reports')
+          .select('job_id, verification_type, score, created_at')
+          .eq('company_id', companyId)
+          .eq('voided', false)
+          .gte('score', 60)
+
+        // Re-fetch my own employee row — pulls processor fields too so
+        // Alayda-style roles show their processor commissions here.
         const empPromise = supabase
           .from('employees')
-          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, is_hourly, is_salary, hourly_rate, annual_salary')
+          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, is_hourly, is_salary, hourly_rate, annual_salary')
           .eq('id', user.id).maybeSingle()
 
         // Utility invoices on jobs the user might own — we fetch them all
@@ -166,7 +212,11 @@ export default function MyPay() {
           .select('id, utility_invoice_id, job_id, customer_name, utility_name, amount, incentive_amount, project_cost, net_cost, payment_status, paid_at, created_at')
           .eq('company_id', companyId)
 
-        const [jr, lr, ir, pr, tr, er, ur] = await Promise.all([jobsPromise, leadsPromise, invoicesPromise, paymentsPromise, timePromise, empPromise, utilPromise])
+        const [jr, lr, ir, pr, tr, er, ur, tlr, apr, vr] = await Promise.all([
+          jobsPromise, leadsPromise, invoicesPromise, paymentsPromise,
+          timePromise, empPromise, utilPromise, timeLogPromise,
+          allPaymentsPromise, verPromise,
+        ])
         setJobs(jr.data || [])
         setLeads(lr.data || [])
         setInvoices(ir.data || [])
@@ -174,6 +224,9 @@ export default function MyPay() {
         setTimeEntries(tr.data || [])
         setEmpRow(er?.data || null)
         setUtilityInvoices(ur?.data || [])
+        setTimeLogEntries(tlr?.data || [])
+        setAllPayments(apr?.data || [])
+        setVerificationReports(vr?.data || [])
       } finally {
         setLoading(false)
       }
@@ -185,9 +238,59 @@ export default function MyPay() {
   const periodStartStr = periodStart.toISOString().split('T')[0]
   const periodEndStr = periodEnd.toISOString().split('T')[0]
 
+  // Build a Map<invoice_id, lifetimePaid> once — feeds both the
+  // calculateInvoiceCommissions pending bucket and the paid-threshold
+  // bonus gate below.
+  const allPaymentsByInvoiceId = useMemo(() => {
+    const m = new Map()
+    ;(allPayments || []).forEach(p => {
+      if (!p.invoice_id) return
+      m.set(p.invoice_id, (m.get(p.invoice_id) || 0) + (parseFloat(p.amount) || 0))
+    })
+    return m
+  }, [allPayments])
+
+  // Per-job paid/total for the paid-threshold bonus gate. Mirrors the
+  // Payroll page builder so MyPay gates bonuses identically.
+  const jobPaymentStatus = useMemo(() => {
+    const map = new Map()
+    const utilByJob = new Map()
+    ;(utilityInvoices || []).forEach(u => {
+      if (!u.job_id) return
+      if (!utilByJob.has(u.job_id)) utilByJob.set(u.job_id, [])
+      utilByJob.get(u.job_id).push(u)
+    })
+    const jobIds = new Set()
+    ;(invoices || []).forEach(inv => { if (inv.job_id) jobIds.add(inv.job_id) })
+    utilByJob.forEach((_, jobId) => jobIds.add(jobId))
+    jobIds.forEach(jobId => {
+      const stdInvs = (invoices || []).filter(i => i.job_id === jobId)
+      const utils = utilByJob.get(jobId) || []
+      const stdPaid = stdInvs.reduce((s, inv) => s + (inv.payment_status === 'Paid'
+        ? (parseFloat(inv.amount) || 0)
+        : (allPaymentsByInvoiceId.get(inv.id) || 0)
+      ), 0)
+      const utilPaid = utils.filter(u => u.payment_status === 'Paid').reduce((s, u) => s + (parseFloat(u.incentive_amount) || parseFloat(u.amount) || 0), 0)
+      let total
+      if (utils.length > 0 && utils.some(u => parseFloat(u.project_cost) > 0)) {
+        total = utils.reduce((s, u) => s + (parseFloat(u.project_cost) || 0), 0)
+      } else {
+        total = stdInvs.reduce((s, inv) => s + (parseFloat(inv.amount) || 0), 0)
+      }
+      map.set(jobId, {
+        standardPaid: stdPaid,
+        standardTotal: stdInvs.reduce((s, inv) => s + (parseFloat(inv.amount) || 0), 0),
+        utilityPaid: utilPaid,
+        utilityTotal: utils.reduce((s, u) => s + (parseFloat(u.incentive_amount) || parseFloat(u.amount) || 0), 0),
+        paid: stdPaid + utilPaid,
+        total,
+      })
+    })
+    return map
+  }, [invoices, utilityInvoices, allPaymentsByInvoiceId])
+
   const commData = useMemo(() => {
     if (!user?.id) return { available: 0, pending: 0, details: [] }
-    // Prefer freshly-fetched empRow; fall back to the store's user until it arrives.
     const me = empRow || user
     return calculateInvoiceCommissions({
       employee: me,
@@ -195,12 +298,44 @@ export default function MyPay() {
       leads,
       invoices,
       inPeriodPayments: payments,
+      allPaymentsByInvoiceId,
       utilityInvoices,
       payrollConfig,
       periodStartStr,
       periodEndStr,
     })
-  }, [user, empRow, jobs, leads, invoices, payments, utilityInvoices, payrollConfig, periodStartStr, periodEndStr])
+  }, [user, empRow, jobs, leads, invoices, payments, allPaymentsByInvoiceId, utilityInvoices, payrollConfig, periodStartStr, periodEndStr])
+
+  // Efficiency bonus for this user — same calc Payroll uses. Uses the
+  // user's own time entries plus every other crew member's time_log
+  // rows on the same jobs so saved-hours math matches Payroll exactly.
+  const bonusData = useMemo(() => {
+    if (!user?.id) return { bonus: 0, details: [] }
+    // Combine user's time_clock (normalized to job hours) with all
+    // company time_log rows so the crew split is accurate.
+    const myClockToJob = timeClockToJobHours(timeEntries)
+    const combinedTimeLog = [...timeLogEntries, ...myClockToJob]
+    // Only pass jobs the user worked on so the calc is scoped
+    const verifiedJobIds = new Set(
+      (verificationReports || [])
+        .filter(r => r.verification_type === 'completion')
+        .map(r => r.job_id)
+        .filter(Boolean)
+    )
+    return calculateEfficiencyBonus({
+      employeeId: user.id,
+      timeLogEntries: combinedTimeLog,
+      timeClockRows: timeEntries,
+      jobs,
+      employees: [empRow || user],
+      skillLevels: [],
+      payrollConfig,
+      verifiedJobIds,
+      dailyVerifiedJobDays: null,
+      jobPaymentStatus,
+      bonusOverrides: [],
+    })
+  }, [user, empRow, timeEntries, timeLogEntries, jobs, payrollConfig, verificationReports, jobPaymentStatus])
 
   const totalHours = timeEntries.reduce((s, e) => {
     let h = e.total_hours
@@ -210,9 +345,25 @@ export default function MyPay() {
 
   // Calculate expected hourly/salary pay (own-view only, no HR access needed)
   const periodsPerYear = PERIODS_PER_YEAR[payrollConfig.pay_frequency] || 26
-  const hourlyPay = (user?.is_hourly && user?.hourly_rate) ? totalHours * parseFloat(user.hourly_rate) : 0
-  const salaryPay = (user?.is_salary && user?.annual_salary) ? parseFloat(user.annual_salary) / periodsPerYear : 0
-  const grossPay = hourlyPay + salaryPay + commData.available
+  const me = empRow || user || {}
+  const hourlyPay = (me.is_hourly && me.hourly_rate) ? totalHours * parseFloat(me.hourly_rate) : 0
+  const salaryPay = (me.is_salary && me.annual_salary) ? parseFloat(me.annual_salary) / periodsPerYear : 0
+  const grossPay = hourlyPay + salaryPay + commData.available + (bonusData.bonus || 0)
+
+  // Split commissions into buckets the UI renders separately so it's
+  // obvious to the rep where each dollar is coming from.
+  const earnedInvoice = commData.details.filter(d => d.status === 'available' && d.type === 'invoice_commission')
+  const earnedUtility = commData.details.filter(d => d.status === 'available' && d.type === 'utility_commission')
+  const earnedProcessor = commData.details.filter(d => d.status === 'available' && d.type === 'processor_commission')
+  const pendingInvoice = commData.details.filter(d => d.status === 'pending' && d.type === 'invoice_commission')
+  const pendingUtility = commData.details.filter(d => d.status === 'pending' && d.type === 'utility_commission')
+  const pendingProcessor = commData.details.filter(d => d.status === 'pending' && d.type === 'processor_commission')
+  const processorEarnedTotal = earnedProcessor.reduce((s, d) => s + d.amount, 0)
+  const processorPendingTotal = pendingProcessor.reduce((s, d) => s + d.amount, 0)
+
+  const earnedBonuses = (bonusData.details || []).filter(d => !d.blockedReason)
+  const blockedBonuses = (bonusData.details || []).filter(d => d.blockedReason)
+  const blockedBonusTotal = blockedBonuses.reduce((s, d) => s + (d.wouldHaveEarned || 0), 0)
 
   const fmt = (n) => `$${(n || 0).toFixed(2)}`
 
@@ -222,8 +373,11 @@ export default function MyPay() {
     job_completed: 'paid when the job is marked Completed',
   }[payrollConfig.commission_trigger] || 'paid when the customer pays the invoice'
 
-  const earned = commData.details.filter(d => d.status === 'available')
-  const pendingList = commData.details.filter(d => d.status === 'pending')
+  // Earned / Pending sales lists — show invoice + utility commissions.
+  // Processor commissions are rendered in their own card below so users
+  // can see them as a distinct pay line.
+  const earned = [...earnedInvoice, ...earnedUtility]
+  const pendingList = [...pendingInvoice, ...pendingUtility]
 
   const cardStyle = {
     backgroundColor: theme.bgCard,
@@ -292,7 +446,7 @@ export default function MyPay() {
 
       {/* Gross pay summary */}
       <div style={{ ...cardStyle, background: 'linear-gradient(135deg, rgba(90,99,73,0.08) 0%, rgba(90,99,73,0.02) 100%)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '12px' }}>
           <div>
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gross this period</div>
             <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text, marginTop: '2px' }}>{fmt(grossPay)}</div>
@@ -301,19 +455,25 @@ export default function MyPay() {
             <div>
               <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Hourly</div>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#3b82f6', marginTop: '2px' }}>{fmt(hourlyPay)}</div>
-              <div style={{ fontSize: '11px', color: theme.textMuted }}>{totalHours.toFixed(2)}h × ${parseFloat(user.hourly_rate).toFixed(2)}</div>
+              <div style={{ fontSize: '11px', color: theme.textMuted }}>{totalHours.toFixed(2)}h × ${parseFloat(me.hourly_rate).toFixed(2)}</div>
             </div>
           )}
           {salaryPay > 0 && (
             <div>
               <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Salary</div>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#3b82f6', marginTop: '2px' }}>{fmt(salaryPay)}</div>
-              <div style={{ fontSize: '11px', color: theme.textMuted }}>${(parseFloat(user.annual_salary) || 0).toLocaleString()}/yr ÷ {periodsPerYear}</div>
+              <div style={{ fontSize: '11px', color: theme.textMuted }}>${(parseFloat(me.annual_salary) || 0).toLocaleString()}/yr ÷ {periodsPerYear}</div>
             </div>
           )}
           <div>
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Commission</div>
             <div style={{ fontSize: '18px', fontWeight: '600', color: '#22c55e', marginTop: '2px' }}>{fmt(commData.available)}</div>
+            {commData.pending > 0 && <div style={{ fontSize: '11px', color: '#f59e0b' }}>{fmt(commData.pending)} pending</div>}
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Bonus</div>
+            <div style={{ fontSize: '18px', fontWeight: '600', color: '#8b5cf6', marginTop: '2px' }}>{fmt(bonusData.bonus)}</div>
+            {blockedBonusTotal > 0 && <div style={{ fontSize: '11px', color: '#ef4444' }}>{fmt(blockedBonusTotal)} blocked</div>}
           </div>
         </div>
       </div>
@@ -386,6 +546,120 @@ export default function MyPay() {
         </div>
       )}
 
+      {/* Processor commissions — utility invoices you processed this period */}
+      {(earnedProcessor.length > 0 || pendingProcessor.length > 0) && (
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: '700', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <TrendingUp size={18} style={{ color: '#a855f7' }} />
+              Utility processing
+            </h2>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '18px', fontWeight: '700', color: '#a855f7' }}>{fmt(processorEarnedTotal)}</div>
+              {processorPendingTotal > 0 && <div style={{ fontSize: '11px', color: '#f59e0b' }}>{fmt(processorPendingTotal)} pending</div>}
+            </div>
+          </div>
+          <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
+            Paid on every utility invoice you handle. Rate: {me.commission_processor_rate}{me.commission_processor_type === 'flat' ? '$ flat' : '%'} of incentive.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {[...earnedProcessor, ...pendingProcessor].map((d, i) => (
+              <div key={i} style={{
+                padding: '10px 12px',
+                backgroundColor: d.status === 'pending' ? 'rgba(245,158,11,0.06)' : 'rgba(168,85,247,0.06)',
+                border: `1px solid ${d.status === 'pending' ? 'rgba(245,158,11,0.25)' : 'rgba(168,85,247,0.25)'}`,
+                borderRadius: '8px',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px'
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {d.jobTitle}
+                  </div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                    {d.utilityInvoiceId} · {d.utilityName || 'Utility'} · incentive ${d.invoiceAmount.toFixed(2)}
+                    {d.paidDate && ` · paid ${new Date(d.paidDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                    {!d.paidDate && ` · ${d.paymentStatus || 'Pending'}`}
+                  </div>
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: d.status === 'pending' ? '#f59e0b' : '#a855f7', whiteSpace: 'nowrap' }}>
+                  {fmt(d.amount)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Efficiency bonuses earned */}
+      {earnedBonuses.length > 0 && (
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: '700', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Zap size={18} style={{ color: '#8b5cf6' }} />
+              Efficiency bonuses earned
+            </h2>
+            <span style={{ fontSize: '18px', fontWeight: '700', color: '#8b5cf6' }}>{fmt(bonusData.bonus)}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {earnedBonuses.map((d, i) => (
+              <div key={i} style={{ padding: '10px 12px', backgroundColor: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.jobTitle}</div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                    Allotted {d.allottedHours}h · Actual {d.actualHours?.toFixed(1)}h · Saved {d.savedHours?.toFixed(1)}h
+                    {d.crewSize > 1 && ` · split ${d.crewSize} ways`}
+                  </div>
+                  {d.releaseReason && d.releaseReason !== 'victor_verified' && (
+                    <div style={{ fontSize: '10px', color: '#f59e0b', marginTop: '2px', fontWeight: 600 }}>
+                      Released via {d.releaseReason === 'paid_threshold_met' ? `paid threshold (${d.paidPercent}%)` : d.releaseReason === 'admin_override' ? 'admin override' : 'gate off'}
+                    </div>
+                  )}
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#8b5cf6', whiteSpace: 'nowrap' }}>{fmt(d.bonusAmount)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Blocked bonuses — user needs to know why they didn't get paid */}
+      {blockedBonuses.length > 0 && (
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: '700', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertCircle size={18} style={{ color: '#ef4444' }} />
+              Bonuses on hold
+            </h2>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '18px', fontWeight: '700', color: theme.textMuted, textDecoration: 'line-through' }}>{fmt(blockedBonusTotal)}</div>
+              <div style={{ fontSize: '11px', color: '#ef4444' }}>not paid</div>
+            </div>
+          </div>
+          <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
+            These bonuses weren't released this period. The most common reason is missing Victor completion verification. Ask your admin to verify the job or release the bonus manually.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {blockedBonuses.map((d, i) => (
+              <div key={i} style={{ padding: '10px 12px', backgroundColor: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.jobTitle}</div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                    Allotted {d.allottedHours}h · Actual {d.actualHours?.toFixed(1)}h · Saved {d.savedHours?.toFixed(1)}h
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '3px', fontWeight: 600 }}>
+                    {d.blockedReason === 'no_completion_verification' ? 'Blocked — completion verification missing' : 'Blocked'}
+                    {d.paidPercent != null && ` · ${d.paidPercent}% paid (need ${d.paidThresholdPct}%)`}
+                  </div>
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textMuted, whiteSpace: 'nowrap', textDecoration: 'line-through' }}>
+                  {fmt(d.wouldHaveEarned)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Hours summary */}
       {timeEntries.length > 0 && (
         <div style={cardStyle}>
@@ -403,12 +677,12 @@ export default function MyPay() {
       )}
 
       {/* Empty states */}
-      {!commData.details.length && !timeEntries.length && (
+      {!commData.details.length && !timeEntries.length && !bonusData.details?.length && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: '40px 20px' }}>
           <DollarSign size={32} style={{ color: theme.textMuted, margin: '0 auto 8px' }} />
           <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Nothing to show yet</div>
           <div style={{ fontSize: '12px', color: theme.textMuted }}>
-            Commissions and hours will appear here once activity lands in this pay period.
+            Commissions, bonuses, and hours will appear here once activity lands in this pay period.
           </div>
         </div>
       )}
