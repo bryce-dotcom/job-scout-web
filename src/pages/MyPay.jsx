@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Zap } from 'lucide-react'
+import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Zap, Eye } from 'lucide-react'
 import {
   getCurrentPayPeriod,
   calculateInvoiceCommissions,
@@ -11,6 +11,7 @@ import {
   timeClockToJobHours,
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
+import { canViewHR } from '../lib/accessControl'
 
 /**
  * MyPay — self-service pay view for every employee.
@@ -65,8 +66,33 @@ export default function MyPay() {
   // the current period.
   const [periodOffset, setPeriodOffset] = useState(0)
 
+  // Admin "View as" — Bryce/Doug can audit what each rep sees on their
+  // MyPay without logging in as them. Gated by canViewHR (the same flag
+  // that controls full Payroll access). Defaults to the logged-in user
+  // so reps see themselves automatically.
+  const isHRAdmin = canViewHR(user)
+  const [viewAsEmployeeId, setViewAsEmployeeId] = useState(user?.id || null)
+  const [allEmployees, setAllEmployees] = useState([])
+  const effectiveUserId = viewAsEmployeeId || user?.id
+  const isImpersonating = effectiveUserId && effectiveUserId !== user?.id
+
+  // When the logged-in user changes (rare — page reload), reset the
+  // impersonation pointer to themselves.
+  useEffect(() => { setViewAsEmployeeId(user?.id || null) }, [user?.id])
+
+  // Load active employees for the View-as dropdown (admin only)
   useEffect(() => {
-    if (!companyId || !user?.id) return
+    if (!isHRAdmin || !companyId) return
+    ;(async () => {
+      const { data } = await supabase.from('employees')
+        .select('id, name, email, role, is_commission, commission_processor_rate')
+        .eq('company_id', companyId).eq('active', true).order('name')
+      setAllEmployees(data || [])
+    })()
+  }, [isHRAdmin, companyId])
+
+  useEffect(() => {
+    if (!companyId || !effectiveUserId) return
     ;(async () => {
       setLoading(true)
       try {
@@ -96,7 +122,7 @@ export default function MyPay() {
           .from('leads')
           .select('id, salesperson_id, salesperson_ids')
           .eq('company_id', companyId)
-          .or(`salesperson_id.eq.${user.id},salesperson_ids.cs.{${user.id}}`)
+          .or(`salesperson_id.eq.${effectiveUserId},salesperson_ids.cs.{${effectiveUserId}}`)
 
         // All jobs — we need any job owned directly by the user OR linked
         // to one of their leads. Paginate because HHH has >6k jobs.
@@ -156,7 +182,7 @@ export default function MyPay() {
           .from('time_clock')
           .select('id, job_id, employee_id, clock_in, clock_out, total_hours')
           .eq('company_id', companyId)
-          .eq('employee_id', user.id)
+          .eq('employee_id', effectiveUserId)
           .gte('clock_in', periodStart.toISOString())
           .lte('clock_in', periodEnd.toISOString())
           .not('clock_out', 'is', null)
@@ -203,7 +229,7 @@ export default function MyPay() {
         const empPromise = supabase
           .from('employees')
           .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, is_hourly, is_salary, hourly_rate, annual_salary')
-          .eq('id', user.id).maybeSingle()
+          .eq('id', effectiveUserId).maybeSingle()
 
         // Utility invoices on jobs the user might own — we fetch them all
         // and filter client-side via the shared calc's ownership lookup.
@@ -232,7 +258,7 @@ export default function MyPay() {
       }
     })()
     // periodOffset in deps so changing the period refetches in-period payments
-  }, [companyId, user?.id, periodOffset])
+  }, [companyId, effectiveUserId, periodOffset])
 
   const { periodStart, periodEnd } = getCurrentPayPeriod(payrollConfig, periodOffset)
   const periodStartStr = periodStart.toISOString().split('T')[0]
@@ -290,7 +316,7 @@ export default function MyPay() {
   }, [invoices, utilityInvoices, allPaymentsByInvoiceId])
 
   const commData = useMemo(() => {
-    if (!user?.id) return { available: 0, pending: 0, details: [] }
+    if (!effectiveUserId) return { available: 0, pending: 0, details: [] }
     const me = empRow || user
     return calculateInvoiceCommissions({
       employee: me,
@@ -304,13 +330,13 @@ export default function MyPay() {
       periodStartStr,
       periodEndStr,
     })
-  }, [user, empRow, jobs, leads, invoices, payments, allPaymentsByInvoiceId, utilityInvoices, payrollConfig, periodStartStr, periodEndStr])
+  }, [effectiveUserId, empRow, jobs, leads, invoices, payments, allPaymentsByInvoiceId, utilityInvoices, payrollConfig, periodStartStr, periodEndStr])
 
   // Efficiency bonus for this user — same calc Payroll uses. Uses the
   // user's own time entries plus every other crew member's time_log
   // rows on the same jobs so saved-hours math matches Payroll exactly.
   const bonusData = useMemo(() => {
-    if (!user?.id) return { bonus: 0, details: [] }
+    if (!effectiveUserId) return { bonus: 0, details: [] }
     // Combine user's time_clock (normalized to job hours) with all
     // company time_log rows so the crew split is accurate.
     const myClockToJob = timeClockToJobHours(timeEntries)
@@ -323,7 +349,7 @@ export default function MyPay() {
         .filter(Boolean)
     )
     return calculateEfficiencyBonus({
-      employeeId: user.id,
+      employeeId: effectiveUserId,
       timeLogEntries: combinedTimeLog,
       timeClockRows: timeEntries,
       jobs,
@@ -397,9 +423,59 @@ export default function MyPay() {
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '900px', margin: '0 auto' }}>
+      {/* Admin "View as" banner — visible only to HR-enabled users.
+          Lets Bryce/Doug pick any active employee and see their MyPay
+          exactly as that person would see it (commissions, bonuses,
+          processor cuts, blocked items). The dropdown defaults to the
+          logged-in user so non-impersonating loads stay clean. */}
+      {isHRAdmin && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+          padding: '10px 14px', marginBottom: '16px',
+          backgroundColor: isImpersonating ? 'rgba(245,158,11,0.10)' : 'rgba(90,99,73,0.06)',
+          border: `1px solid ${isImpersonating ? 'rgba(245,158,11,0.4)' : theme.border}`,
+          borderRadius: '10px',
+        }}>
+          <Eye size={14} style={{ color: isImpersonating ? '#d97706' : theme.textMuted }} />
+          <span style={{ fontSize: '12px', fontWeight: 600, color: isImpersonating ? '#92400e' : theme.textSecondary }}>
+            {isImpersonating ? 'Viewing as:' : 'View as:'}
+          </span>
+          <select
+            value={effectiveUserId || ''}
+            onChange={(e) => setViewAsEmployeeId(e.target.value ? parseInt(e.target.value) : user?.id)}
+            style={{
+              padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.border}`,
+              backgroundColor: theme.bgCard, fontSize: '13px', color: theme.text, minWidth: '180px',
+            }}
+          >
+            {/* Self always at top */}
+            {user && <option value={user.id}>{user.name} (me)</option>}
+            <option disabled>──────</option>
+            {(allEmployees || []).filter(e => e.id !== user?.id).map(e => (
+              <option key={e.id} value={e.id}>
+                {e.name}{e.role ? ` · ${e.role}` : ''}
+              </option>
+            ))}
+          </select>
+          {isImpersonating && (
+            <button
+              onClick={() => setViewAsEmployeeId(user?.id)}
+              style={{ padding: '5px 10px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+            >
+              Back to mine
+            </button>
+          )}
+          <span style={{ marginLeft: 'auto', fontSize: '11px', color: theme.textMuted, fontStyle: 'italic' }}>
+            Admin tool — only visible to HR-enabled users
+          </span>
+        </div>
+      )}
+
       <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>My Pay</h1>
+          <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
+            {isImpersonating ? `${empRow?.name || 'Employee'}'s Pay` : 'My Pay'}
+          </h1>
           <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
             Pay period: {periodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             {periodOffset !== 0 && (
