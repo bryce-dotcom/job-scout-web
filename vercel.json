@@ -10,7 +10,7 @@
     }
   ],
   "functions": {
-    "api/cron/drain-migrations.cjs": {
+    "api/cron/drain-migrations.js": {
       "maxDuration": 300
     }
   }
