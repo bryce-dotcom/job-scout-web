@@ -31,15 +31,21 @@ serve(async (req) => {
       proposal_notes,
       include_tiers,
       eos_data,
+      manual_annual_savings,
     } = await req.json();
 
     const totalNum = parseFloat(total) || 0;
     const incentiveNum = parseFloat(utility_incentive) || 0;
     const discountNum = parseFloat(discount) || 0;
+    const manualSavingsNum = parseFloat(manual_annual_savings) || 0;
     const isFresh = user_direction === '__fresh__';
     const hasDirection = !isFresh && user_direction && user_direction.trim().length > 0;
     const hasExisting = existing_layout && existing_layout.sections;
     const hasAudit = audit_data && audit_data.annual_savings_kwh > 0;
+    // Canonical annual savings: manual override (set by user on the estimate) wins over audit.
+    const canonicalAnnualSavings = manualSavingsNum > 0
+      ? manualSavingsNum
+      : (hasAudit ? (audit_data.annual_savings_dollars || 0) : 0);
 
     // Build context for Claude
     const lineItemsSummary = (line_items || []).map((li: any) =>
@@ -174,6 +180,7 @@ Create 3 pricing tiers. CRITICAL RULES:
 - net_price for ALL tiers = price - incentive (same incentive amount subtracted from each).
 - The recommended tier should be "better".
 - NEVER use the word "rebate" — always say "incentive."
+- annual_savings MUST BE THE SAME on all 3 tiers${canonicalAnnualSavings > 0 ? ` and EQUAL TO ${canonicalAnnualSavings}` : ''}. Annual energy savings come from the lighting (same scope across tiers), so the savings figure does not change between Good / Better / Best.
 ` : ''}
 ${hasAudit ? `
 INVESTMENT GRADE AUDIT DATA (these are REAL certified numbers — use them EXACTLY):
@@ -265,7 +272,40 @@ Be specific to ${customer_name} and this project. Generic copy = lost deal. Sell
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Inject real audit data into sections so the frontend charts use exact numbers
+    // Force the canonical annual savings number across every section that displays it,
+    // so the AI cannot invent per-tier or per-section variants. Manual override beats audit.
+    if (canonicalAnnualSavings > 0 && proposalLayout.sections) {
+      const netCost = totalNum - (hasAudit ? (audit_data.estimated_rebate || incentiveNum) : incentiveNum);
+      const paybackMonths = canonicalAnnualSavings > 0
+        ? Math.round((netCost / canonicalAnnualSavings) * 12)
+        : 0;
+
+      for (const section of proposalLayout.sections) {
+        if (section.type === 'savings_timeline') {
+          section.annual_savings = canonicalAnnualSavings;
+        }
+        if (section.type === 'roi_summary') {
+          if (!section.metrics) section.metrics = {};
+          section.metrics.annual_savings = canonicalAnnualSavings;
+          if (netCost > 0) {
+            section.metrics.payback_months = paybackMonths;
+            section.metrics.roi_percent = Math.round(((canonicalAnnualSavings * 5 - netCost) / netCost) * 100);
+          }
+        }
+        if (section.type === 'pricing_tiers' && Array.isArray(section.tiers)) {
+          for (const tier of section.tiers) {
+            tier.annual_savings = canonicalAnnualSavings;
+            const tierNet = parseFloat(tier.net_price) || netCost;
+            if (tierNet > 0) {
+              tier.payback_months = Math.round((tierNet / canonicalAnnualSavings) * 12);
+            }
+          }
+        }
+      }
+    }
+
+    // Inject real audit data into sections so the frontend charts use exact numbers.
+    // Note: tier annual_savings already forced above using canonicalAnnualSavings (which prefers manual override).
     if (hasAudit && proposalLayout.sections) {
       // Ensure audit_summary is preserved at the layout level
       if (!proposalLayout.audit_summary) {
@@ -282,25 +322,13 @@ Be specific to ${customer_name} and this project. Generic copy = lost deal. Sell
       }
       proposalLayout.audit_certified = true;
 
-      // Force correct numbers into savings_timeline
+      // Force correct kWh / wattage / fixture numbers into savings_timeline.
+      // annual_savings already set above using canonicalAnnualSavings (manual override wins).
       const savingsSection = proposalLayout.sections.find((s: any) => s.type === 'savings_timeline');
       if (savingsSection) {
-        savingsSection.annual_savings = audit_data.annual_savings_dollars;
         savingsSection.annual_kwh_savings = audit_data.annual_savings_kwh;
         savingsSection.watts_reduced = audit_data.watts_reduced;
         savingsSection.total_fixtures = audit_data.total_fixtures;
-      }
-
-      // Force correct numbers into roi_summary
-      const roiSection = proposalLayout.sections.find((s: any) => s.type === 'roi_summary');
-      if (roiSection) {
-        if (!roiSection.metrics) roiSection.metrics = {};
-        roiSection.metrics.annual_savings = audit_data.annual_savings_dollars;
-        const netCost = totalNum - (audit_data.estimated_rebate || incentiveNum);
-        if (audit_data.annual_savings_dollars > 0) {
-          roiSection.metrics.payback_months = Math.round((netCost / audit_data.annual_savings_dollars) * 12);
-          roiSection.metrics.roi_percent = Math.round(((audit_data.annual_savings_dollars * 5 - netCost) / netCost) * 100);
-        }
       }
     }
 
