@@ -426,7 +426,7 @@ export default function MyPay() {
       {/* Build marker — appears for everyone, helps debug stale-bundle
           confusion. If you don't see "v2026.04.25" you're on an old build. */}
       <div style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '8px', textAlign: 'right', fontFamily: 'monospace' }}>
-        MyPay v2026.04.25 · view-as
+        MyPay v2026.04.27 · view-as enabled
       </div>
       {/* Admin "View as" banner — visible only to HR-enabled users.
           Lets Bryce/Doug pick any active employee and see their MyPay
