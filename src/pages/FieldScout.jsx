@@ -203,6 +203,9 @@ export default function FieldScout() {
   // Determine if user is a field role that requires Victor verification before clock-out
   const fieldRoles = ['field tech', 'installer', 'project manager', 'technician', 'foreman', 'crew lead']
   const isFieldRole = currentEmployee?.role && fieldRoles.includes(currentEmployee.role.toLowerCase())
+  // Admin/Owner can override the verification gate via "Force Clock Out" (audited).
+  const adminRoles = ['admin', 'owner', 'super_admin', 'developer']
+  const isAdmin = currentEmployee?.role && adminRoles.includes(currentEmployee.role.toLowerCase())
 
   // Today's jobs — only show jobs assigned to this user.
   //
@@ -777,18 +780,24 @@ export default function FieldScout() {
     setVictorModal({ type: 'completion', jobId, markComplete: true })
   }
 
-  // Clock out
-  const handleClockOut = async () => {
+  // Clock out. Pass `forceReason` (string) to bypass the verification gate —
+  // only admins are allowed to do that; the reason is persisted in notes for audit.
+  const handleClockOut = async (forceReason = null) => {
     if (!activeEntry || clockingOut) return
-    // Block clock-out if clocked into a job that hasn't been verified
-    if (activeEntry.job_id && !verifiedJobs.has(activeEntry.job_id)) {
-      setClockOutBlocked(true)
-      return
-    }
-    // Block field roles clocked in as General if they haven't done daily verification
-    if (isFieldRole && !activeEntry.job_id && !hasDailyVerification) {
-      setClockOutBlocked(true)
-      return
+    const isForced = typeof forceReason === 'string' && forceReason.trim().length > 0
+    // Re-enforce the gate here — never trust a caller's local state mutation.
+    // Only admins may force; everyone else must actually pass verification.
+    if (!isForced || !isAdmin) {
+      // Block clock-out if clocked into a job that hasn't been verified
+      if (activeEntry.job_id && !verifiedJobs.has(activeEntry.job_id)) {
+        setClockOutBlocked(true)
+        return
+      }
+      // Block field roles clocked in as General if they haven't done daily verification
+      if (isFieldRole && !activeEntry.job_id && !hasDailyVerification) {
+        setClockOutBlocked(true)
+        return
+      }
     }
     setClockingOut(true)
     const entryId = activeEntry.id
@@ -800,14 +809,22 @@ export default function FieldScout() {
       totalHours -= (new Date(activeEntry.lunch_end) - new Date(activeEntry.lunch_start)) / (1000 * 60 * 60)
     }
     try {
+      const updatePayload = {
+        clock_out: clockOut.toISOString(),
+        clock_out_lat: lat,
+        clock_out_lng: lng,
+        total_hours: Math.round(totalHours * 100) / 100
+      }
+      if (isForced && isAdmin) {
+        const stamp = `[FORCED CLOCK-OUT ${clockOut.toISOString()} by ${currentEmployee?.name || currentEmployee?.email} — verification bypassed] ${forceReason.trim()}`
+        updatePayload.notes = activeEntry.notes ? `${activeEntry.notes}\n${stamp}` : stamp
+        updatePayload.adjusted_by = currentEmployee?.id || null
+        updatePayload.adjusted_at = clockOut.toISOString()
+        updatePayload.adjustment_reason = `Force clock-out: ${forceReason.trim()}`
+      }
       const { error } = await supabase
         .from('time_clock')
-        .update({
-          clock_out: clockOut.toISOString(),
-          clock_out_lat: lat,
-          clock_out_lng: lng,
-          total_hours: Math.round(totalHours * 100) / 100
-        })
+        .update(updatePayload)
         .eq('id', entryId)
       if (error) throw error
       await fetchEntries()
@@ -1938,32 +1955,43 @@ export default function FieldScout() {
                     <Shield size={16} />
                     {activeEntry.job_id ? 'Verify Now' : 'Run Daily Check'}
                   </button>
-                  <button
-                    onClick={() => {
-                      if (confirm('Clock out without verification? This will be flagged for review.')) {
+                  {isAdmin ? (
+                    <button
+                      onClick={() => {
+                        const reason = prompt('Admin override: enter a reason for forcing clock-out without Victor verification (required, will be saved to the time entry for audit):')
+                        if (!reason || !reason.trim()) return
                         setClockOutBlocked(false)
-                        setVerifiedJobs(prev => { const s = new Set(prev); if (activeEntry.job_id) s.add(activeEntry.job_id); return s })
-                        setHasDailyVerification(true)
-                        handleClockOut()
-                      }
-                    }}
-                    style={{
+                        handleClockOut(reason.trim())
+                      }}
+                      title="Admin only — bypasses verification and is logged on the time entry"
+                      style={{
+                        padding: '10px 16px',
+                        backgroundColor: 'transparent',
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: '10px',
+                        color: theme.textSecondary,
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        minHeight: '44px'
+                      }}
+                    >
+                      Force Clock Out (Admin)
+                    </button>
+                  ) : (
+                    <div style={{
                       padding: '10px 16px',
-                      backgroundColor: 'transparent',
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: '10px',
-                      color: theme.textSecondary,
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      minHeight: '44px'
-                    }}
-                  >
-                    Force Clock Out
-                  </button>
+                      fontSize: '12px',
+                      color: theme.textMuted,
+                      fontStyle: 'italic',
+                      alignSelf: 'center'
+                    }}>
+                      Stuck? Ask an admin to force clock-out for you.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
