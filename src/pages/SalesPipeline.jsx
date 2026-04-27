@@ -364,7 +364,7 @@ export default function SalesPipeline() {
       try {
         const { data: jobsData } = await supabase
           .from('jobs')
-          .select('id, lead_id, job_id, status, job_total, utility_incentive, assigned_team, invoice_status, salesperson_id, pm_id, job_lead_id')
+          .select('id, lead_id, job_id, status, job_total, utility_incentive, assigned_team, invoice_status, salesperson_id, pm_id, job_lead_id, business_unit')
           .in('lead_id', deliveryLeadIds)
         attachJobs(normalized, jobsData)
       } catch (e) { /* non-critical */ }
@@ -467,13 +467,20 @@ export default function SalesPipeline() {
     fetchPipelineLeads()
   }, [companyId, navigate, stages, dateRange])
 
-  // Extract unique business units for filter dropdown
+  // Extract unique business units for filter dropdown.
+  // Sources: lead.business_unit (sales-stage leads) AND any business_unit
+  // on the lead's attached jobs (delivery-stage leads usually have BU on
+  // the job, not the lead).
   const businessUnits = useMemo(() => {
     const bus = new Set()
+    const collect = (raw) => {
+      if (!raw) return
+      const name = typeof raw === 'object' ? raw.name : raw
+      if (name) bus.add(name)
+    }
     pipelineLeads.forEach(l => {
-      if (!l.business_unit) return
-      const buName = typeof l.business_unit === 'object' ? l.business_unit.name : l.business_unit
-      if (buName) bus.add(buName)
+      collect(l.business_unit)
+      ;(l.jobs || []).forEach(j => collect(j.business_unit))
     })
     return [...bus].sort()
   }, [pipelineLeads])
@@ -509,21 +516,28 @@ export default function SalesPipeline() {
       if (effectiveOwnerFilter === 'unassigned') {
         if (lead.lead_owner_id || lead.salesperson_id) return false
       } else if (lead._isJob) {
-        // For standalone jobs, match salesperson, PM, or job lead
-        if (lead.salesperson_id !== ownerId && lead._pmId !== ownerId && lead._jobLeadId !== ownerId && lead.lead_owner_id !== ownerId) return false
+        // For standalone jobs, match salesperson or lead owner only.
+        // PM / job-lead matches were too loose — they made reps see deals
+        // they didn't sell just because they were assigned to install.
+        if (lead.salesperson_id !== ownerId && lead.lead_owner_id !== ownerId) return false
       } else {
-        // Check lead-level owners first
-        const leadMatch = lead.lead_owner_id === ownerId || lead.salesperson_id === ownerId
-        // Also check job-level owners for delivery leads
-        const jobMatch = (lead.jobs || []).some(j =>
-          j.salesperson_id === ownerId || j.pm_id === ownerId || j.job_lead_id === ownerId
-        )
-        if (!leadMatch && !jobMatch) return false
+        // Lead-level ownership only — the salesperson/lead owner ON THE LEAD.
+        // Previously we also matched on jobs.salesperson_id / pm_id /
+        // job_lead_id, which surfaced leads where the rep was just the
+        // installer or PM on a single attached job. That made reps see
+        // jobs they didn't sell.
+        if (lead.lead_owner_id !== ownerId && lead.salesperson_id !== ownerId) return false
       }
     }
     if (buFilter !== 'all') {
-      const buName = typeof lead.business_unit === 'object' ? lead.business_unit?.name : (lead.business_unit || '')
-      if (buName !== buFilter) return false
+      // Match the lead's BU OR any attached job's BU. Delivery-stage
+      // leads often have BU only on the job, not the lead row.
+      const leadBu = typeof lead.business_unit === 'object' ? lead.business_unit?.name : (lead.business_unit || '')
+      const jobBuMatch = (lead.jobs || []).some(j => {
+        const jbu = typeof j.business_unit === 'object' ? j.business_unit?.name : (j.business_unit || '')
+        return jbu === buFilter
+      })
+      if (leadBu !== buFilter && !jobBuMatch) return false
     }
     return true
   })
