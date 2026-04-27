@@ -2852,7 +2852,7 @@ export default function Payroll() {
                       <input
                         type="number" min="0" step="5"
                         value={payrollConfig.efficiency_bonus_rate}
-                        onChange={(e) => setPayrollConfig({ ...payrollConfig, efficiency_bonus_rate: parseFloat(e.target.value) || 25 })}
+                        onChange={(e) => setPayrollConfig({ ...payrollConfig, efficiency_bonus_rate: parseFloat(e.target.value) || 30 })}
                         style={inputStyle}
                       />
                       <span style={{ fontSize: '14px', color: theme.textMuted }}>/hour</span>
