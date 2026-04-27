@@ -73,6 +73,7 @@ export default function Books() {
   const fetchPlaidTransactions = useStore((state) => state.fetchPlaidTransactions)
   const syncPlaidTransactions = useStore((state) => state.syncPlaidTransactions)
   const jobs = useStore((state) => state.jobs)
+  const employees = useStore((state) => state.employees)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || {
@@ -109,8 +110,13 @@ export default function Books() {
   const [showExpenseModal, setShowExpenseModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [expenseForm, setExpenseForm] = useState({
-    description: '', amount: '', expense_date: '', vendor: '', category_id: ''
+    description: '', amount: '', expense_date: '', vendor: '', category_id: '',
+    payee_mode: 'employee', // 'employee' | 'vendor' | 'other'
+    payee_employee_id: '', payee_vendor_id: '', payee_name: ''
   })
+  // vendors table doesn't exist yet — when it does, flip this to true and the
+  // Vendor segment will appear in the Payee picker.
+  const VENDORS_ENABLED = false
   // Split-across-categories support: when enabled, the expense's amount is
   // distributed across N category lines (e.g. one check to Cole covering
   // materials + fuel + tools). Each line is { category_id, amount, note }.
@@ -176,7 +182,7 @@ export default function Books() {
   }
 
   const fetchExpenses = async () => {
-    const { data } = await supabase.from('manual_expenses').select('*, category:expense_categories(id, name, icon, color)').eq('company_id', companyId).order('expense_date', { ascending: false })
+    const { data } = await supabase.from('manual_expenses').select('*, category:expense_categories(id, name, icon, color), payee_employee:employees!manual_expenses_payee_employee_id_fkey(id, name)').eq('company_id', companyId).order('expense_date', { ascending: false })
     setExpenses(data || [])
     // Pull all splits for this company in one query and bucket by parent.
     // A split row has either expense_id (manual_expenses) OR plaid_transaction_id, never both.
@@ -707,6 +713,16 @@ export default function Books() {
       }
       if (expenseSplits.some(l => !l.category_id)) { toast.error('Every split line needs a category'); return }
     }
+    // Resolve structured payee from the segmented picker. The DB CHECK
+    // forbids both FKs being set; the picker enforces "one mode at a time"
+    // so we just clear the off-mode columns here.
+    const mode = expenseForm.payee_mode
+    const payeeEmployeeId = mode === 'employee' && expenseForm.payee_employee_id
+      ? parseInt(expenseForm.payee_employee_id, 10) : null
+    const payeeVendorId = mode === 'vendor' && expenseForm.payee_vendor_id
+      ? parseInt(expenseForm.payee_vendor_id, 10) : null
+    const payeeName = mode === 'other' ? (expenseForm.payee_name || null) : null
+
     const payload = {
       company_id: companyId, description: expenseForm.description,
       amount: totalAmount,
@@ -714,7 +730,10 @@ export default function Books() {
       vendor: expenseForm.vendor || null,
       // When splits are on, the parent's category_id stops being meaningful;
       // null it out so reporting code knows to look at splits instead.
-      category_id: expenseSplitsEnabled ? null : (expenseForm.category_id || null)
+      category_id: expenseSplitsEnabled ? null : (expenseForm.category_id || null),
+      payee_employee_id: payeeEmployeeId,
+      payee_vendor_id: payeeVendorId,
+      payee_name: payeeName
     }
     let expenseId
     if (editingItem) {
@@ -755,7 +774,21 @@ export default function Books() {
 
   const openEditExpense = (expense) => {
     setEditingItem(expense)
-    setExpenseForm({ description: expense.description || '', amount: expense.amount || '', expense_date: expense.expense_date || '', vendor: expense.vendor || '', category_id: expense.category_id || '' })
+    // Determine which payee mode to land on based on which column has a value.
+    let payee_mode = 'employee'
+    if (expense.payee_vendor_id) payee_mode = 'vendor'
+    else if (!expense.payee_employee_id && expense.payee_name) payee_mode = 'other'
+    setExpenseForm({
+      description: expense.description || '',
+      amount: expense.amount || '',
+      expense_date: expense.expense_date || '',
+      vendor: expense.vendor || '',
+      category_id: expense.category_id || '',
+      payee_mode,
+      payee_employee_id: expense.payee_employee_id ? String(expense.payee_employee_id) : '',
+      payee_vendor_id: expense.payee_vendor_id ? String(expense.payee_vendor_id) : '',
+      payee_name: expense.payee_name || ''
+    })
     const existingSplits = splitsByExpense[expense.id] || []
     if (existingSplits.length > 0) {
       setExpenseSplitsEnabled(true)
@@ -770,7 +803,10 @@ export default function Books() {
   const closeExpenseModal = () => {
     setShowExpenseModal(false)
     setEditingItem(null)
-    setExpenseForm({ description: '', amount: '', expense_date: '', vendor: '', category_id: '' })
+    setExpenseForm({
+      description: '', amount: '', expense_date: '', vendor: '', category_id: '',
+      payee_mode: 'employee', payee_employee_id: '', payee_vendor_id: '', payee_name: ''
+    })
     setExpenseSplitsEnabled(false)
     setExpenseSplits([])
   }
@@ -2076,6 +2112,63 @@ export default function Books() {
             </button>
           </div>
 
+          {/* Payroll by Employee — totals for any payroll-category manual_expense
+              tagged to an employee. When a row has splits, the employee is
+              credited the WHOLE check (sum of splits), not per-line, so commission/
+              bonus categories paid in the same check still count. */}
+          {(() => {
+            const from = new Date(taxDateFrom)
+            const to = new Date(taxDateTo)
+            const isPayrollCategoryName = (name) => !!name && name.toLowerCase().includes('payroll')
+            const inRange = (d) => { const x = new Date(d); return x >= from && x <= to }
+            const byEmp = {}
+            expenses.forEach(e => {
+              if (!e.payee_employee_id || !e.expense_date || !inRange(e.expense_date)) return
+              const splits = splitsByExpense[e.id] || []
+              // Determine if this expense touches payroll. Either:
+              //  (a) parent category is payroll, or
+              //  (b) any split is in a payroll category.
+              const parentIsPayroll = isPayrollCategoryName(e.category?.name)
+              const splitIsPayroll = splits.some(s => isPayrollCategoryName(s.category?.name))
+              if (!parentIsPayroll && !splitIsPayroll) return
+              // Whole-check semantics: employee gets credit for the parent total
+              // even when there are splits. Splits sum to parent.amount by UI rule.
+              const total = parseFloat(e.amount) || 0
+              const empName = e.payee_employee?.name || `Employee #${e.payee_employee_id}`
+              if (!byEmp[e.payee_employee_id]) byEmp[e.payee_employee_id] = { name: empName, total: 0, count: 0 }
+              byEmp[e.payee_employee_id].total += total
+              byEmp[e.payee_employee_id].count += 1
+            })
+            const empEntries = Object.entries(byEmp).sort((a, b) => b[1].total - a[1].total)
+            if (empEntries.length === 0) return null
+            return (
+              <div style={{ ...statCardStyle, marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Payroll by Employee (YTD)</h3>
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '16px' }}>Manual expenses tagged to an employee in a payroll category, within the date range above.</p>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                        <th style={{ padding: '8px 0', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: theme.textMuted }}>Employee</th>
+                        <th style={{ padding: '8px 0', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: theme.textMuted }}>Total Paid</th>
+                        <th style={{ padding: '8px 0', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: theme.textMuted }}># of Payments</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {empEntries.map(([id, row]) => (
+                        <tr key={id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                          <td style={{ padding: '10px 0', fontSize: '13px', color: theme.text }}>{row.name}</td>
+                          <td style={{ padding: '10px 0', fontSize: '13px', fontWeight: '600', color: theme.text, textAlign: 'right' }}>{formatCurrency(row.total)}</td>
+                          <td style={{ padding: '10px 0', fontSize: '13px', color: theme.textMuted, textAlign: 'center' }}>{row.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })()}
+
           {(() => {
             const taxTxns = plaidTransactions.filter(t => {
               if (!t.confirmed) return false
@@ -2210,8 +2303,10 @@ export default function Books() {
             // unless the per-line override is set.
             const confirmedPlaid = plaidTransactions.filter(t => t.confirmed)
             const manualRows = []
+            const payeeLabel = (e) => e.payee_employee?.name || e.payee_name || null
             expenses.forEach(e => {
               const splits = splitsByExpense[e.id] || []
+              const payee = payeeLabel(e)
               if (splits.length > 0) {
                 splits.forEach(s => {
                   manualRows.push({
@@ -2220,7 +2315,8 @@ export default function Books() {
                     tax_category: s.tax_category || s.category?.default_tax_category || null,
                     description: e.description + (s.note ? ` — ${s.note}` : ''),
                     amount: parseFloat(s.amount) || 0,
-                    date: e.expense_date, isExpense: true
+                    date: e.expense_date, isExpense: true,
+                    payee
                   })
                 })
               } else {
@@ -2228,7 +2324,8 @@ export default function Books() {
                   id: 'm-' + e.id, type: 'manual', category: e.category?.name || 'Uncategorized',
                   tax_category: e.category?.default_tax_category || null,
                   description: e.description, amount: parseFloat(e.amount) || 0,
-                  date: e.expense_date, isExpense: true
+                  date: e.expense_date, isExpense: true,
+                  payee
                 })
               }
             })
@@ -2290,9 +2387,12 @@ export default function Books() {
                       {items.length > 0 && (
                         <div style={{ marginTop: '12px', maxHeight: '120px', overflowY: 'auto' }}>
                           {items.slice(0, 5).map(item => (
-                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: theme.textSecondary, padding: '4px 0' }}>
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>{item.description}</span>
-                              <span>{formatCurrency(item.amount)}</span>
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12px', color: theme.textSecondary, padding: '4px 0' }}>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                                {item.description}
+                                <span style={{ color: theme.textMuted, marginLeft: '6px' }}>· {item.payee || '—'}</span>
+                              </span>
+                              <span style={{ flexShrink: 0 }}>{formatCurrency(item.amount)}</span>
                             </div>
                           ))}
                           {items.length > 5 && <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>+{items.length - 5} more</div>}
@@ -2347,6 +2447,71 @@ export default function Books() {
                   <label style={labelStyle}>Vendor</label>
                   <input type="text" value={expenseForm.vendor} onChange={(e) => setExpenseForm({ ...expenseForm, vendor: e.target.value })} style={inputStyle} />
                 </div>
+              </div>
+
+              {/* Payee picker — segmented Employee | Vendor | Other.
+                  Stored polymorphically on manual_expenses.payee_employee_id /
+                  payee_vendor_id / payee_name. DB CHECK forbids both FKs set. */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Payee</label>
+                <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', padding: '4px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px' }}>
+                  {['employee', VENDORS_ENABLED ? 'vendor' : null, 'other'].filter(Boolean).map(mode => {
+                    const active = expenseForm.payee_mode === mode
+                    const label = mode === 'employee' ? 'Employee' : mode === 'vendor' ? 'Vendor' : 'Other'
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setExpenseForm({
+                          ...expenseForm,
+                          payee_mode: mode,
+                          // Switching modes clears the off-mode values so save can't
+                          // smuggle a stale FK through.
+                          payee_employee_id: mode === 'employee' ? expenseForm.payee_employee_id : '',
+                          payee_vendor_id: mode === 'vendor' ? expenseForm.payee_vendor_id : '',
+                          payee_name: mode === 'other' ? expenseForm.payee_name : ''
+                        })}
+                        style={{
+                          flex: 1, padding: '8px 12px', minHeight: '36px',
+                          backgroundColor: active ? theme.accent : 'transparent',
+                          border: 'none', borderRadius: '6px',
+                          color: active ? '#fff' : theme.textSecondary,
+                          fontSize: '13px', fontWeight: '500', cursor: 'pointer'
+                        }}
+                      >{label}</button>
+                    )
+                  })}
+                </div>
+                {expenseForm.payee_mode === 'employee' && (
+                  <select
+                    value={expenseForm.payee_employee_id}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, payee_employee_id: e.target.value })}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select employee --</option>
+                    {(employees || []).filter(e => e.active !== false).map(e => (
+                      <option key={e.id} value={e.id}>{e.name}</option>
+                    ))}
+                  </select>
+                )}
+                {expenseForm.payee_mode === 'vendor' && VENDORS_ENABLED && (
+                  <select
+                    value={expenseForm.payee_vendor_id}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, payee_vendor_id: e.target.value })}
+                    style={inputStyle}
+                  >
+                    <option value="">-- Select vendor --</option>
+                  </select>
+                )}
+                {expenseForm.payee_mode === 'other' && (
+                  <input
+                    type="text"
+                    placeholder="Payee name (e.g. contractor, one-off person)"
+                    defaultValue={expenseForm.payee_name}
+                    onBlur={(e) => setExpenseForm({ ...expenseForm, payee_name: e.target.value })}
+                    style={inputStyle}
+                  />
+                )}
               </div>
 
               {/* Split toggle + lines */}
