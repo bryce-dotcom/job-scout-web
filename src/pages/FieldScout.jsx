@@ -204,28 +204,25 @@ export default function FieldScout() {
   const fieldRoles = ['field tech', 'installer', 'project manager', 'technician', 'foreman', 'crew lead']
   const isFieldRole = currentEmployee?.role && fieldRoles.includes(currentEmployee.role.toLowerCase())
 
-  // Today's jobs — only show jobs assigned to this user (or unassigned)
-  const todayStr = new Date().toDateString()
+  // Today's jobs — only show jobs assigned to this user.
+  //
+  // Scope rules (tightened 2026-04-27 — HCP migration left hundreds of
+  // legacy "In Progress" jobs with stale start_dates that were leaking
+  // into everyone's daily list because of an over-permissive "unassigned
+  // shows to everyone" rule + unbounded "earlier" window):
+  //   * Date window: today, plus a 7-day catch-up tail. Anything older
+  //     is stale legacy data — shouldn't clutter the daily clock-in.
+  //   * Active clock-in always shows regardless of date/assignment.
+  //   * Must be assigned to this employee somehow (job_lead_id /
+  //     salesperson_id / pm_id / assigned_team). No more blanket
+  //     unassigned exposure.
   const todayDate = new Date(); todayDate.setHours(23, 59, 59, 999)
+  const catchUpStart = new Date(); catchUpStart.setHours(0, 0, 0, 0); catchUpStart.setDate(catchUpStart.getDate() - 7)
   const employeeName = currentEmployee?.name || ''
-  const todaysJobs = jobs.filter(j => {
-    // Skip terminal statuses
-    if (['Completed', 'Cancelled', 'Archived'].includes(j.status)) return false
-    // Always include the job we're actively clocked into, even if not scheduled today
-    if (activeEntry?.job_id && j.id === activeEntry.job_id) return true
-    // "In Progress" jobs always show (crew is actively working)
-    const isActive = j.status === 'In Progress'
-    // Jobs scheduled for today or earlier (catch-up on overdue work)
-    const jobDate = j.start_date ? new Date(j.start_date) : null
-    const isScheduledForTodayOrBefore = jobDate && jobDate <= todayDate
-    if (!isActive && !isScheduledForTodayOrBefore) return false
-    // Assigned directly to this employee via job_lead_id
-    if (currentEmployee?.id && j.job_lead_id === currentEmployee.id) return true
-    // Assigned as salesperson or PM
-    if (currentEmployee?.id && (j.salesperson_id === currentEmployee.id || j.pm_id === currentEmployee.id)) return true
-    // No assignment at all — show to everyone
-    if (!j.assigned_team && !j.job_lead_id) return true
-    // Assigned via team — handle both array and comma-separated string
+  const matchesEmployee = (j) => {
+    if (!currentEmployee?.id) return false
+    if (j.job_lead_id === currentEmployee.id) return true
+    if (j.salesperson_id === currentEmployee.id || j.pm_id === currentEmployee.id) return true
     if (j.assigned_team && employeeName) {
       if (Array.isArray(j.assigned_team)) {
         if (j.assigned_team.some(name => name.toLowerCase().includes(employeeName.toLowerCase()))) return true
@@ -234,6 +231,16 @@ export default function FieldScout() {
       }
     }
     return false
+  }
+  const todaysJobs = jobs.filter(j => {
+    if (['Completed', 'Cancelled', 'Archived'].includes(j.status)) return false
+    // Always include the job we're actively clocked into, even if not scheduled / assigned.
+    if (activeEntry?.job_id && j.id === activeEntry.job_id) return true
+    if (!matchesEmployee(j)) return false
+    const jobDate = j.start_date ? new Date(j.start_date) : null
+    const inWindow = jobDate && jobDate >= catchUpStart && jobDate <= todayDate
+    const isActive = j.status === 'In Progress'
+    return inWindow || isActive
   })
 
   // Sort: working first, then upcoming (Scheduled/In Progress), then completed
