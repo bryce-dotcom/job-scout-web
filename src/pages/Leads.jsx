@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send } from 'lucide-react'
+import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send, MapPin, ChevronDown, ChevronRight } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { leadsFields } from '../lib/importExportFields'
@@ -77,6 +77,65 @@ export default function Leads() {
   const [showImportExport, setShowImportExport] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [ownerFilter, setOwnerFilter] = useState('all')
+  const [groupByCity, setGroupByCity] = useState(() => {
+    try { return localStorage.getItem('jobscout-leads-group-by-city') === '1' } catch { return false }
+  })
+  const [collapsedCities, setCollapsedCities] = useState(() => {
+    try {
+      const raw = localStorage.getItem('jobscout-leads-collapsed-cities')
+      return raw ? new Set(JSON.parse(raw)) : new Set()
+    } catch { return new Set() }
+  })
+
+  // Persist group toggle
+  useEffect(() => {
+    try { localStorage.setItem('jobscout-leads-group-by-city', groupByCity ? '1' : '0') } catch {}
+  }, [groupByCity])
+
+  // Persist collapsed cities
+  useEffect(() => {
+    try { localStorage.setItem('jobscout-leads-collapsed-cities', JSON.stringify([...collapsedCities])) } catch {}
+  }, [collapsedCities])
+
+  const toggleCity = (city) => {
+    setCollapsedCities(prev => {
+      const next = new Set(prev)
+      if (next.has(city)) next.delete(city)
+      else next.add(city)
+      return next
+    })
+  }
+
+  // Parse city from a freeform address string.
+  // Handles common shapes:
+  //   "1735 s 5500 w, Salt Lake City, UT"            -> "Salt Lake City"
+  //   "6395 W 10400 N St, Highland, UT 84003, USA"   -> "Highland"
+  //   "15542 W Plentiful Way \nBluffdale Ut 84065"   -> "Bluffdale"
+  //   "1153 S 3600 W SLC, UT"                        -> "SLC"
+  const parseCity = (address) => {
+    if (!address || typeof address !== 'string') return null
+    const cleaned = address.replace(/\n/g, ',').trim()
+    const parts = cleaned.split(',').map(p => p.trim()).filter(Boolean)
+    if (parts.length >= 2) {
+      // Comma-separated: city is typically the second-to-last segment before "ST ZIP"
+      // Strip trailing "USA"
+      let segs = parts.filter(p => !/^USA$/i.test(p))
+      // Find segment that looks like "ST" or "ST ZIP" — city is one before it
+      for (let i = segs.length - 1; i >= 1; i--) {
+        if (/^[A-Z]{2}(\s+\d{5}(-\d{4})?)?$/i.test(segs[i])) {
+          return titleCase(segs[i - 1])
+        }
+      }
+      // Fallback: second-to-last segment
+      return titleCase(segs[segs.length - 2] || segs[0])
+    }
+    // No comma — try to extract "City ST ZIP" from the tail
+    const m = cleaned.match(/([A-Za-z][A-Za-z .'-]+?)\s+[A-Z]{2}\s+\d{5}/i)
+    if (m) return titleCase(m[1])
+    return null
+  }
+
+  const titleCase = (s) => s.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()).trim()
 
   // Mobile detection
   useEffect(() => {
@@ -338,6 +397,74 @@ export default function Leads() {
     await updateLead(lead.id, updates)
   }
 
+  const renderLeadCard = (lead) => (
+    <EntityCard
+      key={lead.id}
+      name={lead.customer_name}
+      businessName={lead.business_name}
+      onClick={() => navigate(`/leads/${lead.id}`)}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0, lineHeight: 1.3 }}>
+          {lead.customer_name}
+        </h3>
+        <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0, ...getStatusStyle(lead.status) }}>
+          {STATUS_LABELS[lead.status] || lead.status}
+        </span>
+      </div>
+      {lead.business_name && (
+        <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '10px' }}>{lead.business_name}</div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', color: theme.textMuted, marginBottom: '12px', flexWrap: 'wrap' }}>
+        {lead.phone && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Phone size={13} /><span>{lead.phone}</span>
+          </div>
+        )}
+        {lead.phone && lead.email && <span style={{ color: theme.border }}>|</span>}
+        {lead.email && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden' }}>
+            <Mail size={13} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</span>
+          </div>
+        )}
+      </div>
+      {lead.address && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
+          <MapPin size={12} style={{ flexShrink: 0 }} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.address}</span>
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        {lead.service_type && (
+          <span style={{ fontSize: '11px', padding: '4px 8px', backgroundColor: theme.bg, color: theme.textSecondary, borderRadius: '4px', fontWeight: '500' }}>{lead.service_type}</span>
+        )}
+        {lead.appointment_time && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '4px 8px', backgroundColor: '#d1fae5', color: '#059669', borderRadius: '4px', fontWeight: '500' }}>
+            <Calendar size={11} />
+            {new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </span>
+        )}
+        {lead.quote_id && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '4px 8px', backgroundColor: '#dbeafe', color: '#2563eb', borderRadius: '4px', fontWeight: '500' }}>
+            <FileText size={11} />Quote
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }} onClick={(e) => e.stopPropagation()}>
+        <button onClick={(e) => { e.stopPropagation(); openEditModal(lead); }} style={{ padding: isMobile ? '10px' : '8px 12px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Pencil size={14} />Edit
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); openAppointmentModal(lead); }} style={{ flex: 1, padding: isMobile ? '10px' : '8px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+          <Calendar size={14} />Appt
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); handleCreateQuote(lead); }} style={{ flex: 1, padding: isMobile ? '10px' : '8px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.textSecondary, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+          <FileText size={14} />Quote
+        </button>
+      </div>
+    </EntityCard>
+  )
+
   const inputStyle = {
     width: '100%',
     padding: '10px 12px',
@@ -407,6 +534,27 @@ export default function Leads() {
           <option value="all">All Sources</option>
           {leadSources.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        <button
+          type="button"
+          onClick={() => setGroupByCity(v => !v)}
+          title="Group leads by city"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            padding: isMobile ? '10px 12px' : '10px 14px',
+            minHeight: isMobile ? '44px' : 'auto',
+            backgroundColor: groupByCity ? theme.accentBg : theme.bgCard,
+            color: groupByCity ? theme.accent : theme.textSecondary,
+            border: `1px solid ${groupByCity ? theme.accent : theme.border}`,
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <MapPin size={16} />
+          {isMobile ? 'City' : 'Group by City'}
+        </button>
         </div>
       </PageHeader>
 
@@ -416,8 +564,62 @@ export default function Leads() {
           <UserPlus size={48} style={{ color: theme.textMuted, marginBottom: '16px' }} />
           <p style={{ color: theme.textSecondary }}>No leads found.</p>
         </div>
+      ) : groupByCity ? (
+        (() => {
+          const groups = new Map()
+          for (const lead of filteredLeads) {
+            const c = parseCity(lead.address) || '__NO_CITY__'
+            if (!groups.has(c)) groups.set(c, [])
+            groups.get(c).push(lead)
+          }
+          const cityNames = [...groups.keys()].filter(c => c !== '__NO_CITY__').sort((a, b) => a.localeCompare(b))
+          if (groups.has('__NO_CITY__')) cityNames.push('__NO_CITY__')
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {cityNames.map(city => {
+                const cityLeads = groups.get(city)
+                const isCollapsed = collapsedCities.has(city)
+                const displayName = city === '__NO_CITY__' ? 'No City' : city
+                return (
+                  <div key={city}>
+                    <button
+                      type="button"
+                      onClick={() => toggleCity(city)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                        padding: '10px 12px', minHeight: '44px',
+                        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                        borderRadius: '8px', color: theme.text, fontSize: '14px',
+                        fontWeight: '600', cursor: 'pointer', textAlign: 'left',
+                        marginBottom: isCollapsed ? 0 : '12px'
+                      }}
+                    >
+                      {isCollapsed ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
+                      <MapPin size={16} style={{ color: theme.accent }} />
+                      <span style={{ flex: 1 }}>{displayName}</span>
+                      <span style={{ color: theme.textMuted, fontWeight: '500', fontSize: '13px' }}>
+                        {cityLeads.length} lead{cityLeads.length === 1 ? '' : 's'}
+                      </span>
+                    </button>
+                    {!isCollapsed && (
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
+                        {cityLeads.map(lead => renderLeadCard(lead))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
+          {filteredLeads.map((lead) => renderLeadCard(lead))}
+        </div>
+      )}
+      {/* hidden legacy block removed */}
+      {false && (
+        <div>
           {filteredLeads.map((lead) => (
             <EntityCard
               key={lead.id}

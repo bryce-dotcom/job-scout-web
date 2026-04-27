@@ -13,7 +13,7 @@ import {
   CheckCircle, Timer, Briefcase, DollarSign, Star,
   AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
   Loader2, ShieldCheck, Shield, Search, FileText, Lock,
-  Camera
+  Camera, Calendar as CalendarIcon
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
 import ArnieFloatingPanel from '../components/ArnieFloatingPanel'
@@ -117,6 +117,10 @@ export default function FieldScout() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [activeEntry, setActiveEntry] = useState(null)
   const [todayEntries, setTodayEntries] = useState([])
+  // Week-to-date entries (Sun 00:00 → end of Sat) for the current employee.
+  // Used by the "This Week" hours card so field techs can see their
+  // running weekly total without leaving FieldScout.
+  const [weekEntries, setWeekEntries] = useState([])
   const [expandedJob, setExpandedJob] = useState(null)
   const [clockingIn, setClockingIn] = useState(false)
   const [clockingOut, setClockingOut] = useState(false)
@@ -269,6 +273,27 @@ export default function FieldScout() {
   }, [companyId, currentEmployee])
 
   useEffect(() => { fetchEntries() }, [fetchEntries])
+
+  // Fetch this week's entries (Sun 00:00 of the current week through now)
+  // for the WTD hours card. Refetches whenever the active entry changes
+  // (clock-in/out) so the totals stay current without polling.
+  const fetchWeekEntries = useCallback(async () => {
+    if (!companyId || !currentEmployee) return
+    const now = new Date()
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - now.getDay()) // Sunday
+    weekStart.setHours(0, 0, 0, 0)
+    const { data } = await supabase
+      .from('time_clock')
+      .select('id, clock_in, clock_out, total_hours, lunch_start, lunch_end')
+      .eq('company_id', companyId)
+      .eq('employee_id', currentEmployee.id)
+      .gte('clock_in', weekStart.toISOString())
+      .order('clock_in', { ascending: false })
+    if (data) setWeekEntries(data)
+  }, [companyId, currentEmployee])
+
+  useEffect(() => { fetchWeekEntries() }, [fetchWeekEntries, activeEntry?.id, activeEntry?.clock_out])
 
   // Fetch verification status for today's jobs.
   // Both queries are scoped per-JOB (not per-employee) so that once any
@@ -1059,6 +1084,45 @@ export default function FieldScout() {
 
   const isOnLunch = activeEntry?.lunch_start && !activeEntry?.lunch_end
   const elapsedHours = activeEntry ? (currentTime - new Date(activeEntry.clock_in)) / (1000 * 60 * 60) : 0
+
+  // Week-to-date hour totals + per-day breakdown (Sun→Sat).
+  // Completed entries: use stored total_hours when available, otherwise derive
+  // from clock_in/clock_out minus lunch. The active in-progress entry adds the
+  // running elapsed time so the WTD card ticks up live.
+  const weekStats = (() => {
+    const now = currentTime
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - now.getDay())
+    weekStart.setHours(0, 0, 0, 0)
+    const perDay = [0, 0, 0, 0, 0, 0, 0] // Sun..Sat
+    let total = 0
+    for (const e of weekEntries) {
+      if (!e.clock_in) continue
+      const start = new Date(e.clock_in)
+      let hrs = 0
+      if (e.total_hours != null && e.clock_out) {
+        hrs = parseFloat(e.total_hours) || 0
+      } else if (e.clock_out) {
+        hrs = (new Date(e.clock_out) - start) / 3600000
+        if (e.lunch_start && e.lunch_end) {
+          hrs -= (new Date(e.lunch_end) - new Date(e.lunch_start)) / 3600000
+        }
+      } else if (activeEntry && e.id === activeEntry.id) {
+        // running in-progress entry
+        hrs = (now - start) / 3600000
+        if (e.lunch_start && e.lunch_end) {
+          hrs -= (new Date(e.lunch_end) - new Date(e.lunch_start)) / 3600000
+        } else if (e.lunch_start && !e.lunch_end) {
+          hrs -= (now - new Date(e.lunch_start)) / 3600000
+        }
+      }
+      hrs = Math.max(0, hrs)
+      total += hrs
+      const dow = start.getDay()
+      if (dow >= 0 && dow <= 6) perDay[dow] += hrs
+    }
+    return { total, perDay, weekStart }
+  })()
   const activeJobName = activeEntry?.job_id
     ? (jobs.find(j => j.id === activeEntry.job_id)?.job_title || 'Job')
     : 'General'
@@ -1298,6 +1362,76 @@ export default function FieldScout() {
           letterSpacing: '2px'
         }}>
           {currentTime.toLocaleTimeString()}
+        </div>
+      </div>
+
+      {/* ===== SECTION 1.5: WEEK-TO-DATE HOURS CARD =====
+          Kayden requested (feedback c590a6cb) the ability to see total
+          hours worked this week, like Housecall. Sunday→Saturday, the
+          current in-progress entry's elapsed time is included so the
+          number ticks up live. Per-day strip below gives a quick glance
+          at where the hours landed. */}
+      <div style={{
+        backgroundColor: theme.bgCard,
+        border: `1px solid ${theme.border}`,
+        borderRadius: '14px',
+        padding: '14px 16px',
+        marginBottom: '16px',
+        boxShadow: theme.shadow,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.textMuted, fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <CalendarIcon size={14} />
+            This Week
+          </div>
+          <div style={{ fontSize: '11px', color: theme.textMuted }}>
+            {weekStats.weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            {' – '}
+            {(() => {
+              const end = new Date(weekStats.weekStart); end.setDate(end.getDate() + 6)
+              return end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            })()}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ fontSize: '32px', fontWeight: 800, color: theme.accent, lineHeight: 1 }}>
+            {weekStats.total.toFixed(2)}
+          </div>
+          <div style={{ fontSize: '13px', color: theme.textMuted }}>hours</div>
+          {activeEntry && (
+            <div style={{
+              marginLeft: 'auto',
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              padding: '2px 8px', borderRadius: 999,
+              backgroundColor: 'rgba(34,197,94,0.15)',
+              color: '#16a34a', fontSize: '11px', fontWeight: 600,
+            }}>
+              <Clock size={11} /> live
+            </div>
+          )}
+        </div>
+        {/* Per-day strip: S M T W T F S */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
+            const isToday = i === currentTime.getDay()
+            const h = weekStats.perDay[i]
+            return (
+              <div key={i} style={{
+                textAlign: 'center',
+                padding: '6px 2px',
+                borderRadius: '8px',
+                backgroundColor: isToday ? theme.accentBg : 'transparent',
+                border: `1px solid ${isToday ? theme.accent + '40' : 'transparent'}`,
+              }}>
+                <div style={{ fontSize: '10px', fontWeight: 600, color: isToday ? theme.accent : theme.textMuted, marginBottom: '2px' }}>
+                  {label}
+                </div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: h > 0 ? theme.text : theme.textMuted }}>
+                  {h > 0 ? h.toFixed(1) : '—'}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 

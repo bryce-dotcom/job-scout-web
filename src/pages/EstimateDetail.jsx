@@ -18,6 +18,7 @@ import SignedProposalCard from '../components/SignedProposalCard'
 import EmailDeliveryBadge from '../components/EmailDeliveryBadge'
 import { buildDefaultTerms, DEFAULT_DOWN_PAYMENT_LABEL } from '../components/proposal/formalProposalDefaults'
 import FormalTermsEditor from '../components/proposal/FormalTermsEditor'
+import useSmartBack from '../lib/useSmartBack'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -52,6 +53,7 @@ const DEFAULT_SETTINGS = {
 export default function EstimateDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const goBack = useSmartBack('/estimates')
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
@@ -1810,7 +1812,7 @@ export default function EstimateDetail() {
         marginBottom: '24px'
       }}>
         <button
-          onClick={() => navigate('/estimates')}
+          onClick={goBack}
           style={{
             padding: '10px',
             backgroundColor: theme.bgCard,

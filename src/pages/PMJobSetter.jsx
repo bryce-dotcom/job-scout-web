@@ -71,6 +71,97 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
+// Strip a trailing " (Name)" suffix that the scheduler appends when one
+// appointment is created per assignee. Used to dedupe sibling rows.
+function stripAssigneeSuffix(title) {
+  if (!title) return ''
+  return String(title).replace(/\s*\([^()]+\)\s*$/, '').trim()
+}
+
+// Group appointments that represent the same job (same start_time + base
+// title + location) so multi-assignee jobs render as ONE card.
+function groupAppointments(apts) {
+  const groups = new Map()
+  for (const a of apts || []) {
+    const baseTitle = stripAssigneeSuffix(a.title)
+    const key = `${a.start_time || ''}|${baseTitle}|${a.location || ''}`
+    if (!groups.has(key)) groups.set(key, { primary: a, baseTitle, items: [] })
+    groups.get(key).items.push(a)
+  }
+  return Array.from(groups.values())
+}
+
+// 2 initials from a full name. "Jane Q. Doe" => "JD"
+function initialsFromName(name) {
+  if (!name) return '?'
+  const parts = String(name).trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+// Stacked avatar circles for a list of assignees. Shows up to 3 + "+N".
+function AvatarStack({ names, accent = '#5a6349', size = 20, max = 3 }) {
+  const unique = Array.from(new Set((names || []).filter(Boolean)))
+  if (unique.length === 0) return null
+  const shown = unique.slice(0, max)
+  const extra = unique.length - shown.length
+  const overlap = 6
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, marginLeft: 'auto' }}>
+      {shown.map((name, i) => (
+        <div
+          key={`${name}-${i}`}
+          title={name}
+          style={{
+            width: `${size}px`,
+            height: `${size}px`,
+            borderRadius: '50%',
+            backgroundColor: accent,
+            color: '#fff',
+            fontSize: `${Math.round(size * 0.45)}px`,
+            fontWeight: '700',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1.5px solid #fff',
+            marginLeft: i === 0 ? 0 : `-${overlap}px`,
+            boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+            userSelect: 'none',
+            lineHeight: 1
+          }}
+        >
+          {initialsFromName(name)}
+        </div>
+      ))}
+      {extra > 0 && (
+        <div
+          title={unique.slice(max).join(', ')}
+          style={{
+            height: `${size}px`,
+            minWidth: `${size}px`,
+            padding: '0 5px',
+            borderRadius: `${size}px`,
+            backgroundColor: '#fff',
+            color: accent,
+            fontSize: `${Math.round(size * 0.45)}px`,
+            fontWeight: '700',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: `1.5px solid ${accent}`,
+            marginLeft: `-${overlap}px`,
+            userSelect: 'none',
+            lineHeight: 1
+          }}
+        >
+          +{extra}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function PMJobSetter() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -522,7 +613,26 @@ export default function PMJobSetter() {
     const effectivePM = !isAdmin && user?.id ? String(user.id) : filterPM
     if (effectivePM) {
       const pmId = parseInt(effectivePM)
-      filtered = filtered.filter(j => j.pm_id === pmId || j.job_lead_id === pmId || !j.pm_id)
+      // Also match jobs where this user appears in the assigned_team text or
+      // is the assignee of any job_section. Without this, a team member who
+      // was added via the schedule modal's multi-assign (but isn't pm or
+      // job_lead) wouldn't see the job on the board.
+      // (Christopher: "every HHH team member sees the work on the calendar.")
+      const userEmp = employees.find(e => String(e.id) === String(pmId))
+      const userName = (userEmp?.name || '').trim().toLowerCase()
+      const sectionJobIds = new Set(
+        (jobSections || [])
+          .filter(s => s.assigned_to === pmId)
+          .map(s => s.job_id)
+      )
+      filtered = filtered.filter(j => {
+        if (j.pm_id === pmId) return true
+        if (j.job_lead_id === pmId) return true
+        if (!j.pm_id) return true
+        if (sectionJobIds.has(j.id)) return true
+        if (userName && j.assigned_team && j.assigned_team.toLowerCase().includes(userName)) return true
+        return false
+      })
     }
     if (filterBusinessUnit) {
       filtered = filtered.filter(j => j.business_unit === filterBusinessUnit)
@@ -539,7 +649,7 @@ export default function PMJobSetter() {
 
   // Memoized filtered jobs list (for map + route suggestions)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const filteredJobList = useMemo(() => getFilteredJobs(), [jobs.length, jobStatuses.length, selectedCalendar, filterPM, filterBusinessUnit, searchTerm])
+  const filteredJobList = useMemo(() => getFilteredJobs(), [jobs.length, jobStatuses.length, selectedCalendar, filterPM, filterBusinessUnit, searchTerm, jobSections.length, employees.length])
 
   // Load Leaflet CSS & JS when map is toggled on
   useEffect(() => {
@@ -817,7 +927,10 @@ export default function PMJobSetter() {
 
       if (section.start_time) {
         const startHour = new Date(section.start_time).getHours()
-        return sameDay && startHour === hour
+        // Clamp out-of-range hours (e.g. timezone-shifted to 2 AM) into the
+        // first visible slot (8 AM) so they remain visible in week view.
+        const visibleHour = (startHour < 7 || startHour > 17) ? 8 : startHour
+        return sameDay && visibleHour === hour
       }
       return sameDay && hour === 8
     })
@@ -845,7 +958,12 @@ export default function PMJobSetter() {
       const jobDt = new Date(job.start_date)
       const isFirstDay = toLocalDateStr(jobDt) === toLocalDateStr(date)
       const jobHour = jobDt.getHours()
-      if (isFirstDay) return jobHour === hour || (jobHour === 0 && hour === 8)
+      // Clamp hours outside the visible range [7,17] (incl. midnight or
+      // timezone-shifted values) into the first slot so the job is never
+      // silently dropped from the week view (Christopher reported jobs
+      // showing in monthly view but missing from weekly view).
+      const visibleHour = (jobHour < 7 || jobHour > 17) ? 8 : jobHour
+      if (isFirstDay) return visibleHour === hour
       return hour === 8
     })
   }
@@ -869,7 +987,10 @@ export default function PMJobSetter() {
       const aptDateStr = `${aptDt.getFullYear()}-${String(aptDt.getMonth() + 1).padStart(2, '0')}-${String(aptDt.getDate()).padStart(2, '0')}`
       if (aptDateStr !== slotDateStr) return false
       const aptHour = aptDt.getHours()
-      return aptHour === hour || (aptHour === 0 && hour === 8)
+      // Clamp out-of-visible-range hours into the first slot (8 AM) so they
+      // are not hidden in week view.
+      const visibleHour = (aptHour < 7 || aptHour > 17) ? 8 : aptHour
+      return visibleHour === hour
     })
   }
 
@@ -2928,10 +3049,12 @@ export default function PMJobSetter() {
                             {(() => {
                               const dayKey = day.toDateString()
                               const isExpanded = expandedDay === dayKey
-                              const totalItems = dayJobs.length + dayAppointments.length
+                              // Group appointments so multi-assignee jobs render as ONE card
+                              const dayApptGroups = groupAppointments(dayAppointments)
+                              const totalItems = dayJobs.length + dayApptGroups.length
                               const showLimit = isExpanded ? 999 : 4
                               const jobsToShow = dayJobs.slice(0, showLimit)
-                              const aptsToShow = dayAppointments.slice(0, Math.max(0, showLimit - dayJobs.length))
+                              const aptsToShow = dayApptGroups.slice(0, Math.max(0, showLimit - dayJobs.length))
                               const hiddenCount = totalItems - Math.min(totalItems, showLimit)
 
                               return (
@@ -2964,10 +3087,13 @@ export default function PMJobSetter() {
                                       </div>
                                     )
                                   })}
-                                  {/* Appointments */}
-                                  {aptsToShow.map(apt => {
+                                  {/* Appointments — grouped so multi-assignee jobs show as ONE card with stacked avatars */}
+                                  {aptsToShow.map(group => {
+                                    const apt = group.primary
                                     const aptColor = appointmentStatusColors[apt.status] || '#0ea5e9'
                                     const isRecurring = isRecurringAppointment(apt)
+                                    const names = group.items.map(a => a.employee?.name).filter(Boolean)
+                                    const displayTitle = group.baseTitle || apt.title || 'Appointment'
                                     return (
                                       <div
                                         key={`apt-${apt.id}`}
@@ -2984,20 +3110,24 @@ export default function PMJobSetter() {
                                           fontWeight: isRecurring ? '600' : '500',
                                           color: isRecurring ? '#0369a1' : aptColor,
                                           cursor: 'grab',
-                                          whiteSpace: 'nowrap',
                                           overflow: 'hidden',
-                                          textOverflow: 'ellipsis',
                                           display: 'flex',
                                           alignItems: 'center',
                                           gap: '3px',
                                           border: isRecurring ? '1px solid #93c5fd' : 'none',
-                                          borderLeftWidth: '3px'
+                                          borderLeftWidth: '3px',
+                                          minWidth: 0
                                         }}
-                                        title={`${isRecurring ? '↻ Recurring — ' : ''}${apt.title}${apt.employee?.name ? ` — ${apt.employee.name}` : ''}${apt.location ? ` @ ${apt.location}` : ''}`}
+                                        title={`${isRecurring ? '↻ Recurring — ' : ''}${displayTitle}${names.length ? ` — ${names.join(', ')}` : ''}${apt.location ? ` @ ${apt.location}` : ''}`}
                                       >
                                         {isRecurring && <RefreshCw size={8} style={{ flexShrink: 0 }} />}
                                         {!isRecurring && <Clock size={8} style={{ flexShrink: 0 }} />}
-                                        {apt.title || 'Appointment'}
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                                          {displayTitle}
+                                        </span>
+                                        {names.length > 0 && (
+                                          <AvatarStack names={names} accent={isRecurring ? '#0ea5e9' : aptColor} size={16} />
+                                        )}
                                       </div>
                                     )
                                   })}
@@ -3199,10 +3329,13 @@ export default function PMJobSetter() {
                               )
                             })
                           })()}
-                          {/* Render appointments */}
-                          {slotAppointments.map(apt => {
+                          {/* Render appointments — grouped so multi-assignee jobs show as ONE card with stacked avatars */}
+                          {groupAppointments(slotAppointments).map(group => {
+                            const apt = group.primary
                             const aptColor = appointmentStatusColors[apt.status] || '#0ea5e9'
                             const isRecurring = isRecurringAppointment(apt)
+                            const names = group.items.map(a => a.employee?.name).filter(Boolean)
+                            const displayTitle = group.baseTitle || apt.title || 'Appointment'
                             return (
                               <div
                                 key={`apt-${apt.id}`}
@@ -3222,22 +3355,18 @@ export default function PMJobSetter() {
                                   border: isRecurring ? '1px solid #93c5fd' : 'none',
                                   borderLeftWidth: '3px',
                                   cursor: 'grab',
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis'
+                                  overflow: 'hidden'
                                 }}
-                                title={`${isRecurring ? '↻ Recurring — ' : ''}${apt.title}${apt.employee?.name ? ` — ${apt.employee.name}` : ''}${apt.location ? ` @ ${apt.location}` : ''}`}
+                                title={`${isRecurring ? '↻ Recurring — ' : ''}${displayTitle}${names.length ? ` — ${names.join(', ')}` : ''}${apt.location ? ` @ ${apt.location}` : ''}`}
                               >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
                                   {isRecurring && <RefreshCw size={9} style={{ flexShrink: 0 }} />}
                                   {!isRecurring && <Clock size={9} style={{ flexShrink: 0 }} />}
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {apt.title || 'Appointment'}
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                                    {displayTitle}
                                   </span>
-                                  {apt.employee?.name && (
-                                    <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: 'auto', flexShrink: 0 }}>
-                                      {apt.employee.name}
-                                    </span>
+                                  {names.length > 0 && (
+                                    <AvatarStack names={names} accent={isRecurring ? '#0ea5e9' : aptColor} size={18} />
                                   )}
                                 </div>
                               </div>

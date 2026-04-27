@@ -9,6 +9,7 @@ import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import { useIsMobile } from '../hooks/useIsMobile'
+import useSmartBack from '../lib/useSmartBack'
 
 // Light theme fallback
 const defaultTheme = {
@@ -26,6 +27,7 @@ const defaultTheme = {
 export default function QuoteDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const goBack = useSmartBack('/quotes')
   const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const products = useStore((state) => state.products)
@@ -434,7 +436,7 @@ export default function QuoteDetail() {
         flexWrap: 'wrap'
       }}>
         <button
-          onClick={() => navigate('/quotes')}
+          onClick={goBack}
           style={{
             padding: '10px',
             backgroundColor: theme.bgCard,

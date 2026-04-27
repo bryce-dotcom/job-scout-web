@@ -21,6 +21,7 @@ import { companyNotify } from '../lib/companyNotify'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import { computeAllottedHours } from '../lib/allottedHours'
 import SearchableSelect from '../components/SearchableSelect'
+import useSmartBack from '../lib/useSmartBack'
 
 const CATEGORY_COLORS = {
   CONTRACT: { bg: '#dcfce7', text: '#166534' },
@@ -76,6 +77,56 @@ class JobDetailErrorBoundary extends Component {
   }
 }
 
+// Local-state input: holds its own value while typing and only commits to parent
+// on blur. Prevents the entire JobDetail tree from re-rendering on every keystroke,
+// which was causing focus loss / "screen refresh" when tabbing between fields.
+function LocalInput({ value, onCommit, ...rest }) {
+  const [local, setLocal] = useState(value ?? '')
+  const lastExternal = useRef(value ?? '')
+  useEffect(() => {
+    // Sync if the parent value changed from outside (e.g. fetch / auto-calc)
+    if ((value ?? '') !== lastExternal.current) {
+      lastExternal.current = value ?? ''
+      setLocal(value ?? '')
+    }
+  }, [value])
+  return (
+    <input
+      {...rest}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={(e) => {
+        lastExternal.current = e.target.value
+        onCommit(e.target.value)
+        if (rest.onBlur) rest.onBlur(e)
+      }}
+    />
+  )
+}
+
+function LocalTextarea({ value, onCommit, ...rest }) {
+  const [local, setLocal] = useState(value ?? '')
+  const lastExternal = useRef(value ?? '')
+  useEffect(() => {
+    if ((value ?? '') !== lastExternal.current) {
+      lastExternal.current = value ?? ''
+      setLocal(value ?? '')
+    }
+  }, [value])
+  return (
+    <textarea
+      {...rest}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={(e) => {
+        lastExternal.current = e.target.value
+        onCommit(e.target.value)
+        if (rest.onBlur) rest.onBlur(e)
+      }}
+    />
+  )
+}
+
 export default function JobDetailWrapper() {
   return <JobDetailErrorBoundary><JobDetailInner /></JobDetailErrorBoundary>
 }
@@ -83,6 +134,7 @@ export default function JobDetailWrapper() {
 function JobDetailInner() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const goBack = useSmartBack('/jobs')
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const products = useStore((state) => state.products)
@@ -2621,7 +2673,7 @@ function JobDetailInner() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <button
-          onClick={() => navigate('/jobs')}
+          onClick={goBack}
           style={{
             padding: '10px',
             backgroundColor: theme.bgCard,
@@ -3037,7 +3089,7 @@ function JobDetailInner() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Job Title</label>
-                    <input type="text" value={formData.job_title || ''} onChange={(e) => setFormData(prev => ({ ...prev, job_title: e.target.value }))} style={inputStyle} />
+                    <LocalInput type="text" value={formData.job_title || ''} onCommit={(v) => setFormData(prev => ({ ...prev, job_title: v }))} style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>Business Unit *</label>
@@ -3132,7 +3184,7 @@ function JobDetailInner() {
                 </div>
                 <div>
                   <label style={labelStyle}>Address</label>
-                  <input type="text" value={formData.job_address || ''} onChange={(e) => setFormData(prev => ({ ...prev, job_address: e.target.value }))} style={inputStyle} />
+                  <LocalInput type="text" value={formData.job_address || ''} onCommit={(v) => setFormData(prev => ({ ...prev, job_address: v }))} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelStyle}>Assigned To (Job Lead)</label>
@@ -3209,26 +3261,26 @@ function JobDetailInner() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Created Date</label>
-                    <input type="date" value={formData.created_at ? formData.created_at.slice(0, 10) : ''} onChange={(e) => setFormData(prev => ({ ...prev, created_at: e.target.value ? new Date(e.target.value + 'T12:00:00').toISOString() : prev.created_at }))} style={inputStyle} />
+                    <LocalInput type="date" value={formData.created_at ? formData.created_at.slice(0, 10) : ''} onCommit={(v) => setFormData(prev => ({ ...prev, created_at: v ? new Date(v + 'T12:00:00').toISOString() : prev.created_at }))} style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>Start Date</label>
-                    <input type="datetime-local" value={formData.start_date ? formData.start_date.slice(0, 16) : ''} onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))} style={inputStyle} />
+                    <LocalInput type="datetime-local" value={formData.start_date ? formData.start_date.slice(0, 16) : ''} onCommit={(v) => setFormData(prev => ({ ...prev, start_date: v }))} style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>End Date</label>
-                    <input type="datetime-local" value={formData.end_date ? formData.end_date.slice(0, 16) : ''} onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))} style={inputStyle} />
+                    <LocalInput type="datetime-local" value={formData.end_date ? formData.end_date.slice(0, 16) : ''} onCommit={(v) => setFormData(prev => ({ ...prev, end_date: v }))} style={inputStyle} />
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Allotted Hours</label>
-                    <input type="number" value={formData.allotted_time_hours || ''} onChange={(e) => setFormData(prev => ({ ...prev, allotted_time_hours: e.target.value }))} step="0.25" style={inputStyle} />
+                    <LocalInput type="number" value={formData.allotted_time_hours || ''} onCommit={(v) => setFormData(prev => ({ ...prev, allotted_time_hours: v }))} step="0.25" style={inputStyle} />
                   </div>
                 </div>
                 <div>
                   <label style={labelStyle}>Details</label>
-                  <textarea value={formData.details || ''} onChange={(e) => setFormData(prev => ({ ...prev, details: e.target.value }))} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
+                  <LocalTextarea value={formData.details || ''} onCommit={(v) => setFormData(prev => ({ ...prev, details: v }))} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
                 </div>
                 <button onClick={handleSave} disabled={saving} style={{
                   padding: '10px 16px', backgroundColor: theme.accent, color: '#ffffff',

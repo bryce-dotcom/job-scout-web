@@ -52,6 +52,7 @@ export default function UtilityInvoiceDetail() {
   const [showRecordPayment, setShowRecordPayment] = useState(false)
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [paymentNote, setPaymentNote] = useState('')
+  const [paymentAmount, setPaymentAmount] = useState('')
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -104,6 +105,11 @@ export default function UtilityInvoiceDetail() {
       setPaymentDate(new Date().toISOString().slice(0, 10))
     }
     setPaymentNote('')
+    // Default the amount to whatever was last recorded on the invoice
+    // (incentive_amount preferred, falls back to amount). User can edit
+    // it down (or up) if the utility paid short or over.
+    const expected = invoice.incentive_amount ?? invoice.amount ?? ''
+    setPaymentAmount(expected === '' || expected === null ? '' : String(expected))
     setShowRecordPayment(true)
   }
 
@@ -116,14 +122,39 @@ export default function UtilityInvoiceDetail() {
     // Store the date at noon UTC so it doesn't drift to the day before in
     // negative timezones when displayed back.
     const isoPaidAt = `${paymentDate}T12:00:00.000Z`
-    const stamped = `Paid ${paymentDate}${paymentNote ? ' — ' + paymentNote : ''}`
+    // Parse the actual amount paid. If left blank, fall back to the
+    // existing invoice amount so behavior matches the old read-only flow.
+    const expected = parseFloat(invoice.incentive_amount ?? invoice.amount) || 0
+    const paidNum = paymentAmount === '' ? expected : parseFloat(paymentAmount)
+    if (isNaN(paidNum) || paidNum < 0) {
+      toast.error('Enter a valid amount')
+      setSaving(false)
+      return
+    }
+    const shortBy = Math.round((expected - paidNum) * 100) / 100
+    let amountNote = ''
+    if (shortBy > 0.005) {
+      amountNote = ` — short ${formatCurrency(shortBy)} (expected ${formatCurrency(expected)}, received ${formatCurrency(paidNum)})`
+    } else if (shortBy < -0.005) {
+      amountNote = ` — over ${formatCurrency(-shortBy)} (expected ${formatCurrency(expected)}, received ${formatCurrency(paidNum)})`
+    }
+    const stamped = `Paid ${paymentDate}${paymentNote ? ' — ' + paymentNote : ''}${amountNote}`
     const newNotes = invoice.notes ? `${invoice.notes}\n\n${stamped}` : stamped
-    const { error } = await supabase.from('utility_invoices').update({
+    const updatePayload = {
       payment_status: 'Paid',
       paid_at: isoPaidAt,
       notes: newNotes,
       updated_at: new Date().toISOString()
-    }).eq('id', id)
+    }
+    // If the actual paid amount differs from what was on the invoice,
+    // overwrite incentive_amount / amount so the books reflect reality.
+    if (Math.abs(shortBy) > 0.005) {
+      updatePayload.incentive_amount = paidNum
+      updatePayload.amount = paidNum
+      const pcNum = parseFloat(invoice.project_cost) || 0
+      if (pcNum > 0) updatePayload.net_cost = Math.round((pcNum - paidNum) * 100) / 100
+    }
+    const { error } = await supabase.from('utility_invoices').update(updatePayload).eq('id', id)
     if (error) {
       toast.error('Failed to record payment: ' + error.message)
       setSaving(false)
@@ -1098,15 +1129,18 @@ export default function UtilityInvoiceDetail() {
             </div>
 
             <div style={{ marginBottom: '14px' }}>
-              <label style={labelStyle}>Amount</label>
+              <label style={labelStyle}>Amount Received</label>
               <input
-                type="text"
-                value={formatCurrency(invoice.incentive_amount || invoice.amount)}
-                readOnly
-                style={{ ...inputStyle, backgroundColor: theme.bg, color: theme.textMuted }}
+                type="number"
+                step="0.01"
+                min="0"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder={formatCurrency(invoice.incentive_amount || invoice.amount)}
+                style={inputStyle}
               />
               <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                Utility incentive payments are recorded as a single full payout. To change the amount, edit the rebate.
+                Expected {formatCurrency(invoice.incentive_amount || invoice.amount)}. Edit if the utility paid short or over — the rebate will be updated to match and the variance noted in the audit log.
               </p>
             </div>
 

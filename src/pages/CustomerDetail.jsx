@@ -14,6 +14,7 @@ import Tooltip from '../components/Tooltip'
 import EmptyState from '../components/EmptyState'
 import { quoteStatusColors, invoiceStatusColors } from '../lib/statusColors'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
+import useSmartBack from '../lib/useSmartBack'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -29,6 +30,7 @@ const defaultTheme = {
 export default function CustomerDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const goBack = useSmartBack('/customers')
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const employees = useStore((state) => state.employees)
@@ -745,7 +747,7 @@ export default function CustomerDetail() {
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
           <button
-            onClick={() => navigate('/customers')}
+            onClick={goBack}
             style={{
               padding: isMobile ? '12px' : '8px',
               minWidth: isMobile ? '44px' : 'auto',

@@ -9,6 +9,7 @@ import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
 import { useIsMobile } from '../hooks/useIsMobile'
+import useSmartBack from '../lib/useSmartBack'
 
 // Light theme fallback
 const defaultTheme = {
@@ -27,6 +28,7 @@ export default function InvoiceDetail() {
   const isMobile = useIsMobile()
   const { id } = useParams()
   const navigate = useNavigate()
+  const goBack = useSmartBack('/invoices')
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
@@ -1242,7 +1244,7 @@ export default function InvoiceDetail() {
       {/* Header */}
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <button
-          onClick={() => navigate('/invoices')}
+          onClick={goBack}
           style={{
             padding: '10px',
             backgroundColor: theme.bgCard,

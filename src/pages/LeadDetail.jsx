@@ -20,6 +20,7 @@ import DealBreadcrumb from '../components/DealBreadcrumb'
 import EmptyState from '../components/EmptyState'
 import ProductPickerModal from '../components/ProductPickerModal'
 import SearchableSelect from '../components/SearchableSelect'
+import useSmartBack from '../lib/useSmartBack'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -47,6 +48,7 @@ const getPackageKey = (p) => p.source_table === 'utility_forms' ? `uf_${p.templa
 export default function LeadDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const goBack = useSmartBack('/leads')
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const employees = useStore((state) => state.employees)
@@ -950,7 +952,7 @@ export default function LeadDetail() {
         {/* Row 1: Back + Name + Status + Quick Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
           <button
-            onClick={() => navigate('/leads')}
+            onClick={goBack}
             style={{
               padding: '8px',
               minWidth: '36px',

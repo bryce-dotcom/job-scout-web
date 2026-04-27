@@ -21,6 +21,18 @@ export default function FeedbackButton() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
+  const resetForm = () => {
+    setType('feedback')
+    setSubject('')
+    setMessage('')
+    setSubmitted(false)
+  }
+
+  const closeModal = () => {
+    setIsOpen(false)
+    resetForm()
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!message.trim()) return
@@ -42,11 +54,7 @@ export default function FeedbackButton() {
 
       setSubmitted(true)
       setTimeout(() => {
-        setIsOpen(false)
-        setSubmitted(false)
-        setType('feedback')
-        setSubject('')
-        setMessage('')
+        closeModal()
       }, 2000)
     } catch (err) {
       alert('Error submitting feedback: ' + err.message)
@@ -104,8 +112,12 @@ export default function FeedbackButton() {
             zIndex: 1001,
             padding: '20px'
           }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setIsOpen(false)
+          onMouseDown={(e) => {
+            // Only close when the mousedown actually starts on the overlay itself.
+            // Using onClick here misfires when the user starts a text selection
+            // inside an input and releases the mouse on top of the overlay,
+            // which would unintentionally dismiss the modal.
+            if (e.target === e.currentTarget) closeModal()
           }}
         >
           <div
@@ -131,7 +143,7 @@ export default function FeedbackButton() {
                 <div style={{ color: '#888', fontSize: '13px' }}>Help us improve Job Scout</div>
               </div>
               <button
-                onClick={() => setIsOpen(false)}
+                onClick={closeModal}
                 style={{
                   padding: '8px',
                   backgroundColor: '#2a2a2a',

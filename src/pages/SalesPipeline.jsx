@@ -82,6 +82,8 @@ export default function SalesPipeline() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
+  const isAdmin = useStore((state) => state.isAdmin)
+  const isDeveloper = useStore((state) => state.isDeveloper)
   const employees = useStore((state) => state.employees)
   const updateLead = useStore((state) => state.updateLead)
   const updateQuote = useStore((state) => state.updateQuote)
@@ -137,6 +139,19 @@ export default function SalesPipeline() {
 
   // Owner filter — default to logged-in user
   const [ownerFilter, setOwnerFilter] = useState(() => user?.id ? String(user.id) : 'all')
+  const canViewAll = isAdmin || isDeveloper
+
+  // Sync owner filter once user loads (initializer runs before user is hydrated).
+  // Non-admins are locked to their own scope; admins default to "Mine" but can switch.
+  useEffect(() => {
+    if (!user?.id) return
+    setOwnerFilter(prev => {
+      if (!canViewAll) return String(user.id)
+      // Admin: only override the initial "all" fallback so we don't undo their selection.
+      if (prev === 'all') return String(user.id)
+      return prev
+    })
+  }, [user?.id, canViewAll])
 
   // Business Unit filter
   const [buFilter, setBuFilter] = useState('all')
@@ -483,10 +498,15 @@ export default function SalesPipeline() {
       if (!searchable.includes(term)) return false
     }
 
-    // Owner filter — applies to leads AND jobs
-    if (ownerFilter !== 'all') {
-      const ownerId = parseInt(ownerFilter)
-      if (ownerFilter === 'unassigned') {
+    // Owner filter — applies to leads AND jobs.
+    // Non-admins are always scoped to their own records, even if the filter state
+    // somehow says "all" (e.g. stale state before user hydrated).
+    const effectiveOwnerFilter = (!canViewAll && user?.id)
+      ? String(user.id)
+      : ownerFilter
+    if (effectiveOwnerFilter !== 'all') {
+      const ownerId = parseInt(effectiveOwnerFilter)
+      if (effectiveOwnerFilter === 'unassigned') {
         if (lead.lead_owner_id || lead.salesperson_id) return false
       } else if (lead._isJob) {
         // For standalone jobs, match salesperson, PM, or job lead
@@ -1148,9 +1168,9 @@ export default function SalesPipeline() {
                 cursor: 'pointer'
               }}
             >
-              <option value="all">All Owners</option>
-              <option value="unassigned">Unassigned</option>
-              {activeEmployees.map(emp => (
+              {canViewAll && <option value="all">All Owners</option>}
+              {canViewAll && <option value="unassigned">Unassigned</option>}
+              {(canViewAll ? activeEmployees : activeEmployees.filter(e => e.id === user?.id)).map(emp => (
                 <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
               ))}
             </select>
@@ -1395,9 +1415,9 @@ export default function SalesPipeline() {
                   onChange={(e) => setOwnerFilter(e.target.value)}
                   style={{ flex: 1, padding: '10px 12px', backgroundColor: m.bgCard, border: `1px solid ${m.border}`, borderRadius: '8px', color: m.text, fontSize: '13px' }}
                 >
-                  <option value="all">All Owners</option>
-                  <option value="unassigned">Unassigned</option>
-                  {activeEmployees.map(emp => (
+                  {canViewAll && <option value="all">All Owners</option>}
+                  {canViewAll && <option value="unassigned">Unassigned</option>}
+                  {(canViewAll ? activeEmployees : activeEmployees.filter(e => e.id === user?.id)).map(emp => (
                     <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
                   ))}
                 </select>

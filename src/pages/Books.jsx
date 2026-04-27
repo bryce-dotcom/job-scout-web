@@ -111,6 +111,15 @@ export default function Books() {
   const [expenseForm, setExpenseForm] = useState({
     description: '', amount: '', expense_date: '', vendor: '', category_id: ''
   })
+  // Split-across-categories support: when enabled, the expense's amount is
+  // distributed across N category lines (e.g. one check to Cole covering
+  // materials + fuel + tools). Each line is { category_id, amount, note }.
+  // Lines must sum to expenseForm.amount before save is allowed.
+  const [expenseSplitsEnabled, setExpenseSplitsEnabled] = useState(false)
+  const [expenseSplits, setExpenseSplits] = useState([])
+  // Cache of all splits keyed by expense_id, so the list view can render
+  // category badges and the booked rollup can credit the right buckets.
+  const [splitsByExpense, setSplitsByExpense] = useState({})
 
   // Asset/Liability modals
   const [showAssetModal, setShowAssetModal] = useState(false)
@@ -163,6 +172,17 @@ export default function Books() {
   const fetchExpenses = async () => {
     const { data } = await supabase.from('manual_expenses').select('*, category:expense_categories(id, name, icon, color)').eq('company_id', companyId).order('expense_date', { ascending: false })
     setExpenses(data || [])
+    // Pull all splits for this company in one query and group by expense_id.
+    const { data: splits } = await supabase
+      .from('expense_splits')
+      .select('*, category:expense_categories(id, name, icon, color)')
+      .eq('company_id', companyId)
+    const byExp = {}
+    ;(splits || []).forEach(s => {
+      if (!byExp[s.expense_id]) byExp[s.expense_id] = []
+      byExp[s.expense_id].push(s)
+    })
+    setSplitsByExpense(byExp)
   }
 
   const fetchExpenseCategories = async () => {
@@ -616,17 +636,52 @@ export default function Books() {
   }
 
   // ─── Expense handlers ───
+  // Sum of split-line amounts (numeric, NaN-safe).
+  const splitsSum = expenseSplits.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0)
+  const expenseTotal = parseFloat(expenseForm.amount) || 0
+  const splitsBalanced = !expenseSplitsEnabled || Math.abs(splitsSum - expenseTotal) < 0.01
+
   const handleSaveExpense = async () => {
+    const totalAmount = parseFloat(expenseForm.amount) || 0
+    if (expenseSplitsEnabled) {
+      if (expenseSplits.length === 0) { toast.error('Add at least one split line or turn off splits'); return }
+      if (Math.abs(splitsSum - totalAmount) > 0.01) {
+        toast.error(`Split lines (${formatCurrency(splitsSum)}) must equal expense total (${formatCurrency(totalAmount)})`)
+        return
+      }
+      if (expenseSplits.some(l => !l.category_id)) { toast.error('Every split line needs a category'); return }
+    }
     const payload = {
       company_id: companyId, description: expenseForm.description,
-      amount: parseFloat(expenseForm.amount) || 0,
+      amount: totalAmount,
       expense_date: expenseForm.expense_date || null,
-      vendor: expenseForm.vendor || null, category_id: expenseForm.category_id || null
+      vendor: expenseForm.vendor || null,
+      // When splits are on, the parent's category_id stops being meaningful;
+      // null it out so reporting code knows to look at splits instead.
+      category_id: expenseSplitsEnabled ? null : (expenseForm.category_id || null)
     }
+    let expenseId
     if (editingItem) {
       await supabase.from('manual_expenses').update(payload).eq('id', editingItem.id)
+      expenseId = editingItem.id
     } else {
-      await supabase.from('manual_expenses').insert([payload])
+      const { data: inserted } = await supabase.from('manual_expenses').insert([payload]).select().single()
+      expenseId = inserted?.id
+    }
+    if (expenseId) {
+      // Replace splits: simplest correct semantics for an edit. Delete then insert.
+      await supabase.from('expense_splits').delete().eq('expense_id', expenseId).eq('company_id', companyId)
+      if (expenseSplitsEnabled && expenseSplits.length) {
+        const rows = expenseSplits.map(l => ({
+          company_id: companyId,
+          expense_id: expenseId,
+          category_id: parseInt(l.category_id, 10),
+          amount: parseFloat(l.amount) || 0,
+          note: l.note || null
+        }))
+        const { error } = await supabase.from('expense_splits').insert(rows)
+        if (error) { toast.error('Failed to save splits: ' + error.message); return }
+      }
     }
     await fetchExpenses()
     closeExpenseModal()
@@ -634,6 +689,9 @@ export default function Books() {
 
   const handleDeleteExpense = async (id) => {
     if (!confirm('Delete this expense?')) return
+    // ON DELETE CASCADE on expense_splits.expense_id handles cleanup, but
+    // delete explicitly anyway so RLS / row-count is predictable.
+    await supabase.from('expense_splits').delete().eq('expense_id', id).eq('company_id', companyId)
     await supabase.from('manual_expenses').delete().eq('id', id)
     await fetchExpenses()
   }
@@ -641,6 +699,14 @@ export default function Books() {
   const openEditExpense = (expense) => {
     setEditingItem(expense)
     setExpenseForm({ description: expense.description || '', amount: expense.amount || '', expense_date: expense.expense_date || '', vendor: expense.vendor || '', category_id: expense.category_id || '' })
+    const existingSplits = splitsByExpense[expense.id] || []
+    if (existingSplits.length > 0) {
+      setExpenseSplitsEnabled(true)
+      setExpenseSplits(existingSplits.map(s => ({ category_id: String(s.category_id || ''), amount: String(s.amount || ''), note: s.note || '' })))
+    } else {
+      setExpenseSplitsEnabled(false)
+      setExpenseSplits([])
+    }
     setShowExpenseModal(true)
   }
 
@@ -648,6 +714,21 @@ export default function Books() {
     setShowExpenseModal(false)
     setEditingItem(null)
     setExpenseForm({ description: '', amount: '', expense_date: '', vendor: '', category_id: '' })
+    setExpenseSplitsEnabled(false)
+    setExpenseSplits([])
+  }
+
+  const addSplitLine = () => {
+    // Pre-fill the new line with whatever balance is left so the common
+    // "1 line covers the rest" case is one click.
+    const remaining = Math.max(0, expenseTotal - splitsSum)
+    setExpenseSplits([...expenseSplits, { category_id: '', amount: remaining > 0 ? remaining.toFixed(2) : '', note: '' }])
+  }
+  const updateSplitLine = (idx, patch) => {
+    setExpenseSplits(expenseSplits.map((l, i) => i === idx ? { ...l, ...patch } : l))
+  }
+  const removeSplitLine = (idx) => {
+    setExpenseSplits(expenseSplits.filter((_, i) => i !== idx))
   }
 
   // ─── Asset/Liability handlers ───
@@ -1942,19 +2023,38 @@ export default function Books() {
           <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '24px' }}>Confirmed Transactions by Category</h2>
 
           {(() => {
-            // Combine confirmed plaid transactions + manual expenses
+            // Combine confirmed plaid transactions + manual expenses.
+            // For manual expenses with splits, emit one row per split so each
+            // category gets credited correctly; otherwise emit the parent.
             const confirmedPlaid = plaidTransactions.filter(t => t.confirmed)
+            const manualRows = []
+            expenses.forEach(e => {
+              const splits = splitsByExpense[e.id] || []
+              if (splits.length > 0) {
+                splits.forEach(s => {
+                  manualRows.push({
+                    id: 'm-' + e.id + '-s' + s.id, type: 'manual-split',
+                    category: s.category?.name || 'Uncategorized',
+                    description: e.description + (s.note ? ` — ${s.note}` : ''),
+                    amount: parseFloat(s.amount) || 0,
+                    date: e.expense_date, isExpense: true
+                  })
+                })
+              } else {
+                manualRows.push({
+                  id: 'm-' + e.id, type: 'manual', category: e.category?.name || 'Uncategorized',
+                  description: e.description, amount: parseFloat(e.amount) || 0,
+                  date: e.expense_date, isExpense: true
+                })
+              }
+            })
             const allBooked = [
               ...confirmedPlaid.map(t => ({
                 id: 'p-' + t.id, type: 'plaid', category: t.user_category || t.ai_category || 'Uncategorized',
                 description: t.merchant_name || t.name, amount: Math.abs(parseFloat(t.amount) || 0),
                 date: t.date, isExpense: (parseFloat(t.amount) || 0) > 0
               })),
-              ...expenses.map(e => ({
-                id: 'm-' + e.id, type: 'manual', category: e.category?.name || 'Uncategorized',
-                description: e.description, amount: parseFloat(e.amount) || 0,
-                date: e.expense_date, isExpense: true
-              }))
+              ...manualRows
             ]
 
             // Group by category
@@ -2033,11 +2133,11 @@ export default function Books() {
                   <input type="date" value={expenseForm.expense_date} onChange={(e) => setExpenseForm({ ...expenseForm, expense_date: e.target.value })} style={inputStyle} />
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Category</label>
-                  <select value={expenseForm.category_id} onChange={(e) => setExpenseForm({ ...expenseForm, category_id: e.target.value })} style={inputStyle}>
-                    <option value="">-- Select --</option>
+                  <select value={expenseForm.category_id} onChange={(e) => setExpenseForm({ ...expenseForm, category_id: e.target.value })} style={inputStyle} disabled={expenseSplitsEnabled}>
+                    <option value="">{expenseSplitsEnabled ? '-- Using splits --' : '-- Select --'}</option>
                     {expenseCategories.filter(c => c.type === 'expense').map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
@@ -2048,9 +2148,90 @@ export default function Books() {
                   <input type="text" value={expenseForm.vendor} onChange={(e) => setExpenseForm({ ...expenseForm, vendor: e.target.value })} style={inputStyle} />
                 </div>
               </div>
+
+              {/* Split toggle + lines */}
+              <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', minHeight: '44px' }}>
+                  <input
+                    type="checkbox"
+                    checked={expenseSplitsEnabled}
+                    onChange={(e) => {
+                      const on = e.target.checked
+                      setExpenseSplitsEnabled(on)
+                      if (on && expenseSplits.length === 0) {
+                        // Seed two empty lines so user sees the pattern.
+                        setExpenseSplits([
+                          { category_id: expenseForm.category_id || '', amount: '', note: '' },
+                          { category_id: '', amount: '', note: '' }
+                        ])
+                      }
+                    }}
+                  />
+                  <span style={{ fontSize: '14px', color: theme.text, fontWeight: '500' }}>Split across multiple categories</span>
+                  <HelpBadge text="Use this when one payment (e.g. a single check to a vendor) covers expenses in different categories. Each line's amounts must add up to the total above." />
+                </label>
+
+                {expenseSplitsEnabled && (
+                  <div style={{ marginTop: '12px' }}>
+                    {expenseSplits.map((line, idx) => (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr 1.4fr 36px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                        <select
+                          value={line.category_id}
+                          onChange={(e) => updateSplitLine(idx, { category_id: e.target.value })}
+                          style={{ ...inputStyle, padding: '8px 10px' }}
+                        >
+                          <option value="">-- Category --</option>
+                          {expenseCategories.filter(c => c.type === 'expense').map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Amount"
+                          defaultValue={line.amount}
+                          onBlur={(e) => updateSplitLine(idx, { amount: e.target.value })}
+                          style={{ ...inputStyle, padding: '8px 10px' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Note (optional)"
+                          defaultValue={line.note}
+                          onBlur={(e) => updateSplitLine(idx, { note: e.target.value })}
+                          style={{ ...inputStyle, padding: '8px 10px' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeSplitLine(idx)}
+                          style={{ background: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', padding: '6px', minHeight: '36px' }}
+                          title="Remove line"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={addSplitLine}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: 'transparent', border: `1px dashed ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', cursor: 'pointer', minHeight: '36px' }}
+                    >
+                      <Plus size={14} /> Add line
+                    </button>
+                    <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: splitsBalanced ? theme.textSecondary : theme.error, fontWeight: '500' }}>
+                      <span>Sum of splits: {formatCurrency(splitsSum)}</span>
+                      <span>{splitsBalanced ? 'Balanced' : `Off by ${formatCurrency(expenseTotal - splitsSum)}`}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button onClick={closeExpenseModal} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '14px', cursor: 'pointer', minHeight: '44px' }}>Cancel</button>
-                <button onClick={handleSaveExpense} style={{ flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: 'pointer', minHeight: '44px' }}>Save</button>
+                <button
+                  onClick={handleSaveExpense}
+                  disabled={!splitsBalanced}
+                  style={{ flex: 1, padding: '12px', backgroundColor: splitsBalanced ? theme.accent : theme.border, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: splitsBalanced ? 'pointer' : 'not-allowed', minHeight: '44px', opacity: splitsBalanced ? 1 : 0.6 }}
+                >Save</button>
               </div>
             </div>
           </div>
