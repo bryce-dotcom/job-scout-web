@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
 import { isManager as checkManager } from '../lib/accessControl'
 import {
-  ChevronDown, ChevronRight, ChevronLeft, X, Calendar, Clock, User, MapPin, Map,
+  ChevronDown, ChevronRight, ChevronLeft, X, Calendar, Clock, User, MapPin, Map as MapIcon,
   RefreshCw, Filter, Search, Settings, Plus, Briefcase, CheckCircle2,
   AlertCircle, PauseCircle, PlayCircle, ClipboardList, CalendarPlus, Trash2,
   LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2,
@@ -2409,7 +2409,7 @@ export default function PMJobSetter() {
               fontSize: '13px'
             }}
           >
-            <Map size={16} />
+            <MapIcon size={16} />
             {!isMobile && 'Map'}
           </button>
 
