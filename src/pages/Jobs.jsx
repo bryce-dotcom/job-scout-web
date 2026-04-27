@@ -405,8 +405,10 @@ export default function Jobs() {
   const quotes = useStore((state) => state.quotes)
   const businessUnits = useStore((state) => state.businessUnits)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
+  const products = useStore((state) => state.products)
   const fetchJobs = useStore((state) => state.fetchJobs)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
+  const fetchProducts = useStore((state) => state.fetchProducts)
 
   const [showModal, setShowModal] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
@@ -420,6 +422,12 @@ export default function Jobs() {
   const [showImportExport, setShowImportExport] = useState(false)
   const [customerSearchText, setCustomerSearchText] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const [remoteCustomerHits, setRemoteCustomerHits] = useState([])
+  const [remoteCustomerLoading, setRemoteCustomerLoading] = useState(false)
+  // Optional line items to add when creating a brand-new job (so users don't
+  // have to schedule a job, then re-open it just to add line items).
+  const [newJobLines, setNewJobLines] = useState([])
+  const [newLineDraft, setNewLineDraft] = useState({ item_id: '', quantity: 1 })
   const [viewMode, setViewMode] = useState('board')
   const [isMobile, setIsMobile] = useState(false)
   const [calendarMonth, setCalendarMonth] = useState(() => new Date())
@@ -497,7 +505,8 @@ export default function Jobs() {
     }
     fetchJobs()
     fetchCustomers()
-  }, [companyId, navigate, fetchJobs, fetchCustomers])
+    if (fetchProducts) fetchProducts()
+  }, [companyId, navigate, fetchJobs, fetchCustomers, fetchProducts])
 
   // Auto-open create modal when navigating from CustomerDetail with customer pre-filled
   useEffect(() => {
@@ -515,6 +524,38 @@ export default function Jobs() {
       navigate(location.pathname, { replace: true, state: {} })
     }
   }, [location.state, customers, navigate, location.pathname])
+
+  // Server-side customer search fallback (debounced) — ensures the picker
+  // can find any customer in the DB, even if the local store is stale or
+  // the company has more customers than were paginated into memory.
+  useEffect(() => {
+    const term = (customerSearchText || '').trim()
+    if (!showCustomerDropdown || !companyId || term.length < 2) {
+      setRemoteCustomerHits([])
+      setRemoteCustomerLoading(false)
+      return
+    }
+    let cancelled = false
+    setRemoteCustomerLoading(true)
+    const handle = setTimeout(async () => {
+      try {
+        const escaped = term.replace(/[%_,]/g, '\\$&')
+        const { data } = await supabase
+          .from('customers')
+          .select('id, name, business_name, address, phone, email')
+          .eq('company_id', companyId)
+          .or(`name.ilike.%${escaped}%,business_name.ilike.%${escaped}%`)
+          .order('name')
+          .limit(50)
+        if (!cancelled) setRemoteCustomerHits(data || [])
+      } catch (e) {
+        if (!cancelled) setRemoteCustomerHits([])
+      } finally {
+        if (!cancelled) setRemoteCustomerLoading(false)
+      }
+    }, 220)
+    return () => { cancelled = true; clearTimeout(handle) }
+  }, [customerSearchText, showCustomerDropdown, companyId])
 
   // Mobile detection
   useEffect(() => {
@@ -719,6 +760,8 @@ export default function Jobs() {
     setEditingJob(null)
     setError(null)
     setShowCustomerDropdown(false)
+    setNewJobLines([])
+    setNewLineDraft({ item_id: '', quantity: 1 })
   }
 
   const handleChange = (e) => {
@@ -802,6 +845,32 @@ export default function Jobs() {
       setError(result.error.message)
       setLoading(false)
       return
+    }
+
+    // Bulk-insert any line items the user added in the create modal so they
+    // don't have to re-open the job afterwards just to add lines.
+    if (!editingJob && result.data?.[0] && newJobLines.length > 0) {
+      const newJobId = result.data[0].id
+      const linesPayload = newJobLines
+        .filter(l => l.item_id && Number(l.quantity) > 0)
+        .map(l => {
+          const product = products.find(p => String(p.id) === String(l.item_id))
+          const price = Number(product?.unit_price || 0)
+          const qty = Number(l.quantity || 1)
+          return {
+            company_id: companyId,
+            job_id: newJobId,
+            item_id: product?.id || null,
+            quantity: qty,
+            price,
+            total: price * qty,
+            labor_cost: Number(product?.labor_cost || 0)
+          }
+        })
+      if (linesPayload.length > 0) {
+        const { error: linesErr } = await supabase.from('job_lines').insert(linesPayload)
+        if (linesErr) console.warn('[Jobs] failed to insert job_lines on create:', linesErr)
+      }
     }
 
     // Auto-create tracking lead for new jobs without a lead_id
@@ -1911,7 +1980,7 @@ export default function Jobs() {
                         const norm = normalize(str)
                         return termWords.every(w => norm.includes(w))
                       }
-                      const filtered = termNorm
+                      const localFiltered = termNorm
                         ? customers.filter(c =>
                             matchesAllWords(c.name) ||
                             matchesAllWords(c.business_name) ||
@@ -1919,6 +1988,13 @@ export default function Jobs() {
                             c.phone?.replace(/\D/g, '').includes(term.replace(/\D/g, ''))
                           )
                         : customers.slice(0, 20)
+                      // Merge in any remote (server-side) hits not already in local results
+                      const seen = new Set(localFiltered.map(c => c.id))
+                      const merged = [...localFiltered]
+                      for (const r of remoteCustomerHits) {
+                        if (!seen.has(r.id)) { merged.push(r); seen.add(r.id) }
+                      }
+                      const filtered = merged
                       const rect = customerInputRef.current?.getBoundingClientRect()
                       const dropdownStyle = rect ? {
                         position: 'fixed',
@@ -1963,7 +2039,7 @@ export default function Jobs() {
                           borderRadius: '8px', padding: '12px',
                           fontSize: '13px', color: theme.textMuted, textAlign: 'center'
                         }}>
-                          No customers found
+                          {remoteCustomerLoading ? 'Searching…' : 'No customers found'}
                         </div>
                       ) : null
                     })()}
@@ -2159,6 +2235,108 @@ export default function Jobs() {
                   <label style={labelStyle}>Notes</label>
                   <textarea name="notes" value={formData.notes} onChange={handleChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
                 </div>
+
+                {!editingJob && (
+                  <div style={{
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '10px',
+                    padding: '14px',
+                    backgroundColor: theme.bg
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <label style={{ ...labelStyle, margin: 0 }}>Line Items (optional)</label>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                        Add now or later from the Job page
+                      </span>
+                    </div>
+                    {newJobLines.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
+                        {newJobLines.map((l, idx) => {
+                          const prod = products.find(p => String(p.id) === String(l.item_id))
+                          const price = Number(prod?.unit_price || 0)
+                          const qty = Number(l.quantity || 1)
+                          return (
+                            <div key={idx} style={{
+                              display: 'flex', alignItems: 'center', gap: '8px',
+                              padding: '8px 10px', backgroundColor: theme.bgCard,
+                              border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px'
+                            }}>
+                              <div style={{ flex: 1, color: theme.text }}>{prod?.name || 'Unknown product'}</div>
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={l.quantity}
+                                onChange={(e) => {
+                                  const v = e.target.value
+                                  setNewJobLines(prev => prev.map((row, i) => i === idx ? { ...row, quantity: v } : row))
+                                }}
+                                style={{ ...inputStyle, width: '70px', padding: '6px 8px' }}
+                              />
+                              <div style={{ width: '90px', textAlign: 'right', color: theme.textSecondary }}>
+                                ${(price * qty).toFixed(2)}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setNewJobLines(prev => prev.filter((_, i) => i !== idx))}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}
+                                title="Remove line"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 100px auto', gap: '8px', alignItems: 'end' }}>
+                      <SearchableSelect
+                        options={(products || []).filter(p => p.active !== false).map(p => ({
+                          value: p.id,
+                          label: `${p.name}${p.unit_price != null ? ` — $${Number(p.unit_price).toFixed(2)}` : ''}`
+                        }))}
+                        value={newLineDraft.item_id}
+                        onChange={(val) => setNewLineDraft(prev => ({ ...prev, item_id: val }))}
+                        placeholder="Search products & services..."
+                        theme={theme}
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={newLineDraft.quantity}
+                        onChange={(e) => setNewLineDraft(prev => ({ ...prev, quantity: e.target.value }))}
+                        placeholder="Qty"
+                        style={inputStyle}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newLineDraft.item_id) return
+                          const qty = Number(newLineDraft.quantity || 1)
+                          if (qty <= 0) return
+                          setNewJobLines(prev => [...prev, { item_id: newLineDraft.item_id, quantity: qty }])
+                          setNewLineDraft({ item_id: '', quantity: 1 })
+                        }}
+                        disabled={!newLineDraft.item_id}
+                        style={{
+                          minHeight: '40px',
+                          padding: '8px 14px',
+                          backgroundColor: newLineDraft.item_id ? theme.accent : theme.bgCardHover,
+                          color: newLineDraft.item_id ? '#ffffff' : theme.textMuted,
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: newLineDraft.item_id ? 'pointer' : 'not-allowed',
+                          display: 'flex', alignItems: 'center', gap: '6px'
+                        }}
+                      >
+                        <Plus size={14} /> Add
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>

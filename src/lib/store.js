@@ -248,7 +248,7 @@ export const useStore = create(
               .from(TABLES.customers)
               .select(QUERIES.customers)
               .eq('company_id', companyId)
-              .order('name')
+              .order('id', { ascending: true })
               .range(from, from + PAGE - 1);
             if (error) break;
             allData = allData.concat(data || []);

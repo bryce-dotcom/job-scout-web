@@ -3075,12 +3075,22 @@ function JobDetailInner() {
                   setEditMode(!editMode)
                 }}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '4px',
-                  color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px'
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  color: editMode ? theme.text : '#ffffff',
+                  backgroundColor: editMode ? theme.bgCardHover : theme.accent,
+                  border: `1px solid ${editMode ? theme.border : theme.accent}`,
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  minHeight: '40px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: editMode ? 'none' : '0 1px 2px rgba(0,0,0,0.08)'
                 }}
+                title={editMode ? 'Cancel editing' : 'Edit this job (change date, status, line items, etc.)'}
               >
-                <Pencil size={14} />
-                {editMode ? 'Cancel' : 'Edit'}
+                <Pencil size={16} />
+                {editMode ? 'Cancel' : 'Edit Job'}
               </button>
             </div>
 
