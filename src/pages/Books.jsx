@@ -120,6 +120,12 @@ export default function Books() {
   // Cache of all splits keyed by expense_id, so the list view can render
   // category badges and the booked rollup can credit the right buckets.
   const [splitsByExpense, setSplitsByExpense] = useState({})
+  // Same idea for Plaid transactions, keyed by plaid_transactions.id.
+  const [splitsByPlaidTxn, setSplitsByPlaidTxn] = useState({})
+
+  // Plaid-side split editor state (only one expanded txn at a time).
+  const [plaidSplitsEnabled, setPlaidSplitsEnabled] = useState(false)
+  const [plaidSplits, setPlaidSplits] = useState([])
 
   // Asset/Liability modals
   const [showAssetModal, setShowAssetModal] = useState(false)
@@ -172,17 +178,25 @@ export default function Books() {
   const fetchExpenses = async () => {
     const { data } = await supabase.from('manual_expenses').select('*, category:expense_categories(id, name, icon, color)').eq('company_id', companyId).order('expense_date', { ascending: false })
     setExpenses(data || [])
-    // Pull all splits for this company in one query and group by expense_id.
+    // Pull all splits for this company in one query and bucket by parent.
+    // A split row has either expense_id (manual_expenses) OR plaid_transaction_id, never both.
     const { data: splits } = await supabase
       .from('expense_splits')
-      .select('*, category:expense_categories(id, name, icon, color)')
+      .select('*, category:expense_categories(id, name, icon, color, default_tax_category)')
       .eq('company_id', companyId)
     const byExp = {}
+    const byPlaid = {}
     ;(splits || []).forEach(s => {
-      if (!byExp[s.expense_id]) byExp[s.expense_id] = []
-      byExp[s.expense_id].push(s)
+      if (s.expense_id) {
+        if (!byExp[s.expense_id]) byExp[s.expense_id] = []
+        byExp[s.expense_id].push(s)
+      } else if (s.plaid_transaction_id) {
+        if (!byPlaid[s.plaid_transaction_id]) byPlaid[s.plaid_transaction_id] = []
+        byPlaid[s.plaid_transaction_id].push(s)
+      }
     })
     setSplitsByExpense(byExp)
+    setSplitsByPlaidTxn(byPlaid)
   }
 
   const fetchExpenseCategories = async () => {
@@ -503,6 +517,20 @@ export default function Books() {
     setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
     setJobSearchText('')
     setTxnAllocJobSearch('')
+    // Hydrate Plaid-side splits for this txn (if any).
+    const existingPlaidSplits = splitsByPlaidTxn[txn.id] || []
+    if (existingPlaidSplits.length > 0) {
+      setPlaidSplitsEnabled(true)
+      setPlaidSplits(existingPlaidSplits.map(s => ({
+        category_id: String(s.category_id || ''),
+        amount: String(s.amount || ''),
+        note: s.note || '',
+        tax_category: s.tax_category || '',
+      })))
+    } else {
+      setPlaidSplitsEnabled(false)
+      setPlaidSplits([])
+    }
     // Load existing allocations
     const { data: allocs } = await supabase
       .from('transaction_job_allocations')
@@ -544,11 +572,25 @@ export default function Books() {
   const handleConfirmTxn = async (txnId) => {
     const category = txnEditCategory
     const taxCategory = txnEditTaxCategory
+    const txnRow = plaidTransactions.find(t => t.id === txnId)
+    const txnAbs = Math.abs(parseFloat(txnRow?.amount) || 0)
 
-    // Both category and tax category are required
-    if (!category || !taxCategory) {
-      toast.error('Expense Category and Tax Category are both required')
-      return
+    // Splits path: parent category becomes ambiguous, so each split line
+    // must have a category and the sum must equal the txn total.
+    if (plaidSplitsEnabled) {
+      if (plaidSplits.length === 0) { toast.error('Add at least one split line or turn off splits'); return }
+      const sum = plaidSplits.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0)
+      if (Math.abs(sum - txnAbs) > 0.01) {
+        toast.error(`Split lines ($${sum.toFixed(2)}) must equal transaction total ($${txnAbs.toFixed(2)})`)
+        return
+      }
+      if (plaidSplits.some(l => !l.category_id)) { toast.error('Every split line needs a category'); return }
+    } else {
+      // Both category and tax category are required for non-split path.
+      if (!category || !taxCategory) {
+        toast.error('Expense Category and Tax Category are both required')
+        return
+      }
     }
 
     // Validate allocations: amounts must not exceed transaction total
@@ -561,8 +603,10 @@ export default function Books() {
 
     const updates = {
       confirmed: true,
-      user_category: category,
-      user_tax_category: taxCategory,
+      // When splits are on, the parent's single category is meaningless — null
+      // it so the rollup knows to look at expense_splits rows instead.
+      user_category: plaidSplitsEnabled ? null : category,
+      user_tax_category: plaidSplitsEnabled ? null : taxCategory,
     }
     if (txnEditNotes) updates.notes = txnEditNotes
     // Set job_id to first allocation for backward compat
@@ -570,6 +614,15 @@ export default function Books() {
     if (firstJobId) updates.job_id = firstJobId
 
     await supabase.from('plaid_transactions').update(updates).eq('id', txnId)
+
+    // Persist splits (delete-then-insert). If splits are off, this clears any
+    // stale split rows from a previous edit.
+    try {
+      await savePlaidSplits(txnId)
+    } catch (err) {
+      toast.error('Failed to save splits: ' + (err.message || err))
+      return
+    }
 
     // Save job allocations
     if (txnJobAllocations.length > 0) {
@@ -606,7 +659,10 @@ export default function Books() {
     }
 
     await fetchPlaidTransactions()
+    await fetchExpenses() // refresh splits cache (covers Plaid splits too)
     setExpandedTxn(null)
+    setPlaidSplitsEnabled(false)
+    setPlaidSplits([])
     toast.success('Transaction confirmed')
   }
 
@@ -677,7 +733,8 @@ export default function Books() {
           expense_id: expenseId,
           category_id: parseInt(l.category_id, 10),
           amount: parseFloat(l.amount) || 0,
-          note: l.note || null
+          note: l.note || null,
+          tax_category: l.tax_category || null
         }))
         const { error } = await supabase.from('expense_splits').insert(rows)
         if (error) { toast.error('Failed to save splits: ' + error.message); return }
@@ -702,7 +759,7 @@ export default function Books() {
     const existingSplits = splitsByExpense[expense.id] || []
     if (existingSplits.length > 0) {
       setExpenseSplitsEnabled(true)
-      setExpenseSplits(existingSplits.map(s => ({ category_id: String(s.category_id || ''), amount: String(s.amount || ''), note: s.note || '' })))
+      setExpenseSplits(existingSplits.map(s => ({ category_id: String(s.category_id || ''), amount: String(s.amount || ''), note: s.note || '', tax_category: s.tax_category || '' })))
     } else {
       setExpenseSplitsEnabled(false)
       setExpenseSplits([])
@@ -722,13 +779,48 @@ export default function Books() {
     // Pre-fill the new line with whatever balance is left so the common
     // "1 line covers the rest" case is one click.
     const remaining = Math.max(0, expenseTotal - splitsSum)
-    setExpenseSplits([...expenseSplits, { category_id: '', amount: remaining > 0 ? remaining.toFixed(2) : '', note: '' }])
+    setExpenseSplits([...expenseSplits, { category_id: '', amount: remaining > 0 ? remaining.toFixed(2) : '', note: '', tax_category: '' }])
   }
   const updateSplitLine = (idx, patch) => {
     setExpenseSplits(expenseSplits.map((l, i) => i === idx ? { ...l, ...patch } : l))
   }
   const removeSplitLine = (idx) => {
     setExpenseSplits(expenseSplits.filter((_, i) => i !== idx))
+  }
+
+  // ─── Plaid-transaction split helpers (mirror of expense-modal helpers) ───
+  const plaidSplitsSum = plaidSplits.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0)
+  const addPlaidSplitLine = (parentAbsAmount) => {
+    const remaining = Math.max(0, (parentAbsAmount || 0) - plaidSplitsSum)
+    setPlaidSplits([...plaidSplits, { category_id: '', amount: remaining > 0 ? remaining.toFixed(2) : '', note: '', tax_category: '' }])
+  }
+  const updatePlaidSplitLine = (idx, patch) => {
+    setPlaidSplits(plaidSplits.map((l, i) => i === idx ? { ...l, ...patch } : l))
+  }
+  const removePlaidSplitLine = (idx) => {
+    setPlaidSplits(plaidSplits.filter((_, i) => i !== idx))
+  }
+  // Persist Plaid splits for the given txn. Delete-then-insert pattern, same
+  // as manual expenses. Caller must validate the sum first.
+  const savePlaidSplits = async (txnId) => {
+    await supabase.from('expense_splits').delete().eq('plaid_transaction_id', txnId).eq('company_id', companyId)
+    if (plaidSplitsEnabled && plaidSplits.length > 0) {
+      const rows = plaidSplits
+        .filter(l => l.category_id && parseFloat(l.amount) > 0)
+        .map(l => ({
+          company_id: companyId,
+          plaid_transaction_id: txnId,
+          expense_id: null,
+          category_id: parseInt(l.category_id, 10),
+          amount: parseFloat(l.amount) || 0,
+          note: l.note || null,
+          tax_category: l.tax_category || null,
+        }))
+      if (rows.length > 0) {
+        const { error } = await supabase.from('expense_splits').insert(rows)
+        if (error) throw error
+      }
+    }
   }
 
   // ─── Asset/Liability handlers ───
@@ -1279,14 +1371,7 @@ export default function Books() {
                       <div
                         onClick={() => {
                           if (isExpanded) { setExpandedTxn(null) }
-                          else {
-                            setExpandedTxn(txn.id)
-                            setTxnEditCategory(txn.user_category || txn.ai_category || '')
-                            setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
-                            setTxnEditNotes(txn.notes || '')
-                            setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
-                            setJobSearchText('')
-                          }
+                          else { expandTransaction(txn) }
                         }}
                         style={{ cursor: 'pointer', flexShrink: 0, padding: '4px' }}
                       >
@@ -1707,6 +1792,100 @@ export default function Books() {
                           <input type="text" value={txnEditNotes} onChange={(e) => setTxnEditNotes(e.target.value)} placeholder="What was this purchase for?" style={inputStyle} />
                         </div>
 
+                        {/* Split across multiple categories — same UX as the manual-expense modal. */}
+                        <div style={{ marginTop: '12px', padding: '12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', minHeight: '36px' }}>
+                            <input
+                              type="checkbox"
+                              checked={plaidSplitsEnabled}
+                              onChange={(e) => {
+                                const on = e.target.checked
+                                setPlaidSplitsEnabled(on)
+                                if (on && plaidSplits.length === 0) {
+                                  setPlaidSplits([
+                                    { category_id: '', amount: '', note: '', tax_category: '' },
+                                    { category_id: '', amount: '', note: '', tax_category: '' },
+                                  ])
+                                }
+                              }}
+                            />
+                            <span style={{ fontSize: '13px', color: theme.text, fontWeight: '500' }}>Split across multiple categories</span>
+                            <HelpBadge text="Use when one bank transaction covers expenses in different categories. Each line's amounts must add up to the transaction total." size={13} />
+                          </label>
+                          {plaidSplitsEnabled && (() => {
+                            const txnAbs = Math.abs(amountNum)
+                            const sum = plaidSplits.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0)
+                            const balanced = Math.abs(sum - txnAbs) < 0.01
+                            return (
+                              <div style={{ marginTop: '10px' }}>
+                                {plaidSplits.map((line, idx) => (
+                                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1.1fr 0.9fr 1.2fr 36px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                                    <select
+                                      value={line.category_id}
+                                      onChange={(e) => updatePlaidSplitLine(idx, { category_id: e.target.value })}
+                                      style={{ ...inputStyle, padding: '8px 10px' }}
+                                    >
+                                      <option value="">-- Category --</option>
+                                      {expenseCategories.filter(c => c.type === 'expense').map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                      ))}
+                                    </select>
+                                    <select
+                                      value={line.tax_category || ''}
+                                      onChange={(e) => updatePlaidSplitLine(idx, { tax_category: e.target.value })}
+                                      style={{ ...inputStyle, padding: '8px 10px' }}
+                                      title="Tax line override (defaults to the category's mapping)"
+                                    >
+                                      <option value="">(use category default)</option>
+                                      {TAX_CATEGORIES.map(grp => (
+                                        <optgroup key={grp.group} label={grp.group}>
+                                          {grp.options.map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                          ))}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      placeholder="Amount"
+                                      defaultValue={line.amount}
+                                      onBlur={(e) => updatePlaidSplitLine(idx, { amount: e.target.value })}
+                                      style={{ ...inputStyle, padding: '8px 10px' }}
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="Note (optional)"
+                                      defaultValue={line.note}
+                                      onBlur={(e) => updatePlaidSplitLine(idx, { note: e.target.value })}
+                                      style={{ ...inputStyle, padding: '8px 10px' }}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => removePlaidSplitLine(idx)}
+                                      style={{ background: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', padding: '6px', minHeight: '36px' }}
+                                      title="Remove line"
+                                    >
+                                      <X size={16} />
+                                    </button>
+                                  </div>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => addPlaidSplitLine(txnAbs)}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: 'transparent', border: `1px dashed ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', cursor: 'pointer', minHeight: '36px' }}
+                                >
+                                  <Plus size={14} /> Add line
+                                </button>
+                                <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: balanced ? theme.textSecondary : theme.error, fontWeight: '500' }}>
+                                  <span>Sum of splits: {formatCurrency(sum)}</span>
+                                  <span>{balanced ? 'Balanced' : `Off by ${formatCurrency(txnAbs - sum)}`}</span>
+                                </div>
+                              </div>
+                            )
+                          })()}
+                        </div>
+
                         {/* Actions */}
                         <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
                           <button onClick={() => handleConfirmTxn(txn.id)} style={{
@@ -2026,6 +2205,9 @@ export default function Books() {
             // Combine confirmed plaid transactions + manual expenses.
             // For manual expenses with splits, emit one row per split so each
             // category gets credited correctly; otherwise emit the parent.
+            // Same for confirmed Plaid transactions with splits.
+            // tax_category on each row falls back to the split's category default
+            // unless the per-line override is set.
             const confirmedPlaid = plaidTransactions.filter(t => t.confirmed)
             const manualRows = []
             expenses.forEach(e => {
@@ -2035,6 +2217,7 @@ export default function Books() {
                   manualRows.push({
                     id: 'm-' + e.id + '-s' + s.id, type: 'manual-split',
                     category: s.category?.name || 'Uncategorized',
+                    tax_category: s.tax_category || s.category?.default_tax_category || null,
                     description: e.description + (s.note ? ` — ${s.note}` : ''),
                     amount: parseFloat(s.amount) || 0,
                     date: e.expense_date, isExpense: true
@@ -2043,19 +2226,36 @@ export default function Books() {
               } else {
                 manualRows.push({
                   id: 'm-' + e.id, type: 'manual', category: e.category?.name || 'Uncategorized',
+                  tax_category: e.category?.default_tax_category || null,
                   description: e.description, amount: parseFloat(e.amount) || 0,
                   date: e.expense_date, isExpense: true
                 })
               }
             })
-            const allBooked = [
-              ...confirmedPlaid.map(t => ({
-                id: 'p-' + t.id, type: 'plaid', category: t.user_category || t.ai_category || 'Uncategorized',
-                description: t.merchant_name || t.name, amount: Math.abs(parseFloat(t.amount) || 0),
-                date: t.date, isExpense: (parseFloat(t.amount) || 0) > 0
-              })),
-              ...manualRows
-            ]
+            const plaidRows = []
+            confirmedPlaid.forEach(t => {
+              const splits = splitsByPlaidTxn[t.id] || []
+              if (splits.length > 0) {
+                splits.forEach(s => {
+                  plaidRows.push({
+                    id: 'p-' + t.id + '-s' + s.id, type: 'plaid-split',
+                    category: s.category?.name || 'Uncategorized',
+                    tax_category: s.tax_category || s.category?.default_tax_category || null,
+                    description: (t.merchant_name || t.name) + (s.note ? ` — ${s.note}` : ''),
+                    amount: parseFloat(s.amount) || 0,
+                    date: t.date, isExpense: (parseFloat(t.amount) || 0) > 0,
+                  })
+                })
+              } else {
+                plaidRows.push({
+                  id: 'p-' + t.id, type: 'plaid', category: t.user_category || t.ai_category || 'Uncategorized',
+                  tax_category: t.user_tax_category || t.ai_tax_category || null,
+                  description: t.merchant_name || t.name, amount: Math.abs(parseFloat(t.amount) || 0),
+                  date: t.date, isExpense: (parseFloat(t.amount) || 0) > 0,
+                })
+              }
+            })
+            const allBooked = [...plaidRows, ...manualRows]
 
             // Group by category
             const byCategory = {}
@@ -2161,8 +2361,8 @@ export default function Books() {
                       if (on && expenseSplits.length === 0) {
                         // Seed two empty lines so user sees the pattern.
                         setExpenseSplits([
-                          { category_id: expenseForm.category_id || '', amount: '', note: '' },
-                          { category_id: '', amount: '', note: '' }
+                          { category_id: expenseForm.category_id || '', amount: '', note: '', tax_category: '' },
+                          { category_id: '', amount: '', note: '', tax_category: '' }
                         ])
                       }
                     }}
@@ -2174,7 +2374,7 @@ export default function Books() {
                 {expenseSplitsEnabled && (
                   <div style={{ marginTop: '12px' }}>
                     {expenseSplits.map((line, idx) => (
-                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr 1.4fr 36px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1.1fr 0.9fr 1.2fr 36px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
                         <select
                           value={line.category_id}
                           onChange={(e) => updateSplitLine(idx, { category_id: e.target.value })}
@@ -2183,6 +2383,22 @@ export default function Books() {
                           <option value="">-- Category --</option>
                           {expenseCategories.filter(c => c.type === 'expense').map(c => (
                             <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                        {/* Per-line tax-category override. Empty = inherit from category default. */}
+                        <select
+                          value={line.tax_category || ''}
+                          onChange={(e) => updateSplitLine(idx, { tax_category: e.target.value })}
+                          style={{ ...inputStyle, padding: '8px 10px' }}
+                          title="Tax line override (defaults to the category's mapping)"
+                        >
+                          <option value="">(use category default)</option>
+                          {TAX_CATEGORIES.map(grp => (
+                            <optgroup key={grp.group} label={grp.group}>
+                              {grp.options.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </optgroup>
                           ))}
                         </select>
                         <input
