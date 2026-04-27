@@ -756,11 +756,15 @@ export const useStore = create(
 
         // Network refresh
         try {
+          // NOTE: explicitly exclude `notes` — it's a giant JSON dump column (some rows >10MB)
+          // that pushes the list-fetch over 10s. Lazy-load notes on detail when needed.
+          const LIST_COLS = 'id,company_id,audit_id,customer_id,job_id,lead_id,created_by,created_date,status,address,city,state,zip,utility_provider_id,electric_rate,operating_hours,operating_days,total_existing_watts,total_proposed_watts,total_fixtures,annual_savings_kwh,annual_savings_dollars,estimated_rebate,est_project_cost,net_cost,payback_months,proposal_pdf_url,watts_reduced,applicable_rebate_rate,calculated_rebate,rebate_capped,rebate_source,created_at,updated_at,proposal_pdf,rate_schedule,customer_signature'
           const { data, error } = await supabase
             .from('lighting_audits')
-            .select('*, customer:customers(id, name), utility_provider:utility_providers(id, provider_name)')
+            .select(`${LIST_COLS}, customer:customers(id, name), utility_provider:utility_providers(id, provider_name)`)
             .eq('company_id', companyId)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .limit(500);
 
           if (!error) {
             set({ lightingAudits: data || [] });
@@ -914,16 +918,34 @@ export const useStore = create(
         if (cached.length > 0 && get().prescriptiveMeasures.length === 0) set({ prescriptiveMeasures: cached });
 
         // Network refresh
+        // NOTE: utility_programs has no `provider_id` column and no FK to utility_providers.
+        // Consumers (EstimateDetail, NewLightingAudit, QuoteDetail) compare
+        // pm.program.provider_id === audit.utility_provider_id, so we synthesize
+        // provider_id by matching utility_programs.utility_name to utility_providers.provider_name.
         try {
           const { data, error } = await supabase
             .from('prescriptive_measures')
-            .select('*, program:utility_programs(id, program_name, utility_name, provider_id)')
+            .select('*, program:utility_programs(id, program_name, utility_name)')
             .eq('is_active', true)
             .or(`company_id.eq.${companyId},company_id.is.null`);
 
           if (!error) {
-            set({ prescriptiveMeasures: data || [] });
-            await offlineDb.putAll('prescriptiveMeasures', data || []);
+            // Attach derived provider_id to each row's `program`
+            const providers = get().utilityProviders || [];
+            const providerByName = new Map(
+              providers.map(p => [(p.provider_name || '').trim().toLowerCase(), p.id])
+            );
+            const enriched = (data || []).map(m => {
+              if (m.program && m.program.utility_name) {
+                const pid = providerByName.get(m.program.utility_name.trim().toLowerCase()) || null;
+                return { ...m, program: { ...m.program, provider_id: pid } };
+              }
+              return m;
+            });
+            set({ prescriptiveMeasures: enriched });
+            await offlineDb.putAll('prescriptiveMeasures', enriched);
+          } else {
+            console.error('[fetchPrescriptiveMeasures] error:', error.message);
           }
         } catch (e) {
           console.log('[fetchPrescriptiveMeasures] Offline, using cache');
