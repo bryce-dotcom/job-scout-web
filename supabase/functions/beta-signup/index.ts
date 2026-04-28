@@ -174,12 +174,12 @@ async function seedSampleData(supabase: any, companyId: number, ownerEmail: stri
     { asset_id: 'VAN-001', name: 'Sprinter Van', type: 'Vehicle', status: 'Available', mileage_hours: 28000, last_pm_date: '2026-01-10', next_pm_due: '2026-04-10' }
   ];
 
-  // Sample Inventory
+  // Sample Inventory — `inventory` table has no sku / unit_cost columns; use barcode for SKU.
   const inventory = [
-    { name: 'LED Tube 4ft T8', sku: 'LED-T8-4FT', quantity: 250, min_quantity: 50, location: 'Warehouse A', unit_cost: 6.00 },
-    { name: 'LED High Bay 150W', sku: 'LED-HB-150', quantity: 45, min_quantity: 20, location: 'Warehouse A', unit_cost: 65.00 },
-    { name: 'LED Panel 2x4', sku: 'LED-PNL-2X4', quantity: 80, min_quantity: 25, location: 'Warehouse A', unit_cost: 42.00 },
-    { name: 'Occupancy Sensor', sku: 'SENS-OCC-01', quantity: 120, min_quantity: 30, location: 'Warehouse B', unit_cost: 22.00 }
+    { name: 'LED Tube 4ft T8',    barcode: 'LED-T8-4FT',  quantity: 250, min_quantity: 50, location: 'Warehouse A' },
+    { name: 'LED High Bay 150W',  barcode: 'LED-HB-150',  quantity: 45,  min_quantity: 20, location: 'Warehouse A' },
+    { name: 'LED Panel 2x4',      barcode: 'LED-PNL-2X4', quantity: 80,  min_quantity: 25, location: 'Warehouse A' },
+    { name: 'Occupancy Sensor',   barcode: 'SENS-OCC-01', quantity: 120, min_quantity: 30, location: 'Warehouse B' }
   ];
 
   // Insert all data
@@ -215,8 +215,8 @@ async function seedSampleData(supabase: any, companyId: number, ownerEmail: stri
         status: 'In Progress',
         start_date: now.toISOString().split('T')[0],
         job_total: 12500.00,
-        time_allotted_hours: 40,
-        time_tracked_hours: 16
+        allotted_time_hours: 40,
+        time_tracked: 16
       },
       {
         job_id: 'JOB-002',
@@ -225,7 +225,7 @@ async function seedSampleData(supabase: any, companyId: number, ownerEmail: stri
         status: 'Scheduled',
         start_date: new Date(now.getTime() + 7 * 86400000).toISOString().split('T')[0],
         job_total: 4800.00,
-        time_allotted_hours: 16
+        allotted_time_hours: 16
       },
       {
         job_id: 'JOB-003',
@@ -235,8 +235,8 @@ async function seedSampleData(supabase: any, companyId: number, ownerEmail: stri
         start_date: new Date(now.getTime() - 14 * 86400000).toISOString().split('T')[0],
         end_date: new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0],
         job_total: 8200.00,
-        time_allotted_hours: 24,
-        time_tracked_hours: 22
+        allotted_time_hours: 24,
+        time_tracked: 22
       }
     ];
 
@@ -252,10 +252,10 @@ async function seedSampleData(supabase: any, companyId: number, ownerEmail: stri
     { key: 'service_types', value: JSON.stringify(['Lighting Retrofit', 'New Construction', 'Maintenance', 'Emergency Service', 'Audit']) }
   ];
 
-  for (const setting of settingsData) {
-    await supabase.from('settings').upsert(
-      { ...setting, company_id: companyId },
-      { onConflict: 'company_id,key' }
-    );
-  }
+  // Plain insert — the function above early-returns if seed already ran for this
+  // company, and the settings table has no (company_id, key) unique constraint
+  // so an upsert with onConflict would error and silently drop the row.
+  await supabase.from('settings').insert(
+    settingsData.map(s => ({ ...s, company_id: companyId }))
+  );
 }
