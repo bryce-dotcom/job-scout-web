@@ -765,6 +765,15 @@ export default function EstimateDetail() {
       setDepositPhoto(null)
       await fetchEstimateData()
       await fetchQuotes()
+
+      // Auto-create the job — Doug expected one click, not three
+      // (approve -> "Ready to convert" banner -> Convert to Job button).
+      // The job lands in Chillin so the PM can decide when to schedule it.
+      if (!estimate.job_id) {
+        try { await handleConvertToJob({ silent: true }) } catch (e) {
+          console.warn('[EstimateDetail] auto-convert after approve failed:', e?.message)
+        }
+      }
     } catch (err) {
       toast.error('Error: ' + err.message)
     }
@@ -802,6 +811,13 @@ export default function EstimateDetail() {
       setShowDepositModal(false)
       await fetchEstimateData()
       await fetchQuotes()
+
+      // Same auto-convert as the deposit path
+      if (!estimate.job_id) {
+        try { await handleConvertToJob({ silent: true }) } catch (e) {
+          console.warn('[EstimateDetail] auto-convert after approve (skip deposit) failed:', e?.message)
+        }
+      }
     } catch (err) {
       toast.error('Error: ' + err.message)
     }
@@ -1006,9 +1022,12 @@ export default function EstimateDetail() {
     setReceiptUploading(false)
   }
 
-  // Convert approved estimate to a Job
-  const handleConvertToJob = async () => {
-    if (!confirm('Convert this estimate to a Job?')) return
+  // Convert approved estimate to a Job. When called from the Approve
+  // flow (auto-convert) we skip the confirm dialog and the success toast
+  // so it feels like one action instead of three.
+  const handleConvertToJob = async (opts = {}) => {
+    const { silent = false } = opts
+    if (!silent && !confirm('Convert this estimate to a Job?')) return
     setConvertingToJob(true)
     try {
       // 1. Find or create customer
@@ -1056,7 +1075,11 @@ export default function EstimateDetail() {
           salesperson_id: estimate.salesperson_id || null,
           quote_id: estimate.id,
           job_address: customerInfo?.address || null,
-          status: 'Scheduled',
+          // Default to Chillin (the triage / new-jobs column) — matches
+          // Jobs.jsx default and what Doug expects when an estimate is
+          // approved. Schedule modal flips it to Scheduled when a date
+          // is set.
+          status: 'Chillin',
           start_date: estimate.service_date || new Date().toISOString(),
           job_total: subtotal - discount,
           utility_incentive: parseFloat(estimate.utility_incentive) || 0,

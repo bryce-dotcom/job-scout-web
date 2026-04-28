@@ -346,13 +346,17 @@ export default function Payroll() {
           .eq('company_id', companyId)
           .or('salesperson_id.not.is.null,lead_id.not.is.null')),
 
-        // Pending time off requests
+        // Time off requests — pending + recent (last 30 days) so HR
+        // can see the feature exists even when there are no pending
+        // requests to act on, and can review what was approved/denied
+        // recently.
         supabase
           .from('time_off_requests')
           .select('*, employee:employees(name, email)')
           .eq('company_id', companyId)
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false }),
+          .or(`status.eq.pending,created_at.gte.${new Date(Date.now() - 30 * 86400000).toISOString()}`)
+          .order('created_at', { ascending: false })
+          .limit(50),
 
         // Payroll adjustments for this period (matching period OR recurring)
         supabase
@@ -2602,53 +2606,98 @@ export default function Payroll() {
         </div>
       </div>
 
-      {/* Pending Time Off Requests */}
-      {isAdmin && timeOffRequests.length > 0 && (
-        <div style={{
-          backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
-          borderRadius: '12px', overflow: 'hidden', marginBottom: '24px'
-        }}>
+      {/* Time Off Requests — always visible to HR users so they can find
+          the feature even when nothing is pending. Pending get approve/
+          deny buttons; recent (30d) shown read-only below. */}
+      {isAdmin && hasHR && (() => {
+        const pending = timeOffRequests.filter(r => r.status === 'pending')
+        const history = timeOffRequests.filter(r => r.status !== 'pending').slice(0, 10)
+        return (
           <div style={{
-            padding: '16px 20px', borderBottom: `1px solid ${theme.border}`,
-            display: 'flex', alignItems: 'center', gap: '10px'
+            backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+            borderRadius: '12px', overflow: 'hidden', marginBottom: '24px'
           }}>
-            <AlertTriangle size={18} style={{ color: '#eab308' }} />
-            <span style={{ fontWeight: '600', color: theme.text }}>Pending Time Off Requests ({timeOffRequests.length})</span>
-          </div>
-
-          {timeOffRequests.map(request => (
-            <div key={request.id} style={{
-              padding: isMobile ? '12px 16px' : '16px 20px', borderBottom: `1px solid ${theme.border}`,
-              display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '16px',
-              flexDirection: isMobile ? 'column' : 'row'
+            <div style={{
+              padding: '16px 20px', borderBottom: `1px solid ${theme.border}`,
+              display: 'flex', alignItems: 'center', gap: '10px'
             }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: '600', color: theme.text }}>{request.employee?.name || request.employee?.email}</div>
-                <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
-                  <span style={{
-                    marginLeft: '8px', padding: '2px 8px', backgroundColor: 'rgba(139,92,246,0.1)',
-                    borderRadius: '12px', color: '#8b5cf6', fontSize: '11px', textTransform: 'uppercase'
-                  }}>{request.request_type}</span>
-                </div>
-                {request.reason && <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>"{request.reason}"</div>}
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => handleApproveRequest(request.id)} style={{
-                  padding: '8px 16px', background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                  border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
-                }}><Check size={14} /> Approve</button>
-                <button onClick={() => handleDenyRequest(request.id)} style={{
-                  padding: '8px 16px', background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                  border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
-                }}><X size={14} /> Deny</button>
-              </div>
+              {pending.length > 0
+                ? <AlertTriangle size={18} style={{ color: '#eab308' }} />
+                : <Calendar size={18} style={{ color: theme.textMuted }} />}
+              <span style={{ fontWeight: '600', color: theme.text }}>
+                Time Off Requests
+                {pending.length > 0 && <span style={{ marginLeft: 8, color: '#eab308' }}>· {pending.length} pending</span>}
+              </span>
             </div>
-          ))}
-        </div>
-      )}
+
+            {pending.length === 0 && history.length === 0 && (
+              <div style={{ padding: '20px', fontSize: '13px', color: theme.textMuted, textAlign: 'center' }}>
+                No time off requests right now. Employees submit them from their Time Clock page,
+                and they&apos;ll show up here for you to approve.
+              </div>
+            )}
+
+            {pending.map(request => (
+              <div key={request.id} style={{
+                padding: isMobile ? '12px 16px' : '16px 20px', borderBottom: `1px solid ${theme.border}`,
+                display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '12px' : '16px',
+                flexDirection: isMobile ? 'column' : 'row'
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: '600', color: theme.text }}>{request.employee?.name || request.employee?.email}</div>
+                  <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                    {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
+                    <span style={{
+                      marginLeft: '8px', padding: '2px 8px', backgroundColor: 'rgba(139,92,246,0.1)',
+                      borderRadius: '12px', color: '#8b5cf6', fontSize: '11px', textTransform: 'uppercase'
+                    }}>{request.request_type}</span>
+                  </div>
+                  {request.reason && <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>&ldquo;{request.reason}&rdquo;</div>}
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => handleApproveRequest(request.id)} style={{
+                    padding: '8px 16px', background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                    border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+                  }}><Check size={14} /> Approve</button>
+                  <button onClick={() => handleDenyRequest(request.id)} style={{
+                    padding: '8px 16px', background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                    border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+                  }}><X size={14} /> Deny</button>
+                </div>
+              </div>
+            ))}
+
+            {history.length > 0 && (
+              <div style={{ padding: '8px 20px', backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}`, fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Recent (last 30 days)
+              </div>
+            )}
+            {history.map(request => (
+              <div key={request.id} style={{
+                padding: '10px 20px', borderBottom: `1px solid ${theme.border}`,
+                display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px', color: theme.textMuted
+              }}>
+                <div style={{ flex: 1 }}>
+                  <strong style={{ color: theme.text }}>{request.employee?.name || request.employee?.email}</strong>
+                  {' — '}{new Date(request.start_date).toLocaleDateString()}–{new Date(request.end_date).toLocaleDateString()}
+                  {' · '}{request.request_type}
+                  {request.reason && <span style={{ marginLeft: 6, fontStyle: 'italic' }}>&ldquo;{request.reason}&rdquo;</span>}
+                </div>
+                <span style={{
+                  padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 700,
+                  backgroundColor: request.status === 'approved' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                  color: request.status === 'approved' ? '#16a34a' : '#dc2626',
+                  textTransform: 'uppercase',
+                }}>
+                  {request.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* ── Settings Modal ──────────────────────────────── */}
       {showSettingsModal && (

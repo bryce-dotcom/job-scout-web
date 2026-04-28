@@ -1330,10 +1330,55 @@ export default function CustomerDetail() {
                             {quote.status}
                           </span>
                         </div>
-                        <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
-                          {quote.quote_lines?.length > 0 && `${quote.quote_lines.length} line items`}
-                        </div>
-                        <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                        {quote.estimate_name && (
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginTop: '6px' }}>
+                            {quote.estimate_name}
+                          </div>
+                        )}
+                        {/* Line items preview — full descriptions, not just a count.
+                            Doug reported only seeing a brief preview and wanting the
+                            full product/description visible. */}
+                        {quote.quote_lines?.length > 0 && (
+                          <div style={{
+                            marginTop: '8px',
+                            padding: '8px 10px',
+                            backgroundColor: theme.bg,
+                            border: `1px solid ${theme.border}`,
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            color: theme.textSecondary,
+                          }}>
+                            {quote.quote_lines.slice(0, 5).map((line, li) => (
+                              <div key={line.id || li} style={{
+                                display: 'flex',
+                                gap: '6px',
+                                padding: li > 0 ? '6px 0 0' : 0,
+                                borderTop: li > 0 ? `1px dashed ${theme.border}` : 'none',
+                                marginTop: li > 0 ? '6px' : 0,
+                              }}>
+                                <span style={{ flex: '0 0 auto', fontWeight: 600, color: theme.text }}>
+                                  {line.quantity != null ? `${line.quantity}× ` : ''}
+                                </span>
+                                <span style={{ flex: 1, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                  {line.item_name || line.product_name || ''}
+                                  {(line.item_name || line.product_name) && line.description ? ' — ' : ''}
+                                  {line.description || ''}
+                                </span>
+                                {line.line_total != null && (
+                                  <span style={{ flex: '0 0 auto', fontWeight: 600, color: theme.text }}>
+                                    ${parseFloat(line.line_total).toLocaleString()}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                            {quote.quote_lines.length > 5 && (
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: theme.textMuted, fontStyle: 'italic' }}>
+                                +{quote.quote_lines.length - 5} more line{quote.quote_lines.length - 5 === 1 ? '' : 's'} — open the estimate to see all.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
                           Created {new Date(quote.created_at).toLocaleDateString()}
                           {quote.sent_at && ` - Sent ${new Date(quote.sent_at).toLocaleDateString()}`}
                         </div>
