@@ -1,9 +1,12 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
-import { Plus, Search, MapPin, Dog, KeyRound, Ruler, Calendar, X, Edit2, Save, Trash2 } from 'lucide-react'
+import { Plus, Search, MapPin, Dog, KeyRound, Ruler, Calendar, X, Edit2, Save, Trash2, Calculator, Crop } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
+import YardMeasureModal from '../../../components/zach/YardMeasureModal'
+import EstimateModal from '../../../components/zach/EstimateModal'
+import { loadGoogleMaps, hasMapsKey, staticMapUrl } from '../../../lib/googleMaps'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -23,6 +26,7 @@ const empty = {
   gate_code: '', dog_on_premises: false, dog_notes: '',
   irrigation_notes: '', obstacles: '', hazards: '',
   preferred_crew: '', notes: '', active: true,
+  latitude: null, longitude: null, turf_polygon: null,
 }
 
 export default function ZachProperties() {
@@ -34,6 +38,7 @@ export default function ZachProperties() {
   const fetchCustomers = useStore(s => s.fetchCustomers)
   const lawnProperties = useStore(s => s.lawnProperties)
   const fetchLawnProperties = useStore(s => s.fetchLawnProperties)
+  const fetchLawnPricing = useStore(s => s.fetchLawnPricing)
 
   const [search, setSearch] = useState('')
   const [filterDay, setFilterDay] = useState('all')
@@ -42,12 +47,55 @@ export default function ZachProperties() {
   const [form, setForm] = useState(empty)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [measuring, setMeasuring] = useState(null)   // property being measured
+  const [estimating, setEstimating] = useState(null) // property being estimated
+  const addressInputRef = useRef(null)
+  const autocompleteRef = useRef(null)
 
   useEffect(() => {
     if (!companyId) return
     fetchLawnProperties()
+    fetchLawnPricing()
     if (!customers?.length) fetchCustomers()
   }, [companyId])
+
+  // Wire Google Places autocomplete onto the address field whenever the form opens
+  useEffect(() => {
+    if (!showForm || !addressInputRef.current || !hasMapsKey()) return
+    let alive = true
+    loadGoogleMaps().then(google => {
+      if (!alive || !addressInputRef.current) return
+      // Tear down any prior instance
+      if (autocompleteRef.current) {
+        google.maps.event.clearInstanceListeners(autocompleteRef.current)
+      }
+      const ac = new google.maps.places.Autocomplete(addressInputRef.current, {
+        fields: ['address_components', 'formatted_address', 'geometry'],
+        types: ['address'],
+      })
+      autocompleteRef.current = ac
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace()
+        if (!place) return
+        const comps = place.address_components || []
+        const get = (type, short) => {
+          const c = comps.find(c => c.types.includes(type))
+          return c ? (short ? c.short_name : c.long_name) : ''
+        }
+        const street = [get('street_number'), get('route')].filter(Boolean).join(' ')
+        setForm(prev => ({
+          ...prev,
+          address: street || place.formatted_address || prev.address,
+          city:    get('locality') || get('sublocality') || prev.city,
+          state:   get('administrative_area_level_1', true) || prev.state,
+          zip:     get('postal_code') || prev.zip,
+          latitude:  place.geometry?.location?.lat() ?? prev.latitude ?? null,
+          longitude: place.geometry?.location?.lng() ?? prev.longitude ?? null,
+        }))
+      })
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [showForm])
 
   const filtered = useMemo(() => {
     return (lawnProperties || []).filter(p => {
@@ -85,6 +133,9 @@ export default function ZachProperties() {
       lot_size_sqft: form.lot_size_sqft ? parseInt(form.lot_size_sqft) : null,
       turf_size_sqft: form.turf_size_sqft ? parseInt(form.turf_size_sqft) : null,
       mow_height_inches: form.mow_height_inches ? parseFloat(form.mow_height_inches) : null,
+      latitude: form.latitude != null && form.latitude !== '' ? parseFloat(form.latitude) : null,
+      longitude: form.longitude != null && form.longitude !== '' ? parseFloat(form.longitude) : null,
+      turf_polygon: form.turf_polygon || null,
       updated_at: new Date().toISOString(),
     }
     let result
@@ -157,6 +208,7 @@ export default function ZachProperties() {
                   {p.address && <p style={{ margin: '4px 0 0', fontSize: 13, color: theme.textMuted }}>{p.address}{p.city ? ', ' + p.city : ''}{p.state ? ' ' + p.state : ''}</p>}
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
+                  <button onClick={() => setEstimating(p)} title="Estimate" style={{ padding: 6, background: theme.accentBg, border: `1px solid ${theme.accent}`, borderRadius: 6, cursor: 'pointer', color: theme.accent }}><Calculator size={14} /></button>
                   <button onClick={() => openEdit(p)} title="Edit" style={{ padding: 6, background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 6, cursor: 'pointer', color: theme.textSecondary }}><Edit2 size={14} /></button>
                   <button onClick={() => remove(p.id)} title="Delete" style={{ padding: 6, background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 6, cursor: 'pointer', color: theme.danger }}><Trash2 size={14} /></button>
                 </div>
@@ -172,6 +224,10 @@ export default function ZachProperties() {
                 {p.dog_on_premises && <Chip theme={theme} icon={Dog} color={theme.danger}>Dog</Chip>}
                 {p.gate_code && <Chip theme={theme} icon={KeyRound}>Gate: {p.gate_code}</Chip>}
               </div>
+
+              {p.latitude && p.longitude && hasMapsKey() && (
+                <img src={staticMapUrl({ lat: p.latitude, lng: p.longitude, polygon: p.turf_polygon, width: 360, height: 140 })} alt="" style={{ marginTop: 10, width: '100%', borderRadius: 8, border: `1px solid ${theme.border}`, display: 'block' }} />
+              )}
 
               {p.notes && <p style={{ marginTop: 12, fontSize: 13, color: theme.textSecondary, whiteSpace: 'pre-wrap' }}>{p.notes}</p>}
             </div>
@@ -197,7 +253,9 @@ export default function ZachProperties() {
                   {(customers || []).map(c => <option key={c.id} value={c.id}>{c.business_name || c.name}</option>)}
                 </select>
               </Field>
-              <Field label="Address"><input style={inputStyle} value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></Field>
+              <Field label="Address">
+                <input ref={addressInputRef} style={inputStyle} value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder={hasMapsKey() ? 'Start typing — Google will autocomplete' : 'Street address'} />
+              </Field>
               <Row>
                 <Field label="City"><input style={inputStyle} value={form.city} onChange={e => setForm({...form, city: e.target.value})} /></Field>
                 <Field label="State"><input style={inputStyle} value={form.state} onChange={e => setForm({...form, state: e.target.value})} maxLength={2} /></Field>
@@ -230,6 +288,24 @@ export default function ZachProperties() {
                   </select>
                 </Field>
               </Row>
+
+              {/* Satellite measurement */}
+              <div style={{ marginTop: 8, padding: 12, background: theme.bg, border: `1px dashed ${theme.border}`, borderRadius: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Measure from satellite</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted }}>
+                      {form.turf_polygon?.length ? `Saved polygon · ${form.turf_polygon.length} pts` : 'Trace the lawn on a Google satellite tile to auto-fill turf sqft.'}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setMeasuring({ __form: true, address: [form.address, form.city, form.state].filter(Boolean).join(', '), latitude: form.latitude, longitude: form.longitude, turf_polygon: form.turf_polygon })} style={{ padding: '8px 14px', minHeight: 40, background: theme.accent, color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 500, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Crop size={14} /> {form.turf_polygon?.length ? 'Re-measure' : 'Measure yard'}
+                  </button>
+                </div>
+                {form.latitude && form.longitude && (
+                  <img src={staticMapUrl({ lat: form.latitude, lng: form.longitude, polygon: form.turf_polygon, width: 560, height: 200 })} alt="" style={{ marginTop: 10, width: '100%', borderRadius: 8, border: `1px solid ${theme.border}`, display: 'block' }} />
+                )}
+              </div>
             </Section>
 
             <Section title="Access & site">
@@ -258,6 +334,44 @@ export default function ZachProperties() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Yard measurement modal */}
+      {measuring && (
+        <YardMeasureModal
+          address={measuring.address || [measuring.address_line, measuring.city, measuring.state].filter(Boolean).join(', ')}
+          initialCenter={measuring.latitude && measuring.longitude ? { lat: Number(measuring.latitude), lng: Number(measuring.longitude) } : null}
+          initialPolygon={measuring.turf_polygon || null}
+          onClose={() => setMeasuring(null)}
+          onSave={async ({ polygon, sqft, lat, lng }) => {
+            if (measuring.__form) {
+              // measuring against the open form (new property or edit-in-progress)
+              setForm(prev => ({
+                ...prev,
+                turf_polygon: polygon,
+                turf_size_sqft: sqft || prev.turf_size_sqft,
+                latitude: lat ?? prev.latitude,
+                longitude: lng ?? prev.longitude,
+              }))
+            } else if (measuring.id) {
+              // measuring an existing property in-place
+              await supabase.from('lawn_properties').update({
+                turf_polygon: polygon,
+                turf_size_sqft: sqft || measuring.turf_size_sqft,
+                latitude: lat ?? measuring.latitude,
+                longitude: lng ?? measuring.longitude,
+                updated_at: new Date().toISOString(),
+              }).eq('id', measuring.id)
+              fetchLawnProperties()
+            }
+            setMeasuring(null)
+          }}
+        />
+      )}
+
+      {/* Estimate modal */}
+      {estimating && (
+        <EstimateModal property={estimating} onClose={() => setEstimating(null)} onSaved={() => {}} />
       )}
     </div>
   )

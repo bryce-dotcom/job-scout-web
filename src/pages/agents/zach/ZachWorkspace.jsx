@@ -6,6 +6,7 @@ const ZACH_TABS = [
   { path: '/agents/zach',            label: 'Properties', icon: 'Home',     end: true },
   { path: '/agents/zach/visits',     label: 'Visits',     icon: 'ClipboardCheck' },
   { path: '/agents/zach/treatments', label: 'Treatments', icon: 'Sprout' },
+  { path: '/agents/zach/pricing',    label: 'Pricing',    icon: 'DollarSign' },
   { path: '/agents/zach/settings',   label: 'Settings',   icon: 'Settings' },
 ];
 

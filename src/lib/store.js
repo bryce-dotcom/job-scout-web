@@ -47,6 +47,8 @@ export const useStore = create(
       lawnProperties: [],
       lawnVisits: [],
       lawnTreatments: [],
+      lawnPricing: null,
+      lawnEstimates: [],
 
       // Inventory
       inventory: [],
@@ -171,6 +173,8 @@ export const useStore = create(
           lawnProperties: [],
           lawnVisits: [],
           lawnTreatments: [],
+          lawnPricing: null,
+          lawnEstimates: [],
           inventory: [],
           lightingAudits: [],
           auditAreas: [],
@@ -316,6 +320,37 @@ export const useStore = create(
           if (!error) set({ lawnTreatments: data || [] });
         } catch (e) {
           console.warn('[fetchLawnTreatments] failed:', e?.message);
+        }
+      },
+
+      fetchLawnPricing: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+        try {
+          const { data, error } = await supabase
+            .from('lawn_pricing')
+            .select('*')
+            .eq('company_id', companyId)
+            .maybeSingle();
+          if (!error) set({ lawnPricing: data || null });
+        } catch (e) {
+          console.warn('[fetchLawnPricing] failed:', e?.message);
+        }
+      },
+
+      fetchLawnEstimates: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+        try {
+          const { data, error } = await supabase
+            .from('lawn_estimates')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('created_at', { ascending: false })
+            .limit(200);
+          if (!error) set({ lawnEstimates: data || [] });
+        } catch (e) {
+          console.warn('[fetchLawnEstimates] failed:', e?.message);
         }
       },
 

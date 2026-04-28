@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
-import { Plus, ClipboardCheck, X, Save, Trash2, Calendar, Cloud, Clock, Users } from 'lucide-react'
+import { Plus, ClipboardCheck, X, Save, Trash2, Calendar, Cloud, Clock, Users, TrendingUp } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
+import { estimateMow, computeEffortFactor, DEFAULT_PRICING } from '../../../lib/lawnEstimator'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -29,6 +30,8 @@ export default function ZachVisits() {
   const fetchLawnProperties = useStore(s => s.fetchLawnProperties)
   const lawnVisits = useStore(s => s.lawnVisits)
   const fetchLawnVisits = useStore(s => s.fetchLawnVisits)
+  const lawnPricing = useStore(s => s.lawnPricing)
+  const fetchLawnPricing = useStore(s => s.fetchLawnPricing)
 
   const [filterProperty, setFilterProperty] = useState('all')
   const [showForm, setShowForm] = useState(false)
@@ -40,6 +43,7 @@ export default function ZachVisits() {
   useEffect(() => {
     if (!companyId) return
     fetchLawnVisits()
+    fetchLawnPricing()
     if (!lawnProperties?.length) fetchLawnProperties()
   }, [companyId])
 
@@ -69,11 +73,26 @@ export default function ZachVisits() {
   const save = async () => {
     if (!form.property_id) { setError('Pick a property.'); return }
     setSaving(true); setError(null)
+    const propId = parseInt(form.property_id)
+    const property = propMap[propId]
+
+    // Predicted duration — only meaningful for mow visits with a turf measurement
+    let predicted = null
+    if (form.service_type === 'mow' && property?.turf_size_sqft) {
+      const est = estimateMow({
+        turf_sqft: property.turf_size_sqft,
+        pricing: lawnPricing || DEFAULT_PRICING,
+        effort_factor: 1, // predict from baseline so the learning loop measures drift fairly
+      })
+      predicted = est.predicted_minutes
+    }
+
     const payload = {
       ...form,
       company_id: companyId,
-      property_id: parseInt(form.property_id),
+      property_id: propId,
       duration_minutes: form.duration_minutes ? parseInt(form.duration_minutes) : null,
+      predicted_duration_minutes: predicted,
       updated_at: new Date().toISOString(),
     }
     let result
@@ -84,6 +103,33 @@ export default function ZachVisits() {
     }
     setSaving(false)
     if (result.error) { setError(result.error.message); return }
+
+    // Learning loop — pull this property's last 20 mow visits and recompute effort_factor.
+    if (form.service_type === 'mow') {
+      try {
+        const { data: history } = await supabase
+          .from('lawn_visits')
+          .select('duration_minutes, predicted_duration_minutes')
+          .eq('company_id', companyId)
+          .eq('property_id', propId)
+          .eq('service_type', 'mow')
+          .not('duration_minutes', 'is', null)
+          .not('predicted_duration_minutes', 'is', null)
+          .order('visit_date', { ascending: false })
+          .limit(20)
+        const ef = computeEffortFactor(history || [])
+        if (ef.sample_n >= 3) {
+          await supabase.from('lawn_properties').update({
+            effort_factor: ef.factor,
+            effort_sample_n: ef.sample_n,
+            updated_at: new Date().toISOString(),
+          }).eq('id', propId)
+        }
+      } catch (e) {
+        console.warn('[learning loop] skipped:', e?.message)
+      }
+    }
+
     setShowForm(false); setEditingId(null)
     fetchLawnVisits()
   }
@@ -182,6 +228,19 @@ export default function ZachVisits() {
               <Field label="Crew"><input style={inputStyle} value={form.crew} onChange={e => setForm({...form, crew: e.target.value})} placeholder="e.g. Crew B" /></Field>
               <Field label="Duration (min)"><input type="number" style={inputStyle} value={form.duration_minutes} onChange={e => setForm({...form, duration_minutes: e.target.value})} /></Field>
             </Row>
+            {(() => {
+              const prop = propMap[parseInt(form.property_id)]
+              if (form.service_type !== 'mow' || !prop?.turf_size_sqft || !lawnPricing) return null
+              const est = estimateMow({ turf_sqft: prop.turf_size_sqft, pricing: lawnPricing, effort_factor: 1 })
+              return (
+                <div style={{ display: 'flex', gap: 8, padding: 10, background: 'rgba(168,85,247,0.08)', border: `1px solid #a855f7`, borderRadius: 8, marginBottom: 12 }}>
+                  <TrendingUp size={16} style={{ color: '#a855f7', flexShrink: 0, marginTop: 2 }} />
+                  <div style={{ fontSize: 13, color: theme.textSecondary }}>
+                    Zach predicts <strong>{est.predicted_minutes} min</strong> for this mow ({prop.turf_size_sqft.toLocaleString()} sqft). Logging actual time tunes future estimates.
+                  </div>
+                </div>
+              )
+            })()}
             <Field label="Weather"><input style={inputStyle} value={form.weather} onChange={e => setForm({...form, weather: e.target.value})} placeholder="Sunny 78F" /></Field>
             <Field label="Notes"><textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} /></Field>
             <Field label="Billed">

@@ -67,6 +67,7 @@ import ZachWorkspace from './pages/agents/zach/ZachWorkspace'
 import ZachProperties from './pages/agents/zach/ZachProperties'
 import ZachVisits from './pages/agents/zach/ZachVisits'
 import ZachTreatments from './pages/agents/zach/ZachTreatments'
+import ZachPricing from './pages/agents/zach/ZachPricing'
 import ZachSettings from './pages/agents/zach/ZachSettings'
 import ConradWorkspace from './pages/agents/conrad/ConradWorkspace'
 import ConradDashboard from './pages/agents/conrad/ConradDashboard'
@@ -417,6 +418,7 @@ function App() {
             <Route index element={<ZachProperties />} />
             <Route path="visits" element={<ZachVisits />} />
             <Route path="treatments" element={<ZachTreatments />} />
+            <Route path="pricing" element={<ZachPricing />} />
             <Route path="settings" element={<ZachSettings />} />
           </Route>
 
