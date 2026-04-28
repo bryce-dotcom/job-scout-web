@@ -4193,6 +4193,49 @@ export default function PMJobSetter() {
                 {detailJob.job_title || `Job #${detailJob.id}`}
               </h2>
               <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                {/* Reschedule — opens the Schedule modal pre-populated so
+                    the user can change start/duration without leaving the
+                    board. Saves go straight back to the same calendar. */}
+                <button
+                  onClick={() => {
+                    const job = detailJob
+                    setDetailJob(null)
+                    const startTime = job.start_date ? new Date(job.start_date) : (() => {
+                      const t = new Date(); t.setHours(8, 0, 0, 0); t.setDate(t.getDate() + 1); return t
+                    })()
+                    const durationHrs = job.end_date && job.start_date
+                      ? Math.max(0.5, (new Date(job.end_date) - new Date(job.start_date)) / 3600000)
+                      : (job.allotted_time_hours || 4)
+                    setScheduleJob(job)
+                    setScheduleForm({
+                      start_time: formatDateTimeLocal(startTime),
+                      duration_hours: durationHrs,
+                      pm_id: job.pm_id ? String(job.pm_id) : (!isAdmin && user?.id ? String(user.id) : ''),
+                      job_lead_id: job.job_lead_id ? String(job.job_lead_id) : '',
+                      assigned_employee_ids: [],
+                      assigned_team: job.assigned_team || '',
+                      notes: job.notes || '',
+                      recurrence: job.recurrence || 'None',
+                      recurrence_end: '',
+                      createAppointment: true,
+                      sendText: false,
+                      sendEmail: false,
+                      phone: job.customer?.phone || '',
+                      email: job.customer?.email || '',
+                    })
+                    setScheduleError(null)
+                    setShowScheduleModal(true)
+                  }}
+                  style={{
+                    padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                    backgroundColor: 'rgba(168,85,247,0.12)', color: '#7c3aed',
+                    border: '1px solid rgba(168,85,247,0.3)',
+                    borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                  }}
+                  title="Reschedule without leaving the board"
+                >
+                  <Calendar size={12} /> Reschedule
+                </button>
                 <button
                   onClick={() => { setDetailJob(null); navigate(`/jobs/${detailJob.id}`) }}
                   style={{

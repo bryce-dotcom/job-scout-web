@@ -1017,6 +1017,7 @@ export default function Jobs() {
     const customerName = job.customer?.name || job.customer_name || 'Unknown'
     const amount = parseFloat(job.job_total) || 0
     const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
+    const needsInvoice = !job.invoice_status || job.invoice_status === 'Not Invoiced'
     companyNotify({
       companyId,
       type: 'job_completed',
@@ -1025,6 +1026,19 @@ export default function Jobs() {
       metadata: { job_id: job.id, customer_name: customerName, amount },
       createdBy: user?.id
     })
+    if (needsInvoice) {
+      companyNotify({
+        companyId,
+        type: 'job_ready_to_invoice',
+        title: 'Ready to invoice',
+        message: `${customerName}${amountStr} — ${job.job_title || job.job_id}`,
+        metadata: {
+          job_id: job.id, human_job_id: job.job_id, customer_name: customerName,
+          amount, link: `/jobs/${job.id}#invoice`,
+        },
+        createdBy: user?.id
+      })
+    }
 
     await fetchJobs()
   }

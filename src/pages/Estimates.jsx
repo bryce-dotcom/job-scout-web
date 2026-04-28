@@ -55,6 +55,9 @@ export default function Estimates() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  // Hide noise estimates by default (Draft + $0). Doug reported the
+  // unfiltered list was full of $0 / unrelated drafts when he searched.
+  const [hideNoise, setHideNoise] = useState(true)
   const [showImportExport, setShowImportExport] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
 
@@ -97,13 +100,28 @@ export default function Estimates() {
   }, [companyId, navigate, fetchQuotes])
 
   const filteredEstimates = quotes.filter(quote => {
-    const customerName = quote.customer?.name || quote.lead?.customer_name || ''
-    const matchesSearch = searchTerm === '' ||
-      customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      quote.quote_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      quote.estimate_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    // Broad search blob — includes customer/lead names, business name,
+    // email/phone, the human-readable quote_id, the estimate name, the
+    // recipient email (so cvwrfut.gov surfaces an estimate when its
+    // recipient is reilleyc@cvwrfut.gov), and notes.
+    const blob = [
+      quote.customer?.name, quote.customer?.business_name, quote.customer?.email, quote.customer?.phone,
+      quote.lead?.customer_name, quote.lead?.business_name, quote.lead?.email, quote.lead?.phone,
+      quote.quote_id, quote.estimate_name, quote.sent_to_email, quote.notes,
+      quote.business_unit, quote.service_type,
+    ].filter(Boolean).join(' ').toLowerCase()
+    const matchesSearch = searchTerm === '' || blob.includes(searchTerm.toLowerCase())
 
     const matchesStatus = statusFilter === 'all' || quote.status === statusFilter
+
+    // "Hide noise" — drop drafts with $0 since those are usually
+    // unfinished estimates. Bypass when a search is active so the
+    // user can still find a draft they're looking for.
+    if (hideNoise && !searchTerm) {
+      const isDraft = quote.status === 'Draft'
+      const isZero = !quote.quote_amount || parseFloat(quote.quote_amount) === 0
+      if (isDraft && isZero) return false
+    }
 
     return matchesSearch && matchesStatus
   })
@@ -353,6 +371,24 @@ export default function Estimates() {
           <option value="Rejected">Rejected</option>
           <option value="Expired">Expired</option>
         </select>
+        <label
+          title="Drafts with $0 are usually unfinished — hide them by default. Searching ignores this filter."
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 10px',
+            border: `1px solid ${theme.border}`, borderRadius: 8,
+            cursor: 'pointer', fontSize: 12, color: theme.textSecondary,
+            userSelect: 'none', minHeight: isMobile ? '44px' : 'auto',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={hideNoise}
+            onChange={(e) => setHideNoise(e.target.checked)}
+            style={{ accentColor: theme.accent }}
+          />
+          Hide $0 drafts
+        </label>
       </div>
 
       {filteredEstimates.length === 0 ? (

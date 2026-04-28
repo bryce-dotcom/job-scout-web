@@ -949,18 +949,44 @@ function JobDetailInner() {
       }
     }
 
-    if (newStatus === 'Completed') {
+    // Celebrate completion + flag invoicing. Both Completed and Verified
+    // Complete should trigger an "invoice this" alert so Tracy / whoever
+    // owns AR doesn't have to scan the job board hunting for finished
+    // jobs that still show "Not Invoiced".
+    if (newStatus === 'Completed' || newStatus === 'Verified Complete') {
       const customerName = getCustomerPrimary(job.customer) || job.customer_name || 'Unknown'
       const amount = parseFloat(job.job_total) || 0
       const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
+      const needsInvoice = !job.invoice_status || job.invoice_status === 'Not Invoiced'
+
+      // Existing celebration toast
       companyNotify({
         companyId,
         type: 'job_completed',
-        title: 'Job Completed!',
+        title: newStatus === 'Verified Complete' ? 'Job Verified Complete!' : 'Job Completed!',
         message: `${customerName}${amountStr} (${job.job_id})`,
         metadata: { job_id: job.id, customer_name: customerName, amount },
         createdBy: user?.id
       })
+
+      // Separate, actionable "ready to invoice" alert when the job
+      // hasn't been invoiced yet.
+      if (needsInvoice) {
+        companyNotify({
+          companyId,
+          type: 'job_ready_to_invoice',
+          title: 'Ready to invoice',
+          message: `${customerName}${amountStr} — ${job.job_title || job.job_id}`,
+          metadata: {
+            job_id: job.id,
+            human_job_id: job.job_id,
+            customer_name: customerName,
+            amount,
+            link: `/jobs/${job.id}#invoice`,
+          },
+          createdBy: user?.id
+        })
+      }
     }
 
     await fetchJobData()
