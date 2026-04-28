@@ -233,7 +233,7 @@ export default function Dashboard() {
   const mtdSalesWon = mtdSalesWonLeads.reduce((sum, l) => sum + (quoteByLead[l.id] || parseFloat(l.quote_amount) || 0), 0)
 
   // Extra metrics
-  const completedJobsMTD = jobs.filter(j => j.status === 'Completed' && (j.end_date || j.updated_at) && new Date(j.end_date || j.updated_at) >= firstOfMonth).length
+  const completedJobsMTD = jobs.filter(j => j.status === 'Completed' && (j.completed_at || j.end_date || j.updated_at) && new Date(j.completed_at || j.end_date || j.updated_at) >= firstOfMonth).length
   const totalLeadsCount = leads.length
   const netIncome = thisMonthRevenue - thisMonthExpenses
   const completedJobsAll = jobs.filter(j => j.status === 'Completed')
@@ -270,7 +270,7 @@ export default function Dashboard() {
   const ytdDeposits = depositsYTD
   const completedJobsYTD = jobs.filter(j => {
     if (j.status !== 'Completed') return false
-    const jobDate = j.end_date || j.updated_at
+    const jobDate = j.completed_at || j.end_date || j.updated_at
     return jobDate && new Date(jobDate) >= firstOfYear
   }).length
 

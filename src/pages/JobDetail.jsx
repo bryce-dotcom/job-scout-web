@@ -924,7 +924,11 @@ function JobDetailInner() {
       updateData.start_date = new Date().toISOString()
     }
     if (newStatus === 'Completed') {
-      updateData.end_date = new Date().toISOString()
+      // Use completed_at for the actual completion timestamp.
+      // DO NOT touch end_date — that's the SCHEDULED end of the job and
+      // overwriting it with "now" was painting completed jobs as multi-
+      // week bars on the calendar (Costco bug, fixed Apr 28 2026).
+      updateData.completed_at = new Date().toISOString()
     }
 
     await supabase.from('jobs').update(updateData).eq('id', id)

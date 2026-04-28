@@ -200,7 +200,7 @@ function RecentWins({ wins, theme, isMobile, navigate, formatDate }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', color: theme.textMuted }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                 <CheckCircle size={11} style={{ color: '#4a7c59' }} />
-                {formatDate(job.end_date || job.updated_at)}
+                {formatDate(job.completed_at || job.end_date || job.updated_at)}
               </span>
               {job.assigned_team && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -572,8 +572,8 @@ export default function Jobs() {
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const recentWins = jobs
-    .filter(j => j.status === 'Completed' && new Date(j.end_date || j.updated_at) >= thirtyDaysAgo)
-    .sort((a, b) => new Date(b.end_date || b.updated_at) - new Date(a.end_date || a.updated_at))
+    .filter(j => j.status === 'Completed' && new Date(j.completed_at || j.end_date || j.updated_at) >= thirtyDaysAgo)
+    .sort((a, b) => new Date(b.completed_at || b.updated_at) - new Date(a.completed_at || a.updated_at))
 
   const filteredJobs = jobs.filter(job => {
     const term = searchTerm.toLowerCase()
@@ -1001,7 +1001,10 @@ export default function Jobs() {
       .from('jobs')
       .update({
         status: 'Completed',
-        end_date: new Date().toISOString(),
+        // completed_at = actual completion time. end_date stays the
+        // scheduled end so the job stops painting as a multi-week bar
+        // on the calendar (Costco bug, fixed Apr 28 2026).
+        completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
       .eq('id', job.id)
