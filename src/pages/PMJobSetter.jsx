@@ -1027,6 +1027,67 @@ export default function PMJobSetter() {
     setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
   }
 
+  // Group monthDays into rows of 7 (a calendar "week"). Used by the
+  // multi-day spanning renderer below.
+  const getMonthWeeks = () => {
+    const days = getMonthDays()
+    const weeks = []
+    for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7))
+    return weeks
+  }
+
+  // Whether a job is multi-day (spans 2+ calendar days). Single-day jobs
+  // continue to render in their cell as before; only multi-day jobs get
+  // the Google-Calendar-style spanning bar.
+  const isMultiDayJob = (job) => {
+    if (!job?.start_date) return false
+    const start = new Date(job.start_date); start.setHours(0,0,0,0)
+    const end = job.end_date ? new Date(job.end_date) : new Date(job.start_date)
+    end.setHours(0,0,0,0)
+    return end.getTime() > start.getTime()
+  }
+
+  // For a given week (array of 7 Date|null), compute multi-day job spans
+  // clipped to that week. Returns
+  //   [{ job, startCol, endCol, lane, continuesLeft, continuesRight }]
+  // Lanes are assigned greedily so overlapping spans stack vertically.
+  const computeWeekSpans = (weekDays, jobs) => {
+    const spans = []
+    jobs.forEach(job => {
+      if (!isMultiDayJob(job)) return
+      const start = new Date(job.start_date); start.setHours(0,0,0,0)
+      const end = job.end_date ? new Date(job.end_date) : new Date(job.start_date)
+      end.setHours(23,59,59,999)
+      let startCol = -1, endCol = -1
+      for (let c = 0; c < 7; c++) {
+        const d = weekDays[c]; if (!d) continue
+        const mid = new Date(d); mid.setHours(12,0,0,0)
+        if (mid >= start && mid <= end) {
+          if (startCol < 0) startCol = c
+          endCol = c
+        }
+      }
+      if (startCol < 0) return
+      const firstReal = weekDays.find(d => d) ; const lastReal = [...weekDays].reverse().find(d => d)
+      const firstMid = firstReal ? (() => { const m = new Date(firstReal); m.setHours(0,0,0,0); return m })() : null
+      const lastMid = lastReal ? (() => { const m = new Date(lastReal); m.setHours(23,59,59,999); return m })() : null
+      const continuesLeft = firstMid ? start < firstMid : false
+      const continuesRight = lastMid ? end > lastMid : false
+      spans.push({ job, startCol, endCol, continuesLeft, continuesRight })
+    })
+    // Greedy lane assignment: longest first, then earliest. Within a lane,
+    // a new span fits only if it starts after the previous one ends.
+    spans.sort((a, b) => (b.endCol - b.startCol) - (a.endCol - a.startCol) || a.startCol - b.startCol)
+    const laneEnd = []
+    spans.forEach(s => {
+      let lane = 0
+      while (laneEnd[lane] != null && laneEnd[lane] >= s.startCol) lane++
+      s.lane = lane
+      laneEnd[lane] = s.endCol
+    })
+    return spans
+  }
+
   // Get jobs for a specific calendar date (applies date range filter for calendar)
   const getJobsForDate = (date) => {
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -3007,17 +3068,30 @@ export default function PMJobSetter() {
                     </div>
                   ))}
                 </div>
-                {/* Day grid — auto-scales rows to fill the available viewport
-                    and falls back to internal scrolling when overflowing. */}
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                  gridAutoRows: `minmax(60px, calc((100vh - 360px) / ${Math.ceil(getMonthDays().length / 7)}))`,
-                  maxHeight: 'calc(100vh - 220px)',
-                  overflow: 'auto',
-                }}>
-                  {getMonthDays().map((day, idx) => {
-                    const dayJobs = day ? getJobsForDate(day) : []
+                {/* Day grid, structured as week rows so multi-day jobs can
+                    span columns Google-Calendar-style. Each week row is a
+                    relative-positioned grid; span bars float above the
+                    day cells with absolute positioning. */}
+                <div style={{ maxHeight: 'calc(100vh - 220px)', overflow: 'auto' }}>
+                  {getMonthWeeks().map((weekDays, weekIdx) => {
+                    // Multi-day spans clipped to this week
+                    const weekSpans = computeWeekSpans(weekDays, getFilteredJobs())
+                    const laneCount = weekSpans.reduce((m, s) => Math.max(m, s.lane + 1), 0)
+                    const spanLaneHeight = 18 // px per multi-day bar row
+                    const spanAreaHeight = laneCount * (spanLaneHeight + 2)
+                    const weekRowMinH = `max(60px, calc((100vh - 360px) / ${getMonthWeeks().length}))`
+                    return (
+                      <div key={`week-${weekIdx}`} style={{
+                        position: 'relative',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                        minHeight: weekRowMinH,
+                      }}>
+                        {weekDays.map((day, colIdx) => {
+                          const idx = weekIdx * 7 + colIdx
+                          // Single-day jobs render in cells as before; multi-day
+                          // jobs are filtered out and rendered as spans on top.
+                          const dayJobs = day ? getJobsForDate(day).filter(j => !isMultiDayJob(j)) : []
                     const dayAppointments = day ? getAppointmentsForDate(day) : []
                     const isDragOver = day && dragOverSlot?.date?.toDateString() === day.toDateString()
 
@@ -3031,6 +3105,7 @@ export default function PMJobSetter() {
                           borderBottom: `1px solid ${theme.border}`,
                           borderRight: (idx + 1) % 7 !== 0 ? `1px solid ${theme.border}` : 'none',
                           padding: '4px',
+                          paddingTop: `${4 + spanAreaHeight}px`,
                           overflow: 'hidden',
                           backgroundColor: !day ? theme.bg : isDragOver ? theme.accentBg : (day && isToday(day) ? 'rgba(90,99,73,0.06)' : 'transparent'),
                           transition: 'background-color 0.15s'
@@ -3153,6 +3228,58 @@ export default function PMJobSetter() {
                             })()}
                           </>
                         )}
+                      </div>
+                    )
+                        })}
+                        {/* Multi-day spanning bars — absolutely positioned over the
+                            day cells of this week. Each occupies one lane row at
+                            the top of the cells. Click opens the job; drag is
+                            preserved by the underlying cell drop targets. */}
+                        {weekSpans.map((span, sIdx) => {
+                          const job = span.job
+                          const statusColor = defaultStatusColors[job.status] || theme.accent
+                          const widthPct = ((span.endCol - span.startCol + 1) / 7) * 100
+                          const leftPct = (span.startCol / 7) * 100
+                          const top = 4 + span.lane * (spanLaneHeight + 2)
+                          return (
+                            <div
+                              key={`span-${weekIdx}-${job.id}-${sIdx}`}
+                              draggable
+                              onDragStart={(e) => handleJobDragStart(e, job)}
+                              onDragEnd={handleDragEnd}
+                              onClick={() => setDetailJob(job)}
+                              title={`${job.customer?.name || ''}${job.customer?.name ? ' — ' : ''}${job.job_title || `Job #${job.id}`}${span.continuesLeft || span.continuesRight ? ' (continues)' : ''}`}
+                              style={{
+                                position: 'absolute',
+                                top: `${top}px`,
+                                left: `calc(${leftPct}% + 3px)`,
+                                width: `calc(${widthPct}% - 6px)`,
+                                height: `${spanLaneHeight}px`,
+                                backgroundColor: `${statusColor}22`,
+                                borderLeft: span.continuesLeft ? 'none' : `3px solid ${statusColor}`,
+                                borderTopLeftRadius: span.continuesLeft ? 0 : 4,
+                                borderBottomLeftRadius: span.continuesLeft ? 0 : 4,
+                                borderTopRightRadius: span.continuesRight ? 0 : 4,
+                                borderBottomRightRadius: span.continuesRight ? 0 : 4,
+                                color: theme.text,
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                padding: '0 6px',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                cursor: 'grab',
+                                zIndex: 2,
+                              }}
+                            >
+                              {span.continuesLeft && <span style={{ marginRight: 4, opacity: 0.6 }}>‹</span>}
+                              {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                              {span.continuesRight && <span style={{ marginLeft: 'auto', opacity: 0.6 }}>›</span>}
+                            </div>
+                          )
+                        })}
                       </div>
                     )
                   })}
