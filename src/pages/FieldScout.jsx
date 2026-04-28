@@ -787,7 +787,7 @@ export default function FieldScout() {
     const isForced = typeof forceReason === 'string' && forceReason.trim().length > 0
     // Re-enforce the gate here — never trust a caller's local state mutation.
     // Only admins may force; everyone else must actually pass verification.
-    if (!isForced || !isAdmin) {
+    if (!isForced) {
       // Block clock-out if clocked into a job that hasn't been verified
       if (activeEntry.job_id && !verifiedJobs.has(activeEntry.job_id)) {
         setClockOutBlocked(true)
@@ -815,12 +815,20 @@ export default function FieldScout() {
         clock_out_lng: lng,
         total_hours: Math.round(totalHours * 100) / 100
       }
-      if (isForced && isAdmin) {
-        const stamp = `[FORCED CLOCK-OUT ${clockOut.toISOString()} by ${currentEmployee?.name || currentEmployee?.email} — verification bypassed] ${forceReason.trim()}`
+      if (isForced) {
+        // Admin force vs tech self-skip — both write the same audit fields,
+        // but the stamp prefix makes the source obvious in the time-entry
+        // log and the adjustment_reason gets a different leader so review
+        // queries can split admin overrides from tech skips.
+        const who = currentEmployee?.name || currentEmployee?.email || 'unknown'
+        const tag = isAdmin ? 'ADMIN FORCE' : 'TECH SKIP'
+        const stamp = `[${tag} CLOCK-OUT ${clockOut.toISOString()} by ${who} — verification bypassed] ${forceReason.trim()}`
         updatePayload.notes = activeEntry.notes ? `${activeEntry.notes}\n${stamp}` : stamp
         updatePayload.adjusted_by = currentEmployee?.id || null
         updatePayload.adjusted_at = clockOut.toISOString()
-        updatePayload.adjustment_reason = `Force clock-out: ${forceReason.trim()}`
+        updatePayload.adjustment_reason = isAdmin
+          ? `Force clock-out: ${forceReason.trim()}`
+          : `Tech-skip clock-out (flagged for review): ${forceReason.trim()}`
       }
       const { error } = await supabase
         .from('time_clock')
@@ -1905,95 +1913,114 @@ export default function FieldScout() {
             </button>
           </div>
 
-          {/* Clock-out blocked warning */}
+          {/* Clock-out blocked — explain WHY and give the tech a real path forward */}
           {clockOutBlocked && (
             <div style={{
               marginTop: '12px',
-              padding: '14px',
-              backgroundColor: 'rgba(239,68,68,0.1)',
-              border: '1px solid rgba(239,68,68,0.3)',
+              padding: '16px',
+              backgroundColor: 'rgba(168,85,247,0.08)',
+              border: '1px solid rgba(168,85,247,0.35)',
               borderRadius: '12px',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '12px'
             }}>
-              <Lock size={20} style={{ color: '#ef4444', flexShrink: 0, marginTop: '2px' }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#ef4444', marginBottom: '4px' }}>
-                  Verify before clocking out
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
+                <div style={{
+                  width: '36px', height: '36px', flexShrink: 0,
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <Shield size={18} color="#fff" />
                 </div>
-                <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px' }}>
-                  {activeEntry.job_id
-                    ? 'Complete a Victor verification on your active job before clocking out.'
-                    : 'Field crew must complete a daily Victor verification before clocking out.'}
-                </div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button
-                    onClick={() => {
-                      setClockOutBlocked(false)
-                      if (activeEntry.job_id) {
-                        handleMarkComplete(activeEntry.job_id)
-                      } else {
-                        setVictorModal({ type: 'daily', jobId: null })
-                      }
-                    }}
-                    style={{
-                      padding: '10px 16px',
-                      background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                      border: 'none',
-                      borderRadius: '10px',
-                      color: '#fff',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      minHeight: '44px'
-                    }}
-                  >
-                    <Shield size={16} />
-                    {activeEntry.job_id ? 'Verify Now' : 'Run Daily Check'}
-                  </button>
-                  {isAdmin ? (
-                    <button
-                      onClick={() => {
-                        const reason = prompt('Admin override: enter a reason for forcing clock-out without Victor verification (required, will be saved to the time entry for audit):')
-                        if (!reason || !reason.trim()) return
-                        setClockOutBlocked(false)
-                        handleClockOut(reason.trim())
-                      }}
-                      title="Admin only — bypasses verification and is logged on the time entry"
-                      style={{
-                        padding: '10px 16px',
-                        backgroundColor: 'transparent',
-                        border: `1px solid ${theme.border}`,
-                        borderRadius: '10px',
-                        color: theme.textSecondary,
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        minHeight: '44px'
-                      }}
-                    >
-                      Force Clock Out (Admin)
-                    </button>
-                  ) : (
-                    <div style={{
-                      padding: '10px 16px',
-                      fontSize: '12px',
-                      color: theme.textMuted,
-                      fontStyle: 'italic',
-                      alignSelf: 'center'
-                    }}>
-                      Stuck? Ask an admin to force clock-out for you.
-                    </div>
-                  )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
+                    Quick check before you clock out
+                  </div>
+                  <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+                    {activeEntry.job_id ? (
+                      <>Run a 60-second Victor check on this job — a few photos and a couple questions. This is how we confirm the job&apos;s done so you get paid your <strong>efficiency bonus</strong>, and so the customer&apos;s invoice is right.</>
+                    ) : (
+                      <>You&apos;re clocked into general time. Run a quick daily check (where you are, what you worked on) so the office knows your time is real and your hours go through clean.</>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => {
+                    setClockOutBlocked(false)
+                    if (activeEntry.job_id) {
+                      handleMarkComplete(activeEntry.job_id)
+                    } else {
+                      setVictorModal({ type: 'daily', jobId: null })
+                    }
+                  }}
+                  style={{
+                    flex: '1 1 200px',
+                    padding: '12px 16px',
+                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    color: '#fff',
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    minHeight: '48px',
+                    boxShadow: '0 2px 8px rgba(168,85,247,0.3)',
+                  }}
+                >
+                  <Shield size={16} />
+                  {activeEntry.job_id ? 'Run Quick Check (60 sec)' : 'Run Daily Check'}
+                </button>
+
+                <button
+                  onClick={() => {
+                    const reason = prompt(
+                      isAdmin
+                        ? 'Admin override — please enter a reason for skipping the Victor check (will be saved to the time entry):'
+                        : "Can't run the check right now? Tell us why in 1–2 sentences. This goes to your manager for review and gets attached to your time entry.\n\nExamples: \"Customer rushed me out\", \"Phone died\", \"Job not actually done — coming back tomorrow\""
+                    )
+                    if (!reason || reason.trim().length < 10) {
+                      if (reason !== null) alert('Please give a real reason (at least a sentence) so your manager understands what happened.')
+                      return
+                    }
+                    setClockOutBlocked(false)
+                    handleClockOut(reason.trim())
+                  }}
+                  title={isAdmin ? 'Admin: bypass and log reason' : 'Skip the check and explain why — manager will review'}
+                  style={{
+                    flex: '1 1 200px',
+                    padding: '12px 16px',
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '10px',
+                    color: theme.textSecondary,
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    minHeight: '48px'
+                  }}
+                >
+                  {isAdmin ? 'Force Clock Out (Admin)' : "Skip & Explain — flagged for review"}
+                </button>
+              </div>
+
+              {!isAdmin && (
+                <div style={{
+                  marginTop: '10px', fontSize: '11px', color: theme.textMuted,
+                  fontStyle: 'italic', textAlign: 'center'
+                }}>
+                  Skipping is fine when you really can&apos;t verify — but every skip lands on your manager&apos;s desk. Run the check when you can.
+                </div>
+              )}
             </div>
           )}
         </div>
