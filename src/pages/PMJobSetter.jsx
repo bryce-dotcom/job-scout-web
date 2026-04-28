@@ -942,11 +942,13 @@ export default function PMJobSetter() {
   // would disappear from the calendar on days 2 and 3. Christopher
   // reported this as "Multi-Day Job only occupies one date".
   const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  // NOTE: getJobScheduledEnd() is defined below — works because both are
+  // hoisted via the function-component closure (same render scope).
   const slotDateInJobRange = (slotDate, job) => {
     if (!job.start_date) return false
     const start = new Date(job.start_date); start.setHours(0,0,0,0)
-    const endSrc = job.end_date ? new Date(job.end_date) : new Date(job.start_date)
-    endSrc.setHours(23,59,59,999)
+    const endRaw = getJobScheduledEnd(job) || new Date(job.start_date)
+    const endSrc = new Date(endRaw); endSrc.setHours(23,59,59,999)
     const slot = new Date(slotDate); slot.setHours(12,0,0,0) // midday — safe from DST edges
     return slot >= start && slot <= endSrc
   }
@@ -1036,15 +1038,44 @@ export default function PMJobSetter() {
     return weeks
   }
 
+  // Statuses where end_date represents an *actual completion* timestamp
+  // rather than a scheduled-end. For these, the gap from start_date to
+  // end_date is the elapsed lifetime of the job (often weeks) and should
+  // NOT be treated as a multi-day calendar span — Costco "Commercial
+  // Window Cleaning" was a 2hr job on Apr 1 but its end_date was set to
+  // the verification date Apr 15, painting a 14-day bar across the grid.
+  const TERMINAL_JOB_STATUSES_FOR_SPAN = new Set([
+    'Completed', 'Verified Complete', 'Archived', 'Cancelled', 'Closed',
+    'Invoiced', 'Job Complete', 'Won', 'Done',
+  ])
+
+  // Effective scheduled-end for calendar rendering. For active/scheduled
+  // jobs, use end_date if provided; otherwise fall back to start_date.
+  // For terminal-status jobs, ignore end_date entirely — it's the
+  // completion timestamp, not the scheduled end. Cap any span at 14 days
+  // as a safety net for other bad data.
+  const getJobScheduledEnd = (job) => {
+    if (!job?.start_date) return null
+    const start = new Date(job.start_date)
+    if (!job.end_date || TERMINAL_JOB_STATUSES_FOR_SPAN.has(job.status)) {
+      return start
+    }
+    const end = new Date(job.end_date)
+    const diffDays = (end - start) / 86400000
+    if (diffDays < 0) return start          // garbage — end before start
+    if (diffDays > 14) return start          // safety cap — likely bad data
+    return end
+  }
+
   // Whether a job is multi-day (spans 2+ calendar days). Single-day jobs
   // continue to render in their cell as before; only multi-day jobs get
   // the Google-Calendar-style spanning bar.
   const isMultiDayJob = (job) => {
     if (!job?.start_date) return false
     const start = new Date(job.start_date); start.setHours(0,0,0,0)
-    const end = job.end_date ? new Date(job.end_date) : new Date(job.start_date)
-    end.setHours(0,0,0,0)
-    return end.getTime() > start.getTime()
+    const end = getJobScheduledEnd(job); if (!end) return false
+    const endDay = new Date(end); endDay.setHours(0,0,0,0)
+    return endDay.getTime() > start.getTime()
   }
 
   // For a given week (array of 7 Date|null), compute multi-day job spans
