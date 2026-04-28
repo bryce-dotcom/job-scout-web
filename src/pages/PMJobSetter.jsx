@@ -594,13 +594,34 @@ export default function PMJobSetter() {
     return null
   }
 
-  // Filter jobs for kanban (no date filtering — kanban always shows all jobs)
+  // Filter jobs for the board. Applies BOTH search and the date-range
+  // selector at the top of the page — Doug reported "Nothing happens
+  // when I change the filter MTD/YTD/custom dates" because previously
+  // the date filter only fired inside the calendar's day-cell renderer.
   const getFilteredJobs = () => {
     let filtered = jobs
 
     // Filter to jobs with recognized statuses (jobStatuses always has values via fallback)
     const validStatuses = jobStatuses.map(s => s.id)
     filtered = filtered.filter(j => validStatuses.includes(j.status))
+
+    // Date-range filter — applies to start_date OR completed_at OR
+    // updated_at so a job is in scope if it's scheduled in-range, was
+    // completed in-range, or was last touched in-range.
+    const cutoffStart = getDateCutoff()
+    const cutoffEnd = getDateCutoffEnd()
+    if (cutoffStart || cutoffEnd) {
+      filtered = filtered.filter(j => {
+        const candidates = [j.start_date, j.completed_at, j.updated_at, j.created_at]
+          .filter(Boolean).map(d => new Date(d))
+        if (!candidates.length) return false
+        return candidates.some(d => {
+          if (cutoffStart && d < cutoffStart) return false
+          if (cutoffEnd && d > cutoffEnd) return false
+          return true
+        })
+      })
+    }
 
     if (selectedCalendar !== 'all') {
       const cal = jobCalendars.find(c => c.id === selectedCalendar)
@@ -638,18 +659,35 @@ export default function PMJobSetter() {
       filtered = filtered.filter(j => j.business_unit === filterBusinessUnit)
     }
     if (searchTerm) {
-      filtered = filtered.filter(j =>
-        j.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        j.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        j.customer?.address?.toLowerCase().includes(searchTerm.toLowerCase())
-      )
+      // Broad search: title, customer name/business/contact-of-company,
+      // address, email, phone, notes, the human-readable job_id, and the
+      // related estimate_name (so when Doug searches "Central Valley
+      // Water District" the job created from an estimate of that name
+      // surfaces even though the customer record itself is just the
+      // contact "Chris Reilley").
+      const term = searchTerm.toLowerCase()
+      filtered = filtered.filter(j => {
+        const blob = [
+          j.job_title,
+          j.job_id,
+          j.notes,
+          j.business_unit,
+          j.assigned_team,
+          j.customer?.name,
+          j.customer?.business_name,
+          j.customer?.address,
+          j.customer?.email,
+          j.customer?.phone,
+        ].filter(Boolean).join(' ').toLowerCase()
+        return blob.includes(term)
+      })
     }
     return filtered
   }
 
   // Memoized filtered jobs list (for map + route suggestions)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const filteredJobList = useMemo(() => getFilteredJobs(), [jobs.length, jobStatuses.length, selectedCalendar, filterPM, filterBusinessUnit, searchTerm, jobSections.length, employees.length])
+  const filteredJobList = useMemo(() => getFilteredJobs(), [jobs.length, jobStatuses.length, selectedCalendar, filterPM, filterBusinessUnit, searchTerm, jobSections.length, employees.length, dateRange, customDateFrom, customDateTo])
 
   // Load Leaflet CSS & JS when map is toggled on
   useEffect(() => {
