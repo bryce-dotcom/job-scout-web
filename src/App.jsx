@@ -63,6 +63,11 @@ import FreddyTrips from './pages/agents/freddy/FreddyTrips'
 import FreddyCosts from './pages/agents/freddy/FreddyCosts'
 import FreddyDrivers from './pages/agents/freddy/FreddyDrivers'
 import FreddyAlerts from './pages/agents/freddy/FreddyAlerts'
+import ZachWorkspace from './pages/agents/zach/ZachWorkspace'
+import ZachProperties from './pages/agents/zach/ZachProperties'
+import ZachVisits from './pages/agents/zach/ZachVisits'
+import ZachTreatments from './pages/agents/zach/ZachTreatments'
+import ZachSettings from './pages/agents/zach/ZachSettings'
 import ConradWorkspace from './pages/agents/conrad/ConradWorkspace'
 import ConradDashboard from './pages/agents/conrad/ConradDashboard'
 import ConradCampaigns from './pages/agents/conrad/ConradCampaigns'
@@ -405,6 +410,14 @@ function App() {
             <Route path="settings" element={<FreddySettings />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path=":id" element={<FleetDetail />} />
+          </Route>
+
+          {/* Zach Workspace (Lawn Care) */}
+          <Route path="/agents/zach" element={<ZachWorkspace />}>
+            <Route index element={<ZachProperties />} />
+            <Route path="visits" element={<ZachVisits />} />
+            <Route path="treatments" element={<ZachTreatments />} />
+            <Route path="settings" element={<ZachSettings />} />
           </Route>
 
           {/* Conrad Workspace (Email Marketing) */}

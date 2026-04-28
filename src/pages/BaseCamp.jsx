@@ -124,6 +124,8 @@ export default function BaseCamp() {
       navigate('/agents/freddy');
     } else if (agent.slug === 'arnie-og') {
       navigate('/agents/arnie');
+    } else if (agent.slug === 'zach-yard-yeti') {
+      navigate('/agents/zach');
     }
   };
 

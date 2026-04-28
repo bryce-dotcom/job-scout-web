@@ -43,6 +43,11 @@ export const useStore = create(
       fleetMaintenance: [],
       fleetRentals: [],
 
+      // Lawn Care (Zach)
+      lawnProperties: [],
+      lawnVisits: [],
+      lawnTreatments: [],
+
       // Inventory
       inventory: [],
 
@@ -163,6 +168,9 @@ export const useStore = create(
           fleet: [],
           fleetMaintenance: [],
           fleetRentals: [],
+          lawnProperties: [],
+          lawnVisits: [],
+          lawnTreatments: [],
           inventory: [],
           lightingAudits: [],
           auditAreas: [],
@@ -261,6 +269,53 @@ export const useStore = create(
           }
         } catch (e) {
           console.log('[fetchCustomers] Offline, using cache');
+        }
+      },
+
+      fetchLawnProperties: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+        try {
+          const { data, error } = await supabase
+            .from('lawn_properties')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('property_name', { ascending: true });
+          if (!error) set({ lawnProperties: data || [] });
+        } catch (e) {
+          console.warn('[fetchLawnProperties] failed:', e?.message);
+        }
+      },
+
+      fetchLawnVisits: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+        try {
+          const { data, error } = await supabase
+            .from('lawn_visits')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('visit_date', { ascending: false })
+            .limit(500);
+          if (!error) set({ lawnVisits: data || [] });
+        } catch (e) {
+          console.warn('[fetchLawnVisits] failed:', e?.message);
+        }
+      },
+
+      fetchLawnTreatments: async () => {
+        const { companyId } = get();
+        if (!companyId) return;
+        try {
+          const { data, error } = await supabase
+            .from('lawn_treatments')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('scheduled_date', { ascending: false, nullsFirst: false })
+            .limit(500);
+          if (!error) set({ lawnTreatments: data || [] });
+        } catch (e) {
+          console.warn('[fetchLawnTreatments] failed:', e?.message);
         }
       },
 
