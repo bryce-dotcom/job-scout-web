@@ -282,6 +282,11 @@ export default function PMJobSetter() {
   // Schedule modal (opened when dropping a job onto the calendar)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [scheduleJob, setScheduleJob] = useState(null)
+  // Click-empty-day flow: when a user clicks an empty calendar slot,
+  // we surface a quick-pick of unscheduled jobs they can drop into
+  // that date. Closes the gap Doug flagged ("scheduling is a pain in
+  // the ass") without forcing the drag-and-drop pattern.
+  const [quickPickDate, setQuickPickDate] = useState(null)
   const [scheduleForm, setScheduleForm] = useState({
     start_time: '',
     duration_hours: 4,
@@ -3169,6 +3174,16 @@ export default function PMJobSetter() {
                         key={idx}
                         onDragOver={day ? (e) => { e.preventDefault(); setDragOverSlot({ date: day, hour: 8 }) } : undefined}
                         onDrop={day ? (e) => handleMonthDayDrop(e, day) : undefined}
+                        onClick={day ? (e) => {
+                          // Click-empty-cell opens the quick-pick modal so
+                          // the user can schedule an unscheduled job into
+                          // this date without dragging from kanban.
+                          // Skip when the click landed on an actual event
+                          // (those have their own handlers via stopPropagation).
+                          if (e.target === e.currentTarget || (e.target).getAttribute?.('data-day-content') === 'true') {
+                            setQuickPickDate(day)
+                          }
+                        } : undefined}
                         style={{
                           minWidth: 0,
                           borderBottom: `1px solid ${theme.border}`,
@@ -3176,6 +3191,7 @@ export default function PMJobSetter() {
                           padding: '4px',
                           paddingTop: `${4 + spanAreaHeight}px`,
                           overflow: 'hidden',
+                          cursor: day ? 'pointer' : 'default',
                           backgroundColor: !day ? theme.bg : isDragOver ? theme.accentBg : (day && isToday(day) ? 'rgba(90,99,73,0.06)' : 'transparent'),
                           transition: 'background-color 0.15s'
                         }}
@@ -4611,6 +4627,121 @@ export default function PMJobSetter() {
           </div>
         </div>
       )}
+
+      {/* Quick-pick modal — click-empty-day flow. Lists Chillin /
+          unscheduled jobs so the user can drop one into the clicked
+          date without leaving the calendar. Reuses the schedule modal
+          for the actual scheduling. */}
+      {quickPickDate && (() => {
+        const target = quickPickDate
+        // Unscheduled candidates: status not yet on the calendar AND
+        // either no start_date OR start_date in the past with no end.
+        const candidates = getFilteredJobs()
+          .filter(j => j.status === 'Chillin' || !j.start_date)
+          .slice(0, 50)
+        const dateLabel = target.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+        return (
+          <div
+            style={{
+              position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              zIndex: 1000, padding: '20px',
+            }}
+            onClick={() => setQuickPickDate(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                backgroundColor: theme.bgCard, borderRadius: '14px',
+                width: '100%', maxWidth: '480px', maxHeight: '80vh',
+                overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              }}
+            >
+              <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: theme.text }}>Schedule on {dateLabel}</div>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 2 }}>
+                  Pick a job below — or create a new one.
+                </div>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto', padding: '8px' }}>
+                {candidates.length === 0 ? (
+                  <div style={{ padding: '24px 16px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                    No unscheduled jobs. Click below to create a new one.
+                  </div>
+                ) : candidates.map(job => (
+                  <button
+                    key={job.id}
+                    onClick={() => {
+                      const startTime = new Date(target); startTime.setHours(8, 0, 0, 0)
+                      setScheduleJob(job)
+                      setScheduleForm({
+                        start_time: formatDateTimeLocal(startTime),
+                        duration_hours: job.allotted_time_hours || 4,
+                        pm_id: job.pm_id ? String(job.pm_id) : (!isAdmin && user?.id ? String(user.id) : ''),
+                        job_lead_id: job.job_lead_id ? String(job.job_lead_id) : '',
+                        assigned_employee_ids: [],
+                        assigned_team: job.assigned_team || '',
+                        notes: job.notes || '',
+                        recurrence: job.recurrence || 'None',
+                        recurrence_end: '',
+                        createAppointment: true,
+                        sendText: false,
+                        sendEmail: false,
+                        phone: job.customer?.phone || '',
+                        email: job.customer?.email || '',
+                      })
+                      setScheduleError(null)
+                      setShowScheduleModal(true)
+                      setQuickPickDate(null)
+                    }}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '10px 12px', marginBottom: '4px',
+                      backgroundColor: 'transparent', border: `1px solid ${theme.border}`,
+                      borderRadius: '8px', cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>
+                      {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                    </div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: 2 }}>
+                      {job.business_unit || '—'}
+                      {job.job_total ? ` · $${parseFloat(job.job_total).toLocaleString()}` : ''}
+                      {' · '}{job.status}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div style={{ padding: '12px 16px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 8, justifyContent: 'space-between' }}>
+                <button
+                  onClick={() => {
+                    const dateStr = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`
+                    setQuickPickDate(null)
+                    navigate(`/jobs?createOn=${dateStr}`)
+                  }}
+                  style={{
+                    padding: '8px 14px', backgroundColor: theme.accent, color: '#fff',
+                    border: 'none', borderRadius: '8px', fontSize: '13px',
+                    fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  + Create new job
+                </button>
+                <button
+                  onClick={() => setQuickPickDate(null)}
+                  style={{
+                    padding: '8px 14px', backgroundColor: 'transparent',
+                    border: `1px solid ${theme.border}`, borderRadius: '8px',
+                    fontSize: '13px', color: theme.textMuted, cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Add Section Modal */}
       {/* Schedule Job Modal */}
