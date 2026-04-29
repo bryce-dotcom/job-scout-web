@@ -340,10 +340,11 @@ export default function ZachProperties() {
       {measuring && (
         <YardMeasureModal
           address={measuring.address || [measuring.address_line, measuring.city, measuring.state].filter(Boolean).join(', ')}
+          propertyId={measuring.id || null}
           initialCenter={measuring.latitude && measuring.longitude ? { lat: Number(measuring.latitude), lng: Number(measuring.longitude) } : null}
           initialPolygon={measuring.turf_polygon || null}
           onClose={() => setMeasuring(null)}
-          onSave={async ({ polygon, sqft, lat, lng }) => {
+          onSave={async ({ polygon, sqft, lat, lng, ai }) => {
             if (measuring.__form) {
               // measuring against the open form (new property or edit-in-progress)
               setForm(prev => ({
@@ -355,13 +356,21 @@ export default function ZachProperties() {
               }))
             } else if (measuring.id) {
               // measuring an existing property in-place
-              await supabase.from('lawn_properties').update({
+              const update = {
                 turf_polygon: polygon,
                 turf_size_sqft: sqft || measuring.turf_size_sqft,
                 latitude: lat ?? measuring.latitude,
                 longitude: lng ?? measuring.longitude,
                 updated_at: new Date().toISOString(),
-              }).eq('id', measuring.id)
+              }
+              if (ai) {
+                update.ai_estimated_sqft = ai.ai_sqft
+                update.ai_confidence = ai.confidence
+                update.ai_obstacles = ai.obstacles || null
+                update.ai_reasoning = ai.reasoning || null
+                update.ai_estimated_at = new Date().toISOString()
+              }
+              await supabase.from('lawn_properties').update(update).eq('id', measuring.id)
               fetchLawnProperties()
             }
             setMeasuring(null)

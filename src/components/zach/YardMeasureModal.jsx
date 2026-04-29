@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, MapPin, Trash2, Save, AlertTriangle, Search } from 'lucide-react'
-import { loadGoogleMaps, hasMapsKey } from '../../lib/googleMaps'
+import { X, MapPin, Trash2, Save, AlertTriangle, Search, Sparkles, Loader } from 'lucide-react'
+import { loadGoogleMaps, hasMapsKey, GOOGLE_MAPS_API_KEY } from '../../lib/googleMaps'
+import { supabase } from '../../lib/supabase'
+import { useStore } from '../../lib/store'
 
 const SQM_PER_SQFT = 0.09290304
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 // Click-to-trace polygon over a satellite tile.
 // Props:
@@ -11,7 +15,8 @@ const SQM_PER_SQFT = 0.09290304
 //   initialPolygon — existing polygon to edit
 //   onClose
 //   onSave({ polygon, sqft, lat, lng })
-export default function YardMeasureModal({ address, initialCenter, initialPolygon, onClose, onSave }) {
+export default function YardMeasureModal({ address, propertyId, initialCenter, initialPolygon, onClose, onSave }) {
+  const companyId = useStore(s => s.companyId)
   const mapElRef = useRef(null)
   const mapRef = useRef(null)
   const polyRef = useRef(null)
@@ -23,6 +28,11 @@ export default function YardMeasureModal({ address, initialCenter, initialPolygo
   const [error, setError] = useState(null)
   const [center, setCenter] = useState(initialCenter || null)
   const [loading, setLoading] = useState(true)
+
+  // AI auto-measure state
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResult, setAiResult] = useState(null)   // { ai_sqft, raw_sqft, confidence, obstacles, reasoning, calibration_factor_applied, image_footprint_sqft }
+  const [aiError, setAiError] = useState(null)
 
   useEffect(() => {
     if (!hasMapsKey()) {
@@ -185,15 +195,126 @@ export default function YardMeasureModal({ address, initialCenter, initialPolygo
     setSqft(0)
   }
 
-  const save = () => {
+  // ============ AI Auto-Measure ============
+  // Browser fetches the Static Maps tile (referrer-restricted public key),
+  // converts to base64, posts to zach-yard-ai.
+  const runAi = async () => {
+    setAiError(null)
+    if (!center?.lat || !center?.lng) { setAiError('Pan/search to the property first.'); return }
+    if (!companyId) { setAiError('Missing company.'); return }
+    if (!GOOGLE_MAPS_API_KEY) { setAiError('Maps key missing.'); return }
+    setAiLoading(true)
+    try {
+      const zoom = 20
+      const width = 640, height = 640, scale = 2
+      const url = `https://maps.googleapis.com/maps/api/staticmap?center=${center.lat},${center.lng}&zoom=${zoom}&size=${width}x${height}&scale=${scale}&maptype=satellite&key=${encodeURIComponent(GOOGLE_MAPS_API_KEY)}`
+      const tileRes = await fetch(url)
+      if (!tileRes.ok) throw new Error('Failed to fetch satellite tile')
+      const blob = await tileRes.blob()
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader()
+        r.onloadend = () => resolve(r.result)
+        r.onerror = reject
+        r.readAsDataURL(blob)
+      })
+      const base64 = String(dataUrl).split(',')[1] || ''
+      const mediaType = blob.type || 'image/png'
+
+      const fnUrl = `${SUPABASE_URL}/functions/v1/zach-yard-ai`
+      const res = await fetch(fnUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'apikey': SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          company_id: companyId,
+          image_base64: base64,
+          media_type: mediaType,
+          lat: center.lat,
+          lng: center.lng,
+          address,
+          zoom,
+          image_width: width,
+          image_height: height,
+          scale,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || 'AI failed')
+      setAiResult(json)
+    } catch (e) {
+      setAiError(e.message || String(e))
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const acceptAi = () => {
+    if (!aiResult?.ai_sqft) return
+    onSave({
+      polygon: null,
+      sqft: aiResult.ai_sqft,
+      lat: center?.lat,
+      lng: center?.lng,
+      ai: aiResult,
+    })
+  }
+
+  // ============ Save (manual polygon, possibly correcting AI) ============
+  const save = async () => {
     if (!polyRef.current) { setError('Trace the lawn first — click points around the perimeter.'); return }
     const path = polyRef.current.getPath().getArray().map(ll => ({ lat: ll.lat(), lng: ll.lng() }))
     if (path.length < 3) { setError('Need at least 3 points.'); return }
-    onSave({ polygon: path, sqft, lat: center?.lat, lng: center?.lng })
+
+    // If the AI produced a guess and the user's traced sqft differs by >5%,
+    // log a correction and bump the company's calibration factor.
+    if (aiResult?.ai_sqft && companyId) {
+      const aiSqft = aiResult.ai_sqft
+      const actual = sqft
+      const deltaPct = aiSqft > 0 ? ((actual - aiSqft) / aiSqft) * 100 : 0
+      if (Math.abs(deltaPct) >= 5) {
+        try {
+          await supabase.from('lawn_ai_corrections').insert({
+            company_id: companyId,
+            property_id: propertyId || null,
+            ai_sqft: aiSqft,
+            actual_sqft: actual,
+            delta_pct: Number(deltaPct.toFixed(2)),
+            ai_obstacles: aiResult.obstacles || null,
+            ai_confidence: aiResult.confidence || null,
+            latitude: center?.lat,
+            longitude: center?.lng,
+            source: 'measure_modal',
+          })
+          // Pull current calibration + sample count, recompute running average
+          const { data: pricing } = await supabase
+            .from('lawn_pricing')
+            .select('ai_calibration_factor, ai_sample_n')
+            .eq('company_id', companyId)
+            .maybeSingle()
+          const oldFactor = Number(pricing?.ai_calibration_factor) || 1
+          const oldN = Number(pricing?.ai_sample_n) || 0
+          const sampleRatio = aiSqft > 0 ? actual / aiSqft : 1
+          const newN = oldN + 1
+          const newFactor = Math.max(0.5, Math.min(2.0, ((oldFactor * oldN) + sampleRatio) / newN))
+          await supabase
+            .from('lawn_pricing')
+            .update({ ai_calibration_factor: Number(newFactor.toFixed(3)), ai_sample_n: newN })
+            .eq('company_id', companyId)
+        } catch (e) {
+          console.warn('[YardMeasureModal] correction log failed:', e)
+        }
+      }
+    }
+
+    onSave({ polygon: path, sqft, lat: center?.lat, lng: center?.lng, ai: aiResult || null })
   }
 
   return (
     <div onMouseDown={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, zIndex: 1100 }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 900, maxHeight: '95vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #d6cdb8' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -208,7 +329,37 @@ export default function YardMeasureModal({ address, initialCenter, initialPolygo
             <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#7d8a7f' }} />
             <input ref={searchInputRef} type="text" defaultValue={address || ''} placeholder="Search address (or pan the map)" style={{ width: '100%', padding: '10px 12px 10px 38px', border: '1px solid #d6cdb8', borderRadius: 8, background: '#fff', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
           </div>
-          <p style={{ margin: '8px 0 0', fontSize: 12, color: '#7d8a7f' }}>Click around the perimeter of the turf. Drag vertices to refine. Skip driveways, beds, and the house.</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+            <p style={{ margin: 0, fontSize: 12, color: '#7d8a7f', flex: 1, minWidth: 200 }}>Click around the perimeter of the turf. Drag vertices to refine. Skip driveways, beds, and the house.</p>
+            <button onClick={runAi} disabled={aiLoading || !center} style={{ padding: '8px 12px', background: '#a855f7', color: '#fff', border: 'none', borderRadius: 8, cursor: (aiLoading || !center) ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: (aiLoading || !center) ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {aiLoading ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={14} />}
+              {aiLoading ? 'Zach is looking…' : 'AI Auto-Measure'}
+            </button>
+          </div>
+          {aiError && (
+            <div style={{ marginTop: 8, padding: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 6, color: '#b91c1c', fontSize: 12 }}>{aiError}</div>
+          )}
+          {aiResult && (
+            <div style={{ marginTop: 8, padding: 10, background: 'rgba(168,85,247,0.08)', border: '1px solid #a855f7', borderRadius: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#7d8a7f', textTransform: 'uppercase', fontWeight: 700 }}>Zach's estimate</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#2c3530' }}>{aiResult.ai_sqft?.toLocaleString()} <span style={{ fontSize: 12, color: '#7d8a7f', fontWeight: 500 }}>sqft · {Math.round((aiResult.confidence || 0) * 100)}% conf</span></div>
+                  {aiResult.calibration_factor_applied && aiResult.calibration_factor_applied !== 1 && (
+                    <div style={{ fontSize: 11, color: '#7d8a7f' }}>Raw {aiResult.raw_sqft?.toLocaleString()} × calibration {aiResult.calibration_factor_applied}</div>
+                  )}
+                </div>
+                <button onClick={acceptAi} style={{ padding: '8px 12px', background: '#5a6349', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>Use this</button>
+              </div>
+              {aiResult.reasoning && <div style={{ fontSize: 12, color: '#4d5a52', marginTop: 6, fontStyle: 'italic' }}>{aiResult.reasoning}</div>}
+              {Array.isArray(aiResult.obstacles) && aiResult.obstacles.length > 0 && (
+                <div style={{ marginTop: 6, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {aiResult.obstacles.map((o, i) => <span key={i} style={{ fontSize: 11, padding: '2px 6px', background: '#fff', border: '1px solid #d6cdb8', borderRadius: 4, color: '#4d5a52' }}>{o}</span>)}
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: '#7d8a7f', marginTop: 6 }}>Trace your own polygon below if Zach got it wrong — that correction trains him for next time.</div>
+            </div>
+          )}
         </div>
 
         <div style={{ position: 'relative', flex: 1, minHeight: 380 }}>

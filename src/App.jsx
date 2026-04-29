@@ -94,6 +94,7 @@ import FrankieSettings from './pages/agents/frankie/FrankieSettings'
 import CustomerPortal from './pages/CustomerPortal'
 import LenardAZSRP from './pages/agents/LenardAZSRP'
 import LenardUTRMP from './pages/agents/LenardUTRMP'
+import ZachInstantQuote from './pages/agents/ZachInstantQuote'
 import DataConsole from './pages/admin/DataConsole'
 import Help from './pages/admin/Help'
 import EOS from './pages/admin/EOS'
@@ -314,6 +315,9 @@ function App() {
         {/* Public agent routes - NO auth required */}
         <Route path="/agent/lenard-az-srp" element={<LenardAZSRP />} />
         <Route path="/agent/lenard-ut-rmp" element={<LenardUTRMP />} />
+
+        {/* Zach instant-quote landing page (public, per-company slug) */}
+        <Route path="/quote/:slug" element={<ZachInstantQuote />} />
 
         {/* Customer Portal - public, no auth */}
         <Route path="/portal/:token" element={<CustomerPortal />} />
