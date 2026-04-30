@@ -74,6 +74,7 @@ export default function EstimateDetail() {
   const businessUnits = useStore((state) => state.businessUnits)
 
   const [estimate, setEstimate] = useState(null)
+  const [portalTokenStats, setPortalTokenStats] = useState(null) // { access_count, accessed_at, expires_at, is_revoked }
   const [lineItems, setLineItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -204,6 +205,22 @@ export default function EstimateDetail() {
 
     if (estimateData) {
       setEstimate(estimateData)
+
+      // Pull portal-token access stats so we can show the customer's
+      // actual view count on the page. Noah filed feedback that a
+      // customer "viewed once and couldn't open again" — when we
+      // checked, the portal had been hit 8 times. Surfacing the count
+      // gives the rep a concrete answer next time.
+      if (estimateData.portal_token) {
+        try {
+          const { data: tk } = await supabase
+            .from('customer_portal_tokens')
+            .select('access_count, accessed_at, expires_at, is_revoked')
+            .eq('token', estimateData.portal_token)
+            .maybeSingle()
+          if (tk) setPortalTokenStats(tk)
+        } catch (err) { /* non-critical */ }
+      }
 
       // Try ordering by sort_order; fall back to id if column doesn't exist yet
       let lines = null
@@ -3233,9 +3250,24 @@ export default function EstimateDetail() {
                   alignItems: 'center',
                   gap: '8px'
                 }}>
-                  <span style={{ fontSize: '13px', color: theme.textSecondary, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    Portal link available
-                  </span>
+                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                    <div style={{ fontSize: '13px', color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      Portal link available
+                    </div>
+                    {portalTokenStats && (
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: 2 }}>
+                        {portalTokenStats.is_revoked ? (
+                          <span style={{ color: '#b91c1c', fontWeight: 600 }}>Link revoked</span>
+                        ) : portalTokenStats.access_count > 0 ? (
+                          <>Customer viewed {portalTokenStats.access_count} time{portalTokenStats.access_count === 1 ? '' : 's'}
+                          {portalTokenStats.accessed_at && ` · last ${new Date(portalTokenStats.accessed_at).toLocaleString()}`}</>
+                        ) : (
+                          <span style={{ color: theme.textMuted }}>Not yet viewed</span>
+                        )}
+                        {portalTokenStats.expires_at && ` · expires ${new Date(portalTokenStats.expires_at).toLocaleDateString()}`}
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={() => {
                       const url = `${window.location.origin}/portal/${estimate.portal_token}`
