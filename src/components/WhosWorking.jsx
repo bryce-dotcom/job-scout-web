@@ -20,7 +20,7 @@ function formatElapsed(start) {
 }
 
 export default function WhosWorking({ theme }) {
-  const companyId = useStore(s => s.currentCompanyId)
+  const companyId = useStore(s => s.companyId)
   const mapElRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef([])
@@ -88,9 +88,11 @@ export default function WhosWorking({ theme }) {
     let cancelled = false
     loadGoogleMaps().then(google => {
       if (cancelled || !mapElRef.current || mapRef.current) return
+      // Default center: company HQ (Highland, UT). When markers are present,
+      // fitBounds takes over below, so this only matters for the empty state.
       mapRef.current = new google.maps.Map(mapElRef.current, {
-        center: { lat: 39.5, lng: -98.35 },  // continental US default
-        zoom: 4,
+        center: { lat: 40.4297, lng: -111.7977 },
+        zoom: 10,
         mapTypeId: 'roadmap',
         streetViewControl: false,
         fullscreenControl: false,
@@ -189,7 +191,7 @@ export default function WhosWorking({ theme }) {
         <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: `1px solid ${theme.border}`, minHeight: 320 }}>
           <div ref={mapElRef} style={{ width: '100%', height: 360 }} />
           {!loading && active.length === 0 && (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(247,245,239,0.92)', color: theme.textMuted, gap: 6, padding: 16, textAlign: 'center' }}>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(247,245,239,0.92)', color: theme.textMuted, gap: 6, padding: 16, textAlign: 'center', zIndex: 5, pointerEvents: 'none' }}>
               <Clock size={28} />
               <div style={{ fontWeight: 600, color: theme.textSecondary }}>Nobody is clocked in right now</div>
               <div style={{ fontSize: 12 }}>This map will show pins as soon as someone clocks in.</div>
@@ -197,42 +199,26 @@ export default function WhosWorking({ theme }) {
           )}
         </div>
 
-        {/* Roster */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto' }}>
+        {/* Roster — keep the column visible even when empty so the layout
+            doesn't collapse. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto', minHeight: 60 }}>
           {active.length === 0 && !loading && (
-            <div style={{ fontSize: 13, color: theme.textMuted, padding: 12, textAlign: 'center' }}>No one on the clock.</div>
+            <div style={{ fontSize: 13, color: theme.textMuted, padding: 12, textAlign: 'center', background: theme.bg, border: `1px dashed ${theme.border}`, borderRadius: 8 }}>
+              No one on the clock right now.
+            </div>
+          )}
+          {loading && active.length === 0 && (
+            <div style={{ fontSize: 13, color: theme.textMuted, padding: 12, textAlign: 'center' }}>Loading…</div>
           )}
           {active.map(p => (
-            <div key={p.entryId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8 }}>
-              {p.headshot
-                ? <img src={p.headshot} alt={p.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${theme.border}` }} />
-                : <div style={{ width: 36, height: 36, borderRadius: '50%', background: theme.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>{(p.name || '?').charAt(0).toUpperCase()}</div>
-              }
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                <div style={{ fontSize: 11, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Clock size={11} /> {formatElapsed(p.clock_in)}
-                  {(p.lat == null || p.lng == null) && <span style={{ marginLeft: 4, color: '#d4940a' }}>· no location</span>}
-                </div>
-              </div>
-              {p.lat != null && p.lng != null && (
-                <button
-                  onClick={() => {
-                    if (!mapRef.current) return
-                    mapRef.current.setCenter({ lat: p.lat, lng: p.lng })
-                    mapRef.current.setZoom(16)
-                    const idx = located.findIndex(x => x.entryId === p.entryId)
-                    if (idx >= 0 && markersRef.current[idx]) {
-                      window.google.maps.event.trigger(markersRef.current[idx], 'click')
-                    }
-                  }}
-                  title="Show on map"
-                  style={{ padding: 6, background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 6, color: theme.textSecondary, cursor: 'pointer', display: 'flex' }}
-                >
-                  <MapPin size={14} />
-                </button>
-              )}
-            </div>
+            <RosterRow
+              key={p.entryId}
+              p={p}
+              theme={theme}
+              located={located}
+              mapRef={mapRef}
+              markersRef={markersRef}
+            />
           ))}
         </div>
       </div>
@@ -241,6 +227,52 @@ export default function WhosWorking({ theme }) {
         <div style={{ marginTop: 10, fontSize: 11, color: theme.textMuted }}>
           {unlocated.length} clocked-in {unlocated.length === 1 ? 'person has' : 'people have'} no recorded location.
         </div>
+      )}
+    </div>
+  )
+}
+
+// Single roster row. Pulled out so we can compute `isStale` cleanly without
+// a block-body in the parent's .map callback.
+function RosterRow({ p, theme, located, mapRef, markersRef }) {
+  const ageMin = (Date.now() - new Date(p.clock_in).getTime()) / 60000
+  const isStale = ageMin > 16 * 60
+  const formatted = (() => {
+    const mins = Math.max(0, Math.floor(ageMin))
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return h > 0 ? `${h}h ${m}m` : `${m}m`
+  })()
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, background: isStale ? 'rgba(212,148,10,0.08)' : theme.bg, border: `1px solid ${isStale ? '#d4940a' : theme.border}`, borderRadius: 8 }}>
+      {p.headshot
+        ? <img src={p.headshot} alt={p.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${theme.border}` }} />
+        : <div style={{ width: 36, height: 36, borderRadius: '50%', background: theme.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>{(p.name || '?').charAt(0).toUpperCase()}</div>
+      }
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+        <div style={{ fontSize: 11, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <Clock size={11} /> {formatted}
+          {isStale && <span style={{ marginLeft: 4, color: '#b07300', fontWeight: 600 }}>· stuck — forgot to clock out?</span>}
+          {(p.lat == null || p.lng == null) && <span style={{ marginLeft: 4, color: '#d4940a' }}>· no location</span>}
+        </div>
+      </div>
+      {p.lat != null && p.lng != null && (
+        <button
+          onClick={() => {
+            if (!mapRef.current) return
+            mapRef.current.setCenter({ lat: p.lat, lng: p.lng })
+            mapRef.current.setZoom(16)
+            const idx = located.findIndex(x => x.entryId === p.entryId)
+            if (idx >= 0 && markersRef.current[idx]) {
+              window.google.maps.event.trigger(markersRef.current[idx], 'click')
+            }
+          }}
+          title="Show on map"
+          style={{ padding: 6, background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 6, color: theme.textSecondary, cursor: 'pointer', display: 'flex' }}
+        >
+          <MapPin size={14} />
+        </button>
       )}
     </div>
   )
