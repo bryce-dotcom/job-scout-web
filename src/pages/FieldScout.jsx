@@ -684,6 +684,56 @@ export default function FieldScout() {
 
   const firstName = (user?.name || user?.email || 'Scout').split(' ')[0]
 
+  // ── Live location pings ──────────────────────────────────────────────
+  // While someone is on the clock, post a fresh GPS reading every 15 min so
+  // the dashboard's Who's Working map can show where they actually are right
+  // now (not just where they started their shift).
+  //
+  // Caveats baked into the design:
+  //  - Browser geolocation only fires in foreground tabs. When the page is
+  //    backgrounded (locked phone, switched apps), pings pause and resume on
+  //    next foreground. That's expected — there's no reliable cross-platform
+  //    background-location API in PWAs.
+  //  - The first ping fires 30s after clock-in (gives time for the user to
+  //    actually be at the job site, not still walking to the truck).
+  //  - We never block clock-out on a pending ping; the interval is cleared
+  //    as soon as activeEntry goes null.
+  //  - GPS failures are silent — better to show stale data than to spam the
+  //    user with permission errors mid-shift.
+  useEffect(() => {
+    if (!activeEntry?.id) return
+    let cancelled = false
+    const PING_INTERVAL_MS = 15 * 60 * 1000  // 15 minutes
+    const FIRST_PING_DELAY_MS = 30 * 1000
+
+    const ping = async () => {
+      if (cancelled) return
+      if (document.visibilityState === 'hidden') return  // skip if backgrounded
+      const { lat, lng } = await getCoordsFast()
+      if (cancelled || lat == null || lng == null) return
+      await supabase.from('time_clock').update({
+        last_lat: lat,
+        last_lng: lng,
+        last_ping_at: new Date().toISOString(),
+      }).eq('id', activeEntry.id).is('clock_out', null)  // only update if still on the clock
+    }
+
+    const firstId = setTimeout(ping, FIRST_PING_DELAY_MS)
+    const intervalId = setInterval(ping, PING_INTERVAL_MS)
+    // Also ping when the tab becomes visible again — catches the
+    // "phone was locked for an hour" case so the dashboard refreshes.
+    const onVisible = () => { if (document.visibilityState === 'visible') ping() }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      cancelled = true
+      clearTimeout(firstId)
+      clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEntry?.id])
+
   // Fast GPS grab — returns lat/lng only (no blocking reverse-geocode).
   // We backfill the human-readable address in the background after the
   // DB write so clock-in/out responds instantly.

@@ -46,21 +46,32 @@ export default function WhosWorking({ theme }) {
       // (employee_id and adjusted_by both reference employees).
       const { data, error } = await supabase
         .from('time_clock')
-        .select('id, employee_id, clock_in, clock_in_lat, clock_in_lng, clock_in_address, employees!time_clock_employee_id_fkey(id, name, headshot_url)')
+        .select('id, employee_id, clock_in, clock_in_lat, clock_in_lng, clock_in_address, last_lat, last_lng, last_ping_at, employees!time_clock_employee_id_fkey(id, name, headshot_url)')
         .eq('company_id', companyId)
         .is('clock_out', null)
         .order('clock_in', { ascending: false })
       if (error) throw error
-      const rows = (data || []).map(r => ({
-        entryId: r.id,
-        employeeId: r.employee_id,
-        name: r.employees?.name || 'Unknown',
-        headshot: r.employees?.headshot_url || null,
-        lat: r.clock_in_lat != null ? Number(r.clock_in_lat) : null,
-        lng: r.clock_in_lng != null ? Number(r.clock_in_lng) : null,
-        address: r.clock_in_address || null,
-        clock_in: r.clock_in,
-      }))
+      const rows = (data || []).map(r => {
+        // Prefer the live ping location over the clock-in location when we
+        // have a recent ping. Falls back to clock-in location if the user
+        // hasn't pinged yet (e.g. first 30s after clock-in, or backgrounded
+        // tab).
+        const liveLat = r.last_lat != null ? Number(r.last_lat) : null
+        const liveLng = r.last_lng != null ? Number(r.last_lng) : null
+        const lat = liveLat != null ? liveLat : (r.clock_in_lat != null ? Number(r.clock_in_lat) : null)
+        const lng = liveLng != null ? liveLng : (r.clock_in_lng != null ? Number(r.clock_in_lng) : null)
+        return {
+          entryId: r.id,
+          employeeId: r.employee_id,
+          name: r.employees?.name || 'Unknown',
+          headshot: r.employees?.headshot_url || null,
+          lat, lng,
+          address: r.clock_in_address || null,
+          clock_in: r.clock_in,
+          last_ping_at: r.last_ping_at || null,
+          isLive: liveLat != null && liveLng != null,
+        }
+      })
       setActive(rows)
     } catch (e) {
       setError(e.message || String(e))
@@ -128,6 +139,9 @@ export default function WhosWorking({ theme }) {
         label: { text: (p.name || '?').charAt(0).toUpperCase(), color: '#fff', fontWeight: '700', fontSize: '13px' },
       })
       marker.addListener('click', () => {
+        const fresh = p.isLive && p.last_ping_at
+          ? `<span style="color:#15803d;">📍 Live · updated ${formatElapsed(p.last_ping_at)} ago</span>`
+          : `<span style="color:#7d8a7f;">📍 Clock-in location (no live ping yet)</span>`
         const html = `
           <div style="font-family: system-ui, -apple-system, sans-serif; min-width: 180px;">
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
@@ -137,6 +151,7 @@ export default function WhosWorking({ theme }) {
                 <div style="font-size:11px; color:#7d8a7f;">On the clock · ${formatElapsed(p.clock_in)}</div>
               </div>
             </div>
+            <div style="font-size:11px; margin-bottom:4px;">${fresh}</div>
             ${p.address ? `<div style="font-size:12px; color:#4d5a52;">${p.address}</div>` : ''}
           </div>`
         infoRef.current.setContent(html)
@@ -255,6 +270,7 @@ function RosterRow({ p, theme, located, mapRef, markersRef }) {
         <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
         <div style={{ fontSize: 11, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
           <Clock size={11} /> {formatted}
+          {p.isLive && <span style={{ marginLeft: 4, color: '#15803d', fontWeight: 600 }}>· live</span>}
           {isStale && <span style={{ marginLeft: 4, color: '#b07300', fontWeight: 600 }}>· stuck — forgot to clock out?</span>}
           {(p.lat == null || p.lng == null) && <span style={{ marginLeft: 4, color: '#d4940a' }}>· no location</span>}
         </div>
