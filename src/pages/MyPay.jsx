@@ -54,6 +54,7 @@ export default function MyPay() {
   const [timeLogEntries, setTimeLogEntries] = useState([])
   const [verificationReports, setVerificationReports] = useState([])
   const [utilityInvoices, setUtilityInvoices] = useState([])
+  const [myPtoRequests, setMyPtoRequests] = useState([])
   const [loading, setLoading] = useState(true)
   // Fresh copy of the user's employee row (rate, commission flags) re-read
   // from DB on every mount so a just-updated rate shows here immediately
@@ -238,10 +239,20 @@ export default function MyPay() {
           .select('id, utility_invoice_id, job_id, customer_name, utility_name, amount, incentive_amount, project_cost, net_cost, payment_status, paid_at, created_at')
           .eq('company_id', companyId)
 
-        const [jr, lr, ir, pr, tr, er, ur, tlr, apr, vr] = await Promise.all([
+        // User's own time-off requests (Alayda asked "How can I see
+        // requests for time off?" — give every employee a self-view).
+        const ptoPromise = supabase
+          .from('time_off_requests')
+          .select('id, start_date, end_date, request_type, status, reason, created_at, decided_at')
+          .eq('company_id', companyId)
+          .eq('employee_id', effectiveUserId)
+          .order('created_at', { ascending: false })
+          .limit(20)
+
+        const [jr, lr, ir, pr, tr, er, ur, tlr, apr, vr, ptr] = await Promise.all([
           jobsPromise, leadsPromise, invoicesPromise, paymentsPromise,
           timePromise, empPromise, utilPromise, timeLogPromise,
-          allPaymentsPromise, verPromise,
+          allPaymentsPromise, verPromise, ptoPromise,
         ])
         setJobs(jr.data || [])
         setLeads(lr.data || [])
@@ -253,6 +264,7 @@ export default function MyPay() {
         setTimeLogEntries(tlr?.data || [])
         setAllPayments(apr?.data || [])
         setVerificationReports(vr?.data || [])
+        setMyPtoRequests(ptr?.data || [])
       } finally {
         setLoading(false)
       }
@@ -753,6 +765,57 @@ export default function MyPay() {
           </div>
           <div style={{ fontSize: '12px', color: theme.textMuted }}>
             {timeEntries.length} time entries logged this pay period. Full detail on the Time Clock page.
+          </div>
+        </div>
+      )}
+
+      {/* My time-off requests — own status, regardless of HR access. */}
+      {myPtoRequests.length > 0 && (
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h2 style={{ fontSize: '15px', fontWeight: '700', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Clock size={18} style={{ color: '#a855f7' }} />
+              My Time Off Requests
+            </h2>
+            <span style={{ fontSize: '12px', color: theme.textMuted }}>{myPtoRequests.length} on file</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {myPtoRequests.slice(0, 8).map(r => {
+              const statusStyles = {
+                pending: { bg: 'rgba(234,179,8,0.12)', fg: '#a16207', label: 'Pending review' },
+                approved: { bg: 'rgba(34,197,94,0.12)', fg: '#15803d', label: 'Approved' },
+                denied: { bg: 'rgba(239,68,68,0.12)', fg: '#b91c1c', label: 'Denied' },
+              }
+              const s = statusStyles[r.status] || { bg: theme.bg, fg: theme.textSecondary, label: r.status }
+              const fmt = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
+              const range = r.start_date === r.end_date ? fmt(r.start_date) : `${fmt(r.start_date)} – ${fmt(r.end_date)}`
+              return (
+                <div key={r.id} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px 10px', backgroundColor: theme.bg, borderRadius: '8px', gap: 8,
+                }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+                      {range} · {r.request_type === 'pto' ? 'PTO' : (r.request_type || '').toUpperCase()}
+                    </div>
+                    {r.reason && (
+                      <div style={{ fontSize: 11, color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.reason}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{
+                    padding: '3px 8px', borderRadius: 999, backgroundColor: s.bg, color: s.fg,
+                    fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+                  }}>
+                    {s.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ marginTop: 10, fontSize: 11, color: theme.textMuted }}>
+            Submit new requests on the Time Clock page.
           </div>
         </div>
       )}

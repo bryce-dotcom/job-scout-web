@@ -1,0 +1,10 @@
+require('dotenv').config()
+const { createClient } = require('@supabase/supabase-js')
+const s = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+;(async () => {
+  const { data } = await s.from('employees')
+    .select('id, name, email, role, user_role, is_developer, has_hr_access, active')
+    .ilike('name', '%alayda%')
+    .eq('company_id', 3)
+  console.table(data)
+})()

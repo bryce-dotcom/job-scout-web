@@ -1910,7 +1910,43 @@ export default function Payroll() {
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px', flexDirection: isMobile ? 'column' : 'row' }}>
-        <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>Payroll</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>Payroll</h1>
+          {/* Time Off shortcut — Alayda asked "How can I see requests
+              for time off?" because the panel was buried under the
+              employee table. Now there's a chip in the header that
+              jumps straight to it and shows the pending count. */}
+          {isAdmin && hasHR && (() => {
+            const pending = timeOffRequests.filter(r => r.status === 'pending').length
+            return (
+              <a
+                href="#time-off-requests"
+                onClick={(e) => {
+                  e.preventDefault()
+                  document.getElementById('time-off-requests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '6px 10px', borderRadius: 999,
+                  backgroundColor: pending > 0 ? 'rgba(234,179,8,0.12)' : 'rgba(90,99,73,0.08)',
+                  border: `1px solid ${pending > 0 ? 'rgba(234,179,8,0.4)' : theme.border}`,
+                  color: pending > 0 ? '#a16207' : theme.textSecondary,
+                  fontSize: 12, fontWeight: 600, textDecoration: 'none', cursor: 'pointer',
+                }}
+                title="Jump to time-off request review"
+              >
+                <Calendar size={12} />
+                Time Off
+                {pending > 0 && (
+                  <span style={{
+                    backgroundColor: '#eab308', color: '#fff',
+                    borderRadius: 999, padding: '1px 7px', fontSize: 11, fontWeight: 700,
+                  }}>{pending}</span>
+                )}
+              </a>
+            )
+          })()}
+        </div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           {/* Role filter (admin only) */}
           {isAdmin && (
@@ -2613,9 +2649,10 @@ export default function Payroll() {
         const pending = timeOffRequests.filter(r => r.status === 'pending')
         const history = timeOffRequests.filter(r => r.status !== 'pending').slice(0, 10)
         return (
-          <div style={{
+          <div id="time-off-requests" style={{
             backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
-            borderRadius: '12px', overflow: 'hidden', marginBottom: '24px'
+            borderRadius: '12px', overflow: 'hidden', marginBottom: '24px',
+            scrollMarginTop: '20px',
           }}>
             <div style={{
               padding: '16px 20px', borderBottom: `1px solid ${theme.border}`,
