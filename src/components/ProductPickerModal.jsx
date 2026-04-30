@@ -5,6 +5,7 @@ import { useTheme } from './Layout'
 import {
   X, Search, ChevronLeft, Grid3X3, Wrench, Zap, Droplets, Leaf, ShoppingBag, Box, Package, Boxes
 } from 'lucide-react'
+import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -331,8 +332,8 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
                 gap: '12px'
               }}>
                 {products
-                  .filter(p => p.active !== false && p.name.toLowerCase().includes(catalogSearch.toLowerCase()))
-                  .slice(0, 20)
+                  .filter(p => p.active !== false && matchAllTokens(buildBlob(p.name, p.description, p.sku, p.category, p.service_type), catalogSearch))
+                  .slice(0, 40)
                   .map(product => (
                     <ProductCard
                       key={product.id}
@@ -346,7 +347,7 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
                     />
                   ))}
               </div>
-              {products.filter(p => p.active !== false && p.name.toLowerCase().includes(catalogSearch.toLowerCase())).length === 0 && (
+              {products.filter(p => p.active !== false && matchAllTokens(buildBlob(p.name, p.description, p.sku, p.category, p.service_type), catalogSearch)).length === 0 && (
                 <div style={{
                   padding: '40px',
                   textAlign: 'center',
@@ -638,23 +639,41 @@ function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventor
             fontWeight: '600',
             color: theme.text,
             marginBottom: '4px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
             display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}>
-            {product.name}
+            alignItems: 'flex-start',
+            gap: '6px',
+            lineHeight: 1.3
+          }} title={product.name}>
+            <span style={{
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}>{product.name}</span>
             {componentCount > 0 && (
-              <Boxes size={13} style={{ color: theme.textMuted, flexShrink: 0 }} title={`Bundle: ${componentCount} components`} />
+              <Boxes size={13} style={{ color: theme.textMuted, flexShrink: 0, marginTop: 3 }} title={`Bundle: ${componentCount} components`} />
             )}
           </div>
+          {product.description && (
+            <div style={{
+              fontSize: '12px',
+              color: theme.textSecondary,
+              marginBottom: '6px',
+              display: '-webkit-box',
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              lineHeight: 1.35,
+            }} title={product.description}>
+              {product.description}
+            </div>
+          )}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            fontSize: '13px'
+            fontSize: '13px',
+            flexWrap: 'wrap'
           }}>
             <span style={{ fontWeight: '600', color: theme.accent }}>
               ${totalPrice.toFixed(2)}

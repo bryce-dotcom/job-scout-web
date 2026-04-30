@@ -4,6 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
+import WhosWorking from '../components/WhosWorking'
 import {
   UserPlus,
   Briefcase,
@@ -83,7 +84,7 @@ const DEFAULT_PREFS = {
   pipelineDisplay: 'count', // 'count' | 'dollars' | 'both'
   rollingDays: 90,
   showRolling: true,
-  sections: { pipeline: true, schedule: true, activity: true, alerts: true, quickActions: true },
+  sections: { pipeline: true, whosWorking: true, schedule: true, activity: true, alerts: true, quickActions: true },
   alerts: { lowStock: true, fleetPM: true, overdueInvoices: true, todaysAppts: true },
 }
 
@@ -515,6 +516,7 @@ export default function Dashboard() {
                   Visible Sections
                 </div>
                 <ToggleSwitch on={prefs.sections.pipeline} onToggle={() => toggleSection('pipeline')} label="Sales Pipeline" />
+                <ToggleSwitch on={prefs.sections.whosWorking} onToggle={() => toggleSection('whosWorking')} label="Who's Working (Live Map)" />
                 <ToggleSwitch on={prefs.sections.schedule} onToggle={() => toggleSection('schedule')} label="Today's Schedule" />
                 <ToggleSwitch on={prefs.sections.activity} onToggle={() => toggleSection('activity')} label="Recent Activity" />
                 <ToggleSwitch on={prefs.sections.alerts} onToggle={() => toggleSection('alerts')} label="Alerts & Warnings" />
@@ -749,6 +751,11 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ═══ Who's Working — live map of clocked-in employees ═══ */}
+      {prefs.sections.whosWorking && (
+        <WhosWorking theme={theme} />
       )}
 
       {/* ═══ Row 3: Today's Schedule & Recent Activity ═══ */}

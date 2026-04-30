@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import { companyNotify } from '../lib/companyNotify'
+import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 
 // Default calendar colors for visual distinction
 const calendarColors = [
@@ -670,9 +671,8 @@ export default function PMJobSetter() {
       // Water District" the job created from an estimate of that name
       // surfaces even though the customer record itself is just the
       // contact "Chris Reilley").
-      const term = searchTerm.toLowerCase()
       filtered = filtered.filter(j => {
-        const blob = [
+        const blob = buildBlob(
           j.job_title,
           j.job_id,
           j.notes,
@@ -683,8 +683,10 @@ export default function PMJobSetter() {
           j.customer?.address,
           j.customer?.email,
           j.customer?.phone,
-        ].filter(Boolean).join(' ').toLowerCase()
-        return blob.includes(term)
+          j.quote?.estimate_name,
+          j.quote?.quote_id,
+        )
+        return matchAllTokens(blob, searchTerm)
       })
     }
     return filtered

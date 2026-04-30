@@ -801,14 +801,19 @@ export default function FieldScout() {
     }
     setClockingOut(true)
     const entryId = activeEntry.id
-    const { lat, lng } = await getCoordsFast()
-    const clockIn = new Date(activeEntry.clock_in)
+    // Capture the clock-out moment IMMEDIATELY — before anything async — so a
+    // slow GPS lookup or network retry doesn't distort the recorded time.
+    // London reported "Failed to send request on clocked out" — the user's
+    // actual moment is now preserved across retries.
     const clockOut = new Date()
+    const clockIn = new Date(activeEntry.clock_in)
     let totalHours = (clockOut - clockIn) / (1000 * 60 * 60)
     if (activeEntry.lunch_start && activeEntry.lunch_end) {
       totalHours -= (new Date(activeEntry.lunch_end) - new Date(activeEntry.lunch_start)) / (1000 * 60 * 60)
     }
-    try {
+
+    // Build the payload up front so retry uses the exact same data.
+    const buildPayload = ({ lat, lng }) => {
       const updatePayload = {
         clock_out: clockOut.toISOString(),
         clock_out_lat: lat,
@@ -816,10 +821,6 @@ export default function FieldScout() {
         total_hours: Math.round(totalHours * 100) / 100
       }
       if (isForced) {
-        // Admin force vs tech self-skip — both write the same audit fields,
-        // but the stamp prefix makes the source obvious in the time-entry
-        // log and the adjustment_reason gets a different leader so review
-        // queries can split admin overrides from tech skips.
         const who = currentEmployee?.name || currentEmployee?.email || 'unknown'
         const tag = isAdmin ? 'ADMIN FORCE' : 'TECH SKIP'
         const stamp = `[${tag} CLOCK-OUT ${clockOut.toISOString()} by ${who} — verification bypassed] ${forceReason.trim()}`
@@ -830,20 +831,54 @@ export default function FieldScout() {
           ? `Force clock-out: ${forceReason.trim()}`
           : `Tech-skip clock-out (flagged for review): ${forceReason.trim()}`
       }
+      return updatePayload
+    }
+
+    // GPS is best-effort — never block the actual clock-out on it.
+    let coords = { lat: null, lng: null }
+    try { coords = await getCoordsFast() } catch { /* ignore */ }
+
+    // Up to 3 attempts with exponential backoff. The captured timestamp is
+    // unchanged across retries, so the user's true clock-out moment is what
+    // gets recorded even if the first POST fails on a flaky cell connection.
+    const attempt = async () => {
       const { error } = await supabase
         .from('time_clock')
-        .update(updatePayload)
+        .update(buildPayload(coords))
         .eq('id', entryId)
       if (error) throw error
-      await fetchEntries()
-      setShowDailyCheckPrompt(true)
-      if (lat != null) backfillAddress(entryId, lat, lng, 'out')
-    } catch (err) {
-      alert('Error clocking out: ' + err.message)
-    } finally {
+    }
+
+    let lastErr = null
+    for (let i = 0; i < 3; i++) {
+      try {
+        await attempt()
+        lastErr = null
+        break
+      } catch (err) {
+        lastErr = err
+        if (i < 2) await new Promise(r => setTimeout(r, 600 * (i + 1)))
+      }
+    }
+
+    if (lastErr) {
+      // Replace the harsh native alert with a toast that lets the user retry
+      // without losing the captured timestamp. Until they retry successfully,
+      // they remain "clocked in" in our local view — but the stamp we'll send
+      // when they retry is the original moment, not the retry moment.
+      const hhmm = clockOut.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      toast.error(`Couldn't save your clock-out (${hhmm}). Tap Clock Out again — your time is preserved.`, { duration: 8000 })
       setClockingOut(false)
       setGpsStatus(null)
+      return
     }
+
+    await fetchEntries()
+    setShowDailyCheckPrompt(true)
+    if (coords.lat != null) backfillAddress(entryId, coords.lat, coords.lng, 'out')
+
+    setClockingOut(false)
+    setGpsStatus(null)
   }
 
   // Lunch

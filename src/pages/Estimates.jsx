@@ -9,6 +9,7 @@ import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/Impo
 import { estimatesFields, quoteLinesFields } from '../lib/importExportFields'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import PageHeader from '../components/PageHeader'
+import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 
 // Light theme fallback
 const defaultTheme = {
@@ -104,13 +105,13 @@ export default function Estimates() {
     // email/phone, the human-readable quote_id, the estimate name, the
     // recipient email (so cvwrfut.gov surfaces an estimate when its
     // recipient is reilleyc@cvwrfut.gov), and notes.
-    const blob = [
+    const blob = buildBlob(
       quote.customer?.name, quote.customer?.business_name, quote.customer?.email, quote.customer?.phone,
       quote.lead?.customer_name, quote.lead?.business_name, quote.lead?.email, quote.lead?.phone,
       quote.quote_id, quote.estimate_name, quote.sent_to_email, quote.notes,
-      quote.business_unit, quote.service_type,
-    ].filter(Boolean).join(' ').toLowerCase()
-    const matchesSearch = searchTerm === '' || blob.includes(searchTerm.toLowerCase())
+      quote.business_unit, quote.service_type, quote.job_title,
+    )
+    const matchesSearch = matchAllTokens(blob, searchTerm)
 
     const matchesStatus = statusFilter === 'all' || quote.status === statusFilter
 

@@ -11,6 +11,7 @@ import { customersFields } from '../lib/importExportFields'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { matchPhoneOrTokens, buildBlob, tokenize } from '../lib/searchUtils'
 
 const emptyCustomer = {
   name: '',
@@ -75,13 +76,11 @@ export default function Customers() {
   const filteredCustomers = (() => {
     const term = searchTerm.toLowerCase().trim()
     const filtered = customers.filter(customer => {
-      const matchesSearch = !term ||
-        customer.name?.toLowerCase().includes(term) ||
-        customer.business_name?.toLowerCase().includes(term) ||
-        customer.email?.toLowerCase().includes(term) ||
-        customer.phone?.replace(/\D/g, '').includes(term.replace(/\D/g, '')) ||
-        customer.address?.toLowerCase().includes(term) ||
-        customer.notes?.toLowerCase().includes(term)
+      const blob = buildBlob(
+        customer.name, customer.business_name, customer.email, customer.address, customer.notes,
+        customer.secondary_contact_name, customer.secondary_contact_email, customer.tags
+      )
+      const matchesSearch = !term || matchPhoneOrTokens(blob, customer.phone, term)
 
       const matchesStatus = statusFilter === 'all' || customer.status === statusFilter
 
@@ -154,8 +153,12 @@ export default function Customers() {
     setLoading(true)
     setError(null)
 
+    // Trim string fields so trailing/leading whitespace can't break search later.
+    const trimmed = Object.fromEntries(
+      Object.entries(formData).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
+    )
     const payload = {
-      ...formData,
+      ...trimmed,
       company_id: companyId,
       salesperson_id: formData.salesperson_id || null,
       updated_at: new Date().toISOString()
