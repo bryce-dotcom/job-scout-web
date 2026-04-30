@@ -5,6 +5,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import WhosWorking from '../components/WhosWorking'
+import { canViewHR } from '../lib/accessControl'
 import {
   UserPlus,
   Briefcase,
@@ -516,7 +517,9 @@ export default function Dashboard() {
                   Visible Sections
                 </div>
                 <ToggleSwitch on={prefs.sections.pipeline} onToggle={() => toggleSection('pipeline')} label="Sales Pipeline" />
-                <ToggleSwitch on={prefs.sections.whosWorking} onToggle={() => toggleSection('whosWorking')} label="Who's Working (Live Map)" />
+                {canViewHR(currentEmployee) && (
+                  <ToggleSwitch on={prefs.sections.whosWorking} onToggle={() => toggleSection('whosWorking')} label="Who's Working (Live Map)" />
+                )}
                 <ToggleSwitch on={prefs.sections.schedule} onToggle={() => toggleSection('schedule')} label="Today's Schedule" />
                 <ToggleSwitch on={prefs.sections.activity} onToggle={() => toggleSection('activity')} label="Recent Activity" />
                 <ToggleSwitch on={prefs.sections.alerts} onToggle={() => toggleSection('alerts')} label="Alerts & Warnings" />
@@ -754,7 +757,10 @@ export default function Dashboard() {
       )}
 
       {/* ═══ Who's Working — live map of clocked-in employees ═══ */}
-      {prefs.sections.whosWorking && (
+      {/* Gated to users with HR access — knowing where employees are physically
+          located is a manager/HR visibility concern. Office/bookkeeper roles
+          (Tracy) don't see this; managers with HR access (Alayda, owners) do. */}
+      {prefs.sections.whosWorking && canViewHR(currentEmployee) && (
         <WhosWorking theme={theme} />
       )}
 

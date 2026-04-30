@@ -42,9 +42,11 @@ export default function WhosWorking({ theme }) {
     setLoading(true)
     setError(null)
     try {
+      // FK hint required: time_clock has multiple relationships to employees
+      // (employee_id and adjusted_by both reference employees).
       const { data, error } = await supabase
         .from('time_clock')
-        .select('id, employee_id, clock_in, clock_in_lat, clock_in_lng, clock_in_address, employees(id, name, headshot_url)')
+        .select('id, employee_id, clock_in, clock_in_lat, clock_in_lng, clock_in_address, employees!time_clock_employee_id_fkey(id, name, headshot_url)')
         .eq('company_id', companyId)
         .is('clock_out', null)
         .order('clock_in', { ascending: false })
