@@ -716,18 +716,22 @@ export default function SalesPipeline() {
 
   // Get stage value
   // Single source of truth for Won: use the SAME calc as the page's
-  // grand-total Sales Won (jobs created in the date window). That way the
-  // kanban Won column header matches the top-of-page tile, even when
-  //   (a) some Won-status leads have no job,
-  //   (b) some jobs in the window came from recurring/fresh paths with no
-  //       Won lead, or
-  //   (c) job_total !== quote_amount on a given deal.
+  // grand-total Sales Won (jobs created in the date window), but ALSO
+  // honor the active owner filter so the Won column shows only THIS
+  // rep's wins when filtering to a specific person.
+  const ownerFilteredJobs = (() => {
+    const effOwner = (!canViewAll && user?.id) ? String(user.id) : ownerFilter
+    if (!effOwner || effOwner === 'all') return storeJobs || []
+    if (effOwner === 'unassigned') return (storeJobs || []).filter(j => !j.salesperson_id)
+    const ownerId = parseInt(effOwner)
+    return (storeJobs || []).filter(j => j.salesperson_id === ownerId)
+  })()
   const wonInRangeJobs = (() => {
     const cutoff = getDateCutoff(dateRange)
     const cutoffEnd = dateRange === 'custom' && customDateTo
       ? new Date(customDateTo + 'T23:59:59').toISOString()
       : null
-    return wonJobsInRange(storeJobs, cutoff, cutoffEnd)
+    return wonJobsInRange(ownerFilteredJobs, cutoff, cutoffEnd)
   })()
 
   const getStageValue = (stageId) => {
@@ -1114,13 +1118,14 @@ export default function SalesPipeline() {
 
     // "Sales Won" — jobs CREATED in the selected window (estimate→job
     // approval OR fresh job). Source of truth: src/lib/jobMetrics.js.
-    // Plus a parallel "Jobs Delivered" stat so the page surfaces both
-    // halves of the funnel.
+    // Honors the active owner filter via ownerFilteredJobs so the grand
+    // total only shows the selected rep's wins (matches what they see
+    // in the Won column).
     const rangeCutoff = getDateCutoff(dateRange)
-    const wonInRange = wonJobsInRange(storeJobs, rangeCutoff, null)
+    const wonInRange = wonJobsInRange(ownerFilteredJobs, rangeCutoff, null)
     const salesWonTotal = sumJobTotal(wonInRange)
     const salesWonCount = wonInRange.length
-    const deliveredInRange = deliveredJobsInRange(storeJobs, storeJobStatuses, rangeCutoff, null)
+    const deliveredInRange = deliveredJobsInRange(ownerFilteredJobs, storeJobStatuses, rangeCutoff, null)
     const deliveredTotal = sumJobTotal(deliveredInRange)
     const deliveredCount = deliveredInRange.length
 
