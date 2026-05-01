@@ -346,6 +346,48 @@ serve(async (req) => {
         .eq('id', estimate.lead_id);
     }
 
+    // Auto-create a job if one doesn't already exist. Without this the
+    // estimate sits in "Approved" forever and never appears on the Sales
+    // Won metric (which counts jobs, not approved quotes). Mirror what
+    // EstimateDetail.handleConvertToJob does, simplified — line items + a
+    // deposit invoice can be added later from the UI.
+    let createdJobId: number | null = null
+    try {
+      if (!estimate.job_id) {
+        const customerName = estimate.customer?.name || estimate.customer?.business_name || estimate.customer_name || 'Customer'
+        const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`
+        const { data: newJob, error: jobErr } = await supabase
+          .from('jobs')
+          .insert([{
+            company_id: tokenRow.company_id,
+            job_id: jobNumber,
+            job_title: estimate.estimate_name || estimate.job_title || `${customerName} - Job`,
+            customer_id: estimate.customer_id || null,
+            lead_id: estimate.lead_id ? parseInt(String(estimate.lead_id)) : null,
+            salesperson_id: estimate.salesperson_id || null,
+            quote_id: estimate.id,
+            status: 'Chillin',
+            start_date: estimate.service_date || new Date().toISOString(),
+            job_total: parseFloat(String(estimate.quote_amount || 0)) || 0,
+            utility_incentive: parseFloat(String(estimate.utility_incentive || 0)) || 0,
+            details: estimate.summary || null,
+            updated_at: new Date().toISOString(),
+          }])
+          .select('id')
+          .single()
+        if (jobErr) {
+          console.error('[approve-document] job auto-create failed', jobErr)
+        } else if (newJob?.id) {
+          createdJobId = newJob.id
+          // Link the new job back onto the quote so subsequent edits
+          // (deposit photo, line items) find it.
+          await supabase.from('quotes').update({ job_id: newJob.id }).eq('id', estimate.id)
+        }
+      }
+    } catch (e) {
+      console.error('[approve-document] job auto-create exception', e)
+    }
+
     // Broadcast an "Estimate Approved" notification to the whole company
     // so the rep team gets the toast + the salesperson who owns the quote
     // gets the owner-targeted confetti burst on their screen. Runs last so

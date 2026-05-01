@@ -77,6 +77,7 @@ const ALERT_DEFS = [
   { id: 'lowStock', label: 'Low Stock Items', icon: Package, color: '#c25a5a', bg: 'rgba(194,90,90,0.1)' },
   { id: 'fleetPM', label: 'Fleet PM Overdue', icon: Truck, color: '#d4940a', bg: 'rgba(244,185,66,0.15)' },
   { id: 'overdueInvoices', label: 'Overdue Invoices (30+ days)', icon: Receipt, color: '#c25a5a', bg: 'rgba(194,90,90,0.1)' },
+  { id: 'staleEstimates', label: 'Stale Estimates ($5k+, sent 7+ days ago)', icon: AlertTriangle, color: '#d4940a', bg: 'rgba(244,185,66,0.15)' },
   { id: 'todaysAppts', label: 'Today\'s Appointments', icon: Calendar, color: '#5a9bd5', bg: 'rgba(90,155,213,0.15)' },
 ]
 
@@ -87,7 +88,7 @@ const DEFAULT_PREFS = {
   rollingDays: 90,
   showRolling: true,
   sections: { pipeline: true, whosWorking: true, schedule: true, activity: true, alerts: true, quickActions: true },
-  alerts: { lowStock: true, fleetPM: true, overdueInvoices: true, todaysAppts: true },
+  alerts: { lowStock: true, fleetPM: true, overdueInvoices: true, staleEstimates: true, todaysAppts: true },
 }
 
 const PREFS_KEY = 'jobscout_dashboard_prefs'
@@ -337,10 +338,23 @@ export default function Dashboard() {
   const recentCompletedJobs = jobs.filter(j => j.status === 'Completed').sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)).slice(0, 5)
 
   // Alerts
+  // Stale estimates: status='Sent', $5K+, sent 7+ days ago. The safety net
+  // for option-A on the "estimate stuck in Sent forever" problem — surfaces
+  // every Pacific-Steel-style gap so reps either close or kill them.
+  const sevenDaysAgo = new Date(today.getTime() - 7 * 86400000)
+  const staleEstimates = (quotes || []).filter(q => {
+    if (q.status !== 'Sent') return false
+    const amt = parseFloat(q.quote_amount) || 0
+    if (amt < 5000) return false
+    const sentAt = q.sent_date || q.last_sent_at
+    if (!sentAt) return false
+    return new Date(sentAt) < sevenDaysAgo
+  })
   const alertData = {
     lowStock: { items: inventory.filter(i => i.quantity < (i.min_quantity || 10)), nav: '/inventory' },
     fleetPM: { items: fleet.filter(f => f.next_pm_due && new Date(f.next_pm_due) < today), nav: '/fleet' },
     overdueInvoices: { items: invoices.filter(i => { if (i.payment_status !== 'Pending') return false; return Math.floor((today - new Date(i.created_at)) / 86400000) > 30 }), nav: '/invoices' },
+    staleEstimates: { items: staleEstimates, nav: '/estimates' },
     todaysAppts: { items: appointments.filter(a => a.start_time?.startsWith(todayStr)), nav: '/appointments' },
   }
   const visibleAlerts = ALERT_DEFS.filter(a => prefs.alerts[a.id] && alertData[a.id].items.length > 0)
