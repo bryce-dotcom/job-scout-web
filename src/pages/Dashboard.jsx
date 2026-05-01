@@ -6,6 +6,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import WhosWorking from '../components/WhosWorking'
 import { canViewHR } from '../lib/accessControl'
+import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import {
   UserPlus,
   Briefcase,
@@ -57,14 +58,14 @@ const STAGE_COLORS = { 'New': '#3b82f6', 'Contacted': '#8b5cf6', 'Scheduled': '#
 
 // All available metric card definitions
 const METRIC_DEFS = [
-  { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Deals won in the sales pipeline this month. Value is from quote amounts. This is a sales metric — see Completed Jobs for delivery.' },
+  { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Total $ value of jobs created this month — covers both estimate-approval-becomes-job AND fresh jobs added directly. Counts every job whose created_at is in the current month, regardless of status. Pair with Completed Jobs (delivery side).' },
   { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads', hint: 'Leads currently in the pipeline (not Won, Lost, or Closed). These are prospects being worked.' },
   { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs', hint: 'Jobs that are Scheduled, In Progress, or Chillin. Does not include Completed or Archived.' },
   { id: 'pendingInvoices', label: 'Pending Invoices', icon: Receipt, color: null, nav: '/invoices', hint: 'Invoices sent but not yet paid. The dollar amount is what customers owe you (accounts receivable).' },
   { id: 'mtdRevenue', label: 'MTD Revenue', icon: DollarSign, color: '#4a7c59', nav: null, hint: 'Cash received this month = Paid Invoices (from Invoices page) + Deposits (from Lead Payments page) + Bank Deposits (from Plaid/Books) + Collected Incentives. This is actual money in, not estimates.' },
   { id: 'mtdDeposits', label: 'MTD Deposits', icon: TrendingUp, color: '#4a7c59', nav: '/lead-payments', hint: 'Lead and job deposits collected this month within JobScout. These are pre-job payments logged in the system.' },
   { id: 'mtdExpenses', label: 'MTD Expenses', icon: CreditCard, color: '#c25a5a', nav: '/expenses', hint: 'Money spent this month: manually logged expenses + bank outflows from Plaid. Does not include transfers between accounts.' },
-  { id: 'completedJobs', label: 'Jobs Completed (MTD)', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Jobs finished in delivery this month (status = Completed). This is a delivery metric — see Sales Won for pipeline wins.' },
+  { id: 'completedJobs', label: 'Jobs Completed (MTD)', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Jobs that moved into a delivered status this month (Completed, Verified Complete, Post Inspected, Invoiced, Closed — whichever your pipeline marks as category=delivered in /settings). Counts every job whose status changed into a delivered category this month.' },
   { id: 'totalLeads', label: 'Total Leads', icon: UserPlus, color: '#8b5cf6', nav: '/leads', hint: 'All leads in the system across all statuses including Closed.' },
   { id: 'netIncome', label: 'MTD Net Income', icon: DollarSign, color: '#16a34a', nav: null, hint: 'Revenue minus expenses this month. Positive = profit, negative = loss. Based on actual cash flow, not estimates.' },
   { id: 'avgJobValue', label: 'Avg Job Value', icon: DollarSign, color: '#3b82f6', nav: null, hint: 'Average dollar amount per completed job across all time. Calculated from job totals.' },
@@ -113,6 +114,7 @@ export default function Dashboard() {
   const user = useStore((state) => state.user)
   const leads = useStore((state) => state.leads)
   const jobs = useStore((state) => state.jobs)
+  const jobStatuses = useStore((state) => state.jobStatuses)
   const quotes = useStore((state) => state.quotes)
   const invoices = useStore((state) => state.invoices)
   const payments = useStore((state) => state.payments)
@@ -224,26 +226,32 @@ export default function Dashboard() {
     if (q.lead_id && amt > (quoteByLead[q.lead_id] || 0)) quoteByLead[q.lead_id] = amt
   })
 
-  const wonOrDeliveryStatuses = ['Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed']
-  // Sales Won = leads that reached Won/delivery status (pipeline wins)
-  // Uses converted_at (when deal closed) or updated_at as fallback
-  const mtdSalesWonLeads = leads.filter(l => {
-    if (!wonOrDeliveryStatuses.includes(l.status)) return false
-    const wonDate = l.converted_at || l.updated_at
-    return wonDate && new Date(wonDate) >= firstOfMonth
-  })
-  const mtdSalesWon = mtdSalesWonLeads.reduce((sum, l) => sum + (quoteByLead[l.id] || parseFloat(l.quote_amount) || 0), 0)
+  // ─── Sales Won + Jobs Delivered ─────────────────────────────────────────
+  // Single source of truth: src/lib/jobMetrics.js. See that file for the
+  // definitions. Status sets are config-driven from the company's
+  // `jobStatuses` settings — custom pipelines just work.
+  //
+  // WON  = a job exists (estimate→job approval OR fresh job). Timestamp =
+  //        jobs.created_at.
+  // DELIVERED = a job is in a status flagged category='delivered' in the
+  //        company's settings (Completed, Verified Complete, etc.).
+  //        Timestamp = jobs.last_status_change_at (set by DB trigger).
+  const mtdWonJobs = wonJobsInRange(jobs, firstOfMonth, null)
+  const mtdSalesWon = sumJobTotal(mtdWonJobs)
+  const mtdDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, firstOfMonth, null)
+  const completedJobsMTD = mtdDeliveredJobs.length
 
-  // Extra metrics
-  const completedJobsMTD = jobs.filter(j => j.status === 'Completed' && (j.completed_at || j.end_date || j.updated_at) && new Date(j.completed_at || j.end_date || j.updated_at) >= firstOfMonth).length
+  // Avg-job-value uses ALL delivered jobs (not just MTD)
+  const allDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, null, null)
+  const avgJobValue = allDeliveredJobs.length > 0 ? sumJobTotal(allDeliveredJobs) / allDeliveredJobs.length : 0
+
+  // Win rate still measured at the LEAD level — it answers "of the leads
+  // that got a decision, what % were wins?" — which is a sales-funnel
+  // question, not a job-delivery question. Kept separate intentionally.
   const totalLeadsCount = leads.length
   const netIncome = thisMonthRevenue - thisMonthExpenses
-  const completedJobsAll = jobs.filter(j => j.status === 'Completed')
-  const avgJobValue = completedJobsAll.length > 0
-    ? completedJobsAll.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0) / completedJobsAll.length
-    : 0
-  const wonLeads = leads.filter(l => wonOrDeliveryStatuses.includes(l.status)).length
-  const decidedLeads = leads.filter(l => [...wonOrDeliveryStatuses, 'Lost'].includes(l.status)).length
+  const wonLeads = leads.filter(l => l.status === 'Won').length
+  const decidedLeads = leads.filter(l => l.status === 'Won' || l.status === 'Lost').length
   const conversionRate = decidedLeads > 0 ? Math.round((wonLeads / decidedLeads) * 100) : 0
 
   // ── YTD calculations ──
@@ -261,20 +269,11 @@ export default function Dashboard() {
   const ytdExpenses = manualExpensesYTD + plaidOutYTD
   const ytdNetIncome = ytdRevenue - ytdExpenses
 
-  // YTD Sales Won = leads that reached Won/delivery status this year (pipeline wins)
-  const ytdSalesWonLeads = leads.filter(l => {
-    if (!wonOrDeliveryStatuses.includes(l.status)) return false
-    const wonDate = l.converted_at || l.updated_at
-    return wonDate && new Date(wonDate) >= firstOfYear
-  })
-  const ytdSalesWon = ytdSalesWonLeads.reduce((sum, l) => sum + (quoteByLead[l.id] || parseFloat(l.quote_amount) || 0), 0)
-
+  // YTD — same definitions as MTD, just a wider window.
+  const ytdWonJobs = wonJobsInRange(jobs, firstOfYear, null)
+  const ytdSalesWon = sumJobTotal(ytdWonJobs)
   const ytdDeposits = depositsYTD
-  const completedJobsYTD = jobs.filter(j => {
-    if (j.status !== 'Completed') return false
-    const jobDate = j.completed_at || j.end_date || j.updated_at
-    return jobDate && new Date(jobDate) >= firstOfYear
-  }).length
+  const completedJobsYTD = deliveredJobsInRange(jobs, jobStatuses, firstOfYear, null).length
 
   // ── Build revenue/expense breakdown descriptions ──
   const revenueParts = []
@@ -291,7 +290,7 @@ export default function Dashboard() {
 
   // Metric values map — subtitles explain exactly where each number comes from
   const metricValues = {
-    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdSalesWonLeads.length} deal${mtdSalesWonLeads.length !== 1 ? 's' : ''} won (from Pipeline)`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won' },
+    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonJobs.length} job${mtdWonJobs.length !== 1 ? 's' : ''} created this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won' },
     activeLeads: { value: activeLeads, subtitle: 'Leads in pipeline (not Won/Lost)' },
     openJobs: { value: openJobs, subtitle: 'Scheduled + In Progress + Chillin' },
     pendingInvoices: { value: pendingInvoices, subtitle: `${formatCurrency(accountsReceivable)} owed (from Invoices)` },
@@ -301,7 +300,7 @@ export default function Dashboard() {
     completedJobs: { value: completedJobsMTD, subtitle: 'Delivery completed (from Job Board)', ytdValue: completedJobsYTD, ytdLabel: 'YTD Completed' },
     totalLeads: { value: totalLeadsCount, subtitle: 'All leads in pipeline' },
     netIncome: { value: formatCurrency(netIncome), subtitle: 'Revenue - Expenses (cash basis)', ytdValue: formatCurrency(ytdNetIncome), ytdLabel: 'YTD Net Income' },
-    avgJobValue: { value: formatCurrency(avgJobValue), subtitle: `Across ${completedJobsAll.length} completed jobs` },
+    avgJobValue: { value: formatCurrency(avgJobValue), subtitle: `Across ${allDeliveredJobs.length} delivered jobs` },
     conversionRate: { value: `${conversionRate}%`, subtitle: `${wonLeads} won / ${decidedLeads} decided` },
   }
 
@@ -321,14 +320,12 @@ export default function Dashboard() {
   const totalPipelineCount = pipelineData.reduce((sum, p) => sum + p.count, 0)
   const totalPipelineDollars = pipelineData.reduce((sum, p) => sum + p.dollars, 0)
 
-  // Rolling average — based on completed jobs
-  const rollingCutoff = new Date(today.getTime() - prefs.rollingDays * 24 * 60 * 60 * 1000)
-  const rollingCompletedJobs = jobs.filter(j => {
-    if (j.status !== 'Completed') return false
-    const jobDate = j.start_date || j.updated_at
-    return jobDate && new Date(jobDate) >= rollingCutoff
-  })
-  const rollingWonTotal = rollingCompletedJobs.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
+  // Rolling average — DELIVERED revenue averaged over the user's chosen
+  // window. Uses last_status_change_at, not start_date, so a 90-day rolling
+  // means "delivered in the last 90 days" not "scheduled to start in".
+  const rollingCutoff = daysAgo(prefs.rollingDays, today)
+  const rollingCompletedJobs = deliveredJobsInRange(jobs, jobStatuses, rollingCutoff, null)
+  const rollingWonTotal = sumJobTotal(rollingCompletedJobs)
   const rollingWonCount = rollingCompletedJobs.length
   const rollingAvgPerMonth = prefs.rollingDays > 0 ? (rollingWonTotal / prefs.rollingDays) * 30 : 0
 

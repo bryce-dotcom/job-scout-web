@@ -2190,6 +2190,24 @@ export default function PMJobSetter() {
                 padding: '8px 10px'
               }}
             />
+            {/* Category — drives whether jobs in this status count toward
+                "Jobs Delivered" on the dashboard / EOS / pipeline. Open =
+                still in progress; Delivered = work is done. */}
+            <select
+              value={status.category || 'open'}
+              onChange={(e) => updateStatus(setForm, form, index, 'category', e.target.value)}
+              title="Open = work in progress · Delivered = work is done (counts toward Jobs Delivered metric)"
+              style={{
+                ...inputStyle,
+                width: '110px',
+                minHeight: '36px',
+                padding: '8px 10px',
+                fontSize: '12px'
+              }}
+            >
+              <option value="open">Open</option>
+              <option value="delivered">Delivered</option>
+            </select>
             <button
               onClick={() => deleteStatus(setForm, form, index)}
               style={{

@@ -5,6 +5,7 @@ import { useTheme } from '../../components/Layout'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { toast } from '../../lib/toast'
 import HelpBadge from '../../components/HelpBadge'
+import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../../lib/jobMetrics'
 import {
   Target, Eye, TrendingUp, Shield, Heart, Star, Zap,
   Users, CheckCircle, XCircle, Clock, Calendar, Plus, X,
@@ -94,13 +95,11 @@ const AUTO_SOURCES = {
     label: 'Dollar Amount Sold',
     category: 'Sales',
     format: 'currency',
+    // Source of truth: src/lib/jobMetrics.js. WON = a job was created
+    // (estimate-approval OR fresh job). Sums job_total in the window.
     compute: (d, s, e, sd, ed, ent) => {
-      return filterByEntity(d.leads, ent)
-        .filter(l => WON_STATUSES.includes(l.status) && l.converted_at >= s && l.converted_at <= e)
-        .reduce((sum, l) => {
-          const q = d.quotes.find(q => String(q.lead_id) === String(l.id))
-          return sum + (parseFloat(q?.quote_amount) || 0)
-        }, 0)
+      const inRange = wonJobsInRange(filterByEntity(d.jobs, ent), s, e)
+      return sumJobTotal(inRange)
     },
   },
   meetings_created: {
@@ -119,20 +118,23 @@ const AUTO_SOURCES = {
     label: 'Jobs Completed',
     category: 'Operations',
     format: 'number',
-    compute: (d, s, e, sd, ed, ent) => filterByEntity(d.jobs, ent).filter(j => j.status === 'Completed' && j.updated_at >= s && j.updated_at <= e).length,
+    // DELIVERED = job is in a status flagged category='delivered' in
+    // settings (Completed, Verified Complete, Post Inspected, Invoiced,
+    // Closed — whatever the company configured). Custom pipelines work.
+    compute: (d, s, e, sd, ed, ent) => deliveredJobsInRange(filterByEntity(d.jobs, ent), d.jobStatuses, s, e).length,
   },
   job_revenue: {
     label: 'Job Revenue',
     category: 'Operations',
     format: 'currency',
-    compute: (d, s, e, sd, ed, ent) => filterByEntity(d.jobs, ent).filter(j => j.status === 'Completed' && j.updated_at >= s && j.updated_at <= e).reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0),
+    compute: (d, s, e, sd, ed, ent) => sumJobTotal(deliveredJobsInRange(filterByEntity(d.jobs, ent), d.jobStatuses, s, e)),
   },
   dollars_per_hour: {
     label: 'Dollars / Hour',
     category: 'Operations',
     format: 'currency',
     compute: (d, s, e, sd, ed, ent) => {
-      const rev = filterByEntity(d.jobs, ent).filter(j => j.status === 'Completed' && j.updated_at >= s && j.updated_at <= e).reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
+      const rev = sumJobTotal(deliveredJobsInRange(filterByEntity(d.jobs, ent), d.jobStatuses, s, e))
       const hrs = filterTimeLogsByEntity(d.timeLogs, d.jobs, ent).filter(t => t.date >= sd && t.date <= ed).reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0)
       return hrs > 0 ? Math.round(rev / hrs) : 0
     },
@@ -2393,6 +2395,7 @@ export default function EOS() {
   const quotes = useStore(s => s.quotes) || []
   const leadPayments = useStore(s => s.leadPayments) || []
   const businessUnits = useStore(s => s.businessUnits) || []
+  const jobStatuses = useStore(s => s.jobStatuses) || []
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
@@ -2408,8 +2411,8 @@ export default function EOS() {
   }, [companyId])
 
   const storeData = useMemo(() => ({
-    jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments, submittals,
-  }), [jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments, submittals])
+    jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments, submittals, jobStatuses,
+  }), [jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments, submittals, jobStatuses])
 
   // Build entity list from service types + business units (deduplicated)
   const entities = useMemo(() => {

@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { isAdmin as checkAdmin, isManager as checkManager } from '../lib/accessControl'
 import { toast } from '../lib/toast'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { getDeliveredStatusIds } from '../lib/jobMetrics'
 import {
   BarChart3,
   TrendingUp,
@@ -1226,7 +1227,9 @@ function JobsReport({ theme, companyId, jobs, employees, formatCurrency, inputSt
   const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
   const totalAllotted = enrichedJobs.reduce((s, j) => s + j.allottedHours, 0)
   const totalTracked = enrichedJobs.reduce((s, j) => s + j.trackedHours, 0)
-  const completedJobs = enrichedJobs.filter(j => (j.status || '').toLowerCase().includes('complete')).length
+  // Use the configured delivered-category statuses, not a string-match heuristic.
+  const deliveredSet = getDeliveredStatusIds(storeJobStatuses)
+  const completedJobs = enrichedJobs.filter(j => deliveredSet.has(j.status)).length
 
   const SortHeader = ({ field, children, align }) => (
     <th

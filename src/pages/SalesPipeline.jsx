@@ -5,6 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { offlineDb } from '../lib/offlineDb'
 import { canEditPipelineStages } from '../lib/accessControl'
+import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../lib/jobMetrics'
 import {
   Plus, X, DollarSign, User, Calendar, Phone, Mail, Building2,
   Trophy, XCircle, ChevronRight, RefreshCw, MapPin, Settings, Trash2,
@@ -1016,21 +1017,21 @@ export default function SalesPipeline() {
     const todayAppointments = leadsWithAppointments.filter(l => new Date(l.appointment_time).toDateString() === today)
     const sumAmount = (arr) => arr.reduce((sum, l) => sum + getLeadAmount(l), 0)
 
-    // "Sales Won" — completed jobs value (matches Dashboard)
-    // This is the most concrete number: work done = money earned
+    // "Sales Won" — jobs CREATED in the selected window (estimate→job
+    // approval OR fresh job). Source of truth: src/lib/jobMetrics.js.
+    // Plus a parallel "Jobs Delivered" stat so the page surfaces both
+    // halves of the funnel.
     const rangeCutoff = getDateCutoff(dateRange)
-    const completedJobsInRange = (storeJobs || []).filter(j => {
-      if (j.status !== 'Completed') return false
-      const jobDate = j.start_date || j.updated_at
-      if (!jobDate) return false
-      if (rangeCutoff && new Date(jobDate) < new Date(rangeCutoff)) return false
-      return true
-    })
-    const salesWonTotal = completedJobsInRange.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
-    const salesWonCount = completedJobsInRange.length
+    const wonInRange = wonJobsInRange(storeJobs, rangeCutoff, null)
+    const salesWonTotal = sumJobTotal(wonInRange)
+    const salesWonCount = wonInRange.length
+    const deliveredInRange = deliveredJobsInRange(storeJobs, storeJobStatuses, rangeCutoff, null)
+    const deliveredTotal = sumJobTotal(deliveredInRange)
+    const deliveredCount = deliveredInRange.length
 
     return {
-      salesWon: { value: formatCurrency(salesWonTotal), label: `Jobs Won`, sublabel: `${salesWonCount} completed`, color: '#16a34a', isFormatted: true },
+      salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} job${salesWonCount !== 1 ? 's' : ''} created`, color: '#16a34a', isFormatted: true },
+      delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} completed`, color: '#10b981', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
       lost: { value: lostLeadsList.length, label: 'Lost', color: '#64748b' },
