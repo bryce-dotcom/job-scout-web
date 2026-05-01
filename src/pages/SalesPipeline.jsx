@@ -540,6 +540,30 @@ export default function SalesPipeline() {
       })
       if (leadBu !== buFilter && !jobBuMatch) return false
     }
+    // Date-range filter — used to only fire inside specific stat calcs,
+    // so changing MTD/YTD/etc didn't move the per-stage column counts.
+    // Now apply at the lead level using last_updated (when the lead last
+    // moved through the pipeline) with created_at as fallback. Quote and
+    // job activity also count — if any attached quote was sent/approved
+    // or any attached job was status-changed in the window, the lead is
+    // in scope. That way a January lead that closed in April still
+    // appears under MTD.
+    const cutoffStr = getDateCutoff(dateRange)
+    const cutoffEndStr = dateRange === 'custom' && customDateTo ? new Date(customDateTo + 'T23:59:59').toISOString() : null
+    if (cutoffStr) {
+      const candidates = [
+        lead.last_updated, lead.created_at, lead.converted_at,
+        ...(lead._quotes || []).flatMap(q => [q.sent_date, q.approved_date, q.last_sent_at, q.updated_at]),
+        ...(lead.jobs || []).flatMap(j => [j.last_status_change_at, j.created_at, j.updated_at]),
+      ].filter(Boolean)
+      if (candidates.length === 0) return false
+      const inRange = candidates.some(d => {
+        if (d < cutoffStr) return false
+        if (cutoffEndStr && d > cutoffEndStr) return false
+        return true
+      })
+      if (!inRange) return false
+    }
     return true
   })
 
