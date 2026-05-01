@@ -327,23 +327,44 @@ export default function SalesPipeline() {
     const stageIds = stages.map(s => s.id)
     const allStatuses = [...new Set([...stageIds, ...LEGACY_STATUSES])]
 
-    // Fetch leads
-    let { data, error } = await supabase
-      .from('leads')
-      .select(LEAD_COLUMNS)
-      .eq('company_id', companyId)
-      .in('status', allStatuses)
-      .order('updated_at', { ascending: false })
+    // Fetch leads — paginated, with NULLS LAST sort. Two reasons:
+    //
+    //   1) Postgres' DEFAULT for DESC order is NULLS FIRST. HHH had 1273
+    //      leads with updated_at=NULL (legacy import gap). The default
+    //      sort dumped all of them at the top, then PostgREST's 1000-row
+    //      cap silently truncated the rest — meaning every lead actually
+    //      touched recently (the ones reps care about) was invisible.
+    //      `nullsFirst: false` puts the active rows first.
+    //
+    //   2) Even with the sort fixed, HHH already exceeds 1000 rows so
+    //      the cap would still swallow some leads. We page through with
+    //      .range() until we have everything.
+    const fetchAllLeads = async (selectStr) => {
+      const PAGE = 1000
+      const all = []
+      for (let from = 0; ; from += PAGE) {
+        const to = from + PAGE - 1
+        const { data: page, error: pageErr } = await supabase
+          .from('leads')
+          .select(selectStr)
+          .eq('company_id', companyId)
+          .in('status', allStatuses)
+          .order('updated_at', { ascending: false, nullsFirst: false })
+          .range(from, to)
+        if (pageErr) return { data: null, error: pageErr }
+        if (!page || page.length === 0) break
+        all.push(...page)
+        if (page.length < PAGE) break
+      }
+      return { data: all, error: null }
+    }
+
+    let { data, error } = await fetchAllLeads(LEAD_COLUMNS)
 
     // If join fails (e.g. PostgREST schema cache), fall back to simpler query
     if (error) {
       console.warn('[Pipeline] Join query failed, falling back:', error.message);
-      ({ data, error } = await supabase
-        .from('leads')
-        .select('*, lead_owner:employees!leads_lead_owner_id_fkey(id, name)')
-        .eq('company_id', companyId)
-        .in('status', allStatuses)
-        .order('updated_at', { ascending: false }))
+      ({ data, error } = await fetchAllLeads('*, lead_owner:employees!leads_lead_owner_id_fkey(id, name)'))
     }
 
     if (error) {
