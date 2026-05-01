@@ -15,7 +15,7 @@ export async function seedSampleData(companyId) {
   try {
     // Sample Employees (5)
     const employees = [
-      { name: 'Bryce West', email: 'bryce@hhh.services', role: 'Owner', user_role: 'Admin' },
+      { name: 'Alex Owner', email: 'owner@example.com', role: 'Owner', user_role: 'Admin' },
       { name: 'Mike Johnson', email: 'mike@example.com', role: 'Sales', user_role: 'User' },
       { name: 'Sarah Chen', email: 'sarah@example.com', role: 'Field Tech', user_role: 'User' },
       { name: 'Tom Williams', email: 'tom@example.com', role: 'Field Tech', user_role: 'User' },
