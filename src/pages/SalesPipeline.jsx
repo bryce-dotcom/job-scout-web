@@ -551,29 +551,46 @@ export default function SalesPipeline() {
       })
       if (leadBu !== buFilter && !jobBuMatch) return false
     }
-    // Date-range filter — used to only fire inside specific stat calcs,
-    // so changing MTD/YTD/etc didn't move the per-stage column counts.
-    // Now apply at the lead level using last_updated (when the lead last
-    // moved through the pipeline) with created_at as fallback. Quote and
-    // job activity also count — if any attached quote was sent/approved
-    // or any attached job was status-changed in the window, the lead is
-    // in scope. That way a January lead that closed in April still
-    // appears under MTD.
+    // Date-range filter — DELIBERATELY only applies to TERMINAL leads
+    // (Won, Lost, or jobs in a delivered status from the company's
+    // job_statuses settings).
+    //
+    // The mental model from the rep's perspective:
+    //   "Show me everything in my open pipeline regardless of when it
+    //    came in (I need to keep working it), but for Won/Lost/Delivered
+    //    only count what closed in this window so my month-over-month
+    //    performance numbers make sense."
+    //
+    // So New, Contacted, Qualified, Estimate Sent, Negotiation, and
+    // every active Delivery column (Chillin, Scheduled, In Progress,
+    // etc.) IGNORE the date filter — they always show the full open
+    // pipeline. Only Won / Lost / Completed / Verified Complete /
+    // Invoiced / Closed (the user's terminal categories) respect it.
     const cutoffStr = getDateCutoff(dateRange)
     const cutoffEndStr = dateRange === 'custom' && customDateTo ? new Date(customDateTo + 'T23:59:59').toISOString() : null
     if (cutoffStr) {
-      const candidates = [
-        lead.last_updated, lead.created_at, lead.converted_at,
-        ...(lead._quotes || []).flatMap(q => [q.sent_date, q.approved_date, q.last_sent_at, q.updated_at]),
-        ...(lead.jobs || []).flatMap(j => [j.last_status_change_at, j.created_at, j.updated_at]),
-      ].filter(Boolean)
-      if (candidates.length === 0) return false
-      const inRange = candidates.some(d => {
-        if (d < cutoffStr) return false
-        if (cutoffEndStr && d > cutoffEndStr) return false
-        return true
-      })
-      if (!inRange) return false
+      const stage = stages.find(s => s.id === lead.status)
+      const isTerminalStage = !!(stage?.isWon || stage?.isLost || stage?.isClosed)
+      // For delivery-side leads, also count as terminal if the lead's
+      // current status is in the company's "delivered" category.
+      const deliveredJobStatusIds = (storeJobStatuses || [])
+        .filter(s => s?.category === 'delivered')
+        .map(s => s.id)
+      const isDeliveredJobStatus = deliveredJobStatusIds.includes(lead.status)
+      const isTerminal = isTerminalStage || isDeliveredJobStatus
+      if (isTerminal) {
+        const candidates = [
+          lead.last_updated, lead.converted_at,
+          ...(lead._quotes || []).flatMap(q => [q.approved_date, q.rejected_date, q.updated_at]),
+          ...(lead.jobs || []).flatMap(j => [j.last_status_change_at, j.updated_at]),
+        ].filter(Boolean)
+        const inRange = candidates.some(d => {
+          if (d < cutoffStr) return false
+          if (cutoffEndStr && d > cutoffEndStr) return false
+          return true
+        })
+        if (!inRange) return false
+      }
     }
     return true
   })
