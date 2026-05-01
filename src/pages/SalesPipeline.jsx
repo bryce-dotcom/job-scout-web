@@ -514,20 +514,31 @@ export default function SalesPipeline() {
       : ownerFilter
     if (effectiveOwnerFilter !== 'all') {
       const ownerId = parseInt(effectiveOwnerFilter)
+      // Build the set of all possible owner IDs that could attribute this
+      // lead/job to a rep. We deliberately ALSO check attached quotes —
+      // many leads in the system have null salesperson_id but a real rep
+      // on the quote (legacy import + create flows that didn't carry
+      // salesperson through). Without this fallback, those quotes
+      // disappear from every rep's pipeline view ("bitter creek testing
+      // is Noah's but I can't see it"). Quote-level matching is safe
+      // because the rep DID send the quote — that's their work.
+      const owners = new Set()
+      if (lead.lead_owner_id) owners.add(lead.lead_owner_id)
+      if (lead.salesperson_id) owners.add(lead.salesperson_id)
+      ;(lead._quotes || []).forEach(q => {
+        if (q.salesperson_id) owners.add(q.salesperson_id)
+      })
+
       if (effectiveOwnerFilter === 'unassigned') {
-        if (lead.lead_owner_id || lead.salesperson_id) return false
+        if (owners.size > 0) return false
       } else if (lead._isJob) {
-        // For standalone jobs, match salesperson or lead owner only.
-        // PM / job-lead matches were too loose — they made reps see deals
-        // they didn't sell just because they were assigned to install.
+        // For standalone jobs, only match the lead-level fields (jobs
+        // don't have an attached quotes set the same way). PM / job-lead
+        // matches were too loose — they made reps see deals they didn't
+        // sell just because they were assigned to install.
         if (lead.salesperson_id !== ownerId && lead.lead_owner_id !== ownerId) return false
       } else {
-        // Lead-level ownership only — the salesperson/lead owner ON THE LEAD.
-        // Previously we also matched on jobs.salesperson_id / pm_id /
-        // job_lead_id, which surfaced leads where the rep was just the
-        // installer or PM on a single attached job. That made reps see
-        // jobs they didn't sell.
-        if (lead.lead_owner_id !== ownerId && lead.salesperson_id !== ownerId) return false
+        if (!owners.has(ownerId)) return false
       }
     }
     if (buFilter !== 'all') {

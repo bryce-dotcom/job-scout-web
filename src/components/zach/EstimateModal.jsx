@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { X, Calculator, Save, AlertTriangle, TrendingUp } from 'lucide-react'
+import { X, Calculator, Save, AlertTriangle, TrendingUp, FileText } from 'lucide-react'
 import { estimateProgram } from '../../lib/lawnEstimator'
 import { useStore } from '../../lib/store'
 import { supabase } from '../../lib/supabase'
@@ -7,11 +7,16 @@ import { supabase } from '../../lib/supabase'
 export default function EstimateModal({ property, onClose, onSaved }) {
   const companyId = useStore(s => s.companyId)
   const lawnPricing = useStore(s => s.lawnPricing)
+  const fetchLeads = useStore(s => s.fetchLeads)
+  const user = useStore(s => s.user)
+  const employees = useStore(s => s.employees)
+  const currentEmployeeId = useMemo(() => (employees || []).find(e => e.email === user?.email)?.id || null, [employees, user])
 
   const [edgingLF, setEdgingLF] = useState(property?.edging_lin_ft || 200)
   const [override, setOverride] = useState(null) // optional manual override
   const [saving, setSaving] = useState(false)
   const [savedId, setSavedId] = useState(null)
+  const [savedQuoteId, setSavedQuoteId] = useState(null)
 
   const result = useMemo(() => {
     if (!property) return null
@@ -25,7 +30,9 @@ export default function EstimateModal({ property, onClose, onSaved }) {
   const saveEstimate = async () => {
     if (!result) return
     setSaving(true)
-    const { data, error } = await supabase.from('lawn_estimates').insert({
+    const annual = override ?? result.annual_program_total
+
+    const { data: estimate, error } = await supabase.from('lawn_estimates').insert({
       company_id: companyId,
       property_id: property.id,
       turf_sqft: property.turf_size_sqft,
@@ -37,13 +44,80 @@ export default function EstimateModal({ property, onClose, onSaved }) {
         mows_per_season: result.mows_per_season,
       },
       per_visit_total: result.per_visit.grand_total,
-      annual_program_total: override ?? result.annual_program_total,
+      annual_program_total: annual,
       status: 'draft',
     }).select().single()
+    if (error) { setSaving(false); alert('Save failed: ' + error.message); return }
+    setSavedId(estimate.id)
+
+    // Mirror Lenard: also write to the unified quotes + quote_lines tables so
+    // this bid shows up in the sales pipeline alongside everything else.
+    let quoteId = null
+    try {
+      const propertyLabel = property.property_name || property.address || `Property #${property.id}`
+      const { data: quote, error: qErr } = await supabase.from('quotes').insert({
+        company_id: companyId,
+        lead_id: property.lead_id || null,
+        customer_id: property.customer_id || null,
+        salesperson_id: currentEmployeeId,  // attribute to creator so it shows in their pipeline
+        audit_id: null,
+        audit_type: 'lawn_care',
+        service_type: 'Lawn Care',
+        estimate_name: `Lawn care — ${propertyLabel}`,
+        summary: `${(property.turf_size_sqft || 0).toLocaleString()} sqft turf · ${property.mow_frequency || 'Weekly'} · ${result.mows_per_season} mows/season`,
+        quote_amount: annual,
+        status: 'Draft',
+        notes: [
+          `Address: ${[property.address, property.city, property.state, property.zip].filter(Boolean).join(', ') || '—'}`,
+          `Per visit: $${result.per_visit.grand_total} · Treatments: $${result.treatments_total} · Annual: $${annual}`,
+        ].join('\n'),
+      }).select().single()
+
+      if (qErr) {
+        console.warn('[EstimateModal] quote insert failed:', qErr.message)
+      } else {
+        quoteId = quote.id
+        setSavedQuoteId(quoteId)
+
+        // One quote_line for the mow program, one per treatment round.
+        const lines = [
+          {
+            company_id: companyId,
+            quote_id: quoteId,
+            item_name: `Mowing — ${result.mows_per_season} visits`,
+            description: `${property.mow_frequency || 'Weekly'} mowing on ${(property.turf_size_sqft || 0).toLocaleString()} sqft turf · ~${result.per_visit.predicted_minutes} min/visit`,
+            quantity: result.mows_per_season,
+            price: result.per_visit.grand_total,
+            line_total: result.mows_total,
+            sort_order: 0,
+          },
+          ...result.treatments.map((t, i) => ({
+            company_id: companyId,
+            quote_id: quoteId,
+            item_name: `Treatment Round ${t.round} — ${t.label}`,
+            description: t.detail || null,
+            quantity: 1,
+            price: t.total,
+            line_total: t.total,
+            sort_order: i + 1,
+          })),
+        ]
+        const { error: linesErr } = await supabase.from('quote_lines').insert(lines)
+        if (linesErr) console.warn('[EstimateModal] quote_lines insert failed:', linesErr.message)
+
+        // Backlink: quote → estimate, lead → quote (so the pipeline shows it)
+        await supabase.from('lawn_estimates').update({ quote_id: quoteId, status: 'sent' }).eq('id', estimate.id)
+        if (property.lead_id) {
+          await supabase.from('leads').update({ quote_id: quoteId, status: 'Estimate Sent' }).eq('id', property.lead_id)
+          fetchLeads?.()
+        }
+      }
+    } catch (e) {
+      console.warn('[EstimateModal] quote sync threw:', e.message)
+    }
+
     setSaving(false)
-    if (error) { alert('Save failed: ' + error.message); return }
-    setSavedId(data.id)
-    onSaved?.(data)
+    onSaved?.({ ...estimate, quote_id: quoteId })
   }
 
   return (
@@ -122,7 +196,10 @@ export default function EstimateModal({ property, onClose, onSaved }) {
 
           {savedId && (
             <div style={{ marginTop: 14, padding: 10, background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', borderRadius: 8, color: '#15803d', fontSize: 13 }}>
-              Estimate saved (#{savedId}). View history under Estimates tab.
+              Estimate saved (#{savedId}).
+              {savedQuoteId && (
+                <span> Bid pushed to the sales pipeline as <a href={`/quotes/${savedQuoteId}`} style={{ color: '#15803d', fontWeight: 600 }}>Quote #{savedQuoteId}</a> with line items{property.lead_id ? ' and lead status set to Estimate Sent' : ''}.</span>
+              )}
             </div>
           )}
 

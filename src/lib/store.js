@@ -2093,11 +2093,21 @@ export const useStore = create(
 
       // --- Quotes ---
       createQuote: async (quoteData) => {
+        // Default salesperson_id to the creator if the caller didn't pass
+        // one. Without this, quotes can land orphaned (no rep) and then
+        // disappear from every rep's pipeline view because the filter
+        // can't attribute them.
+        const state = get()
+        const currentEmployee = (state.employees || []).find(e => e.email === state.user?.email)
+        const withRep = {
+          ...quoteData,
+          salesperson_id: quoteData.salesperson_id ?? currentEmployee?.id ?? null,
+        }
         const tempId = `temp_${crypto.randomUUID()}`
-        const record = { ...quoteData, id: tempId, created_at: new Date().toISOString() }
-        set(state => ({ quotes: [record, ...state.quotes] }))
+        const record = { ...withRep, id: tempId, created_at: new Date().toISOString() }
+        set(s => ({ quotes: [record, ...s.quotes] }))
         await offlineDb.put('quotes', record)
-        await syncQueue.enqueue({ table: 'quotes', operation: 'insert', data: quoteData, tempId })
+        await syncQueue.enqueue({ table: 'quotes', operation: 'insert', data: withRep, tempId })
         if (navigator.onLine) await syncQueue.processQueue()
         return tempId
       },
