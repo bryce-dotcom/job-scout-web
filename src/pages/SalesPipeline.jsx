@@ -715,8 +715,30 @@ export default function SalesPipeline() {
   }
 
   // Get stage value
+  // Single source of truth for Won: use the SAME calc as the page's
+  // grand-total Sales Won (jobs created in the date window). That way the
+  // kanban Won column header matches the top-of-page tile, even when
+  //   (a) some Won-status leads have no job,
+  //   (b) some jobs in the window came from recurring/fresh paths with no
+  //       Won lead, or
+  //   (c) job_total !== quote_amount on a given deal.
+  const wonInRangeJobs = (() => {
+    const cutoff = getDateCutoff(dateRange)
+    const cutoffEnd = dateRange === 'custom' && customDateTo
+      ? new Date(customDateTo + 'T23:59:59').toISOString()
+      : null
+    return wonJobsInRange(storeJobs, cutoff, cutoffEnd)
+  })()
+
   const getStageValue = (stageId) => {
+    const stage = stages.find(s => s.id === stageId)
+    if (stage?.isWon) return sumJobTotal(wonInRangeJobs)
     return getLeadsForStage(stageId).reduce((sum, l) => sum + getLeadAmount(l), 0)
+  }
+  const getStageCount = (stageId) => {
+    const stage = stages.find(s => s.id === stageId)
+    if (stage?.isWon) return wonInRangeJobs.length
+    return getLeadsForStage(stageId).length
   }
 
   // Check if appointment is today
@@ -1778,7 +1800,7 @@ export default function SalesPipeline() {
                         {stage.name}
                       </span>
                       <span style={{ backgroundColor: stage.color + '20', color: stage.color, padding: '1px 5px', borderRadius: '10px', fontSize: '10px', fontWeight: '600', flexShrink: 0 }}>
-                        {stageLeads.length}
+                        {getStageCount(stage.id)}
                       </span>
                     </div>
                     <div style={{ fontSize: '12px', color: stageValue > 0 ? '#16a34a' : theme.textMuted, fontWeight: stageValue > 0 ? '600' : '400', marginTop: '2px' }}>
@@ -1939,7 +1961,7 @@ export default function SalesPipeline() {
                         {stage.name}
                       </span>
                       <span style={{ backgroundColor: stage.color + '20', color: stage.color, padding: '1px 5px', borderRadius: '10px', fontSize: '10px', fontWeight: '600', flexShrink: 0 }}>
-                        {stageLeads.length}
+                        {getStageCount(stage.id)}
                       </span>
                     </div>
                     <div style={{ fontSize: '12px', color: stageValue > 0 ? '#16a34a' : theme.textMuted, fontWeight: stageValue > 0 ? '600' : '400', marginTop: '2px' }}>
