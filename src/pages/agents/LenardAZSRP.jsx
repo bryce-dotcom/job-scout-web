@@ -945,33 +945,22 @@ export default function LenardAZSRP() {
         setShowSaveModal(false);
         showToast(savedLeadId ? 'Project updated' : 'Project saved as lead + audit', '\u2713');
 
-        // Mirror the signature onto the canonical leads AND jobs
-        // customer_signature_* columns so downstream attachments (W9,
-        // credit app, invoices, etc.) can auto-stamp it via
-        // resolveCustomerSignature.
+        // Capture customer signature on the lead (and any linked jobs)
+        // via the lenard-capture-signature edge function. Used to be a
+        // direct anon UPDATE, which required leaving leads.update open
+        // to anon. The edge function uses the service role inside, so
+        // the leads table can stay strict tenant-isolated.
         if (signatureData && data.leadId) {
           try {
-            const sigBytes = Uint8Array.from(atob(signatureData.split(',')[1]), c => c.charCodeAt(0));
-            const sigPath = `signatures/lead-${data.leadId}.png`;
-            await supabase.storage
-              .from('project-documents')
-              .upload(sigPath, sigBytes, { contentType: 'image/png', upsert: true });
-            const sigPatch = {
-              customer_signature_path: sigPath,
-              customer_signature_method: 'drawn',
-              customer_signature_captured_at: new Date().toISOString(),
-            }
-            await supabase.from('leads').update(sigPatch).eq('id', data.leadId);
-            // Also stamp any jobs linked to this lead
-            const { data: linkedJobs } = await supabase
-              .from('jobs')
-              .select('id')
-              .eq('lead_id', data.leadId)
-            if (linkedJobs?.length > 0) {
-              await supabase.from('jobs').update(sigPatch).eq('lead_id', data.leadId)
-            }
+            await supabase.functions.invoke('lenard-capture-signature', {
+              body: {
+                leadId: data.leadId,
+                signatureBase64: signatureData,
+                method: 'drawn',
+              },
+            });
           } catch (sigErr) {
-            console.warn('[Lenard AZ] unified signature mirror failed', sigErr);
+            console.warn('[Lenard AZ] signature capture failed', sigErr);
           }
         }
 

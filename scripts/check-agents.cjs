@@ -1,0 +1,11 @@
+require('dotenv').config()
+const { createClient } = require('@supabase/supabase-js')
+const s = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+;(async () => {
+  const { data: ag } = await s.from('agents').select('slug, name, description').order('slug')
+  console.log('Available agents:')
+  console.table(ag)
+  const { data: ca } = await s.from('company_agents').select('company_id, agent_slug, enabled').eq('company_id', 3)
+  console.log('\nHHH (co=3) enabled agents:')
+  console.table(ca)
+})()
