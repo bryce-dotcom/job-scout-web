@@ -2824,9 +2824,13 @@ export default function PMJobSetter() {
                               businessName={job.customer?.business_name}
                               style={{ padding: '0px', overflow: 'hidden', cursor: 'grab' }}
                             >
-                              {/* Job Header — click to expand, double-click to go to detail */}
+                              {/* Job Header — click anywhere on the card opens
+                                  the side detail panel (same one the calendar
+                                  uses; has Reschedule + Full View). The
+                                  chevron is the dedicated expand-sections
+                                  toggle so the two gestures don't conflict. */}
                               <div
-                                onClick={() => toggleJobExpanded(job.id)}
+                                onClick={() => setDetailJob(job)}
                                 onDoubleClick={() => navigate(`/jobs/${job.id}`)}
                                 style={{
                                   padding: '10px 12px',
@@ -2836,11 +2840,17 @@ export default function PMJobSetter() {
                                   gap: '8px'
                                 }}
                               >
-                                {isExpanded ? (
-                                  <ChevronDown size={16} style={{ color: theme.textMuted, flexShrink: 0, marginTop: '2px' }} />
-                                ) : (
-                                  <ChevronRight size={16} style={{ color: theme.textMuted, flexShrink: 0, marginTop: '2px' }} />
-                                )}
+                                <span
+                                  onClick={(e) => { e.stopPropagation(); toggleJobExpanded(job.id) }}
+                                  title={isExpanded ? 'Collapse sections' : 'Expand sections'}
+                                  style={{ flexShrink: 0, marginTop: '2px', cursor: 'pointer', padding: '2px', margin: '-2px' }}
+                                >
+                                  {isExpanded ? (
+                                    <ChevronDown size={16} style={{ color: theme.textMuted }} />
+                                  ) : (
+                                    <ChevronRight size={16} style={{ color: theme.textMuted }} />
+                                  )}
+                                </span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{
                                     fontSize: '14px',
