@@ -3097,31 +3097,34 @@ function JobDetailInner() {
             border: `1px solid ${theme.border}`,
             padding: '20px'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Job Details</h3>
-              <button
-                onClick={() => {
-                  if (!editMode) setCustomerSearchText(job.customer?.name || '')
-                  setEditMode(!editMode)
-                }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                  color: editMode ? theme.text : '#ffffff',
-                  backgroundColor: editMode ? theme.bgCardHover : theme.accent,
-                  border: `1px solid ${editMode ? theme.border : theme.accent}`,
-                  borderRadius: '8px',
-                  padding: '8px 14px',
-                  minHeight: '40px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  boxShadow: editMode ? 'none' : '0 1px 2px rgba(0,0,0,0.08)'
-                }}
-                title={editMode ? 'Cancel editing' : 'Edit this job (change date, status, line items, etc.)'}
-              >
-                <Pencil size={16} />
-                {editMode ? 'Cancel' : 'Edit Job'}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <ClockIntoJobButton job={job} theme={theme} navigate={navigate} />
+                <button
+                  onClick={() => {
+                    if (!editMode) setCustomerSearchText(job.customer?.name || '')
+                    setEditMode(!editMode)
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    color: editMode ? theme.text : '#ffffff',
+                    backgroundColor: editMode ? theme.bgCardHover : theme.accent,
+                    border: `1px solid ${editMode ? theme.border : theme.accent}`,
+                    borderRadius: '8px',
+                    padding: '8px 14px',
+                    minHeight: '40px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    boxShadow: editMode ? 'none' : '0 1px 2px rgba(0,0,0,0.08)'
+                  }}
+                  title={editMode ? 'Cancel editing' : 'Edit this job (change date, status, line items, etc.)'}
+                >
+                  <Pencil size={16} />
+                  {editMode ? 'Cancel' : 'Edit Job'}
+                </button>
+              </div>
             </div>
 
             {editMode ? (
@@ -6844,5 +6847,124 @@ function JobDetailInner() {
         <JobCostingModal job={job} theme={theme} onClose={() => setShowCostingModal(false)} />
       )}
     </div>
+  )
+}
+
+// Clock-into-this-job helper. Renders one of three states:
+//  - "Clock In to this Job"  → no open time_clock entry; creates one with job_id set
+//  - "Clocked In · Clock Out" → already clocked into THIS job; closes the entry
+//  - "Switch to this Job"     → clocked into a different job; closes that entry then opens a new one tied here
+//
+// Solves Christopher's "in-progress job, can't log back in" complaint —
+// before this, there was no UI path on the job detail page to open or
+// transfer a time_clock entry to the current job.
+function ClockIntoJobButton({ job, theme }) {
+  const [busy, setBusy] = useState(false)
+  const [activeEntry, setActiveEntry] = useState(null)
+  const user = useStore(s => s.user)
+  const employees = useStore(s => s.employees)
+  const me = (employees || []).find(e => e.email === user?.email)
+  const companyId = useStore(s => s.companyId)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      if (!me?.id) return
+      const { data } = await supabase.from('time_clock')
+        .select('id, job_id, clock_in')
+        .eq('employee_id', me.id)
+        .is('clock_out', null)
+        .order('clock_in', { ascending: false })
+        .limit(1)
+      if (!cancelled) setActiveEntry(data?.[0] || null)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [me?.id, busy])
+
+  if (!me || !job?.id) return null
+  const isHereOpen = activeEntry && activeEntry.job_id === job.id
+  const isElsewhere = activeEntry && activeEntry.job_id !== job.id
+
+  const tryGetCoords = () => new Promise(resolve => {
+    if (!navigator.geolocation) return resolve({ lat: null, lng: null })
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve({ lat: null, lng: null }),
+      { timeout: 4000, maximumAge: 60000, enableHighAccuracy: false }
+    )
+  })
+
+  const clockOut = async (entryId) => {
+    const { lat, lng } = await tryGetCoords()
+    const out = new Date()
+    const ent = activeEntry
+    let totalHours = null
+    if (ent?.clock_in) totalHours = Math.round(((out - new Date(ent.clock_in)) / 36e5) * 100) / 100
+    await supabase.from('time_clock').update({
+      clock_out: out.toISOString(),
+      clock_out_lat: lat, clock_out_lng: lng,
+      ...(totalHours != null ? { total_hours: totalHours } : {}),
+    }).eq('id', entryId)
+  }
+
+  const clockIn = async () => {
+    const { lat, lng } = await tryGetCoords()
+    await supabase.from('time_clock').insert({
+      company_id: companyId,
+      employee_id: me.id,
+      job_id: job.id,
+      clock_in: new Date().toISOString(),
+      clock_in_lat: lat, clock_in_lng: lng,
+    })
+  }
+
+  const handleClick = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      if (isHereOpen) {
+        await clockOut(activeEntry.id)
+      } else if (isElsewhere) {
+        if (!confirm(`You're already clocked into job ${activeEntry.job_id}. Switch to this job? Your current entry will be closed.`)) { setBusy(false); return }
+        await clockOut(activeEntry.id)
+        await clockIn()
+      } else {
+        await clockIn()
+      }
+    } catch (e) {
+      alert('Clock action failed: ' + (e?.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const label = busy ? '...'
+    : isHereOpen ? 'Clock Out (this job)'
+    : isElsewhere ? 'Switch to this Job'
+    : 'Clock In to this Job'
+  const bg = isHereOpen ? '#c25a5a' : '#4a7c59'
+  return (
+    <button
+      onClick={handleClick}
+      disabled={busy}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '6px',
+        color: '#fff', backgroundColor: bg,
+        border: `1px solid ${bg}`,
+        borderRadius: '8px',
+        padding: '8px 14px',
+        minHeight: '40px',
+        fontSize: '14px',
+        fontWeight: '600',
+        cursor: busy ? 'wait' : 'pointer',
+        opacity: busy ? 0.7 : 1,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+      }}
+      title={isElsewhere ? 'You are clocked into a different job — clicking will close it and start a new entry here.' : ''}
+    >
+      <Clock size={16} />
+      {label}
+    </button>
   )
 }

@@ -488,36 +488,57 @@ export default function Payroll() {
   }
 
   // ── Employee Pay Calculations ────────────────────────────
+  // Hours are deduped per-day: time_clock is the AUTHORITATIVE workday
+  // total. time_log entries are job-level breakdowns of the SAME hours
+  // (a tech logs that they spent 4h on Job A and 4h on Job B during
+  // their 8h shift). Adding both inflated payroll on every overlap day
+  // — Alayda flagged it; verified 28 of 41 time_log rows overlapped a
+  // same-day time_clock row, double-counting the hours.
+  //
+  // Rule: for each (employee, day), use time_clock total if any
+  // time_clock entry exists. Otherwise fall back to the sum of time_log
+  // entries (covers older imports / setups where only time_log was used).
   const calculateEmployeeHours = (employeeId) => {
     const empEntries = timeEntries.filter(e => e.employee_id === employeeId)
     const empTimeLogs = timeLogEntries.filter(e => e.employee_id === employeeId)
     let regularHours = 0
     let overtimeHours = 0
 
-    // Group by week for overtime (combine time_clock + time_log)
-    const weeklyHours = {}
-    const addToWeek = (date, hours) => {
-      const weekStart = new Date(date)
-      weekStart.setDate(weekStart.getDate() - weekStart.getDay())
-      const weekKey = weekStart.toISOString().split('T')[0]
-      weeklyHours[weekKey] = (weeklyHours[weekKey] || 0) + hours
+    // Build per-(week × day) buckets so we can pick the right source per day.
+    const dayKey = (d) => new Date(d).toISOString().slice(0, 10)
+    const weekKey = (d) => {
+      const w = new Date(d)
+      w.setDate(w.getDate() - w.getDay())
+      return w.toISOString().slice(0, 10)
+    }
+    const dayMap = {}  // dayKey → { week, clockHours, logHours }
+    const ensureDay = (d) => {
+      const dk = dayKey(d)
+      if (!dayMap[dk]) dayMap[dk] = { week: weekKey(d), clockHours: 0, logHours: 0 }
+      return dayMap[dk]
     }
 
-    // time_clock entries
     empEntries.forEach(entry => {
       let hours = entry.total_hours
       if (!hours && entry.clock_in && entry.clock_out) {
         hours = Math.round((new Date(entry.clock_out) - new Date(entry.clock_in)) / 36e5 * 100) / 100
       }
-      if (!hours) return
-      addToWeek(new Date(entry.clock_in), hours)
+      if (!hours || !entry.clock_in) return
+      ensureDay(entry.clock_in).clockHours += hours
     })
-
-    // time_log entries (job-level hours)
     empTimeLogs.forEach(entry => {
       if (!entry.hours) return
-      const entryDate = new Date(entry.date || entry.clock_in_time || entry.created_at)
-      addToWeek(entryDate, entry.hours)
+      const dt = entry.date || entry.clock_in_time || entry.created_at
+      if (!dt) return
+      ensureDay(dt).logHours += entry.hours
+    })
+
+    // Per day: prefer time_clock when present (the authoritative workday),
+    // else fall back to time_log. Never sum both.
+    const weeklyHours = {}
+    Object.values(dayMap).forEach(({ week, clockHours, logHours }) => {
+      const hrs = clockHours > 0 ? clockHours : logHours
+      weeklyHours[week] = (weeklyHours[week] || 0) + hrs
     })
 
     const otThreshold = payrollConfig.overtime_threshold || 40
