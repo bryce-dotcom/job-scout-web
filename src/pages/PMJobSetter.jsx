@@ -2362,7 +2362,7 @@ export default function PMJobSetter() {
           <h1 style={{ fontSize: isMobile ? '20px' : '20px', fontWeight: '700', color: theme.text, margin: 0 }}>
             Job Board
           </h1>
-          <HelpBadge text="Drag job sections to the calendar to schedule work. Track progress across all jobs." />
+          <HelpBadge text="Single-click a job: open quick details (status, customer, reschedule).  Double-click: full job page.  Chevron icon: expand sections.  Drag a job onto the calendar to schedule." />
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           {/* View Toggle */}
@@ -4281,6 +4281,23 @@ export default function PMJobSetter() {
                   title="Reschedule without leaving the board"
                 >
                   <Calendar size={12} /> Reschedule
+                </button>
+                <button
+                  onClick={() => {
+                    const j = detailJob
+                    setDetailJob(null)
+                    setSelectedJob(j)
+                    setShowSectionModal(true)
+                  }}
+                  style={{
+                    padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                    backgroundColor: 'rgba(34,197,94,0.12)', color: '#15803d',
+                    border: '1px solid rgba(34,197,94,0.3)',
+                    borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                  }}
+                  title="Add a new section to this job"
+                >
+                  <Plus size={12} /> Add Section
                 </button>
                 <button
                   onClick={() => { setDetailJob(null); navigate(`/jobs/${detailJob.id}`) }}
