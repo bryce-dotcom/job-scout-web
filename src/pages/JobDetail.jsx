@@ -1865,14 +1865,23 @@ function JobDetailInner() {
   }
 
   const handleDeleteJob = async () => {
-    if (!confirm('Permanently delete this job and all its line items and sections?')) return
+    if (!confirm('Permanently delete this job and all its line items, sections, appointments, and invoices?')) return
     setSaving(true)
     // Delete or nullify related records before deleting the job (no CASCADE)
+    //
+    // Christopher reported that deleting a job leaves the assigned-team
+    // appointments on the calendar — the calendar reads from the
+    // `appointments` table, which had job_id but no cascade. Same
+    // problem for job_sections (sub-tasks) and verification_reports.
+    // Now wiping all of them.
     await Promise.all([
       supabase.from('time_log').update({ job_id: null }).eq('job_id', id),
       supabase.from('expenses').update({ job_id: null }).eq('job_id', id),
       supabase.from('invoices').delete().eq('job_id', id),
       supabase.from('utility_invoices').delete().eq('job_id', id),
+      supabase.from('appointments').delete().eq('job_id', id),         // calendar cleanup — Christopher's fix
+      supabase.from('job_sections').delete().eq('job_id', id),
+      supabase.from('verification_reports').delete().eq('job_id', id),
     ])
     const { error } = await supabase.from('jobs').delete().eq('id', id)
     setSaving(false)

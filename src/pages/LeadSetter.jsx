@@ -2120,10 +2120,29 @@ export default function LeadSetter() {
                   onClick={async () => {
                     if (!window.confirm('Delete this appointment? The lead will remain.')) return
                     try {
-                      await supabase.from('appointments').delete().eq('id', selectedEvent.id)
+                      // Tracy reported "I created a meeting for Cole and it is not
+                      // deleting even after refreshing." Hardened the cleanup:
+                      //  - delete the appointment row
+                      //  - clear EVERY back-pointer on the lead (appointment_id,
+                      //    appointment_time, edit_link, event_id) so the calendar
+                      //    can't reconstruct it from leftover lead fields
+                      //  - bust the store/IndexedDB cache so the next fetch is
+                      //    fresh and the deleted event doesn't ghost back
+                      const { error: delErr } = await supabase.from('appointments').delete().eq('id', selectedEvent.id)
+                      if (delErr) throw delErr
                       if (selectedEvent.lead_id) {
-                        await supabase.from('leads').update({ status: 'Contacted', appointment_time: null, appointment_id: null, updated_at: new Date().toISOString() }).eq('id', selectedEvent.lead_id)
+                        await supabase.from('leads').update({
+                          status: 'Contacted',
+                          appointment_time: null,
+                          appointment_id: null,
+                          edit_link: null,
+                          event_id: null,
+                          updated_at: new Date().toISOString(),
+                        }).eq('id', selectedEvent.lead_id)
                       }
+                      // Refresh global store appointments so other views (Job Board, etc.)
+                      // also drop the event immediately
+                      if (fetchAppointments) await fetchAppointments()
                       setShowEventModal(false); setSelectedEvent(null)
                       await fetchData()
                     } catch (err) { alert('Error: ' + err.message) }

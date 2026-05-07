@@ -135,6 +135,7 @@ export default function FieldScout() {
   // Payment collection
   const [paymentJob, setPaymentJob] = useState(null)
   const [paymentInvoice, setPaymentInvoice] = useState(null) // linked invoice for payment
+  const [portalLink, setPortalLink] = useState(null) // surfaced when popup was blocked so user can tap manually
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', reference: '', notes: '' })
   const [paymentSaving, setPaymentSaving] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
@@ -1017,13 +1018,28 @@ export default function FieldScout() {
     setStripeLoading(false)
   }
 
-  // Open portal for card/ACH payment — customer pays on their phone
+  // Open portal for card/ACH payment — customer pays on their phone.
+  //
+  // Cameron reported that this button "doesn't advance to the next screen"
+  // on his phone. Root cause: window.open(...) ran AFTER await calls, so
+  // mobile browsers stripped the user-gesture context and silently blocked
+  // the popup. He saw nothing happen and no error.
+  //
+  // Fix: open the window SYNCHRONOUSLY at the start of the click handler
+  // (an about:blank shell) so the popup blocker honors the gesture, then
+  // navigate that window to the real URL once the token is back. If the
+  // browser still blocks it, fall back to surfacing a tappable link
+  // inline so the user can manually open it.
   const handlePayWithPortal = async () => {
     if (!paymentInvoice) return
+    // Synchronous popup BEFORE any await — the only way mobile browsers
+    // honor the gesture and don't block.
+    let portalWindow = null
+    try { portalWindow = window.open('about:blank', '_blank') } catch { /* blocked */ }
     setStripeLoading(true)
+    setPortalLink(null)
     try {
-      // Create portal token for this invoice
-      const { data: portalToken } = await supabase
+      const { data: portalToken, error: tokenErr } = await supabase
         .from('customer_portal_tokens')
         .insert({
           document_type: 'invoice',
@@ -1035,13 +1051,26 @@ export default function FieldScout() {
         .select('token')
         .single()
 
-      if (portalToken?.token) {
-        const portalUrl = `https://jobscout.appsannex.com/portal/${portalToken.token}`
-        window.open(portalUrl, '_blank')
-        // Update invoice with portal token
-        await supabase.from('invoices').update({ portal_token: portalToken.token }).eq('id', paymentInvoice.id)
+      if (tokenErr || !portalToken?.token) {
+        if (portalWindow) try { portalWindow.close() } catch {}
+        alert('Failed to create payment link: ' + (tokenErr?.message || 'unknown'))
+        setStripeLoading(false)
+        return
       }
+
+      const portalUrl = `https://jobscout.appsannex.com/portal/${portalToken.token}`
+      // Navigate the pre-opened window to the real URL. If the popup was
+      // blocked despite the sync open, surface the link inline so the
+      // user can tap it (and optionally text/email it).
+      if (portalWindow && !portalWindow.closed) {
+        try { portalWindow.location.href = portalUrl } catch { /* blocked */ }
+      } else {
+        setPortalLink(portalUrl)
+      }
+      // Persist token on the invoice for resends + tracking
+      await supabase.from('invoices').update({ portal_token: portalToken.token }).eq('id', paymentInvoice.id)
     } catch (err) {
+      if (portalWindow) try { portalWindow.close() } catch {}
       alert('Failed to open payment page: ' + err.message)
     }
     setStripeLoading(false)
@@ -3427,9 +3456,38 @@ export default function FieldScout() {
                   <CreditCard size={20} />
                   Pay with Card or Bank
                 </button>
-                <p style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'center', margin: '0 0 20px', lineHeight: '1.4' }}>
+                <p style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'center', margin: '0 0 12px', lineHeight: '1.4' }}>
                   Opens secure payment page — hand phone to customer
                 </p>
+                {/* Fallback if the browser blocked the auto-popup. Cameron's
+                    bug: on mobile the new tab silently failed and he saw
+                    nothing happen. Now we surface the link inline so he
+                    can tap to open it OR text/email it. */}
+                {portalLink && (
+                  <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '10px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#15803d', marginBottom: '8px' }}>Payment page ready — tap to open or share:</div>
+                    <a
+                      href={portalLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: 'block', padding: '10px', backgroundColor: '#fff', border: '1px solid #d6cdb8', borderRadius: '8px', color: '#15803d', fontSize: '13px', textDecoration: 'underline', wordBreak: 'break-all', marginBottom: '8px' }}
+                    >{portalLink}</a>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {paymentJob?.customer?.phone && (
+                        <a
+                          href={`sms:${paymentJob.customer.phone.replace(/\D/g, '')}?body=${encodeURIComponent(`Hi ${paymentJob.customer.name || ''} — please pay your invoice here: ${portalLink}`)}`}
+                          style={{ flex: 1, padding: '10px', backgroundColor: '#3b82f6', color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
+                        >Text to Customer</a>
+                      )}
+                      {paymentJob?.customer?.email && (
+                        <a
+                          href={`mailto:${paymentJob.customer.email}?subject=${encodeURIComponent('Invoice payment link')}&body=${encodeURIComponent(`Please pay your invoice here:\n${portalLink}`)}`}
+                          style={{ flex: 1, padding: '10px', backgroundColor: '#16a34a', color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
+                        >Email to Customer</a>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Amount input */}
                 <div style={{ marginBottom: '16px' }}>

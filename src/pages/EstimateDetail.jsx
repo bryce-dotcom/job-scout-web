@@ -1830,7 +1830,16 @@ export default function EstimateDetail() {
     )
   }
 
-  const subtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
+  // Subtotal: prefer the sum of line items, but fall back to the quote's
+  // canonical quote_amount when there are no lines yet. Audit-driven
+  // estimates (Lenard / Zach) often store the $ on the quote row directly
+  // and never write line-item rows. Without this fallback, the estimate
+  // list page shows $X (from quote_amount) and the detail page shows $0
+  // (sum of zero lines) — Noah's "estimate pricing shows different on
+  // estimate page vs inside of estimate" complaint.
+  const lineSum = lineItems.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
+  const quoteAmt = parseFloat(estimate.quote_amount) || 0
+  const subtotal = lineSum > 0 ? lineSum : quoteAmt
   const discount = parseFloat(estimate.discount) || 0
   const incentive = parseFloat(estimate.utility_incentive) || 0
   const total = subtotal - discount
@@ -3794,6 +3803,7 @@ export default function EstimateDetail() {
         isOpen={showProductPicker}
         onClose={() => setShowProductPicker(false)}
         onSelect={handleProductSelect}
+        recentProductIds={lineItems.map(l => l.item_id).filter(Boolean)}
       />
 
       {/* Deposit / Approval Modal */}
