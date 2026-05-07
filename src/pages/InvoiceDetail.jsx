@@ -212,6 +212,44 @@ export default function InvoiceDetail() {
     setLoading(false)
   }
 
+  // Generate (or re-fetch) a hosted Stripe Payment Link for this
+  // invoice. Customers click the URL, pay via Stripe Checkout, the
+  // existing stripe-webhook records the payment automatically.
+  const [generatingLink, setGeneratingLink] = useState(false)
+  const sendStripePaymentLink = async () => {
+    setGeneratingLink(true)
+    try {
+      let url = invoice?.stripe_payment_link_url || null
+      if (!url) {
+        await supabase.auth.refreshSession()
+        const res = await supabase.functions.invoke('stripe-create-payment-link', {
+          body: { company_id: companyId, invoice_id: parseInt(id) },
+        })
+        if (res.error || res.data?.error) {
+          toast.error(res.data?.error || res.error?.message || 'Failed to create payment link')
+          setGeneratingLink(false)
+          return
+        }
+        url = res.data?.url
+        await fetchInvoiceData()
+      }
+      if (!url) {
+        toast.error('No payment link returned')
+        setGeneratingLink(false)
+        return
+      }
+      try {
+        await navigator.clipboard.writeText(url)
+        toast.success('Payment link copied — paste it to your customer or use Send to email it')
+      } catch {
+        toast.success('Payment link ready: ' + url)
+      }
+    } catch (err) {
+      toast.error(err.message || 'Failed')
+    }
+    setGeneratingLink(false)
+  }
+
   const chargeSavedCard = async () => {
     if (!selectedCardId) return
     setCharging(true)
@@ -1637,53 +1675,95 @@ export default function InvoiceDetail() {
               </div>
             ) : (
               <div>
-                {payments.map((payment) => (
-                  <div key={payment.id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '14px 20px',
-                    borderBottom: `1px solid ${theme.border}`
-                  }}>
-                    <div>
-                      <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
-                        {formatCurrency(payment.amount)}
-                      </p>
-                      <p style={{ fontSize: '12px', color: theme.textMuted }}>
-                        {formatDate(payment.date)} - {payment.method}
-                      </p>
+                {payments.map((payment) => {
+                  const refunded = parseFloat(payment.refunded_amount || 0)
+                  const refundable = parseFloat(payment.amount || 0) - refunded
+                  const canRefund = !!payment.stripe_payment_intent_id && refundable > 0.005
+                  const statusColor = payment.status === 'Refunded' || payment.status === 'Partially Refunded'
+                    ? { bg: 'rgba(239,68,68,0.12)', fg: '#b91c1c' }
+                    : payment.status === 'Completed'
+                      ? { bg: 'rgba(74,124,89,0.12)', fg: '#4a7c59' }
+                      : { bg: 'rgba(194,139,56,0.12)', fg: '#c28b38' }
+                  return (
+                    <div key={payment.id} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '14px 20px',
+                      borderBottom: `1px solid ${theme.border}`
+                    }}>
+                      <div>
+                        <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>
+                          {formatCurrency(payment.amount)}
+                          {refunded > 0 && (
+                            <span style={{ fontSize: 12, fontWeight: 500, color: '#b91c1c', marginLeft: 8 }}>
+                              − {formatCurrency(refunded)} refunded
+                            </span>
+                          )}
+                        </p>
+                        <p style={{ fontSize: '12px', color: theme.textMuted }}>
+                          {formatDate(payment.date)} - {payment.method}
+                          {payment.stripe_payment_intent_id && <span style={{ marginLeft: 6, opacity: 0.6 }}>· Stripe</span>}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          padding: '2px 8px', borderRadius: '12px',
+                          fontSize: '11px', fontWeight: '500',
+                          backgroundColor: statusColor.bg, color: statusColor.fg,
+                        }}>
+                          {payment.status}
+                        </span>
+                        {canRefund && (
+                          <button
+                            onClick={async () => {
+                              const reason = prompt(`Refund ${formatCurrency(refundable)} via Stripe?\n\nOptional: enter a reason (will be saved + sent to Stripe).`)
+                              if (reason === null) return
+                              try {
+                                await supabase.auth.refreshSession()
+                                const r = await supabase.functions.invoke('stripe-refund-payment', {
+                                  body: { company_id: companyId, payment_id: payment.id, reason: reason.trim() || null },
+                                })
+                                if (r.error || r.data?.error) {
+                                  toast.error(r.data?.error || r.error?.message || 'Refund failed')
+                                  return
+                                }
+                                toast.success(`Refund of ${formatCurrency(r.data.refunded_amount)} issued`)
+                                await fetchInvoiceData()
+                                await fetchInvoices()
+                              } catch (err) { toast.error(err.message || 'Refund failed') }
+                            }}
+                            disabled={saving}
+                            title={`Refund ${formatCurrency(refundable)} via Stripe`}
+                            style={{
+                              background: 'none', border: `1px solid #b91c1c33`,
+                              padding: '3px 8px', borderRadius: 6,
+                              cursor: saving ? 'not-allowed' : 'pointer',
+                              color: '#b91c1c', fontSize: 11, fontWeight: 600,
+                              display: 'flex', alignItems: 'center', gap: 3,
+                            }}
+                          >
+                            ↺ Refund
+                          </button>
+                        )}
+                        <button
+                          onClick={() => rescindPayment(payment)}
+                          disabled={saving}
+                          title="Rescind payment record (does NOT refund Stripe; for manual entries)"
+                          style={{
+                            background: 'none', border: 'none', padding: '4px',
+                            cursor: saving ? 'not-allowed' : 'pointer',
+                            color: theme.textMuted,
+                            opacity: saving ? 0.4 : 0.6,
+                            display: 'flex', alignItems: 'center'
+                          }}
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        fontSize: '11px',
-                        fontWeight: '500',
-                        backgroundColor: payment.status === 'Completed' ? 'rgba(74,124,89,0.12)' : 'rgba(194,139,56,0.12)',
-                        color: payment.status === 'Completed' ? '#4a7c59' : '#c28b38'
-                      }}>
-                        {payment.status}
-                      </span>
-                      <button
-                        onClick={() => rescindPayment(payment)}
-                        disabled={saving}
-                        title="Rescind payment"
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          padding: '4px',
-                          cursor: saving ? 'not-allowed' : 'pointer',
-                          color: theme.textMuted,
-                          opacity: saving ? 0.4 : 0.6,
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}
-                      >
-                        <RotateCcw size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -2059,6 +2139,15 @@ export default function InvoiceDetail() {
                       Charge Saved Card
                     </button>
                   )}
+                  <button
+                    onClick={sendStripePaymentLink}
+                    disabled={generatingLink}
+                    style={actionBtnStyle('#7c3aed', '#ffffff')}
+                    title={invoice.stripe_payment_link_url ? 'Copy existing payment link to clipboard' : 'Generate a one-click Stripe Payment Link the customer can pay via card or ACH'}
+                  >
+                    <Link2 size={18} />
+                    {generatingLink ? 'Generating…' : (invoice.stripe_payment_link_url ? 'Copy Payment Link' : 'Send Payment Link')}
+                  </button>
                   <button
                     onClick={markAsPaid}
                     disabled={saving}
