@@ -135,6 +135,7 @@ export default function SalesPipeline() {
   const [mobileDeliveryExpanded, setMobileDeliveryExpanded] = useState(false)
   const [pullDistance, setPullDistance] = useState(0)
   const [pullStartY, setPullStartY] = useState(0)
+  const [pullStartX, setPullStartX] = useState(0)
   const [isPulling, setIsPulling] = useState(false)
   const [touchedCardId, setTouchedCardId] = useState(null)
 
@@ -1408,16 +1409,28 @@ export default function SalesPipeline() {
           return { bg: 'rgba(90,99,73,0.08)', color: '#7d8a7f', border: `1px solid ${m.border}` }
         }
 
-        // Pull to refresh handlers
-        const handleTouchStart = (e) => { setPullStartY(e.touches[0].clientY) }
+        // Pull to refresh handlers — Bryce flagged the old threshold (70px)
+        // was firing accidentally during normal list scrolling. Now we
+        // require 40px before even SHOWING the indicator and 130px before
+        // actually triggering the refresh. Also bail if the user is
+        // mostly swiping sideways (kanban swipe between columns) so the
+        // refresh doesn't fire during horizontal navigation.
+        const handleTouchStart = (e) => {
+          setPullStartY(e.touches[0].clientY)
+          setPullStartX(e.touches[0].clientX)
+        }
         const handleTouchMove = (e) => {
           const scrollEl = e.currentTarget
           if (scrollEl.scrollTop > 0) return
-          const diff = e.touches[0].clientY - pullStartY
-          if (diff > 0) { setPullDistance(Math.min(diff, 100)); setIsPulling(true) }
+          const dy = e.touches[0].clientY - pullStartY
+          const dx = Math.abs(e.touches[0].clientX - (pullStartX || 0))
+          // Mostly horizontal? Bail.
+          if (dx > Math.max(20, dy)) return
+          // Need a clear downward intent before showing the indicator
+          if (dy > 40) { setPullDistance(Math.min(dy, 160)); setIsPulling(true) }
         }
         const handleTouchEnd = () => {
-          if (pullDistance > 70) { fetchPipelineLeads(); setRefreshing(true) }
+          if (pullDistance > 130) { fetchPipelineLeads(); setRefreshing(true) }
           setPullDistance(0); setIsPulling(false)
         }
 

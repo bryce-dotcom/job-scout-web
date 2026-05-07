@@ -404,6 +404,7 @@ export default function LenardUTRMP() {
 
   // Pull-to-refresh
   const [pullStartY, setPullStartY] = useState(0);
+  const [pullStartX, setPullStartX] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [isPulling, setIsPulling] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -2488,14 +2489,16 @@ export default function LenardUTRMP() {
   return (
     <div
       style={{ maxWidth: '480px', margin: '0 auto', background: T.bg, minHeight: '100vh', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: T.text, paddingBottom: '20px' }}
-      onTouchStart={e => setPullStartY(e.touches[0].clientY)}
+      onTouchStart={e => { setPullStartY(e.touches[0].clientY); setPullStartX(e.touches[0].clientX); }}
       onTouchMove={e => {
         if (e.currentTarget.scrollTop > 0) return;
-        const diff = e.touches[0].clientY - pullStartY;
-        if (diff > 0) { setPullDistance(Math.min(diff, 100)); setIsPulling(true); }
+        const dy = e.touches[0].clientY - pullStartY;
+        const dx = Math.abs(e.touches[0].clientX - (pullStartX || 0));
+        if (dx > Math.max(20, dy)) return;
+        if (dy > 40) { setPullDistance(Math.min(dy, 160)); setIsPulling(true); }
       }}
       onTouchEnd={() => {
-        if (pullDistance > 70) handlePullRefresh();
+        if (pullDistance > 130) handlePullRefresh();
         setPullDistance(0); setIsPulling(false);
       }}
     >

@@ -111,6 +111,7 @@ export default function NewLightingAudit() {
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
   const customers = useStore((state) => state.customers)
+  const leads = useStore((state) => state.leads)
   const employees = useStore((state) => state.employees)
   const products = useStore((state) => state.products)
   const fixtureTypes = useStore((state) => state.fixtureTypes)
@@ -241,19 +242,78 @@ export default function NewLightingAudit() {
     }
   }, [basicInfo.customer_id, customers])
 
-  // Filtered customer list for search
-  const filteredCustomers = customerSearch.trim()
+  // Filtered customer list for search.
+  //
+  // Also includes matching LEADS (Doug couldn't find Adagio Water Features
+  // because she's still a lead, not a customer). Leads are tagged with
+  // _isLead=true so the dropdown can show a "Lead — click to convert" badge,
+  // and selecting one auto-converts the lead → customer in the background
+  // before proceeding so the audit can use a real customer_id.
+  const term = customerSearch.trim().toLowerCase()
+  const matchingCustomers = term
     ? customers.filter(c =>
-        (c.name || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
-        (c.email || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
+        (c.name || '').toLowerCase().includes(term) ||
+        (c.email || '').toLowerCase().includes(term) ||
         (c.phone || '').includes(customerSearch) ||
-        (c.business_name || '').toLowerCase().includes(customerSearch.toLowerCase())
+        (c.business_name || '').toLowerCase().includes(term)
       )
     : customers
+  const matchingLeads = term
+    ? (leads || []).filter(l => {
+        // Only suggest leads NOT already converted to a customer
+        if (l.customer_id) return false
+        return (
+          (l.customer_name || '').toLowerCase().includes(term) ||
+          (l.business_name || '').toLowerCase().includes(term) ||
+          (l.email || '').toLowerCase().includes(term) ||
+          (l.phone || '').includes(customerSearch) ||
+          (l.address || '').toLowerCase().includes(term)
+        )
+      }).map(l => ({
+        _isLead: true,
+        _leadId: l.id,
+        id: `lead-${l.id}`,
+        name: l.business_name || l.customer_name || `Lead #${l.id}`,
+        email: l.email,
+        phone: l.phone,
+        address: l.address,
+        business_name: l.business_name,
+        _statusBadge: l.status,
+      }))
+    : []
+  const filteredCustomers = [...matchingCustomers, ...matchingLeads]
 
   const selectedCustomer = customers.find(c => c.id === parseInt(basicInfo.customer_id))
 
-  const handleSelectCustomer = (customer) => {
+  const handleSelectCustomer = async (customer) => {
+    // If user picked a LEAD, upgrade it to a real customer first so the
+    // audit has a customer_id to link to. The lead row stays put with
+    // converted_at + customer_id back-pointing to the new customer.
+    if (customer._isLead) {
+      const { data: newCust, error } = await supabase.from('customers').insert({
+        company_id: companyId,
+        name: (customer.name || '').trim(),
+        business_name: customer.business_name || null,
+        email: customer.email || null,
+        phone: customer.phone || null,
+        address: customer.address || null,
+        status: 'Active',
+      }).select().single()
+      if (error || !newCust) {
+        alert('Couldn\'t convert lead to customer: ' + (error?.message || 'unknown'))
+        return
+      }
+      // Back-link the lead so future searches don't suggest it again
+      await supabase.from('leads').update({
+        customer_id: newCust.id,
+        converted_at: new Date().toISOString(),
+      }).eq('id', customer._leadId)
+      // Also stamp the audit with the lead_id so we keep the lineage
+      setBasicInfo(prev => ({ ...prev, customer_id: newCust.id, lead_id: customer._leadId }))
+      setCustomerSearch(newCust.name || '')
+      setShowCustomerDropdown(false)
+      return
+    }
     setBasicInfo(prev => ({ ...prev, customer_id: customer.id }))
     setCustomerSearch(customer.name || '')
     setShowCustomerDropdown(false)
@@ -1006,7 +1066,7 @@ export default function NewLightingAudit() {
                     </button>
                     {filteredCustomers.length === 0 ? (
                       <div style={{ padding: '12px', color: theme.textMuted, fontSize: '13px', textAlign: 'center' }}>
-                        No customers found
+                        No customers or leads found
                       </div>
                     ) : (
                       filteredCustomers.slice(0, 20).map(c => (
@@ -1022,10 +1082,17 @@ export default function NewLightingAudit() {
                           onMouseOver={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover}
                           onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
-                          <div style={{ fontWeight: '500' }}>{c.name}</div>
-                          {(c.email || c.phone) && (
-                            <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                              {[c.email, c.phone].filter(Boolean).join(' · ')}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}>
+                            <span>{c.name}</span>
+                            {c._isLead && (
+                              <span style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', padding: '2px 6px', borderRadius: '8px', background: 'rgba(139,92,246,0.12)', color: '#7c3aed', border: '1px solid rgba(139,92,246,0.3)' }}>
+                                Lead{c._statusBadge ? ` · ${c._statusBadge}` : ''} — click to convert
+                              </span>
+                            )}
+                          </div>
+                          {(c.email || c.phone || c.address) && (
+                            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                              {[c.email, c.phone, c.address].filter(Boolean).join(' · ')}
                             </div>
                           )}
                         </button>
