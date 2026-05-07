@@ -869,6 +869,19 @@ export default function PMJobSetter() {
           // Other columns: show jobs with this status, but move future-dated ones to Scheduled
           if (j.status !== statusId) return false
           if (hasScheduledDate && !isTerminal) return false // this job goes to Scheduled instead
+
+          // Terminal columns (Completed/Verified/etc.): hide jobs whose
+          // start_date is meaningfully in the future. Tracy reported these
+          // were polluting the Completed view ("future jobs in completed
+          // jobs"). HCP imports + bulk recurring builds sometimes mark
+          // future jobs Complete by mistake; reroute those to Scheduled
+          // so the Completed column only shows truly-finished work.
+          if (isTerminal) {
+            const today = new Date(); today.setHours(0,0,0,0)
+            const oneWeekOut = new Date(today.getTime() + 7 * 86400000)
+            const startDt = j.start_date ? new Date(j.start_date) : null
+            if (startDt && startDt > oneWeekOut) return false
+          }
           return true
         }
       })

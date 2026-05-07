@@ -406,24 +406,33 @@ export default function CustomerPortal() {
             <div style={{ padding: '20px' }}>
               <h3 style={styles.sectionTitle}>Line Items</h3>
               <div style={{ borderTop: `1px solid ${theme.border}` }}>
-                {line_items.map((li, i) => (
-                  <div key={li.id || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px 0', borderBottom: `1px solid ${theme.border}` }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontWeight: '500', color: theme.text, margin: '0 0 2px', fontSize: '14px' }}>
-                        {li.item_name || li.item?.name || li.description || 'Item'}
-                      </p>
-                      {li.description && li.item_name && (
-                        <p style={{ color: theme.textMuted, fontSize: '13px', margin: 0 }}>{li.description}</p>
-                      )}
-                      <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0' }}>
-                        {li.quantity || 1} x {formatCurrency(li.price)}
+                {line_items.map((li, i) => {
+                  // Alayda flagged: portal showed "17 x $0.00" per line and only
+                  // a real total at the bottom. Cause: render used li.price /
+                  // li.total but the DB columns are unit_price / line_total
+                  // for some quote_lines (legacy schema). Fall through both.
+                  const lineTotal = parseFloat(li.total ?? li.line_total) || 0
+                  const qty = parseFloat(li.quantity) || 1
+                  const unit = parseFloat(li.unit_price ?? li.price) || (qty > 0 ? lineTotal / qty : 0)
+                  return (
+                    <div key={li.id || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px 0', borderBottom: `1px solid ${theme.border}` }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontWeight: '500', color: theme.text, margin: '0 0 2px', fontSize: '14px' }}>
+                          {li.item_name || li.item?.name || li.description || 'Item'}
+                        </p>
+                        {li.description && li.item_name && (
+                          <p style={{ color: theme.textMuted, fontSize: '13px', margin: 0 }}>{li.description}</p>
+                        )}
+                        <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0' }}>
+                          {qty} x {formatCurrency(unit)}
+                        </p>
+                      </div>
+                      <p style={{ fontWeight: '600', color: theme.text, margin: 0, fontSize: '14px', whiteSpace: 'nowrap', marginLeft: '16px' }}>
+                        {formatCurrency(lineTotal)}
                       </p>
                     </div>
-                    <p style={{ fontWeight: '600', color: theme.text, margin: 0, fontSize: '14px', whiteSpace: 'nowrap', marginLeft: '16px' }}>
-                      {formatCurrency(li.total)}
-                    </p>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
               {/* Total */}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '16px 0 0', marginTop: '4px' }}>
