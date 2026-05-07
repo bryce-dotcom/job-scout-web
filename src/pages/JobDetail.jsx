@@ -3090,6 +3090,13 @@ function JobDetailInner() {
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 360px', gap: '24px' }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Customer-vs-Utility split — only shown when there's a utility
+              incentive on the job. Built specifically because Tracy was
+              over-billing customers by including the utility's share on
+              the customer invoice. Now it's impossible to miss what each
+              party owes. */}
+          <CustomerUtilitySplit job={job} theme={theme} />
+
           {/* Customer Info */}
           <div style={{
             backgroundColor: theme.bgCard,
@@ -6966,5 +6973,100 @@ function ClockIntoJobButton({ job, theme }) {
       <Clock size={16} />
       {label}
     </button>
+  )
+}
+
+// Customer-owes vs Utility-owes breakdown panel.
+// Only shown when the job has a utility incentive. Built specifically
+// because Tracy was over-billing customers by including the utility's
+// share on the customer invoice — 12 customer invoices across HHH ended
+// up holding $394K of utility-side dollars. Now it's impossible to miss
+// what each party owes.
+function CustomerUtilitySplit({ job, theme }) {
+  const [customerInvoices, setCustomerInvoices] = useState([])
+  const [utilityInvoices, setUtilityInvoices] = useState([])
+  useEffect(() => {
+    if (!job?.id) return
+    let cancelled = false
+    Promise.all([
+      supabase.from('invoices').select('id, invoice_id, amount, payment_status').eq('job_id', job.id),
+      supabase.from('utility_invoices').select('id, utility_invoice_id, utility_name, amount, incentive_amount, payment_status, paid_at').eq('job_id', job.id),
+    ]).then(([invRes, utilRes]) => {
+      if (cancelled) return
+      setCustomerInvoices(invRes.data || [])
+      setUtilityInvoices(utilRes.data || [])
+    })
+    return () => { cancelled = true }
+  }, [job?.id])
+
+  if (!job) return null
+  const jobTotal = parseFloat(job.job_total) || 0
+  const utilityIncentive = parseFloat(job.utility_incentive) || 0
+  const discount = parseFloat(job.discount) || 0
+  if (utilityIncentive <= 0) return null
+
+  const customerOwes = Math.max(0, jobTotal - utilityIncentive - discount)
+  const fmt = (n) => '$' + (Math.round((n || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const customerInvoiced = (customerInvoices || []).reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+  const customerInvoiceFlag = customerOwes > 0 && Math.abs(customerInvoiced - customerOwes) > Math.max(50, customerOwes * 0.10)
+
+  return (
+    <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0 }}>Who Pays What</h3>
+        <span style={{ fontSize: '11px', color: theme.textMuted, padding: '2px 8px', background: theme.bg, borderRadius: '12px', border: `1px solid ${theme.border}` }}>Utility-incentive job</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '14px' }}>
+        <div style={{ padding: '14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: '700', textTransform: 'uppercase', marginBottom: '4px' }}>Customer Pays</div>
+          <div style={{ fontSize: '20px', fontWeight: '700', color: '#15803d' }}>{fmt(customerOwes)}</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>job_total minus utility minus discount</div>
+        </div>
+        <div style={{ padding: '14px', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: '#3b82f6', fontWeight: '700', textTransform: 'uppercase', marginBottom: '4px' }}>Utility Pays</div>
+          <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af' }}>{fmt(utilityIncentive)}</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>incentive rebate from utility</div>
+        </div>
+        <div style={{ padding: '14px', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '700', textTransform: 'uppercase', marginBottom: '4px' }}>Total Job Value</div>
+          <div style={{ fontSize: '20px', fontWeight: '700', color: theme.text }}>{fmt(jobTotal)}</div>
+          {discount > 0 && <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>after {fmt(discount)} discount</div>}
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+        <div>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, marginBottom: '6px' }}>Customer Invoice(s)</div>
+          {customerInvoices.length === 0 ? (
+            <div style={{ fontSize: '12px', color: theme.textMuted, padding: '10px', background: theme.bg, borderRadius: '8px', textAlign: 'center' }}>None yet</div>
+          ) : customerInvoices.map(i => (
+            <div key={i.id} style={{ padding: '8px 10px', background: theme.bg, borderRadius: '8px', marginBottom: '6px', fontSize: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: theme.text }}>{i.invoice_id || `inv#${i.id}`}</span>
+              <span style={{ fontWeight: '600' }}>{fmt(i.amount)} <span style={{ color: theme.textMuted, marginLeft: '4px' }}>· {i.payment_status}</span></span>
+            </div>
+          ))}
+          {customerInvoiceFlag && (
+            <div style={{ marginTop: '8px', padding: '10px 12px', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: '8px', color: '#92700c', fontSize: '12px' }}>
+              <strong>Mismatch:</strong> Customer is invoiced {fmt(customerInvoiced)}, but should be ~{fmt(customerOwes)}. Diff {fmt(Math.abs(customerInvoiced - customerOwes))}.
+            </div>
+          )}
+        </div>
+        <div>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, marginBottom: '6px' }}>Utility Invoice(s)</div>
+          {utilityInvoices.length === 0 ? (
+            <div style={{ fontSize: '12px', color: theme.textMuted, padding: '10px', background: theme.bg, borderRadius: '8px', textAlign: 'center' }}>None yet</div>
+          ) : utilityInvoices.map(u => (
+            <div key={u.id} style={{ padding: '8px 10px', background: theme.bg, borderRadius: '8px', marginBottom: '6px', fontSize: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: theme.text }}>{u.utility_invoice_id || `util#${u.id}`}{u.utility_name ? ' · ' + u.utility_name : ''}</span>
+                <span style={{ fontWeight: '600' }}>{fmt(u.incentive_amount || u.amount)} <span style={{ color: u.payment_status === 'Paid' ? '#16a34a' : '#d4940a', marginLeft: '4px' }}>· {u.payment_status}</span></span>
+              </div>
+              {u.payment_status !== 'Paid' && (
+                <div style={{ fontSize: '10px', color: '#d4940a', marginTop: '4px' }}>Utility has not paid us yet — follow up if overdue</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }

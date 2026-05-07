@@ -10,6 +10,7 @@ import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
 import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 
 // Light theme fallback
 const defaultTheme = {
@@ -32,6 +33,15 @@ export default function InvoiceDetail() {
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
+  const employees = useStore((state) => state.employees)
+  // Determine if the current user is allowed to edit invoice TOTALS.
+  // Office/bookkeeper roles (Tracy) historically lowered totals to record
+  // partial payments — that's how MFCP and 12 other invoices ended up
+  // misclassified ($394K of utility-side dollars sitting on customer
+  // invoices). Lock the amount field for non-admins; they can still
+  // record payments via the Payment modal.
+  const currentEmployee = (employees || []).find(e => e.email === user?.email)
+  const canEditAmount = checkAdmin(currentEmployee)
   const fetchInvoices = useStore((state) => state.fetchInvoices)
   const settings = useStore((state) => state.settings)
   const getSettingValue = useStore((state) => state.getSettingValue)
@@ -2072,8 +2082,10 @@ export default function InvoiceDetail() {
                 </button>
               )}
 
-              {/* Edit button — only if not locked and not currently editing */}
-              {!invoice.is_locked && !isEditing && (
+              {/* Edit button — only if not locked, not editing, AND user
+                  has admin access. Office-role users can still record
+                  payments but can't change the totals. */}
+              {!invoice.is_locked && !isEditing && canEditAmount && (
                 <button onClick={startEditing} style={actionBtnStyle(theme.accentBg, theme.accent)}>
                   <Pencil size={18} />
                   Edit Invoice
