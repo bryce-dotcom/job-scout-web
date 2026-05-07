@@ -158,6 +158,9 @@ export default function Books() {
   const [editingCategoryId, setEditingCategoryId] = useState(null)
   const [editingCategoryTax, setEditingCategoryTax] = useState('')
 
+  // Stripe merchant summary (volume + balance + payouts)
+  const [merchantSummary, setMerchantSummary] = useState(null)
+
   useEffect(() => {
     if (companyId) fetchAllBooksData()
   }, [companyId])
@@ -171,9 +174,19 @@ export default function Books() {
       fetchAssets(),
       fetchLiabilities(),
       fetchConnectedAccounts(),
-      fetchPlaidTransactions()
+      fetchPlaidTransactions(),
+      fetchMerchantSummary(),
     ])
     setLoading(false)
+  }
+
+  const fetchMerchantSummary = async () => {
+    try {
+      const { data } = await supabase.functions.invoke('stripe-merchant-summary', {
+        body: { company_id: companyId, days: 30 },
+      })
+      if (data && !data.error) setMerchantSummary(data)
+    } catch (e) { /* silent — Stripe might not be configured */ }
   }
 
   const fetchBankAccounts = async () => {
@@ -521,8 +534,8 @@ export default function Books() {
         toast.success(`Synced ${plaidAdded} Plaid txns, ${plaidCategorized} categorized; Stripe ${stripeImported} payouts${stripeBalance}`)
       }
 
-      // Refresh the bank_accounts list so the Stripe row appears
-      await fetchBankAccounts()
+      // Refresh the bank_accounts list + merchant summary
+      await Promise.all([fetchBankAccounts(), fetchMerchantSummary()])
     } catch (e) {
       toast.error('Sync failed: ' + e.message)
     }
@@ -1017,6 +1030,82 @@ export default function Books() {
           ))}
         </div>
       </div>
+
+      {/* Merchant Summary — Stripe flow at a glance, visible on every tab */}
+      {merchantSummary?.configured && (() => {
+        const m = merchantSummary
+        const fmtMoney = (n) => `$${(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        const tile = {
+          flex: '1 1 140px', minWidth: 140,
+          padding: '10px 12px', borderRadius: 10,
+          backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+        }
+        const lbl = { fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }
+        const val = { fontSize: 18, fontWeight: 700, color: theme.text }
+        return (
+          <div style={{
+            marginBottom: 20, padding: 14, borderRadius: 12,
+            backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  display: 'inline-flex', width: 28, height: 28, borderRadius: 7,
+                  backgroundColor: '#635bff', color: '#fff',
+                  alignItems: 'center', justifyContent: 'center',
+                  fontSize: 13, fontWeight: 800, letterSpacing: 0.3,
+                }}>S</span>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>Stripe Merchant — last {m.window_days} days</div>
+                  <div style={{ fontSize: 11, color: theme.textMuted }}>
+                    {m.last_synced ? `Synced ${new Date(m.last_synced).toLocaleString()}` : 'Not yet synced'}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+              <div style={tile}>
+                <div style={lbl}>Volume Processed</div>
+                <div style={val}>{fmtMoney(m.charges.gross)}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>{m.charges.count} charges</div>
+              </div>
+              <div style={tile}>
+                <div style={lbl}>Refunds Issued</div>
+                <div style={{ ...val, color: m.refunds.total > 0 ? '#b91c1c' : theme.text }}>
+                  {m.refunds.total > 0 ? '−' : ''}{fmtMoney(m.refunds.total)}
+                </div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>{m.refunds.count} refunds</div>
+              </div>
+              <div style={tile}>
+                <div style={lbl}>Net Collected</div>
+                <div style={{ ...val, color: '#15803d' }}>{fmtMoney(m.charges.net)}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>after refunds</div>
+              </div>
+              <div style={tile}>
+                <div style={lbl}>In Stripe Now</div>
+                <div style={val}>{fmtMoney(m.total_in_stripe)}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                  {fmtMoney(m.available)} avail · {fmtMoney(m.pending)} pending
+                </div>
+              </div>
+              <div style={tile}>
+                <div style={lbl}>Paid to Bank</div>
+                <div style={{ ...val, color: '#5a6349' }}>{fmtMoney(m.payouts.total)}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>{m.payouts.count} payouts</div>
+              </div>
+              <div style={tile}>
+                <div style={lbl}>Last Payout</div>
+                <div style={val}>
+                  {m.payouts.last_amount != null ? fmtMoney(m.payouts.last_amount) : '—'}
+                </div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                  {m.payouts.last_date ? new Date(m.payouts.last_date + 'T12:00').toLocaleDateString() : 'No payouts yet'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ════════════════════ OVERVIEW TAB ════════════════════ */}
       {activeTab === 'overview' && (
