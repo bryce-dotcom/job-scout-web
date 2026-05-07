@@ -551,6 +551,14 @@ export default function CustomerDetail() {
 
   // ── Statement Generator ──────────────────────────────────
   const generateStatement = async () => {
+    // Tracy reported "I click Generate Statement and nothing happens."
+    // Same root cause as Cameron's invoice button: window.open at the
+    // end fires AFTER an await chain (jspdf dynamic import) which strips
+    // the user-gesture context and the popup gets silently blocked.
+    // Fix: open about:blank synchronously inside the click handler so
+    // the gesture is honored, then navigate it once the PDF is ready.
+    let pdfWindow = null
+    try { pdfWindow = window.open('about:blank', '_blank') } catch { /* blocked */ }
     const { jsPDF } = await import('jspdf')
     const doc = new jsPDF()
     const pageWidth = doc.internal.pageSize.getWidth()
@@ -719,10 +727,27 @@ export default function CustomerDetail() {
     doc.setTextColor(balance > 0 ? 220 : 34, balance > 0 ? 50 : 160, balance > 0 ? 50 : 60)
     doc.text(currency(balance), rightEdge, y, { align: 'right' })
 
-    // Open in new tab
+    // Open in new tab — navigate the pre-opened window if we have one
+    // (popup-blocker workaround). Fall back to a fresh window.open if
+    // the pre-open was blocked entirely.
     const blob = doc.output('blob')
     const url = URL.createObjectURL(blob)
-    window.open(url, '_blank')
+    if (pdfWindow && !pdfWindow.closed) {
+      try { pdfWindow.location.href = url } catch { window.open(url, '_blank') }
+    } else {
+      const opened = window.open(url, '_blank')
+      if (!opened) {
+        // Popup blocked — fall back to triggering a download so the user
+        // at least gets the PDF.
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `statement-${(customer.business_name || customer.name || 'customer').replace(/[^a-z0-9]+/gi, '-')}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        alert('Statement downloaded — your browser blocked opening it in a new tab.')
+      }
+    }
   }
 
   const tabs = [

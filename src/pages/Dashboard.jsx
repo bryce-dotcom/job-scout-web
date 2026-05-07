@@ -58,7 +58,8 @@ const STAGE_COLORS = { 'New': '#3b82f6', 'Contacted': '#8b5cf6', 'Scheduled': '#
 
 // All available metric card definitions
 const METRIC_DEFS = [
-  { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Total $ value of jobs created this month — covers both estimate-approval-becomes-job AND fresh jobs added directly. Counts every job whose created_at is in the current month, regardless of status. Pair with Completed Jobs (delivery side).' },
+  { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Total $ value of jobs WON this month — counts every job whose created_at falls in the current month, regardless of current status. "Won" means the deal entered the work queue (estimate approved or job created directly). Pair with MTD Delivered for the delivery side.' },
+  { id: 'mtdDelivered', label: 'MTD Delivered', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Total $ value of jobs DELIVERED this month — sums job_total for every job whose status moved into a delivered category (Completed, Verified Complete, Invoiced, etc.) this month. A deal can be Won in one month and Delivered in another, so this and MTD Sales Won are intentionally separate.' },
   { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads', hint: 'Leads currently in the pipeline (not Won, Lost, or Closed). These are prospects being worked.' },
   { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs', hint: 'Jobs that are Scheduled, In Progress, or Chillin. Does not include Completed or Archived.' },
   { id: 'pendingInvoices', label: 'Pending Invoices', icon: Receipt, color: null, nav: '/invoices', hint: 'Invoices sent but not yet paid. The dollar amount is what customers owe you (accounts receivable).' },
@@ -78,17 +79,18 @@ const ALERT_DEFS = [
   { id: 'fleetPM', label: 'Fleet PM Overdue', icon: Truck, color: '#d4940a', bg: 'rgba(244,185,66,0.15)' },
   { id: 'overdueInvoices', label: 'Overdue Invoices (30+ days)', icon: Receipt, color: '#c25a5a', bg: 'rgba(194,90,90,0.1)' },
   { id: 'staleEstimates', label: 'Stale Estimates ($5k+, sent 7+ days ago)', icon: AlertTriangle, color: '#d4940a', bg: 'rgba(244,185,66,0.15)' },
+  { id: 'pendingTimeOff', label: 'Pending Time-Off Requests', icon: Calendar, color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' },
   { id: 'todaysAppts', label: 'Today\'s Appointments', icon: Calendar, color: '#5a9bd5', bg: 'rgba(90,155,213,0.15)' },
 ]
 
 // Default preferences
 const DEFAULT_PREFS = {
-  metrics: ['mtdSalesWon', 'completedJobs', 'activeLeads', 'openJobs', 'pendingInvoices', 'mtdRevenue', 'mtdDeposits', 'mtdExpenses'],
+  metrics: ['mtdSalesWon', 'mtdDelivered', 'activeLeads', 'openJobs', 'pendingInvoices', 'mtdRevenue', 'mtdDeposits', 'mtdExpenses'],
   pipelineDisplay: 'count', // 'count' | 'dollars' | 'both'
   rollingDays: 90,
   showRolling: true,
   sections: { pipeline: true, whosWorking: true, schedule: true, activity: true, alerts: true, quickActions: true },
-  alerts: { lowStock: true, fleetPM: true, overdueInvoices: true, staleEstimates: true, todaysAppts: true },
+  alerts: { lowStock: true, fleetPM: true, overdueInvoices: true, staleEstimates: true, pendingTimeOff: true, todaysAppts: true },
 }
 
 const PREFS_KEY = 'jobscout_dashboard_prefs'
@@ -134,7 +136,24 @@ export default function Dashboard() {
   const [activeTimeLog, setActiveTimeLog] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [prefs, setPrefs] = useState(loadPrefs)
+  const [pendingTimeOff, setPendingTimeOff] = useState([])
   const settingsRef = useRef(null)
+
+  // Pending time-off requests — Alayda asked "How can I see requests for
+  // time off?" The Payroll page already had them but they were not
+  // surfaced anywhere prominent. Now they pop as a dashboard alert badge
+  // so HR/owners see pending requests on landing.
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    supabase
+      .from('time_off_requests')
+      .select('id, employee_id, start_date, end_date, status, reason')
+      .eq('company_id', companyId)
+      .eq('status', 'pending')
+      .then(({ data }) => { if (!cancelled) setPendingTimeOff(data || []) })
+    return () => { cancelled = true }
+  }, [companyId])
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -241,6 +260,7 @@ export default function Dashboard() {
   const mtdSalesWon = sumJobTotal(mtdWonJobs)
   const mtdDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, firstOfMonth, null)
   const completedJobsMTD = mtdDeliveredJobs.length
+  const mtdDelivered = sumJobTotal(mtdDeliveredJobs)
 
   // Avg-job-value uses ALL delivered jobs (not just MTD)
   const allDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, null, null)
@@ -274,7 +294,9 @@ export default function Dashboard() {
   const ytdWonJobs = wonJobsInRange(jobs, firstOfYear, null)
   const ytdSalesWon = sumJobTotal(ytdWonJobs)
   const ytdDeposits = depositsYTD
-  const completedJobsYTD = deliveredJobsInRange(jobs, jobStatuses, firstOfYear, null).length
+  const ytdDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, firstOfYear, null)
+  const completedJobsYTD = ytdDeliveredJobs.length
+  const ytdDelivered = sumJobTotal(ytdDeliveredJobs)
 
   // ── Build revenue/expense breakdown descriptions ──
   const revenueParts = []
@@ -291,7 +313,8 @@ export default function Dashboard() {
 
   // Metric values map — subtitles explain exactly where each number comes from
   const metricValues = {
-    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonJobs.length} job${mtdWonJobs.length !== 1 ? 's' : ''} created this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won' },
+    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonJobs.length} job${mtdWonJobs.length !== 1 ? 's' : ''} won this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won' },
+    mtdDelivered: { value: formatCurrency(mtdDelivered), subtitle: `${mtdDeliveredJobs.length} job${mtdDeliveredJobs.length !== 1 ? 's' : ''} delivered this month`, ytdValue: formatCurrency(ytdDelivered), ytdLabel: 'YTD Delivered' },
     activeLeads: { value: activeLeads, subtitle: 'Leads in pipeline (not Won/Lost)' },
     openJobs: { value: openJobs, subtitle: 'Scheduled + In Progress + Chillin' },
     pendingInvoices: { value: pendingInvoices, subtitle: `${formatCurrency(accountsReceivable)} owed (from Invoices)` },
@@ -355,6 +378,7 @@ export default function Dashboard() {
     fleetPM: { items: fleet.filter(f => f.next_pm_due && new Date(f.next_pm_due) < today), nav: '/fleet' },
     overdueInvoices: { items: invoices.filter(i => { if (i.payment_status !== 'Pending') return false; return Math.floor((today - new Date(i.created_at)) / 86400000) > 30 }), nav: '/invoices' },
     staleEstimates: { items: staleEstimates, nav: '/estimates' },
+    pendingTimeOff: { items: pendingTimeOff, nav: '/payroll' },
     todaysAppts: { items: appointments.filter(a => a.start_time?.startsWith(todayStr)), nav: '/appointments' },
   }
   const visibleAlerts = ALERT_DEFS.filter(a => prefs.alerts[a.id] && alertData[a.id].items.length > 0)
@@ -745,9 +769,9 @@ export default function Dashboard() {
               marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${theme.border}`,
               display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', flexWrap: 'wrap', gap: isMobile ? '12px' : '16px'
             }}>
-              <div>
+              <div title={`Average monthly delivered revenue. Sums the last ${prefs.rollingDays} days of completed jobs and normalizes to a 30-day rate. Not the same as the Pipeline page's raw last-30-days total.`}>
                 <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>
-                  {prefs.rollingDays}-Day Rolling Avg
+                  Avg monthly delivered &middot; last {prefs.rollingDays}d
                 </div>
                 <div style={{ fontSize: isMobile ? '20px' : '22px', fontWeight: '700', color: '#16a34a' }}>
                   {formatCurrency(rollingAvgPerMonth)}<span style={{ fontSize: '13px', fontWeight: '400', color: theme.textMuted }}>/mo</span>

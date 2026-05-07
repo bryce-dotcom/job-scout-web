@@ -211,6 +211,7 @@ function JobDetailInner() {
   const [jobTimeEntries, setJobTimeEntries] = useState([])
   const [localIncentive, setLocalIncentive] = useState('')
   const [localDiscount, setLocalDiscount] = useState('')
+  const [discountMode, setDiscountMode] = useState('$')  // '$' = flat, '%' = percent of subtotal
 
   // Section state
   const [sections, setSections] = useState([])
@@ -3853,22 +3854,51 @@ function JobDetailInner() {
               </>
             )}
 
-            {/* Discount — always visible */}
+            {/* Discount — always visible. Christopher requested a percent
+                option in addition to the existing flat-dollar input. The
+                $ / % toggle below the input lets you type "10" with %
+                selected and the actual dollar discount is computed live
+                from job subtotal × percent / 100. The DB still stores a
+                flat dollar value (job.discount) so reports stay simple. */}
             <div style={{
               padding: '16px 20px',
               backgroundColor: 'rgba(220,38,38,0.06)',
               borderTop: `1px solid ${theme.border}`
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <span style={{ color: '#dc2626', fontSize: '14px', fontWeight: '600' }}>Discount</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ color: '#dc2626', fontSize: '14px' }}>$</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {/* $ / % mode toggle */}
+                  <div style={{ display: 'flex', border: `1px solid rgba(220,38,38,0.25)`, borderRadius: '6px', overflow: 'hidden' }}>
+                    {['$', '%'].map(m => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setDiscountMode(m)}
+                        style={{
+                          padding: '4px 10px',
+                          fontSize: '13px',
+                          fontWeight: '700',
+                          border: 'none',
+                          backgroundColor: discountMode === m ? '#dc2626' : 'transparent',
+                          color: discountMode === m ? '#fff' : '#dc2626',
+                          cursor: 'pointer',
+                        }}
+                      >{m}</button>
+                    ))}
+                  </div>
                   <input
                     type="number"
                     value={localDiscount}
                     onChange={(e) => setLocalDiscount(e.target.value)}
                     onBlur={async () => {
-                      const val = parseFloat(localDiscount) || 0
+                      const raw = parseFloat(localDiscount) || 0
+                      // Convert percent → flat dollars before saving
+                      const lineSum = (job.line_items || lineItems || []).reduce((s, l) => s + (parseFloat(l.line_total) || 0), 0)
+                      const subtotalForPct = lineSum > 0 ? lineSum : (parseFloat(job.job_total) || 0) + raw  // approximate when no lines
+                      const val = discountMode === '%'
+                        ? Math.round(subtotalForPct * (raw / 100) * 100) / 100
+                        : raw
                       if (val !== (parseFloat(job.discount) || 0)) {
                         await supabase.from('jobs').update({
                           discount: val,
@@ -3877,7 +3907,7 @@ function JobDetailInner() {
                         setJob(prev => ({ ...prev, discount: val }))
                       }
                     }}
-                    placeholder="0.00"
+                    placeholder={discountMode === '%' ? '0' : '0.00'}
                     style={{
                       width: '110px',
                       padding: '6px 10px',
