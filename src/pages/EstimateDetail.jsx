@@ -2466,21 +2466,23 @@ export default function EstimateDetail() {
               </div>
             ) : (
               <>
-                {/* Line items table — wraps in horizontal scroll on mobile
-                    since the 8-column grid (20+2fr+1.5fr+80+100+90+100+72 ≈
-                    800px minimum) can't compress into a phone viewport. The
-                    scroll container pinned to the parent's width keeps the
-                    rest of the page from overflowing. */}
-                <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
-                <div style={{ minWidth: isMobile ? '780px' : 'auto' }}>
-                {/* Table Header */}
+                {/* Line items table.
+                    Desktop: 8 columns (chevron, item, description, qty,
+                    price, discount, total, delete).
+                    Mobile: 6 slim columns — drop Description + Discount,
+                    both still visible in the expanded row. Fits a 360px
+                    phone viewport without horizontal scroll. */}
+                {(() => null)()}
+                {/* Header */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '20px 2fr 1.5fr 80px 100px 90px 100px 72px',
-                  gap: '12px',
-                  padding: '12px 20px',
+                  gridTemplateColumns: isMobile
+                    ? '20px 1fr 56px 70px 80px 32px'
+                    : '20px 2fr 1.5fr 80px 100px 90px 100px 72px',
+                  gap: isMobile ? '6px' : '12px',
+                  padding: isMobile ? '10px 12px' : '12px 20px',
                   backgroundColor: theme.accentBg,
-                  fontSize: '12px',
+                  fontSize: '11px',
                   fontWeight: '600',
                   color: theme.textMuted,
                   textTransform: 'uppercase',
@@ -2488,10 +2490,10 @@ export default function EstimateDetail() {
                 }}>
                   <div></div>
                   <div>Item</div>
-                  <div>Description</div>
+                  {!isMobile && <div>Description</div>}
                   <div style={{ textAlign: 'right' }}>Qty</div>
                   <div style={{ textAlign: 'right' }}>Price</div>
-                  <div style={{ textAlign: 'right' }}>Discount</div>
+                  {!isMobile && <div style={{ textAlign: 'right' }}>Disc.</div>}
                   <div style={{ textAlign: 'right' }}>Total</div>
                   <div></div>
                 </div>
@@ -2508,9 +2510,11 @@ export default function EstimateDetail() {
                         onClick={() => setExpandedLineId(isExpanded ? null : line.id)}
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: '20px 2fr 1.5fr 80px 100px 90px 100px 72px',
-                          gap: '12px',
-                          padding: '14px 20px',
+                          gridTemplateColumns: isMobile
+                            ? '20px 1fr 56px 70px 80px 32px'
+                            : '20px 2fr 1.5fr 80px 100px 90px 100px 72px',
+                          gap: isMobile ? '6px' : '12px',
+                          padding: isMobile ? '10px 12px' : '14px 20px',
                           alignItems: 'center',
                           cursor: 'pointer'
                         }}
@@ -2528,19 +2532,21 @@ export default function EstimateDetail() {
                             </span>
                           )}
                         </div>
-                        <div>
-                          <p style={{
-                            fontSize: '12px',
-                            color: (line.description || line.item?.description) ? theme.textSecondary : theme.textMuted,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            margin: 0,
-                            fontStyle: (line.description || line.item?.description) ? 'normal' : 'italic'
-                          }}>
-                            {line.description || line.item?.description || 'Click to add description'}
-                          </p>
-                        </div>
+                        {!isMobile && (
+                          <div>
+                            <p style={{
+                              fontSize: '12px',
+                              color: (line.description || line.item?.description) ? theme.textSecondary : theme.textMuted,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              margin: 0,
+                              fontStyle: (line.description || line.item?.description) ? 'normal' : 'italic'
+                            }}>
+                              {line.description || line.item?.description || 'Click to add description'}
+                            </p>
+                          </div>
+                        )}
                         <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                           <input
                             type="number"
@@ -2589,32 +2595,34 @@ export default function EstimateDetail() {
                             }}
                           />
                         </div>
-                        <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            defaultValue={line.discount || ''}
-                            placeholder="0"
-                            key={`disc-${line.id}-${line.discount}`}
-                            onBlur={(e) => {
-                              const val = parseFloat(e.target.value) || 0
-                              if (val !== (parseFloat(line.discount) || 0)) handleDiscountChange(line, val)
-                            }}
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                            style={{
-                              width: '70px',
-                              padding: '4px 6px',
-                              textAlign: 'right',
-                              fontSize: '14px',
-                              color: (line.discount > 0) ? '#ef4444' : theme.textMuted,
-                              border: `1px solid ${theme.border}`,
-                              borderRadius: '6px',
-                              backgroundColor: theme.bgCard,
-                              outline: 'none'
-                            }}
-                          />
-                        </div>
+                        {!isMobile && (
+                          <div style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              defaultValue={line.discount || ''}
+                              placeholder="0"
+                              key={`disc-${line.id}-${line.discount}`}
+                              onBlur={(e) => {
+                                const val = parseFloat(e.target.value) || 0
+                                if (val !== (parseFloat(line.discount) || 0)) handleDiscountChange(line, val)
+                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                              style={{
+                                width: '70px',
+                                padding: '4px 6px',
+                                textAlign: 'right',
+                                fontSize: '14px',
+                                color: (line.discount > 0) ? '#ef4444' : theme.textMuted,
+                                border: `1px solid ${theme.border}`,
+                                borderRadius: '6px',
+                                backgroundColor: theme.bgCard,
+                                outline: 'none'
+                              }}
+                            />
+                          </div>
+                        )}
                         <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: '500', color: theme.text }}>
                           {formatCurrency(line.line_total)}
                         </div>
@@ -2865,8 +2873,6 @@ export default function EstimateDetail() {
                     </div>
                   )
                 })}
-                </div>{/* close minWidth wrapper (line items mobile scroll) */}
-                </div>{/* close overflowX wrapper */}
               </>
             )}
           </div>
