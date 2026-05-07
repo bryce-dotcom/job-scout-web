@@ -76,6 +76,7 @@ export default function Login() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [inviteCode, setInviteCode] = useState('')
+  const [tosAccepted, setTosAccepted] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -161,9 +162,20 @@ export default function Login() {
       return
     }
 
+    if (!tosAccepted) {
+      setError('Please accept the Terms of Service and Privacy Policy to continue')
+      setLoading(false)
+      return
+    }
+
     try {
       const res = await supabase.functions.invoke('beta-signup', {
-        body: { email, password, companyName, inviteCode: inviteCode.trim().toUpperCase() }
+        body: {
+          email, password, companyName,
+          inviteCode: inviteCode.trim().toUpperCase(),
+          tosAccepted: true,
+          tosVersion: 'v1-2026-05-07',
+        }
       })
 
       if (res.error) {
@@ -464,12 +476,41 @@ export default function Login() {
                   <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={6} placeholder="Confirm password" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
                 </div>
 
-                <button type="submit" disabled={loading} style={{
-                  width: '100%', padding: '14px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '600',
-                  cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, transition: 'all 0.15s ease'
+                <label style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
+                  marginBottom: 18, padding: 12, borderRadius: 10,
+                  backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+                  cursor: 'pointer', userSelect: 'none',
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={tosAccepted}
+                    onChange={(e) => setTosAccepted(e.target.checked)}
+                    style={{ marginTop: 3, accentColor: theme.accent, cursor: 'pointer', width: 16, height: 16, flexShrink: 0 }}
+                    required
+                  />
+                  <span style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.5 }}>
+                    I agree to the{' '}
+                    <a href="/terms" target="_blank" rel="noreferrer" style={{ color: theme.accent, fontWeight: 600 }}>
+                      Terms of Service
+                    </a>{' '}
+                    and{' '}
+                    <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: theme.accent, fontWeight: 600 }}>
+                      Privacy Policy
+                    </a>
+                    .
+                  </span>
+                </label>
+
+                <button type="submit" disabled={loading || !tosAccepted} style={{
+                  width: '100%', padding: '14px',
+                  backgroundColor: tosAccepted ? theme.accent : theme.textMuted,
+                  color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '600',
+                  cursor: (loading || !tosAccepted) ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.7 : 1, transition: 'all 0.15s ease'
                 }}
-                  onMouseEnter={(e) => { if (!loading) e.currentTarget.style.backgroundColor = theme.accentHover }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = theme.accent }}
+                  onMouseEnter={(e) => { if (!loading && tosAccepted) e.currentTarget.style.backgroundColor = theme.accentHover }}
+                  onMouseLeave={(e) => { if (tosAccepted) e.currentTarget.style.backgroundColor = theme.accent }}
                 >
                   {loading ? 'Creating your account...' : 'Create Account & Start Trial'}
                 </button>

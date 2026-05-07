@@ -5,6 +5,8 @@ import { supabase } from './lib/supabase'
 import { useStore } from './lib/store'
 import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
+import Terms from './pages/Terms'
+import Privacy from './pages/Privacy'
 import Onboarding from './pages/Onboarding'
 import Employees from './pages/Employees'
 import Customers from './pages/Customers'
@@ -325,6 +327,8 @@ function App() {
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
 
         {/* Onboarding (protected, full-screen, no layout) */}
         <Route path="/onboarding" element={

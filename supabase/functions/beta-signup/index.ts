@@ -17,12 +17,23 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const { email, password, companyName, inviteCode } = await req.json();
+    const { email, password, companyName, inviteCode, tosAccepted, tosVersion } = await req.json();
 
     if (!email || !password || !companyName || !inviteCode) {
       return new Response(JSON.stringify({ error: 'All fields are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    // Require explicit ToS / Privacy Policy acceptance.
+    if (!tosAccepted) {
+      return new Response(JSON.stringify({ error: 'You must accept the Terms of Service and Privacy Policy to continue' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Capture caller IP for the acceptance audit record.
+    const acceptedIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || req.headers.get('cf-connecting-ip')
+      || null;
 
     // 1. Validate invite code
     const { data: code, error: codeError } = await supabase
@@ -58,13 +69,16 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 3. Create company
+    // 3. Create company (with ToS acceptance stamped)
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .insert({
         company_name: companyName,
         owner_email: email,
-        setup_complete: false
+        setup_complete: false,
+        tos_accepted_at: new Date().toISOString(),
+        tos_version: tosVersion || 'v1-2026-05-07',
+        tos_accepted_ip: acceptedIp,
       })
       .select()
       .single();
