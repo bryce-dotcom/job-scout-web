@@ -694,11 +694,19 @@ export default function LeadSetter() {
 
   // Save commission settings
   const saveSettings = async () => {
+    // Bridge the old boolean (commission_requires_quote) to the canonical
+    // rule field (setter_qualification_rule). Payroll + the DB trigger that
+    // promotes pending→earned both key off the rule field. Keeping the
+    // boolean in sync so legacy code/queries that still read it stay correct.
+    const ruleFromBool = settingsForm.commission_requires_quote
+      ? 'quote_created'
+      : 'appointment_set'
     const { error } = await supabase
       .from('companies')
       .update({
         setter_pay_per_appointment: parseFloat(settingsForm.setter_pay_per_appointment) || 0,
         commission_requires_quote: settingsForm.commission_requires_quote,
+        setter_qualification_rule: ruleFromBool,
         source_pay_per_lead: parseFloat(settingsForm.source_pay_per_lead) || 0
       })
       .eq('id', companyId)
@@ -709,6 +717,7 @@ export default function LeadSetter() {
         ...company,
         setter_pay_per_appointment: parseFloat(settingsForm.setter_pay_per_appointment) || 0,
         commission_requires_quote: settingsForm.commission_requires_quote,
+        setter_qualification_rule: ruleFromBool,
         source_pay_per_lead: parseFloat(settingsForm.source_pay_per_lead) || 0
       })
       setShowSettingsModal(false)

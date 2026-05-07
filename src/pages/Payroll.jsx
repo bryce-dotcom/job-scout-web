@@ -758,12 +758,34 @@ export default function Payroll() {
   */
 
   // Lead commissions (appointment setting, sourcing)
+  //
+  // Setter rule from companies.setter_qualification_rule:
+  //   'appointment_set' (legacy default) — pay every appointment_set row
+  //                                        regardless of payment_status
+  //   'quote_created'                    — only pay appointment_set rows
+  //                                        whose payment_status='earned'
+  //                                        (a trigger flips them when a
+  //                                        quote is created on the lead)
+  //
+  // Lead-source commissions are unaffected — they always pay on the row.
+  const setterRule = company?.setter_qualification_rule || 'appointment_set'
   const calculateLeadCommissions = (employeeId) => {
     const empCommissions = leadCommissions.filter(c => c.employee_id === employeeId)
-    const total = empCommissions.reduce((sum, c) => sum + (c.amount || 0), 0)
-    const apptCount = empCommissions.filter(c => c.commission_type === 'appointment_set').length
-    const sourceCount = empCommissions.filter(c => c.commission_type === 'lead_source').length
-    return { total, apptCount, sourceCount, details: empCommissions }
+    const setterRows = empCommissions.filter(c => c.commission_type === 'appointment_set')
+    const sourceRows = empCommissions.filter(c => c.commission_type === 'lead_source')
+    const earnedSetter = setterRule === 'quote_created'
+      ? setterRows.filter(c => c.payment_status === 'earned')
+      : setterRows
+    const pendingSetter = setterRule === 'quote_created'
+      ? setterRows.filter(c => c.payment_status === 'pending')
+      : []
+    const total = earnedSetter.reduce((s, c) => s + (c.amount || 0), 0)
+                + sourceRows.reduce((s, c) => s + (c.amount || 0), 0)
+    const apptCount = earnedSetter.length
+    const pendingCount = pendingSetter.length
+    const pendingAmount = pendingSetter.reduce((s, c) => s + (c.amount || 0), 0)
+    const sourceCount = sourceRows.length
+    return { total, apptCount, sourceCount, details: [...earnedSetter, ...sourceRows], pendingCount, pendingAmount }
   }
 
   // Efficiency bonuses: allotted hours - actual hours, weighted split between crew.

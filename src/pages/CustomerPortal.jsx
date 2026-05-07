@@ -68,6 +68,12 @@ export default function CustomerPortal() {
 
   // Payment
   const [paying, setPaying] = useState(false)
+  // Customer-controlled partial payment (Tracy's installment-plan feedback).
+  // When toggled on, the customer types whatever amount they're paying THIS
+  // time — no need for the rep to lower the invoice total before sending
+  // the link. Defaults off so the buttons still say "Pay $X.XX" full balance.
+  const [usePartial, setUsePartial] = useState(false)
+  const [partialAmount, setPartialAmount] = useState('')
 
   const fetchDocument = async () => {
     try {
@@ -507,7 +513,12 @@ export default function CustomerPortal() {
           {((isEstimate && isApproved && depositRequired && !depositPaid) ||
             (isInvoice && !isFullyPaid && balanceDue > 0)) && payment_config && (
             (() => {
-              const payAmt = isInvoice ? balanceDue : parseFloat(doc.deposit_required)
+              const fullAmt = isInvoice ? balanceDue : parseFloat(doc.deposit_required)
+              // For invoices only: if customer chose "pay a custom amount",
+              // use that. Otherwise pay full. Estimate deposits are fixed.
+              const parsedPartial = parseFloat(partialAmount) || 0
+              const partialActive = isInvoice && usePartial && parsedPartial > 0 && parsedPartial <= fullAmt
+              const payAmt = partialActive ? parsedPartial : fullAmt
               const payType = isInvoice ? 'invoice_payment' : 'estimate_deposit'
               const hasAnyMethod = payment_config.stripe_enabled || payment_config.paypal_enabled
                 || payment_config.bank_enabled || payment_config.wisetack_enabled
@@ -536,6 +547,61 @@ export default function CustomerPortal() {
                         lineHeight: '1.5'
                       }}>
                         {preferredPaymentNote.replace('{cc_fee_percent}', ccFeePercent)}
+                      </div>
+                    )}
+
+                    {/* Partial-payment toggle (invoices only). Lets the
+                        customer pay an installment without forcing the rep
+                        to lower the invoice total first. */}
+                    {isInvoice && fullAmt > 0 && (
+                      <div style={{
+                        padding: '12px 14px',
+                        backgroundColor: theme.bg,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: '10px',
+                        marginBottom: '14px',
+                      }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={usePartial}
+                            onChange={(e) => { setUsePartial(e.target.checked); if (!e.target.checked) setPartialAmount('') }}
+                            style={{ width: '18px', height: '18px' }}
+                          />
+                          <span style={{ fontSize: '14px', color: theme.text, fontWeight: 500 }}>Pay a partial amount</span>
+                        </label>
+                        {usePartial && (
+                          <div style={{ marginTop: '10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '16px', color: theme.textMuted, fontWeight: 600 }}>$</span>
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="0.01"
+                                min="0"
+                                max={fullAmt}
+                                value={partialAmount}
+                                onChange={(e) => setPartialAmount(e.target.value)}
+                                placeholder={fullAmt.toFixed(2)}
+                                style={{
+                                  flex: 1,
+                                  padding: '10px 12px',
+                                  fontSize: '16px',
+                                  border: `1px solid ${theme.border}`,
+                                  borderRadius: '8px',
+                                  backgroundColor: '#fff',
+                                  color: theme.text,
+                                  outline: 'none',
+                                }}
+                              />
+                            </div>
+                            <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0' }}>
+                              Balance remaining: {formatCurrency(fullAmt)}. {parsedPartial > 0 && parsedPartial <= fullAmt
+                                ? `After this payment: ${formatCurrency(fullAmt - parsedPartial)} due.`
+                                : parsedPartial > fullAmt ? 'Amount exceeds balance — please reduce.' : ''}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
 
