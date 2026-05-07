@@ -1,0 +1,13 @@
+require('dotenv').config()
+const { createClient } = require('@supabase/supabase-js')
+const s = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+;(async () => {
+  const { data } = await s.from('plaid_transactions')
+    .select('date, amount, name, merchant_name, plaid_transaction_id, plaid_category, pending')
+    .eq('company_id', 3)
+    .like('plaid_transaction_id', 'stripe_%')
+    .order('date', { ascending: false })
+    .limit(10)
+  console.log('Stripe-sourced Books transactions:')
+  console.table(data)
+})()

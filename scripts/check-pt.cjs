@@ -1,0 +1,10 @@
+require('dotenv').config()
+const { createClient } = require('@supabase/supabase-js')
+const s = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+;(async () => {
+  const { data, error } = await s.from('plaid_transactions').select('*').eq('source_system', 'stripe').limit(3)
+  if (error) console.log('err:', error)
+  console.log('rows:', data?.length)
+  if (data?.[0]) console.log('keys:', Object.keys(data[0]))
+  console.log(data)
+})()

@@ -7,10 +7,17 @@
     {
       "path": "/api/cron/drain-migrations",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/stripe-sync-books",
+      "schedule": "0 */6 * * *"
     }
   ],
   "functions": {
     "api/cron/drain-migrations.js": {
+      "maxDuration": 300
+    },
+    "api/cron/stripe-sync-books.js": {
       "maxDuration": 300
     }
   }

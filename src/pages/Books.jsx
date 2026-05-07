@@ -500,14 +500,29 @@ export default function Books() {
   const handleSync = async () => {
     setSyncing(true)
     try {
-      const result = await syncPlaidTransactions()
-      if (result?.error) {
-        toast.error(result.error)
+      // Run Plaid + Stripe in parallel — both populate Books.
+      const [plaid, stripe] = await Promise.all([
+        syncPlaidTransactions().catch(e => ({ error: e.message })),
+        supabase.functions.invoke('stripe-sync-books', { body: { company_id: companyId } })
+          .then(r => r.data || { error: r.error?.message })
+          .catch(e => ({ error: e.message })),
+      ])
+
+      const plaidAdded = plaid?.sync?.total_added || 0
+      const plaidCategorized = plaid?.categorized?.categorized || 0
+      const stripeImported = stripe?.payouts_imported || 0
+      const stripeBalance = stripe?.total_balance != null ? `, Stripe balance $${stripe.total_balance.toFixed(2)}` : ''
+
+      if (plaid?.error && stripe?.error && !stripe?.skipped) {
+        toast.error(`Both syncs failed: Plaid ${plaid.error}; Stripe ${stripe.error}`)
+      } else if (plaid?.error) {
+        toast.error('Plaid sync failed: ' + plaid.error + (stripeImported ? ` (Stripe ok — ${stripeImported} payouts)` : ''))
       } else {
-        const added = result?.sync?.total_added || 0
-        const categorized = result?.categorized?.categorized || 0
-        toast.success(`Synced ${added} transactions, categorized ${categorized}`)
+        toast.success(`Synced ${plaidAdded} Plaid txns, ${plaidCategorized} categorized; Stripe ${stripeImported} payouts${stripeBalance}`)
       }
+
+      // Refresh the bank_accounts list so the Stripe row appears
+      await fetchBankAccounts()
     } catch (e) {
       toast.error('Sync failed: ' + e.message)
     }
