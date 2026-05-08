@@ -505,6 +505,19 @@ export default function CustomerPortal() {
           </div>
         )}
 
+        {/* Customer ↔ rep conversation (estimate only). Lets the customer
+            ask questions or negotiate directly through the portal link
+            instead of starting a separate email thread the rep never sees. */}
+        {isEstimate && (
+          <PortalConversation
+            token={token}
+            customerName={customer?.business_name || customer?.name || ''}
+            customerEmail={customer?.email || ''}
+            theme={theme}
+            isMobile={isMobile}
+          />
+        )}
+
         {/* Action buttons */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
           {/* Estimate: Approve button */}
@@ -991,6 +1004,191 @@ const styles = {
     animation: 'spin 0.8s linear infinite',
     margin: '0 auto',
   },
+}
+
+// ---- PortalConversation ----
+// Two-way thread for the customer. Polls for new messages from the rep
+// every 30s and lets the customer type a reply that lands in the rep's
+// EstimateConversation panel inside the app.
+function PortalConversation({ token, customerName, customerEmail, theme, isMobile }) {
+  const [messages, setMessages] = useState([])
+  const [draft, setDraft] = useState('')
+  const [name, setName] = useState(customerName || '')
+  const [email, setEmail] = useState(customerEmail || '')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const [opened, setOpened] = useState(false)
+
+  const load = async () => {
+    try {
+      const data = await invokeEdgeFunction('customer-portal-message', { token, action: 'list' })
+      setMessages(data?.messages || [])
+    } catch (err) {
+      // Quiet failure — non-critical
+      console.warn('[PortalConversation] list failed:', err.message)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, 30_000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  const send = async () => {
+    if (!draft.trim()) return
+    setSending(true)
+    setError('')
+    try {
+      await invokeEdgeFunction('customer-portal-message', {
+        token,
+        body: draft.trim(),
+        from_name: name || undefined,
+        from_email: email || undefined,
+      })
+      setDraft('')
+      await load()
+    } catch (err) {
+      setError(err.message || 'Could not send your message. Please try again.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const visibleCount = messages.length
+  const cardStyle = {
+    backgroundColor: theme.bgCard,
+    border: `1px solid ${theme.border}`,
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+  }
+
+  return (
+    <div style={cardStyle}>
+      <button
+        onClick={() => setOpened((v) => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+          padding: '14px 18px', border: 'none', background: 'transparent',
+          cursor: 'pointer', textAlign: 'left',
+          borderBottom: opened ? `1px solid ${theme.border}` : 'none',
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>Questions or comments?</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>
+            {visibleCount > 0
+              ? `${visibleCount} message${visibleCount === 1 ? '' : 's'} with our team — tap to open the conversation`
+              : 'Send a message to our team and we\'ll get right back to you.'}
+          </div>
+        </div>
+        <span style={{ color: theme.textMuted, fontSize: 18 }}>{opened ? '−' : '+'}</span>
+      </button>
+
+      {opened && (
+        <div style={{ padding: '0 0 14px' }}>
+          {messages.length > 0 && (
+            <div style={{ maxHeight: isMobile ? 280 : 360, overflowY: 'auto', padding: '12px 16px' }}>
+              {messages.map((m) => {
+                const fromCustomer = m.from_role === 'customer'
+                const fromSystem = m.from_role === 'system'
+                const align = fromCustomer ? 'flex-end' : 'flex-start'
+                const bg = fromCustomer
+                  ? 'rgba(90,99,73,0.10)'
+                  : fromSystem
+                    ? theme.bg
+                    : 'rgba(59,130,246,0.08)'
+                const labelColor = fromCustomer ? theme.accent : fromSystem ? theme.textMuted : '#1d4ed8'
+                return (
+                  <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: align, marginBottom: 10 }}>
+                    <div style={{
+                      maxWidth: '90%',
+                      padding: '10px 12px',
+                      backgroundColor: bg,
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: 10,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: labelColor, textTransform: 'uppercase', marginBottom: 4 }}>
+                        {fromSystem ? 'System' : (m.from_name || (fromCustomer ? 'You' : 'Our team'))}
+                        <span style={{ marginLeft: 8, color: theme.textMuted, fontWeight: 400, textTransform: 'none' }}>
+                          {new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {m.subject && (
+                        <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 4 }}>{m.subject}</div>
+                      )}
+                      <div style={{ fontSize: 13, color: theme.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <div style={{ padding: '10px 16px 0' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your name"
+                style={{
+                  flex: 1, minWidth: 140,
+                  padding: 10, fontSize: 16,
+                  border: `1px solid ${theme.border}`, borderRadius: 8,
+                  color: theme.text, WebkitTextFillColor: theme.text,
+                  backgroundColor: theme.bg, boxSizing: 'border-box',
+                }}
+              />
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Your email"
+                type="email"
+                style={{
+                  flex: 1, minWidth: 140,
+                  padding: 10, fontSize: 16,
+                  border: `1px solid ${theme.border}`, borderRadius: 8,
+                  color: theme.text, WebkitTextFillColor: theme.text,
+                  backgroundColor: theme.bg, boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Type your message…"
+              rows={3}
+              style={{
+                width: '100%', padding: 10, fontSize: 16,
+                border: `1px solid ${theme.border}`, borderRadius: 8,
+                color: theme.text, WebkitTextFillColor: theme.text,
+                backgroundColor: theme.bg, boxSizing: 'border-box',
+                resize: 'vertical', fontFamily: 'inherit',
+              }}
+            />
+            {error && <div style={{ marginTop: 6, fontSize: 13, color: theme.error }}>{error}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <button
+                onClick={send}
+                disabled={!draft.trim() || sending}
+                style={{
+                  padding: '10px 18px', borderRadius: 8,
+                  backgroundColor: theme.accent, color: '#fff',
+                  border: 'none', cursor: !draft.trim() || sending ? 'not-allowed' : 'pointer',
+                  opacity: !draft.trim() || sending ? 0.6 : 1,
+                  fontSize: 14, fontWeight: 600, minHeight: 44,
+                }}
+              >
+                {sending ? 'Sending…' : 'Send message'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // Inject keyframe animation for spinner

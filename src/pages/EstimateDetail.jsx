@@ -16,6 +16,7 @@ import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
 import SignedProposalCard from '../components/SignedProposalCard'
 import EmailDeliveryBadge from '../components/EmailDeliveryBadge'
+import EstimateConversation from '../components/EstimateConversation'
 import { buildDefaultTerms, DEFAULT_DOWN_PAYMENT_LABEL } from '../components/proposal/formalProposalDefaults'
 import FormalTermsEditor from '../components/proposal/FormalTermsEditor'
 import useSmartBack from '../lib/useSmartBack'
@@ -91,6 +92,7 @@ function EstimateDetailInner() {
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
+  const currentEmployee = useStore((state) => state.currentEmployee)
   const products = useStore((state) => state.products)
   const employees = useStore((state) => state.employees)
   const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
@@ -1563,38 +1565,48 @@ function EstimateDetailInner() {
       const buObject = getBusinessUnitObject()
       const presMode = estimate.settings_overrides?.presentation_mode || 'pdf'
 
-      // Only the PDF presentation mode needs a physical PDF attachment.
-      // Interactive and formal modes use the portal link, no attachment.
-      if (presMode === 'pdf') {
-        // Verify the existing pdf_url actually exists in storage — if the
-        // file was deleted or the path is stale, regenerate instead of
-        // passing a dead reference to the edge function.
-        let needNewPdf = !estimate.pdf_url
-        if (estimate.pdf_url) {
-          const { data: existsCheck } = await supabase.storage
-            .from('project-documents')
-            .createSignedUrl(estimate.pdf_url, 60)
-          if (!existsCheck?.signedUrl) needNewPdf = true
-        }
+      // Always generate + upload a snapshot PDF of what the customer
+      // received on this send, regardless of presentation mode. Reps
+      // were complaining (Doug + Noah) that interactive / AI-estimator
+      // sends had no PDF on file — they couldn't tell what the
+      // customer was actually looking at. Now every send leaves a
+      // permanent paper trail in `sent_snapshot_pdf_path`.
+      //
+      // For presentation_mode='pdf' we still also write the path to
+      // `pdf_url` so the existing send-estimate edge function attaches
+      // it as an email attachment.
+      let snapshotPdfPath = null
+      try {
+        const effectiveSettings = getEffectiveSettings()
+        const pdfBlob = await generateEstimatePdf({
+          estimate,
+          lineItems,
+          company,
+          settings: effectiveSettings,
+          layout: effectiveSettings.pdf_layout || 'email',
+          businessUnit: buObject,
+        })
+        const fileName = `estimates/${companyId}/${estimate.quote_id || estimate.id}_${Date.now()}.pdf`
+        const { error: upErr } = await supabase.storage
+          .from('project-documents')
+          .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true })
+        if (upErr) throw new Error('PDF upload failed: ' + upErr.message)
+        snapshotPdfPath = fileName
 
-        if (needNewPdf) {
-          const effectiveSettings = getEffectiveSettings()
-          const pdfBlob = await generateEstimatePdf({
-            estimate,
-            lineItems,
-            company,
-            settings: effectiveSettings,
-            layout: effectiveSettings.pdf_layout || 'email',
-            businessUnit: buObject
-          })
-          const fileName = `estimates/${companyId}/${estimate.quote_id || estimate.id}_${Date.now()}.pdf`
-          const { error: upErr } = await supabase.storage
-            .from('project-documents')
-            .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true })
-          if (upErr) throw new Error('PDF upload failed: ' + upErr.message)
-          await updateQuote(id, { pdf_url: fileName })
+        const updates = {
+          sent_snapshot_pdf_path: fileName,
+          sent_snapshot_pdf_at: new Date().toISOString(),
+        }
+        // PDF mode also uses the same file as the email attachment.
+        if (presMode === 'pdf') {
+          updates.pdf_url = fileName
           estimate.pdf_url = fileName
         }
+        await updateQuote(id, updates)
+      } catch (snapErr) {
+        // Don't block the send — the email can still go out without a
+        // snapshot. Surface a console warning so we know it failed.
+        console.warn('[EstimateDetail] proposal snapshot failed:', snapErr)
       }
 
       // Create portal token (new token every send so we can revoke old ones later)
@@ -1705,6 +1717,49 @@ function EstimateDetailInner() {
         email_clicked_at: null,
         updated_at: new Date().toISOString()
       })
+
+      // Archive the actual email + portal link into the conversation
+      // thread so the rep can always answer "what did the customer get?".
+      // Best-effort: never let a logging failure break the send flow.
+      try {
+        const subjectLine = sendSubject || `Estimate ${estimate.quote_id || `#${estimate.id}`} from ${company?.company_name || ''}`.trim()
+        const senderName = currentEmployee?.name || company?.company_name || 'JobScout'
+        const senderEmail = currentEmployee?.email || buObject?.email || company?.owner_email || null
+        const bodyLines = [
+          `Sent to: ${sendEmail}`,
+          portalUrl ? `Portal link: ${portalUrl}` : null,
+          presMode ? `Presentation mode: ${presMode}` : null,
+          estimate.pdf_url ? `Proposal PDF attached: ${estimate.pdf_url}` : null,
+          sendAttachments.length > 0 ? `Extra attachments: ${sendAttachments.map(a => a.name).join(', ')}` : null,
+          '',
+          `Subtotal: $${subtotalCalc.toFixed(2)}`,
+          discountCalc ? `Discount: -$${discountCalc.toFixed(2)}` : null,
+          incentiveCalc ? `Utility incentive: -$${incentiveCalc.toFixed(2)}` : null,
+          `Contract total: $${contractTotal.toFixed(2)}`,
+          incentiveCalc ? `Net after incentive: $${netAfterIncentive.toFixed(2)}` : null,
+          dpAmount ? `${dpLabel}: $${dpAmount.toFixed(2)}` : null,
+        ].filter(Boolean)
+        await supabase.from('estimate_messages').insert({
+          quote_id: estimate.id,
+          company_id: companyId,
+          from_role: 'system',
+          from_name: senderName,
+          from_email: senderEmail,
+          to_email: sendEmail,
+          channel: 'email',
+          subject: subjectLine,
+          body: bodyLines.join('\n'),
+          metadata: {
+            portal_url: portalUrl,
+            pdf_storage_path: estimate.pdf_url || null,
+            presentation_mode: presMode,
+            email_id: sendData?.emailId || null,
+            sent_by_employee_id: currentEmployee?.id || null,
+          },
+        })
+      } catch (logErr) {
+        console.warn('[EstimateDetail] failed to archive sent email into thread:', logErr)
+      }
 
       toast.success('Estimate sent successfully!')
       setShowSendModal(false)
@@ -1979,6 +2034,31 @@ function EstimateDetailInner() {
           >
             <Settings size={18} />
           </button>
+          {(estimate.sent_snapshot_pdf_path || estimate.pdf_url) && (
+            <button
+              onClick={async () => {
+                const path = estimate.sent_snapshot_pdf_path || estimate.pdf_url
+                try {
+                  const { data, error: signErr } = await supabase.storage
+                    .from('project-documents')
+                    .createSignedUrl(path, 60 * 5)
+                  if (signErr || !data?.signedUrl) {
+                    toast.error('Snapshot PDF not found in storage')
+                    return
+                  }
+                  window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+                } catch (err) {
+                  toast.error('Could not open snapshot: ' + err.message)
+                }
+              }}
+              title={estimate.sent_snapshot_pdf_at
+                ? `Snapshot of what was sent on ${new Date(estimate.sent_snapshot_pdf_at).toLocaleString()}`
+                : 'Open the saved proposal PDF'}
+              style={{ padding: '8px 14px', backgroundColor: theme.bgCard, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' }}
+            >
+              <Eye size={16} /> View what customer received
+            </button>
+          )}
           <button
             onClick={handleSendToSetter}
             style={{ padding: '8px 14px', backgroundColor: '#dbeafe', color: '#1d4ed8', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' }}
@@ -1999,6 +2079,19 @@ function EstimateDetailInner() {
 
       {/* Email delivery tracking (same tracker used on invoices) */}
       <EmailDeliveryBadge record={estimate} theme={theme} />
+
+      {/* Conversation: thread of every email that went out + customer
+          replies through the portal + rep replies + internal notes.
+          Sits at the top so reps stop wondering "what did I send?"
+          and "did the customer say anything?". */}
+      <EstimateConversation
+        quoteId={estimate.id}
+        companyId={companyId}
+        currentEmployee={currentEmployee}
+        customerInfo={customerInfo}
+        theme={theme}
+        isMobile={isMobile}
+      />
 
       {/* Flow context - only when linked to a lead */}
       {estimate.lead_id && estimate.lead?.status && (
