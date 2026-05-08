@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useMemo, lazy, Suspense, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -50,7 +50,41 @@ const DEFAULT_SETTINGS = {
   estimate_message: ''
 }
 
-export default function EstimateDetail() {
+// Per-route ErrorBoundary so a render-time crash inside the estimate UI shows
+// a recoverable error card instead of the white "blank page" Tracy reported
+// when navigating into estimates from the customer card. Mirrors the pattern
+// used in JobDetail.jsx.
+class EstimateDetailErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error) { return { error } }
+  componentDidCatch(error, info) {
+    // Surface to console / Sentry will pick this up automatically too.
+    console.error('[EstimateDetail] render crash:', error, info)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '24px', maxWidth: '720px', margin: '0 auto' }}>
+          <h2 style={{ color: '#dc2626', marginBottom: '12px' }}>Something went wrong loading this estimate</h2>
+          <p style={{ color: '#6b7280', marginBottom: '12px' }}>
+            The estimate page hit an unexpected error. Reloading usually fixes it. If it keeps happening,
+            send the error text below to support.
+          </p>
+          <pre style={{ padding: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', whiteSpace: 'pre-wrap', fontSize: '12px', color: '#991b1b' }}>
+            {this.state.error.message}
+          </pre>
+          <div style={{ marginTop: '12px', display: 'flex', gap: 8 }}>
+            <button onClick={() => window.location.reload()} style={{ padding: '8px 16px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Reload</button>
+            <button onClick={() => window.history.back()} style={{ padding: '8px 16px', backgroundColor: '#f3f4f6', color: '#111827', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer' }}>Go back</button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function EstimateDetailInner() {
   const { id } = useParams()
   const navigate = useNavigate()
   const goBack = useSmartBack('/estimates')
@@ -6131,4 +6165,8 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
 
     </div>
   )
+}
+
+export default function EstimateDetail() {
+  return <EstimateDetailErrorBoundary><EstimateDetailInner /></EstimateDetailErrorBoundary>
 }
