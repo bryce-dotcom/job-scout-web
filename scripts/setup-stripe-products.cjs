@@ -18,6 +18,9 @@
 //   Field Pro      prod_YYY  ...
 //   Field Boss     prod_ZZZ  ...
 
+// Read both .env and .env.local so the master Stripe key (added by
+// extract-master-stripe-keys.cjs) is picked up.
+require('dotenv').config({ path: '.env.local' })
 require('dotenv').config()
 const { createClient } = require('@supabase/supabase-js')
 
