@@ -90,6 +90,8 @@ export default function Onboarding() {
     company_name: company?.company_name || '',
     phone: company?.phone || '',
     address: company?.address || '',
+    remit_to_address: company?.remit_to_address || '',
+    remit_to_email: company?.remit_to_email || '',
     city: company?.city || '',
     state: company?.state || '',
     zip: company?.zip || '',
@@ -163,6 +165,8 @@ export default function Onboarding() {
         company_name: formData.company_name,
         phone: formData.phone || null,
         address: formData.address || null,
+        remit_to_address: formData.remit_to_address || null,
+        remit_to_email: formData.remit_to_email || null,
         city: formData.city || null,
         state: formData.state || null,
         zip: formData.zip || null,
@@ -314,8 +318,22 @@ export default function Onboarding() {
               </div>
 
               <div style={{ marginBottom: '16px' }}>
-                <label style={labelStyle}>Address</label>
+                <label style={labelStyle}>Physical Address</label>
                 <input type="text" name="address" value={formData.address} onChange={handleChange} placeholder="123 Main St" style={inputStyle} />
+              </div>
+
+              {/* Optional remit-to (PO Box). When set, customer-facing
+                  documents (invoices, statements) show this instead of
+                  the physical address — so checks land at the right
+                  mailbox. Tracy at HHH asked for this so City Creek and
+                  others mail payments to the company PO Box. */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Billing / Remit-To Address <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 'normal' }}>(optional — shown on invoices instead of physical address)</span></label>
+                <input type="text" name="remit_to_address" value={formData.remit_to_address} onChange={handleChange} placeholder="PO Box 557, Lehi, UT 84043" style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Billing Email <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 'normal' }}>(optional — for "Questions about this invoice?")</span></label>
+                <input type="email" name="remit_to_email" value={formData.remit_to_email} onChange={handleChange} placeholder="billing@example.com" style={inputStyle} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>

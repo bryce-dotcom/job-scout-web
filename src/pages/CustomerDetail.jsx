@@ -579,7 +579,9 @@ export default function CustomerDetail() {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(100)
-    if (company?.address) { doc.text(company.address, margin, y); y += 5 }
+    // Statements show the remit-to address so customers know where to mail payment
+    const stmtAddress = company?.remit_to_address || company?.address
+    if (stmtAddress) { doc.text(stmtAddress, margin, y); y += 5 }
     if (company?.phone) { doc.text(company.phone, margin, y); y += 5 }
     y += 3
 

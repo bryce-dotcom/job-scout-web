@@ -65,6 +65,8 @@ const emptyEmployee = {
   is_commission: false,
   hourly_rate: 0,
   annual_salary: 0,
+  // OT mode: null = inherit company default; 'overtime' = 1.5x; 'bonus' = bonus pool; 'none' = no OT
+  overtime_mode: null,
   // Commission rates
   commission_goods_rate: 0,
   commission_goods_type: 'percent',
@@ -372,6 +374,7 @@ export default function Employees() {
       // Parse pay types from pay_type field or individual flags
       is_hourly: employee.is_hourly || employee.pay_type === 'hourly' || employee.pay_type === 'hybrid',
       is_salary: employee.is_salary || employee.pay_type === 'salary' || employee.pay_type === 'hybrid',
+      overtime_mode: employee.overtime_mode || null,
       is_commission: employee.is_commission || employee.pay_type === 'commission' || employee.pay_type === 'hybrid',
       hourly_rate: employee.hourly_rate || 0,
       annual_salary: employee.annual_salary || 0,
@@ -496,6 +499,7 @@ export default function Employees() {
       tax_classification: formData.tax_classification || 'W2',
       is_hourly: formData.is_hourly,
       is_salary: formData.is_salary,
+      overtime_mode: formData.overtime_mode || null,
       is_commission: formData.is_commission,
       hourly_rate: parseFloat(formData.hourly_rate) || 0,
       annual_salary: parseFloat(formData.annual_salary) || 0,
@@ -712,6 +716,7 @@ export default function Employees() {
       tax_classification: formData.tax_classification || 'W2',
       is_hourly: formData.is_hourly,
       is_salary: formData.is_salary,
+      overtime_mode: formData.overtime_mode || null,
       is_commission: formData.is_commission,
       hourly_rate: parseFloat(formData.hourly_rate) || 0,
       annual_salary: parseFloat(formData.annual_salary) || 0,
@@ -1851,6 +1856,31 @@ export default function Employees() {
                       <PayTypeToggle label="Salary" field="is_salary" icon={Briefcase} disabled={!isEditing} />
                       <PayTypeToggle label="Commission" field="is_commission" icon={DollarSign} disabled={!isEditing} />
                     </div>
+
+                    {/* Overtime mode — per-employee override of company default.
+                        Alayda's Energy Scout employees should be on 'bonus' so
+                        over-threshold hours don't pay 1.5x; standard W2
+                        employees stay on 'overtime' or inherit the default. */}
+                    {formData.is_hourly && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <label style={labelStyle}>Overtime Pay Mode</label>
+                        <select
+                          name="overtime_mode"
+                          value={formData.overtime_mode || ''}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        >
+                          <option value="">Inherit company default</option>
+                          <option value="overtime">Overtime (1.5x over 40 hrs)</option>
+                          <option value="bonus">Bonus pool (1.0x — over-threshold hours go to bonus pool, not OT premium)</option>
+                          <option value="none">None (all hours = base rate, no OT distinction)</option>
+                        </select>
+                        <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                          Energy Scout employees → Bonus pool. Standard W2 → Overtime. 1099 contractors → None.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Conditional Rate Inputs */}
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>

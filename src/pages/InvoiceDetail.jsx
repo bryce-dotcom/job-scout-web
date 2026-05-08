@@ -424,7 +424,7 @@ export default function InvoiceDetail() {
             business_unit_name: buObj?.name || invoice.business_unit || '',
             business_unit_phone: buObj?.phone || company?.phone || '',
             business_unit_email: buObj?.email || company?.owner_email || '',
-            business_unit_address: buObj?.address || company?.address || '',
+            business_unit_address: buObj?.address || company?.remit_to_address || company?.address || '',
             logo_url: rLogoUrl,
             portal_url: invoice.portal_token ? `https://jobscout.appsannex.com/portal/${invoice.portal_token}` : null
           })
@@ -722,9 +722,12 @@ export default function InvoiceDetail() {
       }
     }
     const headerName = buInfo?.name || invoice.business_unit || company?.company_name || company?.name || 'Company'
-    const headerAddress = buInfo?.address || company?.address
+    // Prefer remit_to_address for the invoice header — that's the address
+    // customers should mail checks to (PO Box etc.). Fall back to BU
+    // address, then physical company address.
+    const headerAddress = buInfo?.address || company?.remit_to_address || company?.address
     const headerPhone = buInfo?.phone || company?.phone
-    const headerEmail = buInfo?.email || company?.owner_email || company?.email
+    const headerEmail = buInfo?.email || company?.remit_to_email || company?.owner_email || company?.email
 
     // ── Company header ──
     doc.setFontSize(20)
@@ -1180,7 +1183,7 @@ export default function InvoiceDetail() {
           business_unit_name: buObject?.name || invoice.business_unit || '',
           business_unit_phone: buObject?.phone || company?.phone || '',
           business_unit_email: buObject?.email || company?.owner_email || '',
-          business_unit_address: buObject?.address || company?.address || '',
+          business_unit_address: buObject?.address || company?.remit_to_address || company?.address || '',
           custom_subject: sendSubject || undefined,
           extra_attachments: sendAttachments.length > 0 ? sendAttachments.map(a => ({ filename: a.name, content: a.base64 })) : undefined,
         })

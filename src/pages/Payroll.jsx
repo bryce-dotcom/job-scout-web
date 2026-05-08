@@ -92,6 +92,13 @@ export default function Payroll() {
     bonus_paid_threshold_percent: 50,
     overtime_threshold: 40, // hours per week
     overtime_multiplier: 1.5,
+    // Overtime pay model — per Alayda's request, configurable per company
+    // (and overrideable per employee via employees.overtime_mode).
+    //   'overtime' — pay 1.5x for hours over the threshold (legal default)
+    //   'bonus'    — pay only at base rate; over-threshold hours go to a
+    //                bonus pool tracked separately (Energy Scout model)
+    //   'none'     — no OT distinction; all hours = regular pay
+    overtime_mode: 'overtime',
   })
   const [skillLevelSettings, setSkillLevelSettings] = useState([])
 
@@ -542,16 +549,39 @@ export default function Payroll() {
     })
 
     const otThreshold = payrollConfig.overtime_threshold || 40
+    // Resolve the OT mode for THIS employee: per-employee override wins
+    // over the company-wide default. Energy Scout employees get bonus
+    // mode (no OT premium); standard W2 employees get overtime.
+    const empRow = employees.find(e => e.id === employeeId)
+    const empMode = empRow?.overtime_mode || payrollConfig.overtime_mode || 'overtime'
     Object.values(weeklyHours).forEach(hours => {
-      if (hours <= otThreshold) {
+      if (empMode === 'none') {
+        // No OT distinction — all hours pay at base rate
         regularHours += hours
+      } else if (empMode === 'bonus') {
+        // Energy Scout model: cap regular at threshold, count rest as
+        // bonus hours (NOT overtime — paid at base rate or zero, the
+        // bonus structure is separate via bonusCalc).
+        if (hours <= otThreshold) {
+          regularHours += hours
+        } else {
+          regularHours += otThreshold
+          // Tracked as overtimeHours for display + storage but with
+          // multiplier 1.0 in the pay calc downstream (handled there).
+          overtimeHours += hours - otThreshold
+        }
       } else {
-        regularHours += otThreshold
-        overtimeHours += hours - otThreshold
+        // 'overtime' (legal default) — 1.5x over threshold
+        if (hours <= otThreshold) {
+          regularHours += hours
+        } else {
+          regularHours += otThreshold
+          overtimeHours += hours - otThreshold
+        }
       }
     })
 
-    return { regularHours, overtimeHours, totalHours: regularHours + overtimeHours }
+    return { regularHours, overtimeHours, totalHours: regularHours + overtimeHours, otMode: empMode }
   }
 
   // Invoice-based commissions — delegates to bonusCalc.calculateInvoiceCommissions
@@ -879,10 +909,16 @@ export default function Payroll() {
 
   // Full pay calculation per employee
   const calculateFullPay = (employee) => {
-    const { regularHours, overtimeHours } = calculateEmployeeHours(employee.id)
+    const { regularHours, overtimeHours, otMode } = calculateEmployeeHours(employee.id)
     const hourlyRate = employee.hourly_rate || 0
     const annualSalary = employee.annual_salary || 0
-    const otMultiplier = payrollConfig.overtime_multiplier || 1.5
+    // OT multiplier depends on the resolved mode for this employee.
+    // 'overtime' = 1.5x (legal default). 'bonus' = 1.0x (Energy Scout
+    // model — over-threshold hours pay at base rate; the bonus pool
+    // gets calculated separately by bonusCalc). 'none' = 1.0x.
+    const otMultiplier = otMode === 'overtime'
+      ? (payrollConfig.overtime_multiplier || 1.5)
+      : 1.0
 
     let hourlyPay = 0
     let salaryPay = 0
