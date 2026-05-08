@@ -19,6 +19,150 @@ import {
   timeClockToJobHours,
   calculateInvoiceCommissions as sharedCalculateInvoiceCommissions,
 } from '../lib/bonusCalc'
+import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
+
+// Roll the per-employee tax breakdowns up into one row per tax-kind +
+// jurisdiction with the right due date based on the company's deposit
+// schedule. Each row lands in payroll_tax_liabilities and shows up in
+// the Payroll Inbox.
+function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodEnd, payDate, employees, employeePayData, company }) {
+  // Compute due dates from the company's federal/state schedule
+  const fedSched = company?.federal_deposit_schedule || 'monthly'
+  const fedDue = computeDepositDueDate(payDate, fedSched)
+  const stateSched = company?.state_deposit_schedule || fedSched
+  const stateDue = computeDepositDueDate(payDate, stateSched)
+
+  // Sums across every employee on this payroll run
+  let fit = 0, sit = 0
+  let ssEE = 0, ssER = 0, medEE = 0, medER = 0, addMed = 0
+  let futa = 0, sui = 0
+  for (const emp of employees) {
+    const t = employeePayData?.[emp.id]?.tax
+    if (!t) continue
+    fit    += t.federalIncomeTax       || 0
+    sit    += t.stateIncomeTax         || 0
+    ssEE   += t.socialSecurityEmployee || 0
+    ssER   += t.socialSecurityEmployer || 0
+    medEE  += t.medicareEmployee       || 0
+    medER  += t.medicareEmployer       || 0
+    addMed += t.additionalMedicare     || 0
+    futa   += t.futa                   || 0
+    sui    += t.sui                    || 0
+  }
+
+  const r2 = (n) => Math.round(n * 100) / 100
+  const startStr = toDateStr(periodStart)
+  const endStr   = toDateStr(periodEnd)
+
+  const rows = []
+  // Federal payroll tax — the IRS lumps FIT + SS + Medicare into one
+  // EFTPS deposit per pay period (combined federal payroll tax).
+  const fedTotal = r2(fit + ssEE + ssER + medEE + medER + addMed)
+  if (fedTotal > 0) {
+    rows.push({
+      company_id: companyId, payroll_run_id: payrollRunId,
+      jurisdiction: 'federal', agency: 'IRS', kind: 'federal_income_tax',
+      period_start: startStr, period_end: endStr, due_date: fedDue,
+      amount_employee: r2(fit), amount_employer: 0,
+    })
+    rows.push({
+      company_id: companyId, payroll_run_id: payrollRunId,
+      jurisdiction: 'federal', agency: 'IRS', kind: 'social_security',
+      period_start: startStr, period_end: endStr, due_date: fedDue,
+      amount_employee: r2(ssEE), amount_employer: r2(ssER),
+    })
+    rows.push({
+      company_id: companyId, payroll_run_id: payrollRunId,
+      jurisdiction: 'federal', agency: 'IRS', kind: 'medicare',
+      period_start: startStr, period_end: endStr, due_date: fedDue,
+      amount_employee: r2(medEE), amount_employer: r2(medER),
+    })
+    if (addMed > 0) rows.push({
+      company_id: companyId, payroll_run_id: payrollRunId,
+      jurisdiction: 'federal', agency: 'IRS', kind: 'additional_medicare',
+      period_start: startStr, period_end: endStr, due_date: fedDue,
+      amount_employee: r2(addMed), amount_employer: 0,
+    })
+  }
+
+  // FUTA accumulates and is deposited quarterly when liability >= $500;
+  // otherwise once a year by Jan 31. We file the per-period accrual; the
+  // Inbox can group them by quarter for display later.
+  if (futa > 0) {
+    rows.push({
+      company_id: companyId, payroll_run_id: payrollRunId,
+      jurisdiction: 'federal', agency: 'IRS', kind: 'futa',
+      period_start: startStr, period_end: endStr,
+      due_date: nextQuarterEnd(payDate),
+      amount_employee: 0, amount_employer: r2(futa),
+    })
+  }
+
+  // State income tax (Utah TC-941)
+  if (sit > 0) {
+    rows.push({
+      company_id: companyId, payroll_run_id: payrollRunId,
+      jurisdiction: 'state',
+      agency: company?.state_employer_id_state === 'UT' ? 'Utah State Tax Commission' : 'State',
+      kind: 'state_income_tax',
+      period_start: startStr, period_end: endStr, due_date: stateDue,
+      amount_employee: r2(sit), amount_employer: 0,
+    })
+  }
+
+  // SUI (employer only, quarterly to DWS)
+  if (sui > 0) {
+    rows.push({
+      company_id: companyId, payroll_run_id: payrollRunId,
+      jurisdiction: 'state',
+      agency: company?.state_employer_id_state === 'UT' ? 'Utah DWS' : 'State Unemployment',
+      kind: 'sui',
+      period_start: startStr, period_end: endStr,
+      due_date: nextQuarterEnd(payDate),
+      amount_employee: 0, amount_employer: r2(sui),
+    })
+  }
+
+  return rows
+}
+
+function toDateStr(d) {
+  return new Date(d).toISOString().split('T')[0]
+}
+
+// Federal deposit due date by schedule. Approximations — the IRS
+// semi-weekly rule has Wed/Fri shipping windows; v1 uses next Wednesday
+// for semiweekly which is conservative enough for the inbox.
+function computeDepositDueDate(payDate, schedule) {
+  const d = new Date(payDate)
+  if (schedule === 'monthly') {
+    // Due by 15th of NEXT month
+    const n = new Date(d.getFullYear(), d.getMonth() + 1, 15)
+    return toDateStr(n)
+  }
+  if (schedule === 'semiweekly') {
+    // Conservative: 3 business days after pay date (push to next Wed)
+    const n = new Date(d)
+    n.setDate(n.getDate() + 3)
+    while (n.getDay() !== 3) n.setDate(n.getDate() + 1) // jump to Wednesday
+    return toDateStr(n)
+  }
+  if (schedule === 'quarterly') return nextQuarterEnd(payDate)
+  if (schedule === 'annually')  return `${new Date(payDate).getFullYear() + 1}-01-31`
+  // Default: 15th of next month
+  const n = new Date(d.getFullYear(), d.getMonth() + 1, 15)
+  return toDateStr(n)
+}
+
+function nextQuarterEnd(date) {
+  const d = new Date(date)
+  const m = d.getMonth()
+  // Q1 ends 3/31 → due 4/30; Q2 6/30 → 7/31; Q3 9/30 → 10/31; Q4 12/31 → 1/31
+  const dueMonth = m <= 2 ? 4 : m <= 5 ? 7 : m <= 8 ? 10 : 13
+  const dueYear  = dueMonth === 13 ? d.getFullYear() + 1 : d.getFullYear()
+  const due      = new Date(dueYear, dueMonth === 13 ? 0 : dueMonth, 31)
+  return toDateStr(due)
+}
 
 const AVATAR_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
@@ -62,6 +206,10 @@ export default function Payroll() {
   const [periodOffset, setPeriodOffset] = useState(0) // 0 = current, -1 = previous, etc.
   const [adjustments, setAdjustments] = useState([])
   const [verificationReports, setVerificationReports] = useState([])
+  // YTD paystubs (this calendar year) so the tax engine can correctly
+  // cap Social Security wage base + trip Additional Medicare. Built once
+  // per fetch, indexed by employee_id.
+  const [ytdPaystubs, setYtdPaystubs] = useState([])
   const [utilityInvoicesState, setUtilityInvoicesState] = useState([])
   // Admin bonus overrides (release bonuses blocked by the Victor gate).
   // Stored as payroll_adjustments rows, category='bonus_override'.
@@ -436,6 +584,16 @@ export default function Payroll() {
       setTimeOffRequests(requestsRes.data || [])
       setAdjustments(adjRes.data || [])
       setVerificationReports(verRes.data || [])
+
+      // YTD paystubs for tax wage-base capping. Pull this year's
+      // paystubs for the company, gross + tax-line columns only.
+      const yearStart = `${new Date().getFullYear()}-01-01`
+      const { data: ytdRows } = await supabase
+        .from('paystubs')
+        .select('employee_id, gross_pay, taxable_wages, social_security_employee, medicare_employee')
+        .eq('company_id', companyId)
+        .gte('pay_date', yearStart)
+      setYtdPaystubs(ytdRows || [])
     } catch (err) {
       console.error('Error:', err)
     } finally {
@@ -908,6 +1066,24 @@ export default function Payroll() {
   })
 
   // Full pay calculation per employee
+  // YTD totals per employee from this year's paystubs. Drives Social
+  // Security wage-base capping + Additional Medicare threshold.
+  const ytdPaystubsByEmployee = useMemo(() => {
+    const map = {}
+    for (const ps of ytdPaystubs || []) {
+      const e = ps.employee_id
+      if (!e) continue
+      if (!map[e]) map[e] = { gross: 0, ssWages: 0, medicareWages: 0 }
+      map[e].gross         += Number(ps.gross_pay)         || 0
+      // SS / Medicare wages = taxable_wages (closest proxy when populated;
+      // falls back to gross_pay if column is null on legacy paystubs).
+      const tw = Number(ps.taxable_wages) || Number(ps.gross_pay) || 0
+      map[e].ssWages       += tw
+      map[e].medicareWages += tw
+    }
+    return map
+  }, [ytdPaystubs])
+
   const calculateFullPay = (employee) => {
     const { regularHours, overtimeHours, otMode } = calculateEmployeeHours(employee.id)
     const hourlyRate = employee.hourly_rate || 0
@@ -950,7 +1126,27 @@ export default function Payroll() {
     const empAdjustments = adjustments.filter(a => a.employee_id === employee.id)
     const totalAdditions = empAdjustments.filter(a => a.type === 'addition').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
     const totalDeductions = empAdjustments.filter(a => a.type === 'deduction').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
-    const netPay = grossPay + totalAdditions - totalDeductions
+
+    // Pre-tax: gross + additions (additions are pre-tax for simplicity in v1).
+    // Post-tax: deductions come off the net.
+    const taxableGross = grossPay + totalAdditions
+
+    // ── TAX ENGINE ──
+    // Run the per-period tax calculator. YTD totals come from this calendar
+    // year's already-paid paystubs (calculated below). If the employee has
+    // no W-4 on file we still produce a row but flag it — the gross+net will
+    // be the same and Alayda will see the missing-W-4 warning in the UI.
+    const ytdForEmp = ytdPaystubsByEmployee?.[employee.id] || { gross: 0, ssWages: 0, medicareWages: 0 }
+    const tax = calcPaystubTax({
+      employee,
+      company,
+      gross: taxableGross,
+      ytd: ytdForEmp,
+      payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
+      preTaxDeductions: 0,
+      postTaxDeductions: totalDeductions,
+    })
+    const hasW4 = !!employee.w4_filing_status
 
     return {
       hourlyPay,
@@ -965,8 +1161,15 @@ export default function Payroll() {
       grossPay: Math.round(grossPay * 100) / 100,
       totalAdditions: Math.round(totalAdditions * 100) / 100,
       totalDeductions: Math.round(totalDeductions * 100) / 100,
-      netPay: Math.round(netPay * 100) / 100,
+      // netPay below is the OLD pre-tax net (gross + additions - deductions).
+      // Kept under the same key so any place that reads it doesn't break.
+      // The new tax-aware net is exposed under `tax.netPay`.
+      netPay: Math.round((grossPay + totalAdditions - totalDeductions) * 100) / 100,
       adjustments: empAdjustments,
+      // Tax breakdown — drives the per-employee paystub display + writes
+      // payroll_tax_liabilities rows on payroll save.
+      tax,
+      hasW4,
     }
   }
 
@@ -1233,6 +1436,7 @@ export default function Payroll() {
 
       const paystubs = activeEmployees.map(emp => {
         const data = employeePayData[emp.id]
+        const t = data?.tax || {}
         return {
           company_id: companyId,
           employee_id: emp.id,
@@ -1245,11 +1449,50 @@ export default function Payroll() {
           hourly_rate: data.hourlyRate,
           salary_amount: data.salaryPay,
           gross_pay: data.grossPay,
+          // Tax engine output — written to the per-employee paystub so
+          // YTD aggregation (next period's wage-base capping) works.
+          bonus_pay:                data.efficiencyBonus?.bonus || 0,
+          commission_pay:           data.commissionPay || 0,
+          taxable_wages:            t.taxableWages || data.grossPay,
+          federal_income_tax:       t.federalIncomeTax || 0,
+          state_income_tax:         t.stateIncomeTax || 0,
+          social_security_employee: t.socialSecurityEmployee || 0,
+          social_security_employer: t.socialSecurityEmployer || 0,
+          medicare_employee:        t.medicareEmployee || 0,
+          medicare_employer:        t.medicareEmployer || 0,
+          additional_medicare:      t.additionalMedicare || 0,
+          futa:                     t.futa || 0,
+          sui:                      t.sui || 0,
+          pre_tax_deductions:       t.preTaxDeductions || 0,
+          post_tax_deductions:      t.postTaxDeductions || 0,
+          net_pay:                  t.netPay || data.grossPay,
         }
       })
 
       const { error: stubsError } = await supabase.from('paystubs').insert(paystubs)
       if (stubsError) throw stubsError
+
+      // ── Write payroll_tax_liabilities so the Payroll Inbox knows
+      //    what to deposit and when. Aggregates each tax kind across
+      //    all employees on this run.
+      try {
+        const liabilities = aggregateTaxLiabilities({
+          companyId,
+          payrollRunId: payrollRun.id,
+          periodStart, periodEnd, payDate,
+          employees: activeEmployees,
+          employeePayData,
+          company,
+        })
+        if (liabilities.length) {
+          const { error: liabErr } = await supabase
+            .from('payroll_tax_liabilities')
+            .insert(liabilities)
+          if (liabErr) console.warn('[runPayroll] tax liability insert failed:', liabErr)
+        }
+      } catch (liabErr) {
+        console.warn('[runPayroll] tax liability aggregation crashed:', liabErr)
+      }
 
       setShowRunPayrollModal(false)
       alert('Payroll processed successfully!')
@@ -3589,13 +3832,58 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
             </>
           )}
 
-          {/* Net Pay */}
+          {/* Tax breakdown — only when the W-4 is on file. Without it
+              the engine returns zeros (we never silently withhold the
+              wrong amount), so we show a clear missing-W-4 nudge. */}
+          {data.tax && (
+            <div style={{ padding: 16, backgroundColor: theme.bg, borderRadius: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: theme.text, marginBottom: 10 }}>
+                Tax Withholding (this paycheck)
+              </div>
+              {!data.hasW4 && (
+                <div style={{ padding: '8px 12px', marginBottom: 10, backgroundColor: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: 8, fontSize: 12, color: '#a16207' }}>
+                  No W-4 on file — taxes shown are $0. Add this employee's tax info on their employee page so the next paycheck withholds correctly.
+                </div>
+              )}
+              <table style={{ width: '100%', fontSize: 13, color: theme.textSecondary }}>
+                <tbody>
+                  <tr><td style={{ padding: '4px 0' }}>Federal income tax</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.federalIncomeTax)}</td></tr>
+                  <tr><td style={{ padding: '4px 0' }}>State income tax</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.stateIncomeTax)}</td></tr>
+                  <tr><td style={{ padding: '4px 0' }}>Social Security (6.2%)</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.socialSecurityEmployee)}</td></tr>
+                  <tr><td style={{ padding: '4px 0' }}>Medicare (1.45%)</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.medicareEmployee)}</td></tr>
+                  {data.tax.additionalMedicare > 0 && (
+                    <tr><td style={{ padding: '4px 0' }}>Additional Medicare (0.9% over $200k YTD)</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.additionalMedicare)}</td></tr>
+                  )}
+                </tbody>
+              </table>
+              <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px dashed ${theme.border}`, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: theme.textMuted }}>
+                <span>Employer match (Social Security + Medicare + FUTA + SUI):</span>
+                <span>{fmt((data.tax.socialSecurityEmployer || 0) + (data.tax.medicareEmployer || 0) + (data.tax.futa || 0) + (data.tax.sui || 0))}</span>
+              </div>
+              <div style={{ marginTop: 4, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: theme.textMuted }}>
+                <span>Total cost of this paycheck to the company:</span>
+                <span>{fmt(data.tax.totalEmployerCost)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Net Pay — uses the tax-engine net when we have it, falls back
+              to gross-minus-deductions for legacy / no-W-4 employees. */}
           <div style={{
             padding: '20px', backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: '10px',
             display: 'flex', justifyContent: 'space-between', alignItems: 'center'
           }}>
-            <div style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>Net Pay</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#22c55e' }}>{fmt(data.netPay)}</div>
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>Net Pay (take-home)</div>
+              {data.tax && data.hasW4 && (
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 2 }}>
+                  After all taxes + deductions
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#22c55e' }}>
+              {fmt(data.tax?.netPay ?? data.netPay)}
+            </div>
           </div>
         </div>
       </div>
