@@ -88,7 +88,24 @@ const emptyEmployee = {
   // PTO
   pto_days_per_year: 10,
   pto_accrued: 0,
-  pto_used: 0
+  pto_used: 0,
+  // Tax setup (W-4) — needed to compute federal income tax withholding.
+  // Plain-English labels in the UI; this is just storage.
+  ssn_input: '',                    // user-typed SSN; never persisted as plain text
+  ssn_last4: '',                    // displayed as ***-**-XXXX
+  date_of_birth: '',
+  hire_date: '',
+  home_address: '',
+  home_city: '',
+  home_state: '',
+  home_zip: '',
+  w4_filing_status: '',             // 'single' | 'married_jointly' | 'head_of_household'
+  w4_multiple_jobs: false,
+  w4_dependents_amount: 0,
+  w4_other_income: 0,
+  w4_deductions: 0,
+  w4_extra_withholding: 0,
+  w4_signed_at: '',
 }
 
 export default function Employees() {
@@ -393,7 +410,23 @@ export default function Employees() {
       skill_level: employee.skill_level || '',
       pto_days_per_year: employee.pto_days_per_year || 10,
       pto_accrued: employee.pto_accrued || 0,
-      pto_used: employee.pto_used || 0
+      pto_used: employee.pto_used || 0,
+      // Tax setup
+      ssn_input: '',                                       // never load plain SSN — only show last4
+      ssn_last4: employee.ssn_last4 || '',
+      date_of_birth: employee.date_of_birth || '',
+      hire_date: employee.hire_date || '',
+      home_address: employee.home_address || '',
+      home_city: employee.home_city || '',
+      home_state: employee.home_state || '',
+      home_zip: employee.home_zip || '',
+      w4_filing_status: employee.w4_filing_status || '',
+      w4_multiple_jobs: !!employee.w4_multiple_jobs,
+      w4_dependents_amount: employee.w4_dependents_amount || 0,
+      w4_other_income: employee.w4_other_income || 0,
+      w4_deductions: employee.w4_deductions || 0,
+      w4_extra_withholding: employee.w4_extra_withholding || 0,
+      w4_signed_at: employee.w4_signed_at || '',
     })
     setIsEditing(false)
     setError(null)
@@ -519,7 +552,42 @@ export default function Employees() {
       pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
       pto_accrued: parseFloat(formData.pto_accrued) || 0,
       pto_used: parseFloat(formData.pto_used) || 0,
+      // Tax setup (everything except SSN — that's encrypted via RPC below)
+      date_of_birth: formData.date_of_birth || null,
+      hire_date: formData.hire_date || null,
+      home_address: formData.home_address || null,
+      home_city: formData.home_city || null,
+      home_state: formData.home_state || null,
+      home_zip: formData.home_zip || null,
+      w4_filing_status: formData.w4_filing_status || null,
+      w4_multiple_jobs: !!formData.w4_multiple_jobs,
+      w4_dependents_amount: parseFloat(formData.w4_dependents_amount) || 0,
+      w4_other_income: parseFloat(formData.w4_other_income) || 0,
+      w4_deductions: parseFloat(formData.w4_deductions) || 0,
+      w4_extra_withholding: parseFloat(formData.w4_extra_withholding) || 0,
+      w4_signed_at: formData.w4_signed_at || null,
       updated_at: new Date().toISOString()
+    }
+
+    // SSN handling: only update when the user typed something new. We
+    // call the encrypt_ssn RPC server-side so the plaintext never leaves
+    // the database boundary in cleartext within our own SQL log.
+    const ssnRaw = (formData.ssn_input || '').trim()
+    if (ssnRaw) {
+      const digits = ssnRaw.replace(/\D/g, '')
+      if (digits.length !== 9) {
+        setError('SSN must be 9 digits.')
+        setLoading(false)
+        return
+      }
+      const { data: enc, error: encErr } = await supabase.rpc('encrypt_ssn', { p_ssn: digits })
+      if (encErr) {
+        setError('Could not save SSN: ' + encErr.message)
+        setLoading(false)
+        return
+      }
+      payload.ssn_encrypted = enc
+      payload.ssn_last4 = digits.slice(-4)
     }
 
     let result
@@ -736,7 +804,40 @@ export default function Employees() {
       pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
       pto_accrued: parseFloat(formData.pto_accrued) || 0,
       pto_used: parseFloat(formData.pto_used) || 0,
+      // Tax setup carry-over (same pattern as handleSubmit)
+      date_of_birth: formData.date_of_birth || null,
+      hire_date: formData.hire_date || null,
+      home_address: formData.home_address || null,
+      home_city: formData.home_city || null,
+      home_state: formData.home_state || null,
+      home_zip: formData.home_zip || null,
+      w4_filing_status: formData.w4_filing_status || null,
+      w4_multiple_jobs: !!formData.w4_multiple_jobs,
+      w4_dependents_amount: parseFloat(formData.w4_dependents_amount) || 0,
+      w4_other_income: parseFloat(formData.w4_other_income) || 0,
+      w4_deductions: parseFloat(formData.w4_deductions) || 0,
+      w4_extra_withholding: parseFloat(formData.w4_extra_withholding) || 0,
+      w4_signed_at: formData.w4_signed_at || null,
       updated_at: new Date().toISOString()
+    }
+
+    // SSN encrypt — same as handleSubmit
+    const ssnRaw2 = (formData.ssn_input || '').trim()
+    if (ssnRaw2) {
+      const digits2 = ssnRaw2.replace(/\D/g, '')
+      if (digits2.length !== 9) {
+        setError('SSN must be 9 digits.')
+        setLoading(false)
+        return
+      }
+      const { data: enc2, error: encErr2 } = await supabase.rpc('encrypt_ssn', { p_ssn: digits2 })
+      if (encErr2) {
+        setError('Could not save SSN: ' + encErr2.message)
+        setLoading(false)
+        return
+      }
+      payload.ssn_encrypted = enc2
+      payload.ssn_last4 = digits2.slice(-4)
     }
 
     // Insert the employee
@@ -2020,6 +2121,207 @@ export default function Employees() {
                         </div>
                       </>
                     )}
+
+                    {/* ===== TAX SETUP (W-4) ===== */}
+                    {/* Crayola UX rule: 5 plain questions, no IRS form
+                        numbers in the headlines. Help text under each
+                        field explains what they checked on their actual
+                        W-4 form so Alayda can copy values straight off it. */}
+                    <div style={sectionHeaderStyle}>Tax Info (for paychecks)</div>
+                    <div style={{
+                      padding: '12px 14px', marginBottom: 14,
+                      backgroundColor: 'rgba(59,130,246,0.06)',
+                      border: '1px solid rgba(59,130,246,0.20)',
+                      borderRadius: 10, fontSize: 13, color: theme.textSecondary,
+                    }}>
+                      Copy this info from the employee's signed Form W-4.
+                      JobScout uses these answers to calculate the right amount
+                      of federal tax to withhold from every paycheck.
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                      <div>
+                        <label style={labelStyle}>Date of birth</label>
+                        <input
+                          type="date"
+                          name="date_of_birth"
+                          value={formData.date_of_birth || ''}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Hire date</label>
+                        <input
+                          type="date"
+                          name="hire_date"
+                          value={formData.hire_date || ''}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        />
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                          Used to flag the new-hire report (due to Utah DWS within 20 days).
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                      <div>
+                        <label style={labelStyle}>Home address</label>
+                        <input
+                          type="text"
+                          name="home_address"
+                          value={formData.home_address || ''}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          placeholder="Street"
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>City</label>
+                        <input
+                          type="text"
+                          name="home_city"
+                          value={formData.home_city || ''}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <div>
+                          <label style={labelStyle}>State</label>
+                          <input
+                            type="text"
+                            name="home_state"
+                            value={formData.home_state || ''}
+                            onChange={handleChange}
+                            disabled={!isEditing}
+                            maxLength={2}
+                            style={isEditing ? inputStyle : inputStyleDisabled}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>ZIP</label>
+                          <input
+                            type="text"
+                            name="home_zip"
+                            value={formData.home_zip || ''}
+                            onChange={handleChange}
+                            disabled={!isEditing}
+                            style={isEditing ? inputStyle : inputStyleDisabled}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                      <div>
+                        <label style={labelStyle}>Social Security Number</label>
+                        <input
+                          type="text"
+                          name="ssn_input"
+                          value={formData.ssn_input}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          placeholder={formData.ssn_last4 ? `On file: ***-**-${formData.ssn_last4}` : 'XXX-XX-XXXX'}
+                          autoComplete="off"
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        />
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                          Encrypted at rest. {formData.ssn_last4 ? 'Leave blank to keep the SSN already on file.' : 'Required for W-2 filings.'}
+                        </div>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>How do they file their taxes? (W-4 Step 1)</label>
+                        <select
+                          name="w4_filing_status"
+                          value={formData.w4_filing_status || ''}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        >
+                          <option value="">— Pick one —</option>
+                          <option value="single">Single (or married filing separately)</option>
+                          <option value="married_jointly">Married filing jointly</option>
+                          <option value="head_of_household">Head of household</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, backgroundColor: theme.bg }}>
+                        <input
+                          type="checkbox"
+                          name="w4_multiple_jobs"
+                          checked={!!formData.w4_multiple_jobs}
+                          onChange={(e) => isEditing && setFormData(prev => ({ ...prev, w4_multiple_jobs: e.target.checked }))}
+                          disabled={!isEditing}
+                          style={{ marginTop: 2 }}
+                        />
+                        <label style={{ fontSize: 13, color: theme.text }}>
+                          They checked the <strong>Step 2(c) checkbox</strong> on their W-4
+                          <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                            (works two jobs, or their spouse works)
+                          </div>
+                        </label>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Dependents credit (W-4 Step 3, dollars)</label>
+                        <input
+                          type="number"
+                          step="100"
+                          name="w4_dependents_amount"
+                          value={formData.w4_dependents_amount}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          placeholder="0"
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        />
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                          Whatever they wrote on Step 3. Usually $2,000/kid + $500/other dependent.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                      <div>
+                        <label style={labelStyle}>Other income / yr (Step 4a)</label>
+                        <input type="number" step="100" name="w4_other_income" value={formData.w4_other_income} onChange={handleChange} disabled={!isEditing} placeholder="0" style={isEditing ? inputStyle : inputStyleDisabled} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Deductions / yr (Step 4b)</label>
+                        <input type="number" step="100" name="w4_deductions" value={formData.w4_deductions} onChange={handleChange} disabled={!isEditing} placeholder="0" style={isEditing ? inputStyle : inputStyleDisabled} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Extra per paycheck (Step 4c)</label>
+                        <input type="number" step="1" name="w4_extra_withholding" value={formData.w4_extra_withholding} onChange={handleChange} disabled={!isEditing} placeholder="0" style={isEditing ? inputStyle : inputStyleDisabled} />
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                          Extra federal tax to take out of every paycheck.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                      <div>
+                        <label style={labelStyle}>W-4 signed on</label>
+                        <input
+                          type="date"
+                          name="w4_signed_at"
+                          value={formData.w4_signed_at || ''}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          style={isEditing ? inputStyle : inputStyleDisabled}
+                        />
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                          Date on the actual W-4 form they handed you.
+                        </div>
+                      </div>
+                      <div />
+                    </div>
 
                     {/* ===== PTO SECTION ===== */}
                     <div style={sectionHeaderStyle}>Paid Time Off</div>
