@@ -2491,6 +2491,86 @@ function JobDetailInner() {
     }
   }
 
+  // Alayda flagged: utility company asked for a SINGLE PDF, not a ZIP.
+  // Same manifest as handleDownloadSubmittal but merges every PDF item
+  // into one combined PDF using pdf-lib. Non-PDF items (raw photos,
+  // CONTENTS.txt) are skipped — utility submissions want documentation,
+  // not the index file.
+  const handleDownloadSubmittalPDF = async () => {
+    const { toast } = await import('../lib/toast')
+    const manifest = buildSubmittalManifest()
+    if (manifest.length === 0) return
+    setSubmittalDownloading(true)
+    setSubmittalProgress(`Preparing 0/${manifest.length}...`)
+    try {
+      const [{ PDFDocument }, { saveAs }] = await Promise.all([
+        import('pdf-lib'),
+        import('file-saver'),
+      ])
+      const merged = await PDFDocument.create()
+      const jobName = sanitizeFilename(job.job_title || job.job_id || 'job')
+      let completed = 0
+      let pdfsMerged = 0
+      let skipped = 0
+
+      for (const item of manifest) {
+        try {
+          // Only PDFs make sense for a merged document; everything else skipped
+          const isPdfFile = (item.filename || '').toLowerCase().endsWith('.pdf')
+          if (!isPdfFile && item.type !== 'utilpdf') { skipped++; completed++; continue }
+
+          let bytes = null
+          if (item.type === 'public') {
+            const resp = await fetch(item.url); if (resp.ok) bytes = await resp.arrayBuffer()
+          } else if (item.type === 'signed') {
+            const { data: signedData } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
+            if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) bytes = await resp.arrayBuffer() }
+          } else if (item.type === 'signed_path') {
+            const { data: signedData } = await supabase.storage.from(item.bucket).createSignedUrl(item.path, 300)
+            if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) bytes = await resp.arrayBuffer() }
+          } else if (item.type === 'doc') {
+            if (item.att.storage_bucket) {
+              const { data: signedData } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
+              if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) bytes = await resp.arrayBuffer() }
+            }
+            if (!bytes && item.att.url) { const resp = await fetch(item.att.url); if (resp.ok) bytes = await resp.arrayBuffer() }
+          } else if (item.type === 'utilpdf') {
+            const blob = await generateUtilityInvoicePDF(item.invoice)
+            bytes = await blob.arrayBuffer()
+          }
+
+          if (bytes) {
+            const src = await PDFDocument.load(bytes, { ignoreEncryption: true })
+            const pages = await merged.copyPages(src, src.getPageIndices())
+            pages.forEach(p => merged.addPage(p))
+            pdfsMerged++
+          }
+        } catch (err) {
+          console.warn('Submittal PDF: skipping', item.filename, err.message)
+          skipped++
+        }
+        completed++
+        setSubmittalProgress(`Merging ${completed}/${manifest.length}...`)
+      }
+
+      if (pdfsMerged === 0) {
+        toast.error('No PDF documents available to merge — try the ZIP download instead.')
+        return
+      }
+      setSubmittalProgress('Saving...')
+      const blob = new Blob([await merged.save()], { type: 'application/pdf' })
+      const filename = `${jobName}_submittal_package.pdf`
+      saveAs(blob, filename)
+      toast.success(`Combined ${pdfsMerged} document${pdfsMerged === 1 ? '' : 's'} into one PDF${skipped ? ` (${skipped} non-PDF skipped)` : ''}`)
+    } catch (err) {
+      console.error('Submittal PDF merge failed:', err)
+      toast.error('Merge failed: ' + err.message)
+    } finally {
+      setSubmittalDownloading(false)
+      setSubmittalProgress('')
+    }
+  }
+
   const handleSendSubmittal = async () => {
     const { toast } = await import('../lib/toast')
     if (!submittalEmail) {
@@ -6356,6 +6436,25 @@ function JobDetailInner() {
                   {submittalSelected.size} item{submittalSelected.size !== 1 ? 's' : ''} selected
                 </span>
                 <div style={{ display: 'flex', gap: '8px' }}>
+                  {/* Combined PDF — utility companies often want one merged
+                      file, not a ZIP (Alayda's complaint). Skips non-PDF
+                      items. Falls back to ZIP if no PDFs in the manifest. */}
+                  <button
+                    onClick={handleDownloadSubmittalPDF}
+                    disabled={submittalDownloading || submittalSending || submittalSelected.size === 0}
+                    style={{
+                      padding: '10px 16px', backgroundColor: '#16a34a', color: '#fff',
+                      border: 'none', borderRadius: '8px',
+                      cursor: submittalDownloading || submittalSending || submittalSelected.size === 0 ? 'not-allowed' : 'pointer',
+                      fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px',
+                      opacity: submittalDownloading || submittalSending || submittalSelected.size === 0 ? 0.6 : 1,
+                      minHeight: '44px'
+                    }}
+                    title="Combine all selected PDFs into a single file (best for utility submissions)"
+                  >
+                    {submittalDownloading ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <FileText size={16} />}
+                    {submittalDownloading ? submittalProgress : 'Combined PDF'}
+                  </button>
                   <button
                     onClick={handleDownloadSubmittal}
                     disabled={submittalDownloading || submittalSending || submittalSelected.size === 0}
@@ -6367,9 +6466,10 @@ function JobDetailInner() {
                       opacity: submittalDownloading || submittalSending || submittalSelected.size === 0 ? 0.6 : 1,
                       minHeight: '44px'
                     }}
+                    title="Download as ZIP — preserves folder structure"
                   >
                     {submittalDownloading ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={16} />}
-                    {submittalDownloading ? submittalProgress : 'Download'}
+                    {submittalDownloading ? submittalProgress : 'ZIP'}
                   </button>
                   <button
                     onClick={handleSendSubmittal}
