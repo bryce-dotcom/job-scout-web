@@ -1100,7 +1100,13 @@ export default function EstimateDetail() {
           start_date: estimate.service_date || new Date().toISOString(),
           job_total: subtotal - discount,
           utility_incentive: parseFloat(estimate.utility_incentive) || 0,
-          details: estimate.summary || null,
+          // Carry the estimate's notes / summary onto the job so the
+          // installers see what was promised. Doug + Alayda flagged that
+          // notes weren't transferring estimate→job. Combine summary
+          // + notes (and the customer-facing message if set) so nothing
+          // is lost.
+          details: [estimate.summary, estimate.notes, estimate.estimate_message].filter(Boolean).join('\n\n') || null,
+          notes: [estimate.notes, estimate.summary].filter(Boolean).join('\n\n') || null,
           updated_at: new Date().toISOString()
         }])
         .select()

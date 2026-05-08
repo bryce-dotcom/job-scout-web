@@ -370,7 +370,10 @@ serve(async (req) => {
             start_date: estimate.service_date || new Date().toISOString(),
             job_total: parseFloat(String(estimate.quote_amount || 0)) || 0,
             utility_incentive: parseFloat(String(estimate.utility_incentive || 0)) || 0,
-            details: estimate.summary || null,
+            // Combine estimate summary + notes + message so the job
+            // page shows what was promised. Doug + Alayda's bug.
+            details: [estimate.summary, estimate.notes, estimate.estimate_message].filter(Boolean).join('\n\n') || null,
+            notes: [estimate.notes, estimate.summary].filter(Boolean).join('\n\n') || null,
             updated_at: new Date().toISOString(),
           }])
           .select('id')

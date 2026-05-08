@@ -133,6 +133,8 @@ export default function Invoices() {
   const [statusFilter, setStatusFilter] = useState('all')
   // Quick-view filters for Tracy's "invoices coming due" + "card on file" workflow
   const [dueFilter, setDueFilter] = useState('all') // all | overdue | due_soon | due_30 | has_card | active_plan
+  // Sort order — Tracy: "Can I have the feature sorting invoices by dates?"
+  const [sortOrder, setSortOrder] = useState('newest')  // newest | oldest | due_soon | due_late | amount_high | amount_low
   const [customersWithCard, setCustomersWithCard] = useState(new Set())
   const [activePlanInvoiceIds, setActivePlanInvoiceIds] = useState(new Set())
   const [showImportExport, setShowImportExport] = useState(false)
@@ -225,6 +227,19 @@ export default function Invoices() {
       (invoice.job?.job_id || '').toLowerCase().includes(term)
     const matchesStatus = statusFilter === 'all' || invoice.payment_status === statusFilter
     return matchesSearch && matchesStatus
+  }).sort((a, b) => {
+    // Tracy's ask — sort the customer invoice list by user-selected order
+    const dateA = (k) => a[k] ? new Date(a[k]).getTime() : 0
+    const dateB = (k) => b[k] ? new Date(b[k]).getTime() : 0
+    switch (sortOrder) {
+      case 'oldest':       return dateA('created_at') - dateB('created_at')
+      case 'due_soon':     return (dateA('due_date') || Infinity) - (dateB('due_date') || Infinity)
+      case 'due_late':     return (dateB('due_date') || 0) - (dateA('due_date') || 0)
+      case 'amount_high':  return (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0)
+      case 'amount_low':   return (parseFloat(a.amount) || 0) - (parseFloat(b.amount) || 0)
+      case 'newest':
+      default:             return dateB('created_at') - dateA('created_at')
+    }
   })
 
   // Utility invoice filtering
@@ -1010,6 +1025,20 @@ export default function Invoices() {
           <option value="Paid">Paid</option>
           <option value="Overdue">Overdue</option>
           <option value="Cancelled">Cancelled</option>
+        </select>
+        {/* Sort order — Tracy: "Can I have the feature sorting invoices by dates?" */}
+        <select
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+          style={{ ...inputStyle, width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'auto' : '180px' }}
+          title="Sort order"
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="due_soon">Due date — soonest first</option>
+          <option value="due_late">Due date — latest first</option>
+          <option value="amount_high">Amount — high to low</option>
+          <option value="amount_low">Amount — low to high</option>
         </select>
       </div>
 
