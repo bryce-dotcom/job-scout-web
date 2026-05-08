@@ -83,6 +83,7 @@ const baseTabs = [
   { id: 'estimate_defaults', label: 'Estimate Defaults', icon: FileStack },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'my_money', label: 'My Money', icon: Wallet },
+  { id: 'tax', label: 'Payroll Tax / Compliance', icon: Building2 },
   { id: 'billing', label: 'Subscription', icon: CreditCard },
   { id: 'users', label: 'User Management', icon: Users },
   { id: 'integrations', label: 'Integrations', icon: Link2 }
@@ -642,6 +643,9 @@ export default function Settings() {
 
       case 'my_money':
         return <PaymentSettingsTab theme={theme} settings={settings} saveSetting={saveSetting} />
+
+      case 'tax':
+        return <PayrollTaxSettingsTab theme={theme} companyId={companyId} />
 
       case 'billing':
         return <BillingTab theme={theme} companyId={companyId} />
@@ -2881,6 +2885,204 @@ function PaymentSettingsTab({ theme, settings, saveSetting }) {
       </div>
     </div>
   )
+}
+
+// ─── Payroll Tax / Compliance Tab ───
+// One screen for the company-level payroll tax setup. Drives the
+// Payroll Inbox and the calculation engine. Plain-English labels —
+// no IRS jargon in the UI.
+function PayrollTaxSettingsTab({ theme, companyId }) {
+  const [form, setForm] = useState({
+    ein: '', legal_name: '', business_type: '',
+    state_employer_id: '', state_employer_id_state: 'UT',
+    sui_account_number: '', sui_rate_pct: '', sui_wage_base: '',
+    futa_rate_pct: 0.6,
+    federal_deposit_schedule: '', state_deposit_schedule: '',
+  })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [savedAt, setSavedAt] = useState(null)
+
+  useEffect(() => {
+    if (!companyId) return
+    let mounted = true
+    ;(async () => {
+      const { data } = await supabase
+        .from('companies')
+        .select('ein, legal_name, business_type, state_employer_id, state_employer_id_state, sui_account_number, sui_rate_pct, sui_wage_base, futa_rate_pct, federal_deposit_schedule, state_deposit_schedule')
+        .eq('id', companyId)
+        .single()
+      if (!mounted) return
+      if (data) setForm(prev => ({ ...prev, ...data }))
+      setLoading(false)
+    })()
+    return () => { mounted = false }
+  }, [companyId])
+
+  const save = async () => {
+    setSaving(true)
+    const payload = { ...form, updated_at: new Date().toISOString() }
+    // Convert empty strings to null for numeric fields
+    for (const k of ['sui_rate_pct','sui_wage_base','futa_rate_pct']) {
+      if (payload[k] === '') payload[k] = null
+      else if (payload[k] != null) payload[k] = parseFloat(payload[k])
+    }
+    const { error } = await supabase.from('companies').update(payload).eq('id', companyId)
+    setSaving(false)
+    if (error) alert('Save failed: ' + error.message)
+    else setSavedAt(new Date())
+  }
+
+  const set = (k) => (e) => setForm(prev => ({ ...prev, [k]: e.target.value }))
+
+  if (loading) return <div style={{ color: theme.textMuted }}>Loading…</div>
+
+  const gaps = [
+    !form.ein && 'EIN missing',
+    !form.state_employer_id && 'Utah State Tax Commission ID missing',
+    !form.federal_deposit_schedule && 'Federal deposit schedule not set',
+    form.sui_rate_pct == null && 'State unemployment (SUI) rate missing',
+  ].filter(Boolean)
+
+  const inputStyle = {
+    width: '100%', padding: '10px 12px',
+    border: `1px solid ${theme.border}`, borderRadius: 8,
+    fontSize: 14, color: theme.text, backgroundColor: theme.bgCard,
+    boxSizing: 'border-box', outline: 'none',
+  }
+  const labelStyle = { display: 'block', fontSize: 13, fontWeight: 600, color: theme.textSecondary, marginBottom: 6 }
+  const helpStyle  = { fontSize: 12, color: theme.textMuted, marginTop: 4 }
+
+  return (
+    <div>
+      <h3 style={{ fontSize: 18, fontWeight: 700, color: theme.text, margin: '0 0 6px' }}>Payroll Tax Setup</h3>
+      <p style={{ fontSize: 13, color: theme.textMuted, marginBottom: 18 }}>
+        These fields tell JobScout how to calculate tax withholding, when deposits are due, and what your IDs are on every form. You only fill them in once.
+      </p>
+
+      {gaps.length > 0 && (
+        <div style={{ padding: 14, backgroundColor: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: 10, marginBottom: 20 }}>
+          <div style={{ fontWeight: 700, color: '#a16207', marginBottom: 4 }}>Still missing — payroll math will be wrong without these:</div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: theme.textSecondary }}>
+            {gaps.map(g => <li key={g}>{g}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* Federal */}
+      <Card title="Federal" theme={theme}>
+        <Row two>
+          <Field label="EIN (Employer ID Number)" help="Format: XX-XXXXXXX. The IRS sent this in your EIN assignment letter (Form CP-575).">
+            <input value={form.ein || ''} onChange={set('ein')} placeholder="XX-XXXXXXX" style={inputStyle} />
+          </Field>
+          <Field label="Legal business name" help="Exactly as it appears on your IRS letter.">
+            <input value={form.legal_name || ''} onChange={set('legal_name')} placeholder="HHH Services, LLC" style={inputStyle} />
+          </Field>
+        </Row>
+        <Row two>
+          <Field label="Business type" help="What you filed as with the IRS.">
+            <select value={form.business_type || ''} onChange={set('business_type')} style={inputStyle}>
+              <option value="">— Select —</option>
+              <option value="LLC">LLC</option>
+              <option value="S-Corp">S-Corporation</option>
+              <option value="C-Corp">C-Corporation</option>
+              <option value="Sole Prop">Sole Proprietorship</option>
+              <option value="Partnership">Partnership</option>
+            </select>
+          </Field>
+          <Field label="How often do you deposit federal payroll taxes?" help="The IRS told you in a letter. Most small employers are Monthly. If you owe more than $50k/yr, they bump you to Semi-weekly.">
+            <select value={form.federal_deposit_schedule || ''} onChange={set('federal_deposit_schedule')} style={inputStyle}>
+              <option value="">— Select —</option>
+              <option value="monthly">Monthly (deposit by the 15th of next month)</option>
+              <option value="semiweekly">Semi-weekly (Wed payday → next Wed; Fri payday → next Wed; etc.)</option>
+              <option value="quarterly">Quarterly (smallest employers only)</option>
+              <option value="annually">Annually (very small — under $1,000/yr liability)</option>
+            </select>
+          </Field>
+        </Row>
+        <Row two>
+          <Field label="FUTA rate (federal unemployment)" help="Almost always 0.6%. Only changes if your state is in 'credit reduction' status (none currently).">
+            <input type="number" step="0.001" value={form.futa_rate_pct ?? ''} onChange={set('futa_rate_pct')} placeholder="0.6" style={inputStyle} />
+            <div style={helpStyle}>Percent (0.6 = 0.6%)</div>
+          </Field>
+          <div />
+        </Row>
+      </Card>
+
+      {/* State */}
+      <Card title="State (Utah)" theme={theme}>
+        <Row two>
+          <Field label="State Tax Commission ID" help="Your withholding account number with the Utah State Tax Commission. Looks like: 12345678-WTH">
+            <input value={form.state_employer_id || ''} onChange={set('state_employer_id')} placeholder="12345678-WTH" style={inputStyle} />
+          </Field>
+          <Field label="State" help="Where the company is registered.">
+            <input value={form.state_employer_id_state || 'UT'} onChange={set('state_employer_id_state')} maxLength={2} style={inputStyle} />
+          </Field>
+        </Row>
+        <Row two>
+          <Field label="State deposit schedule" help="Utah follows your federal schedule by default — pick the same one unless DWS told you otherwise.">
+            <select value={form.state_deposit_schedule || ''} onChange={set('state_deposit_schedule')} style={inputStyle}>
+              <option value="">— Same as federal —</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="annually">Annually</option>
+            </select>
+          </Field>
+          <div />
+        </Row>
+      </Card>
+
+      {/* State unemployment */}
+      <Card title="State Unemployment (SUI)" theme={theme}>
+        <Row two>
+          <Field label="DWS account number" help="Utah Department of Workforce Services sends this when you register as an employer.">
+            <input value={form.sui_account_number || ''} onChange={set('sui_account_number')} placeholder="C0123456-7" style={inputStyle} />
+          </Field>
+          <Field label="Your assigned SUI rate (%)" help="DWS sends a rate-notice letter each January. New employers usually start at 1.20%.">
+            <input type="number" step="0.0001" value={form.sui_rate_pct ?? ''} onChange={set('sui_rate_pct')} placeholder="1.2000" style={inputStyle} />
+          </Field>
+        </Row>
+        <Row two>
+          <Field label="SUI wage base ($)" help="Utah 2025 = $48,900. Updates each January.">
+            <input type="number" value={form.sui_wage_base ?? ''} onChange={set('sui_wage_base')} placeholder="48900" style={inputStyle} />
+          </Field>
+          <div />
+        </Row>
+      </Card>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+        <button onClick={save} disabled={saving} style={{
+          padding: '12px 20px', minHeight: 44, backgroundColor: theme.accent, color: '#fff',
+          border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+          cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
+        }}>
+          {saving ? 'Saving…' : 'Save tax settings'}
+        </button>
+        {savedAt && <span style={{ fontSize: 13, color: '#16a34a' }}>Saved at {savedAt.toLocaleTimeString()}</span>}
+      </div>
+    </div>
+  )
+
+  function Card({ title, children }) {
+    return (
+      <section style={{ marginBottom: 22, padding: 16, backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12 }}>
+        <h4 style={{ fontSize: 14, fontWeight: 700, color: theme.text, margin: '0 0 12px' }}>{title}</h4>
+        {children}
+      </section>
+    )
+  }
+  function Row({ two, children }) {
+    return <div style={{ display: 'grid', gridTemplateColumns: two ? '1fr 1fr' : '1fr', gap: 14, marginBottom: 12 }}>{children}</div>
+  }
+  function Field({ label, help, children }) {
+    return (
+      <div>
+        <label style={labelStyle}>{label}</label>
+        {children}
+        {help && <div style={helpStyle}>{help}</div>}
+      </div>
+    )
+  }
 }
 
 // ─── Integrations Tab ───

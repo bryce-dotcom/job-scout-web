@@ -52,6 +52,7 @@ import Incentives from './pages/Incentives'
 import TimeClock from './pages/TimeClock'
 import FieldScout from './pages/FieldScout'
 import Payroll from './pages/Payroll'
+import PayrollInbox from './pages/PayrollInbox'
 import MyPay from './pages/MyPay'
 import Books from './pages/Books'
 import BaseCamp from './pages/BaseCamp'
@@ -387,6 +388,7 @@ function App() {
           <Route path="/time-clock" element={<TimeClockRouteGuard />} />
           <Route path="/field-scout" element={<FieldScout />} />
           <Route path="/payroll" element={<Payroll />} />
+          <Route path="/payroll/inbox" element={<PayrollInbox />} />
           <Route path="/my-pay" element={<MyPay />} />
           <Route path="/books" element={<Books />} />
 

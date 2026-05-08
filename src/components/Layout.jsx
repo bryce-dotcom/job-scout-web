@@ -53,7 +53,8 @@ import {
   Compass,
   RefreshCw,
   HelpCircle,
-  Eye
+  Eye,
+  Inbox
 } from 'lucide-react'
 
 // Theme context
@@ -312,7 +313,8 @@ export default function Layout() {
         { to: '/employees', icon: UserCog, label: 'Employees', hint: 'Manage team members and roles' },
         { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' },
         { to: '/my-pay', icon: DollarSign, label: 'My Pay', hint: 'Your commissions, pending payouts, and hours' },
-        { to: '/payroll', icon: DollarSign, label: 'Payroll', hint: 'Commissions, hours, bonuses, and pay runs' }
+        { to: '/payroll', icon: DollarSign, label: 'Payroll', hint: 'Commissions, hours, bonuses, and pay runs' },
+        { to: '/payroll/inbox', icon: Inbox, label: 'Payroll Inbox', hint: 'Tax deposits, new-hire reports, and filings — what to do today' }
       ]
     }
   ]
