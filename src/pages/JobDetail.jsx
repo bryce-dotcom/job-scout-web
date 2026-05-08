@@ -1885,6 +1885,85 @@ function JobDetailInner() {
     }
   }
 
+  // Duplicate Job — Alayda asked for this. Clones the job's core fields,
+  // line items, and sections to a brand-new "Chillin" job with no
+  // schedule. Doesn't carry payments, invoices, time logs, or photos —
+  // those are tied to the work that actually happened on the original.
+  const handleDuplicateJob = async () => {
+    if (!confirm('Duplicate this job? The new job will start in Chillin with no schedule, copied line items, and copied sections. Invoices, payments, photos, and time entries are NOT copied.')) return
+    setSaving(true)
+    try {
+      const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`
+      const insertRow = {
+        company_id: companyId,
+        job_id: jobNumber,
+        job_title: `${job.job_title || 'Job'} (copy)`,
+        job_address: job.job_address || null,
+        customer_id: job.customer_id || null,
+        lead_id: job.lead_id || null,
+        salesperson_id: job.salesperson_id || null,
+        pm_id: job.pm_id || null,
+        job_lead_id: job.job_lead_id || null,
+        quote_id: null, // don't double-bind to the source estimate
+        business_unit: job.business_unit || null,
+        service_type: job.service_type || null,
+        status: 'Chillin',
+        details: job.details || null,
+        notes: job.notes || null,
+        job_total: job.job_total || null,
+        utility_incentive: job.utility_incentive || 0,
+        allotted_time_hours: job.allotted_time_hours || null,
+        recurrence: 'None',
+        assigned_team: job.assigned_team || null,
+        updated_at: new Date().toISOString(),
+      }
+      const { data: newJob, error: jobErr } = await supabase
+        .from('jobs')
+        .insert([insertRow])
+        .select()
+        .single()
+      if (jobErr) throw jobErr
+
+      // Copy line items
+      const { data: srcLines } = await supabase
+        .from('job_lines')
+        .select('item_id, quantity, price, total, description, notes')
+        .eq('job_id', id)
+      if (srcLines?.length) {
+        const lineRows = srcLines.map(l => ({ ...l, company_id: companyId, job_id: newJob.id }))
+        const { error: lineErr } = await supabase.from('job_lines').insert(lineRows)
+        if (lineErr) console.error('[duplicateJob] job_lines copy failed:', lineErr)
+      }
+
+      // Copy sections (without scheduled dates — fresh job, fresh schedule)
+      const { data: srcSections } = await supabase
+        .from('job_sections')
+        .select('name, description, estimated_hours, sort_order, status')
+        .eq('job_id', id)
+      if (srcSections?.length) {
+        const sectionRows = srcSections.map(s => ({
+          ...s,
+          company_id: companyId,
+          job_id: newJob.id,
+          status: 'pending',
+          updated_at: new Date().toISOString(),
+        }))
+        const { error: secErr } = await supabase.from('job_sections').insert(sectionRows)
+        if (secErr) console.error('[duplicateJob] job_sections copy failed:', secErr)
+      }
+
+      const { toast } = await import('../lib/toast')
+      toast.success(`Duplicated as ${jobNumber}`)
+      await fetchJobs()
+      navigate(`/jobs/${newJob.id}`)
+    } catch (err) {
+      const { toast } = await import('../lib/toast')
+      toast.error('Duplicate failed: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleDeleteJob = async () => {
     if (!confirm('Permanently delete this job and all its line items, sections, appointments, and invoices?')) return
     setSaving(true)
@@ -4634,6 +4713,16 @@ function JobDetailInner() {
                 Job Costing
               </button>
 
+              {/* Duplicate Job — Alayda asked for this. Available to anyone
+                  who can edit; safer than Delete so no admin gate. */}
+              <button onClick={handleDuplicateJob} disabled={saving} title="Make a copy of this job (line items + sections)" style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                padding: '12px 16px', backgroundColor: theme.bgCard, color: theme.text,
+                border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
+              }}>
+                <Copy size={18} />
+                Duplicate Job
+              </button>
               {isAdmin && (
                 <>
                   <div style={{ borderTop: `1px solid ${theme.border}`, margin: '6px 0' }} />
