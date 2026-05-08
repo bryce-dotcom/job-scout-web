@@ -1211,6 +1211,18 @@ export default function PMJobSetter() {
         updated_at: new Date().toISOString()
       }).eq('id', draggedAppointment.id)
 
+      // Two-way sync: if this appointment is tied to a job, push the
+      // new schedule onto the job too. Without this the calendar moves
+      // but the job's start_date stays stuck on the old date — Doug's
+      // "reschedule on calendar doesn't change the job" complaint.
+      if (draggedAppointment.job_id) {
+        await supabase.from('jobs').update({
+          start_date: newStart.toISOString(),
+          end_date: newEnd.toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', draggedAppointment.job_id)
+      }
+
       setDraggedAppointment(null)
       await fetchData()
       return
@@ -1367,6 +1379,20 @@ export default function PMJobSetter() {
     }
 
     await supabase.from('appointments').update(updateData).eq('id', editingAppointment.id)
+
+    // Two-way sync: if this appointment is tied to a job, push the
+    // schedule + assignment changes onto the job too. Without this the
+    // calendar updates but the job stays on the old date — Doug's
+    // "calendar and job get out of sync" complaint.
+    if (editingAppointment.job_id) {
+      const jobUpdate = {
+        start_date: startTime.toISOString(),
+        end_date: endTime.toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      if (updateData.employee_id) jobUpdate.pm_id = updateData.employee_id
+      await supabase.from('jobs').update(jobUpdate).eq('id', editingAppointment.job_id)
+    }
 
     // If recurrence changed to recurring and end date set, create future appointments
     if (isRecurring && appointmentForm.recurrence_end && !isRecurringAppointment(editingAppointment)) {

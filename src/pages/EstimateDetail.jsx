@@ -1083,9 +1083,19 @@ function EstimateDetailInner() {
     if (!silent && !confirm('Convert this estimate to a Job?')) return
     setConvertingToJob(true)
     try {
+      // Refetch the estimate fresh so we never trust a stale closure
+      // when this runs auto-after-approve. (React state updates after
+      // fetchEstimateData() are not visible inside this same async tick.)
+      const { data: freshEstimate } = await supabase
+        .from('quotes')
+        .select('*, lead:leads(id, customer_name, phone, email, address), customer:customers(id, name, email, phone, address, business_name)')
+        .eq('id', id)
+        .single()
+      const estimateRow = freshEstimate || estimate
+
       // 1. Find or create customer
-      let customerId = estimate.customer_id || null
-      const customerInfo = estimate.customer || estimate.lead
+      let customerId = estimateRow.customer_id || null
+      const customerInfo = estimateRow.customer || estimateRow.lead
       const customerName = customerInfo?.name || customerInfo?.customer_name || ''
 
       if (!customerId && customerName) {
@@ -1122,27 +1132,28 @@ function EstimateDetailInner() {
         .insert([{
           company_id: companyId,
           job_id: jobNumber,
-          job_title: estimate.estimate_name || estimate.service_type || `${customerName} - Job`,
+          job_title: estimateRow.estimate_name || estimateRow.service_type || `${customerName} - Job`,
           customer_id: customerId,
-          lead_id: estimate.lead_id ? parseInt(estimate.lead_id) : null,
-          salesperson_id: estimate.salesperson_id || null,
-          quote_id: estimate.id,
+          lead_id: estimateRow.lead_id ? parseInt(estimateRow.lead_id) : null,
+          salesperson_id: estimateRow.salesperson_id || null,
+          quote_id: estimateRow.id,
           job_address: customerInfo?.address || null,
           // Default to Chillin (the triage / new-jobs column) — matches
           // Jobs.jsx default and what Doug expects when an estimate is
           // approved. Schedule modal flips it to Scheduled when a date
           // is set.
           status: 'Chillin',
-          start_date: estimate.service_date || new Date().toISOString(),
-          job_total: subtotal - discount,
-          utility_incentive: parseFloat(estimate.utility_incentive) || 0,
+          start_date: estimateRow.service_date || new Date().toISOString(),
+          job_total: parseFloat(estimateRow.quote_amount) || (subtotal - discount),
+          utility_incentive: parseFloat(estimateRow.utility_incentive) || 0,
           // Carry the estimate's notes / summary onto the job so the
           // installers see what was promised. Doug + Alayda flagged that
           // notes weren't transferring estimate→job. Combine summary
           // + notes (and the customer-facing message if set) so nothing
-          // is lost.
-          details: [estimate.summary, estimate.notes, estimate.estimate_message].filter(Boolean).join('\n\n') || null,
-          notes: [estimate.notes, estimate.summary].filter(Boolean).join('\n\n') || null,
+          // is lost. Pulled from the FRESH estimate row, not the closure,
+          // because auto-convert runs before React state catches up.
+          details: [estimateRow.summary, estimateRow.notes, estimateRow.estimate_message].filter(Boolean).join('\n\n') || null,
+          notes: [estimateRow.notes, estimateRow.summary].filter(Boolean).join('\n\n') || null,
           updated_at: new Date().toISOString()
         }])
         .select()
@@ -1231,9 +1242,24 @@ function EstimateDetailInner() {
         console.error('[convertToJob] deposit invoice step failed', depErr)
       }
 
-      // 3. Copy quote lines to job lines
-      if (lineItems.length > 0) {
-        const jobLines = lineItems.map(line => ({
+      // 3. Copy quote lines to job lines.
+      //
+      // CRITICAL: refetch quote_lines from the DB instead of relying on the
+      // `lineItems` React state. When this handler is auto-invoked right
+      // after `await fetchEstimateData()` (the approve/skip-deposit auto-
+      // convert path), `lineItems` from the closure is still stale because
+      // React hasn't re-rendered yet. That bug silently produced jobs with
+      // a $ total but ZERO job_lines (Pacific Steel, bitter creek, etc.).
+      const { data: freshQuoteLines, error: qlErr } = await supabase
+        .from('quote_lines')
+        .select('id, item_id, quantity, price, line_total, notes, photos')
+        .eq('quote_id', estimateRow.id)
+      if (qlErr) {
+        console.error('[convertToJob] failed to fetch quote_lines for copy:', qlErr)
+      }
+      const linesToCopy = freshQuoteLines || []
+      if (linesToCopy.length > 0) {
+        const jobLines = linesToCopy.map(line => ({
           company_id: companyId,
           job_id: newJob.id,
           item_id: line.item_id || null,
@@ -1243,12 +1269,18 @@ function EstimateDetailInner() {
           notes: line.notes || null,
           photos: line.photos || []
         }))
-        const { data: createdJobLines } = await supabase.from('job_lines').insert(jobLines).select('id')
-
-        // Map quote_line_id → job_line_id for photo carry-forward
-        if (createdJobLines?.length) {
-          for (let i = 0; i < lineItems.length; i++) {
-            const quoteLineId = lineItems[i].id
+        const { data: createdJobLines, error: jlErr } = await supabase
+          .from('job_lines')
+          .insert(jobLines)
+          .select('id')
+        if (jlErr) {
+          // Surface loudly so we never silently lose lines again.
+          console.error('[convertToJob] job_lines insert failed:', jlErr)
+          toast.error(`Job created but line items failed to copy: ${jlErr.message}`)
+        } else if (createdJobLines?.length) {
+          // Map quote_line_id → job_line_id for photo carry-forward
+          for (let i = 0; i < linesToCopy.length; i++) {
+            const quoteLineId = linesToCopy[i].id
             const jobLineId = createdJobLines[i]?.id
             if (quoteLineId && jobLineId) {
               await supabase

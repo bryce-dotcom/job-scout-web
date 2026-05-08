@@ -1027,6 +1027,25 @@ function JobDetailInner() {
     }
     if (formData.customer_id) updates.customer_id = formData.customer_id
     await supabase.from('jobs').update(updates).eq('id', id)
+
+    // Two-way sync: if the job's start/end date changed, push the new
+    // schedule onto the linked appointment(s) so the calendar matches.
+    // Without this, editing the job's date here leaves a stale event on
+    // the calendar — Doug's "I changed it on the job, didn't change on
+    // the calendar" complaint.
+    const startChanged = formData.start_date && formData.start_date !== job?.start_date
+    const endChanged = formData.end_date && formData.end_date !== job?.end_date
+    if (startChanged || endChanged) {
+      try {
+        const apptUpdate = { updated_at: new Date().toISOString() }
+        if (formData.start_date) apptUpdate.start_time = new Date(formData.start_date).toISOString()
+        if (formData.end_date) apptUpdate.end_time = new Date(formData.end_date).toISOString()
+        await supabase.from('appointments').update(apptUpdate).eq('job_id', id)
+      } catch (apptErr) {
+        console.warn('[JobDetail.handleSave] appointment sync failed:', apptErr)
+      }
+    }
+
     await fetchJobData()
     await fetchJobs()
     setEditMode(false)
