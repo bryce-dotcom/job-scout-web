@@ -230,6 +230,7 @@ function JobDetailInner() {
   const [sectionFormError, setSectionFormError] = useState('')
   const ganttRef = useRef(null)
   const fileInputRef = useRef(null)
+  const docCameraInputRef = useRef(null)  // dedicated camera-capture input for iOS photo-as-document upload
 
   // Document viewer state
   const [viewingDoc, setViewingDoc] = useState(null) // { url, name }
@@ -5233,27 +5234,31 @@ function JobDetailInner() {
             border: `1px solid ${theme.border}`,
             padding: '20px'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
               <Paperclip size={16} color={theme.textMuted} />
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, flex: 1 }}>Documents ({attachments.length})</h3>
+              {/* Two file inputs: camera-capture for "snap a photo of this
+                  contract right now" (Alayda's iPhone-friendly upload),
+                  regular for everything else. Both routed through the
+                  same handler. */}
               <input type="file" ref={fileInputRef} multiple style={{ display: 'none' }} onChange={handleUploadDocument} />
+              <input type="file" ref={docCameraInputRef} accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUploadDocument} />
               <button
                 onClick={handleOpenGenerateModal}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '5px 8px',
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  padding: isMobile ? '8px 12px' : '5px 8px',
                   backgroundColor: theme.accentBg,
                   color: theme.accent,
                   border: `1px solid ${theme.accent}`,
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  fontSize: '11px',
-                  fontWeight: '500'
+                  fontSize: isMobile ? '13px' : '11px',
+                  fontWeight: '500',
+                  minHeight: isMobile ? '44px' : 'auto',
                 }}
               >
-                <Package size={12} />
+                <Package size={isMobile ? 16 : 12} />
                 Generate
               </button>
               <button
@@ -5265,40 +5270,55 @@ function JobDetailInner() {
                   setSubmittalMessage(`Please find the attached submittal package for ${jobTitle}${svcType}. Let us know if you have any questions.`)
                 }}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '5px 8px',
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  padding: isMobile ? '8px 12px' : '5px 8px',
                   backgroundColor: 'rgba(59,130,246,0.1)',
                   color: '#3b82f6',
                   border: '1px solid #3b82f6',
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  fontSize: '11px',
-                  fontWeight: '500'
+                  fontSize: isMobile ? '13px' : '11px',
+                  fontWeight: '500',
+                  minHeight: isMobile ? '44px' : 'auto',
                 }}
               >
-                <PackageCheck size={12} />
+                <PackageCheck size={isMobile ? 16 : 12} />
                 Submittal
               </button>
+              {/* Mobile-only camera capture — Alayda flagged that uploading
+                  documents on iPhone was clunky. Now: tap "Camera" → opens
+                  the iOS camera right away → photo uploads as a document. */}
+              {isMobile && (
+                <button
+                  onClick={() => docCameraInputRef.current?.click()}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '10px 14px',
+                    backgroundColor: '#3b82f6',
+                    color: '#fff', border: 'none', borderRadius: '8px',
+                    cursor: 'pointer', fontSize: '14px', fontWeight: '600',
+                    minHeight: '44px',
+                  }}
+                  title="Take a photo with your camera"
+                >
+                  <Camera size={16} /> Camera
+                </button>
+              )}
               <button
                 onClick={() => fileInputRef.current?.click()}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '6px 10px',
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: isMobile ? '10px 14px' : '6px 10px',
                   backgroundColor: theme.accent,
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
+                  color: '#fff', border: 'none', borderRadius: isMobile ? '8px' : '6px',
                   cursor: 'pointer',
-                  fontSize: '12px',
-                  fontWeight: '500'
+                  fontSize: isMobile ? '14px' : '12px',
+                  fontWeight: isMobile ? '600' : '500',
+                  minHeight: isMobile ? '44px' : 'auto',
                 }}
               >
-                <Upload size={14} />
-                Upload
+                <Upload size={isMobile ? 16 : 14} />
+                {isMobile ? 'Upload File' : 'Upload'}
               </button>
             </div>
             {attachments.length === 0 ? (
