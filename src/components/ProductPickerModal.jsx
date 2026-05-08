@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from './Layout'
 import {
-  X, Search, ChevronLeft, Grid3X3, Wrench, Zap, Droplets, Leaf, ShoppingBag, Box, Package, Boxes
+  X, Search, Package, Boxes, Wrench, Zap, Droplets, Leaf, ShoppingBag, Grid3X3, Clock
 } from 'lucide-react'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 
@@ -18,486 +18,429 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-/**
- * ProductPickerModal - Visual product catalog picker for quote line items
- *
- * @param {boolean} isOpen - Controls modal visibility
- * @param {function} onClose - Callback when modal is closed
- * @param {function} onSelect - Callback when a product is selected, receives (product, laborCost, totalPrice)
- */
-export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
-  const companyId = useStore((state) => state.companyId)
-  const products = useStore((state) => state.products)
-  const serviceTypes = useStore((state) => state.serviceTypes)
-  const laborRates = useStore((state) => state.laborRates)
-  const inventory = useStore((state) => state.inventory)
-  const productComponents = useStore((state) => state.productComponents)
+const SERVICE_ICONS = {
+  'Energy Efficiency': Zap,
+  'Electrical': Zap,
+  'Exterior Cleaning': Droplets,
+  'Exterior Cleaning & Maint': Droplets,
+  'Window Cleaning': Droplets,
+  'Landscaping': Leaf,
+  'Lawn Care': Leaf,
+  'Retail': ShoppingBag,
+  'General': Grid3X3,
+}
 
-  const [productGroups, setProductGroups] = useState([])
-  const [catalogServiceType, setCatalogServiceType] = useState('')
-  const [selectedGroup, setSelectedGroup] = useState(null)
-  const [catalogSearch, setCatalogSearch] = useState('')
-  const [isMobile, setIsMobile] = useState(false)
+const ROW_LIMIT = 200
+
+/**
+ * ProductPickerModal — search + filter product catalog
+ *
+ * @param {boolean} isOpen
+ * @param {function} onClose
+ * @param {function} onSelect — receives (product, laborCost, totalPrice)
+ * @param {number[]} [recentProductIds] — product ids already on this estimate; surface as "Recents"
+ */
+export default function ProductPickerModal({ isOpen, onClose, onSelect, recentProductIds = [] }) {
+  const companyId = useStore((s) => s.companyId)
+  const products = useStore((s) => s.products)
+  const serviceTypes = useStore((s) => s.serviceTypes)
+  const laborRates = useStore((s) => s.laborRates)
+  const inventory = useStore((s) => s.inventory)
+  const productComponents = useStore((s) => s.productComponents)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
-  // Mobile detection
+  const [productGroups, setProductGroups] = useState([])
+  const [search, setSearch] = useState('')
+  const [serviceFilter, setServiceFilter] = useState(null)   // null = all
+  const [groupFilter, setGroupFilter] = useState(null)       // null = all
+  const [confirmProduct, setConfirmProduct] = useState(null)
+  const [highlightIdx, setHighlightIdx] = useState(0)
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768)
+
+  const searchRef = useRef(null)
+  const listRef = useRef(null)
+  const rowRefs = useRef({})
+
+  // Mobile detect
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768)
-    checkMobile()
-    window.addEventListener('resize', checkMobile)
-    return () => window.removeEventListener('resize', checkMobile)
+    const cb = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', cb)
+    return () => window.removeEventListener('resize', cb)
   }, [])
 
-  // Fetch product groups when modal opens
+  // On open: reset state, autofocus search
   useEffect(() => {
     if (isOpen && companyId) {
-      fetchProductGroups()
-      setCatalogServiceType(serviceTypes[0] || '')
-      setSelectedGroup(null)
-      setCatalogSearch('')
+      fetchGroups()
+      setSearch('')
+      setServiceFilter(null)
+      setGroupFilter(null)
+      setHighlightIdx(0)
+      setConfirmProduct(null)
+      requestAnimationFrame(() => searchRef.current?.focus())
     }
-  }, [isOpen, companyId, serviceTypes])
+  }, [isOpen, companyId])
 
-  const fetchProductGroups = async () => {
-    const { data } = await supabase
-      .from('product_groups')
-      .select('*')
-      .eq('company_id', companyId)
-      .order('name')
+  const fetchGroups = async () => {
+    const { data } = await supabase.from('product_groups').select('*').eq('company_id', companyId).order('name')
     setProductGroups(data || [])
   }
 
-  // Get service type icon
-  const getServiceTypeIcon = (type) => {
-    const iconMap = {
-      'Energy Efficiency': Zap,
-      'Electrical': Zap,
-      'Exterior Cleaning': Droplets,
-      'Landscaping': Leaf,
-      'Retail': ShoppingBag,
-      'General': Grid3X3
-    }
-    return iconMap[type] || Wrench
-  }
-
-  // Calculate labor cost for product
   const calculateLaborCost = (product) => {
     if (!product.allotted_time_hours) return 0
-
-    let rate = null
-    if (product.labor_rate_id) {
-      rate = laborRates.find(r => r.id === product.labor_rate_id)
-    }
-    if (!rate) {
-      rate = laborRates.find(r => r.is_default)
-    }
-
-    if (!rate) return 0
-    return product.allotted_time_hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1)
+    let rate = product.labor_rate_id ? laborRates.find((r) => r.id === product.labor_rate_id) : null
+    if (!rate) rate = laborRates.find((r) => r.is_default)
+    return rate ? product.allotted_time_hours * (rate.rate_per_hour || 0) * (rate.multiplier || 1) : 0
   }
 
-  // Get inventory count for product
+  // null = product doesn't track inventory; number = stock count
   const getInventoryCount = (productId) => {
-    const inv = inventory.find(i => i.product_id === productId)
-    return inv?.quantity || 0
+    const inv = inventory.find((i) => i.product_id === productId)
+    return inv ? (inv.quantity ?? 0) : null
   }
 
-  // Get component count for product (bundle indicator)
-  const getComponentCount = (productId) => {
-    return productComponents.filter(pc => pc.parent_product_id === productId).length
-  }
+  const getComponentCount = (productId) =>
+    productComponents.filter((pc) => pc.parent_product_id === productId).length
 
-  const [confirmProduct, setConfirmProduct] = useState(null) // product awaiting install choice
+  const activeProducts = useMemo(() => products.filter((p) => p.active !== false), [products])
 
-  // Handle product selection — if it has labor, show install choice
-  const handleSelectProduct = (product) => {
-    const laborCost = calculateLaborCost(product)
-    if (laborCost > 0) {
+  // Service type lives on product_groups, not on products. Derive each
+  // product's service type via its group_id.
+  const groupServiceById = useMemo(() => {
+    const m = {}
+    productGroups.forEach((g) => { m[g.id] = g.service_type })
+    return m
+  }, [productGroups])
+
+  const productServiceType = (p) => groupServiceById[p.group_id] || null
+
+  const serviceTypeCounts = useMemo(() => {
+    const m = {}
+    activeProducts.forEach((p) => {
+      const k = productServiceType(p)
+      if (k) m[k] = (m[k] || 0) + 1
+    })
+    return m
+  }, [activeProducts, groupServiceById])
+
+  // Build the list of service-type chips from what's actually on groups,
+  // plus any names declared in the company's settings list.
+  const chipServiceTypes = useMemo(() => {
+    const seen = new Set()
+    const out = []
+    serviceTypes.forEach((t) => { if (!seen.has(t)) { seen.add(t); out.push(t) } })
+    productGroups.forEach((g) => {
+      if (g.service_type && !seen.has(g.service_type)) { seen.add(g.service_type); out.push(g.service_type) }
+    })
+    return out
+  }, [serviceTypes, productGroups])
+
+  const groupsForFilter = useMemo(() => {
+    if (!serviceFilter) return []
+    return productGroups.filter((g) => g.service_type === serviceFilter)
+  }, [productGroups, serviceFilter])
+
+  const filteredProducts = useMemo(() => {
+    let list = activeProducts
+    if (serviceFilter) list = list.filter((p) => productServiceType(p) === serviceFilter)
+    if (groupFilter !== null) list = list.filter((p) => p.group_id === groupFilter)
+    if (search.trim()) {
+      list = list.filter((p) =>
+        matchAllTokens(buildBlob(p.name, p.description, p.sku, p.product_category, productServiceType(p)), search)
+      )
+    }
+    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [activeProducts, serviceFilter, groupFilter, search, groupServiceById])
+
+  // Recents — surface above results when there's no active search
+  const recents = useMemo(() => {
+    if (search.trim() || !recentProductIds?.length) return []
+    const seen = new Set()
+    return recentProductIds
+      .filter((id) => {
+        if (!id || seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+      .map((id) => activeProducts.find((p) => p.id === id))
+      .filter(Boolean)
+      .slice(0, 5)
+  }, [search, recentProductIds, activeProducts])
+
+  // Reset highlight when filter pipeline changes
+  useEffect(() => { setHighlightIdx(0) }, [search, serviceFilter, groupFilter])
+
+  // Keep highlight row scrolled into view
+  useEffect(() => {
+    const row = rowRefs.current[highlightIdx]
+    if (row) row.scrollIntoView({ block: 'nearest' })
+  }, [highlightIdx])
+
+  const handleSelect = (product) => {
+    const labor = calculateLaborCost(product)
+    if (labor > 0) {
       setConfirmProduct(product)
     } else {
       onSelect(product, 0, product.unit_price || 0)
-      setSelectedGroup(null)
-      setCatalogSearch('')
     }
   }
 
-  const handleConfirmChoice = (withInstall) => {
+  const handleConfirm = (withInstall) => {
     if (!confirmProduct) return
-    const product = confirmProduct
-    const fullLaborCost = calculateLaborCost(product)
-    const laborCost = withInstall ? fullLaborCost : 0
-    // unit_price = directCost*markup + components + labor
-    // "Product Only" = unit_price minus labor
-    const installedPrice = product.unit_price || 0
-    const productOnlyPrice = installedPrice - fullLaborCost
-    const totalPrice = withInstall ? installedPrice : Math.max(0, productOnlyPrice)
-    onSelect(product, laborCost, totalPrice)
+    const p = confirmProduct
+    const fullLabor = calculateLaborCost(p)
+    const installed = p.unit_price || 0
+    const productOnly = Math.max(0, installed - fullLabor)
+    onSelect(p, withInstall ? fullLabor : 0, withInstall ? installed : productOnly)
     setConfirmProduct(null)
-    setSelectedGroup(null)
-    setCatalogSearch('')
   }
 
-  // Handle back button
-  const handleBack = () => {
-    if (catalogSearch) {
-      setCatalogSearch('')
-    } else if (selectedGroup) {
-      setSelectedGroup(null)
-    } else {
-      onClose()
+  // Keyboard: Esc / Arrow keys / Enter
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e) => {
+      if (confirmProduct) return // let the install overlay take precedence
+      if (e.key === 'Escape') { e.preventDefault(); onClose() }
+      else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightIdx((i) => Math.min(i + 1, Math.max(0, filteredProducts.slice(0, ROW_LIMIT).length - 1)))
+      }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIdx((i) => Math.max(i - 1, 0)) }
+      else if (e.key === 'Enter') {
+        const p = filteredProducts[highlightIdx]
+        if (p) { e.preventDefault(); handleSelect(p) }
+      }
     }
-  }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, filteredProducts, highlightIdx, confirmProduct])
 
   if (!isOpen) return null
+
+  const visibleProducts = filteredProducts.slice(0, ROW_LIMIT)
+  const truncated = filteredProducts.length > ROW_LIMIT
 
   return (
     <>
       {/* Backdrop */}
       <div
         onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          zIndex: 50
-        }}
+        style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50 }}
       />
 
       {/* Modal */}
-      <div style={{
-        position: 'fixed',
-        top: isMobile ? 0 : '50%',
-        left: isMobile ? 0 : '50%',
-        right: isMobile ? 0 : 'auto',
-        bottom: isMobile ? 0 : 'auto',
-        transform: isMobile ? 'none' : 'translate(-50%, -50%)',
-        backgroundColor: theme.bgCard,
-        borderRadius: isMobile ? 0 : '16px',
-        border: isMobile ? 'none' : `1px solid ${theme.border}`,
-        width: isMobile ? '100%' : '90%',
-        maxWidth: isMobile ? '100%' : '900px',
-        height: isMobile ? '100%' : 'auto',
-        maxHeight: isMobile ? '100%' : '85vh',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        zIndex: 51
-      }}>
-        {/* Header */}
-        <div style={{
+      <div
+        style={{
+          position: 'fixed',
+          top: isMobile ? 0 : '50%',
+          left: isMobile ? 0 : '50%',
+          right: isMobile ? 0 : 'auto',
+          bottom: isMobile ? 0 : 'auto',
+          transform: isMobile ? 'none' : 'translate(-50%, -50%)',
+          backgroundColor: theme.bgCard,
+          borderRadius: isMobile ? 0 : '16px',
+          border: isMobile ? 'none' : `1px solid ${theme.border}`,
+          width: isMobile ? '100%' : '90%',
+          maxWidth: isMobile ? '100%' : '780px',
+          height: isMobile ? '100%' : 'auto',
+          maxHeight: isMobile ? '100%' : '85vh',
+          overflow: 'hidden',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: isMobile ? '16px' : '20px',
-          borderBottom: `1px solid ${theme.border}`
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
-              onClick={handleBack}
-              style={{
-                padding: isMobile ? '10px' : '8px',
-                minWidth: isMobile ? '44px' : 'auto',
-                minHeight: isMobile ? '44px' : 'auto',
-                backgroundColor: theme.bg,
-                border: `1px solid ${theme.border}`,
-                borderRadius: '8px',
-                cursor: 'pointer',
-                color: theme.textSecondary,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <ChevronLeft size={20} />
-            </button>
-            <h2 style={{
-              fontSize: isMobile ? '16px' : '18px',
-              fontWeight: '600',
-              color: theme.text,
-              margin: 0
-            }}>
-              {selectedGroup ? selectedGroup.name : 'Select Product'}
-            </h2>
-          </div>
+          flexDirection: 'column',
+          zIndex: 51,
+        }}
+      >
+        {/* Header: title + close */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
+          <h2 style={{ margin: 0, fontSize: isMobile ? '15px' : '17px', fontWeight: 600, color: theme.text }}>Select Product</h2>
           <button
             onClick={onClose}
-            style={{
-              padding: isMobile ? '10px' : '8px',
-              minWidth: isMobile ? '44px' : 'auto',
-              minHeight: isMobile ? '44px' : 'auto',
-              backgroundColor: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: theme.textMuted,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
+            style={{ padding: 8, minWidth: isMobile ? 44 : 'auto', minHeight: isMobile ? 44 : 'auto', background: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Body */}
-        <div style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: isMobile ? '16px' : '20px'
-        }}>
-          {/* Search Bar */}
-          <div style={{
-            position: 'relative',
-            marginBottom: '16px'
-          }}>
-            <Search size={18} style={{
-              position: 'absolute',
-              left: '12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: theme.textMuted
-            }} />
+        {/* Sticky filter bar */}
+        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, background: theme.bgCard }}>
+          {/* Search input */}
+          <div style={{ position: 'relative', marginBottom: 10 }}>
+            <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
             <input
+              ref={searchRef}
               type="text"
-              value={catalogSearch}
-              onChange={(e) => setCatalogSearch(e.target.value)}
-              placeholder="Search products..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search products by name, SKU, description…"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               style={{
                 width: '100%',
-                padding: isMobile ? '12px 12px 12px 40px' : '10px 12px 10px 40px',
-                minHeight: isMobile ? '44px' : 'auto',
+                padding: isMobile ? '12px 36px 12px 38px' : '10px 36px 10px 38px',
+                minHeight: isMobile ? 44 : 'auto',
                 border: `1px solid ${theme.border}`,
-                borderRadius: '8px',
-                fontSize: '14px',
+                borderRadius: 8,
+                // 16px on mobile prevents iOS Safari from auto-zooming the
+                // viewport when the input gains focus — that zoom was what
+                // made it look like Doug "couldn't see what he was typing".
+                fontSize: isMobile ? 16 : 14,
                 color: theme.text,
-                backgroundColor: theme.bgCard
+                // Some iOS WebKit builds ignore `color` on inputs unless
+                // -webkit-text-fill-color is set explicitly. Belt + suspenders.
+                WebkitTextFillColor: theme.text,
+                caretColor: theme.accent,
+                backgroundColor: theme.bgCard,
+                boxSizing: 'border-box',
+                outline: 'none',
               }}
             />
+            {search && (
+              <button
+                onClick={() => { setSearch(''); searchRef.current?.focus() }}
+                title="Clear search"
+                style={{
+                  position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                  padding: 6, background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: theme.textMuted, display: 'flex', alignItems: 'center'
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
-          {/* Service Type Tabs */}
-          {!catalogSearch && !selectedGroup && (
-            <div style={{
-              display: 'flex',
-              gap: '8px',
-              overflowX: 'auto',
-              WebkitOverflowScrolling: 'touch',
-              paddingBottom: '8px',
-              marginBottom: '16px'
-            }}>
-              {serviceTypes.map(type => (
-                <button
-                  key={type}
-                  onClick={() => setCatalogServiceType(type)}
-                  style={{
-                    padding: isMobile ? '10px 16px' : '8px 14px',
-                    minHeight: isMobile ? '44px' : 'auto',
-                    backgroundColor: catalogServiceType === type ? theme.accent : theme.bg,
-                    color: catalogServiceType === type ? '#fff' : theme.textSecondary,
-                    border: `1px solid ${catalogServiceType === type ? theme.accent : theme.border}`,
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    whiteSpace: 'nowrap',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  {(() => {
-                    const Icon = getServiceTypeIcon(type)
-                    return <Icon size={16} />
-                  })()}
-                  {type}
-                </button>
+          {/* Service-type chips */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <FilterChip
+              theme={theme} active={!serviceFilter}
+              onClick={() => { setServiceFilter(null); setGroupFilter(null) }}
+            >
+              All <span style={{ opacity: 0.7, marginLeft: 4 }}>{activeProducts.length}</span>
+            </FilterChip>
+            {chipServiceTypes
+              .filter((t) => (serviceTypeCounts[t] || 0) > 0)
+              .map((t) => {
+                const Icon = SERVICE_ICONS[t] || Wrench
+                return (
+                  <FilterChip
+                    key={t} theme={theme} active={serviceFilter === t}
+                    onClick={() => { setServiceFilter(t); setGroupFilter(null) }}
+                  >
+                    <Icon size={12} />
+                    {t} <span style={{ opacity: 0.7, marginLeft: 4 }}>{serviceTypeCounts[t] || 0}</span>
+                  </FilterChip>
+                )
+              })}
+          </div>
+
+          {/* Group sub-filter chips (only when service is selected and groups exist) */}
+          {serviceFilter && groupsForFilter.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+              <FilterChip theme={theme} small active={groupFilter === null} onClick={() => setGroupFilter(null)}>
+                All groups
+              </FilterChip>
+              {groupsForFilter.map((g) => (
+                <FilterChip key={g.id} theme={theme} small active={groupFilter === g.id} onClick={() => setGroupFilter(g.id)}>
+                  {g.name} <span style={{ opacity: 0.7, marginLeft: 4 }}>{activeProducts.filter((p) => p.group_id === g.id).length}</span>
+                </FilterChip>
               ))}
             </div>
           )}
+        </div>
 
-          {/* Search Results */}
-          {catalogSearch && (
-            <div>
-              <div style={{
-                fontSize: '13px',
-                color: theme.textMuted,
-                marginBottom: '12px'
-              }}>
-                Search results for "{catalogSearch}"
-              </div>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
-                gap: '12px'
-              }}>
-                {products
-                  .filter(p => p.active !== false && matchAllTokens(buildBlob(p.name, p.description, p.sku, p.category, p.service_type), catalogSearch))
-                  .slice(0, 40)
-                  .map(product => (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                      theme={theme}
-                      isMobile={isMobile}
-                      calculateLaborCost={calculateLaborCost}
-                      getInventoryCount={getInventoryCount}
-                      getComponentCount={getComponentCount}
-                      onSelect={handleSelectProduct}
-                    />
-                  ))}
-              </div>
-              {products.filter(p => p.active !== false && matchAllTokens(buildBlob(p.name, p.description, p.sku, p.category, p.service_type), catalogSearch)).length === 0 && (
-                <div style={{
-                  padding: '40px',
-                  textAlign: 'center',
-                  color: theme.textMuted
-                }}>
-                  No products found matching "{catalogSearch}"
-                </div>
-              )}
-            </div>
-          )}
+        {/* Result list */}
+        <div ref={listRef} style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
+          {/* Result count */}
+          <div style={{ padding: '4px 16px 8px', fontSize: 12, color: theme.textMuted }}>
+            {filteredProducts.length === 0
+              ? `No matches${search ? ` for "${search}"` : ''}`
+              : `${filteredProducts.length} ${filteredProducts.length === 1 ? 'product' : 'products'}${truncated ? ` (showing first ${ROW_LIMIT}, refine search to narrow)` : ''}`}
+          </div>
 
-          {/* Product Groups */}
-          {!catalogSearch && !selectedGroup && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(150px, 1fr))',
-              gap: '12px'
-            }}>
-              {/* Show groups for selected service type */}
-              {productGroups
-                .filter(g => g.service_type === catalogServiceType)
-                .map(group => (
-                  <GroupTile
-                    key={group.id}
-                    group={group}
-                    theme={theme}
-                    isMobile={isMobile}
-                    productCount={products.filter(p => p.group_id === group.id && p.active !== false).length}
-                    onSelect={() => setSelectedGroup(group)}
-                  />
-                ))}
-
-              {/* Show ungrouped products tile */}
-              {products.filter(p =>
-                p.service_type === catalogServiceType &&
-                !p.group_id &&
-                p.active !== false
-              ).length > 0 && (
-                <GroupTile
-                  group={{ id: null, name: 'Other Products', service_type: catalogServiceType }}
+          {/* Recents strip */}
+          {recents.length > 0 && (
+            <>
+              <SectionHeader theme={theme} icon={Clock}>Recently used on this estimate</SectionHeader>
+              {recents.map((p) => (
+                <ProductRow
+                  key={`recent-${p.id}`}
+                  product={p}
+                  highlighted={false}
+                  onClick={() => handleSelect(p)}
                   theme={theme}
                   isMobile={isMobile}
-                  productCount={products.filter(p => p.service_type === catalogServiceType && !p.group_id && p.active !== false).length}
-                  onSelect={() => setSelectedGroup({ id: null, name: 'Other Products', service_type: catalogServiceType })}
-                  isOther
+                  laborCost={calculateLaborCost(p)}
+                  stock={getInventoryCount(p.id)}
+                  componentCount={getComponentCount(p.id)}
                 />
-              )}
-
-              {productGroups.filter(g => g.service_type === catalogServiceType).length === 0 &&
-               products.filter(p => p.service_type === catalogServiceType && !p.group_id && p.active !== false).length === 0 && (
-                <div style={{
-                  gridColumn: '1 / -1',
-                  padding: '40px',
-                  textAlign: 'center',
-                  color: theme.textMuted
-                }}>
-                  No product groups for {catalogServiceType}
-                </div>
-              )}
-            </div>
+              ))}
+              <div style={{ borderBottom: `1px solid ${theme.border}`, margin: '6px 0' }} />
+              <SectionHeader theme={theme}>All products</SectionHeader>
+            </>
           )}
 
-          {/* Products in selected group */}
-          {!catalogSearch && selectedGroup && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
-              gap: '12px'
-            }}>
-              {products
-                .filter(p => {
-                  if (selectedGroup.id === null) {
-                    return p.service_type === selectedGroup.service_type && !p.group_id && p.active !== false
-                  }
-                  return p.group_id === selectedGroup.id && p.active !== false
-                })
-                .map(product => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    theme={theme}
-                    isMobile={isMobile}
-                    calculateLaborCost={calculateLaborCost}
-                    getInventoryCount={getInventoryCount}
-                    onSelect={handleSelectProduct}
-                  />
-                ))}
-              {products.filter(p => {
-                if (selectedGroup.id === null) {
-                  return p.service_type === selectedGroup.service_type && !p.group_id && p.active !== false
-                }
-                return p.group_id === selectedGroup.id && p.active !== false
-              }).length === 0 && (
-                <div style={{
-                  gridColumn: '1 / -1',
-                  padding: '40px',
-                  textAlign: 'center',
-                  color: theme.textMuted
-                }}>
-                  No products in this group
-                </div>
-              )}
+          {/* Main list */}
+          {visibleProducts.map((p, i) => (
+            <ProductRow
+              key={p.id}
+              product={p}
+              highlighted={highlightIdx === i}
+              onClick={() => { setHighlightIdx(i); handleSelect(p) }}
+              onMouseEnter={() => setHighlightIdx(i)}
+              rowRef={(el) => { rowRefs.current[i] = el }}
+              theme={theme}
+              isMobile={isMobile}
+              laborCost={calculateLaborCost(p)}
+              stock={getInventoryCount(p.id)}
+              componentCount={getComponentCount(p.id)}
+            />
+          ))}
+
+          {filteredProducts.length === 0 && (
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: theme.textMuted, fontSize: 13 }}>
+              {search
+                ? `No products match "${search}". Try a different term${serviceFilter ? ` or clear the ${serviceFilter} filter` : ''}.`
+                : 'No products in this filter. Try another service type.'}
             </div>
           )}
         </div>
       </div>
 
-      {/* Install choice overlay */}
+      {/* Install choice overlay (unchanged behavior) */}
       {confirmProduct && (() => {
         const p = confirmProduct
-        const laborCost = calculateLaborCost(p)
-        const installedPrice = p.unit_price || 0
-        const productOnlyPrice = Math.max(0, installedPrice - laborCost)
+        const labor = calculateLaborCost(p)
+        const installed = p.unit_price || 0
+        const productOnly = Math.max(0, installed - labor)
         return (
           <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
-            <div style={{ backgroundColor: theme.bgCard, borderRadius: '14px', padding: '24px', maxWidth: '380px', width: '90%', border: `1px solid ${theme.border}` }}>
-              <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>{p.name}</div>
-              <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '20px' }}>Choose how to add this product</div>
-
+            <div style={{ backgroundColor: theme.bgCard, borderRadius: 14, padding: 24, maxWidth: 380, width: '90%', border: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: theme.text, marginBottom: 4 }}>{p.name}</div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 20 }}>Choose how to add this product</div>
               <button
-                onClick={() => handleConfirmChoice(true)}
-                style={{
-                  width: '100%', padding: '14px 16px', marginBottom: '10px',
-                  backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '10px',
-                  cursor: 'pointer', textAlign: 'left', fontSize: '14px'
-                }}
+                onClick={() => handleConfirm(true)}
+                style={{ width: '100%', padding: '14px 16px', marginBottom: 10, backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer', textAlign: 'left', fontSize: 14 }}
               >
-                <div style={{ fontWeight: '600' }}>Product + Install</div>
-                <div style={{ fontSize: '12px', opacity: 0.85, marginTop: '2px' }}>
-                  ${installedPrice.toFixed(2)} — includes ${laborCost.toFixed(2)} labor ({p.allotted_time_hours}h)
+                <div style={{ fontWeight: 600 }}>Product + Install</div>
+                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
+                  ${installed.toFixed(2)} — includes ${labor.toFixed(2)} labor ({p.allotted_time_hours}h)
                 </div>
               </button>
-
               <button
-                onClick={() => handleConfirmChoice(false)}
-                style={{
-                  width: '100%', padding: '14px 16px', marginBottom: '12px',
-                  backgroundColor: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '10px',
-                  cursor: 'pointer', textAlign: 'left', fontSize: '14px'
-                }}
+                onClick={() => handleConfirm(false)}
+                style={{ width: '100%', padding: '14px 16px', marginBottom: 12, backgroundColor: theme.bg, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 10, cursor: 'pointer', textAlign: 'left', fontSize: 14 }}
               >
-                <div style={{ fontWeight: '600' }}>Product Only</div>
-                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                  ${productOnlyPrice.toFixed(2)} — no labor included
+                <div style={{ fontWeight: 600 }}>Product Only</div>
+                <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                  ${productOnly.toFixed(2)} — no labor included
                 </div>
               </button>
-
               <button
                 onClick={() => setConfirmProduct(null)}
-                style={{ width: '100%', padding: '10px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '13px' }}
+                style={{ width: '100%', padding: 10, backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: 13 }}
               >
                 Cancel
               </button>
@@ -509,197 +452,117 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect }) {
   )
 }
 
-// Group tile component
-function GroupTile({ group, theme, isMobile, productCount, onSelect, isOther }) {
+function FilterChip({ children, active, onClick, theme, small }) {
   return (
     <button
-      onClick={onSelect}
+      onClick={onClick}
       style={{
-        padding: '20px 16px',
-        backgroundColor: theme.bg,
-        border: `1px solid ${theme.border}`,
-        borderRadius: '12px',
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        padding: small ? '5px 10px' : '7px 12px',
+        backgroundColor: active ? theme.accent : theme.bg,
+        color: active ? '#fff' : theme.textSecondary,
+        border: `1px solid ${active ? theme.accent : theme.border}`,
+        borderRadius: 999,
         cursor: 'pointer',
-        textAlign: 'center',
-        transition: 'border-color 0.2s, transform 0.2s',
-        minHeight: isMobile ? '100px' : '120px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px'
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = theme.accent
-        e.currentTarget.style.transform = 'translateY(-2px)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = theme.border
-        e.currentTarget.style.transform = 'translateY(0)'
+        fontSize: small ? 12 : 13,
+        fontWeight: 500,
+        whiteSpace: 'nowrap',
       }}
     >
-      <div style={{
-        width: '48px',
-        height: '48px',
-        borderRadius: '12px',
-        backgroundColor: theme.accentBg,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        {group.image_url ? (
-          <img
-            src={group.image_url}
-            alt={group.name}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              borderRadius: '12px'
-            }}
-          />
-        ) : isOther ? (
-          <Box size={24} color={theme.accent} />
-        ) : (
-          <Grid3X3 size={24} color={theme.accent} />
-        )}
-      </div>
-      <div style={{
-        fontSize: '13px',
-        fontWeight: '600',
-        color: theme.text
-      }}>
-        {group.name}
-      </div>
-      <div style={{
-        fontSize: '11px',
-        color: theme.textMuted
-      }}>
-        {productCount} items
-      </div>
+      {children}
     </button>
   )
 }
 
-// Product card component
-function ProductCard({ product, theme, isMobile, calculateLaborCost, getInventoryCount, getComponentCount, onSelect }) {
-  const laborCost = calculateLaborCost(product)
-  const componentCount = getComponentCount ? getComponentCount(product.id) : 0
-  const totalPrice = product.unit_price || 0
+function SectionHeader({ children, theme, icon: Icon }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px 4px', fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      {Icon && <Icon size={11} />}
+      {children}
+    </div>
+  )
+}
 
+function ProductRow({ product, highlighted, onClick, onMouseEnter, rowRef, theme, isMobile, laborCost, stock, componentCount }) {
+  const price = product.unit_price || 0
   return (
     <button
-      onClick={() => onSelect(product)}
+      ref={rowRef}
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
       style={{
-        padding: '16px',
-        backgroundColor: theme.bg,
-        border: `1px solid ${theme.border}`,
-        borderRadius: '12px',
+        display: 'flex',
+        // Top-align so multi-line description doesn't push the price out of frame
+        alignItems: 'flex-start',
+        gap: 12,
+        width: '100%',
+        padding: isMobile ? '10px 16px' : '8px 16px',
+        background: highlighted ? theme.accentBg : 'transparent',
+        border: 'none',
+        borderBottom: `1px solid ${theme.border}`,
         cursor: 'pointer',
         textAlign: 'left',
-        transition: 'border-color 0.2s',
-        minHeight: isMobile ? '80px' : 'auto'
+        minHeight: isMobile ? 64 : 'auto',
       }}
-      onMouseEnter={(e) => e.currentTarget.style.borderColor = theme.accent}
-      onMouseLeave={(e) => e.currentTarget.style.borderColor = theme.border}
     >
-      <div style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '12px'
-      }}>
-        <div style={{
-          width: '48px',
-          height: '48px',
-          borderRadius: '8px',
-          backgroundColor: theme.accentBg,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0
-        }}>
-          {product.image_url ? (
-            <img
-              src={product.image_url}
-              alt={product.name}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                borderRadius: '8px'
-              }}
-            />
-          ) : (
-            <Package size={24} color={theme.accent} />
-          )}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontSize: '14px',
-            fontWeight: '600',
-            color: theme.text,
-            marginBottom: '4px',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '6px',
-            lineHeight: 1.3
-          }} title={product.name}>
-            <span style={{
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}>{product.name}</span>
-            {componentCount > 0 && (
-              <Boxes size={13} style={{ color: theme.textMuted, flexShrink: 0, marginTop: 3 }} title={`Bundle: ${componentCount} components`} />
-            )}
-          </div>
-          {product.description && (
-            <div style={{
-              fontSize: '12px',
-              color: theme.textSecondary,
-              marginBottom: '6px',
-              display: '-webkit-box',
-              WebkitLineClamp: 3,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-              lineHeight: 1.35,
-            }} title={product.description}>
-              {product.description}
-            </div>
-          )}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '13px',
-            flexWrap: 'wrap'
-          }}>
-            <span style={{ fontWeight: '600', color: theme.accent }}>
-              ${totalPrice.toFixed(2)}
+      {/* Thumbnail */}
+      <div style={{ width: 36, height: 36, borderRadius: 6, backgroundColor: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+        {product.image_url
+          ? <img src={product.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <Package size={18} color={theme.accent} />}
+      </div>
+
+      {/* Name + meta */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={product.name}>{product.name}</span>
+          {componentCount > 0 && <Boxes size={12} color={theme.textMuted} title={`Bundle: ${componentCount} components`} />}
+          {laborCost > 0 && (
+            <span style={{ fontSize: 10, fontWeight: 600, color: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', padding: '1px 6px', borderRadius: 8, whiteSpace: 'nowrap' }}>
+              + install
             </span>
-            {laborCost > 0 ? (
-              <span style={{
-                fontSize: '10px', fontWeight: '600', color: '#8b5cf6',
-                backgroundColor: 'rgba(139,92,246,0.1)', padding: '2px 6px',
-                borderRadius: '8px'
-              }}>
-                includes install ({product.allotted_time_hours}h)
-              </span>
-            ) : (
-              <span style={{
-                fontSize: '10px', color: theme.textMuted,
-                backgroundColor: theme.bg, padding: '2px 6px',
-                borderRadius: '8px'
-              }}>
-                product only
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-            {getInventoryCount(product.id)} in stock
-          </div>
+          )}
         </div>
+        {product.description && (
+          // Show up to 2 lines of description on mobile / 1 on desktop
+          // so reps can actually tell similar SKUs apart at a glance —
+          // Doug's feedback: "the descriptions are not enough".
+          <div
+            style={{
+              fontSize: isMobile ? 13 : 12,
+              color: theme.textMuted,
+              marginTop: 2,
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitLineClamp: isMobile ? 2 : 1,
+              WebkitBoxOrient: 'vertical',
+              lineHeight: 1.35,
+            }}
+            title={product.description}
+          >
+            {product.description}
+          </div>
+        )}
+        {/* Useful at-a-glance meta: SKU + category */}
+        {(product.sku || product.product_category) && (
+          <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, opacity: 0.85 }}>
+            {product.sku ? <span>SKU: {product.sku}</span> : null}
+            {product.sku && product.product_category ? <span style={{ margin: '0 6px' }}>·</span> : null}
+            {product.product_category ? <span>{product.product_category}</span> : null}
+          </div>
+        )}
+      </div>
+
+      {/* Price + stock */}
+      <div style={{ flexShrink: 0, textAlign: 'right' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: theme.accent, fontVariantNumeric: 'tabular-nums' }}>
+          ${price.toFixed(2)}
+        </div>
+        {stock !== null && (
+          <div style={{ fontSize: 11, color: stock === 0 ? '#ef4444' : theme.textMuted, marginTop: 1 }}>
+            {stock === 0 ? 'out of stock' : `${stock} in stock`}
+          </div>
+        )}
       </div>
     </button>
   )
