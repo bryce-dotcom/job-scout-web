@@ -188,6 +188,36 @@ export default function Onboarding() {
       return
     }
 
+    // Auto-enable AI agents that match the chosen industry. Arnie is
+    // useful everywhere; the trade-specific agent is the wedge that
+    // makes the new tenant's first 5 minutes feel productive.
+    try {
+      const slugs = ['arnie-og']                    // always
+      const ind = (formData.industry || '').toLowerCase()
+      if (ind.includes('lawn') || ind.includes('landscap')) slugs.push('zach-yard-yeti')
+      if (ind.includes('lighting') || ind.includes('electrical')) slugs.push('lenard-lighting')
+      if (ind.includes('fleet') || ind.includes('transport')) slugs.push('freddy-fleet')
+      if (ind.includes('cleaning')) slugs.push('walter-windows')
+
+      const { data: agentRows } = await supabase
+        .from('agents').select('id, slug').in('slug', slugs)
+      if (agentRows?.length) {
+        await supabase.from('company_agents').upsert(
+          agentRows.map(a => ({
+            company_id: company.id,
+            agent_id: a.id,
+            subscription_status: 'active',
+            activated_at: new Date().toISOString(),
+            settings: {},
+          })),
+          { onConflict: 'company_id,agent_id', ignoreDuplicates: true }
+        )
+      }
+    } catch (e) {
+      console.warn('[Onboarding] agent auto-enable failed:', e.message)
+      // Non-fatal — user can recruit them in Base Camp later.
+    }
+
     // If user opted into HCP import, queue a migration_jobs row.
     // A worker (Vercel Function / cron) will pick this up and run the
     // single-tenant importer. We never store the bare API key in the
