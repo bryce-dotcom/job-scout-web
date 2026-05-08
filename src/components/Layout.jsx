@@ -4,6 +4,7 @@ import { useStore } from '../lib/store'
 import FeedbackButton from './FeedbackButton'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
 import GlobalSearch from './GlobalSearch'
+import TrialBanner from './TrialBanner'
 import { useLocationTracking } from '../hooks/useLocationTracking'
 import {
   LayoutDashboard,
@@ -1552,6 +1553,7 @@ export default function Layout() {
             maxWidth: '100%',
             overflowX: 'hidden'
           }}>
+            <TrialBanner />
             <Outlet />
           </div>
         </main>

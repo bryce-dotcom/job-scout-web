@@ -50,6 +50,7 @@ import {
   PartyPopper
 } from 'lucide-react'
 import { seedSampleData, clearAllData } from '../lib/seedData'
+import BillingTab from '../components/BillingTab'
 import { toast } from '../lib/toast'
 
 // Auto-format phone number as (XXX) XXX-XXXX while typing
@@ -82,6 +83,7 @@ const baseTabs = [
   { id: 'estimate_defaults', label: 'Estimate Defaults', icon: FileStack },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'my_money', label: 'My Money', icon: Wallet },
+  { id: 'billing', label: 'Subscription', icon: CreditCard },
   { id: 'users', label: 'User Management', icon: Users },
   { id: 'integrations', label: 'Integrations', icon: Link2 }
 ]
@@ -640,6 +642,9 @@ export default function Settings() {
 
       case 'my_money':
         return <PaymentSettingsTab theme={theme} settings={settings} saveSetting={saveSetting} />
+
+      case 'billing':
+        return <BillingTab theme={theme} companyId={companyId} />
 
       case 'integrations':
         return <IntegrationsTab theme={theme} settings={settings} saveSetting={saveSetting} companyId={companyId} user={user} employees={employees} setActiveTab={setActiveTab} />

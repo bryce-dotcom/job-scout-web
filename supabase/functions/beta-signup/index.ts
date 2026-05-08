@@ -79,6 +79,12 @@ serve(async (req) => {
         tos_accepted_at: new Date().toISOString(),
         tos_version: tosVersion || 'v1-2026-05-07',
         tos_accepted_ip: acceptedIp,
+        // Start a 30-day Field Crew trial. The Settings → Billing UI
+        // upgrades them to Pro/Boss + saves a card before the trial ends.
+        subscription_tier: 'field_crew',
+        billing_status:    'trialing',
+        trial_ends_at:     new Date(Date.now() + 30 * 86400 * 1000).toISOString(),
+        billing_email:     email,
       })
       .select()
       .single();
