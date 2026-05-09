@@ -43,15 +43,22 @@ Deno.serve(async (req) => {
       return json({ success: false, error: 'to and subject are required' })
     }
 
-    // Sanitize from: strip non-ASCII chars from display name (Resend rejects them)
-    // Allow either "Name <addr>" or just "addr"
+    // Sanitize from. Resend rejects non-ASCII and is strict about
+    // RFC 2822 — display names containing commas, semicolons, dots,
+    // or @ MUST be quoted. ("HHH Services, LLC <addr>" would be parsed
+    // as TWO addresses without quotes, and Resend silently drops the
+    // request — onboarding emails were vanishing for exactly this
+    // reason.)
     let safeFrom = (from || '').trim()
     if (safeFrom) {
       const m = safeFrom.match(/^(.*)<([^>]+)>\s*$/)
       if (m) {
-        const name = m[1].replace(/["\\]/g, '').replace(/[^\x20-\x7E]/g, '').trim() || 'JobScout'
+        const rawName = m[1].replace(/["\\]/g, '').replace(/[^\x20-\x7E]/g, '').trim() || 'JobScout'
         const addr = m[2].trim()
-        safeFrom = `${name} <${addr}>`
+        // Quote-wrap if the display name has any RFC 2822 specials.
+        const needsQuote = /[,;.@()<>:\[\]\\]/.test(rawName)
+        const finalName = needsQuote ? `"${rawName}"` : rawName
+        safeFrom = `${finalName} <${addr}>`
       }
     }
     if (!safeFrom) safeFrom = 'JobScout <invoices@appsannex.com>'
