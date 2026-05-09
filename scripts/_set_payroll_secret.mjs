@@ -1,8 +1,7 @@
-// One-time: set the database GUC used by encrypt_ssn / decrypt_ssn.
-// Generates a 64-char random secret if one isn't already set.
-// Stores the secret to .env so it can be retrieved if someone wants to verify.
-//
-// Re-running is safe — it skips if the secret is already set.
+// Set the SSN encryption secret in Supabase Vault.
+// Idempotent: re-running rotates the secret. Existing encrypted SSNs
+// would NOT decrypt after rotation — only run rotation when you've
+// also re-entered every SSN. For first-time setup just run normally.
 import { createClient } from '@supabase/supabase-js'
 import 'dotenv/config'
 import { randomBytes } from 'node:crypto'
@@ -10,33 +9,31 @@ import fs from 'node:fs'
 
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-// Try to encrypt a probe value to detect whether the secret is set.
-const { data: probe, error: probeErr } = await supabase.rpc('encrypt_ssn', { p_ssn: '111111111' })
-if (!probeErr) {
-  console.log('app.payroll_secret is already set on the database — nothing to do.')
-  process.exit(0)
-}
-console.log('Probe error (expected if secret missing):', probeErr.message)
-
-const secret = randomBytes(48).toString('hex') // 96 chars
-console.log('Generated new secret (length:', secret.length, ')')
-
-// Write to .env (don't overwrite if already there)
+// Reuse the secret from .env if one is already there. Otherwise generate.
 const envPath = '.env'
 let envText = ''
 try { envText = fs.readFileSync(envPath, 'utf8') } catch {}
-if (!/PAYROLL_SECRET=/.test(envText)) {
+const m = envText.match(/^PAYROLL_SECRET=(.+)$/m)
+let secret = m ? m[1].trim() : null
+if (!secret) {
+  secret = randomBytes(48).toString('hex') // 96 chars
   fs.appendFileSync(envPath, `\nPAYROLL_SECRET=${secret}\n`)
-  console.log('Wrote PAYROLL_SECRET to .env')
+  console.log('Generated new secret and wrote to .env (length:', secret.length, ')')
 } else {
-  console.log('.env already has PAYROLL_SECRET — leaving it alone')
+  console.log('Reusing PAYROLL_SECRET from .env (length:', secret.length, ')')
 }
 
-// Set the GUC via a direct SQL call. supabase-js doesn't have a generic
-// SQL endpoint; use the management RPC if available, or instruct the
-// user to run the SQL manually.
-console.log('\nNow run this in the Supabase SQL editor (one time):')
-console.log('-------------------------------------------------')
-console.log(`ALTER DATABASE postgres SET app.payroll_secret TO '${secret}';`)
-console.log('-------------------------------------------------')
-console.log('Then disconnect any open Postgres sessions so the new GUC takes effect.')
+const { data, error } = await supabase.rpc('set_payroll_secret', { p_value: secret })
+if (error) {
+  console.error('FAILED:', error.message)
+  process.exit(1)
+}
+console.log(`Vault secret ${data} ✓`)
+
+// Quick smoke-test: encrypt a probe SSN to confirm everything works.
+const { data: enc, error: encErr } = await supabase.rpc('encrypt_ssn', { p_ssn: '123-45-6789' })
+if (encErr) {
+  console.error('encrypt_ssn smoke-test FAILED:', encErr.message)
+  process.exit(1)
+}
+console.log('encrypt_ssn smoke-test OK (returned', String(enc).slice(0, 24), '...)')
