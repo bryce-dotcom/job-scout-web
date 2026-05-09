@@ -108,6 +108,9 @@ serve(async (req) => {
 
     // ── EMAIL (via send-email function) ───────────────────────────────
     const sentVia: string[] = [];
+    const deliveryErrors: string[] = [];
+    const deliveryDetails: Record<string, unknown> = {};
+
     if (channels.includes('email') && targetEmp.email) {
       const html = `
 <!DOCTYPE html><html><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#f3f1ea;">
@@ -123,7 +126,12 @@ serve(async (req) => {
   </div>
 </body></html>`;
       try {
-        await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
+        // send-email expects `from` (a "Name <addr>" string), not `from_name`.
+        // Without it the function defaults to JobScout <invoices@appsannex.com>.
+        const fromName = (company?.company_name || 'JobScout').replace(/[^\x20-\x7E]/g, '').trim();
+        const fromAddr = `${fromName} <invoices@appsannex.com>`;
+
+        const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -134,12 +142,24 @@ serve(async (req) => {
             to: targetEmp.email,
             subject: `Welcome to ${company?.company_name || 'the team'} — finish your onboarding`,
             html,
-            from_name: company?.company_name || 'JobScout',
+            from: fromAddr,
+            reply_to: company?.owner_email || undefined,
           }),
         });
-        sentVia.push('email');
+        const emailBody = await emailRes.json().catch(() => ({}));
+        deliveryDetails.email = { http: emailRes.status, body: emailBody };
+
+        if (emailRes.ok && emailBody?.success) {
+          sentVia.push('email');
+        } else {
+          const msg = emailBody?.error || `send-email returned ${emailRes.status}`;
+          console.warn('[send-onboarding-link] email failed:', msg, emailBody);
+          deliveryErrors.push(`email: ${msg}`);
+        }
       } catch (err) {
-        console.warn('[send-onboarding-link] email failed:', err);
+        const msg = String((err as Error)?.message || err);
+        console.warn('[send-onboarding-link] email threw:', msg);
+        deliveryErrors.push(`email: ${msg}`);
       }
     }
 
@@ -147,18 +167,33 @@ serve(async (req) => {
     if (channels.includes('sms') && targetEmp.phone) {
       const smsText = `Hi ${firstName}! Welcome to ${company?.company_name || 'the team'}. Finish your onboarding here: ${link}`;
       try {
-        await fetch(`${SUPABASE_URL}/functions/v1/send-sms`, {
+        const smsRes = await fetch(`${SUPABASE_URL}/functions/v1/send-sms`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
             apikey: SERVICE_ROLE_KEY,
           },
-          body: JSON.stringify({ to: targetEmp.phone, body: smsText }),
+          body: JSON.stringify({
+            company_id: targetEmp.company_id,
+            to: targetEmp.phone,
+            message: smsText,
+          }),
         });
-        sentVia.push('sms');
+        const smsBody = await smsRes.json().catch(() => ({}));
+        deliveryDetails.sms = { http: smsRes.status, body: smsBody };
+
+        if (smsRes.ok && (smsBody?.success || smsBody?.sid)) {
+          sentVia.push('sms');
+        } else {
+          const msg = smsBody?.error || `send-sms returned ${smsRes.status}`;
+          console.warn('[send-onboarding-link] sms failed:', msg, smsBody);
+          deliveryErrors.push(`sms: ${msg}`);
+        }
       } catch (err) {
-        console.warn('[send-onboarding-link] sms failed:', err);
+        const msg = String((err as Error)?.message || err);
+        console.warn('[send-onboarding-link] sms threw:', msg);
+        deliveryErrors.push(`sms: ${msg}`);
       }
     }
 
@@ -171,11 +206,13 @@ serve(async (req) => {
     }
 
     return json({
-      ok: true,
+      ok: sentVia.length > 0,
       packet_id: packet.id,
       token: packet.token,
       link,
       sent_via: sentVia,
+      delivery_errors: deliveryErrors,
+      delivery_details: deliveryDetails,
       expires_at: packet.expires_at,
     });
   } catch (err) {

@@ -65,6 +65,13 @@ export default function OnboardingPanel({ employee, theme, sectionHeaderStyle })
       const data = await res.json()
       if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
       setJustSent(data)
+      // Surface partial / total delivery failure so HR knows what
+      // actually went out vs what didn't.
+      if (data.delivery_errors?.length > 0) {
+        setError(`Some channels failed: ${data.delivery_errors.join(' · ')}`)
+      } else if (data.sent_via?.length === 0) {
+        setError('Link created but nothing was delivered. Check email/SMS settings.')
+      }
       await refresh()
     } catch (err) {
       setError(err.message)
@@ -133,6 +140,14 @@ export default function OnboardingPanel({ employee, theme, sectionHeaderStyle })
 
       {!loading && packet && (
         <div style={card}>
+          {justSent && (
+            <div style={{ padding: 8, marginBottom: 10, backgroundColor: justSent.sent_via?.length > 0 ? 'rgba(34,197,94,0.10)' : 'rgba(239,68,68,0.10)', border: `1px solid ${justSent.sent_via?.length > 0 ? 'rgba(34,197,94,0.30)' : 'rgba(239,68,68,0.30)'}`, borderRadius: 6, fontSize: 12, color: justSent.sent_via?.length > 0 ? '#16a34a' : '#dc2626' }}>
+              Just sent via: {justSent.sent_via?.join(', ') || '(none)'} · check inbox + spam folder
+              {justSent.delivery_errors?.length > 0 && (
+                <div style={{ marginTop: 4, fontSize: 11 }}>{justSent.delivery_errors.join(' · ')}</div>
+              )}
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>
