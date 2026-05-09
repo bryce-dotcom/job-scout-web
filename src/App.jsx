@@ -53,6 +53,7 @@ import TimeClock from './pages/TimeClock'
 import FieldScout from './pages/FieldScout'
 import Payroll from './pages/Payroll'
 import PayrollInbox from './pages/PayrollInbox'
+import OnboardingPortal from './pages/OnboardingPortal'
 import MyPay from './pages/MyPay'
 import Books from './pages/Books'
 import BaseCamp from './pages/BaseCamp'
@@ -324,6 +325,7 @@ function App() {
 
         {/* Customer Portal - public, no auth */}
         <Route path="/portal/:token" element={<CustomerPortal />} />
+        <Route path="/onboarding/:token" element={<OnboardingPortal />} />
 
         {/* Public routes */}
         <Route path="/login" element={<Login />} />

@@ -13,6 +13,7 @@ import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { employeesFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin, canAccessDevTools, canEditPipelineStages, canViewHR, canManageHRAccess } from '../lib/accessControl'
 import RankBadge from '../components/RankBadge'
+import OnboardingPanel from '../components/OnboardingPanel'
 
 // Role colors (OG DiX style)
 const roleColors = {
@@ -2120,6 +2121,15 @@ export default function Employees() {
                           </div>
                         </div>
                       </>
+                    )}
+
+                    {/* ===== ONBOARDING ===== */}
+                    {viewingEmployee && (
+                      <OnboardingPanel
+                        employee={viewingEmployee}
+                        theme={theme}
+                        sectionHeaderStyle={sectionHeaderStyle}
+                      />
                     )}
 
                     {/* ===== TAX SETUP (W-4) ===== */}
