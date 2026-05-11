@@ -2282,12 +2282,11 @@ function JobDetailInner() {
     // Title
     pdfDoc.setFontSize(18); pdfDoc.setFont('helvetica', 'bold')
     pdfDoc.setTextColor(90, 99, 73)
-    pdfDoc.text('UTILITY INVOICE', re, 20, { align: 'right' })
+    pdfDoc.text('INVOICE', re, 20, { align: 'right' })
     pdfDoc.setTextColor(80); pdfDoc.setFontSize(10); pdfDoc.setFont('helvetica', 'normal')
     let iy = 30
-    pdfDoc.text(`Invoice #: UTL-${inv.id}`, re, iy, { align: 'right' }); iy += 5
-    pdfDoc.text(`Date: ${new Date(inv.created_at).toLocaleDateString()}`, re, iy, { align: 'right' }); iy += 5
-    pdfDoc.text(`Utility: ${inv.utility_name || '-'}`, re, iy, { align: 'right' })
+    pdfDoc.text(`Invoice #: ${inv.id}`, re, iy, { align: 'right' }); iy += 5
+    pdfDoc.text(`Date: ${new Date(inv.created_at).toLocaleDateString()}`, re, iy, { align: 'right' })
     py = Math.max(py, sy + 4)
 
     // Customer
@@ -5834,12 +5833,18 @@ function JobDetailInner() {
             border: isMobile ? 'none' : `1px solid ${theme.border}`,
             width: isMobile ? '100%' : '90%',
             maxWidth: isMobile ? '100%' : '800px',
-            height: isMobile ? '100%' : 'auto',
-            maxHeight: isMobile ? '100%' : '85vh',
+            // Use 100dvh (dynamic viewport height) so iOS Safari's URL bar
+            // doesn't crop the bottom of the modal. Footer + body would
+            // otherwise sit below the visible area with no way to scroll.
+            height: isMobile ? '100dvh' : 'auto',
+            maxHeight: isMobile ? '100dvh' : '85vh',
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
-            zIndex: 51
+            zIndex: 51,
+            // Respect iOS safe area so the close button isn't under the notch
+            paddingTop: isMobile ? 'env(safe-area-inset-top, 0px)' : 0,
+            paddingBottom: isMobile ? 'env(safe-area-inset-bottom, 0px)' : 0,
           }}>
             {/* Header */}
             <div style={{
@@ -5869,8 +5874,11 @@ function JobDetailInner() {
               </button>
             </div>
 
-            {/* Body */}
-            <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '20px' }}>
+            {/* Body — minHeight:0 + WebKit overflow scrolling so iOS Safari
+                actually lets you flick-scroll inside a flex column. Without
+                minHeight:0 the inner content forces the body to grow past
+                the viewport and the footer + scroll get pushed offscreen. */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: isMobile ? '16px' : '20px' }}>
               {submittalDownloading && (
                 <div style={{
                   padding: '12px 16px', marginBottom: '16px', borderRadius: '10px',
@@ -6524,11 +6532,15 @@ function JobDetailInner() {
               )}
             </div>
 
-            {/* Footer */}
+            {/* Footer — kept compact on mobile so the body can scroll.
+                The email + message inputs are themselves scrollable inside
+                this footer if the user starts typing more, and the action
+                row stays pinned. */}
             <div style={{
-              display: 'flex', flexDirection: 'column', gap: '10px',
-              padding: isMobile ? '16px' : '16px 20px',
-              borderTop: `1px solid ${theme.border}`
+              display: 'flex', flexDirection: 'column', gap: isMobile ? '8px' : '10px',
+              padding: isMobile ? '10px 12px' : '16px 20px',
+              borderTop: `1px solid ${theme.border}`,
+              flexShrink: 0
             }}>
               {/* Email row */}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -6545,25 +6557,25 @@ function JobDetailInner() {
                   }}
                 />
               </div>
-              {/* Message */}
+              {/* Message — 2 rows on mobile to save vertical space */}
               <textarea
                 placeholder="Message to recipient..."
                 value={submittalMessage}
                 onChange={(e) => setSubmittalMessage(e.target.value)}
-                rows={3}
+                rows={isMobile ? 2 : 3}
                 style={{
                   width: '100%', padding: '8px 12px', border: `1px solid ${theme.border}`,
                   borderRadius: '8px', fontSize: '13px', color: theme.text,
                   backgroundColor: theme.bgCard, outline: 'none', resize: 'vertical',
-                  fontFamily: 'inherit', lineHeight: '1.4'
+                  fontFamily: 'inherit', lineHeight: '1.4', boxSizing: 'border-box'
                 }}
               />
-              {/* Action row */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              {/* Action row — wraps on narrow screens so 3 buttons + "N selected" never overflow */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '13px', color: theme.textMuted }}>
                   {submittalSelected.size} item{submittalSelected.size !== 1 ? 's' : ''} selected
                 </span>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {/* Combined PDF — utility companies often want one merged
                       file, not a ZIP (Alayda's complaint). Skips non-PDF
                       items. Falls back to ZIP if no PDFs in the manifest. */}

@@ -403,18 +403,19 @@ export default function UtilityInvoiceDetail() {
     if (company?.owner_email || company?.email) { doc.text(company.owner_email || company.email, margin, y); y += 5 }
     y += 5
 
-    // Title
+    // Title — matches the customer invoice template. The utility is sent
+    // a copy of the same invoice the customer sees, with the incentive
+    // shown as a deduction from the project total (per Alison @ utility).
     doc.setTextColor(90, 99, 73)
     doc.setFontSize(18)
     doc.setFont('helvetica', 'bold')
-    doc.text('UTILITY INVOICE', rightEdge, 20, { align: 'right' })
+    doc.text('INVOICE', rightEdge, 20, { align: 'right' })
     doc.setTextColor(80)
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     let iy = 30
-    doc.text(`Invoice #: UTL-${invoice.id}`, rightEdge, iy, { align: 'right' }); iy += 5
-    doc.text(`Date: ${formatDate(invoice.created_at)}`, rightEdge, iy, { align: 'right' }); iy += 5
-    doc.text(`Utility: ${invoice.utility_name || '-'}`, rightEdge, iy, { align: 'right' })
+    doc.text(`Invoice #: ${invoice.id}`, rightEdge, iy, { align: 'right' }); iy += 5
+    doc.text(`Date: ${formatDate(invoice.created_at)}`, rightEdge, iy, { align: 'right' })
 
     // Divider
     doc.setDrawColor(214, 205, 184)
@@ -481,7 +482,7 @@ export default function UtilityInvoiceDetail() {
     y += 10
 
     // Financial summary — shows full project context for the utility,
-    // but the bottom-line "Amount Due" is only the utility incentive.
+    // but the bottom-line "Utility Incentive Due" is what the utility owes us.
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
@@ -527,7 +528,7 @@ export default function UtilityInvoiceDetail() {
     setGeneratingPdf(true)
     try {
       const doc = generateUtilityPDF()
-      doc.save(`UTL-${invoice.id}_${invoice.customer_name || 'utility'}.pdf`)
+      doc.save(`Invoice-${invoice.id}-${invoice.customer_name || 'customer'}.pdf`)
       toast.success('PDF downloaded')
     } catch (err) {
       toast.error('Failed to generate PDF: ' + err.message)
@@ -594,7 +595,7 @@ export default function UtilityInvoiceDetail() {
   if (loading) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: theme.textMuted }}>Loading utility incentive...</p>
+        <p style={{ color: theme.textMuted }}>Loading customer invoice...</p>
       </div>
     )
   }
@@ -602,7 +603,7 @@ export default function UtilityInvoiceDetail() {
   if (!invoice) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: '#dc2626', marginBottom: '16px' }}>Utility incentive not found</p>
+        <p style={{ color: '#dc2626', marginBottom: '16px' }}>Customer invoice not found</p>
         <button onClick={() => navigate('/invoices?type=utility')} style={{ color: theme.accent, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
           Back to Utility Incentives
         </button>
@@ -631,11 +632,14 @@ export default function UtilityInvoiceDetail() {
         </button>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600' }}>
-            UTL-{invoice.id}
+            CUSTOMER INVOICE · UTL-{invoice.id}
           </p>
           <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
-            {invoice.customer_name || 'Utility Incentive'}
+            {invoice.customer_name || 'Customer Invoice'}
           </h1>
+          <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+            Utility incentive applied as a deduction
+          </p>
         </div>
         <span style={{
           padding: '6px 14px',
