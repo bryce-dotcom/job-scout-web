@@ -46,10 +46,15 @@ serve(async (req) => {
 
     const { data: packet, error: pktErr } = await supabase
       .from('employee_onboarding_packets')
-      .select('*, employee:employees(id, name, email, phone, hire_date, home_address, home_city, home_state, home_zip, date_of_birth, ssn_last4)')
+      // Explicit FK — there are TWO FKs from this table to employees
+      // (employee_id AND created_by), so PostgREST won't auto-pick.
+      .select('*, employee:employees!employee_onboarding_packets_employee_id_fkey(id, name, email, phone, hire_date, home_address, home_city, home_state, home_zip, date_of_birth, ssn_last4)')
       .eq('id', packet_id)
       .single();
-    if (pktErr || !packet) return json({ error: 'packet not found' }, 404);
+    if (pktErr || !packet) {
+      console.error('[render-onboarding-pdfs] packet load failed:', pktErr);
+      return json({ error: 'packet not found: ' + (pktErr?.message || 'unknown') }, 404);
+    }
 
     // Load every signed_documents row in this packet
     const { data: docs } = await supabase
