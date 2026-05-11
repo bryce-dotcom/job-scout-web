@@ -482,7 +482,7 @@ export default function UtilityInvoiceDetail() {
     y += 10
 
     // Financial summary — shows full project context for the utility,
-    // but the bottom-line "Utility Incentive Due" is what the utility owes us.
+    // bottom-line "Utility Incentive" = what the utility owes us.
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
@@ -505,7 +505,7 @@ export default function UtilityInvoiceDetail() {
     doc.setTextColor(212, 148, 10)
     doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
-    doc.text('Utility Incentive Due:', summaryX, y + 5)
+    doc.text('Utility Incentive:', summaryX, y + 5)
     doc.text(formatCurrency(invoice.incentive_amount || invoice.amount), valX, y + 5, { align: 'right' })
     y += 18
 
