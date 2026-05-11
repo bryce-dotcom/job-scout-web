@@ -109,7 +109,27 @@ serve(async (req) => {
     // ── EMAIL (via send-email function) ───────────────────────────────
     const sentVia: string[] = [];
     const deliveryErrors: string[] = [];
+    const deliveryInfo: string[] = [];           // soft notes (e.g. SMS not configured)
     const deliveryDetails: Record<string, unknown> = {};
+
+    // Pre-check: is Twilio configured for this company? If not, drop
+    // SMS from the channels list entirely so we don't generate a noisy
+    // "failed" error — it's a setup gap, not a delivery failure.
+    if (channels.includes('sms')) {
+      const { data: twSetting } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('company_id', targetEmp.company_id)
+        .eq('key', 'twilio_config')
+        .maybeSingle();
+      const twCfg = twSetting?.value || {};
+      const hasTwilio = !!(twCfg.account_sid && twCfg.auth_token && twCfg.from_number);
+      if (!hasTwilio) {
+        const idx = channels.indexOf('sms');
+        if (idx >= 0) channels.splice(idx, 1);
+        deliveryInfo.push('SMS skipped — Twilio not set up. Open Settings → Integrations to enable.');
+      }
+    }
 
     if (channels.includes('email') && targetEmp.email) {
       const html = `
@@ -212,6 +232,7 @@ serve(async (req) => {
       link,
       sent_via: sentVia,
       delivery_errors: deliveryErrors,
+      delivery_info:   deliveryInfo,
       delivery_details: deliveryDetails,
       expires_at: packet.expires_at,
     });
