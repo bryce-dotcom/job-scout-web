@@ -176,12 +176,17 @@ export default function PayrollInbox() {
   const totalOverdue = overdue.reduce((sum, l) => sum + (Number(l.amount_total) || 0), 0)
   const totalDueSoon = dueSoon.reduce((sum, l) => sum + (Number(l.amount_total) || 0), 0)
 
+  // Contractors over $600 with W-9 issues block "all clear" too —
+  // we can't file 1099-NEC at year-end without their TIN.
+  const contractorIssues = contractorYTD.filter(c => c.ytd >= 600 && (!c.ein_or_ssn_last4 || !c.w9_signed_at))
+
   const isAllClear =
     !loading &&
     setupGaps.length === 0 &&
     overdue.length === 0 &&
     dueSoon.length === 0 &&
-    newHires.length === 0
+    newHires.length === 0 &&
+    contractorIssues.length === 0
 
   return (
     <div style={{ padding: '20px', maxWidth: 980, margin: '0 auto' }}>
@@ -309,6 +314,65 @@ export default function PayrollInbox() {
           )}
         </Section>
       )}
+
+      {/* 1099 contractors — $600 threshold tracker.
+          Federal rule: contractors paid ≥$600 in a calendar year need
+          a 1099-NEC by Jan 31. Surface BOTH the ones already past the
+          threshold (1099-NEC required) AND those approaching it
+          ($400+ — heads up to make sure W-9 is on file). */}
+      {(() => {
+        const over   = contractorYTD.filter(c => c.ytd >= 600)
+        const approaching = contractorYTD.filter(c => c.ytd >= 400 && c.ytd < 600)
+        if (over.length === 0 && approaching.length === 0) return null
+        return (
+          <>
+            {over.length > 0 && (
+              <Section title="1099-NEC required at year-end (≥ $600 paid)" theme={theme} tone={TONE.yellow}>
+                {over.map(c => {
+                  const missingTin = !c.ein_or_ssn_last4
+                  const missingW9  = !c.w9_signed_at
+                  const tone = (missingTin || missingW9) ? TONE.red : TONE.yellow
+                  const subtitle = (missingTin || missingW9)
+                    ? `${missingTin ? 'NO TIN on file · ' : ''}${missingW9 ? 'W-9 not signed · ' : ''}fix before Jan 31 to file 1099-NEC`
+                    : `Ready for 1099-NEC at year-end · TIN ending ${c.ein_or_ssn_last4} · W-9 signed ${fmtDate(c.w9_signed_at)}`
+                  return (
+                    <Row
+                      key={c.id}
+                      tone={tone}
+                      theme={theme}
+                      icon={FileText}
+                      title={c.name}
+                      big={fmtMoney(c.ytd)}
+                      subtitle={subtitle}
+                      right={(missingTin || missingW9) ? (
+                        <button onClick={() => navigate(`/employees?id=${c.id}`)} style={btn(theme)}>Fix W-9 →</button>
+                      ) : null}
+                    />
+                  )
+                })}
+              </Section>
+            )}
+            {approaching.length > 0 && (
+              <Section title="Approaching $600 (1099-NEC will be required)" theme={theme}>
+                {approaching.map(c => (
+                  <Row
+                    key={c.id}
+                    tone={TONE.gray}
+                    theme={theme}
+                    icon={FileText}
+                    title={c.name}
+                    big={fmtMoney(c.ytd)}
+                    subtitle={`${fmtMoney(600 - c.ytd)} until 1099-NEC threshold${c.w9_signed_at ? '' : ' · W-9 NOT signed yet'}`}
+                    right={!c.w9_signed_at ? (
+                      <button onClick={() => navigate(`/employees?id=${c.id}`)} style={btn(theme)}>Send W-9 link →</button>
+                    ) : null}
+                  />
+                ))}
+              </Section>
+            )}
+          </>
+        )
+      })()}
 
       {/* Recently filed / paid */}
       {recentPaid.length > 0 && (
