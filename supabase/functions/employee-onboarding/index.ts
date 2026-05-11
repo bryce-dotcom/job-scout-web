@@ -236,6 +236,26 @@ serve(async (req) => {
         .eq('id', packet.id);
       if (pktErr) return jsonRes({ error: pktErr.message }, 500);
 
+      // Kick off the PDF render in the background — don't make the
+      // employee wait for it on the success screen. Failures here log
+      // but don't fail finalize; HR can re-render from the panel.
+      try {
+        const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+        const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        // Fire and forget — we don't await this.
+        fetch(`${SUPABASE_URL}/functions/v1/render-onboarding-pdfs`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+            apikey: SERVICE_ROLE_KEY,
+          },
+          body: JSON.stringify({ packet_id: packet.id }),
+        }).catch(err => console.warn('[onboarding] PDF render kick-off failed:', err));
+      } catch (e) {
+        console.warn('[onboarding] PDF render kick-off threw:', e);
+      }
+
       return jsonRes({ ok: true });
     }
 
