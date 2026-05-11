@@ -1,0 +1,11 @@
+require('dotenv').config()
+const { createClient } = require('@supabase/supabase-js')
+const s = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+;(async () => {
+  const { data } = await s.from('feedback')
+    .select('id,user_email,page_url,message,status,created_at')
+    .or('user_email.ilike.%alay%,message.ilike.%utility invoice%')
+    .order('created_at', { ascending: false })
+    .limit(20)
+  console.log(JSON.stringify(data, null, 2))
+})()

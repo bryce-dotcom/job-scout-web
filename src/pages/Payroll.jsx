@@ -37,6 +37,9 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
   let ssEE = 0, ssER = 0, medEE = 0, medER = 0, addMed = 0
   let futa = 0, sui = 0
   for (const emp of employees) {
+    // Skip 1099s — no liabilities to deposit (their payments don't
+    // generate withholding; 1099-NEC is filed once a year not per-period).
+    if (emp.tax_classification === '1099') continue
     const t = employeePayData?.[emp.id]?.tax
     if (!t) continue
     fit    += t.federalIncomeTax       || 0
@@ -1132,21 +1135,31 @@ export default function Payroll() {
     const taxableGross = grossPay + totalAdditions
 
     // ── TAX ENGINE ──
-    // Run the per-period tax calculator. YTD totals come from this calendar
-    // year's already-paid paystubs (calculated below). If the employee has
-    // no W-4 on file we still produce a row but flag it — the gross+net will
-    // be the same and Alayda will see the missing-W-4 warning in the UI.
-    const ytdForEmp = ytdPaystubsByEmployee?.[employee.id] || { gross: 0, ssWages: 0, medicareWages: 0 }
-    const tax = calcPaystubTax({
-      employee,
-      company,
-      gross: taxableGross,
-      ytd: ytdForEmp,
-      payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
-      preTaxDeductions: 0,
-      postTaxDeductions: totalDeductions,
-    })
-    const hasW4 = !!employee.w4_filing_status
+    // 1099 contractors: NO tax withheld — they pay self-employment tax
+    // themselves at filing. We still compute net (= gross + additions -
+    // deductions) so the UI can show what we owe them, but the tax
+    // engine is skipped entirely. is1099 also drives the paystub UI so
+    // it doesn't show the W-4-missing warning to a contractor row.
+    const is1099 = employee.tax_classification === '1099'
+    let tax = null
+    let hasW4 = false
+    if (!is1099) {
+      // Run the per-period tax calculator. YTD totals come from this calendar
+      // year's already-paid paystubs (calculated below). If the employee has
+      // no W-4 on file we still produce a row but flag it — the gross+net will
+      // be the same and Alayda will see the missing-W-4 warning in the UI.
+      const ytdForEmp = ytdPaystubsByEmployee?.[employee.id] || { gross: 0, ssWages: 0, medicareWages: 0 }
+      tax = calcPaystubTax({
+        employee,
+        company,
+        gross: taxableGross,
+        ytd: ytdForEmp,
+        payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
+        preTaxDeductions: 0,
+        postTaxDeductions: totalDeductions,
+      })
+      hasW4 = !!employee.w4_filing_status
+    }
 
     return {
       hourlyPay,
@@ -1167,9 +1180,10 @@ export default function Payroll() {
       netPay: Math.round((grossPay + totalAdditions - totalDeductions) * 100) / 100,
       adjustments: empAdjustments,
       // Tax breakdown — drives the per-employee paystub display + writes
-      // payroll_tax_liabilities rows on payroll save.
+      // payroll_tax_liabilities rows on payroll save. Null for 1099s.
       tax,
       hasW4,
+      is1099,
     }
   }
 
@@ -3832,6 +3846,27 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
             </>
           )}
 
+          {/* 1099 contractor: no withholding card. Show a clear note
+              explaining what's happening + remind HR about the $600
+              year-end threshold. */}
+          {data.is1099 && (
+            <div style={{
+              padding: 14, marginBottom: 12,
+              backgroundColor: 'rgba(249,115,22,0.08)',
+              border: '1px solid rgba(249,115,22,0.30)',
+              borderRadius: 10,
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#c2410c', marginBottom: 4 }}>
+                1099 Contractor — no tax withheld
+              </div>
+              <div style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5 }}>
+                Contractors handle their own federal income tax + self-employment tax (~15.3%) at filing.
+                We don't withhold from their payments. If you pay them ≥$600 this calendar year, JobScout
+                will queue a 1099-NEC for them at year-end — track running totals on the Payroll Inbox.
+              </div>
+            </div>
+          )}
+
           {/* Tax breakdown — only when the W-4 is on file. Without it
               the engine returns zeros (we never silently withhold the
               wrong amount), so we show a clear missing-W-4 nudge. */}
@@ -3874,10 +3909,17 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
             display: 'flex', justifyContent: 'space-between', alignItems: 'center'
           }}>
             <div>
-              <div style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>Net Pay (take-home)</div>
+              <div style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>
+                {data.is1099 ? 'Amount Owed (contractor)' : 'Net Pay (take-home)'}
+              </div>
               {data.tax && data.hasW4 && (
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 2 }}>
                   After all taxes + deductions
+                </div>
+              )}
+              {data.is1099 && (
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 2 }}>
+                  Gross — no tax withheld
                 </div>
               )}
             </div>

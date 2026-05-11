@@ -204,12 +204,48 @@ serve(async (req) => {
     // Quote math
     const quote = estimateProgram(turfSqft, pricing);
 
-    // Save the lead
+    // Create a lead so this prospect shows up in the sales pipeline alongside
+    // every other lead. Soft-fail: if the lead insert dies for any reason
+    // (schema drift, RLS quirk), we still want the quote request to save.
+    let leadId: number | null = null;
+    try {
+      const fallbackName = (() => {
+        const short = String(address).split(',')[0].trim();
+        return short ? `Quote — ${short}` : 'Public quote request';
+      })();
+      const leadNotes = `Public Zach quote · ${turfSqft.toLocaleString()} sqft turf · $${quote.per_visit}/visit · $${quote.annual_program_total}/yr${notes ? `\n\n${notes}` : ''}${aiResult.reasoning ? `\n\nAI: ${aiResult.reasoning}` : ''}`;
+      const leadRes = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
+        method: 'POST',
+        headers: { ...sbHeaders, 'Prefer': 'return=representation' },
+        body: JSON.stringify({
+          company_id: company.id,
+          customer_name: (contact_name && String(contact_name).trim()) || fallbackName,
+          email: contact_email || null,
+          phone: contact_phone || null,
+          address,
+          service_type: 'Lawn Care',
+          lead_source: 'Public Quote',
+          status: 'New',
+          notes: leadNotes,
+        }),
+      });
+      const leadJson = await leadRes.json();
+      if (Array.isArray(leadJson) && leadJson[0]?.id) {
+        leadId = leadJson[0].id;
+      } else if (!leadRes.ok) {
+        console.warn('[zach-instant-quote] lead insert failed:', leadJson);
+      }
+    } catch (e) {
+      console.warn('[zach-instant-quote] lead insert threw:', (e as Error).message);
+    }
+
+    // Save the quote request, linked to the lead we just created
     const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/lawn_quote_requests`, {
       method: 'POST',
       headers: { ...sbHeaders, 'Prefer': 'return=representation' },
       body: JSON.stringify({
         company_id: company.id,
+        lead_id: leadId,
         contact_name: contact_name || null,
         contact_email: contact_email || null,
         contact_phone: contact_phone || null,
@@ -231,8 +267,83 @@ serve(async (req) => {
     });
     const inserted = (await insertRes.json())?.[0];
 
+    // Mirror Lenard: push this bid into the unified quotes + quote_lines tables
+    // so it shows up in the sales pipeline alongside every other quote.
+    let pipelineQuoteId: number | null = null;
+    if (leadId && quote.annual_program_total > 0) {
+      try {
+        const shortAddr = String(address).split(',')[0].trim();
+        const qPayload = {
+          company_id: company.id,
+          lead_id: leadId,
+          audit_id: null,
+          audit_type: 'lawn_care',
+          service_type: 'Lawn Care',
+          estimate_name: `Lawn care — ${shortAddr || address}`,
+          summary: `${turfSqft.toLocaleString()} sqft turf · ${quote.mows_per_season} mows/season · public quote`,
+          quote_amount: quote.annual_program_total,
+          status: 'Draft',
+          notes: `Address: ${address}\nPer visit: $${quote.per_visit} · Treatments: $${quote.treatments_total} · Annual: $${quote.annual_program_total}\n\nAI: ${aiResult.reasoning || ''}`,
+        };
+        const qRes = await fetch(`${SUPABASE_URL}/rest/v1/quotes`, {
+          method: 'POST',
+          headers: { ...sbHeaders, 'Prefer': 'return=representation' },
+          body: JSON.stringify(qPayload),
+        });
+        const qJson = await qRes.json();
+        const newQuote = Array.isArray(qJson) ? qJson[0] : null;
+        if (newQuote?.id) {
+          pipelineQuoteId = newQuote.id;
+
+          const lines = [
+            {
+              company_id: company.id,
+              quote_id: newQuote.id,
+              item_name: `Mowing — ${quote.mows_per_season} visits`,
+              description: `Mowing on ${turfSqft.toLocaleString()} sqft turf · ~${quote.predicted_minutes} min/visit`,
+              quantity: quote.mows_per_season,
+              price: quote.per_visit,
+              line_total: quote.mows_total,
+              sort_order: 0,
+            },
+            ...quote.treatments.map((t: any, i: number) => ({
+              company_id: company.id,
+              quote_id: newQuote.id,
+              item_name: `Treatment Round ${t.round} — ${t.label}`,
+              quantity: 1,
+              price: t.total,
+              line_total: t.total,
+              sort_order: i + 1,
+            })),
+          ];
+          const lrRes = await fetch(`${SUPABASE_URL}/rest/v1/quote_lines`, {
+            method: 'POST',
+            headers: sbHeaders,
+            body: JSON.stringify(lines),
+          });
+          if (!lrRes.ok) {
+            const lrTxt = await lrRes.text();
+            console.warn('[zach-instant-quote] quote_lines insert failed:', lrTxt);
+          }
+
+          // Link the lead to the new quote so the pipeline shows the value.
+          await fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${leadId}`, {
+            method: 'PATCH',
+            headers: sbHeaders,
+            body: JSON.stringify({ quote_id: newQuote.id, status: 'Estimate Sent' }),
+          });
+        } else if (!qRes.ok) {
+          console.warn('[zach-instant-quote] quote insert failed:', qJson);
+        }
+      } catch (e) {
+        console.warn('[zach-instant-quote] quote sync threw:', (e as Error).message);
+      }
+    }
+
     return json({
       quote_id: inserted?.id,
+      pipeline_quote_id: pipelineQuoteId,
+      lead_id: leadId,
       company_name: company.name,
       address,
       ai: {

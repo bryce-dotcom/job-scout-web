@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
-import { Plus, Search, MapPin, Dog, KeyRound, Ruler, Calendar, X, Edit2, Save, Trash2, Calculator, Crop } from 'lucide-react'
+import { Plus, Search, MapPin, Dog, KeyRound, Ruler, Calendar, X, Edit2, Save, Trash2, Calculator, Crop, UserPlus, User } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import YardMeasureModal from '../../../components/zach/YardMeasureModal'
 import EstimateModal from '../../../components/zach/EstimateModal'
@@ -21,13 +21,15 @@ const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 
 const empty = {
   property_name: '', address: '', city: '', state: '', zip: '',
-  customer_id: '', lot_size_sqft: '', turf_size_sqft: '',
+  customer_id: '', lead_id: '', lot_size_sqft: '', turf_size_sqft: '',
   turf_type: '', mow_frequency: 'Weekly', mow_height_inches: 3.0, mow_day: '',
   gate_code: '', dog_on_premises: false, dog_notes: '',
   irrigation_notes: '', obstacles: '', hazards: '',
   preferred_crew: '', notes: '', active: true,
   latitude: null, longitude: null, turf_polygon: null,
 }
+
+const emptyNewLead = { customer_name: '', phone: '', email: '' }
 
 export default function ZachProperties() {
   const themeContext = useTheme()
@@ -36,6 +38,8 @@ export default function ZachProperties() {
   const companyId = useStore(s => s.companyId)
   const customers = useStore(s => s.customers)
   const fetchCustomers = useStore(s => s.fetchCustomers)
+  const leads = useStore(s => s.leads)
+  const fetchLeads = useStore(s => s.fetchLeads)
   const lawnProperties = useStore(s => s.lawnProperties)
   const fetchLawnProperties = useStore(s => s.fetchLawnProperties)
   const fetchLawnPricing = useStore(s => s.fetchLawnPricing)
@@ -45,6 +49,8 @@ export default function ZachProperties() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(empty)
+  const [contactType, setContactType] = useState('none') // 'none' | 'customer' | 'lead' | 'new_lead'
+  const [newLead, setNewLead] = useState(emptyNewLead)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [measuring, setMeasuring] = useState(null)   // property being measured
@@ -57,6 +63,7 @@ export default function ZachProperties() {
     fetchLawnProperties()
     fetchLawnPricing()
     if (!customers?.length) fetchCustomers()
+    if (!leads?.length) fetchLeads()
   }, [companyId])
 
   // Wire Google Places autocomplete onto the address field whenever the form opens
@@ -108,15 +115,21 @@ export default function ZachProperties() {
     })
   }, [lawnProperties, search, filterDay])
 
-  const openCreate = () => { setForm(empty); setEditingId(null); setShowForm(true); setError(null) }
+  const openCreate = () => {
+    setForm(empty); setEditingId(null); setShowForm(true); setError(null)
+    setContactType('none'); setNewLead(emptyNewLead)
+  }
   const openEdit = (p) => {
     setForm({
       ...empty, ...p,
       customer_id: p.customer_id || '',
+      lead_id: p.lead_id || '',
       lot_size_sqft: p.lot_size_sqft ?? '',
       turf_size_sqft: p.turf_size_sqft ?? '',
       mow_height_inches: p.mow_height_inches ?? 3.0,
     })
+    setContactType(p.customer_id ? 'customer' : (p.lead_id ? 'lead' : 'none'))
+    setNewLead(emptyNewLead)
     setEditingId(p.id); setShowForm(true); setError(null)
   }
 
@@ -125,11 +138,39 @@ export default function ZachProperties() {
       setError('Give the property a name or an address.')
       return
     }
+    if (contactType === 'new_lead' && !newLead.customer_name?.trim()) {
+      setError('Give the new lead a name.')
+      return
+    }
     setSaving(true); setError(null)
+
+    // Resolve contact: existing customer, existing lead, or create a new lead now.
+    let resolvedCustomerId = null
+    let resolvedLeadId = null
+    if (contactType === 'customer' && form.customer_id) {
+      resolvedCustomerId = parseInt(form.customer_id)
+    } else if (contactType === 'lead' && form.lead_id) {
+      resolvedLeadId = parseInt(form.lead_id)
+    } else if (contactType === 'new_lead') {
+      const fullAddress = [form.address, form.city, form.state, form.zip].filter(Boolean).join(', ')
+      const { data: lead, error: leadErr } = await supabase.from('leads').insert({
+        company_id: companyId,
+        customer_name: newLead.customer_name.trim(),
+        phone: newLead.phone?.trim() || null,
+        email: newLead.email?.trim() || null,
+        address: fullAddress || null,
+        status: 'New',
+      }).select().single()
+      if (leadErr) { setSaving(false); setError('Lead create failed: ' + leadErr.message); return }
+      resolvedLeadId = lead.id
+      fetchLeads()
+    }
+
     const payload = {
       ...form,
       company_id: companyId,
-      customer_id: form.customer_id || null,
+      customer_id: resolvedCustomerId,
+      lead_id: resolvedLeadId,
       lot_size_sqft: form.lot_size_sqft ? parseInt(form.lot_size_sqft) : null,
       turf_size_sqft: form.turf_size_sqft ? parseInt(form.turf_size_sqft) : null,
       mow_height_inches: form.mow_height_inches ? parseFloat(form.mow_height_inches) : null,
@@ -200,12 +241,23 @@ export default function ZachProperties() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-          {filtered.map(p => (
+          {filtered.map(p => {
+            const linkedCustomer = p.customer_id && (customers || []).find(c => String(c.id) === String(p.customer_id))
+            const linkedLead = p.lead_id && (leads || []).find(l => String(l.id) === String(p.lead_id))
+            return (
             <div key={p.id} style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
                 <div style={{ flex: 1 }}>
                   <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: theme.text }}>{p.property_name || p.address || 'Unnamed property'}</h3>
                   {p.address && <p style={{ margin: '4px 0 0', fontSize: 13, color: theme.textMuted }}>{p.address}{p.city ? ', ' + p.city : ''}{p.state ? ' ' + p.state : ''}</p>}
+                  {(linkedCustomer || linkedLead) && (
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: linkedLead ? '#a855f7' : theme.accent, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      {linkedLead ? <UserPlus size={12} /> : <User size={12} />}
+                      {linkedLead
+                        ? `Lead: ${linkedLead.customer_name || linkedLead.business_name || `#${linkedLead.id}`}`
+                        : `Customer: ${linkedCustomer.business_name || linkedCustomer.name}`}
+                    </p>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
                   <button onClick={() => setEstimating(p)} title="Estimate" style={{ padding: 6, background: theme.accentBg, border: `1px solid ${theme.accent}`, borderRadius: 6, cursor: 'pointer', color: theme.accent }}><Calculator size={14} /></button>
@@ -231,7 +283,8 @@ export default function ZachProperties() {
 
               {p.notes && <p style={{ marginTop: 12, fontSize: 13, color: theme.textSecondary, whiteSpace: 'pre-wrap' }}>{p.notes}</p>}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -247,11 +300,67 @@ export default function ZachProperties() {
 
             <Section title="Identification">
               <Field label="Property name"><input style={inputStyle} value={form.property_name} onChange={e => setForm({...form, property_name: e.target.value})} placeholder="e.g. Smith — Main St" /></Field>
-              <Field label="Customer">
-                <select style={inputStyle} value={form.customer_id} onChange={e => setForm({...form, customer_id: e.target.value})}>
-                  <option value="">— None —</option>
-                  {(customers || []).map(c => <option key={c.id} value={c.id}>{c.business_name || c.name}</option>)}
-                </select>
+
+              <Field label="Contact">
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                  {[
+                    { v: 'none',     label: 'None' },
+                    { v: 'customer', label: 'Existing customer', icon: User },
+                    { v: 'lead',     label: 'Existing lead',     icon: User },
+                    { v: 'new_lead', label: 'New lead',          icon: UserPlus },
+                  ].map(opt => {
+                    const Icon = opt.icon
+                    const active = contactType === opt.v
+                    return (
+                      <button key={opt.v} type="button" onClick={() => {
+                        setContactType(opt.v)
+                        if (opt.v !== 'customer') setForm(prev => ({ ...prev, customer_id: '' }))
+                        if (opt.v !== 'lead')     setForm(prev => ({ ...prev, lead_id: '' }))
+                        if (opt.v !== 'new_lead') setNewLead(emptyNewLead)
+                      }} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px',
+                        background: active ? theme.accent : 'transparent',
+                        color: active ? '#fff' : theme.textSecondary,
+                        border: `1px solid ${active ? theme.accent : theme.border}`,
+                        borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500,
+                      }}>
+                        {Icon && <Icon size={13} />} {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {contactType === 'customer' && (
+                  <select style={inputStyle} value={form.customer_id} onChange={e => setForm({...form, customer_id: e.target.value, lead_id: ''})}>
+                    <option value="">— Select customer —</option>
+                    {(customers || []).map(c => <option key={c.id} value={c.id}>{c.business_name || c.name}</option>)}
+                  </select>
+                )}
+
+                {contactType === 'lead' && (
+                  <select style={inputStyle} value={form.lead_id} onChange={e => setForm({...form, lead_id: e.target.value, customer_id: ''})}>
+                    <option value="">— Select lead —</option>
+                    {(leads || []).map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.customer_name || l.business_name || `Lead #${l.id}`}
+                        {l.status ? ` · ${l.status}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {contactType === 'new_lead' && (
+                  <div style={{ padding: 12, background: theme.bg, border: `1px dashed ${theme.border}`, borderRadius: 10 }}>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8 }}>
+                      Zach will create this lead and link the property to it. You can convert to a customer later from the Leads page.
+                    </div>
+                    <Field label="Lead name *"><input style={inputStyle} value={newLead.customer_name} onChange={e => setNewLead({...newLead, customer_name: e.target.value})} placeholder="e.g. Smith Residence" /></Field>
+                    <Row>
+                      <Field label="Phone"><input style={inputStyle} value={newLead.phone} onChange={e => setNewLead({...newLead, phone: e.target.value})} placeholder="(555) 123-4567" /></Field>
+                      <Field label="Email"><input style={inputStyle} type="email" value={newLead.email} onChange={e => setNewLead({...newLead, email: e.target.value})} placeholder="name@example.com" /></Field>
+                    </Row>
+                  </div>
+                )}
               </Field>
               <Field label="Address">
                 <input ref={addressInputRef} style={inputStyle} value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder={hasMapsKey() ? 'Start typing — Google will autocomplete' : 'Street address'} />

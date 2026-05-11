@@ -61,6 +61,9 @@ export default function PayrollInbox() {
   const [filings, setFilings]         = useState([])
   const [newHires, setNewHires]       = useState([])
   const [employees, setEmployees]     = useState([])
+  // 1099 contractor YTD totals (this calendar year). Drives the
+  // $600-threshold tracker + the year-end 1099-NEC queue.
+  const [contractorYTD, setContractorYTD] = useState([])  // [{ id, name, ytd, w9_signed_at }]
 
   const refresh = async () => {
     if (!companyId) return
@@ -84,7 +87,7 @@ export default function PayrollInbox() {
       // Pull employees for new-hire reports (within 60 days of hire) + setup-gap detection.
       supabase
         .from('employees')
-        .select('id, name, email, active, tax_classification, hire_date, new_hire_reported_at, w4_filing_status, ssn_last4, dd_account_last4')
+        .select('id, name, email, active, tax_classification, hire_date, new_hire_reported_at, w4_filing_status, w9_signed_at, ssn_last4, w9_ein_last4, dd_account_last4')
         .eq('company_id', companyId)
         .order('id'),
     ])
@@ -92,6 +95,36 @@ export default function PayrollInbox() {
     setLiabilities(liab || [])
     setFilings(fil || [])
     setEmployees(emps || [])
+
+    // Per-contractor YTD totals (calendar year). Source = paystubs.
+    // For now we count ALL gross_pay on a 1099's paystubs this year.
+    // If HHH later pays contractors via expenses or other paths, we can
+    // union those sources in.
+    const yearStart = `${today.getFullYear()}-01-01`
+    const contractorIds = (emps || []).filter(e => e.tax_classification === '1099' && e.active).map(e => e.id)
+    const ytdMap = {}
+    if (contractorIds.length) {
+      const { data: ytdRows } = await supabase
+        .from('paystubs')
+        .select('employee_id, gross_pay')
+        .eq('company_id', companyId)
+        .in('employee_id', contractorIds)
+        .gte('pay_date', yearStart)
+      for (const r of ytdRows || []) {
+        ytdMap[r.employee_id] = (ytdMap[r.employee_id] || 0) + (Number(r.gross_pay) || 0)
+      }
+    }
+    const ytd = (emps || [])
+      .filter(e => e.tax_classification === '1099' && e.active)
+      .map(e => ({
+        id: e.id,
+        name: e.name,
+        ytd: ytdMap[e.id] || 0,
+        w9_signed_at: e.w9_signed_at,
+        ein_or_ssn_last4: e.w9_ein_last4 || e.ssn_last4,
+      }))
+      .sort((a, b) => b.ytd - a.ytd)
+    setContractorYTD(ytd)
 
     const recentHires = (emps || []).filter(e => {
       if (!e.hire_date) return false
