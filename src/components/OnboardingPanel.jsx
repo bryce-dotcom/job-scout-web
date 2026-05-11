@@ -9,11 +9,17 @@ import { Send, CheckCircle2, Circle, Copy, RefreshCw, ExternalLink, AlertCircle,
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 
-const STEPS = [
+const W2_STEPS = [
   { key: 'personal',          label: 'Personal info' },
   { key: 'w4',                label: 'Tax info (W-4)' },
   { key: 'direct_deposit',    label: 'Direct deposit' },
   { key: 'i9_section1',       label: 'I-9 Section 1 (employee)' },
+  { key: 'signed',            label: 'Signed + finalized' },
+]
+const C1099_STEPS = [
+  { key: 'personal',          label: 'Personal info' },
+  { key: 'w9',                label: 'W-9 (1099 info)' },
+  { key: 'direct_deposit',    label: 'Direct deposit' },
   { key: 'signed',            label: 'Signed + finalized' },
 ]
 
@@ -132,14 +138,21 @@ export default function OnboardingPanel({ employee, theme, sectionHeaderStyle })
     ? `${window.location.origin}/onboarding/${packet.token}`
     : null
 
-  // Per-step completion booleans
-  const completion = {
+  // Branch checklist + I-9 banner on classification.
+  const is1099 = employee?.tax_classification === '1099'
+  const STEPS = is1099 ? C1099_STEPS : W2_STEPS
+
+  // Per-step completion booleans (we track all columns either way; the
+  // checklist just shows the relevant slice for this classification).
+  const completionAll = {
     personal:       !!packet?.step_personal_completed_at,
     w4:             !!packet?.step_w4_completed_at,
+    w9:             !!packet?.step_w9_completed_at,
     direct_deposit: !!packet?.step_direct_deposit_completed_at,
     i9_section1:    !!packet?.step_i9_section1_completed_at,
     signed:         !!packet?.step_signed_completed_at,
   }
+  const completion = Object.fromEntries(STEPS.map(s => [s.key, completionAll[s.key]]))
   const completedCount = Object.values(completion).filter(Boolean).length
 
   const card = {
@@ -269,7 +282,9 @@ export default function OnboardingPanel({ employee, theme, sectionHeaderStyle })
             </>
           )}
 
-          {packet.status === 'completed' && packet.i9_section2_due_date && !packet.i9_section2_completed_at && (
+          {/* I-9 §2 only matters for W-2 employees (federal employment
+              eligibility verification). 1099 contractors don't get an I-9. */}
+          {!is1099 && packet.status === 'completed' && packet.i9_section2_due_date && !packet.i9_section2_completed_at && (
             <div style={{
               marginTop: 10, padding: 12,
               backgroundColor: 'rgba(234,179,8,0.10)',

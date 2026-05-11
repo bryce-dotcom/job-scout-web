@@ -190,6 +190,28 @@ serve(async (req) => {
         empUpdate.ssn_encrypted = enc;
         empUpdate.ssn_last4     = digits.slice(-4);
       }
+      // 1099 EIN — encrypted via the parallel RPC, stored in the W-9
+      // columns (kept separate from ssn_encrypted because contractors
+      // may use either).
+      if (draft.ein?.value) {
+        const { data: enc, error: encErr } = await supabase.rpc('encrypt_ein', { p_ein: String(draft.ein.value) });
+        if (encErr) return jsonRes({ error: 'EIN encryption failed: ' + encErr.message }, 500);
+        const digits = String(draft.ein.value).replace(/\D/g, '');
+        empUpdate.w9_ein_encrypted = enc;
+        empUpdate.w9_ein_last4     = digits.slice(-4);
+      }
+      // W-9 fields (1099 path)
+      if (draft.w9) {
+        const w = draft.w9;
+        if (w.legal_name)             empUpdate.w9_legal_name             = w.legal_name;
+        if (w.business_name)          empUpdate.w9_business_name          = w.business_name;
+        if (w.federal_classification) empUpdate.w9_federal_classification = w.federal_classification;
+        if (w.other_classification)   empUpdate.w9_other_classification   = w.other_classification;
+        if (w.exempt_payee_code)      empUpdate.w9_exempt_payee_code      = w.exempt_payee_code;
+        if (w.tin_type)               empUpdate.w9_tin_type               = w.tin_type;
+        empUpdate.w9_backup_withholding = !!w.backup_withholding;
+        empUpdate.w9_signed_at = new Date().toISOString().slice(0, 10);
+      }
       if (draft.direct_deposit) {
         const dd = draft.direct_deposit;
         if (dd.account_type) empUpdate.dd_account_type = dd.account_type;
@@ -208,14 +230,15 @@ serve(async (req) => {
         .eq('id', packet.employee_id);
       if (empUpdErr) return jsonRes({ error: 'Apply to employee failed: ' + empUpdErr.message }, 500);
 
-      // Compute I-9 Section 2 deadline (3 business days from hire date)
+      // Compute I-9 Section 2 deadline (3 business days from hire date).
+      // Skipped for 1099 contractors — I-9 doesn't apply.
       const { data: empRow } = await supabase
         .from('employees')
-        .select('hire_date')
+        .select('hire_date, tax_classification')
         .eq('id', packet.employee_id)
         .single();
       let i9Due: string | null = null;
-      if (empRow?.hire_date) {
+      if (empRow?.hire_date && empRow?.tax_classification !== '1099') {
         const d = new Date(empRow.hire_date);
         let added = 0;
         while (added < 3) {
@@ -270,6 +293,7 @@ function stepToCompletionColumn(step: string): string | null {
   const map: Record<string, string> = {
     personal:           'step_personal_completed_at',
     w4:                 'step_w4_completed_at',
+    w9:                 'step_w9_completed_at',
     state_w4:           'step_state_w4_completed_at',
     direct_deposit:     'step_direct_deposit_completed_at',
     i9_section1:        'step_i9_section1_completed_at',

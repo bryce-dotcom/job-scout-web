@@ -107,6 +107,16 @@ const emptyEmployee = {
   w4_deductions: 0,
   w4_extra_withholding: 0,
   w4_signed_at: '',
+  // W-9 (1099 contractors) — separate set; only used when tax_classification = '1099'.
+  w9_legal_name: '',
+  w9_business_name: '',
+  w9_federal_classification: '',
+  w9_other_classification: '',
+  w9_tin_type: '',
+  w9_ein_last4: '',
+  w9_backup_withholding: false,
+  w9_signed_at: '',
+  ein_input: '',                                     // user-typed EIN; never persisted as plain text
 }
 
 export default function Employees() {
@@ -428,6 +438,16 @@ export default function Employees() {
       w4_deductions: employee.w4_deductions || 0,
       w4_extra_withholding: employee.w4_extra_withholding || 0,
       w4_signed_at: employee.w4_signed_at || '',
+      // W-9 fields
+      w9_legal_name: employee.w9_legal_name || '',
+      w9_business_name: employee.w9_business_name || '',
+      w9_federal_classification: employee.w9_federal_classification || '',
+      w9_other_classification: employee.w9_other_classification || '',
+      w9_tin_type: employee.w9_tin_type || '',
+      w9_ein_last4: employee.w9_ein_last4 || '',
+      w9_backup_withholding: !!employee.w9_backup_withholding,
+      w9_signed_at: employee.w9_signed_at || '',
+      ein_input: '',
     })
     setIsEditing(false)
     setError(null)
@@ -567,6 +587,15 @@ export default function Employees() {
       w4_deductions: parseFloat(formData.w4_deductions) || 0,
       w4_extra_withholding: parseFloat(formData.w4_extra_withholding) || 0,
       w4_signed_at: formData.w4_signed_at || null,
+      // W-9 fields (only meaningful when tax_classification = '1099';
+      // we still write them so a W-2 → 1099 reclassification preserves data)
+      w9_legal_name: formData.w9_legal_name || null,
+      w9_business_name: formData.w9_business_name || null,
+      w9_federal_classification: formData.w9_federal_classification || null,
+      w9_other_classification: formData.w9_other_classification || null,
+      w9_tin_type: formData.w9_tin_type || null,
+      w9_backup_withholding: !!formData.w9_backup_withholding,
+      w9_signed_at: formData.w9_signed_at || null,
       updated_at: new Date().toISOString()
     }
 
@@ -589,6 +618,26 @@ export default function Employees() {
       }
       payload.ssn_encrypted = enc
       payload.ssn_last4 = digits.slice(-4)
+    }
+
+    // EIN handling — same pattern as SSN (1099 contractors). Only update
+    // when the user typed something new; encrypt server-side via RPC.
+    const einRaw = (formData.ein_input || '').trim()
+    if (einRaw) {
+      const einDigits = einRaw.replace(/\D/g, '')
+      if (einDigits.length !== 9) {
+        setError('EIN must be 9 digits.')
+        setLoading(false)
+        return
+      }
+      const { data: einEnc, error: einErr } = await supabase.rpc('encrypt_ein', { p_ein: einDigits })
+      if (einErr) {
+        setError('Could not save EIN: ' + einErr.message)
+        setLoading(false)
+        return
+      }
+      payload.w9_ein_encrypted = einEnc
+      payload.w9_ein_last4 = einDigits.slice(-4)
     }
 
     let result
@@ -819,6 +868,15 @@ export default function Employees() {
       w4_deductions: parseFloat(formData.w4_deductions) || 0,
       w4_extra_withholding: parseFloat(formData.w4_extra_withholding) || 0,
       w4_signed_at: formData.w4_signed_at || null,
+      // W-9 fields (only meaningful when tax_classification = '1099';
+      // we still write them so a W-2 → 1099 reclassification preserves data)
+      w9_legal_name: formData.w9_legal_name || null,
+      w9_business_name: formData.w9_business_name || null,
+      w9_federal_classification: formData.w9_federal_classification || null,
+      w9_other_classification: formData.w9_other_classification || null,
+      w9_tin_type: formData.w9_tin_type || null,
+      w9_backup_withholding: !!formData.w9_backup_withholding,
+      w9_signed_at: formData.w9_signed_at || null,
       updated_at: new Date().toISOString()
     }
 
@@ -839,6 +897,25 @@ export default function Employees() {
       }
       payload.ssn_encrypted = enc2
       payload.ssn_last4 = digits2.slice(-4)
+    }
+
+    // EIN handling for the add+invite path
+    const einRaw2 = (formData.ein_input || '').trim()
+    if (einRaw2) {
+      const einDigits2 = einRaw2.replace(/\D/g, '')
+      if (einDigits2.length !== 9) {
+        setError('EIN must be 9 digits.')
+        setLoading(false)
+        return
+      }
+      const { data: einEnc2, error: einErr2 } = await supabase.rpc('encrypt_ein', { p_ein: einDigits2 })
+      if (einErr2) {
+        setError('Could not save EIN: ' + einErr2.message)
+        setLoading(false)
+        return
+      }
+      payload.w9_ein_encrypted = einEnc2
+      payload.w9_ein_last4 = einDigits2.slice(-4)
     }
 
     // Insert the employee
@@ -2132,22 +2209,140 @@ export default function Employees() {
                       />
                     )}
 
-                    {/* ===== TAX SETUP (W-4) ===== */}
-                    {/* Crayola UX rule: 5 plain questions, no IRS form
-                        numbers in the headlines. Help text under each
-                        field explains what they checked on their actual
-                        W-4 form so Alayda can copy values straight off it. */}
-                    <div style={sectionHeaderStyle}>Tax Info (for paychecks)</div>
+                    {/* ===== TAX SETUP — branches W-4 vs W-9 by classification ===== */}
+                    <div style={sectionHeaderStyle}>
+                      Tax Info ({formData.tax_classification === '1099' ? 'W-9 — for 1099 contractors' : 'W-4 — for W-2 employees'})
+                    </div>
                     <div style={{
                       padding: '12px 14px', marginBottom: 14,
-                      backgroundColor: 'rgba(59,130,246,0.06)',
-                      border: '1px solid rgba(59,130,246,0.20)',
+                      backgroundColor: formData.tax_classification === '1099' ? 'rgba(249,115,22,0.06)' : 'rgba(59,130,246,0.06)',
+                      border: `1px solid ${formData.tax_classification === '1099' ? 'rgba(249,115,22,0.20)' : 'rgba(59,130,246,0.20)'}`,
                       borderRadius: 10, fontSize: 13, color: theme.textSecondary,
                     }}>
-                      Copy this info from the employee's signed Form W-4.
-                      JobScout uses these answers to calculate the right amount
-                      of federal tax to withhold from every paycheck.
+                      {formData.tax_classification === '1099'
+                        ? "Copy this info from their signed Form W-9. JobScout uses it to issue their 1099-NEC at year-end. No tax is withheld from their payments — contractors handle their own taxes."
+                        : "Copy this info from the employee's signed Form W-4. JobScout uses these answers to calculate the right amount of federal tax to withhold from every paycheck."}
                     </div>
+
+                    {/* ----- 1099 / W-9 panel ----- */}
+                    {formData.tax_classification === '1099' && (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                          <div>
+                            <label style={labelStyle}>Name on tax return (legal name)</label>
+                            <input type="text" name="w9_legal_name" value={formData.w9_legal_name || ''} onChange={handleChange} disabled={!isEditing} style={isEditing ? inputStyle : inputStyleDisabled} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Business / DBA name (optional)</label>
+                            <input type="text" name="w9_business_name" value={formData.w9_business_name || ''} onChange={handleChange} disabled={!isEditing} style={isEditing ? inputStyle : inputStyleDisabled} />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                          <div>
+                            <label style={labelStyle}>Federal tax classification</label>
+                            <select name="w9_federal_classification" value={formData.w9_federal_classification || ''} onChange={handleChange} disabled={!isEditing} style={isEditing ? inputStyle : inputStyleDisabled}>
+                              <option value="">— Pick one —</option>
+                              <option value="individual">Individual</option>
+                              <option value="sole_prop">Sole proprietor</option>
+                              <option value="llc_c">LLC (taxed as C-Corp)</option>
+                              <option value="llc_s">LLC (taxed as S-Corp)</option>
+                              <option value="llc_p">LLC (multi-member partnership)</option>
+                              <option value="c_corp">C-Corporation</option>
+                              <option value="s_corp">S-Corporation</option>
+                              <option value="partnership">Partnership</option>
+                              <option value="trust">Trust / estate</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={labelStyle}>TIN type</label>
+                            <select name="w9_tin_type" value={formData.w9_tin_type || ''} onChange={handleChange} disabled={!isEditing} style={isEditing ? inputStyle : inputStyleDisabled}>
+                              <option value="">— Pick —</option>
+                              <option value="ssn">SSN</option>
+                              <option value="ein">EIN</option>
+                            </select>
+                            <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                              {formData.w9_tin_type === 'ein'
+                                ? `EIN on file: ${formData.w9_ein_last4 ? `**-***${formData.w9_ein_last4}` : '— none yet —'}`
+                                : `SSN on file: ${formData.ssn_last4 ? `***-**-${formData.ssn_last4}` : '— none yet —'}`}
+                            </div>
+                          </div>
+                        </div>
+
+                        {formData.w9_federal_classification === 'other' && (
+                          <div style={{ marginBottom: 16 }}>
+                            <label style={labelStyle}>Other classification (specify)</label>
+                            <input type="text" name="w9_other_classification" value={formData.w9_other_classification || ''} onChange={handleChange} disabled={!isEditing} style={isEditing ? inputStyle : inputStyleDisabled} />
+                          </div>
+                        )}
+
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                          <div>
+                            {formData.w9_tin_type === 'ein' ? (
+                              <>
+                                <label style={labelStyle}>Employer ID Number (EIN)</label>
+                                <input
+                                  type="text"
+                                  name="ein_input"
+                                  value={formData.ein_input || ''}
+                                  onChange={handleChange}
+                                  disabled={!isEditing}
+                                  placeholder={formData.w9_ein_last4 ? `On file: **-***${formData.w9_ein_last4}` : 'XX-XXXXXXX'}
+                                  autoComplete="off"
+                                  style={isEditing ? inputStyle : inputStyleDisabled}
+                                />
+                                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                                  Encrypted at rest. {formData.w9_ein_last4 ? 'Leave blank to keep the EIN already on file.' : 'Required for the 1099-NEC.'}
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <label style={labelStyle}>Social Security Number</label>
+                                <input
+                                  type="text"
+                                  name="ssn_input"
+                                  value={formData.ssn_input}
+                                  onChange={handleChange}
+                                  disabled={!isEditing}
+                                  placeholder={formData.ssn_last4 ? `On file: ***-**-${formData.ssn_last4}` : 'XXX-XX-XXXX'}
+                                  autoComplete="off"
+                                  style={isEditing ? inputStyle : inputStyleDisabled}
+                                />
+                                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                                  Encrypted at rest. {formData.ssn_last4 ? 'Leave blank to keep the SSN already on file.' : 'Required for the 1099-NEC.'}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, backgroundColor: theme.bg }}>
+                            <input
+                              type="checkbox"
+                              name="w9_backup_withholding"
+                              checked={!!formData.w9_backup_withholding}
+                              onChange={(e) => isEditing && setFormData(prev => ({ ...prev, w9_backup_withholding: e.target.checked }))}
+                              disabled={!isEditing}
+                            />
+                            <label style={{ fontSize: 13, color: theme.text }}>
+                              Subject to backup withholding
+                              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                                Almost always unchecked. Only set if IRS sent a CP2100/B notice.
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                          <div>
+                            <label style={labelStyle}>W-9 signed on</label>
+                            <input type="date" name="w9_signed_at" value={formData.w9_signed_at || ''} onChange={handleChange} disabled={!isEditing} style={isEditing ? inputStyle : inputStyleDisabled} />
+                          </div>
+                          <div />
+                        </div>
+                      </>
+                    )}
+
+                    {/* ----- DOB / hire / address — shared by both paths ----- */}
 
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                       <div>
@@ -2228,6 +2423,8 @@ export default function Employees() {
                       </div>
                     </div>
 
+                    {/* ----- W-2 / W-4 specific block — gated ----- */}
+                    {formData.tax_classification !== '1099' && (<>
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                       <div>
                         <label style={labelStyle}>Social Security Number</label>
@@ -2332,6 +2529,7 @@ export default function Employees() {
                       </div>
                       <div />
                     </div>
+                    </>)}
 
                     {/* ===== PTO SECTION ===== */}
                     <div style={sectionHeaderStyle}>Paid Time Off</div>

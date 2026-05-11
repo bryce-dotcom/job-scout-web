@@ -93,7 +93,16 @@ export default function OnboardingPortal() {
     )
   }
 
-  const STEPS = [
+  // Branch on tax_classification — 1099 contractors get W-9 in place
+  // of W-4 + I-9 (federal employment verification doesn't apply).
+  const is1099 = employee?.tax_classification === '1099'
+  const STEPS = is1099 ? [
+    { key: 'welcome',         label: 'Welcome' },
+    { key: 'personal',        label: 'About you' },
+    { key: 'w9',              label: 'W-9 (1099 info)' },
+    { key: 'direct_deposit',  label: 'Direct deposit' },
+    { key: 'sign',            label: 'Sign + finish' },
+  ] : [
     { key: 'welcome',         label: 'Welcome' },
     { key: 'personal',        label: 'About you' },
     { key: 'w4',              label: 'Tax info' },
@@ -143,6 +152,15 @@ export default function OnboardingPortal() {
               onNext={() => setStep(step + 1)}
             />
           )}
+          {currentStep.key === 'w9' && (
+            <W9Step
+              draft={draft.w9}
+              employee={employee}
+              onSave={(d) => updateStep('w9', d)}
+              onBack={() => setStep(step - 1)}
+              onNext={() => setStep(step + 1)}
+            />
+          )}
           {currentStep.key === 'direct_deposit' && (
             <DirectDepositStep
               draft={draft.direct_deposit}
@@ -166,6 +184,7 @@ export default function OnboardingPortal() {
               draft={draft}
               employee={employee}
               company={company}
+              is1099={is1099}
               onBack={() => setStep(step - 1)}
               onDone={() => window.location.reload()}
             />
@@ -372,6 +391,109 @@ function W4Step({ draft = {}, hourlyHint, onSave, onBack, onNext }) {
   )
 }
 
+function W9Step({ draft = {}, employee, onSave, onBack, onNext }) {
+  const [v, setV] = useState({
+    legal_name: draft.legal_name || employee?.name || '',
+    business_name: draft.business_name || '',
+    federal_classification: draft.federal_classification || '',
+    other_classification: draft.other_classification || '',
+    llc_tax_class: draft.llc_tax_class || '',
+    tin_type: draft.tin_type || 'ssn',
+    backup_withholding: !!draft.backup_withholding,
+    exempt_payee_code: draft.exempt_payee_code || '',
+  })
+  const set = (k) => (e) => setV(p => ({ ...p, [k]: e.target.value }))
+  const valid = v.legal_name && v.federal_classification && v.tin_type
+  const showLLCSub = v.federal_classification?.startsWith('llc_')
+
+  const CLASS_OPTIONS = [
+    { v: 'individual',  label: 'Individual',                sub: 'Most freelancers + side-gigs' },
+    { v: 'sole_prop',   label: 'Sole proprietor',           sub: 'Filed a Schedule C; no LLC' },
+    { v: 'llc_c',       label: 'LLC (taxed as C-Corp)',     sub: 'Rare for small LLCs' },
+    { v: 'llc_s',       label: 'LLC (taxed as S-Corp)',     sub: 'Made the S-Corp election' },
+    { v: 'llc_p',       label: 'LLC (multi-member, partnership)', sub: 'Default for multi-owner LLC' },
+    { v: 'c_corp',      label: 'C-Corporation',             sub: 'Standard corporation' },
+    { v: 's_corp',      label: 'S-Corporation',             sub: 'Filed Form 2553' },
+    { v: 'partnership', label: 'Partnership',               sub: 'General / limited partnership' },
+    { v: 'trust',       label: 'Trust / estate',            sub: '' },
+    { v: 'other',       label: 'Other',                     sub: 'Tell us what' },
+  ]
+
+  return (
+    <div>
+      <h2 style={{ color: theme.text, marginTop: 0 }}>Form W-9 — taxpayer info</h2>
+      <p style={{ color: theme.textMuted, fontSize: 14 }}>
+        Quick info we need to issue your 1099-NEC at year-end (the IRS wants this on file even if we never end up paying you ≥$600).
+      </p>
+
+      <Field label="Name (as it appears on your tax return)">
+        <input type="text" value={v.legal_name} onChange={set('legal_name')} style={inp} />
+      </Field>
+
+      <Field label="Business / DBA name (only if different)" help="Skip if you go by your legal name on tax stuff.">
+        <input type="text" value={v.business_name} onChange={set('business_name')} placeholder="Optional" style={inp} />
+      </Field>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: theme.textSecondary, marginBottom: 6 }}>
+          How are you taxed?
+        </label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
+          {CLASS_OPTIONS.map(o => (
+            <button
+              key={o.v}
+              onClick={() => setV(p => ({ ...p, federal_classification: o.v }))}
+              style={{
+                textAlign: 'left',
+                padding: '10px 12px',
+                backgroundColor: v.federal_classification === o.v ? theme.accentBg : '#fff',
+                border: `1.5px solid ${v.federal_classification === o.v ? theme.accent : theme.border}`,
+                borderRadius: 8,
+                color: v.federal_classification === o.v ? theme.accent : theme.text,
+                fontSize: 13, fontWeight: v.federal_classification === o.v ? 700 : 500,
+                cursor: 'pointer',
+              }}
+            >
+              {o.label}
+              {o.sub && <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, fontWeight: 400 }}>{o.sub}</div>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {v.federal_classification === 'other' && (
+        <Field label="What kind of entity?">
+          <input type="text" value={v.other_classification} onChange={set('other_classification')} style={inp} />
+        </Field>
+      )}
+
+      <Field label="What ID do you use for taxes?" help="Most individuals use SSN. EIN is for LLCs / corporations / sole props who got an EIN from the IRS.">
+        <select value={v.tin_type} onChange={set('tin_type')} style={inp}>
+          <option value="ssn">Social Security Number (SSN)</option>
+          <option value="ein">Employer Identification Number (EIN)</option>
+        </select>
+        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+          You'll enter the actual {v.tin_type === 'ein' ? 'EIN' : 'SSN'} on the next screen.
+        </div>
+      </Field>
+
+      <CheckRow
+        checked={v.backup_withholding}
+        onChange={(e) => setV(p => ({ ...p, backup_withholding: e.target.checked }))}
+        label="I am subject to backup withholding"
+        sub="Almost everyone leaves this UNCHECKED. Only check it if the IRS sent you a CP2100/B notice telling you you're subject to it."
+      />
+
+      <NavButtons
+        onBack={onBack}
+        nextDisabled={!valid}
+        nextLabel="Continue →"
+        onNext={async () => { await onSave(v); onNext() }}
+      />
+    </div>
+  )
+}
+
 function DirectDepositStep({ draft = {}, onSave, onBack, onNext }) {
   const [v, setV] = useState({
     enable: draft.enable !== false,
@@ -490,7 +612,10 @@ function I9Step({ draft = {}, employee, onSave, onBack, onNext }) {
   )
 }
 
-function SignStep({ token, draft, employee, company, onBack, onDone }) {
+function SignStep({ token, draft, employee, company, is1099, onBack, onDone }) {
+  // For 1099: TIN type was already chosen in W-9 step (ssn or ein).
+  // Pull it from draft so this step asks for the right thing.
+  const tinType = is1099 ? (draft.w9?.tin_type || 'ssn') : 'ssn'
   const [ssn, setSsn]     = useState('')
   const [typedName, setTypedName] = useState(employee?.name || '')
   const [agreed, setAgreed] = useState(false)
@@ -559,10 +684,18 @@ function SignStep({ token, draft, employee, company, onBack, onDone }) {
     setSigning(true)
     try {
       const sigImg = padRef.current?.toDataURL('image/png')
-      // Save SSN + sign each form
-      await rpc('save', { token, step: 'ssn', data: { value: digits } })
+      // For 1099: save under 'ein' or 'ssn' based on TIN type chosen in W-9.
+      // For W-2: always SSN.
+      const tinKey = is1099 && tinType === 'ein' ? 'ein' : 'ssn'
+      await rpc('save', { token, step: tinKey, data: { value: digits } })
       const consent = `I, ${typedName.trim()}, agree that this electronic signature has the same legal effect as a handwritten one, and that the information I have provided is true and correct under penalty of perjury.`
-      const sigPayloads = [
+      // Different docs for 1099 vs W-2 path
+      const sigPayloads = is1099 ? [
+        { document_kind: 'w9',                 document_label: 'Form W-9 — Request for Taxpayer ID and Certification', values_snapshot: draft.w9 || {} },
+        ...(draft.direct_deposit?.enable !== false ? [
+          { document_kind: 'direct_deposit_auth', document_label: 'Direct Deposit Authorization', values_snapshot: draft.direct_deposit || {} },
+        ] : []),
+      ] : [
         { document_kind: 'w4',                 document_label: 'Form W-4 (2025)',          values_snapshot: draft.w4 || {} },
         { document_kind: 'i9_section1',        document_label: 'Form I-9 Section 1',       values_snapshot: draft.i9_section1 || {} },
         { document_kind: 'direct_deposit_auth',document_label: 'Direct Deposit Auth',      values_snapshot: draft.direct_deposit || {} },
@@ -589,8 +722,15 @@ function SignStep({ token, draft, employee, company, onBack, onDone }) {
     <div>
       <h2 style={{ color: theme.text, marginTop: 0 }}>Last step — sign + finish</h2>
 
-      <Field label="Your Social Security Number" help="Encrypted as soon as you submit. We need it for your W-2 at year-end.">
-        <input type="text" inputMode="numeric" value={ssn} onChange={(e) => setSsn(e.target.value)} placeholder="XXX-XX-XXXX" autoComplete="off" style={inp} />
+      <Field
+        label={tinType === 'ein' ? 'Your Employer Identification Number (EIN)' : 'Your Social Security Number'}
+        help={tinType === 'ein'
+          ? 'Encrypted as soon as you submit. We need it to issue your 1099-NEC at year-end.'
+          : (is1099
+            ? 'Encrypted as soon as you submit. We need it to issue your 1099-NEC at year-end.'
+            : 'Encrypted as soon as you submit. We need it for your W-2 at year-end.')}
+      >
+        <input type="text" inputMode="numeric" value={ssn} onChange={(e) => setSsn(e.target.value)} placeholder={tinType === 'ein' ? 'XX-XXXXXXX' : 'XXX-XX-XXXX'} autoComplete="off" style={inp} />
       </Field>
 
       <Field label="Type your full legal name">

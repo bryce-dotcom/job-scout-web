@@ -48,7 +48,7 @@ serve(async (req) => {
       .from('employee_onboarding_packets')
       // Explicit FK — there are TWO FKs from this table to employees
       // (employee_id AND created_by), so PostgREST won't auto-pick.
-      .select('*, employee:employees!employee_onboarding_packets_employee_id_fkey(id, name, email, phone, hire_date, home_address, home_city, home_state, home_zip, date_of_birth, ssn_last4)')
+      .select('*, employee:employees!employee_onboarding_packets_employee_id_fkey(id, name, email, phone, hire_date, home_address, home_city, home_state, home_zip, date_of_birth, ssn_last4, w9_ein_last4, tax_classification)')
       .eq('id', packet_id)
       .single();
     if (pktErr || !packet) {
@@ -211,18 +211,64 @@ async function renderPdf({ doc, packet, employee, company }: any): Promise<Uint8
 
 const TITLES: Record<string, string> = {
   w4:                  'Form W-4 (2025) — Employee\'s Withholding Certificate',
+  w9:                  'Form W-9 — Request for Taxpayer ID and Certification',
   i9_section1:         'Form I-9 Section 1 — Employee Information and Attestation',
+  i9_section2:         'Form I-9 Section 2 — Employer Review and Verification',
   direct_deposit_auth: 'Direct Deposit Authorization',
   emergency_contact:   'Emergency Contact Information',
   handbook_ack:        'Employee Handbook Acknowledgment',
   workers_comp:        'Workers\' Compensation Questionnaire',
   background_check_auth: 'Background Check Authorization',
   state_w4:            'State Withholding Certificate',
+  independent_contractor_agreement: 'Independent Contractor Agreement',
+};
+
+const W9_CLASS_LABELS: Record<string, string> = {
+  individual:  'Individual / sole proprietor',
+  sole_prop:   'Sole proprietor',
+  llc_c:       'Limited liability company (taxed as C-Corp)',
+  llc_s:       'Limited liability company (taxed as S-Corp)',
+  llc_p:       'Limited liability company (multi-member partnership)',
+  c_corp:      'C-Corporation',
+  s_corp:      'S-Corporation',
+  partnership: 'Partnership',
+  trust:       'Trust / estate',
+  other:       'Other',
 };
 
 function renderBody(page: any, margin: number, startY: number, doc: any, font: any, fontB: any, ink: any, muted: any, _accent: any): number {
   let y = startY;
   const v = doc.values_snapshot || {};
+
+  if (doc.document_kind === 'w9') {
+    y = section(page, margin, y, 'Part I: Identification', fontB, ink); y -= 14;
+    drawKV(page, margin, y, 'Name (as on tax return)', v.legal_name || '—', font, fontB, ink, muted); y -= 14;
+    if (v.business_name) { drawKV(page, margin, y, 'Business / DBA name', v.business_name, font, fontB, ink, muted); y -= 14; }
+    drawKV(page, margin, y, 'Federal tax classification',
+      W9_CLASS_LABELS[v.federal_classification] || v.federal_classification || '—',
+      font, fontB, ink, muted); y -= 14;
+    if (v.federal_classification === 'other' && v.other_classification) {
+      drawKV(page, margin, y, 'Other (specified)', v.other_classification, font, fontB, ink, muted); y -= 14;
+    }
+    drawKV(page, margin, y, 'TIN type', (v.tin_type || '').toUpperCase(), font, fontB, ink, muted); y -= 14;
+    if (v.tin_type === 'ein' && (employee?.w9_ein_last4)) {
+      drawKV(page, margin, y, 'EIN', `**-***${employee.w9_ein_last4}`, font, fontB, ink, muted); y -= 14;
+    }
+    if (v.tin_type === 'ssn' && (employee?.ssn_last4)) {
+      drawKV(page, margin, y, 'SSN', `***-**-${employee.ssn_last4}`, font, fontB, ink, muted); y -= 14;
+    }
+    if (v.exempt_payee_code) { drawKV(page, margin, y, 'Exempt payee code', v.exempt_payee_code, font, fontB, ink, muted); y -= 14; }
+    y -= 4;
+
+    y = section(page, margin, y, 'Part II: Certification', fontB, ink); y -= 14;
+    drawWrapped(page, margin, y,
+      'Under penalties of perjury, I certify that: (1) The number shown on this form is my correct taxpayer identification number; (2) I am ' +
+      (v.backup_withholding ? 'subject to' : 'NOT subject to') +
+      ' backup withholding because of a notice from the IRS; (3) I am a U.S. citizen or other U.S. person; and (4) the FATCA codes entered (if any) are correct.',
+      font, ink, 612 - 2 * margin, 9);
+    y -= 60;
+    return y;
+  }
 
   if (doc.document_kind === 'w4') {
     y = section(page, margin, y, 'Step 1: Personal information', fontB, ink); y -= 14;
