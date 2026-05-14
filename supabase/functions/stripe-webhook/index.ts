@@ -56,6 +56,69 @@ serve(async (req) => {
     const sigHeader = req.headers.get('stripe-signature') || '';
     const event = JSON.parse(body);
 
+    // Handle setup_intent.succeeded — fires when a customer saves a new
+    // card via SetupIntent (the JobScout payment portal does this). Tracy
+    // saw cards saved in Stripe but they never appeared in JobScout's
+    // saved-card list because we weren't listening.
+    if (event.type === 'setup_intent.succeeded') {
+      const si = event.data.object;
+      const stripeCustomerId = si.customer;
+      const stripePmId = si.payment_method;
+      if (!stripeCustomerId || !stripePmId) {
+        return new Response(JSON.stringify({ received: true, skipped: 'missing customer or payment_method' }),
+          { headers: { 'Content-Type': 'application/json' } });
+      }
+
+      // Find our customer by stripe_customer_id
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const custRes = await fetch(
+        `${supabaseUrl}/rest/v1/customers?stripe_customer_id=eq.${stripeCustomerId}&select=id,company_id&limit=1`,
+        { headers: { 'Authorization': `Bearer ${serviceKey}`, 'apikey': serviceKey } }
+      );
+      const custs = await custRes.json();
+      const cust = Array.isArray(custs) ? custs[0] : null;
+      if (!cust) {
+        console.warn('[setup_intent.succeeded] no customer match for', stripeCustomerId);
+        return new Response(JSON.stringify({ received: true, skipped: 'unknown customer' }),
+          { headers: { 'Content-Type': 'application/json' } });
+      }
+
+      // Fetch the payment method details from Stripe to get brand/last4
+      const tenantKey = Deno.env.get('STRIPE_SECRET_KEY') || '';
+      const pmRes = await fetch(`https://api.stripe.com/v1/payment_methods/${stripePmId}`, {
+        headers: { 'Authorization': `Bearer ${tenantKey}` },
+      });
+      const pm = await pmRes.json();
+      const card = pm.card || {};
+
+      // Upsert into customer_payment_methods. Use stripe_payment_method_id
+      // as the natural dedup key.
+      await fetch(`${supabaseUrl}/rest/v1/customer_payment_methods?on_conflict=stripe_payment_method_id`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${serviceKey}`,
+          'apikey': serviceKey,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          company_id: cust.company_id,
+          customer_id: cust.id,
+          stripe_payment_method_id: stripePmId,
+          brand: card.brand || null,
+          last_four: card.last4 || null,
+          exp_month: card.exp_month || null,
+          exp_year: card.exp_year || null,
+          status: 'active',
+          is_default: false,
+        }),
+      });
+
+      return new Response(JSON.stringify({ received: true, synced: true }),
+        { headers: { 'Content-Type': 'application/json' } });
+    }
+
     if (event.type !== 'checkout.session.completed') {
       return new Response(JSON.stringify({ received: true }),
         { headers: { 'Content-Type': 'application/json' } });

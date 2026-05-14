@@ -544,7 +544,13 @@ export default function LeadSetter() {
         appointment_time: startTime.toISOString(),
         appointment_id: apt.id,
         salesperson_id: primaryId,
-        salesperson_ids: ids
+        salesperson_ids: ids,
+        // Transfer ownership to the rep so this lead appears in their
+        // "My Projects" list in Lenard. Without this, Cole opens Lenard
+        // and can't see the leads Tracy scheduled for him, so he ends
+        // up creating a duplicate lead which orphans Tracy's setter
+        // commission.
+        lead_owner_id: primaryId,
       })
       .eq('id', selectedLead.id)
 
