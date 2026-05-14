@@ -80,6 +80,26 @@ class JobDetailErrorBoundary extends Component {
 // Local-state input: holds its own value while typing and only commits to parent
 // on blur. Prevents the entire JobDetail tree from re-rendering on every keystroke,
 // which was causing focus loss / "screen refresh" when tabbing between fields.
+// Convert a UTC ISO string -> the YYYY-MM-DDTHH:MM string a <input
+// type="datetime-local"> expects, in the user's local timezone.
+// Without this, Edit Job shows the literal UTC hour while the display
+// elsewhere uses toLocaleString — i.e. Doug's bug on /jobs/12607.
+function toLocalDateTime(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+// Inverse — turn what the datetime-local input emits (which JS reads as
+// local time) into a UTC ISO string for the DB.
+function fromLocalDateTime(local) {
+  if (!local) return null
+  const d = new Date(local)
+  if (isNaN(d.getTime())) return null
+  return d.toISOString()
+}
+
 function LocalInput({ value, onCommit, ...rest }) {
   const [local, setLocal] = useState(value ?? '')
   const lastExternal = useRef(value ?? '')
@@ -3531,11 +3551,11 @@ function JobDetailInner() {
                   </div>
                   <div>
                     <label style={labelStyle}>Start Date</label>
-                    <LocalInput type="datetime-local" value={formData.start_date ? formData.start_date.slice(0, 16) : ''} onCommit={(v) => setFormData(prev => ({ ...prev, start_date: v }))} style={inputStyle} />
+                    <LocalInput type="datetime-local" value={toLocalDateTime(formData.start_date)} onCommit={(v) => setFormData(prev => ({ ...prev, start_date: fromLocalDateTime(v) }))} style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>End Date</label>
-                    <LocalInput type="datetime-local" value={formData.end_date ? formData.end_date.slice(0, 16) : ''} onCommit={(v) => setFormData(prev => ({ ...prev, end_date: v }))} style={inputStyle} />
+                    <LocalInput type="datetime-local" value={toLocalDateTime(formData.end_date)} onCommit={(v) => setFormData(prev => ({ ...prev, end_date: fromLocalDateTime(v) }))} style={inputStyle} />
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>

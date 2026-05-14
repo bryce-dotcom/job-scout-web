@@ -83,6 +83,9 @@ export default function LeadSetter() {
 
   // Reactivate-customer-as-lead modal
   const [showReactivateModal, setShowReactivateModal] = useState(false)
+  const [showBlockModal, setShowBlockModal] = useState(false)
+  const [blockForm, setBlockForm] = useState({ start_time: '', duration_minutes: 60, salesperson_id: '', salesperson_ids: [], notes: '' })
+  const [blockSaving, setBlockSaving] = useState(false)
   const [reactivateSearch, setReactivateSearch] = useState('')
   const [reactivating, setReactivating] = useState(false)
   const customers = useStore((state) => state.customers) || []
@@ -1231,6 +1234,31 @@ export default function LeadSetter() {
             <div style={{ fontSize: '13px', color: theme.textMuted }}>
               {weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </div>
+            {/* Block Out Time — Doug's request: sales team needs to mark
+                themselves unavailable (auctions, dr appts) so the setter
+                doesn't schedule meetings on top of them. Creates an
+                appointment row with appointment_type='Block' and no
+                lead_id, which the existing calendar grid already renders
+                as a Block (see line ~1374). */}
+            <button
+              onClick={() => setShowBlockModal(true)}
+              style={{
+                padding: '6px 12px',
+                backgroundColor: '#fef3c7',
+                border: '1px solid #f59e0b',
+                color: '#92400e',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+              title="Block out time so reps can't be scheduled then"
+            >
+              <Clock size={12} /> Block Time
+            </button>
           </div>
 
           {/* Salesperson Calendar Overlay Toggles */}
@@ -2153,6 +2181,108 @@ export default function LeadSetter() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Block Out Time Modal — appointments with appointment_type='Block'
+          and no lead_id. The salesperson is marked busy and the existing
+          calendar grid renders them as gray "Blocked" slots. */}
+      {showBlockModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '16px' }}>
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', maxWidth: '480px', width: '100%', padding: '24px', boxShadow: theme.shadow }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: theme.text }}>Block Out Time</h2>
+              <button onClick={() => setShowBlockModal(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted }}><X size={20} /></button>
+            </div>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: 0, marginBottom: '16px' }}>
+              Mark a time slot as unavailable for one or more reps. Setters will see this on the calendar and won't book meetings on top of it.
+            </p>
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              if (!blockForm.start_time) return
+              setBlockSaving(true)
+              const ids = (blockForm.salesperson_ids?.length ? blockForm.salesperson_ids : (blockForm.salesperson_id ? [blockForm.salesperson_id] : [])).filter(Boolean)
+              if (ids.length === 0) { setBlockSaving(false); alert('Pick at least one rep to block.'); return }
+              const startTime = new Date(blockForm.start_time)
+              const endTime = new Date(startTime.getTime() + blockForm.duration_minutes * 60000)
+              const rows = ids.map(empId => ({
+                company_id: companyId,
+                lead_id: null,
+                appointment_type: 'Block',
+                title: blockForm.notes ? `Blocked — ${blockForm.notes}` : 'Blocked',
+                start_time: startTime.toISOString(),
+                end_time: endTime.toISOString(),
+                duration_minutes: blockForm.duration_minutes,
+                salesperson_id: empId,
+                salesperson_ids: [empId],
+                status: 'Scheduled',
+                notes: blockForm.notes || null,
+              }))
+              const { error } = await supabase.from('appointments').insert(rows)
+              setBlockSaving(false)
+              if (error) { alert('Failed to block time: ' + error.message); return }
+              setShowBlockModal(false)
+              setBlockForm({ start_time: '', duration_minutes: 60, salesperson_id: '', salesperson_ids: [], notes: '' })
+              if (window.refreshAppointmentsCalendar) window.refreshAppointmentsCalendar()
+            }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Start *</label>
+              <input
+                type="datetime-local"
+                required
+                value={blockForm.start_time}
+                onChange={(e) => setBlockForm(p => ({ ...p, start_time: e.target.value }))}
+                style={{ width: '100%', padding: '8px 10px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '14px', marginBottom: '12px', backgroundColor: theme.bgCard, color: theme.text }}
+              />
+
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Duration</label>
+              <select
+                value={blockForm.duration_minutes}
+                onChange={(e) => setBlockForm(p => ({ ...p, duration_minutes: parseInt(e.target.value) }))}
+                style={{ width: '100%', padding: '8px 10px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '14px', marginBottom: '12px', backgroundColor: theme.bgCard, color: theme.text }}
+              >
+                <option value="30">30 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="90">1.5 hours</option>
+                <option value="120">2 hours</option>
+                <option value="180">3 hours</option>
+                <option value="240">4 hours</option>
+                <option value="480">All day (8 hours)</option>
+              </select>
+
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Rep(s) to block *</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px', maxHeight: '180px', overflowY: 'auto', border: `1px solid ${theme.border}`, borderRadius: '6px', padding: '8px' }}>
+                {employees.filter(e => ['Sales', 'Salesman', 'Manager', 'Admin'].includes(e.role)).map(emp => (
+                  <label key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', color: theme.text }}>
+                    <input
+                      type="checkbox"
+                      checked={blockForm.salesperson_ids?.includes(emp.id) || false}
+                      onChange={(e) => {
+                        const cur = blockForm.salesperson_ids || []
+                        setBlockForm(p => ({ ...p, salesperson_ids: e.target.checked ? [...cur, emp.id] : cur.filter(id => id !== emp.id) }))
+                      }}
+                    />
+                    {emp.name}
+                  </label>
+                ))}
+              </div>
+
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Reason (optional)</label>
+              <input
+                type="text"
+                value={blockForm.notes}
+                onChange={(e) => setBlockForm(p => ({ ...p, notes: e.target.value }))}
+                placeholder="e.g. Auction, dr appt, training..."
+                style={{ width: '100%', padding: '8px 10px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '14px', marginBottom: '16px', backgroundColor: theme.bgCard, color: theme.text }}
+              />
+
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setShowBlockModal(false)} style={{ padding: '8px 16px', border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.text, borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}>Cancel</button>
+                <button type="submit" disabled={blockSaving} style={{ padding: '8px 16px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: '6px', cursor: blockSaving ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: '600' }}>
+                  {blockSaving ? 'Blocking...' : 'Block Time'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
