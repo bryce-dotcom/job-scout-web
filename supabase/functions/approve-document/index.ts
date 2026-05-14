@@ -385,6 +385,45 @@ serve(async (req) => {
           // Link the new job back onto the quote so subsequent edits
           // (deposit photo, line items) find it.
           await supabase.from('quotes').update({ job_id: newJob.id }).eq('id', estimate.id)
+
+          // Copy quote_lines → job_lines so the job shows the same line
+          // items the customer accepted. Doug's Capital Lumber bug:
+          // approved $54K quote with 2 line items, job_lines was empty.
+          try {
+            const { data: qLines } = await supabase
+              .from('quote_lines')
+              .select('company_id, item_id, item_name, description, quantity, price, line_total, total, discount, labor_cost, photos, notes, kind, taxable, unit_of_measure, sort_order, image_url')
+              .eq('quote_id', estimate.id)
+              .order('sort_order', { ascending: true, nullsFirst: false })
+
+            if (qLines && qLines.length > 0) {
+              const jobLineRows = qLines.map((ql: any, i: number) => ({
+                company_id: ql.company_id || tokenRow.company_id,
+                job_id: newJob.id,
+                item_id: ql.item_id,
+                item_name: ql.item_name,
+                description: ql.description,
+                quantity: ql.quantity,
+                price: ql.price,
+                total: ql.line_total ?? ql.total,
+                totals: ql.line_total ?? ql.total,
+                discount: ql.discount || 0,
+                labor_cost: ql.labor_cost || 0,
+                photos: ql.photos,
+                notes: ql.notes,
+                kind: ql.kind,
+                taxable: ql.taxable,
+                unit_of_measure: ql.unit_of_measure,
+                // Preserve order — fall back to insertion index if sort_order missing
+                job_line_id: `JL-${newJob.id}-${i + 1}`,
+              }))
+              const { error: lineErr } = await supabase.from('job_lines').insert(jobLineRows)
+              if (lineErr) console.error('[approve-document] job_lines copy failed', lineErr)
+              else console.log(`[approve-document] copied ${jobLineRows.length} quote_lines → job_lines for job ${newJob.id}`)
+            }
+          } catch (e) {
+            console.error('[approve-document] job_lines copy exception', e)
+          }
         }
       }
     } catch (e) {
