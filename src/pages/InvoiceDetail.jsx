@@ -926,6 +926,27 @@ export default function InvoiceDetail() {
     drawTotalLine('Balance Due:', formatCurrency(Math.max(0, balDue)), { bold: true, fontSize: 13 })
     y += 10
 
+    // ── Remit Payment To block ──
+    // Tracy asked the invoice to explicitly say "remit payment to <PO Box>".
+    // We already use remit_to_address in the header, but customers read that
+    // as the business address, not as mailing-payment instructions. Print a
+    // labeled block here so check-payers know exactly where to send it.
+    const remitAddress = company?.remit_to_address || buInfo?.address || company?.address
+    if (remitAddress && balDue > 0) {
+      checkPage(18)
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(0)
+      doc.text('Remit Payment To:', margin, y)
+      y += 5
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(60)
+      const remitLines = doc.splitTextToSize(`${headerName}\n${remitAddress}`, contentWidth)
+      for (const ln of remitLines) { doc.text(ln, margin, y); y += 5 }
+      doc.setTextColor(0)
+      y += 4
+    }
+
     // ── Payment preference note ──
     if (showPreferredNote && preferredPaymentNote) {
       checkPage(20)

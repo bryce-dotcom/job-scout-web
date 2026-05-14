@@ -1623,7 +1623,12 @@ function JobDetailInner() {
     setShowSectionModal(true)
   }
 
-  // Photo upload handler
+  // Photo upload handler — desktop/mobile. Christopher reported "failed to
+  // load" with no detail on /jobs/23282. We now surface the actual error
+  // (storage vs DB vs validation) so the next failure is debuggable, and
+  // reject anything over 25MB up-front instead of waiting for storage to
+  // reject it silently.
+  const MAX_PHOTO_BYTES = 25 * 1024 * 1024
   const handleUploadPhoto = async (e) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0 || !photoUploadTarget) return
@@ -1633,17 +1638,33 @@ function JobDetailInner() {
     setPhotoUploadTarget(null)
 
     let failCount = 0
+    const failures = []
     for (const file of files) {
+      // Up-front validation — desktop browsers will happily attach huge
+      // RAW/DNG/HEIC files that storage then rejects. Tell the user why.
+      if (file.size > MAX_PHOTO_BYTES) {
+        failCount++
+        failures.push(`${file.name}: too large (${Math.round(file.size / 1024 / 1024)}MB > 25MB limit)`)
+        continue
+      }
+      if (file.type && !file.type.startsWith('image/')) {
+        failCount++
+        failures.push(`${file.name}: not an image (${file.type})`)
+        continue
+      }
+
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const subPath = context === 'notes' ? 'notes' : `${context}/${lineId}`
       const filePath = `jobs/${id}/photos/${subPath}/${Date.now()}_${safeName}`
 
       const { error: uploadError } = await supabase.storage
         .from('project-documents')
-        .upload(filePath, file)
+        .upload(filePath, file, { contentType: file.type || 'image/jpeg' })
 
       if (uploadError) {
         failCount++
+        failures.push(`${file.name}: ${uploadError.message}`)
+        console.error('[photo upload] storage error', uploadError, { filePath, size: file.size, type: file.type })
         continue
       }
 
@@ -1661,10 +1682,17 @@ function JobDetailInner() {
       if (lineId && context !== 'notes') insertData.job_line_id = lineId
 
       const { error: dbError } = await supabase.from('file_attachments').insert(insertData)
-      if (dbError) failCount++
+      if (dbError) {
+        failCount++
+        failures.push(`${file.name}: DB ${dbError.message}`)
+        console.error('[photo upload] db error', dbError, { insertData })
+      }
     }
 
-    if (failCount > 0) alert(`${failCount} of ${files.length} photo(s) failed to upload`)
+    if (failCount > 0) {
+      const detail = failures.slice(0, 3).join('\n')
+      alert(`${failCount} of ${files.length} photo(s) failed to upload:\n\n${detail}${failures.length > 3 ? `\n...and ${failures.length - 3} more` : ''}`)
+    }
     await fetchJobData()
   }
 
@@ -5082,16 +5110,32 @@ function JobDetailInner() {
             )}
           </div>
 
-          {/* Notes */}
+          {/* Notes — Christopher's complaint was text disappearing inside the
+              4-row textarea on long entries. We now auto-grow the box up to
+              ~30 rows so what you type stays visible, support markdown
+              syntax (bullets, bold, italic, headings), and show a tip line. */}
           <div style={{
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             border: `1px solid ${theme.border}`,
             padding: '20px'
           }}>
-            <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Notes</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0 }}>Notes</h3>
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                Tip: use <b>**bold**</b>, <i>*italic*</i>, <code>- bullets</code>, <code># headings</code>
+              </span>
+            </div>
             <textarea
               defaultValue={job.notes || ''}
+              onInput={(e) => {
+                // Auto-grow: clear height first so scrollHeight reflects content,
+                // then clamp between 8 and 30 rows worth of pixels.
+                e.target.style.height = 'auto'
+                const min = 8 * 20
+                const max = 30 * 20
+                e.target.style.height = Math.min(max, Math.max(min, e.target.scrollHeight)) + 'px'
+              }}
               onBlur={async (e) => {
                 const val = e.target.value
                 if (val === (job.notes || '')) return
@@ -5104,16 +5148,21 @@ function JobDetailInner() {
                   toast.success('Notes saved')
                 }
               }}
-              rows={4}
-              style={{ ...inputStyle, resize: 'vertical' }}
-              placeholder="Add notes..."
+              rows={8}
+              style={{ ...inputStyle, resize: 'vertical', minHeight: '160px', fontFamily: 'inherit', lineHeight: '1.5' }}
+              placeholder="Add notes... markdown supported"
             />
             {/* Notes photos */}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' }}>
-              {notesPhotos.map(photo => (
-                <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
-              ))}
-              <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(null, 'notes')} />
+            <div style={{ marginTop: '12px' }}>
+              <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '6px', fontWeight: '500' }}>
+                Photos {notesPhotos.length > 0 ? `(${notesPhotos.length})` : ''}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {notesPhotos.map(photo => (
+                  <PhotoThumbnail key={photo.id} att={photo} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
+                ))}
+                <AddPhotoButton theme={theme} onClick={() => triggerPhotoInput(null, 'notes')} />
+              </div>
             </div>
           </div>
 
