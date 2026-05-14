@@ -188,14 +188,19 @@ export default function MyPay() {
           .lte('clock_in', periodEnd.toISOString())
           .not('clock_out', 'is', null)
 
-        // All time_log entries in period — bonus calc needs everyone's
-        // hours on the user's jobs to compute saved hours correctly.
+        // Every crew member's time_clock entries on the user's jobs in
+        // this period. The bonus crew-split needs ALL hours on a job to
+        // know weights — if we only had the user's own time, their share
+        // would inflate to 100%. We pull from time_clock (the real source
+        // of truth); the legacy time_log table only has 43 stale rows
+        // company-wide.
         const timeLogPromise = supabase
-          .from('time_log')
-          .select('id, employee_id, job_id, hours, date, created_at')
+          .from('time_clock')
+          .select('id, employee_id, job_id, clock_in, clock_out, total_hours')
           .eq('company_id', companyId)
-          .gte('created_at', periodStart.toISOString())
-          .lte('created_at', periodEnd.toISOString())
+          .gte('clock_in', periodStart.toISOString())
+          .lte('clock_in', periodEnd.toISOString())
+          .not('clock_out', 'is', null)
 
         // All payments (lifetime, scoped by company) — needed to compute
         // proper paid-threshold bonus gate and lifetime-paid bucket for
@@ -345,14 +350,20 @@ export default function MyPay() {
   }, [effectiveUserId, empRow, jobs, leads, invoices, payments, allPaymentsByInvoiceId, utilityInvoices, payrollConfig, periodStartStr, periodEndStr])
 
   // Efficiency bonus for this user — same calc Payroll uses. Uses the
-  // user's own time entries plus every other crew member's time_log
+  // user's own time entries plus every other crew member's time_clock
   // rows on the same jobs so saved-hours math matches Payroll exactly.
   const bonusData = useMemo(() => {
     if (!effectiveUserId) return { bonus: 0, details: [] }
-    // Combine user's time_clock (normalized to job hours) with all
-    // company time_log rows so the crew split is accurate.
+    // timeLogEntries now contains ALL crew time_clock rows (we changed
+    // the fetch upstream — was pulling from the empty legacy time_log
+    // table). Normalize through timeClockToJobHours and de-dupe against
+    // the user's own rows so we don't double-count.
+    const allCrewToJob = timeClockToJobHours(timeLogEntries)
+    // Drop the user's own rows from the all-crew set since myClockToJob
+    // below will include them with the same hours.
+    const otherCrewToJob = allCrewToJob.filter(r => r.employee_id !== effectiveUserId)
     const myClockToJob = timeClockToJobHours(timeEntries)
-    const combinedTimeLog = [...timeLogEntries, ...myClockToJob]
+    const combinedTimeLog = [...otherCrewToJob, ...myClockToJob]
     // Only pass jobs the user worked on so the calc is scoped
     const verifiedJobIds = new Set(
       (verificationReports || [])

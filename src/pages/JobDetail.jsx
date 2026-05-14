@@ -345,9 +345,36 @@ function JobDetailInner() {
   }, [companyId, id, navigate])
 
   useEffect(() => {
-    // Filter time logs for this job
-    setJobTimeLogs(timeLogs.filter(t => t.job_id === parseInt(id)))
-  }, [timeLogs, id])
+    // Bonus + "Time Logged" sections used to read from the legacy `time_log`
+    // table (43 stale rows company-wide). All real punches go into
+    // `time_clock` (424+ rows on HHH) and are already fetched as
+    // jobTimeEntries. Map them into the shape downstream consumers expect
+    // — that way the bonus card actually sees hours, the crew list is
+    // built from real punches, and Western States stops showing $0 bonus
+    // despite 42h of clocks.
+    const fromTimeClock = (jobTimeEntries || []).map(t => {
+      const emp = employees.find(e => e.id === t.employee_id)
+      let hours = parseFloat(t.total_hours)
+      if (!(hours > 0) && t.clock_in && t.clock_out) {
+        hours = (new Date(t.clock_out) - new Date(t.clock_in)) / 36e5
+      }
+      return {
+        id: `tc-${t.id}`,
+        _source: 'time_clock',
+        _source_id: t.id,
+        job_id: t.job_id,
+        employee_id: t.employee_id,
+        employee: emp ? { id: emp.id, name: emp.name } : null,
+        hours: hours || 0,
+        date: t.clock_in,
+        category: t.adjusted_by ? 'adjusted' : null,
+        notes: t.adjustment_reason || null,
+      }
+    })
+    // Include any legacy time_log rows for this job too (rare but real).
+    const legacy = (timeLogs || []).filter(t => t.job_id === parseInt(id))
+    setJobTimeLogs([...fromTimeClock, ...legacy])
+  }, [jobTimeEntries, timeLogs, employees, id])
 
   // Close status dropdown on outside click
   useEffect(() => {
@@ -4524,7 +4551,12 @@ function JobDetailInner() {
                           </div>
                         ) : (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '15px', fontWeight: '500', color: theme.text }}>{entry.hours}h</span>
+                            <span style={{ fontSize: '15px', fontWeight: '500', color: theme.text }}>{Number(entry.hours || 0).toFixed(2)}h</span>
+                            {/* Edit/delete are for legacy time_log entries only.
+                                time_clock rows are managed from Payroll where
+                                Alayda can adjust clock_in / clock_out with the
+                                full audit trail. */}
+                            {entry._source !== 'time_clock' && (<>
                             <button
                               onClick={() => {
                                 setEditingTimeId(entry.id)
@@ -4546,6 +4578,7 @@ function JobDetailInner() {
                             >
                               <Trash2 size={14} />
                             </button>
+                            </>)}
                           </div>
                         )}
                       </div>
