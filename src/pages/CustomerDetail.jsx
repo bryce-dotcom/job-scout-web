@@ -1549,9 +1549,21 @@ export default function CustomerDetail() {
                       )}
                       <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
                         {job.start_date && `Scheduled: ${new Date(job.start_date).toLocaleDateString()}`}
-                        {job.salesperson && ` - ${job.salesperson.name}`}
+                        {job.completed_at && ` · Completed: ${new Date(job.completed_at).toLocaleDateString()}`}
+                        {job.salesperson && ` · ${job.salesperson.name}`}
                       </div>
                     </div>
+                    {/* Job total — Christopher couldn't find the customer
+                        price after completing a job. Surface it on the
+                        card so he doesn't have to drill in to look it up. */}
+                    {Number(job.job_total) > 0 && (
+                      <div style={{ textAlign: isMobile ? 'left' : 'right', minWidth: isMobile ? 0 : '90px' }}>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Total</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>
+                          ${Number(job.job_total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                    )}
                     <button
                       onClick={() => navigate(`/jobs/${job.id}`)}
                       style={{

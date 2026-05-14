@@ -105,6 +105,20 @@ export default function AuthCallback() {
         const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
         if (exchangeError || !data.session) {
           const msg = exchangeError?.message || 'Unknown error'
+          // PKCE verifier missing is the most common failure on iOS PWA /
+          // cross-browser flows — give a concrete recovery path instead
+          // of just dumping the raw Supabase message.
+          if (/code verifier/i.test(msg) || /code_verifier/i.test(msg)) {
+            // Wipe any half-baked auth state and bounce back to /login
+            // so the user can restart cleanly in this storage context.
+            try {
+              for (const k of Object.keys(localStorage)) if (k.startsWith('sb-') || k.includes('auth')) localStorage.removeItem(k)
+              for (const k of Object.keys(sessionStorage)) if (k.startsWith('sb-') || k.includes('auth')) sessionStorage.removeItem(k)
+            } catch {}
+            setError('Sign-in needs to be retried in the same browser/PWA you started in. We’ve cleared the partial session — tap "Try again" to restart.')
+            setLoading(false)
+            return
+          }
           setError('Authentication failed: ' + msg + '. Please try again.')
           setLoading(false)
           return
@@ -229,7 +243,13 @@ export default function AuthCallback() {
           }}>
             {error && (
               <div style={{ marginBottom: '20px', padding: '14px 16px', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '10px', color: '#b91c1c', fontSize: '14px' }}>
-                {error}
+                <div style={{ marginBottom: '12px' }}>{error}</div>
+                <button
+                  onClick={() => { window.location.href = '/login' }}
+                  style={{ padding: '8px 14px', backgroundColor: '#b91c1c', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                >
+                  Try again
+                </button>
               </div>
             )}
             {message && (

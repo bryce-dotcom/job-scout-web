@@ -3201,6 +3201,16 @@ export default function LenardUTRMP() {
             {totals.existWatts > 0 && <span>{totals.existWatts.toLocaleString()}W {'\u2192'} {totals.newWatts.toLocaleString()}W ({reductionPct}% reduction)</span>}
             {totals.existWatts > 0 && financials.annualEnergySavings > 0 && <span>${Math.round(financials.annualEnergySavings).toLocaleString()}/yr saved</span>}
           </div>
+          {/* Existing-wattage warning: without it, payback math goes weird
+              (Cole reported "20+ year paybacks" on audits where existW=0).
+              The customer-facing proposal shouldn't ship until each line
+              has its existing wattage so the energy savings can be
+              computed correctly. */}
+          {totals.existWatts === 0 && results.length > 0 && (
+            <div style={{ marginTop: '8px', padding: '8px 12px', backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '6px', fontSize: '11px', color: '#92400e', fontWeight: '500' }}>
+              \u26a0 No existing wattage entered. Payback + annual savings won't compute correctly until each fixture line has its existing wattage filled in.
+            </div>
+          )}
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: '6px', paddingTop: '8px', marginTop: '4px' }}>
             {isRep && !projectLocked && (

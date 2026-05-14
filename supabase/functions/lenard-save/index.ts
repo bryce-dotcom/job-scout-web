@@ -388,15 +388,27 @@ serve(async (req) => {
         });
         quoteDbId = newQuote.id;
 
-        // Create quote lines from audit line items using actual cost-per-watt
-        const totalWR = lines.reduce((s: number, l: any) =>
-          s + ((l.qty || 1) * ((l.existW || 0) - (l.newW || 0))), 0);
-        const cpw = totalWR > 0 ? quoteAmount / totalWR : 5;
+        // Create quote lines from audit line items using each fixture's
+        // catalog productPrice. The previous formula derived unitPrice
+        // from (existW - newW) * costPerWatt, which goes NEGATIVE when
+        // the audit has existW=0 (new installs / unknown existing watts).
+        // That made every Lenard estimate render with negative line
+        // totals — Doug confirmed "all reps and projects" affected.
+        // productPrice is already on each line and (qty * productPrice)
+        // sums to est_project_cost for a correctly-built audit, so this
+        // is the right field to use.
+        const sumByPrice = lines.reduce((s: number, l: any) =>
+          s + ((l.qty || 1) * (Number(l.productPrice) || 0)), 0);
+        // Scale only if there's a noticeable mismatch between productPrice
+        // sum and the headline quoteAmount (e.g., rep typed an override).
+        const scale = (sumByPrice > 0 && Math.abs(sumByPrice - quoteAmount) > 1)
+          ? (quoteAmount / sumByPrice) : 1;
 
         for (let i = 0; i < lines.length; i++) {
           const l = lines[i];
           const qty = l.qty || 1;
-          const unitPrice = ((l.existW || 0) - (l.newW || 0)) * cpw;
+          const basePrice = Number(l.productPrice) || 0;
+          const unitPrice = basePrice * scale;
           await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, {
             company_id: cid,
             quote_id: newQuote.id,

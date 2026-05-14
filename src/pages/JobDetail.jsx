@@ -393,7 +393,7 @@ function JobDetailInner() {
 
     const { data: jobData } = await supabase
       .from('jobs')
-      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id, audit_id, customer_id), pm:employees!jobs_pm_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)')
+      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name, secondary_contact_name, secondary_contact_email, secondary_contact_phone, secondary_contact_role), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id, audit_id, customer_id), pm:employees!jobs_pm_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)')
       .eq('id', id)
       .single()
 
@@ -3622,7 +3622,36 @@ function JobDetailInner() {
                 </div>
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Phone</p>
-                  <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{job.customer?.phone || '-'}</p>
+                  {job.customer?.phone ? (
+                    <a href={`tel:${job.customer.phone}`} style={{ fontSize: '14px', fontWeight: '500', color: theme.accent, textDecoration: 'none' }}>
+                      {job.customer.phone}
+                    </a>
+                  ) : (
+                    <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>-</p>
+                  )}
+                  {/* Secondary contact name + phone (Doug: "Can't see contact
+                      name, number, email" on job 23286 — customer JOIN was
+                      loading but only phone + business name were displayed.) */}
+                  {job.customer?.secondary_contact_name && (
+                    <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                      Contact: <span style={{ color: theme.text }}>{job.customer.secondary_contact_name}</span>
+                    </p>
+                  )}
+                  {job.customer?.secondary_contact_phone && job.customer.secondary_contact_phone !== job.customer.phone && (
+                    <a href={`tel:${job.customer.secondary_contact_phone}`} style={{ fontSize: '12px', color: theme.accent, textDecoration: 'none', display: 'block', marginTop: '2px' }}>
+                      {job.customer.secondary_contact_phone}
+                    </a>
+                  )}
+                </div>
+                <div>
+                  <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Email</p>
+                  {(job.customer?.email || job.customer?.secondary_contact_email) ? (
+                    <a href={`mailto:${job.customer?.email || job.customer?.secondary_contact_email}`} style={{ fontSize: '14px', fontWeight: '500', color: theme.accent, textDecoration: 'none', wordBreak: 'break-all' }}>
+                      {job.customer?.email || job.customer?.secondary_contact_email}
+                    </a>
+                  ) : (
+                    <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>-</p>
+                  )}
                 </div>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Address</p>

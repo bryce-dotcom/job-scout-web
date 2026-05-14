@@ -607,7 +607,13 @@ export default function PMJobSetter() {
   const getFilteredJobs = () => {
     let filtered = jobs
 
-    // Filter to jobs with recognized statuses (jobStatuses always has values via fallback)
+    // Filter to jobs with recognized statuses (jobStatuses always has values
+    // via fallback). 'Archived', 'Cancelled', and 'Closed' aren't typically
+    // shown as kanban columns but jobs with those statuses should still be
+    // visible if the user explicitly opted in via a date filter — otherwise
+    // they vanish entirely from the page (Christopher: "I spent 10 minutes
+    // trying to find a job that I just finished"). Treat them as visible
+    // when the date filter is applied; ignore them when "all time" is on.
     const validStatuses = jobStatuses.map(s => s.id)
     filtered = filtered.filter(j => validStatuses.includes(j.status))
 
