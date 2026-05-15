@@ -50,6 +50,7 @@ export default function OnboardingPortal() {
   const [company, setCompany] = useState(null)
   const [handbook, setHandbook] = useState(null)
   const [trainingVideos, setTrainingVideos] = useState([])
+  const [ica, setIca] = useState(null)
   const [step, setStep]       = useState(0) // 0 = welcome
   const [draft, setDraft]     = useState({})
 
@@ -62,6 +63,7 @@ export default function OnboardingPortal() {
         setCompany(data.company)
         setHandbook(data.handbook || null)
         setTrainingVideos(Array.isArray(data.training_videos) ? data.training_videos : [])
+        setIca(data.ica || null)
         setDraft(data.packet?.draft_data || {})
         // Auto-advance past welcome if they've already completed step 1
         if (data.packet?.step_completion?.personal) setStep(1)
@@ -117,13 +119,16 @@ export default function OnboardingPortal() {
   // For now workers_comp + bg_check are always shown for W-2 hires
   // (skipped for 1099 — independent contractors aren't on workers'
   // comp and background-check authorization is rare in that context).
-  const showHandbook = !!handbook?.enabled && (handbook.text || '').trim().length > 0
+  const showHandbook = !!handbook?.enabled && (handbook.text || handbook.pdf_storage_path)
   const showTraining = trainingVideos.length > 0
   const showWorkersComp = !is1099
   const showBgCheck     = !is1099
+  // ICA is 1099-only and only when company has enabled it
+  const showIca = is1099 && !!ica?.enabled && (ica.text || ica.pdf_storage_path)
   const STEPS = [
     ...baseSteps,
     ...(showHandbook ? [{ key: 'handbook', label: 'Handbook' }] : []),
+    ...(showIca ? [{ key: 'ica', label: 'Contractor agreement' }] : []),
     ...(showTraining ? [{ key: 'training', label: 'Training' }] : []),
     ...(showWorkersComp ? [{ key: 'workers_comp', label: 'Workers\' comp' }] : []),
     ...(showBgCheck    ? [{ key: 'background_check', label: 'Background check' }] : []),
@@ -206,6 +211,19 @@ export default function OnboardingPortal() {
               onNext={() => setStep(step + 1)}
             />
           )}
+          {currentStep.key === 'ica' && (
+            <DocAcknowledgmentStep
+              draft={draft.ica}
+              docConfig={ica}
+              titleText="Independent Contractor Agreement"
+              introText="Read the agreement, then check the box to acknowledge. This is the contract between you and the company defining your scope of work and payment terms."
+              ackText="I have read and agree to the Independent Contractor Agreement above."
+              docKey="ica"
+              onSave={(d) => updateStep('ica', d)}
+              onBack={() => setStep(step - 1)}
+              onNext={() => setStep(step + 1)}
+            />
+          )}
           {currentStep.key === 'training' && (
             <TrainingStep
               draft={draft.training}
@@ -241,6 +259,7 @@ export default function OnboardingPortal() {
               is1099={is1099}
               handbook={handbook}
               hasTraining={showTraining}
+              ica={showIca ? ica : null}
               onBack={() => setStep(step - 1)}
               onDone={() => window.location.reload()}
             />
@@ -880,6 +899,98 @@ function TrainingStep({ draft = {}, videos, onSave, onBack, onNext }) {
   )
 }
 
+// Generic doc-ack step. Used by ICA + future custom policies. Pattern
+// mirrors HandbookStep but accepts the doc config + title/intro text
+// as props so it can be reused.
+function DocAcknowledgmentStep({ draft = {}, docConfig, titleText, introText, ackText, docKey, onSave, onBack, onNext }) {
+  const [scrolledToEnd, setScrolledToEnd] = useState(!!draft.scrolled_to_end)
+  const [acknowledged, setAcknowledged]   = useState(!!draft.acknowledged)
+  const [pdfUrl, setPdfUrl]               = useState(null)
+  const [pdfLoading, setPdfLoading]       = useState(!!docConfig?.pdf_storage_path)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!docConfig?.pdf_storage_path) { setPdfLoading(false); return }
+    ;(async () => {
+      try {
+        const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
+        const sb = createClient(SUPABASE_URL, ANON_KEY)
+        const { data, error } = await sb.storage
+          .from('project-documents')
+          .createSignedUrl(docConfig.pdf_storage_path, 3600)
+        if (cancelled) return
+        if (error) { setPdfLoading(false); return }
+        setPdfUrl(data?.signedUrl || null)
+        setPdfLoading(false)
+      } catch (e) { setPdfLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [docConfig?.pdf_storage_path])
+
+  const onScroll = (e) => {
+    const el = e.currentTarget
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) setScrolledToEnd(true)
+  }
+  const hasPdf = !!docConfig?.pdf_storage_path
+  const valid = scrolledToEnd && acknowledged
+
+  return (
+    <div>
+      <h2 style={{ color: theme.text, marginTop: 0 }}>{titleText}</h2>
+      <p style={{ color: theme.textMuted, fontSize: 14 }}>
+        {introText} {docConfig?.version ? <em>Version {docConfig.version}.</em> : null}
+      </p>
+
+      {hasPdf && (
+        <div style={{ marginBottom: 12 }}>
+          {pdfLoading && <div style={{ padding: 16, color: theme.textMuted, fontSize: 13 }}>Loading PDF…</div>}
+          {pdfUrl && (
+            <>
+              <iframe src={pdfUrl} title={titleText} style={{ width: '100%', height: 480, border: `1px solid ${theme.border}`, borderRadius: 10, backgroundColor: '#fff' }} />
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: theme.accent }}>Download PDF</a>
+                {!scrolledToEnd && (
+                  <button onClick={() => setScrolledToEnd(true)} style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#fff', backgroundColor: theme.accent, border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+                    I've read the agreement
+                  </button>
+                )}
+                {scrolledToEnd && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>✓ Marked as read</span>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {(!hasPdf || (!pdfLoading && !pdfUrl)) && (
+        <>
+          <div onScroll={onScroll} style={{ height: 320, overflowY: 'auto', padding: '14px 16px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 10, fontSize: 13, color: theme.text, lineHeight: 1.55, whiteSpace: 'pre-wrap', marginBottom: 12 }}>
+            {docConfig?.text || '(empty — ask whoever sent you this link to fill it in.)'}
+          </div>
+          {!scrolledToEnd && (
+            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8, fontStyle: 'italic' }}>
+              ↓ Scroll to the bottom to enable Continue.
+            </div>
+          )}
+        </>
+      )}
+
+      <CheckRow checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} label={ackText} />
+      <NavButtons
+        onBack={onBack}
+        nextDisabled={!valid}
+        nextLabel="Continue →"
+        onNext={async () => { await onSave({
+          acknowledged,
+          scrolled_to_end: scrolledToEnd,
+          version: docConfig?.version || '',
+          source: hasPdf ? 'pdf' : 'text',
+          pdf_path: docConfig?.pdf_storage_path || null,
+        }); onNext() }}
+      />
+    </div>
+  )
+}
+
 function WorkersCompStep({ draft = {}, onSave, onBack, onNext }) {
   // Brief health questionnaire so the workers' comp carrier knows what
   // pre-existing conditions exist before any future claim. Plain
@@ -1010,7 +1121,7 @@ function BackgroundCheckStep({ draft = {}, employee, onSave, onBack, onNext }) {
   )
 }
 
-function SignStep({ token, draft, employee, company, is1099, handbook, hasTraining, onBack, onDone }) {
+function SignStep({ token, draft, employee, company, is1099, handbook, hasTraining, ica, onBack, onDone }) {
   // For 1099: TIN type was already chosen in W-9 step (ssn or ein).
   // Pull it from draft so this step asks for the right thing.
   const tinType = is1099 ? (draft.w9?.tin_type || 'ssn') : 'ssn'
@@ -1131,6 +1242,20 @@ function SignStep({ token, draft, employee, company, is1099, handbook, hasTraini
           document_kind: 'background_check_auth',
           document_label: 'Background Check Authorization (FCRA)',
           values_snapshot: draft.background_check,
+        })
+      }
+      if (ica && draft.ica?.acknowledged) {
+        extraDocs.push({
+          document_kind: 'independent_contractor_agreement',
+          document_label: `Independent Contractor Agreement${ica.version ? ` (${ica.version})` : ''}`,
+          values_snapshot: {
+            acknowledged: true,
+            scrolled_to_end: !!draft.ica.scrolled_to_end,
+            version: ica.version || '',
+            source: draft.ica.source || (ica.pdf_storage_path ? 'pdf' : 'text'),
+            pdf_path: ica.pdf_storage_path || null,
+            text_excerpt: (ica.text || '').slice(0, 500),
+          },
         })
       }
       const sigPayloads = [...baseDocs, ...extraDocs]

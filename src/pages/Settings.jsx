@@ -3095,6 +3095,35 @@ function PayrollTaxSettingsTab({ theme, companyId }) {
 function OnboardingDocsTab({ theme, companyId, settings, saveSetting }) {
   const handbookSetting = settings.find(s => s.key === 'onboarding_handbook')?.value || {}
   const videosSetting   = settings.find(s => s.key === 'onboarding_training_videos')?.value || []
+  const icaSetting      = settings.find(s => s.key === 'onboarding_ica')?.value || {}
+
+  const [ica, setIca] = useState({
+    enabled: !!icaSetting?.enabled,
+    version: icaSetting?.version || '',
+    text: icaSetting?.text || '',
+    pdf_storage_path: icaSetting?.pdf_storage_path || '',
+    pdf_filename: icaSetting?.pdf_filename || '',
+  })
+  const icaFileRef = useRef(null)
+  const uploadIcaPdf = async (file) => {
+    if (!file) return
+    setUploading(true)
+    try {
+      const path = `ica/${companyId}/${Date.now()}-${file.name.replace(/[^a-z0-9._-]/gi, '_')}`
+      const { error } = await supabase.storage
+        .from('project-documents')
+        .upload(path, file, { contentType: 'application/pdf', upsert: false })
+      if (error) throw error
+      setIca(c => ({ ...c, pdf_storage_path: path, pdf_filename: file.name }))
+    } catch (e) { alert('Upload failed: ' + e.message) }
+    finally { setUploading(false); if (icaFileRef.current) icaFileRef.current.value = '' }
+  }
+  const previewIcaPdf = async () => {
+    if (!ica.pdf_storage_path) return
+    const { data, error } = await supabase.storage.from('project-documents').createSignedUrl(ica.pdf_storage_path, 300)
+    if (error) { alert('Preview failed: ' + error.message); return }
+    window.open(data.signedUrl, '_blank')
+  }
 
   const [handbook, setHandbook] = useState({
     enabled: !!handbookSetting?.enabled,
@@ -3153,6 +3182,7 @@ function OnboardingDocsTab({ theme, companyId, settings, saveSetting }) {
     try {
       await saveSetting('onboarding_handbook', handbook)
       await saveSetting('onboarding_training_videos', videos)
+      await saveSetting('onboarding_ica', ica)
       setSavedAt(new Date())
     } finally { setSaving(false) }
   }
@@ -3290,6 +3320,60 @@ function OnboardingDocsTab({ theme, companyId, settings, saveSetting }) {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Independent Contractor Agreement — only shown to 1099 hires */}
+      <section style={{ marginBottom: 22, padding: 16, backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12 }}>
+        <h4 style={{ fontSize: 14, fontWeight: 700, color: theme.text, margin: '0 0 4px' }}>
+          Independent Contractor Agreement (ICA)
+        </h4>
+        <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 0, marginBottom: 12 }}>
+          Optional. Only shown to 1099 contractors during onboarding. Defines scope, payment terms, IP ownership, etc. Skip this section if you handle ICAs outside JobScout.
+        </p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, cursor: 'pointer' }}>
+          <input type="checkbox" checked={ica.enabled} onChange={(e) => setIca({ ...ica, enabled: e.target.checked })} />
+          <span style={{ fontSize: 14, color: theme.text }}>Show ICA in 1099 contractor onboarding</span>
+        </label>
+        {ica.enabled && (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <label style={lbl}>ICA version</label>
+              <input type="text" value={ica.version} onChange={(e) => setIca({ ...ica, version: e.target.value })} placeholder="e.g. 2025-Q1" style={inp} />
+            </div>
+            <div style={{ marginBottom: 14, padding: 12, backgroundColor: theme.bg, borderRadius: 8, border: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 8 }}>PDF version (preferred)</div>
+              {ica.pdf_storage_path ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ flex: 1, fontSize: 13, color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    📄 {ica.pdf_filename || 'ica.pdf'}
+                  </div>
+                  <button onClick={previewIcaPdf} type="button" style={{ padding: '6px 12px', fontSize: 12, color: theme.accent, backgroundColor: 'transparent', border: `1px solid ${theme.accent}`, borderRadius: 6, cursor: 'pointer' }}>Preview</button>
+                  <button onClick={() => setIca(c => ({ ...c, pdf_storage_path: '', pdf_filename: '' }))} type="button" style={{ padding: '6px 12px', fontSize: 12, color: '#dc2626', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 6, cursor: 'pointer' }}>Remove</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input ref={icaFileRef} type="file" accept="application/pdf" onChange={(e) => uploadIcaPdf(e.target.files?.[0])} style={{ display: 'none' }} />
+                  <button onClick={() => icaFileRef.current?.click()} type="button" disabled={uploading} style={{
+                    padding: '10px 16px', fontSize: 13, fontWeight: 600,
+                    color: '#fff', backgroundColor: theme.accent,
+                    border: 'none', borderRadius: 8,
+                    cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.6 : 1,
+                  }}>{uploading ? 'Uploading…' : 'Upload ICA PDF'}</button>
+                </div>
+              )}
+            </div>
+            <div>
+              <label style={lbl}>ICA text (fallback if no PDF)</label>
+              <textarea
+                value={ica.text}
+                onChange={(e) => setIca({ ...ica, text: e.target.value })}
+                rows={ica.pdf_storage_path ? 3 : 8}
+                placeholder="Paste your standard contractor agreement here, or upload as PDF above."
+                style={{ ...inp, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+              />
+            </div>
+          </>
+        )}
       </section>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

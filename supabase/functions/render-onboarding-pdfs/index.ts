@@ -356,6 +356,24 @@ function renderBody(page: any, margin: number, startY: number, doc: any, font: a
     return y;
   }
 
+  if (doc.document_kind === 'independent_contractor_agreement') {
+    y = section(page, margin, y, 'Acknowledgment', fontB, ink); y -= 14;
+    drawKV(page, margin, y, 'Agreement version', v.version || '—',  font, fontB, ink, muted); y -= 14;
+    drawKV(page, margin, y, 'Read to end',       v.scrolled_to_end ? 'Yes' : 'No', font, fontB, ink, muted); y -= 14;
+    drawKV(page, margin, y, 'Acknowledged',      v.acknowledged ? 'Yes' : 'No', font, fontB, ink, muted); y -= 14;
+    drawKV(page, margin, y, 'Source',            (v.source || '').toUpperCase() || '—', font, fontB, ink, muted); y -= 18;
+    drawWrapped(page, margin, y,
+      'I have read and agree to the Independent Contractor Agreement. I understand my relationship with the company is that of an independent contractor and not an employee.',
+      font, ink, 612 - 2 * margin, 9);
+    y -= 36;
+    if (v.text_excerpt) {
+      y = section(page, margin, y, 'Agreement excerpt (first 500 chars):', fontB, muted); y -= 14;
+      drawWrapped(page, margin, y, v.text_excerpt, font, muted, 612 - 2 * margin, 8);
+      y -= 80;
+    }
+    return y;
+  }
+
   if (doc.document_kind === 'workers_comp') {
     y = section(page, margin, y, 'Workers\' Compensation Questionnaire', fontB, ink); y -= 14;
     drawKV(page, margin, y, 'Can perform essential functions',
