@@ -206,6 +206,29 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
         {product.type && (
           <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>{product.type}</div>
         )}
+        {/* Utility-scope badges — fast visual cue when scrolling the catalog. */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+          {product.in_utility_scope === false && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '3px',
+              padding: '2px 6px', borderRadius: '4px',
+              fontSize: '10px', fontWeight: '600',
+              backgroundColor: 'rgba(249,115,22,0.10)', color: '#c2410c',
+            }} title="Customer-paid only · doesn't count toward utility incentive base">
+              Customer add-on
+            </span>
+          )}
+          {product.suggest_in_lenard && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '3px',
+              padding: '2px 6px', borderRadius: '4px',
+              fontSize: '10px', fontWeight: '600',
+              backgroundColor: 'rgba(59,130,246,0.10)', color: '#3b82f6',
+            }} title="Suggested in Lenard Give-Me + estimate builder">
+              Auto-suggest
+            </span>
+          )}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
           <div style={{ fontSize: '16px', fontWeight: '600', color: theme.accent }}>
             {formatCurrency(product.unit_price)}
@@ -654,7 +677,14 @@ export default function ProductsServices() {
     taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: '', labor_rate_id: '',
     manufacturer: '', model_number: '', product_category: '',
     dlc_listed: false, dlc_listing_number: '', warranty_years: '',
-    spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {}
+    spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {},
+    // Utility incentive scope — only items in_utility_scope=true count
+    // toward the utility's incentive base. SMBE / Express / qualifying
+    // fixtures are typically true; everything else (warranties, fees,
+    // travel, M&V, etc.) should be false. Default true preserves
+    // existing-product behavior; HR sets the override per row.
+    in_utility_scope: true,
+    floor_price: '', ceiling_price: '', suggest_in_lenard: false,
   })
   const [uploadingDoc, setUploadingDoc] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -1031,7 +1061,11 @@ export default function ProductsServices() {
         product_category: product.product_category || '', dlc_listed: product.dlc_listed ?? false,
         dlc_listing_number: product.dlc_listing_number || '', warranty_years: product.warranty_years || '',
         spec_sheet_url: product.spec_sheet_url || '', install_guide_url: product.install_guide_url || '', dlc_document_url: product.dlc_document_url || '',
-        datasheet_json: product.datasheet_json || {}
+        datasheet_json: product.datasheet_json || {},
+        in_utility_scope: product.in_utility_scope ?? true,
+        floor_price: product.floor_price ?? '',
+        ceiling_price: product.ceiling_price ?? '',
+        suggest_in_lenard: product.suggest_in_lenard ?? false,
       })
       // Load existing components for this product
       const existing = productComponents
@@ -1048,7 +1082,8 @@ export default function ProductsServices() {
         labor_rate_id: '',
         manufacturer: '', model_number: '', product_category: '',
         dlc_listed: false, dlc_listing_number: '', warranty_years: '',
-        spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {}
+        spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {},
+        in_utility_scope: true, floor_price: '', ceiling_price: '', suggest_in_lenard: false,
       })
       setModalComponents([])
     }
@@ -1120,7 +1155,12 @@ export default function ProductsServices() {
       product_category: productForm.product_category || null, dlc_listed: productForm.dlc_listed,
       dlc_listing_number: productForm.dlc_listing_number || null, warranty_years: productForm.warranty_years || null,
       spec_sheet_url: productForm.spec_sheet_url || null, install_guide_url: productForm.install_guide_url || null, dlc_document_url: productForm.dlc_document_url || null,
-      datasheet_json: productForm.datasheet_json || {}, updated_at: new Date().toISOString()
+      datasheet_json: productForm.datasheet_json || {},
+      in_utility_scope: !!productForm.in_utility_scope,
+      floor_price: productForm.floor_price === '' ? null : Number(productForm.floor_price),
+      ceiling_price: productForm.ceiling_price === '' ? null : Number(productForm.ceiling_price),
+      suggest_in_lenard: !!productForm.suggest_in_lenard,
+      updated_at: new Date().toISOString()
     }
     let result, productId = editingProduct?.id
     if (editingProduct) {
@@ -2444,6 +2484,83 @@ export default function ProductsServices() {
                       <option value="">-- Select --</option>
                       {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
+                  </div>
+                </div>
+
+                {/* Utility incentive scope — controls whether this item
+                    counts toward the utility's incentive base + appears
+                    in the utility-invoice's in-scope section. SMBE
+                    fixtures = true; warranties / fees / travel / M&V = false. */}
+                <div style={{ padding: '14px 16px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: `3px solid ${productForm.in_utility_scope ? '#22c55e' : '#f97316'}` }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', marginBottom: '12px' }}>Utility Incentive Scope</div>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1.5px solid ${productForm.in_utility_scope ? '#22c55e' : theme.border}`, borderRadius: 8, marginBottom: 8 }}>
+                    <input
+                      type="checkbox"
+                      name="in_utility_scope"
+                      checked={!!productForm.in_utility_scope}
+                      onChange={handleProductChange}
+                      style={{ marginTop: 3 }}
+                    />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+                        Counts toward utility incentive scope
+                      </div>
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, lineHeight: 1.5 }}>
+                        Check ON for items the utility (SRP / RMP / etc.) reimburses — typically only SMBE-qualified fixtures and labor.
+                        Check OFF for warranties, fees, travel, project management, M&V reports, and other "customer-paid only" services. Setting affects how this item shows on utility invoices.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1.5px solid ${theme.border}`, borderRadius: 8, marginBottom: 12 }}>
+                    <input
+                      type="checkbox"
+                      name="suggest_in_lenard"
+                      checked={!!productForm.suggest_in_lenard}
+                      onChange={handleProductChange}
+                      style={{ marginTop: 3 }}
+                    />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+                        Suggest in Lenard Give-Me + Estimate builder
+                      </div>
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, lineHeight: 1.5 }}>
+                        When ON, this item shows up as a suggested add-on when reps build estimates or work the Lenard Give-Me engine. Use for the add-on services HHH offers (utility processing, audits, warranties, etc.).
+                      </div>
+                    </div>
+                  </label>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <label style={labelStyle}>Floor price (optional)</label>
+                      <input
+                        type="number"
+                        name="floor_price"
+                        value={productForm.floor_price}
+                        onChange={handleProductChange}
+                        placeholder="—"
+                        step="0.01"
+                        style={inputStyle}
+                      />
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                        Lower bound rep can adjust to. Below this fires a confirm dialog.
+                      </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Ceiling price (optional)</label>
+                      <input
+                        type="number"
+                        name="ceiling_price"
+                        value={productForm.ceiling_price}
+                        onChange={handleProductChange}
+                        placeholder="—"
+                        step="0.01"
+                        style={inputStyle}
+                      />
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                        Upper bound. Above fires a confirm dialog. Both blank = unlimited.
+                      </div>
+                    </div>
                   </div>
                 </div>
                 {/* Spec Sheet Upload */}
