@@ -3973,7 +3973,7 @@ export default function LenardUTRMP() {
         <div style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
           width: '90%', maxWidth: '400px',
-          maxHeight: 'calc(100vh - 32px)', display: 'flex', flexDirection: 'column',
+          maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column',
           background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '16px', zIndex: 51,
           overflow: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch'
         }}>

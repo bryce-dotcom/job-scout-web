@@ -236,7 +236,7 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
       border: `1px solid ${theme.border}`,
       display: 'flex',
       flexDirection: 'column',
-      maxHeight: isMobile ? 'none' : 'calc(100vh - 420px)',
+      maxHeight: isMobile ? 'none' : 'calc(100dvh - 420px)',
       overflow: 'hidden'
     }}>
       {/* Column header */}

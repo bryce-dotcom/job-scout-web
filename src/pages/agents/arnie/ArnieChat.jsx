@@ -371,7 +371,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',
-      height: isPanel ? '100%' : 'calc(100vh - 140px)',
+      height: isPanel ? '100%' : 'calc(100dvh - 140px)',
       maxWidth: isPanel ? undefined : 900,
       margin: isPanel ? undefined : '0 auto',
       padding: isPanel ? undefined : '0 16px',

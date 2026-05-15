@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePlaidLink } from 'react-plaid-link'
 import { useStore } from '../lib/store'
@@ -3100,10 +3100,45 @@ function OnboardingDocsTab({ theme, companyId, settings, saveSetting }) {
     enabled: !!handbookSetting?.enabled,
     version: handbookSetting?.version || '',
     text: handbookSetting?.text || '',
+    pdf_storage_path: handbookSetting?.pdf_storage_path || '',
+    pdf_filename: handbookSetting?.pdf_filename || '',
   })
   const [videos, setVideos] = useState(Array.isArray(videosSetting) ? videosSetting : [])
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef(null)
+
+  const uploadHandbookPdf = async (file) => {
+    if (!file) return
+    setUploading(true)
+    try {
+      const path = `handbooks/${companyId}/${Date.now()}-${file.name.replace(/[^a-z0-9._-]/gi, '_')}`
+      const { error } = await supabase.storage
+        .from('project-documents')
+        .upload(path, file, { contentType: 'application/pdf', upsert: false })
+      if (error) throw error
+      setHandbook(h => ({ ...h, pdf_storage_path: path, pdf_filename: file.name }))
+    } catch (e) {
+      alert('Upload failed: ' + e.message)
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const removeHandbookPdf = () => {
+    setHandbook(h => ({ ...h, pdf_storage_path: '', pdf_filename: '' }))
+  }
+
+  const previewHandbookPdf = async () => {
+    if (!handbook.pdf_storage_path) return
+    const { data, error } = await supabase.storage
+      .from('project-documents')
+      .createSignedUrl(handbook.pdf_storage_path, 300)
+    if (error) { alert('Preview failed: ' + error.message); return }
+    window.open(data.signedUrl, '_blank')
+  }
 
   const inp = {
     width: '100%', padding: '10px 12px',

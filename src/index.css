@@ -1,1 +1,51 @@
 @import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────
+   Mobile / PWA fixes — applied globally.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Prevent iOS Safari from zooming when the user taps an input.
+   iOS zooms automatically whenever an input's computed font-size is
+   under 16px. Forcing 16px on every form control across the app kills
+   that behavior without touching the design (the inline styles still
+   apply on desktop where zoom doesn't trigger). */
+@media (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Use dynamic viewport units on full-height containers so iOS Safari's
+   URL bar doesn't crop the bottom. Already applied inline on the worst
+   offenders, but this catches any 100vh that slipped through. */
+html, body {
+  min-height: 100dvh;
+}
+
+/* iOS PWA: respect the home-indicator safe area on the bottom of the
+   screen so action bars / FABs / nav don't sit under the gesture bar. */
+body {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Smooth flick-scrolling on iOS inside scrollable regions. WebKit
+   needs this hint for momentum scrolling. */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Make sure tap targets feel like tap targets — kill the iOS double-tap
+   highlight + the 300ms tap delay (touch-action: manipulation handles
+   the delay; -webkit-tap-highlight-color kills the gray flash). */
+button, a, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Prevent horizontal scroll bleed on narrow screens — pages set
+   maxWidth: 100% but rogue children can still push past. This is a
+   safety net. */
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}

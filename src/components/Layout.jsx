@@ -1114,7 +1114,11 @@ export default function Layout() {
             top: 0,
             left: 0,
             right: 0,
-            height: '64px',
+            // Push the bar below the notch on iPhone 14 Pro / Dynamic Island
+            // devices. Without this padding the menu icon + page title sit
+            // under the status bar / notch.
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            height: 'calc(64px + env(safe-area-inset-top, 0px))',
             backgroundColor: theme.bgCard,
             borderBottom: `1px solid ${theme.border}`,
             display: 'flex',
@@ -1175,7 +1179,8 @@ export default function Layout() {
             <aside
               style={{
                 position: 'fixed',
-                top: '64px',
+                // Drawer hangs below the (notch-aware) header.
+                top: 'calc(64px + env(safe-area-inset-top, 0px))',
                 left: 0,
                 bottom: 0,
                 width: '280px',
@@ -1543,7 +1548,11 @@ export default function Layout() {
             backgroundColor: theme.bg,
             minWidth: 0,
             maxWidth: '100%',
-            overflowX: 'hidden'
+            overflowX: 'hidden',
+            // Pad the top by the iPhone notch so the mobile header — which
+            // now includes its own safe-area padding — doesn't overlap
+            // the first row of content.
+            paddingTop: 'env(safe-area-inset-top, 0px)',
           }}
           className="main-content md:ml-[260px] ml-0 mt-[64px] md:mt-0"
         >

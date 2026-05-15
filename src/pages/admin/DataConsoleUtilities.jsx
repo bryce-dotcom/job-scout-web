@@ -1571,7 +1571,7 @@ export default function DataConsoleUtilities() {
   )
 
   return (
-    <div style={{ padding: isMobile ? '16px' : '24px', height: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', height: 'calc(100dvh - 48px)', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700' }}>
           Utilities & Rebates

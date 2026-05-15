@@ -155,7 +155,7 @@ export default function DataConsoleSQL() {
   }
 
   return (
-    <div style={{ padding: isMobile ? '16px' : '24px', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 48px)' }}>
+    <div style={{ padding: isMobile ? '16px' : '24px', display: 'flex', flexDirection: 'column', height: 'calc(100dvh - 48px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
         <h1 style={{ color: adminTheme.text, fontSize: isMobile ? '20px' : '24px', fontWeight: '700' }}>
           SQL Runner

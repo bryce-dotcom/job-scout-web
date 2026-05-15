@@ -3226,7 +3226,7 @@ export default function PMJobSetter() {
                     span columns Google-Calendar-style. Each week row is a
                     relative-positioned grid; span bars float above the
                     day cells with absolute positioning. */}
-                <div style={{ maxHeight: 'calc(100vh - 220px)', overflow: 'auto' }}>
+                <div style={{ maxHeight: 'calc(100dvh - 220px)', overflow: 'auto' }}>
                   {getMonthWeeks().map((weekDays, weekIdx) => {
                     // Multi-day spans clipped to this week
                     const weekSpans = computeWeekSpans(weekDays, getFilteredJobs())

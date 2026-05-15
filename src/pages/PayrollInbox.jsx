@@ -19,7 +19,7 @@ import { supabase } from '../lib/supabase'
 import {
   Inbox, AlertTriangle, CheckCircle2, FileText, Clock, UserPlus,
   Settings as SettingsIcon, ChevronRight, Calendar, Building2,
-  ArrowRight, RefreshCw, Download, Sparkles,
+  ArrowRight, RefreshCw, Download, Sparkles, Send,
 } from 'lucide-react'
 
 // "Crayola-easy" colors. Green = on track / done. Yellow = coming up.
@@ -67,6 +67,34 @@ export default function PayrollInbox() {
 
   const [generating, setGenerating] = useState(null) // 'w2' | '1099_nec' | null
   const [genError, setGenError]     = useState('')
+  const [emailing, setEmailing]     = useState(null)
+  const [emailResult, setEmailResult] = useState(null)
+
+  const bulkEmail = async (kind, year) => {
+    const label = kind === 'W-2' ? 'W-2' : '1099-NEC'
+    if (!confirm(`Email each generated ${label} to its employee/contractor on file? They each get a 24-hour secure download link.`)) return
+    setEmailing(kind); setEmailResult(null)
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      const tok = session?.session?.access_token
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/email-tax-filings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tok || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ company_id: companyId, kind, year }),
+      })
+      const data = await res.json()
+      if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
+      setEmailResult({ kind, year, ...data })
+    } catch (err) {
+      setEmailResult({ kind, year, error: err.message })
+    } finally {
+      setEmailing(null)
+    }
+  }
 
   const generateForms = async (kind, year, quarter) => {
     const key = quarter ? `${kind}-Q${quarter}` : kind
@@ -621,13 +649,24 @@ export default function PayrollInbox() {
                       : `Due to SSA + employees by Jan 31, ${taxYear + 1}`}
                   </div>
                 </div>
-                <button
-                  onClick={() => generateForms('w2', taxYear)}
-                  disabled={generating === 'w2'}
-                  style={btn(theme)}
-                >
-                  <Sparkles size={14} /> {generating === 'w2' ? 'Generating…' : (w2Filings.length > 0 ? 'Regenerate' : 'Generate W-2s')}
-                </button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    onClick={() => generateForms('w2', taxYear)}
+                    disabled={generating === 'w2'}
+                    style={btn(theme)}
+                  >
+                    <Sparkles size={14} /> {generating === 'w2' ? 'Generating…' : (w2Filings.length > 0 ? 'Regenerate' : 'Generate W-2s')}
+                  </button>
+                  {w2Filings.length > 0 && (
+                    <button
+                      onClick={() => bulkEmail('W-2', taxYear)}
+                      disabled={emailing === 'W-2'}
+                      style={{ ...btn(theme), backgroundColor: '#3b82f6' }}
+                    >
+                      <Send size={14} /> {emailing === 'W-2' ? 'Sending…' : `Email all (${w2Filings.length})`}
+                    </button>
+                  )}
+                </div>
               </div>
               {(w2Filings.length > 0 || w3Filing) && (
                 <div style={{ display: 'grid', gap: 4, marginTop: 8 }}>
@@ -659,13 +698,24 @@ export default function PayrollInbox() {
                       : `Due to IRS + contractors by Jan 31, ${taxYear + 1}. Only contractors paid ≥$600 this year are included.`}
                   </div>
                 </div>
-                <button
-                  onClick={() => generateForms('1099_nec', taxYear)}
-                  disabled={generating === '1099_nec'}
-                  style={btn(theme)}
-                >
-                  <Sparkles size={14} /> {generating === '1099_nec' ? 'Generating…' : (necFilings.length > 0 ? 'Regenerate' : 'Generate 1099-NECs')}
-                </button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    onClick={() => generateForms('1099_nec', taxYear)}
+                    disabled={generating === '1099_nec'}
+                    style={btn(theme)}
+                  >
+                    <Sparkles size={14} /> {generating === '1099_nec' ? 'Generating…' : (necFilings.length > 0 ? 'Regenerate' : 'Generate 1099-NECs')}
+                  </button>
+                  {necFilings.length > 0 && (
+                    <button
+                      onClick={() => bulkEmail('1099-NEC', taxYear)}
+                      disabled={emailing === '1099-NEC'}
+                      style={{ ...btn(theme), backgroundColor: '#3b82f6' }}
+                    >
+                      <Send size={14} /> {emailing === '1099-NEC' ? 'Sending…' : `Email all (${necFilings.length})`}
+                    </button>
+                  )}
+                </div>
               </div>
               {(necFilings.length > 0 || f1096) && (
                 <div style={{ display: 'grid', gap: 4, marginTop: 8 }}>
@@ -689,6 +739,24 @@ export default function PayrollInbox() {
             {genError && (
               <div style={{ padding: '8px 16px', backgroundColor: 'rgba(239,68,68,0.10)', borderTop: `1px solid ${theme.border}`, color: '#dc2626', fontSize: 12 }}>
                 {genError}
+              </div>
+            )}
+            {emailResult && (
+              <div style={{ padding: '10px 16px', borderTop: `1px solid ${theme.border}`, backgroundColor: emailResult.error ? 'rgba(239,68,68,0.10)' : 'rgba(34,197,94,0.10)' }}>
+                {emailResult.error ? (
+                  <div style={{ color: '#dc2626', fontSize: 12 }}>Email failed: {emailResult.error}</div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#16a34a' }}>
+                      {emailResult.kind} email batch sent: {emailResult.sent} delivered{emailResult.failed > 0 ? `, ${emailResult.failed} failed` : ''}{emailResult.skipped > 0 ? `, ${emailResult.skipped} skipped (no email on file)` : ''}
+                    </div>
+                    {(emailResult.results || []).filter(r => r.status !== 'sent').slice(0, 5).map((r, i) => (
+                      <div key={i} style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                        {r.name || `#${r.employee_id}`}: {r.status} — {r.reason || r.email || ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </Section>
