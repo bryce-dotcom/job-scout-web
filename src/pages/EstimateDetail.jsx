@@ -5297,11 +5297,34 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
               <p style={{ fontSize: '13px', fontWeight: '600', color: theme.text, margin: '0 0 6px' }}>
                 Interactive Proposal
               </p>
-              <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px', lineHeight: 1.5 }}>
-                {localSettings.proposal_layout
-                  ? `Layout generated ${new Date(localSettings.proposal_layout.generated_at).toLocaleDateString()}. Regenerate to update.`
-                  : 'Generate compelling copy and layout sections using AI based on your line items and estimate details.'}
-              </p>
+              {(() => {
+                // Stale-layout detection: if the estimate was updated AFTER
+                // the layout was generated, surface a loud warning so the
+                // rep regenerates. Doug's complaint on /estimates/4206 was
+                // exactly this — line items changed but the proposal still
+                // showed the older copy.
+                const lay = localSettings.proposal_layout
+                if (!lay) return (
+                  <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px', lineHeight: 1.5 }}>
+                    Generate compelling copy and layout sections using AI based on your line items and estimate details.
+                  </p>
+                )
+                const layAt = new Date(lay.generated_at).getTime()
+                const estAt = new Date(estimate.updated_at || 0).getTime()
+                const stale = estAt > layAt + 60_000  // ignore < 1 minute drift
+                return (
+                  <>
+                    <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 8px', lineHeight: 1.5 }}>
+                      Layout generated {new Date(lay.generated_at).toLocaleDateString()}.
+                    </p>
+                    {stale && (
+                      <div style={{ padding: '8px 10px', backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: '6px', fontSize: '12px', color: '#92400e', marginBottom: '12px', fontWeight: '500' }}>
+                        ⚠ Layout is older than the latest estimate edits. Regenerate so the proposal reflects your current line items.
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '12px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
