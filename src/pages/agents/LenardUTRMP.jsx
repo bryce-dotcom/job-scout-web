@@ -346,6 +346,11 @@ export default function LenardUTRMP() {
   // in_utility_scope=false so it doesn't inflate the incentive base.
   const [addOnServices, setAddOnServices] = useState([]);
 
+  // Good/Better/Best package definitions, pulled from settings table.
+  // Drives the "Apply Good / Better / Best" buttons that bundle the
+  // configured add-on services into the Give-Me quote in one click.
+  const [estimatePackages, setEstimatePackages] = useState([]);
+
   // Pull the add-on services catalog (HHH-seeded set + anything HR added).
   // Filtered server-side: company_id, category='Add-On Service',
   // suggest_in_lenard=true, active=true.
@@ -365,15 +370,26 @@ export default function LenardUTRMP() {
           .maybeSingle();
         const cid = emp?.company_id;
         if (!cid) return;
-        const { data: addons } = await supabase
-          .from('products_services')
-          .select('id, name, description, unit_price, floor_price, ceiling_price, in_utility_scope')
-          .eq('company_id', cid)
-          .eq('product_category', 'Add-On Service')
-          .eq('suggest_in_lenard', true)
-          .eq('active', true)
-          .order('name');
-        if (!cancelled) setAddOnServices(addons || []);
+        const [{ data: addons }, { data: pkgRow }] = await Promise.all([
+          supabase
+            .from('products_services')
+            .select('id, name, description, unit_price, floor_price, ceiling_price, in_utility_scope')
+            .eq('company_id', cid)
+            .eq('product_category', 'Add-On Service')
+            .eq('suggest_in_lenard', true)
+            .eq('active', true)
+            .order('name'),
+          supabase
+            .from('settings')
+            .select('value')
+            .eq('company_id', cid)
+            .eq('key', 'estimate_packages')
+            .maybeSingle(),
+        ]);
+        if (!cancelled) {
+          setAddOnServices(addons || []);
+          setEstimatePackages(Array.isArray(pkgRow?.value) ? pkgRow.value : []);
+        }
       } catch (e) { /* non-critical */ }
     })();
     return () => { cancelled = true; };
@@ -3388,6 +3404,70 @@ export default function LenardUTRMP() {
                 )}
                 <div style={{ marginTop: '3px', color: T.textMuted }}>Customer Out-of-Pocket: <span style={{ fontWeight: '600', color: T.text }}>${Math.round(giveMe.customerOOP).toLocaleString()}</span>{repAdditionalOOP > 0 ? ` + $${Math.round(repAdditionalOOP).toLocaleString()} = $${Math.round(giveMe.customerOOP + repAdditionalOOP).toLocaleString()} total` : ''}</div>
               </div>
+
+              {/* Good / Better / Best — bulk apply package buttons */}
+              {estimatePackages.length > 0 && estimatePackages.some(p => p.addonIds?.length > 0) && (
+                <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: '8px', marginBottom: 8 }}>
+                  <div style={{ fontSize: '10px', fontWeight: '700', color: T.textMuted, letterSpacing: '0.5px', marginBottom: '6px' }}>
+                    APPLY PACKAGE
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                    {estimatePackages.map((pkg, pi) => {
+                      const tone = pi === 0 ? '#9ca3af' : pi === 1 ? T.blue || '#3b82f6' : '#a855f7';
+                      const total = (pkg.addonIds || []).reduce((sum, id) => {
+                        const svc = addOnServices.find(s => String(s.id) === String(id));
+                        return sum + (Number(svc?.unit_price) || 0);
+                      }, 0);
+                      const empty = !pkg.addonIds?.length;
+                      return (
+                        <button
+                          key={pkg.id}
+                          disabled={empty}
+                          onClick={() => {
+                            const toAdd = (pkg.addonIds || [])
+                              .map(id => addOnServices.find(s => String(s.id) === String(id)))
+                              .filter(svc => svc && !giveMeQuoteItems.some(q => q.addonId === svc.id));
+                            if (toAdd.length === 0) {
+                              showToast(`All ${pkg.name} items already added`, '✓');
+                              return;
+                            }
+                            if (!window.confirm(`Apply "${pkg.name}" package? Adds ${toAdd.length} line${toAdd.length === 1 ? '' : 's'} ($${toAdd.reduce((s, p) => s + (Number(p.unit_price) || 0), 0).toLocaleString()}).`)) return;
+                            setGiveMeQuoteItems(prev => [
+                              ...prev,
+                              ...toAdd.map((svc, idx) => ({
+                                id: Date.now() + idx,
+                                type: 'addon_' + svc.id,
+                                addonId: svc.id,
+                                label: svc.name,
+                                description: svc.description,
+                                amount: Number(svc.unit_price) || 0,
+                                in_utility_scope: false,
+                              })),
+                            ]);
+                            markDirty();
+                            showToast(`Applied ${pkg.name}`, '✓');
+                          }}
+                          title={pkg.description || pkg.name}
+                          style={{
+                            padding: '8px 10px',
+                            backgroundColor: empty ? T.bgInput : 'transparent',
+                            color: empty ? T.textMuted : tone,
+                            border: `2px solid ${empty ? T.border : tone}`,
+                            borderRadius: 6,
+                            fontSize: 11, fontWeight: 700,
+                            cursor: empty ? 'not-allowed' : 'pointer',
+                            opacity: empty ? 0.5 : 1,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                          }}
+                        >
+                          <span>{pkg.name}</span>
+                          {!empty && <span style={{ fontSize: 9, fontWeight: 600 }}>${total.toLocaleString()}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Suggestions */}
               {giveMeSuggestions.length > 0 && (

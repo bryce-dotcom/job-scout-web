@@ -115,6 +115,132 @@ function EstimateDetailInner() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showProductPicker, setShowProductPicker] = useState(false)
+  // Add-on services catalog (out-of-utility-scope items: warranties,
+  // facility audits, processing fees, M&V, travel, etc.). Populated
+  // from products_services where suggest_in_lenard=true. Drives the
+  // "Suggested add-ons" strip below the Line Items header so reps
+  // building estimates have one-click access to the same catalog
+  // Lenard's Give-Me engine surfaces.
+  const [addOnSuggestions, setAddOnSuggestions] = useState([])
+  // Good/Better/Best package definitions (from Settings → Estimate Packages).
+  // Each is { id, name, description, addonIds: [...] }. Apply-button hands
+  // off to addPackageBundle which loops through each addonId and inserts
+  // a quote_line.
+  const [packages, setPackages] = useState([])
+  const [allProducts, setAllProducts] = useState([])
+  const [applyingPackage, setApplyingPackage] = useState(null)
+
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [{ data: addons }, { data: pkgRow }, { data: prods }] = await Promise.all([
+          supabase
+            .from('products_services')
+            .select('id, name, description, unit_price, floor_price, ceiling_price, in_utility_scope, product_category')
+            .eq('company_id', companyId)
+            .eq('suggest_in_lenard', true)
+            .eq('active', true)
+            .order('name'),
+          supabase
+            .from('settings')
+            .select('value')
+            .eq('company_id', companyId)
+            .eq('key', 'estimate_packages')
+            .maybeSingle(),
+          supabase
+            .from('products_services')
+            .select('id, name, description, unit_price, in_utility_scope')
+            .eq('company_id', companyId)
+            .eq('active', true),
+        ])
+        if (cancelled) return
+        setAddOnSuggestions(addons || [])
+        setAllProducts(prods || [])
+        setPackages(Array.isArray(pkgRow?.value) ? pkgRow.value : [])
+      } catch (_) { /* non-critical */ }
+    })()
+    return () => { cancelled = true }
+  }, [companyId])
+
+  const applyPackage = async (pkg) => {
+    if (!pkg?.addonIds?.length) {
+      alert(`The "${pkg.name}" package has no products configured. Add products to it in Settings → Good/Better/Best Packages.`)
+      return
+    }
+    const existingIds = new Set(lineItems.map(l => String(l.item_id)))
+    const toAdd = pkg.addonIds
+      .map(id => allProducts.find(p => String(p.id) === String(id)))
+      .filter(p => p && !existingIds.has(String(p.id)))
+    if (toAdd.length === 0) {
+      alert(`All ${pkg.name} package products are already on this estimate.`)
+      return
+    }
+    if (!window.confirm(`Apply "${pkg.name}" package? This will add ${toAdd.length} line item${toAdd.length === 1 ? '' : 's'} totaling $${toAdd.reduce((s, p) => s + (Number(p.unit_price) || 0), 0).toLocaleString()}.`)) return
+    setApplyingPackage(pkg.id)
+    setSaving(true)
+    try {
+      for (const p of toAdd) {
+        await createQuoteLine({
+          company_id: companyId,
+          quote_id: id,
+          item_id: p.id,
+          item_name: p.name,
+          description: p.description || null,
+          quantity: 1,
+          price: Number(p.unit_price) || 0,
+          line_total: Number(p.unit_price) || 0,
+          labor_cost: 0,
+          // Lock scope at insert — never inflate utility incentive base
+          // for items that aren't utility-eligible regardless of how the
+          // catalog changes later.
+          in_utility_scope: !!p.in_utility_scope,
+        })
+      }
+      await updateEstimateTotal()
+      await fetchEstimateData()
+    } finally {
+      setSaving(false)
+      setApplyingPackage(null)
+    }
+  }
+
+  const addSuggestedAddOn = async (svc) => {
+    const promptMsg = `Price for "${svc.name}"?\n\nDefault: $${svc.unit_price || 0}` + (
+      svc.floor_price != null && svc.ceiling_price != null
+        ? `\nRange: $${svc.floor_price} – $${svc.ceiling_price}`
+        : ''
+    )
+    const input = window.prompt(promptMsg, String(svc.unit_price || 0))
+    if (input === null) return
+    let amt = parseFloat(input)
+    if (isNaN(amt) || amt < 0) { alert('Invalid price'); return }
+    if (svc.floor_price != null && amt < Number(svc.floor_price)) {
+      if (!window.confirm(`That's below the floor of $${svc.floor_price}. Add anyway?`)) return
+    }
+    if (svc.ceiling_price != null && amt > Number(svc.ceiling_price)) {
+      if (!window.confirm(`That's above the ceiling of $${svc.ceiling_price}. Add anyway?`)) return
+    }
+    setSaving(true)
+    await createQuoteLine({
+      company_id: companyId,
+      quote_id: id,
+      item_id: svc.id,
+      item_name: svc.name,
+      description: svc.description || null,
+      quantity: 1,
+      price: amt,
+      line_total: amt,
+      labor_cost: 0,
+      // Lock the scope flag at creation — this item NEVER counts toward
+      // utility incentive base regardless of how the catalog changes later.
+      in_utility_scope: !!svc.in_utility_scope,
+    })
+    await updateEstimateTotal()
+    await fetchEstimateData()
+    setSaving(false)
+  }
   const [calculatingIncentive, setCalculatingIncentive] = useState(false)
   const [rebateForms, setRebateForms] = useState([])
   const [fillingForm, setFillingForm] = useState(false)
@@ -2656,6 +2782,93 @@ function EstimateDetailInner() {
                 </button>
               </div>
             </div>
+
+            {/* Good / Better / Best package buttons — one-click bundle add. */}
+            {packages.length > 0 && packages.some(p => p.addonIds?.length > 0) && (
+              <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}`, backgroundColor: theme.bg }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                  Apply package
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+                  {packages.map((pkg, i) => {
+                    const tone = i === 0 ? '#9ca3af' : i === 1 ? '#3b82f6' : '#a855f7'
+                    const total = (pkg.addonIds || []).reduce((s, id) => {
+                      const p = allProducts.find(x => String(x.id) === String(id))
+                      return s + (Number(p?.unit_price) || 0)
+                    }, 0)
+                    const empty = !pkg.addonIds?.length
+                    return (
+                      <button
+                        key={pkg.id}
+                        onClick={() => applyPackage(pkg)}
+                        disabled={empty || saving}
+                        title={pkg.description}
+                        style={{
+                          padding: '10px 14px',
+                          backgroundColor: empty ? theme.bgCard : 'transparent',
+                          color: empty ? theme.textMuted : tone,
+                          border: `2px solid ${empty ? theme.border : tone}`,
+                          borderRadius: 8,
+                          fontSize: 13, fontWeight: 600,
+                          cursor: (empty || saving) ? 'not-allowed' : 'pointer',
+                          opacity: empty ? 0.5 : 1,
+                          textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        }}
+                      >
+                        <span>
+                          {applyingPackage === pkg.id ? '…applying' : pkg.name}
+                        </span>
+                        {!empty && <span style={{ fontSize: 11, fontWeight: 700 }}>${total.toLocaleString()}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Suggested add-ons — products tagged suggest_in_lenard in
+                Settings (warranties, processing fees, audits, M&V, travel,
+                etc.). One-click add with price prompt + floor/ceiling
+                guardrails. Same catalog Lenard's Give-Me uses, so estimate
+                builds in the office and audits in the field stay in sync. */}
+            {addOnSuggestions.length > 0 && (
+              <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}`, backgroundColor: theme.bg }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Suggested add-ons ({addOnSuggestions.length})
+                  </div>
+                  <div style={{ fontSize: 11, color: theme.textMuted, fontStyle: 'italic' }}>
+                    Out-of-utility-scope · raises customer OOP without affecting incentive base
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {addOnSuggestions.map(svc => {
+                    const alreadyAdded = lineItems.some(l => String(l.item_id) === String(svc.id))
+                    return (
+                      <button
+                        key={svc.id}
+                        onClick={() => !alreadyAdded && addSuggestedAddOn(svc)}
+                        disabled={alreadyAdded || saving}
+                        title={svc.description || svc.name}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '6px 10px',
+                          backgroundColor: alreadyAdded ? 'rgba(34,197,94,0.10)' : theme.bgCard,
+                          color: alreadyAdded ? '#16a34a' : theme.text,
+                          border: `1px solid ${alreadyAdded ? 'rgba(34,197,94,0.30)' : theme.border}`,
+                          borderRadius: 16,
+                          fontSize: 12, fontWeight: 500,
+                          cursor: alreadyAdded ? 'default' : 'pointer',
+                          opacity: alreadyAdded ? 0.7 : 1,
+                        }}
+                      >
+                        {alreadyAdded ? '✓ ' : '+ '}{svc.name} <span style={{ color: theme.textMuted, marginLeft: 2 }}>${svc.unit_price}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {lineItems.length === 0 ? (
               <div style={{

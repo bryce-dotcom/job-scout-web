@@ -85,6 +85,7 @@ const baseTabs = [
   { id: 'my_money', label: 'My Money', icon: Wallet },
   { id: 'tax', label: 'Payroll Tax / Compliance', icon: Building2 },
   { id: 'onboarding_docs', label: 'Onboarding Docs & Training', icon: FileStack },
+  { id: 'estimate_packages', label: 'Good/Better/Best Packages', icon: Layers },
   { id: 'billing', label: 'Subscription', icon: CreditCard },
   { id: 'users', label: 'User Management', icon: Users },
   { id: 'integrations', label: 'Integrations', icon: Link2 }
@@ -650,6 +651,9 @@ export default function Settings() {
 
       case 'onboarding_docs':
         return <OnboardingDocsTab theme={theme} companyId={companyId} settings={settings} saveSetting={saveSetting} />
+
+      case 'estimate_packages':
+        return <EstimatePackagesTab theme={theme} companyId={companyId} settings={settings} saveSetting={saveSetting} />
 
       case 'billing':
         return <BillingTab theme={theme} companyId={companyId} />
@@ -3383,6 +3387,169 @@ function OnboardingDocsTab({ theme, companyId, settings, saveSetting }) {
           cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
         }}>
           {saving ? 'Saving…' : 'Save onboarding docs'}
+        </button>
+        {savedAt && <span style={{ fontSize: 13, color: '#16a34a' }}>Saved at {savedAt.toLocaleTimeString()}</span>}
+      </div>
+    </div>
+  )
+}
+
+// ─── Good/Better/Best Estimate Packages ───
+// Each company defines 3 tiers of add-on bundles. When a rep clicks
+// "Apply Better" on an estimate or in Lenard, every product in the
+// Better bundle gets added as a line item (with its catalog default
+// price + in_utility_scope flag locked at insert time). Same engine
+// powers both EstimateDetail and Lenard so good/better/best matches
+// across the field and the office.
+function EstimatePackagesTab({ theme, companyId, settings, saveSetting }) {
+  const stored = settings.find(s => s.key === 'estimate_packages')?.value
+  const initial = (stored && Array.isArray(stored) && stored.length === 3) ? stored : [
+    { id: 'good',   name: 'Good',   description: 'The essentials. Covers the work + utility processing.', addonIds: [] },
+    { id: 'better', name: 'Better', description: 'Most popular. Adds extended warranty + facility audit.', addonIds: [] },
+    { id: 'best',   name: 'Best',   description: 'White-glove. Smart controls, M&V, 5-yr warranty, priority SLA.', addonIds: [] },
+  ]
+  const [packages, setPackages] = useState(initial)
+  const [products, setProducts] = useState([])
+  const [saving, setSaving]     = useState(false)
+  const [savedAt, setSavedAt]   = useState(null)
+
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('products_services')
+        .select('id, name, unit_price, product_category, in_utility_scope, suggest_in_lenard')
+        .eq('company_id', companyId)
+        .eq('active', true)
+        .order('name')
+      if (!cancelled) setProducts(data || [])
+    })()
+    return () => { cancelled = true }
+  }, [companyId])
+
+  const updatePkg = (idx, k, v) => setPackages(p => p.map((x, i) => i === idx ? { ...x, [k]: v } : x))
+  const toggleAddon = (idx, addonId) => setPackages(p => p.map((x, i) => {
+    if (i !== idx) return x
+    const has = (x.addonIds || []).includes(addonId)
+    return { ...x, addonIds: has ? x.addonIds.filter(a => a !== addonId) : [...(x.addonIds || []), addonId] }
+  }))
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await saveSetting('estimate_packages', packages)
+      setSavedAt(new Date())
+    } finally { setSaving(false) }
+  }
+
+  const inp = {
+    width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: 8,
+    fontSize: 14, color: theme.text, backgroundColor: theme.bgCard, boxSizing: 'border-box', outline: 'none',
+  }
+
+  // Suggest-in-lenard items first; everything else after, both alphabetized.
+  const suggested = products.filter(p => p.suggest_in_lenard)
+  const other     = products.filter(p => !p.suggest_in_lenard)
+
+  return (
+    <div>
+      <h3 style={{ fontSize: 18, fontWeight: 700, color: theme.text, margin: '0 0 6px' }}>Good / Better / Best Packages</h3>
+      <p style={{ fontSize: 13, color: theme.textMuted, marginBottom: 18 }}>
+        Define the three tiers that show up as "Apply Good / Better / Best" buttons on Lenard + the estimate builder. Each tier auto-adds the picked products as line items at their catalog price. Out-of-utility-scope products in a tier won't inflate the incentive base.
+      </p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 24 }}>
+        {packages.map((pkg, i) => {
+          const total = (pkg.addonIds || []).reduce((s, id) => {
+            const p = products.find(x => String(x.id) === String(id))
+            return s + (Number(p?.unit_price) || 0)
+          }, 0)
+          const tone = i === 0 ? '#9ca3af' : i === 1 ? '#3b82f6' : '#a855f7'
+          return (
+            <div key={pkg.id} style={{ padding: 16, backgroundColor: theme.bgCard, border: `1.5px solid ${tone}`, borderRadius: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{
+                  display: 'inline-block', width: 28, height: 28, borderRadius: 999,
+                  backgroundColor: tone, color: '#fff', fontSize: 13, fontWeight: 700,
+                  textAlign: 'center', lineHeight: '28px',
+                }}>{i + 1}</span>
+                <input
+                  type="text"
+                  value={pkg.name}
+                  onChange={(e) => updatePkg(i, 'name', e.target.value)}
+                  style={{ ...inp, padding: '6px 10px', fontWeight: 700 }}
+                />
+              </div>
+              <textarea
+                value={pkg.description}
+                onChange={(e) => updatePkg(i, 'description', e.target.value)}
+                rows={2}
+                placeholder="Customer-facing description of what's in this tier."
+                style={{ ...inp, resize: 'vertical', fontFamily: 'inherit', fontSize: 12 }}
+              />
+              <div style={{ marginTop: 12, fontSize: 12, color: theme.textMuted, fontWeight: 600 }}>
+                Includes ({(pkg.addonIds || []).length}) — total ${total.toLocaleString()}
+              </div>
+              <div style={{ marginTop: 6, maxHeight: 220, overflowY: 'auto', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 6, padding: 4 }}>
+                {[...suggested, ...other].length === 0 && (
+                  <div style={{ padding: 10, fontSize: 12, color: theme.textMuted, textAlign: 'center' }}>No products yet — add some in Products & Services.</div>
+                )}
+                {suggested.length > 0 && (
+                  <div style={{ padding: '4px 8px', fontSize: 10, fontWeight: 700, color: theme.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Add-on services</div>
+                )}
+                {suggested.map(p => (
+                  <label key={p.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px',
+                    fontSize: 12, color: theme.text, cursor: 'pointer',
+                    backgroundColor: (pkg.addonIds || []).includes(p.id) ? 'rgba(34,197,94,0.10)' : 'transparent',
+                    borderRadius: 4,
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={(pkg.addonIds || []).includes(p.id)}
+                      onChange={() => toggleAddon(i, p.id)}
+                    />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                    <span style={{ color: theme.textMuted }}>${p.unit_price}</span>
+                  </label>
+                ))}
+                {other.length > 0 && (
+                  <details style={{ marginTop: 6 }}>
+                    <summary style={{ cursor: 'pointer', padding: '4px 8px', fontSize: 11, color: theme.accent }}>
+                      Other products ({other.length})
+                    </summary>
+                    {other.map(p => (
+                      <label key={p.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px',
+                        fontSize: 12, color: theme.text, cursor: 'pointer',
+                        backgroundColor: (pkg.addonIds || []).includes(p.id) ? 'rgba(34,197,94,0.10)' : 'transparent',
+                        borderRadius: 4,
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={(pkg.addonIds || []).includes(p.id)}
+                          onChange={() => toggleAddon(i, p.id)}
+                        />
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                        <span style={{ color: theme.textMuted }}>${p.unit_price}</span>
+                      </label>
+                    ))}
+                  </details>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={save} disabled={saving} style={{
+          padding: '12px 20px', minHeight: 44, backgroundColor: theme.accent, color: '#fff',
+          border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+          cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
+        }}>
+          {saving ? 'Saving…' : 'Save packages'}
         </button>
         {savedAt && <span style={{ fontSize: 13, color: '#16a34a' }}>Saved at {savedAt.toLocaleTimeString()}</span>}
       </div>
