@@ -48,6 +48,8 @@ export default function OnboardingPortal() {
   const [packet, setPacket]   = useState(null)
   const [employee, setEmployee] = useState(null)
   const [company, setCompany] = useState(null)
+  const [handbook, setHandbook] = useState(null)
+  const [trainingVideos, setTrainingVideos] = useState([])
   const [step, setStep]       = useState(0) // 0 = welcome
   const [draft, setDraft]     = useState({})
 
@@ -58,6 +60,8 @@ export default function OnboardingPortal() {
         setPacket(data.packet)
         setEmployee(data.employee)
         setCompany(data.company)
+        setHandbook(data.handbook || null)
+        setTrainingVideos(Array.isArray(data.training_videos) ? data.training_videos : [])
         setDraft(data.packet?.draft_data || {})
         // Auto-advance past welcome if they've already completed step 1
         if (data.packet?.step_completion?.personal) setStep(1)
@@ -96,19 +100,27 @@ export default function OnboardingPortal() {
   // Branch on tax_classification — 1099 contractors get W-9 in place
   // of W-4 + I-9 (federal employment verification doesn't apply).
   const is1099 = employee?.tax_classification === '1099'
-  const STEPS = is1099 ? [
+  const baseSteps = is1099 ? [
     { key: 'welcome',         label: 'Welcome' },
     { key: 'personal',        label: 'About you' },
     { key: 'w9',              label: 'W-9 (1099 info)' },
     { key: 'direct_deposit',  label: 'Direct deposit' },
-    { key: 'sign',            label: 'Sign + finish' },
   ] : [
     { key: 'welcome',         label: 'Welcome' },
     { key: 'personal',        label: 'About you' },
     { key: 'w4',              label: 'Tax info' },
     { key: 'direct_deposit',  label: 'Direct deposit' },
     { key: 'i9_section1',     label: 'Eligibility' },
-    { key: 'sign',            label: 'Sign + finish' },
+  ]
+  // Conditionally insert handbook + training right before sign,
+  // gated on company-level config. Empty/disabled = step is hidden.
+  const showHandbook = !!handbook?.enabled && (handbook.text || '').trim().length > 0
+  const showTraining = trainingVideos.length > 0
+  const STEPS = [
+    ...baseSteps,
+    ...(showHandbook ? [{ key: 'handbook', label: 'Handbook' }] : []),
+    ...(showTraining ? [{ key: 'training', label: 'Training' }] : []),
+    { key: 'sign', label: 'Sign + finish' },
   ]
   const currentStep = STEPS[step]
 
@@ -178,6 +190,24 @@ export default function OnboardingPortal() {
               onNext={() => setStep(step + 1)}
             />
           )}
+          {currentStep.key === 'handbook' && (
+            <HandbookStep
+              draft={draft.handbook}
+              handbook={handbook}
+              onSave={(d) => updateStep('handbook', d)}
+              onBack={() => setStep(step - 1)}
+              onNext={() => setStep(step + 1)}
+            />
+          )}
+          {currentStep.key === 'training' && (
+            <TrainingStep
+              draft={draft.training}
+              videos={trainingVideos}
+              onSave={(d) => updateStep('training', d)}
+              onBack={() => setStep(step - 1)}
+              onNext={() => setStep(step + 1)}
+            />
+          )}
           {currentStep.key === 'sign' && (
             <SignStep
               token={token}
@@ -185,6 +215,8 @@ export default function OnboardingPortal() {
               employee={employee}
               company={company}
               is1099={is1099}
+              handbook={handbook}
+              hasTraining={showTraining}
               onBack={() => setStep(step - 1)}
               onDone={() => window.location.reload()}
             />

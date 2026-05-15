@@ -68,10 +68,10 @@ serve(async (req) => {
           .update({ opened_at: new Date().toISOString(), status: 'in_progress' })
           .eq('id', packet.id);
       }
-      const [{ data: employee }, { data: company }, { data: trainingSetting }] = await Promise.all([
+      const [{ data: employee }, { data: company }, { data: trainingSetting }, { data: handbookSetting }] = await Promise.all([
         supabase
           .from('employees')
-          .select('id, name, email, phone, hire_date, role, headshot_url, business_unit')
+          .select('id, name, email, phone, hire_date, role, headshot_url, business_unit, tax_classification')
           .eq('id', packet.employee_id)
           .single(),
         supabase
@@ -84,6 +84,12 @@ serve(async (req) => {
           .select('value')
           .eq('company_id', packet.company_id)
           .eq('key', 'onboarding_training_videos')
+          .maybeSingle(),
+        supabase
+          .from('settings')
+          .select('value')
+          .eq('company_id', packet.company_id)
+          .eq('key', 'onboarding_handbook')
           .maybeSingle(),
       ]);
       return jsonRes({
@@ -98,6 +104,7 @@ serve(async (req) => {
         employee,
         company,
         training_videos: trainingSetting?.value || [],
+        handbook: handbookSetting?.value || null,
       });
     }
 

@@ -84,6 +84,7 @@ const baseTabs = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'my_money', label: 'My Money', icon: Wallet },
   { id: 'tax', label: 'Payroll Tax / Compliance', icon: Building2 },
+  { id: 'onboarding_docs', label: 'Onboarding Docs & Training', icon: FileStack },
   { id: 'billing', label: 'Subscription', icon: CreditCard },
   { id: 'users', label: 'User Management', icon: Users },
   { id: 'integrations', label: 'Integrations', icon: Link2 }
@@ -646,6 +647,9 @@ export default function Settings() {
 
       case 'tax':
         return <PayrollTaxSettingsTab theme={theme} companyId={companyId} />
+
+      case 'onboarding_docs':
+        return <OnboardingDocsTab theme={theme} companyId={companyId} settings={settings} saveSetting={saveSetting} />
 
       case 'billing':
         return <BillingTab theme={theme} companyId={companyId} />
@@ -3083,6 +3087,146 @@ function PayrollTaxSettingsTab({ theme, companyId }) {
       </div>
     )
   }
+}
+
+// ─── Onboarding Docs & Training Tab ───
+// Per-company config for the new-hire portal: handbook text + training
+// videos. The portal reads these via employee-onboarding's load action.
+function OnboardingDocsTab({ theme, companyId, settings, saveSetting }) {
+  const handbookSetting = settings.find(s => s.key === 'onboarding_handbook')?.value || {}
+  const videosSetting   = settings.find(s => s.key === 'onboarding_training_videos')?.value || []
+
+  const [handbook, setHandbook] = useState({
+    enabled: !!handbookSetting?.enabled,
+    version: handbookSetting?.version || '',
+    text: handbookSetting?.text || '',
+  })
+  const [videos, setVideos] = useState(Array.isArray(videosSetting) ? videosSetting : [])
+  const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState(null)
+
+  const inp = {
+    width: '100%', padding: '10px 12px',
+    border: `1px solid ${theme.border}`, borderRadius: 8,
+    fontSize: 14, color: theme.text, backgroundColor: theme.bgCard,
+    boxSizing: 'border-box', outline: 'none',
+  }
+  const lbl = { display: 'block', fontSize: 13, fontWeight: 600, color: theme.textSecondary, marginBottom: 6 }
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await saveSetting('onboarding_handbook', handbook)
+      await saveSetting('onboarding_training_videos', videos)
+      setSavedAt(new Date())
+    } finally { setSaving(false) }
+  }
+
+  const addVideo = () => setVideos(v => [...v, { id: crypto.randomUUID(), title: '', url: '', required: true }])
+  const removeVideo = (id) => setVideos(v => v.filter(x => x.id !== id))
+  const updateVideo = (id, k, val) => setVideos(v => v.map(x => x.id === id ? { ...x, [k]: val } : x))
+
+  return (
+    <div>
+      <h3 style={{ fontSize: 18, fontWeight: 700, color: theme.text, margin: '0 0 6px' }}>Onboarding Documents & Training</h3>
+      <p style={{ fontSize: 13, color: theme.textMuted, marginBottom: 18 }}>
+        Anything you set here shows up in the new-hire onboarding portal. New hires read + sign the handbook, watch the training videos, and the system records each acknowledgment as a signed document on their employee file.
+      </p>
+
+      {/* Handbook */}
+      <section style={{ marginBottom: 22, padding: 16, backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12 }}>
+        <h4 style={{ fontSize: 14, fontWeight: 700, color: theme.text, margin: '0 0 12px' }}>Employee Handbook</h4>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, cursor: 'pointer' }}>
+          <input type="checkbox" checked={handbook.enabled} onChange={(e) => setHandbook({ ...handbook, enabled: e.target.checked })} />
+          <span style={{ fontSize: 14, color: theme.text }}>Show handbook in new-hire onboarding</span>
+        </label>
+        {handbook.enabled && (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <label style={lbl}>Handbook version</label>
+              <input
+                type="text" value={handbook.version}
+                onChange={(e) => setHandbook({ ...handbook, version: e.target.value })}
+                placeholder="e.g. 2025-Q1"
+                style={inp}
+              />
+              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                Stored on each signed acknowledgment so you know exactly which handbook version they read. Bump it when you update the text.
+              </div>
+            </div>
+            <div>
+              <label style={lbl}>Handbook text</label>
+              <textarea
+                value={handbook.text}
+                onChange={(e) => setHandbook({ ...handbook, text: e.target.value })}
+                rows={12}
+                placeholder="Paste the full text of the handbook here. New hires will scroll through it before they can sign."
+                style={{ ...inp, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+              />
+              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                {handbook.text.length.toLocaleString()} characters · plain text. PDF upload is on the roadmap.
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Training videos */}
+      <section style={{ marginBottom: 22, padding: 16, backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <h4 style={{ fontSize: 14, fontWeight: 700, color: theme.text, margin: 0 }}>Training Videos</h4>
+          <button onClick={addVideo} style={{
+            padding: '8px 14px', minHeight: 36,
+            backgroundColor: theme.accent, color: '#fff',
+            border: 'none', borderRadius: 8,
+            fontSize: 13, fontWeight: 600, cursor: 'pointer',
+          }}>+ Add video</button>
+        </div>
+        {videos.length === 0 && (
+          <div style={{ padding: 14, color: theme.textMuted, fontSize: 13, textAlign: 'center' }}>
+            No videos yet. Add YouTube, Loom, Vimeo, or any embed URL to walk new hires through how to use the system or company-specific training.
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: 10 }}>
+          {videos.map((v, i) => (
+            <div key={v.id} style={{ padding: 12, backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto auto', gap: 10, alignItems: 'end' }}>
+                <div>
+                  <label style={lbl}>Title</label>
+                  <input type="text" value={v.title} onChange={(e) => updateVideo(v.id, 'title', e.target.value)} placeholder={`Video ${i + 1}`} style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>URL (YouTube, Loom, Vimeo, etc.)</label>
+                  <input type="text" value={v.url} onChange={(e) => updateVideo(v.id, 'url', e.target.value)} placeholder="https://www.youtube.com/watch?v=..." style={inp} />
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 12, fontSize: 12, color: theme.textSecondary, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!v.required} onChange={(e) => updateVideo(v.id, 'required', e.target.checked)} />
+                  Required
+                </label>
+                <button onClick={() => removeVideo(v.id)} style={{
+                  padding: '8px 10px', marginBottom: 8,
+                  backgroundColor: 'transparent', color: '#dc2626',
+                  border: `1px solid ${theme.border}`, borderRadius: 6,
+                  fontSize: 12, cursor: 'pointer',
+                }}>Remove</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={save} disabled={saving} style={{
+          padding: '12px 20px', minHeight: 44, backgroundColor: theme.accent, color: '#fff',
+          border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+          cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
+        }}>
+          {saving ? 'Saving…' : 'Save onboarding docs'}
+        </button>
+        {savedAt && <span style={{ fontSize: 13, color: '#16a34a' }}>Saved at {savedAt.toLocaleTimeString()}</span>}
+      </div>
+    </div>
+  )
 }
 
 // ─── Integrations Tab ───

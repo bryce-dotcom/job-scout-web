@@ -1006,10 +1006,14 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
   const [newIssue, setNewIssue] = useState({ title: '', priority: 'medium', type: 'short' })
   const [resolvingId, setResolvingId] = useState(null)
   const [todoText, setTodoText] = useState('')
-  const [todoOwner, setTodoOwner] = useState('')
+  // Owner state is now an ARRAY of employee ids so a single to-do can be
+  // assigned to multiple people. Bryce: "When putting in to-dos for the
+  // issues, I need to be able to select multiple people." Legacy todos
+  // with single owner_id still render — the display code checks both.
+  const [todoOwner, setTodoOwner] = useState([])
   const [addingTodo, setAddingTodo] = useState(false)
   const [newTodoText, setNewTodoText] = useState('')
-  const [newTodoOwner, setNewTodoOwner] = useState('')
+  const [newTodoOwner, setNewTodoOwner] = useState([])
 
   const filtered = useMemo(() => {
     let list = issues
@@ -1048,7 +1052,10 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
       save('todos', [...todos, {
         id: crypto.randomUUID(),
         text: todoText.trim(),
-        owner_id: todoOwner || null,
+        // Persist both owner_id (legacy single) and owner_ids (new multi)
+        // so older records and viewers keep working.
+        owner_id: todoOwner[0] || null,
+        owner_ids: todoOwner.length ? todoOwner : null,
         due_date: nextWeek.toISOString().slice(0, 10),
         done: false,
         created_at: new Date().toISOString(),
@@ -1057,7 +1064,7 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
     }
     setResolvingId(null)
     setTodoText('')
-    setTodoOwner('')
+    setTodoOwner([])
   }
 
   const unresolveIssue = (id) => {
@@ -1073,14 +1080,15 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
     save('todos', [...todos, {
       id: crypto.randomUUID(),
       text: newTodoText.trim(),
-      owner_id: newTodoOwner || null,
+      owner_id: newTodoOwner[0] || null,
+      owner_ids: newTodoOwner.length ? newTodoOwner : null,
       due_date: nextWeek.toISOString().slice(0, 10),
       done: false,
       created_at: new Date().toISOString(),
       source_issue_id: null,
     }])
     setNewTodoText('')
-    setNewTodoOwner('')
+    setNewTodoOwner([])
     setAddingTodo(false)
   }
 
@@ -1101,7 +1109,9 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           {activeTodos.map(todo => {
-            const owner = employees.find(e => String(e.id) === String(todo.owner_id))
+            // Support both shapes: new owner_ids[] and legacy owner_id
+            const ownerIds = (todo.owner_ids && todo.owner_ids.length) ? todo.owner_ids : (todo.owner_id ? [todo.owner_id] : [])
+            const owners = ownerIds.map(oid => employees.find(e => String(e.id) === String(oid))).filter(Boolean)
             const overdue = todo.due_date && todo.due_date < new Date().toISOString().slice(0, 10)
             return (
               <div key={todo.id} style={{
@@ -1113,7 +1123,11 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
                   <Circle size={18} color={theme.border} />
                 </button>
                 <span style={{ flex: 1, fontSize: '13px', color: theme.text, fontWeight: '500' }}>{todo.text}</span>
-                {owner && <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '3px' }}><Users size={10} />{owner.name}</span>}
+                {owners.length > 0 && (
+                  <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <Users size={10} />{owners.map(o => o.name?.split(' ')[0] || o.name).join(', ')}
+                  </span>
+                )}
                 {todo.due_date && <span style={{ fontSize: '10px', color: overdue ? '#ef4444' : theme.textMuted, fontWeight: '600' }}>{overdue ? 'Overdue' : todo.due_date}</span>}
                 <button onClick={() => removeTodo(todo.id)} style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
                   <X size={12} />
@@ -1145,16 +1159,36 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
         </div>
 
         {addingTodo && (
-          <div style={{ display: 'flex', gap: '8px', marginTop: '10px', alignItems: 'center' }}>
-            <InlineInput value={newTodoText} onChange={setNewTodoText} placeholder="Action item..." theme={theme} style={{ flex: 1 }} />
-            <select value={newTodoOwner} onChange={e => setNewTodoOwner(e.target.value)} style={{
-              padding: '8px', borderRadius: '8px', border: `1px solid ${theme.border}`, fontSize: '12px', backgroundColor: theme.bg, color: theme.textSecondary,
-            }}>
-              <option value="">Owner...</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-            <SmallBtn onClick={addTodo} color="#8b5cf6" theme={theme}><Plus size={12} /></SmallBtn>
-            <SmallBtn onClick={() => setAddingTodo(false)} theme={theme}><X size={12} /></SmallBtn>
+          <div style={{ marginTop: '10px' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+              <InlineInput value={newTodoText} onChange={setNewTodoText} placeholder="Action item..." theme={theme} style={{ flex: 1 }} />
+              <SmallBtn onClick={addTodo} color="#8b5cf6" theme={theme}><Plus size={12} /></SmallBtn>
+              <SmallBtn onClick={() => setAddingTodo(false)} theme={theme}><X size={12} /></SmallBtn>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center', padding: '6px', backgroundColor: theme.bg, borderRadius: '6px' }}>
+              <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '600', marginRight: '4px' }}>Owners:</span>
+              {employees.map(e => {
+                const on = newTodoOwner.includes(String(e.id)) || newTodoOwner.includes(e.id)
+                return (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => setNewTodoOwner(on
+                      ? newTodoOwner.filter(id => String(id) !== String(e.id))
+                      : [...newTodoOwner, String(e.id)])}
+                    style={{
+                      padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: '600',
+                      border: `1px solid ${on ? '#8b5cf6' : theme.border}`,
+                      backgroundColor: on ? '#8b5cf6' : 'transparent',
+                      color: on ? '#fff' : theme.textSecondary,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {e.name?.split(' ')[0] || e.name}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
       </Card>
@@ -1222,17 +1256,35 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
                   <div style={{ fontSize: '11px', fontWeight: '700', color: '#22c55e', marginBottom: '8px', textTransform: 'uppercase' }}>
                     Solve — Create action item (optional)
                   </div>
-                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', alignItems: isMobile ? 'stretch' : 'center' }}>
-                    <InlineInput value={todoText} onChange={setTodoText} placeholder="To-do from solving this issue..." theme={theme} style={{ flex: 1 }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <select value={todoOwner} onChange={e => setTodoOwner(e.target.value)} style={{
-                        padding: '8px', borderRadius: '8px', border: `1px solid ${theme.border}`, fontSize: '12px', backgroundColor: theme.bg, color: theme.textSecondary, flex: isMobile ? 1 : undefined,
-                      }}>
-                        <option value="">Who...</option>
-                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                      </select>
+                      <InlineInput value={todoText} onChange={setTodoText} placeholder="To-do from solving this issue..." theme={theme} style={{ flex: 1 }} />
                       <SmallBtn onClick={() => resolveIssue(issue.id)} color="#22c55e" theme={theme}><Check size={12} /> Solve</SmallBtn>
                       <SmallBtn onClick={() => setResolvingId(null)} theme={theme}><X size={12} /></SmallBtn>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center', padding: '6px', backgroundColor: theme.bg, borderRadius: '6px' }}>
+                      <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '600', marginRight: '4px' }}>Owners:</span>
+                      {employees.map(e => {
+                        const on = todoOwner.includes(String(e.id)) || todoOwner.includes(e.id)
+                        return (
+                          <button
+                            key={e.id}
+                            type="button"
+                            onClick={() => setTodoOwner(on
+                              ? todoOwner.filter(id => String(id) !== String(e.id))
+                              : [...todoOwner, String(e.id)])}
+                            style={{
+                              padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: '600',
+                              border: `1px solid ${on ? '#22c55e' : theme.border}`,
+                              backgroundColor: on ? '#22c55e' : 'transparent',
+                              color: on ? '#fff' : theme.textSecondary,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {e.name?.split(' ')[0] || e.name}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
