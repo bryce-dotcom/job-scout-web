@@ -19,7 +19,7 @@ import { supabase } from '../lib/supabase'
 import {
   Inbox, AlertTriangle, CheckCircle2, FileText, Clock, UserPlus,
   Settings as SettingsIcon, ChevronRight, Calendar, Building2,
-  ArrowRight, RefreshCw,
+  ArrowRight, RefreshCw, Download, Sparkles,
 } from 'lucide-react'
 
 // "Crayola-easy" colors. Green = on track / done. Yellow = coming up.
@@ -64,6 +64,42 @@ export default function PayrollInbox() {
   // 1099 contractor YTD totals (this calendar year). Drives the
   // $600-threshold tracker + the year-end 1099-NEC queue.
   const [contractorYTD, setContractorYTD] = useState([])  // [{ id, name, ytd, w9_signed_at }]
+
+  const [generating, setGenerating] = useState(null) // 'w2' | '1099_nec' | null
+  const [genError, setGenError]     = useState('')
+
+  const generateForms = async (kind, year) => {
+    setGenerating(kind); setGenError('')
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      const tok = session?.session?.access_token
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/render-tax-forms`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tok || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ company_id: companyId, kind, year }),
+      })
+      const data = await res.json()
+      if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
+      await refresh()
+    } catch (err) {
+      setGenError(`${kind}: ${err.message}`)
+    } finally {
+      setGenerating(null)
+    }
+  }
+
+  const downloadFiling = async (path) => {
+    if (!path) return
+    const { data, error: urlErr } = await supabase.storage
+      .from('project-documents')
+      .createSignedUrl(path, 300)
+    if (urlErr) { alert('Download link failed: ' + urlErr.message); return }
+    window.open(data.signedUrl, '_blank')
+  }
 
   const refresh = async () => {
     if (!companyId) return
@@ -374,6 +410,106 @@ export default function PayrollInbox() {
         )
       })()}
 
+      {/* Year-end forms — W-2/W-3 + 1099-NEC/1096 generators.
+          Always visible (you can re-render any year); de-emphasized
+          colors most of the year, prominent in Dec / Jan when due. */}
+      {(() => {
+        const now = new Date()
+        const month = now.getMonth() // 0=Jan
+        const isUrgent = month === 11 || month === 0  // Dec / Jan
+        const taxYear = month === 0 ? now.getFullYear() - 1 : now.getFullYear()
+        const w2Filings   = filings.filter(f => f.form_kind === 'W-2'      && f.period_start?.startsWith(String(taxYear)))
+        const w3Filing    = filings.find(  f => f.form_kind === 'W-3'      && f.period_start?.startsWith(String(taxYear)))
+        const necFilings  = filings.filter(f => f.form_kind === '1099-NEC' && f.period_start?.startsWith(String(taxYear)))
+        const f1096       = filings.find(  f => f.form_kind === '1096'     && f.period_start?.startsWith(String(taxYear)))
+        const tone = isUrgent ? TONE.yellow : TONE.gray
+        return (
+          <Section title={`Year-end forms — tax year ${taxYear}`} theme={theme} tone={tone}>
+            {/* W-2 / W-3 row */}
+            <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: w2Filings.length > 0 ? 10 : 0 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>W-2s for employees + W-3 transmittal</div>
+                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                    {w2Filings.length > 0
+                      ? `${w2Filings.length} W-2${w2Filings.length === 1 ? '' : 's'} generated · last refreshed ${fmtDate(w2Filings[0].created_at)}`
+                      : `Due to SSA + employees by Jan 31, ${taxYear + 1}`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => generateForms('w2', taxYear)}
+                  disabled={generating === 'w2'}
+                  style={btn(theme)}
+                >
+                  <Sparkles size={14} /> {generating === 'w2' ? 'Generating…' : (w2Filings.length > 0 ? 'Regenerate' : 'Generate W-2s')}
+                </button>
+              </div>
+              {(w2Filings.length > 0 || w3Filing) && (
+                <div style={{ display: 'grid', gap: 4, marginTop: 8 }}>
+                  {w3Filing && (
+                    <button onClick={() => downloadFiling(w3Filing.pdf_storage_path)} style={pillBtn(theme)}>
+                      <Download size={12} /> W-3 transmittal
+                    </button>
+                  )}
+                  {w2Filings.slice(0, 8).map(f => (
+                    <button key={f.id} onClick={() => downloadFiling(f.pdf_storage_path)} style={pillBtn(theme)}>
+                      <Download size={12} /> W-2 · employee #{f.employee_id}
+                    </button>
+                  ))}
+                  {w2Filings.length > 8 && (
+                    <div style={{ fontSize: 11, color: theme.textMuted, padding: '4px 8px' }}>+{w2Filings.length - 8} more</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 1099-NEC / 1096 row */}
+            <div style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: necFilings.length > 0 ? 10 : 0 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>1099-NECs for contractors + 1096 transmittal</div>
+                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                    {necFilings.length > 0
+                      ? `${necFilings.length} 1099-NEC${necFilings.length === 1 ? '' : 's'} generated · last refreshed ${fmtDate(necFilings[0].created_at)}`
+                      : `Due to IRS + contractors by Jan 31, ${taxYear + 1}. Only contractors paid ≥$600 this year are included.`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => generateForms('1099_nec', taxYear)}
+                  disabled={generating === '1099_nec'}
+                  style={btn(theme)}
+                >
+                  <Sparkles size={14} /> {generating === '1099_nec' ? 'Generating…' : (necFilings.length > 0 ? 'Regenerate' : 'Generate 1099-NECs')}
+                </button>
+              </div>
+              {(necFilings.length > 0 || f1096) && (
+                <div style={{ display: 'grid', gap: 4, marginTop: 8 }}>
+                  {f1096 && (
+                    <button onClick={() => downloadFiling(f1096.pdf_storage_path)} style={pillBtn(theme)}>
+                      <Download size={12} /> 1096 transmittal
+                    </button>
+                  )}
+                  {necFilings.slice(0, 8).map(f => (
+                    <button key={f.id} onClick={() => downloadFiling(f.pdf_storage_path)} style={pillBtn(theme)}>
+                      <Download size={12} /> 1099-NEC · contractor #{f.employee_id}
+                    </button>
+                  ))}
+                  {necFilings.length > 8 && (
+                    <div style={{ fontSize: 11, color: theme.textMuted, padding: '4px 8px' }}>+{necFilings.length - 8} more</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {genError && (
+              <div style={{ padding: '8px 16px', backgroundColor: 'rgba(239,68,68,0.10)', borderTop: `1px solid ${theme.border}`, color: '#dc2626', fontSize: 12 }}>
+                {genError}
+              </div>
+            )}
+          </Section>
+        )
+      })()}
+
       {/* Recently filed / paid */}
       {recentPaid.length > 0 && (
         <Section title="Recently paid" theme={theme} tone={TONE.green}>
@@ -416,6 +552,18 @@ export default function PayrollInbox() {
 }
 
 // ===== Helpers + tiny components =====================================
+function pillBtn(theme) {
+  return {
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    padding: '5px 10px',
+    backgroundColor: theme.accentBg,
+    color: theme.accent,
+    border: 'none', borderRadius: 14,
+    fontSize: 11, fontWeight: 600, cursor: 'pointer',
+    width: 'fit-content',
+  }
+}
+
 function btn(theme) {
   return {
     display: 'inline-flex', alignItems: 'center', gap: 4,
