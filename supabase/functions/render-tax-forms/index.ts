@@ -74,6 +74,16 @@ serve(async (req) => {
       const result = await generate940({ supabase, company_id, company, year });
       return json(result);
     }
+    if (kind === 'tc941') {
+      if (!quarter || quarter < 1 || quarter > 4) return json({ error: 'TC-941 requires quarter (1-4)' }, 400);
+      const result = await generateTC941({ supabase, company_id, company, year, quarter });
+      return json(result);
+    }
+    if (kind === 'form33h') {
+      if (!quarter || quarter < 1 || quarter > 4) return json({ error: 'Form 33H requires quarter (1-4)' }, 400);
+      const result = await generateForm33H({ supabase, company_id, company, year, quarter });
+      return json(result);
+    }
 
     return json({ error: `kind '${kind}' not yet implemented` }, 400);
   } catch (err) {
@@ -443,6 +453,197 @@ async function generate940({ supabase, company_id, company, year }: any) {
 
 function round2(n: number) { return Math.round(n * 100) / 100; }
 
+// =====================================================================
+// Utah TC-941 — State quarterly withholding return
+// =====================================================================
+async function generateTC941({ supabase, company_id, company, year, quarter }: any) {
+  if ((company.state_employer_id_state || 'UT') !== 'UT') {
+    return { ok: false, error: 'TC-941 is Utah-only. Other states need their own renderer.' };
+  }
+  if (!company.state_employer_id) {
+    return { ok: false, error: 'Set Utah State Tax Commission ID in Settings → Payroll Tax / Compliance before generating TC-941.' };
+  }
+
+  const startMonth = (quarter - 1) * 3;
+  const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`;
+  const periodEndDate = new Date(year, startMonth + 3, 0);
+  const periodEnd = periodEndDate.toISOString().slice(0, 10);
+
+  const { data: emps } = await supabase
+    .from('employees')
+    .select('id, tax_classification')
+    .eq('company_id', company_id);
+  const w2Ids = (emps || []).filter((e: any) => e.tax_classification !== '1099').map((e: any) => e.id);
+
+  const { data: paystubs } = await supabase
+    .from('paystubs')
+    .select('employee_id, gross_pay, taxable_wages, state_income_tax')
+    .eq('company_id', company_id)
+    .in('employee_id', w2Ids.length ? w2Ids : [-1])
+    .gte('pay_date', periodStart)
+    .lte('pay_date', periodEnd);
+
+  const totals = {
+    employee_count: new Set((paystubs || []).map((p: any) => p.employee_id)).size,
+    wages: 0,
+    state_tax_withheld: 0,
+  };
+  for (const ps of paystubs || []) {
+    totals.wages += Number(ps.taxable_wages || ps.gross_pay) || 0;
+    totals.state_tax_withheld += Number(ps.state_income_tax) || 0;
+  }
+
+  const { data: paidLiabs } = await supabase
+    .from('payroll_tax_liabilities')
+    .select('amount_total, kind')
+    .eq('company_id', company_id)
+    .eq('jurisdiction', 'state')
+    .eq('kind', 'state_income_tax')
+    .gte('period_start', periodStart)
+    .lte('period_end', periodEnd)
+    .not('paid_at', 'is', null);
+  const totalDeposits = (paidLiabs || []).reduce((s: number, l: any) => s + (Number(l.amount_total) || 0), 0);
+  const balanceDue = round2(totals.state_tax_withheld - totalDeposits);
+
+  const pdfBytes = await renderTC941Pdf({ company, year, quarter, totals, totalDeposits, balanceDue });
+  const path = `tax-filings/${company_id}/${year}/TC941-Q${quarter}-${year}-${Date.now()}.pdf`;
+  await supabase.storage.from('project-documents').upload(path, pdfBytes, { contentType: 'application/pdf', upsert: true });
+
+  await supabase
+    .from('payroll_tax_filings')
+    .update({ status: 'superseded' })
+    .eq('company_id', company_id)
+    .eq('form_kind', 'TC-941')
+    .eq('period_start', periodStart)
+    .neq('status', 'superseded');
+
+  const { data: filing } = await supabase
+    .from('payroll_tax_filings')
+    .insert({
+      company_id, form_kind: 'TC-941', jurisdiction: 'state',
+      period_start: periodStart, period_end: periodEnd,
+      pdf_storage_path: path,
+      values_snapshot: { totals, totalDeposits, balanceDue },
+      status: 'draft',
+    })
+    .select('id')
+    .single();
+  return { ok: true, filing_id: filing?.id, path, totals, totalDeposits, balanceDue };
+}
+
+// =====================================================================
+// Utah Form 33H + 33HA — State unemployment (DWS) quarterly
+//   33H: summary + total taxable wages × company SUI rate = tax due
+//   33HA: per-employee wage detail filed alongside
+// =====================================================================
+async function generateForm33H({ supabase, company_id, company, year, quarter }: any) {
+  if ((company.state_employer_id_state || 'UT') !== 'UT') {
+    return { ok: false, error: 'Form 33H is Utah-only. Other states need their own renderer.' };
+  }
+  if (!company.sui_account_number) {
+    return { ok: false, error: 'Set Utah DWS account number in Settings → Payroll Tax / Compliance before generating Form 33H.' };
+  }
+  if (company.sui_rate_pct == null) {
+    return { ok: false, error: 'Set your assigned Utah SUI rate in Settings → Payroll Tax / Compliance before generating Form 33H.' };
+  }
+
+  const startMonth = (quarter - 1) * 3;
+  const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`;
+  const periodEndDate = new Date(year, startMonth + 3, 0);
+  const periodEnd = periodEndDate.toISOString().slice(0, 10);
+  const yearStart = `${year}-01-01`;
+
+  // Active W-2 employees with paystubs in this quarter
+  const { data: emps } = await supabase
+    .from('employees')
+    .select('id, name, ssn_last4, tax_classification')
+    .eq('company_id', company_id);
+  const w2Ids = (emps || []).filter((e: any) => e.tax_classification !== '1099').map((e: any) => e.id);
+
+  // Pull both this quarter's paystubs (for reportable wages) and YTD
+  // through end-of-quarter (for the per-employee SUI base cap math).
+  const { data: psQuarter } = await supabase
+    .from('paystubs')
+    .select('employee_id, gross_pay, taxable_wages')
+    .eq('company_id', company_id)
+    .in('employee_id', w2Ids.length ? w2Ids : [-1])
+    .gte('pay_date', periodStart)
+    .lte('pay_date', periodEnd);
+
+  const { data: psYTD } = await supabase
+    .from('paystubs')
+    .select('employee_id, gross_pay, taxable_wages, pay_date')
+    .eq('company_id', company_id)
+    .in('employee_id', w2Ids.length ? w2Ids : [-1])
+    .gte('pay_date', yearStart)
+    .lte('pay_date', periodEnd);
+
+  const SUI_BASE = Number(company.sui_wage_base) || 48900;
+  const SUI_RATE = Number(company.sui_rate_pct) || 0;
+
+  // Per-employee: total wages this quarter + ytd-through-quarter (for cap)
+  const empTotals: Record<number, { wages_q: number; wages_ytd: number; ytd_before_q: number }> = {};
+  for (const id of w2Ids) empTotals[id] = { wages_q: 0, wages_ytd: 0, ytd_before_q: 0 };
+  for (const ps of psQuarter || []) {
+    const t = empTotals[ps.employee_id]; if (!t) continue;
+    t.wages_q += Number(ps.taxable_wages || ps.gross_pay) || 0;
+  }
+  for (const ps of psYTD || []) {
+    const t = empTotals[ps.employee_id]; if (!t) continue;
+    const w = Number(ps.taxable_wages || ps.gross_pay) || 0;
+    t.wages_ytd += w;
+    if (ps.pay_date < periodStart) t.ytd_before_q += w;
+  }
+
+  // Per-employee detail rows + aggregate taxable
+  const detail: Array<{ emp_id: number; name: string; ssn_last4: string; total_wages: number; taxable_wages: number; excess_wages: number }> = [];
+  let totalGross = 0; let totalTaxable = 0; let totalExcess = 0;
+  for (const e of (emps || []).filter((x: any) => x.tax_classification !== '1099')) {
+    const t = empTotals[e.id]; if (!t || t.wages_q === 0) continue;
+    // Taxable wages this quarter = min($SUI_BASE - ytd_before_q, wages_q), clamped at 0
+    const baseRoom = Math.max(0, SUI_BASE - t.ytd_before_q);
+    const taxableWages = Math.min(baseRoom, t.wages_q);
+    const excessWages  = Math.max(0, t.wages_q - taxableWages);
+    detail.push({
+      emp_id: e.id, name: e.name, ssn_last4: e.ssn_last4 || '',
+      total_wages: round2(t.wages_q),
+      taxable_wages: round2(taxableWages),
+      excess_wages: round2(excessWages),
+    });
+    totalGross   += t.wages_q;
+    totalTaxable += taxableWages;
+    totalExcess  += excessWages;
+  }
+  totalGross = round2(totalGross); totalTaxable = round2(totalTaxable); totalExcess = round2(totalExcess);
+
+  const taxDue = round2(totalTaxable * SUI_RATE / 100);
+
+  const pdfBytes = await render33HPdf({ company, year, quarter, totalGross, totalTaxable, totalExcess, suiRate: SUI_RATE, suiBase: SUI_BASE, taxDue, detail });
+  const path = `tax-filings/${company_id}/${year}/Form33H-Q${quarter}-${year}-${Date.now()}.pdf`;
+  await supabase.storage.from('project-documents').upload(path, pdfBytes, { contentType: 'application/pdf', upsert: true });
+
+  await supabase
+    .from('payroll_tax_filings')
+    .update({ status: 'superseded' })
+    .eq('company_id', company_id)
+    .eq('form_kind', 'Form-33H')
+    .eq('period_start', periodStart)
+    .neq('status', 'superseded');
+
+  const { data: filing } = await supabase
+    .from('payroll_tax_filings')
+    .insert({
+      company_id, form_kind: 'Form-33H', jurisdiction: 'state',
+      period_start: periodStart, period_end: periodEnd,
+      pdf_storage_path: path,
+      values_snapshot: { totalGross, totalTaxable, totalExcess, suiRate: SUI_RATE, taxDue, detail_count: detail.length },
+      status: 'draft',
+    })
+    .select('id')
+    .single();
+  return { ok: true, filing_id: filing?.id, path, totalGross, totalTaxable, taxDue, detail_count: detail.length };
+}
+
 // ======================== PDF renderers ===============================
 
 async function renderW2Pdf({ company, emp, year, t }: any): Promise<Uint8Array> {
@@ -775,6 +976,122 @@ async function render940Pdf({ company, year, totalPayments, taxableFutaWages, fu
 
   drawWrapped(page, margin, 80,
     `Filing path: due Jan 31 for the prior tax year. Mail to the IRS service center for your state OR e-file via MeF. Balance due of $500 or less can be mailed with the form by check; anything over $500 must be deposited quarterly via EFTPS as you accrue it. Verify the per-employee $7,000 cap math + your state credit reduction status (currently 0% for Utah) before mailing.`,
+    font, muted, 612 - 2 * margin, 8);
+  return pdf.save();
+}
+
+async function renderTC941Pdf({ company, year, quarter, totals, totalDeposits, balanceDue }: any): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([612, 792]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const fontB = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const ink = rgb(0.1, 0.12, 0.13);
+  const muted = rgb(0.45, 0.5, 0.45);
+  const accent = rgb(0.35, 0.39, 0.29);
+  const margin = 40;
+  let y = 792 - margin;
+
+  page.drawText(`Utah TC-941 — Withholding Tax Return`, { x: margin, y, size: 15, font: fontB, color: ink });
+  y -= 16;
+  page.drawText(`Quarter ${quarter} of ${year}`, { x: margin, y, size: 11, font, color: muted });
+  y -= 8;
+  page.drawLine({ start: { x: margin, y }, end: { x: 612 - margin, y }, thickness: 1.5, color: accent });
+  y -= 18;
+
+  const filer = company.legal_name || company.company_name || '';
+  drawBox(page, margin, y, 250, 36, 'Utah Withholding ID', company.state_employer_id || '—', font, fontB, ink, muted);
+  drawBox(page, margin + 270, y, 260, 36, 'Federal EIN', company.ein || '—', font, fontB, ink, muted);
+  y -= 46;
+  drawBox(page, margin, y, 530, 50, 'Employer name + address', `${filer}\n${company.address || ''}`, font, fontB, ink, muted);
+  y -= 60;
+
+  page.drawText('Quarter wage + tax summary', { x: margin, y, size: 11, font: fontB, color: ink });
+  y -= 14;
+  drawBox(page, margin, y, 530, 28, '1  Total Utah wages paid this quarter', money(totals.wages), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 530, 28, '2  Number of employees who received wages', String(totals.employee_count), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 530, 32, '3  Total Utah income tax withheld this quarter', money(totals.state_tax_withheld), font, fontB, ink, muted);
+  y -= 36;
+  drawBox(page, margin, y, 530, 32, '4  Utah deposits already made for this quarter', money(totalDeposits), font, fontB, ink, muted);
+  y -= 36;
+
+  const balanceLabel = balanceDue >= 0 ? '5  Balance due (mail with this return OR pay via TAP)' : '6  Overpayment (refund or credit forward)';
+  const balanceVal   = balanceDue >= 0 ? money(balanceDue) : money(Math.abs(balanceDue));
+  const balanceColor = balanceDue > 0 ? rgb(0.86, 0.15, 0.15) : ink;
+  drawBox(page, margin, y, 530, 38, balanceLabel, balanceVal, font, fontB, balanceColor, muted);
+  y -= 50;
+
+  drawWrapped(page, margin, 80,
+    `Filing path: file via Utah TAP (Taxpayer Access Point) at tap.tax.utah.gov, or mail this return to the Utah State Tax Commission. Due last day of the month after the quarter ends. Verify totals match your bank/TAP records before mailing. Annual reconciliation is filed on TC-941R alongside W-2 copies in February.`,
+    font, muted, 612 - 2 * margin, 8);
+  return pdf.save();
+}
+
+async function render33HPdf({ company, year, quarter, totalGross, totalTaxable, totalExcess, suiRate, suiBase, taxDue, detail }: any): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([612, 792]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const fontB = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const ink = rgb(0.1, 0.12, 0.13);
+  const muted = rgb(0.45, 0.5, 0.45);
+  const accent = rgb(0.35, 0.39, 0.29);
+  const margin = 40;
+  let y = 792 - margin;
+
+  page.drawText(`Utah Form 33H — Employer's Quarterly Wage List & Contribution Report`, { x: margin, y, size: 13, font: fontB, color: ink });
+  y -= 16;
+  page.drawText(`Quarter ${quarter} of ${year} · DWS account ${company.sui_account_number || '—'}`, { x: margin, y, size: 11, font, color: muted });
+  y -= 8;
+  page.drawLine({ start: { x: margin, y }, end: { x: 612 - margin, y }, thickness: 1.5, color: accent });
+  y -= 18;
+
+  const filer = company.legal_name || company.company_name || '';
+  drawBox(page, margin, y, 530, 50, 'Employer name + address', `${filer}\n${company.address || ''}`, font, fontB, ink, muted);
+  y -= 60;
+
+  // Summary block
+  page.drawText('Form 33H — Contribution summary', { x: margin, y, size: 11, font: fontB, color: ink });
+  y -= 14;
+  drawBox(page, margin, y, 260, 28, '1  Total wages paid this quarter', money(totalGross), font, fontB, ink, muted);
+  drawBox(page, margin + 270, y, 260, 28, `2  SUI wage base (${money(suiBase)} per employee)`, money(suiBase), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 260, 28, '3  Excess wages (over $48,900 YTD per employee)', money(totalExcess), font, fontB, ink, muted);
+  drawBox(page, margin + 270, y, 260, 28, '4  Taxable wages (line 1 - line 3)', money(totalTaxable), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 260, 28, '5  Your assigned SUI rate', `${suiRate.toFixed(4)}%`, font, fontB, ink, muted);
+  drawBox(page, margin + 270, y, 260, 32, '6  Contribution due (line 4 × line 5)', money(taxDue), font, fontB, ink, muted);
+  y -= 38;
+
+  // 33HA — Wage list (per-employee detail)
+  page.drawText(`Form 33HA — Wage list (${detail.length} employee${detail.length === 1 ? '' : 's'})`, { x: margin, y, size: 11, font: fontB, color: ink });
+  y -= 12;
+  // Header
+  page.drawText('SSN',          { x: margin,        y, size: 9, font: fontB, color: muted });
+  page.drawText('Employee name',{ x: margin + 80,   y, size: 9, font: fontB, color: muted });
+  page.drawText('Total wages',  { x: margin + 280,  y, size: 9, font: fontB, color: muted });
+  page.drawText('Taxable wages',{ x: margin + 380,  y, size: 9, font: fontB, color: muted });
+  page.drawText('Excess wages', { x: margin + 470,  y, size: 9, font: fontB, color: muted });
+  y -= 4;
+  page.drawLine({ start: { x: margin, y }, end: { x: 612 - margin, y }, thickness: 0.5, color: muted });
+  y -= 12;
+  // Rows
+  for (const d of detail.slice(0, 30)) {
+    page.drawText(d.ssn_last4 ? `***-**-${d.ssn_last4}` : '—', { x: margin, y, size: 9, font, color: ink });
+    page.drawText((d.name || '').slice(0, 32),               { x: margin + 80,  y, size: 9, font, color: ink });
+    page.drawText(money(d.total_wages),                       { x: margin + 280, y, size: 9, font, color: ink });
+    page.drawText(money(d.taxable_wages),                     { x: margin + 380, y, size: 9, font, color: ink });
+    page.drawText(money(d.excess_wages),                      { x: margin + 470, y, size: 9, font, color: ink });
+    y -= 12;
+    if (y < 110) break;
+  }
+  if (detail.length > 30) {
+    page.drawText(`+${detail.length - 30} more employees on continuation page`, { x: margin, y, size: 9, font, color: muted });
+    y -= 12;
+  }
+
+  drawWrapped(page, margin, 80,
+    `Filing path: file electronically via Utah DWS Web Filing at jobs.utah.gov/employer (preferred) — supports 33H + 33HA in one upload. Or mail to Utah Department of Workforce Services. Due last day of the month after the quarter ends. The wage list (33HA) is required even if total contribution is $0.`,
     font, muted, 612 - 2 * margin, 8);
   return pdf.save();
 }

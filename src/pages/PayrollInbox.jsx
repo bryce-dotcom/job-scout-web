@@ -474,6 +474,82 @@ export default function PayrollInbox() {
         )
       })()}
 
+      {/* Utah state quarterly forms — TC-941 (withholding) + Form 33H (DWS unemployment).
+          Same 4-quarter card pattern as 941, but two columns of buttons per row. */}
+      {(() => {
+        const now = new Date()
+        const quarters = []
+        for (let i = 0; i < 4; i++) {
+          const refDate = new Date(now.getFullYear(), now.getMonth() - i * 3, 15)
+          const q = Math.floor(refDate.getMonth() / 3) + 1
+          const year = refDate.getFullYear()
+          const startMonth = (q - 1) * 3
+          const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`
+          const periodEndDate = new Date(year, startMonth + 3, 0)
+          const dueDate = new Date(periodEndDate)
+          dueDate.setMonth(dueDate.getMonth() + 1)
+          const tc941    = filings.find(f => f.form_kind === 'TC-941'   && f.period_start === periodStart && f.status !== 'superseded')
+          const form33h  = filings.find(f => f.form_kind === 'Form-33H' && f.period_start === periodStart && f.status !== 'superseded')
+          quarters.push({ year, quarter: q, periodStart, dueDate, tc941, form33h })
+        }
+        return (
+          <Section title="Utah state quarterly returns" theme={theme}>
+            {quarters.map(q => {
+              const overdueTC = !q.tc941   && now > q.dueDate
+              const overdue33 = !q.form33h && now > q.dueDate
+              const tone = (overdueTC || overdue33) ? TONE.red : (q.tc941 && q.form33h ? TONE.green : TONE.gray)
+              return (
+                <div key={`UT-${q.year}-Q${q.quarter}`} style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 999, backgroundColor: tone.dot, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>Q{q.quarter} {q.year}</div>
+                      <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                        {now > q.dueDate ? `Overdue — was due ${fmtDate(q.dueDate)}` : `Due ${fmtDate(q.dueDate)}`}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', backgroundColor: theme.bg, borderRadius: 6 }}>
+                      <span style={{ fontSize: 12, color: theme.text }}>
+                        TC-941 (state withholding)
+                        {q.tc941 && <span style={{ fontSize: 10, color: '#16a34a', marginLeft: 6 }}>✓</span>}
+                      </span>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {q.tc941?.pdf_storage_path && (
+                          <button onClick={() => downloadFiling(q.tc941.pdf_storage_path)} style={pillBtn(theme)}>
+                            <Download size={11} />
+                          </button>
+                        )}
+                        <button onClick={() => generateForms('tc941', q.year, q.quarter)} disabled={generating === `tc941-Q${q.quarter}`} style={btn(theme)}>
+                          <Sparkles size={12} /> {generating === `tc941-Q${q.quarter}` ? '…' : (q.tc941 ? 'Re' : 'Gen')}
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', backgroundColor: theme.bg, borderRadius: 6 }}>
+                      <span style={{ fontSize: 12, color: theme.text }}>
+                        Form 33H (DWS unemployment)
+                        {q.form33h && <span style={{ fontSize: 10, color: '#16a34a', marginLeft: 6 }}>✓</span>}
+                      </span>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {q.form33h?.pdf_storage_path && (
+                          <button onClick={() => downloadFiling(q.form33h.pdf_storage_path)} style={pillBtn(theme)}>
+                            <Download size={11} />
+                          </button>
+                        )}
+                        <button onClick={() => generateForms('form33h', q.year, q.quarter)} disabled={generating === `form33h-Q${q.quarter}`} style={btn(theme)}>
+                          <Sparkles size={12} /> {generating === `form33h-Q${q.quarter}` ? '…' : (q.form33h ? 'Re' : 'Gen')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </Section>
+        )
+      })()}
+
       {/* Annual FUTA — Form 940. Same pattern, one-per-year. */}
       {(() => {
         const now = new Date()
