@@ -106,6 +106,12 @@ export default function LeadSetter() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterSetter, setFilterSetter] = useState('')
   const [calendarEmployees, setCalendarEmployees] = useState(() => { try { return JSON.parse(localStorage.getItem("leadsetter_calendar_employees") || "[]") } catch { return [] } }) // selected employee IDs to overlay
+  // "Only mine" toggle — Noah complained "I used to be able to see my
+  // scheduled Apointments in lead setter and now I can't see them".
+  // The calendar shows ALL company appointments, so reps with many
+  // colleagues' meetings lose track of their own. Toggle filters the
+  // grid to the current user's appointments only.
+  const [onlyMine, setOnlyMine] = useState(() => { try { return localStorage.getItem("leadsetter_only_mine") === 'true' } catch { return false } })
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -115,6 +121,9 @@ export default function LeadSetter() {
   useEffect(() => {
     localStorage.setItem('leadsetter_calendar_employees', JSON.stringify(calendarEmployees))
   }, [calendarEmployees])
+  useEffect(() => {
+    localStorage.setItem('leadsetter_only_mine', onlyMine ? 'true' : 'false')
+  }, [onlyMine])
 
   // Check if user is admin
   const isAdmin = checkAdmin(user)
@@ -255,6 +264,13 @@ export default function LeadSetter() {
 
   const getAppointmentsForSlot = (date, hour) => {
     return appointments.filter(apt => {
+      // "Only mine" filter — match by salesperson_id OR membership in
+      // salesperson_ids array (multi-rep meetings still show on mine).
+      if (onlyMine && user?.id) {
+        const ids = Array.isArray(apt.salesperson_ids) ? apt.salesperson_ids : []
+        const isMine = apt.salesperson_id === user.id || ids.includes(user.id)
+        if (!isMine) return false
+      }
       const aptDate = new Date(apt.start_time)
       const sameDay = aptDate.toDateString() === date.toDateString()
       const aptHour = aptDate.getHours()
@@ -1265,6 +1281,30 @@ export default function LeadSetter() {
             >
               <Clock size={12} /> Block Time
             </button>
+            {/* Only Mine toggle — Noah wanted to see HIS appointments
+                without other reps' clutter. Sales-role users get a
+                quick toggle that filters the grid to just their own. */}
+            {user?.id && (
+              <button
+                onClick={() => setOnlyMine(v => !v)}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: onlyMine ? theme.accent : 'transparent',
+                  border: `1px solid ${onlyMine ? theme.accent : theme.border}`,
+                  color: onlyMine ? '#ffffff' : theme.textSecondary,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+                title={onlyMine ? 'Showing only your appointments. Click to show everyone.' : 'Show only your appointments'}
+              >
+                <User size={12} /> {onlyMine ? 'Only mine' : 'Only mine?'}
+              </button>
+            )}
           </div>
 
           {/* Salesperson Calendar Overlay Toggles */}

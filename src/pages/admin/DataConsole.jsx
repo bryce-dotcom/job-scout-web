@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useStore } from '../../lib/store'
 import { supabase } from '../../lib/supabase'
@@ -7,7 +7,7 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import {
   LayoutDashboard, MessageSquare, Building2, Users, Zap, Bot,
   Package, Database, Upload, Terminal, ScrollText, Settings, Sparkles, GitMerge,
-  ArrowLeft, Menu, X, RefreshCw
+  ArrowLeft, Menu, X, RefreshCw, Search, Check
 } from 'lucide-react'
 
 // Sub-pages
@@ -288,29 +288,13 @@ export default function DataConsole() {
           <div style={{ color: theme.textMuted, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
             Viewing as
           </div>
-          <select
-            value={company?.id || ''}
-            onChange={(e) => switchCompany(Number(e.target.value))}
-            disabled={switching}
-            style={{
-              width: '100%',
-              padding: '8px 10px',
-              backgroundColor: theme.bgHover,
-              color: theme.text,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '6px',
-              fontSize: '12px',
-              cursor: 'pointer',
-              outline: 'none',
-              opacity: switching ? 0.5 : 1,
-            }}
-          >
-            {allCompanies.map(c => (
-              <option key={c.id} value={c.id} style={{ backgroundColor: theme.bg }}>
-                {c.company_name} (#{c.id}){!c.active ? ' [inactive]' : ''}
-              </option>
-            ))}
-          </select>
+          <CompanyCombobox
+            theme={theme}
+            allCompanies={allCompanies}
+            current={company}
+            switching={switching}
+            onPick={(id) => switchCompany(id)}
+          />
           {switching && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', color: theme.accent, fontSize: '11px' }}>
               <RefreshCw size={12} className="animate-spin" />
@@ -399,6 +383,158 @@ export default function DataConsole() {
           <Route path="ai-assist" element={<Placeholder title="AI Assistant" />} />
         </Routes>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// CompanyCombobox — searchable dropdown for the "Viewing as" sidebar control.
+// Replaces a native <select> so devs can find a company by typing instead of
+// scrolling. Keyboard-friendly (↑/↓/Enter/Esc) and closes on outside-click.
+// ---------------------------------------------------------------------------
+function CompanyCombobox({ theme, allCompanies, current, switching, onPick }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [hoverIdx, setHoverIdx] = useState(0)
+  const wrapRef = useRef(null)
+  const inputRef = useRef(null)
+  const listRef = useRef(null)
+
+  const q = query.trim().toLowerCase()
+  const filtered = q
+    ? allCompanies.filter(c =>
+        c.company_name?.toLowerCase().includes(q) || String(c.id).includes(q))
+    : allCompanies
+
+  useEffect(() => {
+    if (!open) return
+    const onClick = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [open])
+
+  useEffect(() => { if (open && inputRef.current) inputRef.current.focus() }, [open])
+  useEffect(() => { setHoverIdx(0) }, [query, open])
+
+  const pick = (c) => {
+    setOpen(false)
+    setQuery('')
+    if (c && c.id !== current?.id) onPick(c.id)
+  }
+
+  const onKey = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHoverIdx(i => Math.min(i + 1, filtered.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHoverIdx(i => Math.max(i - 1, 0)) }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(filtered[hoverIdx]) }
+    else if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
+  }
+
+  const label = current?.company_name ? `${current.company_name} (#${current.id})` : 'Select a company…'
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => !switching && setOpen(true)}
+          disabled={switching}
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            backgroundColor: theme.bgHover,
+            color: theme.text,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '6px',
+            fontSize: '12px',
+            cursor: switching ? 'wait' : 'pointer',
+            outline: 'none',
+            opacity: switching ? 0.5 : 1,
+            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <Search size={12} style={{ color: theme.textMuted, flexShrink: 0 }} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        </button>
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <Search size={12} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKey}
+            placeholder="Search companies…"
+            style={{
+              width: '100%',
+              padding: '8px 10px 8px 28px',
+              backgroundColor: theme.bgHover,
+              color: theme.text,
+              border: `1px solid ${theme.accent}`,
+              borderRadius: '6px',
+              fontSize: '12px',
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+        </div>
+      )}
+
+      {open && (
+        <div
+          ref={listRef}
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            right: 0,
+            backgroundColor: theme.bgCard,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '6px',
+            boxShadow: '0 8px 20px rgba(0,0,0,0.4)',
+            maxHeight: '280px',
+            overflowY: 'auto',
+            zIndex: 1010,
+          }}
+        >
+          {filtered.length === 0 ? (
+            <div style={{ padding: '10px 12px', color: theme.textMuted, fontSize: '12px' }}>No matches</div>
+          ) : (
+            filtered.map((c, i) => {
+              const isSelected = c.id === current?.id
+              const isHovered = i === hoverIdx
+              return (
+                <div
+                  key={c.id}
+                  onMouseEnter={() => setHoverIdx(i)}
+                  onMouseDown={(e) => { e.preventDefault(); pick(c) }}
+                  style={{
+                    padding: '8px 12px',
+                    fontSize: '12px',
+                    color: theme.text,
+                    backgroundColor: isHovered ? theme.bgHover : 'transparent',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    borderBottom: `1px solid ${theme.border}`,
+                  }}
+                >
+                  <Check size={12} style={{ color: isSelected ? theme.accent : 'transparent', flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                    {c.company_name} <span style={{ color: theme.textMuted }}>(#{c.id})</span>
+                    {!c.active && <span style={{ marginLeft: 6, color: theme.textMuted, fontSize: '10px' }}>[inactive]</span>}
+                  </span>
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
     </div>
   )
 }
