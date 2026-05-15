@@ -3189,17 +3189,59 @@ function OnboardingDocsTab({ theme, companyId, settings, saveSetting }) {
                 Stored on each signed acknowledgment so you know exactly which handbook version they read. Bump it when you update the text.
               </div>
             </div>
+            <div style={{ marginBottom: 14, padding: 12, backgroundColor: theme.bg, borderRadius: 8, border: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 8 }}>PDF version (preferred)</div>
+              {handbook.pdf_storage_path ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                  <div style={{ flex: 1, fontSize: 13, color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    📄 {handbook.pdf_filename || 'handbook.pdf'}
+                  </div>
+                  <button onClick={previewHandbookPdf} type="button" style={{
+                    padding: '6px 12px', fontSize: 12, color: theme.accent,
+                    backgroundColor: 'transparent', border: `1px solid ${theme.accent}`,
+                    borderRadius: 6, cursor: 'pointer',
+                  }}>Preview</button>
+                  <button onClick={removeHandbookPdf} type="button" style={{
+                    padding: '6px 12px', fontSize: 12, color: '#dc2626',
+                    backgroundColor: 'transparent', border: `1px solid ${theme.border}`,
+                    borderRadius: 6, cursor: 'pointer',
+                  }}>Remove</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(e) => uploadHandbookPdf(e.target.files?.[0])}
+                    style={{ display: 'none' }}
+                  />
+                  <button onClick={() => fileInputRef.current?.click()} type="button" disabled={uploading} style={{
+                    padding: '10px 16px', fontSize: 13, fontWeight: 600,
+                    color: '#fff', backgroundColor: theme.accent,
+                    border: 'none', borderRadius: 8,
+                    cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.6 : 1,
+                  }}>
+                    {uploading ? 'Uploading…' : 'Upload handbook PDF'}
+                  </button>
+                  <span style={{ fontSize: 11, color: theme.textMuted }}>
+                    New hires see it embedded in the portal + a download link.
+                  </span>
+                </div>
+              )}
+            </div>
+
             <div>
-              <label style={lbl}>Handbook text</label>
+              <label style={lbl}>Handbook text (fallback if no PDF uploaded)</label>
               <textarea
                 value={handbook.text}
                 onChange={(e) => setHandbook({ ...handbook, text: e.target.value })}
-                rows={12}
-                placeholder="Paste the full text of the handbook here. New hires will scroll through it before they can sign."
+                rows={handbook.pdf_storage_path ? 4 : 12}
+                placeholder={handbook.pdf_storage_path ? 'Optional: short text version. PDF above will be the primary handbook shown.' : 'Paste the full text of the handbook here. New hires will scroll through it before they can sign.'}
                 style={{ ...inp, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
               />
               <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
-                {handbook.text.length.toLocaleString()} characters · plain text. PDF upload is on the roadmap.
+                {handbook.text.length.toLocaleString()} characters · plain text.
               </div>
             </div>
           </>

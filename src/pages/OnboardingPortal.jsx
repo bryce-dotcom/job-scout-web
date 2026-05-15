@@ -669,41 +669,136 @@ function I9Step({ draft = {}, employee, onSave, onBack, onNext }) {
 }
 
 function HandbookStep({ draft = {}, handbook, onSave, onBack, onNext }) {
-  // Require scroll-to-bottom before "Continue" enables. Common e-sign
-  // pattern — proves the new hire actually reached the end of the doc.
+  // Require scroll-to-bottom on text version, OR an explicit "I read the
+  // PDF" click on PDF version (we can't reliably detect end-of-PDF in
+  // a cross-platform iframe). Common e-sign pattern.
   const [scrolledToEnd, setScrolledToEnd] = useState(!!draft.scrolled_to_end)
   const [acknowledged, setAcknowledged]   = useState(!!draft.acknowledged)
+  const [pdfUrl, setPdfUrl]               = useState(null)
+  const [pdfLoading, setPdfLoading]       = useState(!!handbook?.pdf_storage_path)
+
+  // Fetch a short-lived signed URL for the handbook PDF when present.
+  // Done client-side via a thin /functions/v1/employee-onboarding-pdf
+  // proxy so we don't need to expose the storage bucket. For now we
+  // build an unsigned URL via the public render-onboarding-pdfs path —
+  // simpler: just call the storage client direct since the portal has
+  // anon key access.
+  useEffect(() => {
+    let cancelled = false
+    if (!handbook?.pdf_storage_path) { setPdfLoading(false); return }
+    ;(async () => {
+      try {
+        // We don't have the supabase client here directly; build the
+        // public storage URL via the render-onboarding-pdfs RPC pattern.
+        // Simpler: use the supabase URL directly with a signed URL request.
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/employee-onboarding`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${ANON_KEY}`,
+            apikey: ANON_KEY,
+          },
+          body: JSON.stringify({ token: '', action: 'noop' }),
+        }).catch(() => null)
+        // Easier: hit storage REST directly with anon key — but bucket is
+        // private. We need a signed URL — call it via load action's URL
+        // builder OR a tiny dedicated RPC.
+        // Pragmatic v1: storage SDK call via dynamic import.
+        const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
+        const sb = createClient(SUPABASE_URL, ANON_KEY)
+        const { data, error } = await sb.storage
+          .from('project-documents')
+          .createSignedUrl(handbook.pdf_storage_path, 3600)
+        if (cancelled) return
+        if (error) { setPdfLoading(false); return }
+        setPdfUrl(data?.signedUrl || null)
+        setPdfLoading(false)
+      } catch (e) {
+        setPdfLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [handbook?.pdf_storage_path])
+
   const onScroll = (e) => {
     const el = e.currentTarget
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) setScrolledToEnd(true)
   }
-  const valid = scrolledToEnd && acknowledged
+  const hasPdf = !!handbook?.pdf_storage_path
+  const valid = (hasPdf ? scrolledToEnd : scrolledToEnd) && acknowledged
+
   return (
     <div>
       <h2 style={{ color: theme.text, marginTop: 0 }}>Company handbook</h2>
       <p style={{ color: theme.textMuted, fontSize: 14 }}>
         Read through, then check the box to acknowledge. {handbook?.version ? <em>Version {handbook.version}.</em> : null}
       </p>
-      <div
-        onScroll={onScroll}
-        style={{
-          height: 320, overflowY: 'auto',
-          padding: '14px 16px',
-          backgroundColor: theme.bgCard,
-          border: `1px solid ${theme.border}`,
-          borderRadius: 10,
-          fontSize: 13, color: theme.text, lineHeight: 1.55,
-          whiteSpace: 'pre-wrap',
-          marginBottom: 12,
-        }}
-      >
-        {handbook?.text || '(empty handbook — ask HR to fill this in.)'}
-      </div>
-      {!scrolledToEnd && (
-        <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8, fontStyle: 'italic' }}>
-          ↓ Scroll to the bottom of the handbook to enable Continue.
+
+      {hasPdf && (
+        <div style={{ marginBottom: 12 }}>
+          {pdfLoading && <div style={{ padding: 16, color: theme.textMuted, fontSize: 13 }}>Loading handbook PDF…</div>}
+          {pdfUrl && (
+            <>
+              <iframe
+                src={pdfUrl}
+                title="Company handbook"
+                style={{
+                  width: '100%', height: 480,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: 10, backgroundColor: '#fff',
+                }}
+              />
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: theme.accent }}>Download PDF</a>
+                {!scrolledToEnd && (
+                  <button
+                    onClick={() => setScrolledToEnd(true)}
+                    style={{
+                      padding: '8px 14px', fontSize: 12, fontWeight: 600,
+                      color: '#fff', backgroundColor: theme.accent,
+                      border: 'none', borderRadius: 6, cursor: 'pointer',
+                    }}
+                  >
+                    I've read the handbook
+                  </button>
+                )}
+                {scrolledToEnd && <span style={{ fontSize: 12, color: theme.success || '#16a34a', fontWeight: 600 }}>✓ Marked as read</span>}
+              </div>
+            </>
+          )}
+          {!pdfLoading && !pdfUrl && (
+            <div style={{ padding: 16, color: theme.textMuted, fontSize: 13 }}>
+              Couldn't load the PDF. {handbook?.text ? 'Falling back to text version below.' : 'Ask HR for a copy.'}
+            </div>
+          )}
         </div>
       )}
+
+      {(!hasPdf || (!pdfLoading && !pdfUrl)) && (
+        <>
+          <div
+            onScroll={onScroll}
+            style={{
+              height: 320, overflowY: 'auto',
+              padding: '14px 16px',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: 10,
+              fontSize: 13, color: theme.text, lineHeight: 1.55,
+              whiteSpace: 'pre-wrap',
+              marginBottom: 12,
+            }}
+          >
+            {handbook?.text || '(empty handbook — ask HR to fill this in.)'}
+          </div>
+          {!scrolledToEnd && (
+            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8, fontStyle: 'italic' }}>
+              ↓ Scroll to the bottom of the handbook to enable Continue.
+            </div>
+          )}
+        </>
+      )}
+
       <CheckRow
         checked={acknowledged}
         onChange={(e) => setAcknowledged(e.target.checked)}
@@ -713,7 +808,13 @@ function HandbookStep({ draft = {}, handbook, onSave, onBack, onNext }) {
         onBack={onBack}
         nextDisabled={!valid}
         nextLabel="Continue →"
-        onNext={async () => { await onSave({ acknowledged, scrolled_to_end: scrolledToEnd, version: handbook?.version || '' }); onNext() }}
+        onNext={async () => { await onSave({
+          acknowledged,
+          scrolled_to_end: scrolledToEnd,
+          version: handbook?.version || '',
+          source: hasPdf ? 'pdf' : 'text',
+          pdf_path: handbook?.pdf_storage_path || null,
+        }); onNext() }}
       />
     </div>
   )
