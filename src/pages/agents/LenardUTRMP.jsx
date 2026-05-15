@@ -338,6 +338,46 @@ export default function LenardUTRMP() {
 
   const [sbeProducts, setSbeProducts] = useState([]);
   const [productSearch, setProductSearch] = useState('');
+  // Add-on services catalog (out-of-utility-scope items: utility processing
+  // fee, facility audit, M&V report, travel fee, warranties, etc.). These
+  // are real services HHH performs and now bills for as line items so
+  // out-of-pocket increases are tied to a defensible service description
+  // — never just a generic "extra charge". Each line is auto-tagged
+  // in_utility_scope=false so it doesn't inflate the incentive base.
+  const [addOnServices, setAddOnServices] = useState([]);
+
+  // Pull the add-on services catalog (HHH-seeded set + anything HR added).
+  // Filtered server-side: company_id, category='Add-On Service',
+  // suggest_in_lenard=true, active=true.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: u } = await supabase.auth.getUser();
+        // Resolve company_id via the user's employee row
+        const email = u?.user?.email;
+        if (!email) return;
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('company_id')
+          .ilike('email', email)
+          .limit(1)
+          .maybeSingle();
+        const cid = emp?.company_id;
+        if (!cid) return;
+        const { data: addons } = await supabase
+          .from('products_services')
+          .select('id, name, description, unit_price, floor_price, ceiling_price, in_utility_scope')
+          .eq('company_id', cid)
+          .eq('product_category', 'Add-On Service')
+          .eq('suggest_in_lenard', true)
+          .eq('active', true)
+          .order('name');
+        if (!cancelled) setAddOnServices(addons || []);
+      } catch (e) { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [isRep]);
 
   const [showFinancials, setShowFinancials] = useState(false);
   const [operatingHours, setOperatingHours] = useState(10);
@@ -1026,6 +1066,30 @@ export default function LenardUTRMP() {
       });
     }
 
+    // 4b. Add-on service suggestions — real services HHH already
+    // performs but doesn't bill for today (utility processing,
+    // facility audit, M&V, etc.). Each one increases customer
+    // out-of-pocket WITHOUT touching the utility incentive base
+    // (in_utility_scope=false, locked at line creation).
+    // Sorted alphabetically — rep picks based on what actually
+    // applies to this project.
+    addOnServices.forEach(svc => {
+      if (appliedTypes.has('addon_' + svc.id)) return;  // already added
+      suggestions.push({
+        type: 'addon_service',
+        addonId: svc.id,
+        title: svc.name,
+        desc: svc.description || '',
+        defaultPrice: Number(svc.unit_price) || 0,
+        floorPrice:   svc.floor_price != null ? Number(svc.floor_price) : null,
+        ceilingPrice: svc.ceiling_price != null ? Number(svc.ceiling_price) : null,
+        // Impact on commission/realGiveMe — adds OOP, does NOT add to
+        // incentive base, so the impact = the OOP itself (which feeds
+        // into the realGiveMe = (extraIncentive + extraOOP) * 0.5 calc).
+        impact: (Number(svc.unit_price) || 0) * 0.5,
+      });
+    });
+
     // 5. Down payment closing script
     if (effectiveProjectCost > 0 && estimatedRebate > 0) {
       const net = Math.round(effectiveProjectCost - estimatedRebate);
@@ -1033,7 +1097,7 @@ export default function LenardUTRMP() {
     }
 
     return suggestions.sort((a, b) => b.impact - a.impact);
-  }, [isRep, lines, program, effectiveProjectCost, estimatedRebate, rawIncentive, capPct, capAmount, giveMe, sbeProducts, giveMeQuoteItems]);
+  }, [isRep, lines, program, effectiveProjectCost, estimatedRebate, rawIncentive, capPct, capAmount, giveMe, sbeProducts, giveMeQuoteItems, addOnServices]);
 
   // ---- AUTO-POPULATE APP & W9 FIELDS ----
   useEffect(() => {
@@ -3377,6 +3441,54 @@ export default function LenardUTRMP() {
                         </div>
                         <span style={{ fontSize: '10px', color: T.green, fontWeight: '700', flexShrink: 0 }}>+${Math.round(s.impact).toLocaleString()}</span>
                         <button onClick={() => { selectProduct(s.lineId, s.targetProduct); markDirty(); showToast('Tier upgraded', '\u2713'); }} style={{ padding: '4px 10px', background: T.blue, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>Apply</button>
+                      </div>
+                    );
+
+                    if (s.type === 'addon_service') return (
+                      <div key={i} style={{ padding: '8px 0', borderBottom: i < giveMeSuggestions.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '12px', flexShrink: 0 }}>{'\uD83D\uDCB0'}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '11px', fontWeight: '600', color: T.text }}>{s.title}</div>
+                            <div style={{ fontSize: '9px', color: T.textMuted, fontStyle: 'italic', marginTop: 1 }}>
+                              Out-of-utility-scope \u00B7 adds to OOP only
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const promptMsg = `Price for "${s.title}"?\n\nDefault: $${s.defaultPrice}${s.floorPrice != null && s.ceilingPrice != null ? `\nRange: $${s.floorPrice} \u2013 $${s.ceilingPrice}` : ''}`;
+                              const input = window.prompt(promptMsg, String(s.defaultPrice));
+                              if (input === null) return;
+                              let amt = parseFloat(input);
+                              if (isNaN(amt) || amt < 0) { showToast('Invalid price', '\u26A0\uFE0F'); return; }
+                              if (s.floorPrice != null && amt < s.floorPrice) {
+                                if (!window.confirm(`That's below the floor of $${s.floorPrice}. Add anyway?`)) return;
+                              }
+                              if (s.ceilingPrice != null && amt > s.ceilingPrice) {
+                                if (!window.confirm(`That's above the ceiling of $${s.ceilingPrice}. Add anyway?`)) return;
+                              }
+                              setGiveMeQuoteItems(prev => [...prev, {
+                                id: Date.now(),
+                                type: 'addon_' + s.addonId,
+                                addonId: s.addonId,
+                                label: s.title,
+                                description: s.desc,
+                                amount: amt,
+                                in_utility_scope: false,  // LOCKED \u2014 never counts toward incentive
+                              }]);
+                              markDirty();
+                              showToast(`Added ${s.title}`, '\u2713');
+                            }}
+                            style={{ padding: '4px 10px', background: T.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '10px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}
+                          >
+                            Add ${s.defaultPrice.toLocaleString()}
+                          </button>
+                        </div>
+                        {s.desc && (
+                          <div style={{ fontSize: '10px', color: T.textSec, marginLeft: '20px', lineHeight: 1.4 }}>
+                            {s.desc.length > 120 ? s.desc.slice(0, 120) + '\u2026' : s.desc}
+                          </div>
+                        )}
                       </div>
                     );
 
