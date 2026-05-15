@@ -112,14 +112,21 @@ export default function OnboardingPortal() {
     { key: 'direct_deposit',  label: 'Direct deposit' },
     { key: 'i9_section1',     label: 'Eligibility' },
   ]
-  // Conditionally insert handbook + training right before sign,
-  // gated on company-level config. Empty/disabled = step is hidden.
+  // Conditionally insert handbook + training + workers'-comp +
+  // background-check steps before sign, gated on company-level config.
+  // For now workers_comp + bg_check are always shown for W-2 hires
+  // (skipped for 1099 — independent contractors aren't on workers'
+  // comp and background-check authorization is rare in that context).
   const showHandbook = !!handbook?.enabled && (handbook.text || '').trim().length > 0
   const showTraining = trainingVideos.length > 0
+  const showWorkersComp = !is1099
+  const showBgCheck     = !is1099
   const STEPS = [
     ...baseSteps,
     ...(showHandbook ? [{ key: 'handbook', label: 'Handbook' }] : []),
     ...(showTraining ? [{ key: 'training', label: 'Training' }] : []),
+    ...(showWorkersComp ? [{ key: 'workers_comp', label: 'Workers\' comp' }] : []),
+    ...(showBgCheck    ? [{ key: 'background_check', label: 'Background check' }] : []),
     { key: 'sign', label: 'Sign + finish' },
   ]
   const currentStep = STEPS[step]
@@ -204,6 +211,23 @@ export default function OnboardingPortal() {
               draft={draft.training}
               videos={trainingVideos}
               onSave={(d) => updateStep('training', d)}
+              onBack={() => setStep(step - 1)}
+              onNext={() => setStep(step + 1)}
+            />
+          )}
+          {currentStep.key === 'workers_comp' && (
+            <WorkersCompStep
+              draft={draft.workers_comp}
+              onSave={(d) => updateStep('workers_comp', d)}
+              onBack={() => setStep(step - 1)}
+              onNext={() => setStep(step + 1)}
+            />
+          )}
+          {currentStep.key === 'background_check' && (
+            <BackgroundCheckStep
+              draft={draft.background_check}
+              employee={employee}
+              onSave={(d) => updateStep('background_check', d)}
               onBack={() => setStep(step - 1)}
               onNext={() => setStep(step + 1)}
             />
@@ -755,6 +779,136 @@ function TrainingStep({ draft = {}, videos, onSave, onBack, onNext }) {
   )
 }
 
+function WorkersCompStep({ draft = {}, onSave, onBack, onNext }) {
+  // Brief health questionnaire so the workers' comp carrier knows what
+  // pre-existing conditions exist before any future claim. Plain
+  // English; the actual carrier-specific forms live with HR.
+  const [v, setV] = useState({
+    can_perform_essential_functions: draft.can_perform_essential_functions ?? null,
+    has_pre_existing_back_injury: !!draft.has_pre_existing_back_injury,
+    has_pre_existing_other:       !!draft.has_pre_existing_other,
+    pre_existing_details:         draft.pre_existing_details || '',
+    has_current_workers_comp_claim: !!draft.has_current_workers_comp_claim,
+    current_claim_details:        draft.current_claim_details || '',
+    primary_doctor:               draft.primary_doctor || '',
+    primary_doctor_phone:         draft.primary_doctor_phone || '',
+    consent: !!draft.consent,
+  })
+  const set  = (k) => (e) => setV(p => ({ ...p, [k]: e.target.value }))
+  const setBool = (k) => (e) => setV(p => ({ ...p, [k]: e.target.checked }))
+  const valid = v.can_perform_essential_functions !== null && v.consent
+
+  return (
+    <div>
+      <h2 style={{ color: theme.text, marginTop: 0 }}>Workers' compensation</h2>
+      <p style={{ color: theme.textMuted, fontSize: 14 }}>
+        Quick health questionnaire so we know what to do if you ever need to file a workers' comp claim. Honest answers protect you.
+      </p>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: theme.textSecondary, marginBottom: 8 }}>
+          Can you perform the essential physical functions of the job (with or without reasonable accommodation)?
+        </label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[{ k: true, label: 'Yes' }, { k: false, label: 'No' }].map(o => (
+            <button key={String(o.k)} onClick={() => setV(p => ({ ...p, can_perform_essential_functions: o.k }))} style={{
+              flex: 1, padding: 12, minHeight: 44,
+              backgroundColor: v.can_perform_essential_functions === o.k ? theme.accentBg : '#fff',
+              border: `2px solid ${v.can_perform_essential_functions === o.k ? theme.accent : theme.border}`,
+              color: v.can_perform_essential_functions === o.k ? theme.accent : theme.text,
+              borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            }}>{o.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <CheckRow checked={v.has_pre_existing_back_injury} onChange={setBool('has_pre_existing_back_injury')} label="I have a pre-existing back, neck, or shoulder injury" />
+      <CheckRow checked={v.has_pre_existing_other} onChange={setBool('has_pre_existing_other')} label="I have other pre-existing injuries that may be relevant" />
+      {(v.has_pre_existing_back_injury || v.has_pre_existing_other) && (
+        <Field label="Briefly describe">
+          <textarea value={v.pre_existing_details} onChange={set('pre_existing_details')} rows={2} style={{ ...inp, resize: 'vertical' }} />
+        </Field>
+      )}
+
+      <CheckRow checked={v.has_current_workers_comp_claim} onChange={setBool('has_current_workers_comp_claim')} label="I have an open or recent workers' comp claim with a previous employer" />
+      {v.has_current_workers_comp_claim && (
+        <Field label="Details (claim #, employer, status)">
+          <textarea value={v.current_claim_details} onChange={set('current_claim_details')} rows={2} style={{ ...inp, resize: 'vertical' }} />
+        </Field>
+      )}
+
+      <Field label="Primary care doctor (optional, helpful in an emergency)">
+        <input type="text" value={v.primary_doctor} onChange={set('primary_doctor')} placeholder="Dr. Smith" style={inp} />
+      </Field>
+      <Field label="Doctor's phone (optional)">
+        <input type="tel" value={v.primary_doctor_phone} onChange={set('primary_doctor_phone')} style={inp} />
+      </Field>
+
+      <CheckRow
+        checked={v.consent}
+        onChange={(e) => setV(p => ({ ...p, consent: e.target.checked }))}
+        label="I confirm the answers above are true and complete to the best of my knowledge."
+      />
+
+      <NavButtons
+        onBack={onBack}
+        nextDisabled={!valid}
+        nextLabel="Continue →"
+        onNext={async () => { await onSave(v); onNext() }}
+      />
+    </div>
+  )
+}
+
+function BackgroundCheckStep({ draft = {}, employee, onSave, onBack, onNext }) {
+  const [v, setV] = useState({
+    full_legal_name: draft.full_legal_name || employee?.name || '',
+    other_names_used: draft.other_names_used || '',
+    consent_authorize: !!draft.consent_authorize,
+    consent_acknowledge_fcra: !!draft.consent_acknowledge_fcra,
+  })
+  const set = (k) => (e) => setV(p => ({ ...p, [k]: e.target.value }))
+  const valid = v.full_legal_name && v.consent_authorize && v.consent_acknowledge_fcra
+
+  return (
+    <div>
+      <h2 style={{ color: theme.text, marginTop: 0 }}>Background check authorization</h2>
+      <p style={{ color: theme.textMuted, fontSize: 14 }}>
+        Many of our jobs are at customer homes and businesses. We run a standard background check before you start. Your authorization below is required by federal law (FCRA).
+      </p>
+
+      <Field label="Full legal name (first, middle, last)">
+        <input type="text" value={v.full_legal_name} onChange={set('full_legal_name')} style={inp} />
+      </Field>
+      <Field label="Other names you've used (maiden name, prior legal name, optional)">
+        <input type="text" value={v.other_names_used} onChange={set('other_names_used')} placeholder="None or list separated by commas" style={inp} />
+      </Field>
+
+      <div style={{ padding: 12, backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8, marginTop: 14, marginBottom: 14, fontSize: 12, color: theme.textSecondary, lineHeight: 1.55 }}>
+        <strong>Summary of your rights under the FCRA:</strong> A consumer reporting agency may furnish a report on you in connection with this employment decision. You have the right to request a free copy of any report obtained, and to dispute inaccurate information. You also have the right to a "Summary of Your Rights Under the FCRA" — ask HR for a copy.
+      </div>
+
+      <CheckRow
+        checked={v.consent_acknowledge_fcra}
+        onChange={(e) => setV(p => ({ ...p, consent_acknowledge_fcra: e.target.checked }))}
+        label="I acknowledge that I have received the Summary of Rights notice above (in writing or by being directed to the FCRA standard text)."
+      />
+      <CheckRow
+        checked={v.consent_authorize}
+        onChange={(e) => setV(p => ({ ...p, consent_authorize: e.target.checked }))}
+        label="I authorize the company to obtain a consumer report (background check) on me for employment purposes."
+      />
+
+      <NavButtons
+        onBack={onBack}
+        nextDisabled={!valid}
+        nextLabel="Continue →"
+        onNext={async () => { await onSave(v); onNext() }}
+      />
+    </div>
+  )
+}
+
 function SignStep({ token, draft, employee, company, is1099, handbook, hasTraining, onBack, onDone }) {
   // For 1099: TIN type was already chosen in W-9 step (ssn or ein).
   // Pull it from draft so this step asks for the right thing.
@@ -862,6 +1016,20 @@ function SignStep({ token, draft, employee, company, is1099, handbook, hasTraini
           document_kind: 'training_acknowledgment',
           document_label: 'Training Acknowledgment',
           values_snapshot: { watched: draft.training.watched || {}, completed_at: draft.training.completed_at },
+        })
+      }
+      if (!is1099 && draft.workers_comp?.consent) {
+        extraDocs.push({
+          document_kind: 'workers_comp',
+          document_label: 'Workers\' Compensation Questionnaire',
+          values_snapshot: draft.workers_comp,
+        })
+      }
+      if (!is1099 && draft.background_check?.consent_authorize) {
+        extraDocs.push({
+          document_kind: 'background_check_auth',
+          document_label: 'Background Check Authorization (FCRA)',
+          values_snapshot: draft.background_check,
         })
       }
       const sigPayloads = [...baseDocs, ...extraDocs]

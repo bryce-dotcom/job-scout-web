@@ -356,6 +356,48 @@ function renderBody(page: any, margin: number, startY: number, doc: any, font: a
     return y;
   }
 
+  if (doc.document_kind === 'workers_comp') {
+    y = section(page, margin, y, 'Workers\' Compensation Questionnaire', fontB, ink); y -= 14;
+    drawKV(page, margin, y, 'Can perform essential functions',
+      v.can_perform_essential_functions === true ? 'Yes' :
+      v.can_perform_essential_functions === false ? 'No' : '—',
+      font, fontB, ink, muted); y -= 14;
+    drawKV(page, margin, y, 'Pre-existing back/neck/shoulder injury', v.has_pre_existing_back_injury ? 'Yes' : 'No', font, fontB, ink, muted); y -= 14;
+    drawKV(page, margin, y, 'Other pre-existing injuries',           v.has_pre_existing_other       ? 'Yes' : 'No', font, fontB, ink, muted); y -= 14;
+    if (v.pre_existing_details) {
+      drawKV(page, margin, y, 'Details', '', font, fontB, ink, muted);
+      drawWrapped(page, margin + 150, y, String(v.pre_existing_details), font, ink, 612 - 2 * margin - 150, 9);
+      y -= 28;
+    }
+    drawKV(page, margin, y, 'Open prior workers\' comp claim', v.has_current_workers_comp_claim ? 'Yes' : 'No', font, fontB, ink, muted); y -= 14;
+    if (v.current_claim_details) {
+      drawKV(page, margin, y, 'Claim details', '', font, fontB, ink, muted);
+      drawWrapped(page, margin + 150, y, String(v.current_claim_details), font, ink, 612 - 2 * margin - 150, 9);
+      y -= 28;
+    }
+    if (v.primary_doctor)       { drawKV(page, margin, y, 'Primary doctor',       v.primary_doctor, font, fontB, ink, muted); y -= 14; }
+    if (v.primary_doctor_phone) { drawKV(page, margin, y, 'Primary doctor phone', v.primary_doctor_phone, font, fontB, ink, muted); y -= 14; }
+    y -= 6;
+    drawWrapped(page, margin, y,
+      'I confirm the answers above are true and complete to the best of my knowledge.',
+      font, ink, 612 - 2 * margin, 9);
+    y -= 28;
+    return y;
+  }
+
+  if (doc.document_kind === 'background_check_auth') {
+    y = section(page, margin, y, 'Disclosure & Authorization', fontB, ink); y -= 14;
+    drawKV(page, margin, y, 'Full legal name',  v.full_legal_name || '—',  font, fontB, ink, muted); y -= 14;
+    if (v.other_names_used) { drawKV(page, margin, y, 'Other names used', v.other_names_used, font, fontB, ink, muted); y -= 14; }
+    drawKV(page, margin, y, 'FCRA Summary acknowledged', v.consent_acknowledge_fcra ? 'Yes' : 'No', font, fontB, ink, muted); y -= 14;
+    drawKV(page, margin, y, 'Background check authorized', v.consent_authorize ? 'Yes' : 'No', font, fontB, ink, muted); y -= 18;
+    drawWrapped(page, margin, y,
+      'I authorize the employer to obtain a consumer report (background check) on me for employment purposes, and I acknowledge receipt of the FCRA Summary of Rights notice.',
+      font, ink, 612 - 2 * margin, 9);
+    y -= 36;
+    return y;
+  }
+
   if (doc.document_kind === 'emergency_contact') {
     y = section(page, margin, y, 'Emergency Contact', fontB, ink); y -= 14;
     drawKV(page, margin, y, 'Contact name',  v.name || '—',  font, fontB, ink, muted); y -= 14;
