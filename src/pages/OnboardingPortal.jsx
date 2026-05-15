@@ -644,7 +644,118 @@ function I9Step({ draft = {}, employee, onSave, onBack, onNext }) {
   )
 }
 
-function SignStep({ token, draft, employee, company, is1099, onBack, onDone }) {
+function HandbookStep({ draft = {}, handbook, onSave, onBack, onNext }) {
+  // Require scroll-to-bottom before "Continue" enables. Common e-sign
+  // pattern — proves the new hire actually reached the end of the doc.
+  const [scrolledToEnd, setScrolledToEnd] = useState(!!draft.scrolled_to_end)
+  const [acknowledged, setAcknowledged]   = useState(!!draft.acknowledged)
+  const onScroll = (e) => {
+    const el = e.currentTarget
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) setScrolledToEnd(true)
+  }
+  const valid = scrolledToEnd && acknowledged
+  return (
+    <div>
+      <h2 style={{ color: theme.text, marginTop: 0 }}>Company handbook</h2>
+      <p style={{ color: theme.textMuted, fontSize: 14 }}>
+        Read through, then check the box to acknowledge. {handbook?.version ? <em>Version {handbook.version}.</em> : null}
+      </p>
+      <div
+        onScroll={onScroll}
+        style={{
+          height: 320, overflowY: 'auto',
+          padding: '14px 16px',
+          backgroundColor: theme.bgCard,
+          border: `1px solid ${theme.border}`,
+          borderRadius: 10,
+          fontSize: 13, color: theme.text, lineHeight: 1.55,
+          whiteSpace: 'pre-wrap',
+          marginBottom: 12,
+        }}
+      >
+        {handbook?.text || '(empty handbook — ask HR to fill this in.)'}
+      </div>
+      {!scrolledToEnd && (
+        <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8, fontStyle: 'italic' }}>
+          ↓ Scroll to the bottom of the handbook to enable Continue.
+        </div>
+      )}
+      <CheckRow
+        checked={acknowledged}
+        onChange={(e) => setAcknowledged(e.target.checked)}
+        label="I acknowledge that I have read the handbook and agree to abide by its policies."
+      />
+      <NavButtons
+        onBack={onBack}
+        nextDisabled={!valid}
+        nextLabel="Continue →"
+        onNext={async () => { await onSave({ acknowledged, scrolled_to_end: scrolledToEnd, version: handbook?.version || '' }); onNext() }}
+      />
+    </div>
+  )
+}
+
+function TrainingStep({ draft = {}, videos, onSave, onBack, onNext }) {
+  // Track which required videos have been "watched" (we trust the user
+  // to click the button after watching — same level of trust as scroll-
+  // to-bottom on handbook). Future: actual watch-time tracking via embed APIs.
+  const [watched, setWatched] = useState(draft.watched || {})
+  const requiredIds = videos.filter(v => v.required).map(v => v.id)
+  const allRequiredWatched = requiredIds.every(id => watched[id])
+  const valid = allRequiredWatched
+  const toggle = (id) => setWatched(w => ({ ...w, [id]: !w[id] }))
+
+  return (
+    <div>
+      <h2 style={{ color: theme.text, marginTop: 0 }}>Training videos</h2>
+      <p style={{ color: theme.textMuted, fontSize: 14 }}>
+        Watch each video, then mark it as watched. Required videos must all be watched to continue.
+      </p>
+      <div style={{ display: 'grid', gap: 12, marginBottom: 12 }}>
+        {videos.map((v, i) => (
+          <div key={v.id} style={{
+            padding: 14,
+            backgroundColor: theme.bgCard,
+            border: `1px solid ${watched[v.id] ? theme.accent : theme.border}`,
+            borderRadius: 10,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>
+                  {v.title || `Video ${i + 1}`}
+                  {v.required && <span style={{ marginLeft: 8, fontSize: 10, color: theme.error, fontWeight: 700 }}>REQUIRED</span>}
+                </div>
+                {v.url && <a href={v.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: theme.accent, wordBreak: 'break-all' }}>{v.url}</a>}
+              </div>
+              <button onClick={() => toggle(v.id)} style={{
+                padding: '8px 12px', minHeight: 36,
+                backgroundColor: watched[v.id] ? theme.accent : 'transparent',
+                color: watched[v.id] ? '#fff' : theme.accent,
+                border: `1px solid ${theme.accent}`, borderRadius: 6,
+                fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+              }}>
+                {watched[v.id] ? '✓ Watched' : 'Mark watched'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {!allRequiredWatched && requiredIds.length > 0 && (
+        <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8, fontStyle: 'italic' }}>
+          Mark every REQUIRED video as watched to continue.
+        </div>
+      )}
+      <NavButtons
+        onBack={onBack}
+        nextDisabled={!valid}
+        nextLabel="Continue →"
+        onNext={async () => { await onSave({ watched, completed_at: new Date().toISOString() }); onNext() }}
+      />
+    </div>
+  )
+}
+
+function SignStep({ token, draft, employee, company, is1099, handbook, hasTraining, onBack, onDone }) {
   // For 1099: TIN type was already chosen in W-9 step (ssn or ein).
   // Pull it from draft so this step asks for the right thing.
   const tinType = is1099 ? (draft.w9?.tin_type || 'ssn') : 'ssn'
@@ -722,7 +833,7 @@ function SignStep({ token, draft, employee, company, is1099, onBack, onDone }) {
       await rpc('save', { token, step: tinKey, data: { value: digits } })
       const consent = `I, ${typedName.trim()}, agree that this electronic signature has the same legal effect as a handwritten one, and that the information I have provided is true and correct under penalty of perjury.`
       // Different docs for 1099 vs W-2 path
-      const sigPayloads = is1099 ? [
+      const baseDocs = is1099 ? [
         { document_kind: 'w9',                 document_label: 'Form W-9 — Request for Taxpayer ID and Certification', values_snapshot: draft.w9 || {} },
         ...(draft.direct_deposit?.enable !== false ? [
           { document_kind: 'direct_deposit_auth', document_label: 'Direct Deposit Authorization', values_snapshot: draft.direct_deposit || {} },
@@ -733,6 +844,27 @@ function SignStep({ token, draft, employee, company, is1099, onBack, onDone }) {
         { document_kind: 'direct_deposit_auth',document_label: 'Direct Deposit Auth',      values_snapshot: draft.direct_deposit || {} },
         { document_kind: 'emergency_contact',  document_label: 'Emergency Contact',        values_snapshot: { name: draft.personal?.emergency_contact_name, phone: draft.personal?.emergency_contact_phone } },
       ]
+      const extraDocs = []
+      if (handbook?.enabled && draft.handbook?.acknowledged) {
+        extraDocs.push({
+          document_kind: 'handbook_ack',
+          document_label: `Employee Handbook Acknowledgment${handbook.version ? ` (${handbook.version})` : ''}`,
+          values_snapshot: {
+            acknowledged: true,
+            scrolled_to_end: !!draft.handbook?.scrolled_to_end,
+            handbook_version: handbook.version || '',
+            handbook_excerpt: (handbook.text || '').slice(0, 500),
+          },
+        })
+      }
+      if (hasTraining && draft.training?.completed_at) {
+        extraDocs.push({
+          document_kind: 'training_acknowledgment',
+          document_label: 'Training Acknowledgment',
+          values_snapshot: { watched: draft.training.watched || {}, completed_at: draft.training.completed_at },
+        })
+      }
+      const sigPayloads = [...baseDocs, ...extraDocs]
       for (const p of sigPayloads) {
         await rpc('sign', {
           token, ...p,

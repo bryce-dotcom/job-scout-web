@@ -325,6 +325,37 @@ function renderBody(page: any, margin: number, startY: number, doc: any, font: a
     return y;
   }
 
+  if (doc.document_kind === 'handbook_ack') {
+    y = section(page, margin, y, 'Acknowledgment', fontB, ink); y -= 14;
+    drawKV(page, margin, y, 'Handbook version', v.handbook_version || '—', font, fontB, ink, muted); y -= 14;
+    drawKV(page, margin, y, 'Read to end',      v.scrolled_to_end ? 'Yes' : 'No', font, fontB, ink, muted); y -= 14;
+    drawKV(page, margin, y, 'Acknowledged',     v.acknowledged ? 'Yes' : 'No', font, fontB, ink, muted); y -= 14;
+    y -= 6;
+    drawWrapped(page, margin, y,
+      'I acknowledge that I have read the company handbook and agree to abide by its policies.',
+      font, ink, 612 - 2 * margin, 9);
+    y -= 32;
+    if (v.handbook_excerpt) {
+      y = section(page, margin, y, 'Handbook excerpt (first 500 chars):', fontB, muted); y -= 14;
+      drawWrapped(page, margin, y, v.handbook_excerpt, font, muted, 612 - 2 * margin, 8);
+      y -= 80;
+    }
+    return y;
+  }
+
+  if (doc.document_kind === 'training_acknowledgment') {
+    y = section(page, margin, y, 'Training videos completed', fontB, ink); y -= 14;
+    const watched = v.watched || {};
+    const ids = Object.keys(watched).filter(k => watched[k]);
+    drawKV(page, margin, y, 'Videos marked watched', String(ids.length), font, fontB, ink, muted); y -= 14;
+    drawKV(page, margin, y, 'Completed at', v.completed_at ? new Date(v.completed_at).toLocaleString() : '—', font, fontB, ink, muted); y -= 18;
+    drawWrapped(page, margin, y,
+      'I confirm I have watched the required training videos provided as part of my onboarding.',
+      font, ink, 612 - 2 * margin, 9);
+    y -= 32;
+    return y;
+  }
+
   if (doc.document_kind === 'emergency_contact') {
     y = section(page, margin, y, 'Emergency Contact', fontB, ink); y -= 14;
     drawKV(page, margin, y, 'Contact name',  v.name || '—',  font, fontB, ink, muted); y -= 14;
